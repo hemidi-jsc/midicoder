@@ -1,0 +1,2240 @@
+version: v0
+modules:
+  midicoder.dsl.schemas.info_model:
+    models:
+      InfoFile:
+        fields:
+          info:
+            type: ProjectInfo
+            required: true
+      ProjectInfo:
+        fields:
+          name:
+            type: str
+            required: true
+          version:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          author:
+            type: str | NoneType
+            required: false
+          license:
+            type: str | NoneType
+            required: false
+          repository:
+            type: str | NoneType
+            required: false
+          homepage:
+            type: str | NoneType
+            required: false
+          documentation:
+            type: str | NoneType
+            required: false
+          keywords:
+            type: list[str]
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          stack:
+            type: str | NoneType
+            required: false
+          frameworks:
+            type: list[str]
+            required: false
+          languages:
+            type: list[str]
+            required: false
+          created_at:
+            type: str | NoneType
+            required: false
+          updated_at:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: meta.info
+    catalogs: {}
+  midicoder.dsl.schemas.profiles_model:
+    models:
+      EnvironmentProfile:
+        fields:
+          name:
+            type: str
+            required: true
+          overrides:
+            type: dict[str, Any]
+            required: false
+          tags:
+            type: list[str]
+            required: false
+      ProfilesFile:
+        fields:
+          profiles:
+            type: list[EnvironmentProfile]
+            required: true
+        meta:
+          kind: ops.profiles
+    catalogs:
+      ENVIRONMENT_CATALOG:
+      - dev
+      - local
+      - prod
+      - staging
+  midicoder.dsl.schemas.secrets_contract_model:
+    models:
+      SecretRef:
+        fields:
+          id:
+            type: str
+            required: true
+          provider:
+            type: str
+            required: true
+          key:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          required:
+            type: bool
+            required: false
+          tags:
+            type: list[str]
+            required: false
+      SecretsContractFile:
+        fields:
+          secrets:
+            type: list[SecretRef]
+            required: true
+        meta:
+          kind: ops.secrets
+    catalogs:
+      SECRET_PROVIDER_CATALOG:
+      - aws_secrets_manager
+      - azure_key_vault
+      - env
+      - gcp_secret_manager
+      - vault
+  midicoder.dsl.schemas.security_baseline_model:
+    models:
+      CorsPolicy:
+        fields:
+          allowed_origins:
+            type: list[str]
+            required: false
+          allowed_methods:
+            type: list[str]
+            required: false
+          allowed_headers:
+            type: list[str]
+            required: false
+          allow_credentials:
+            type: bool
+            required: false
+      PiiMaskingRule:
+        fields:
+          field:
+            type: str
+            required: true
+          strategy:
+            type: str
+            required: true
+      RateLimitRule:
+        fields:
+          id:
+            type: str
+            required: true
+          requests:
+            type: int
+            required: true
+          per_seconds:
+            type: int
+            required: true
+          scope:
+            type: str
+            required: false
+      SecurityBaseline:
+        fields:
+          auth_required:
+            type: bool
+            required: false
+          authz_required:
+            type: bool
+            required: false
+          cors:
+            type: CorsPolicy | NoneType
+            required: false
+          rate_limits:
+            type: list[RateLimitRule]
+            required: false
+          pii_masking:
+            type: list[PiiMaskingRule]
+            required: false
+          webhook_signature_required:
+            type: bool
+            required: false
+      SecurityBaselineFile:
+        fields:
+          security:
+            type: SecurityBaseline
+            required: true
+        meta:
+          kind: ops.security_baseline
+    catalogs: {}
+  midicoder.dsl.schemas.glossary_model:
+    models:
+      Glossary:
+        fields:
+          terms:
+            type: list[GlossaryTerm]
+            required: true
+        meta:
+          kind: meta.glossary
+      GlossaryFile:
+        fields:
+          glossary:
+            type: Glossary
+            required: true
+      GlossaryTerm:
+        fields:
+          id:
+            type: str
+            required: true
+          term:
+            type: str
+            required: true
+          definition:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          category:
+            type: str | NoneType
+            required: false
+          synonyms:
+            type: list[str]
+            required: false
+          related_terms:
+            type: list[str]
+            required: false
+          examples:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+    catalogs:
+      GLOSSARY_CATEGORY_CATALOG:
+      - api
+      - business
+      - data
+      - domain
+      - integration
+      - process
+      - security
+      - technical
+  midicoder.dsl.schemas.named_field_model:
+    models:
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+    catalogs:
+      COMPOSITE_TYPE_CATALOG:
+      - list<float>
+      - list<int>
+      - list<string>
+      - list<uuid>
+      - map<string,int>
+      - map<string,string>
+      SCALAR_TYPE_CATALOG:
+      - bool
+      - date
+      - datetime
+      - decimal
+      - float
+      - int
+      - json
+      - string
+      - text
+      - time
+      - uuid
+  midicoder.dsl.schemas.entity_model:
+    models:
+      Constraint:
+        fields:
+          type:
+            type: str
+            required: true
+          fields:
+            type: list[str]
+            required: false
+          ref:
+            type: str | NoneType
+            required: false
+      EntitiesFile:
+        fields:
+          entities:
+            type: list[Entity]
+            required: true
+      Entity:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          fields:
+            type: list[NamedField]
+            required: true
+          primary_key:
+            type: str | NoneType
+            required: false
+          indexes:
+            type: list[Index]
+            required: false
+          constraints:
+            type: list[Constraint]
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          tenant_scope:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: domain.entity
+      Index:
+        fields:
+          name:
+            type: str
+            required: true
+          fields:
+            type: list[str]
+            required: true
+          unique:
+            type: bool
+            required: false
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+    catalogs:
+      CONSTRAINT_TYPE_CATALOG:
+      - check
+      - foreign_key
+      - unique
+      TENANT_SCOPE_CATALOG:
+      - global
+      - tenant
+      - user
+  midicoder.dsl.schemas.persistence_model:
+    models:
+      PersistenceColumn:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+      PersistenceDatasource:
+        fields:
+          id:
+            type: str
+            required: true
+          engine:
+            type: str
+            required: true
+          connector:
+            type: str | NoneType
+            required: false
+          database:
+            type: str | NoneType
+            required: false
+          host:
+            type: str | NoneType
+            required: false
+          port:
+            type: int | NoneType
+            required: false
+          db_schema:
+            type: str | NoneType
+            required: false
+          default:
+            type: bool
+            required: false
+          options:
+            type: dict[str, Any]
+            required: false
+          integration_id:
+            type: str | NoneType
+            required: false
+      PersistenceIndex:
+        fields:
+          name:
+            type: str
+            required: true
+          columns:
+            type: list[str]
+            required: false
+          unique:
+            type: bool
+            required: false
+      PersistenceModelFile:
+        fields:
+          datasources:
+            type: list[PersistenceDatasource]
+            required: false
+          tables:
+            type: list[PersistenceTable]
+            required: true
+      PersistenceTable:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          datasource:
+            type: str | NoneType
+            required: false
+          operation_id:
+            type: str | NoneType
+            required: false
+          columns:
+            type: list[PersistenceColumn]
+            required: false
+          indexes:
+            type: list[PersistenceIndex]
+            required: false
+          tags:
+            type: list[str]
+            required: false
+        meta:
+          kind: persistence.table
+    catalogs:
+      PERSISTENCE_CONNECTOR_CATALOG:
+      - aiomysql
+      - asyncpg
+      - mysqlclient
+      - psycopg
+      - redis-py
+      - sqlalchemy
+      PERSISTENCE_CONSTRAINT_KEY_CATALOG:
+      - check
+      - default
+      - foreign_key
+      - primary_key
+      - unique
+      PERSISTENCE_ENGINE_CATALOG:
+      - mysql
+      - postgres
+      - redis
+  midicoder.dsl.schemas.value_object_model:
+    models:
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+      ValueObject:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          fields:
+            type: list[NamedField]
+            required: true
+          category:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: domain.value_object
+      ValueObjectsFile:
+        fields:
+          value_objects:
+            type: list[ValueObject]
+            required: true
+    catalogs:
+      VALUE_OBJECT_CATEGORY_CATALOG:
+      - address
+      - contact
+      - geo
+      - money
+      - period
+  midicoder.dsl.schemas.enum_model:
+    models:
+      EnumDef:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          values:
+            type: list[str]
+            required: true
+          value_labels:
+            type: dict[str, str]
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: domain.enum
+      EnumsFile:
+        fields:
+          enums:
+            type: list[EnumDef]
+            required: true
+    catalogs: {}
+  midicoder.dsl.schemas.error_model:
+    models:
+      ErrorDef:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          category:
+            type: str | NoneType
+            required: false
+          http_status:
+            type: int | NoneType
+            required: false
+          code:
+            type: str | NoneType
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+        meta:
+          kind: domain.error
+      ErrorsFile:
+        fields:
+          errors:
+            type: list[ErrorDef]
+            required: true
+    catalogs:
+      ERROR_CATEGORY_CATALOG:
+      - business
+      - integration
+      - security
+      - system
+      - validation
+  midicoder.dsl.schemas.event_model:
+    models:
+      EventDef:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          kind:
+            type: str | NoneType
+            required: false
+          payload:
+            type: list[NamedField]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+        meta:
+          kind: domain.event
+      EventsFile:
+        fields:
+          events:
+            type: list[EventDef]
+            required: true
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+    catalogs:
+      EVENT_KIND_CATALOG:
+      - audit
+      - domain
+      - integration
+  midicoder.dsl.schemas.guard_effect_model:
+    models:
+      EffectRef:
+        fields:
+          id:
+            type: str
+            required: true
+          params:
+            type: UnionType[dict[str, Any] | NoneType]
+            required: false
+        meta:
+          kind: shared.effect_ref
+      GuardRef:
+        fields:
+          id:
+            type: str
+            required: true
+          params:
+            type: UnionType[dict[str, Any] | NoneType]
+            required: false
+        meta:
+          kind: shared.guard_ref
+      IntegrationCallParams:
+        fields:
+          target:
+            type: Annotated[str | StringConstraints(strip_whitespace=None, 
+              to_upper=None, to_lower=None, strict=None, min_length=None, 
+              max_length=None, 
+              pattern='^(Integration:)?[A-Za-z_][A-Za-z0-9_]*$')] | NoneType
+            required: false
+          integration:
+            type: Annotated[str | StringConstraints(strip_whitespace=None, 
+              to_upper=None, to_lower=None, strict=None, min_length=None, 
+              max_length=None, 
+              pattern='^(Integration:)?[A-Za-z_][A-Za-z0-9_]*$')] | NoneType
+            required: false
+          service:
+            type: UnionType[str | NoneType]
+            required: false
+          operation_id:
+            type: Annotated[str | StringConstraints(strip_whitespace=None, 
+              to_upper=None, to_lower=None, strict=None, min_length=None, 
+              max_length=None, 
+              pattern='^(IntegrationOperation:)?[A-Za-z_][A-Za-z0-9_]*$')] | 
+              NoneType
+            required: false
+          payload:
+            type: UnionType[dict[str, Any] | NoneType]
+            required: false
+    catalogs:
+      EFFECT_CATALOG:
+      - cache.invalidate
+      - call.integration
+      - db.delete
+      - db.insert
+      - db.update
+      - db.upsert
+      - emit.event
+      - schedule.job
+      - send.email
+      - send.notification
+      GUARD_CATALOG:
+      - auth.permission
+      - auth.role
+      - exists
+      - feature.enabled
+      - not_exists
+      - ownership
+      - quota.limit
+      - state.equals
+      - state.in
+      - subscription.active
+      - tenant.active
+  midicoder.dsl.schemas.command_model:
+    models:
+      Command:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          input:
+            type: list[NamedField]
+            required: true
+          fetches:
+            type: list[str]
+            required: false
+          guards:
+            type: list[GuardRef]
+            required: false
+          effects:
+            type: list[EffectRef]
+            required: false
+          errors:
+            type: list[str]
+            required: false
+          returns:
+            type: list[NamedField]
+            required: false
+          category:
+            type: str | NoneType
+            required: false
+          emits:
+            type: list[str]
+            required: false
+          required_roles:
+            type: list[str]
+            required: false
+          required_permissions:
+            type: list[str]
+            required: false
+          writes_to:
+            type: list[str]
+            required: false
+          datasource:
+            type: str | NoneType
+            required: false
+          transaction:
+            type: bool | NoneType
+            required: false
+          tenant_scope:
+            type: str | NoneType
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+        meta:
+          kind: app.command
+      CommandsFile:
+        fields:
+          commands:
+            type: list[Command]
+            required: true
+      EffectRef:
+        fields:
+          id:
+            type: str
+            required: true
+          params:
+            type: UnionType[dict[str, Any] | NoneType]
+            required: false
+        meta:
+          kind: shared.effect_ref
+      GuardRef:
+        fields:
+          id:
+            type: str
+            required: true
+          params:
+            type: UnionType[dict[str, Any] | NoneType]
+            required: false
+        meta:
+          kind: shared.guard_ref
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+    catalogs:
+      COMMAND_CATEGORY_CATALOG:
+      - auth.login
+      - auth.logout
+      - billing.charge
+      - billing.refund
+      - crud.create
+      - crud.delete
+      - crud.read
+      - crud.update
+      - notification.send
+      - subscription.activate
+      - subscription.cancel
+      - subscription.change_plan
+      - workflow.transition
+      TENANT_SCOPE_CATALOG:
+      - global
+      - tenant
+      - user
+  midicoder.dsl.schemas.query_model:
+    models:
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+      QueriesFile:
+        fields:
+          queries:
+            type: list[Query]
+            required: true
+      Query:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          input:
+            type: list[NamedField]
+            required: false
+          returns:
+            type: list[NamedField]
+            required: false
+          reads:
+            type: list[str]
+            required: false
+          filters:
+            type: dict[str, Any] | NoneType
+            required: false
+          pagination:
+            type: dict[str, Any] | NoneType
+            required: false
+          category:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          required_roles:
+            type: list[str]
+            required: false
+          required_permissions:
+            type: list[str]
+            required: false
+          reads_from:
+            type: list[str]
+            required: false
+          datasource:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: app.query
+    catalogs:
+      QUERY_CATEGORY_CATALOG:
+      - detail
+      - list
+      - metrics
+      - report
+      - search
+  midicoder.dsl.schemas.projection_model:
+    models:
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+      Projection:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          source_events:
+            type: list[str]
+            required: false
+          fields:
+            type: list[NamedField]
+            required: false
+          storage:
+            type: str | NoneType
+            required: false
+          storage_kind:
+            type: str | NoneType
+            required: false
+          storage_ref:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: app.projection
+      ProjectionsFile:
+        fields:
+          projections:
+            type: list[Projection]
+            required: true
+    catalogs: {}
+  midicoder.dsl.schemas.rule_model:
+    models:
+      Rule:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          applies_to:
+            type: str | NoneType
+            required: false
+          applies_to_scenario:
+            type: str | NoneType
+            required: false
+          inputs:
+            type: list[str]
+            required: false
+          outputs:
+            type: list[str]
+            required: false
+          rows:
+            type: list[RuleRow]
+            required: false
+          severity:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: rules.rule
+      RuleRow:
+        fields:
+          when:
+            type: dict[str, Any]
+            required: true
+          then:
+            type: dict[str, Any]
+            required: true
+      RulesFile:
+        fields:
+          rules:
+            type: list[Rule]
+            required: true
+    catalogs:
+      RULE_SEVERITY_CATALOG:
+      - error
+      - info
+      - warning
+  midicoder.dsl.schemas.workflow_model:
+    models:
+      EffectRef:
+        fields:
+          id:
+            type: str
+            required: true
+          params:
+            type: UnionType[dict[str, Any] | NoneType]
+            required: false
+        meta:
+          kind: shared.effect_ref
+      GuardRef:
+        fields:
+          id:
+            type: str
+            required: true
+          params:
+            type: UnionType[dict[str, Any] | NoneType]
+            required: false
+        meta:
+          kind: shared.guard_ref
+      Workflow:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          entity:
+            type: str
+            required: true
+          states:
+            type: list[WorkflowState]
+            required: false
+          transitions:
+            type: list[WorkflowTransition]
+            required: false
+          initial_state:
+            type: str
+            required: true
+          error_handlers:
+            type: list[WorkflowErrorHandler]
+            required: false
+          required_roles:
+            type: list[str]
+            required: false
+          required_permissions:
+            type: list[str]
+            required: false
+          scenarios:
+            type: list[str]
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: workflow.definition
+      WorkflowErrorHandler:
+        fields:
+          error:
+            type: str
+            required: true
+          action:
+            type: str
+            required: true
+          transition_to:
+            type: str | NoneType
+            required: false
+      WorkflowState:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          kind:
+            type: str | NoneType
+            required: false
+      WorkflowTransition:
+        fields:
+          from_state:
+            type: str
+            required: true
+          to_state:
+            type: str
+            required: true
+          on_command:
+            type: str | NoneType
+            required: false
+          on_event:
+            type: str | NoneType
+            required: false
+          guards:
+            type: list[GuardRef]
+            required: false
+          effects:
+            type: list[EffectRef]
+            required: false
+      WorkflowsFile:
+        fields:
+          workflows:
+            type: list[Workflow]
+            required: true
+    catalogs:
+      WORKFLOW_STATE_KIND_CATALOG:
+      - final
+      - initial
+      - normal
+  midicoder.dsl.schemas.policy_model:
+    models:
+      PoliciesFile:
+        fields:
+          policies:
+            type: list[Policy]
+            required: true
+      Policy:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          scope:
+            type: str
+            required: true
+          conditions:
+            type: list[PolicyCondition]
+            required: false
+          effects:
+            type: list[PolicyEffect]
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: policy.business
+      PolicyCondition:
+        fields:
+          field:
+            type: str
+            required: true
+          op:
+            type: str
+            required: true
+          value:
+            type: Any
+            required: true
+      PolicyEffect:
+        fields:
+          type:
+            type: str
+            required: true
+          params:
+            type: dict[str, Any]
+            required: false
+    catalogs:
+      POLICY_EFFECT_TYPE_CATALOG:
+      - allow
+      - deny
+      - limit
+      POLICY_OPERATOR_CATALOG:
+      - contains
+      - eq
+      - gt
+      - gte
+      - in
+      - lt
+      - lte
+      - neq
+  midicoder.dsl.schemas.access_policy_model:
+    models:
+      AccessPolicy:
+        fields:
+          roles:
+            type: list[Role]
+            required: false
+          permissions:
+            type: list[Permission]
+            required: false
+          bindings:
+            type: list[Binding]
+            required: false
+        meta:
+          kind: policy.access
+      AccessPolicyFile:
+        fields:
+          access:
+            type: AccessPolicy
+            required: true
+      Binding:
+        fields:
+          role:
+            type: str
+            required: true
+          permissions:
+            type: list[str]
+            required: false
+      Permission:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          resource:
+            type: str
+            required: true
+          action:
+            type: str
+            required: true
+      Role:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+    catalogs:
+      PERMISSION_ACTION_CATALOG:
+      - admin
+      - delete
+      - read
+      - write
+  midicoder.dsl.schemas.reliability_model:
+    models:
+      CircuitBreakerConfig:
+        fields:
+          failure_threshold:
+            type: int
+            required: false
+          recovery_timeout_seconds:
+            type: int
+            required: false
+      ReliabilityPoliciesFile:
+        fields:
+          reliability_policies:
+            type: list[ReliabilityPolicy]
+            required: true
+        meta:
+          kind: ops.reliability
+      ReliabilityPolicy:
+        fields:
+          id:
+            type: str
+            required: true
+          target_kind:
+            type: str
+            required: true
+          target_ref:
+            type: str
+            required: true
+          timeout:
+            type: TimeoutConfig | NoneType
+            required: false
+          retry:
+            type: RetryConfig | NoneType
+            required: false
+          circuit_breaker:
+            type: CircuitBreakerConfig | NoneType
+            required: false
+          idempotency_key_field:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+      RetryConfig:
+        fields:
+          max_attempts:
+            type: int
+            required: false
+          backoff_ms:
+            type: int
+            required: false
+          max_backoff_ms:
+            type: int | NoneType
+            required: false
+          jitter:
+            type: bool
+            required: false
+      TimeoutConfig:
+        fields:
+          connect_ms:
+            type: int | NoneType
+            required: false
+          read_ms:
+            type: int | NoneType
+            required: false
+          total_ms:
+            type: int | NoneType
+            required: false
+    catalogs:
+      RELIABILITY_TARGET_KIND_CATALOG:
+      - command
+      - integration
+      - integration_operation
+      - workflow
+  midicoder.dsl.schemas.observability_model:
+    models:
+      ObservabilityFile:
+        fields:
+          observability:
+            type: list[ObservabilityTarget]
+            required: true
+        meta:
+          kind: ops.observability
+      ObservabilityTarget:
+        fields:
+          kind:
+            type: str
+            required: true
+          ref:
+            type: str
+            required: true
+          log_fields:
+            type: list[str]
+            required: false
+          metrics:
+            type: list[str]
+            required: false
+          trace_enabled:
+            type: bool
+            required: false
+          alert_rules:
+            type: list[str]
+            required: false
+    catalogs:
+      OBSERVABILITY_KIND_CATALOG:
+      - command
+      - integration
+      - integration_operation
+      - persistence.datasource
+      - persistence.table
+      - workflow
+  midicoder.dsl.schemas.http_api_model:
+    models:
+      HttpApiFile:
+        fields:
+          routes:
+            type: list[HttpRoute]
+            required: true
+        meta:
+          kind: api.http_file
+      HttpRoute:
+        fields:
+          method:
+            type: str
+            required: true
+          path:
+            type: str
+            required: true
+          command:
+            type: str | NoneType
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          query:
+            type: str | NoneType
+            required: false
+          auth:
+            type: str | NoneType
+            required: false
+          request_schema:
+            type: list[NamedField] | NoneType
+            required: false
+          response_schema:
+            type: list[NamedField] | NoneType
+            required: false
+          deprecated:
+            type: bool
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: api.http_route
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+    catalogs:
+      HTTP_METHOD_CATALOG:
+      - DELETE
+      - GET
+      - HEAD
+      - OPTIONS
+      - PATCH
+      - POST
+      - PUT
+  midicoder.dsl.schemas.graphql_api_model:
+    models:
+      GraphQLApi:
+        fields:
+          types:
+            type: list[GraphQLType]
+            required: false
+          queries:
+            type: list[GraphQLField]
+            required: false
+          mutations:
+            type: list[GraphQLField]
+            required: false
+        meta:
+          kind: api.graphql
+      GraphQLApiFile:
+        fields:
+          api:
+            type: GraphQLApi
+            required: true
+      GraphQLField:
+        fields:
+          name:
+            type: str
+            required: true
+          resolver:
+            type: str
+            required: true
+          args:
+            type: list[NamedField]
+            required: false
+          returns:
+            type: list[NamedField]
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+      GraphQLType:
+        fields:
+          name:
+            type: str
+            required: true
+          kind:
+            type: str | NoneType
+            required: false
+          fields:
+            type: list[NamedField]
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+    catalogs:
+      GRAPHQL_TYPE_KIND_CATALOG:
+      - enum
+      - interface
+      - object
+      - scalar
+  midicoder.dsl.schemas.integration_model:
+    models:
+      CircuitBreakerPolicy:
+        fields:
+          failure_threshold:
+            type: int
+            required: true
+          recovery_timeout_seconds:
+            type: int
+            required: true
+      EmailProvider:
+        fields:
+          id:
+            type: str
+            required: true
+          transport:
+            type: str
+            required: true
+          host:
+            type: str | NoneType
+            required: false
+          port:
+            type: int | NoneType
+            required: false
+          username_secret:
+            type: Annotated[str | StringConstraints(strip_whitespace=None, 
+              to_upper=None, to_lower=None, strict=None, min_length=None, 
+              max_length=None, pattern='^(Secret:)?[A-Za-z_][A-Za-z0-9_]*$')] | 
+              NoneType
+            required: false
+          password_secret:
+            type: Annotated[str | StringConstraints(strip_whitespace=None, 
+              to_upper=None, to_lower=None, strict=None, min_length=None, 
+              max_length=None, pattern='^(Secret:)?[A-Za-z_][A-Za-z0-9_]*$')] | 
+              NoneType
+            required: false
+          from_email:
+            type: str
+            required: true
+          from_name:
+            type: str | NoneType
+            required: false
+      ErrorMap:
+        fields:
+          source_code:
+            type: str
+            required: true
+          target_error:
+            type: str
+            required: true
+      IntegrationAuth:
+        fields:
+          type:
+            type: str
+            required: true
+          secret_ref:
+            type: Annotated[str | StringConstraints(strip_whitespace=None, 
+              to_upper=None, to_lower=None, strict=None, min_length=None, 
+              max_length=None, pattern='^(Secret:)?[A-Za-z_][A-Za-z0-9_]*$')] | 
+              NoneType
+            required: false
+          key_name:
+            type: str | NoneType
+            required: false
+          token_prefix:
+            type: str | NoneType
+            required: false
+          options:
+            type: dict[str, Any]
+            required: false
+      IntegrationTarget:
+        fields:
+          id:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          provider:
+            type: str | NoneType
+            required: false
+          service:
+            type: str | NoneType
+            required: false
+          base_url:
+            type: str | NoneType
+            required: false
+          auth:
+            type: IntegrationAuth | NoneType
+            required: false
+          timeouts:
+            type: TimeoutPolicy | NoneType
+            required: false
+          retry:
+            type: RetryPolicy | NoneType
+            required: false
+          rate_limit:
+            type: RateLimitPolicy | NoneType
+            required: false
+          circuit_breaker:
+            type: CircuitBreakerPolicy | NoneType
+            required: false
+          headers:
+            type: dict[str, str]
+            required: false
+          tags:
+            type: list[str]
+            required: false
+      IntegrationsFile:
+        fields:
+          integrations:
+            type: list[IntegrationTarget]
+            required: true
+          operations:
+            type: list[RestApiOperation]
+            required: false
+          s3_resources:
+            type: list[S3Resource]
+            required: false
+          oauth2_providers:
+            type: list[OAuth2Provider]
+            required: false
+          webhooks:
+            type: list[WebhookEndpoint]
+            required: false
+          email_providers:
+            type: list[EmailProvider]
+            required: false
+        meta:
+          kind: integration.file
+      NamedField:
+        fields:
+          name:
+            type: str
+            required: true
+          type:
+            type: str
+            required: true
+          required:
+            type: bool
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          metadata:
+            type: dict[str, Any]
+            required: false
+          default:
+            type: UnionType[Any | NoneType]
+            required: false
+          constraints:
+            type: dict[str, Any]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+          introduced_in:
+            type: str | NoneType
+            required: false
+          deprecated_in:
+            type: str | NoneType
+            required: false
+          replaced_by:
+            type: str | NoneType
+            required: false
+          status:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: shared.named_field
+      OAuth2Provider:
+        fields:
+          id:
+            type: str
+            required: true
+          issuer:
+            type: str
+            required: true
+          audience:
+            type: str | NoneType
+            required: false
+          jwks_url:
+            type: str | NoneType
+            required: false
+          introspection_url:
+            type: str | NoneType
+            required: false
+          client_id_secret:
+            type: Annotated[str | StringConstraints(strip_whitespace=None, 
+              to_upper=None, to_lower=None, strict=None, min_length=None, 
+              max_length=None, pattern='^(Secret:)?[A-Za-z_][A-Za-z0-9_]*$')] | 
+              NoneType
+            required: false
+          client_secret_secret:
+            type: Annotated[str | StringConstraints(strip_whitespace=None, 
+              to_upper=None, to_lower=None, strict=None, min_length=None, 
+              max_length=None, pattern='^(Secret:)?[A-Za-z_][A-Za-z0-9_]*$')] | 
+              NoneType
+            required: false
+          scopes:
+            type: list[str]
+            required: false
+      RateLimitPolicy:
+        fields:
+          requests:
+            type: int
+            required: true
+          per_seconds:
+            type: int
+            required: true
+      RestApiOperation:
+        fields:
+          id:
+            type: str
+            required: true
+          integration_id:
+            type: str
+            required: true
+          method:
+            type: str
+            required: true
+          path:
+            type: str
+            required: true
+          request_schema:
+            type: list[NamedField]
+            required: false
+          response_schema:
+            type: list[NamedField]
+            required: false
+          error_mapping:
+            type: list[ErrorMap]
+            required: false
+      RetryPolicy:
+        fields:
+          max_attempts:
+            type: int
+            required: false
+          backoff_ms:
+            type: int
+            required: false
+          max_backoff_ms:
+            type: int | NoneType
+            required: false
+          jitter:
+            type: bool
+            required: false
+      S3Resource:
+        fields:
+          integration_id:
+            type: str
+            required: true
+          bucket:
+            type: str
+            required: true
+          region:
+            type: str
+            required: true
+          operations:
+            type: list[Annotated[str | StringConstraints(strip_whitespace=None, 
+              to_upper=None, to_lower=None, strict=None, min_length=None, 
+              max_length=None, 
+              pattern='^(IntegrationOperation:)?[A-Za-z_][A-Za-z0-9_]*$')]]
+            required: false
+          path_template:
+            type: str | NoneType
+            required: false
+          encryption:
+            type: str | NoneType
+            required: false
+      SignaturePolicy:
+        fields:
+          alg:
+            type: str
+            required: true
+          secret_ref:
+            type: str
+            required: true
+          header_name:
+            type: str | NoneType
+            required: false
+      TimeoutPolicy:
+        fields:
+          connect_ms:
+            type: int | NoneType
+            required: false
+          read_ms:
+            type: int | NoneType
+            required: false
+          total_ms:
+            type: int | NoneType
+            required: false
+      WebhookEndpoint:
+        fields:
+          id:
+            type: str
+            required: true
+          direction:
+            type: str
+            required: true
+          url_or_path:
+            type: str
+            required: true
+          method:
+            type: str
+            required: false
+          signature:
+            type: SignaturePolicy | NoneType
+            required: false
+          retries:
+            type: RetryPolicy | NoneType
+            required: false
+          events:
+            type: list[str]
+            required: false
+    catalogs:
+      AUTH_TYPE_CATALOG:
+      - api_key
+      - aws_sigv4
+      - basic
+      - bearer
+      - none
+      - oauth2_auth_code
+      - oauth2_client_credentials
+      - oauth2_password
+      AWS_SERVICE_CATALOG:
+      - cloudwatch
+      - dynamodb
+      - ecs
+      - eks
+      - eventbridge
+      - kinesis
+      - lambda
+      - rds
+      - s3
+      - secret_manager
+      - ses
+      - sns
+      - sqs
+      - step_functions
+      AZURE_SERVICE_CATALOG:
+      - aks
+      - app_configuration
+      - blob_storage
+      - container_apps
+      - cosmosdb
+      - event_hubs
+      - functions
+      - key_vault
+      - logic_apps
+      - service_bus
+      - sql_database
+      CLOUD_PROVIDER_CATALOG:
+      - aws
+      - azure
+      - gcp
+      EMAIL_TRANSPORT_CATALOG:
+      - mailgun
+      - sendgrid
+      - ses
+      - smtp
+      GCP_SERVICE_CATALOG:
+      - bigquery
+      - cloud_functions
+      - cloud_run
+      - cloud_scheduler
+      - cloud_storage
+      - cloud_tasks
+      - firestore
+      - memorystore
+      - pubsub
+      - secret_manager
+      - spanner
+      INTEGRATION_TYPE_CATALOG:
+      - aws
+      - aws_s3
+      - azure
+      - custom
+      - gcp
+      - oauth2_introspection
+      - queue
+      - rest_api
+      - smtp
+      - webhook
+      WEBHOOK_SIGNATURE_ALG_CATALOG:
+      - hmac-sha1
+      - hmac-sha256
+      - rsa-sha256
+  midicoder.dsl.schemas.scenario_model:
+    models:
+      Scenario:
+        fields:
+          id:
+            type: str
+            required: true
+          description:
+            type: str | NoneType
+            required: false
+          actors:
+            type: list[str]
+            required: false
+          actor_roles:
+            type: list[str]
+            required: false
+          preconditions:
+            type: list[str]
+            required: false
+          steps:
+            type: list[ScenarioStep]
+            required: false
+          postconditions:
+            type: list[str]
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          source:
+            type: str | NoneType
+            required: false
+        meta:
+          kind: scenario.definition
+      ScenarioStep:
+        fields:
+          type:
+            type: str
+            required: true
+          ref:
+            type: str
+            required: true
+          input:
+            type: dict[str, Any]
+            required: false
+          expect:
+            type: dict[str, Any]
+            required: false
+      ScenariosFile:
+        fields:
+          scenarios:
+            type: list[Scenario]
+            required: true
+    catalogs:
+      SCENARIO_STEP_TYPE_CATALOG:
+      - command
+      - event
+      - query
+  midicoder.dsl.schemas.testing_model:
+    models:
+      ContractTestCase:
+        fields:
+          id:
+            type: str
+            required: true
+          kind:
+            type: str
+            required: true
+          framework:
+            type: str | NoneType
+            required: false
+          description:
+            type: str | NoneType
+            required: false
+          tags:
+            type: list[str]
+            required: false
+          steps:
+            type: list[ContractTestStep]
+            required: false
+          scenario:
+            type: str | NoneType
+            required: false
+      ContractTestStep:
+        fields:
+          type:
+            type: str
+            required: true
+          ref:
+            type: str
+            required: true
+          input:
+            type: dict[str, Any]
+            required: false
+          expect:
+            type: dict[str, Any]
+            required: false
+      TestingFile:
+        fields:
+          tests:
+            type: list[ContractTestCase]
+            required: true
+        meta:
+          kind: testing.contract
+    catalogs:
+      CONTRACT_TEST_STEP_TYPE_CATALOG:
+      - command
+      - event
+      - query
+      TEST_FRAMEWORK_CATALOG:
+      - cypress
+      - jest
+      - playwright
+      - pytest
+      - selenium
+      TEST_KIND_CATALOG:
+      - e2e
+      - integration
+      - unit

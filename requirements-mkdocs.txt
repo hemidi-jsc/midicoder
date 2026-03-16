@@ -1,0 +1,4 @@
+mkdocs-carbon
+neoteroi-mkdocs
+pymdown-extensions
+mkdocs-static-i18n
