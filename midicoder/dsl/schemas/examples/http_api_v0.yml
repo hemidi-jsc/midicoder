@@ -1,0 +1,26 @@
+routes:
+  - method: POST
+    path: /api/v1/users
+    command: create_user
+    description: Register new user
+    auth: user_manage
+  - method: POST
+    path: /api/v1/organizations/{organization_id}/invitations
+    command: invite_member
+    description: Invite member
+    auth: user_manage
+  - method: POST
+    path: /api/v1/subscriptions/{subscription_id}/cancel
+    command: cancel_subscription
+    description: Cancel subscription
+    auth: billing_manage
+  - method: GET
+    path: /api/v1/invoices
+    query: list_invoices
+    description: List invoices
+    auth: billing_manage
+  - method: POST
+    path: /api/v1/payments/webhook
+    command: record_payment
+    description: Payment webhook
+

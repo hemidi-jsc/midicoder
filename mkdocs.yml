@@ -1,0 +1,76 @@
+site_name: Documentation
+site_description: Documentation for Midi Coder CLI
+
+nav:
+  - Trang chủ: index.md
+  - Bắt đầu: getting-started.md
+  - Lệnh CLI: cli.md
+  - Pipeline: pipeline.md
+  - Cấu hình: config.md
+  - Artifacts: artifacts.md
+  - Project Context: project-context.md
+  - Contracts & DSL: contracts.md
+  - IR Compiler: ir.md
+  - Codegen & Patches: codegen.md
+  - Init Non-Interactive: non-interactive.md
+  - Sửa Contracts: contract-repair.md
+  - Runtime Testing: runtime-testing.md
+  - Xử lý sự cố: troubleshooting.md
+  - Hỏi đáp: faq.md
+  - Đóng góp: contributing.md
+
+theme:
+  name: carbon
+  prefix: Midi Coder
+  theme_toggle: true
+  theme_default: g90
+  header_nav_items:
+    - title: View on Github
+      url: https://github.com/hemidi-jsc/midicoder.git
+      active: true
+
+
+markdown_extensions:
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: folder
+      fallback_to_default: true
+      languages:
+        - locale: vi
+          name: Tiếng Việt
+          default: true
+          build: true
+        - locale: en
+          name: English
+          build: true
+          nav_translations:
+            Trang chủ: Home
+            Bắt đầu: Getting Started
+            Lệnh CLI: CLI Commands
+            Pipeline: Pipeline
+            Cấu hình: Configuration
+            Artifacts: Artifacts
+            Project Context: Project Context
+            Contracts & DSL: Contracts & DSL
+            IR Compiler: IR Compiler
+            Codegen & Patches: Codegen & Patches
+            Init Non-Interactive: Non-Interactive Init
+            Sửa Contracts: Contract Repair
+            Runtime Testing: Runtime Testing
+            Xử lý sự cố: Troubleshooting
+            Hỏi đáp: FAQ
+            Đóng góp: Contributing
+  - neoteroi.mkdocsoad:
+      use_pymdownx: true
+
+extra_css:
+  - css/mkdocsoad.css
+
+extra_javascript:
+  - js/lang-switcher.js

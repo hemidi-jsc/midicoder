@@ -1,0 +1,33 @@
+{
+  "contracts_root": ".midicoder\\versions\\0.2.0\\contracts",
+  "generated_at": "2026-03-10T02:51:47.893546+00:00",
+  "infos": [],
+  "input_files": [],
+  "ir_checksum": "58b0a60b4f04f13231c07252306b55bdfc005898cdd15fd8965caaeb87a7ccf0",
+  "ir_root": ".midicoder\\versions\\0.2.0\\irs",
+  "outputs": {
+    "ir": ".midicoder\\versions\\0.2.0\\irs\\ir.json",
+    "manifest": ".midicoder\\versions\\0.2.0\\irs\\manifest.json"
+  },
+  "stats": {
+    "commands": 1,
+    "entities": 2,
+    "enums": 0,
+    "errors": 5,
+    "events": 0,
+    "graphql_types": 0,
+    "http_routes": 1,
+    "permissions": 2,
+    "policies": 0,
+    "projections": 0,
+    "queries": 0,
+    "roles": 4,
+    "rules": 3,
+    "scenarios": 0,
+    "value_objects": 0,
+    "workflows": 0
+  },
+  "status": "success",
+  "version": "0.2.0",
+  "warnings": []
+}

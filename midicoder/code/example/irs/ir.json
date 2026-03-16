@@ -1,0 +1,988 @@
+{
+  "generated_at": "2026-03-10T02:51:47.835340+00:00",
+  "indexes": {
+    "refs": [],
+    "symbols": {
+      "Command": {
+        "update_role": {
+          "hash": "374704e8b2a752f99bb95755dfbe3f25d0a6943b5f87dcae92ef4a2d1c6cd1d1",
+          "id": "update_role",
+          "source_file": "app\\commands.yaml",
+          "type": "Command"
+        }
+      },
+      "Entity": {
+        "sessions": {
+          "hash": "84328165975963b4e4b9b5ea9cd7304154ffccb3f8e78ecccdd57706e233d321",
+          "id": "sessions",
+          "source_file": "domain\\entities.yaml",
+          "type": "Entity"
+        },
+        "user": {
+          "hash": "c766c87e289de725c36f0c7aec2939a8c69e8d92bdde96ba1775821095fac8ed",
+          "id": "user",
+          "source_file": "domain\\entities.yaml",
+          "type": "Entity"
+        }
+      },
+      "Error": {
+        "authentication_required": {
+          "hash": "d61c5d4ec184ae7f3c01402bb8f1a8de3ed4ee91f2cd562e759087554941810f",
+          "id": "authentication_required",
+          "source_file": "domain\\errors.yaml",
+          "type": "Error"
+        },
+        "invalid_role_transition": {
+          "hash": "5addf4f94a0dcc70e33814640e6eb8a35672fc0a3815665957c2661b0c470939",
+          "id": "invalid_role_transition",
+          "source_file": "domain\\errors.yaml",
+          "type": "Error"
+        },
+        "invalid_role_upgrade": {
+          "hash": "54b7276a77b5e3badd97e099cfe14a6a8035449a5ca18aee79716b6307c24e29",
+          "id": "invalid_role_upgrade",
+          "source_file": "domain\\errors.yaml",
+          "type": "Error"
+        },
+        "unauthorized_role_change": {
+          "hash": "c7debd54a051894153e65075c256743a32e3c35f3ade298135d5bd598e5341c3",
+          "id": "unauthorized_role_change",
+          "source_file": "domain\\errors.yaml",
+          "type": "Error"
+        },
+        "user_not_found": {
+          "hash": "65c8453bfb51bc901434246b2c58c4bd8908dce7639423ac40d116c4fd23e911",
+          "id": "user_not_found",
+          "source_file": "domain\\errors.yaml",
+          "type": "Error"
+        }
+      },
+      "Rule": {
+        "prevent_system_role_upgrade": {
+          "hash": "26e7aec7f3fcb82ec8298078540bd6d0d32ccc14ef0b3807ae7d3a4a9439ed6f",
+          "id": "prevent_system_role_upgrade",
+          "source_file": "rules\\rules.yaml",
+          "type": "Rule"
+        },
+        "role_upgrade_manager_to_admin": {
+          "hash": "dd64b23638a3d132a44b0fa2e8c82c773c374da99294609de251a466e188ff30",
+          "id": "role_upgrade_manager_to_admin",
+          "source_file": "rules\\rules.yaml",
+          "type": "Rule"
+        },
+        "role_upgrade_staff_to_manager": {
+          "hash": "0c103c678cabdbb5cc14dd7da15625aaba5f8cecfd0b62d73d6bf9dc2910994f",
+          "id": "role_upgrade_staff_to_manager",
+          "source_file": "rules\\rules.yaml",
+          "type": "Rule"
+        }
+      }
+    }
+  },
+  "meta": {
+    "confidence_distribution": {
+      "HIGH": 1,
+      "LOW": 2
+    },
+    "intent_summary": {
+      "by_kind": {
+        "controller": 1,
+        "model": 2
+      },
+      "by_module": {
+        "auth": 1,
+        "sessions": 1,
+        "users": 1
+      }
+    },
+    "sources": [],
+    "stats": {
+      "commands": 1,
+      "entities": 2,
+      "enums": 0,
+      "errors": 5,
+      "events": 0,
+      "graphql_types": 0,
+      "http_routes": 1,
+      "permissions": 2,
+      "policies": 0,
+      "projections": 0,
+      "queries": 0,
+      "roles": 4,
+      "rules": 3,
+      "scenarios": 0,
+      "value_objects": 0,
+      "workflows": 0
+    },
+    "warnings": []
+  },
+  "modules": {
+    "api": {
+      "graphql": null,
+      "http": {
+        "routes": [
+          {
+            "auth": "required",
+            "command": {
+              "id": "update_role",
+              "type": "Command"
+            },
+            "deprecated": false,
+            "description": "Phân quyền cho user",
+            "hash": "ca85edb1c6ab9493d501552d686ff7e0a4b78b17ca5c106958ee76097c4992d8",
+            "id": "post_api_auth_user_role",
+            "method": "POST",
+            "path": "/api/auth/user/role",
+            "query": null,
+            "request_schema": [
+              {
+                "constraints": {},
+                "default": null,
+                "deprecated_in": null,
+                "description": "ID của tài khoản yêu cầu thay đổi quyền",
+                "introduced_in": null,
+                "metadata": {},
+                "name": "requester_id",
+                "replaced_by": null,
+                "required": true,
+                "source_ref": null,
+                "status": null,
+                "type": "uuid"
+              },
+              {
+                "constraints": {},
+                "default": null,
+                "deprecated_in": null,
+                "description": "ID của tài khoản cần phân quyền",
+                "introduced_in": null,
+                "metadata": {},
+                "name": "target_user_id",
+                "replaced_by": null,
+                "required": true,
+                "source_ref": null,
+                "status": null,
+                "type": "uuid"
+              },
+              {
+                "constraints": {},
+                "default": null,
+                "deprecated_in": null,
+                "description": "Tên quyền mới cần thay đổi",
+                "introduced_in": null,
+                "metadata": {},
+                "name": "new_role",
+                "replaced_by": null,
+                "required": true,
+                "source_ref": null,
+                "status": null,
+                "type": "string"
+              }
+            ],
+            "response_schema": [
+              {
+                "constraints": {},
+                "default": null,
+                "deprecated_in": null,
+                "description": "ID của user đã được cập nhật role",
+                "introduced_in": null,
+                "metadata": {},
+                "name": "user_id",
+                "replaced_by": null,
+                "required": true,
+                "source_ref": null,
+                "status": null,
+                "type": "uuid"
+              },
+              {
+                "constraints": {},
+                "default": null,
+                "deprecated_in": null,
+                "description": "Role mới của user",
+                "introduced_in": null,
+                "metadata": {},
+                "name": "role",
+                "replaced_by": null,
+                "required": true,
+                "source_ref": null,
+                "status": null,
+                "type": "string"
+              }
+            ],
+            "source": {
+              "checksum": "c1fa17ff19b4675c8f42cf2167091513ee4ae9ae35659d04d86306bc36597324",
+              "file": "api\\http.yaml",
+              "line": null,
+              "line_end": 30,
+              "line_start": 2,
+              "source_order": 0
+            },
+            "source_ref": null,
+            "tags": [
+              "auth"
+            ]
+          }
+        ]
+      }
+    },
+    "application": {
+      "commands": [
+        {
+          "category": "crud.update",
+          "description": "Phân quyền cho user",
+          "effects": [
+            {
+              "id": "db.update",
+              "params": {
+                "entity": "User",
+                "field": "role"
+              }
+            }
+          ],
+          "emits": [],
+          "errors": [],
+          "fetches": [],
+          "guards": [
+            {
+              "id": "auth.role",
+              "params": {
+                "allowed_roles": [
+                  "system",
+                  "admin"
+                ]
+              }
+            }
+          ],
+          "hash": "374704e8b2a752f99bb95755dfbe3f25d0a6943b5f87dcae92ef4a2d1c6cd1d1",
+          "id": "update_role",
+          "input": [
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "ID của tài khoản yêu cầu thay đổi quyền",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "requester_id",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "uuid"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "ID của tài khoản cần phân quyền",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "target_user_id",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "uuid"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Tên quyền mới cần thay đổi",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "new_role",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "string"
+            }
+          ],
+          "intent": {
+            "alternatives": null,
+            "confidence": "HIGH",
+            "kind": "controller",
+            "module": "auth",
+            "source": "route:/api/auth/user/role + route_path:/api/auth/user/role"
+          },
+          "returns": [],
+          "source": {
+            "checksum": "a0ebe3b64ea0b7477d885a66c839b5569526ced9f8eb42d924ba9f228c730018",
+            "file": "app\\commands.yaml",
+            "line": null,
+            "line_end": 28,
+            "line_start": 2,
+            "source_order": 0
+          },
+          "source_ref": null,
+          "tags": [],
+          "tenant_scope": null,
+          "transaction": null
+        }
+      ],
+      "projections": [],
+      "queries": []
+    },
+    "domain": {
+      "entities": [
+        {
+          "constraints": [
+            {
+              "fields": [
+                "user_id"
+              ],
+              "ref": "User.id",
+              "type": "foreign_key"
+            }
+          ],
+          "description": "Thực thể phiên đăng nhập",
+          "fields": [
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Mã định danh phiên",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "id",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "uuid"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Mã người dùng",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "user_id",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "uuid"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Hash của refresh token",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "refresh_token_hash",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "string"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Thời điểm hết hạn",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "expired_at",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "datetime"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Thời điểm tạo phiên",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "created_at",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "datetime"
+            }
+          ],
+          "hash": "84328165975963b4e4b9b5ea9cd7304154ffccb3f8e78ecccdd57706e233d321",
+          "id": "sessions",
+          "indexes": [],
+          "intent": {
+            "alternatives": null,
+            "confidence": "LOW",
+            "kind": "model",
+            "module": "sessions",
+            "source": "meta_kind:domain.entity + id_pattern:sessions"
+          },
+          "primary_key": "id",
+          "source": {
+            "checksum": "f1233b6792f29e2ac3cae86873f952857e2e948441ec86089aeff989d840db21",
+            "file": "domain\\entities.yaml",
+            "line": null,
+            "line_end": 83,
+            "line_start": 53,
+            "source_order": 1
+          },
+          "source_ref": null,
+          "tags": [
+            "auth",
+            "session"
+          ],
+          "tenant_scope": null
+        },
+        {
+          "constraints": [],
+          "description": "Thực thể người dùng trong hệ thống auth",
+          "fields": [
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Mã định danh duy nhất",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "id",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "uuid"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Tên đăng nhập",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "username",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "string"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Mật khẩu đã được hash",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "password",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "string"
+            },
+            {
+              "constraints": {
+                "enum": [
+                  "system",
+                  "admin",
+                  "manager",
+                  "staff"
+                ]
+              },
+              "default": "staff",
+              "deprecated_in": null,
+              "description": "Vai trò của người dùng",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "role",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "string"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Trạng thái tài khoản",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "status",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "string"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Thời điểm tạo",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "created_at",
+              "replaced_by": null,
+              "required": true,
+              "source_ref": null,
+              "status": null,
+              "type": "datetime"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Thời điểm cập nhật",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "updated_at",
+              "replaced_by": null,
+              "required": false,
+              "source_ref": null,
+              "status": null,
+              "type": "datetime"
+            },
+            {
+              "constraints": {},
+              "default": null,
+              "deprecated_in": null,
+              "description": "Thời điểm xóa mềm",
+              "introduced_in": null,
+              "metadata": {},
+              "name": "deleted_at",
+              "replaced_by": null,
+              "required": false,
+              "source_ref": null,
+              "status": null,
+              "type": "datetime"
+            }
+          ],
+          "hash": "c766c87e289de725c36f0c7aec2939a8c69e8d92bdde96ba1775821095fac8ed",
+          "id": "user",
+          "indexes": [
+            {
+              "fields": [
+                "username"
+              ],
+              "name": "idx_username",
+              "unique": true
+            }
+          ],
+          "intent": {
+            "alternatives": null,
+            "confidence": "LOW",
+            "kind": "model",
+            "module": "users",
+            "source": "meta_kind:domain.entity + id_pattern:user"
+          },
+          "primary_key": "id",
+          "source": {
+            "checksum": "f1233b6792f29e2ac3cae86873f952857e2e948441ec86089aeff989d840db21",
+            "file": "domain\\entities.yaml",
+            "line": null,
+            "line_end": 51,
+            "line_start": 2,
+            "source_order": 0
+          },
+          "source_ref": null,
+          "tags": [
+            "auth",
+            "user"
+          ],
+          "tenant_scope": null
+        }
+      ],
+      "enums": [],
+      "errors": [
+        {
+          "category": "security",
+          "code": "AUTH_005",
+          "description": "Cần xác thực tài khoản yêu cầu thay đổi quyền",
+          "fields": [],
+          "hash": "d61c5d4ec184ae7f3c01402bb8f1a8de3ed4ee91f2cd562e759087554941810f",
+          "http_status": 401,
+          "id": "authentication_required",
+          "source": {
+            "checksum": "fff6ad4a19b452e4f66f3beeb7f0f5507f6971243d66a31cdfe1ace8ce37b3e6",
+            "file": "domain\\errors.yaml",
+            "line": null,
+            "line_end": 44,
+            "line_start": 37,
+            "source_order": 4
+          },
+          "source_ref": "UpdateRole",
+          "tags": [
+            "authentication"
+          ]
+        },
+        {
+          "category": "business",
+          "code": "AUTH_003",
+          "description": "Chuyển đổi role không hợp lệ",
+          "fields": [],
+          "hash": "5addf4f94a0dcc70e33814640e6eb8a35672fc0a3815665957c2661b0c470939",
+          "http_status": 400,
+          "id": "invalid_role_transition",
+          "source": {
+            "checksum": "fff6ad4a19b452e4f66f3beeb7f0f5507f6971243d66a31cdfe1ace8ce37b3e6",
+            "file": "domain\\errors.yaml",
+            "line": null,
+            "line_end": 27,
+            "line_start": 20,
+            "source_order": 2
+          },
+          "source_ref": "UpdateRole",
+          "tags": [
+            "role_management",
+            "validation"
+          ]
+        },
+        {
+          "category": "business",
+          "code": "AUTH_002",
+          "description": "Không thể nâng cấp tài khoản lên system",
+          "fields": [],
+          "hash": "54b7276a77b5e3badd97e099cfe14a6a8035449a5ca18aee79716b6307c24e29",
+          "http_status": 400,
+          "id": "invalid_role_upgrade",
+          "source": {
+            "checksum": "fff6ad4a19b452e4f66f3beeb7f0f5507f6971243d66a31cdfe1ace8ce37b3e6",
+            "file": "domain\\errors.yaml",
+            "line": null,
+            "line_end": 18,
+            "line_start": 11,
+            "source_order": 1
+          },
+          "source_ref": "UpdateRole",
+          "tags": [
+            "role_management",
+            "validation"
+          ]
+        },
+        {
+          "category": "security",
+          "code": "AUTH_001",
+          "description": "Tài khoản không có quyền thay đổi role này",
+          "fields": [],
+          "hash": "c7debd54a051894153e65075c256743a32e3c35f3ade298135d5bd598e5341c3",
+          "http_status": 403,
+          "id": "unauthorized_role_change",
+          "source": {
+            "checksum": "fff6ad4a19b452e4f66f3beeb7f0f5507f6971243d66a31cdfe1ace8ce37b3e6",
+            "file": "domain\\errors.yaml",
+            "line": null,
+            "line_end": 9,
+            "line_start": 2,
+            "source_order": 0
+          },
+          "source_ref": "UpdateRole",
+          "tags": [
+            "authorization",
+            "role_management"
+          ]
+        },
+        {
+          "category": "validation",
+          "code": "AUTH_004",
+          "description": "Không tìm thấy tài khoản cần phân quyền",
+          "fields": [],
+          "hash": "65c8453bfb51bc901434246b2c58c4bd8908dce7639423ac40d116c4fd23e911",
+          "http_status": 404,
+          "id": "user_not_found",
+          "source": {
+            "checksum": "fff6ad4a19b452e4f66f3beeb7f0f5507f6971243d66a31cdfe1ace8ce37b3e6",
+            "file": "domain\\errors.yaml",
+            "line": null,
+            "line_end": 36,
+            "line_start": 29,
+            "source_order": 3
+          },
+          "source_ref": "UpdateRole",
+          "tags": [
+            "user_management"
+          ]
+        }
+      ],
+      "events": [],
+      "value_objects": []
+    },
+    "policy": {
+      "access": {
+        "bindings": [
+          {
+            "permissions": [
+              "update_role_staff_to_manager",
+              "update_role_manager_to_admin"
+            ],
+            "role": "system",
+            "scope": null
+          },
+          {
+            "permissions": [
+              "update_role_staff_to_manager"
+            ],
+            "role": "admin",
+            "scope": null
+          }
+        ],
+        "permissions": [
+          {
+            "actions": [
+              "write"
+            ],
+            "description": "Thay đổi quyền từ manager lên admin",
+            "hash": "6b784541687eba02dc0a543382a5c2aaac89a4686d8478ab4691481dedb482fc",
+            "id": "update_role_manager_to_admin",
+            "resource": "User",
+            "source": {
+              "checksum": "d16f78dad65b7dce1bc0991c38abba07e23e2f95ab664235b47f0d4167cb107d",
+              "file": "policy\\rbac.yaml",
+              "line": null,
+              "line_end": 19,
+              "line_start": 16,
+              "source_order": null
+            },
+            "source_ref": null,
+            "tags": []
+          },
+          {
+            "actions": [
+              "write"
+            ],
+            "description": "Thay đổi quyền từ staff lên manager",
+            "hash": "19a68532c64b805a9133ee8fae63dcf406a682da466676ceb6b3dd69a60defe2",
+            "id": "update_role_staff_to_manager",
+            "resource": "User",
+            "source": {
+              "checksum": "d16f78dad65b7dce1bc0991c38abba07e23e2f95ab664235b47f0d4167cb107d",
+              "file": "policy\\rbac.yaml",
+              "line": null,
+              "line_end": 15,
+              "line_start": 12,
+              "source_order": null
+            },
+            "source_ref": null,
+            "tags": []
+          }
+        ],
+        "roles": [
+          {
+            "description": "Quản trị viên",
+            "hash": "1b740671ce2057eccbb74cce0cc92b95c46d3e3f7a1762c73a9c86e2ad64f979",
+            "id": "admin",
+            "source": {
+              "checksum": "d16f78dad65b7dce1bc0991c38abba07e23e2f95ab664235b47f0d4167cb107d",
+              "file": "policy\\rbac.yaml",
+              "line": null,
+              "line_end": 6,
+              "line_start": 5,
+              "source_order": null
+            },
+            "source_ref": null,
+            "tags": []
+          },
+          {
+            "description": "Quản lý",
+            "hash": "582d626ae536b1cd168540e52fc99be75e3ba88f46d317b07d713eca4dcb444d",
+            "id": "manager",
+            "source": {
+              "checksum": "d16f78dad65b7dce1bc0991c38abba07e23e2f95ab664235b47f0d4167cb107d",
+              "file": "policy\\rbac.yaml",
+              "line": null,
+              "line_end": 8,
+              "line_start": 7,
+              "source_order": null
+            },
+            "source_ref": null,
+            "tags": []
+          },
+          {
+            "description": "Nhân viên",
+            "hash": "3360b169e3292dd565f34336757cc82f1622d6e72d07dba5932c1355abb36507",
+            "id": "staff",
+            "source": {
+              "checksum": "d16f78dad65b7dce1bc0991c38abba07e23e2f95ab664235b47f0d4167cb107d",
+              "file": "policy\\rbac.yaml",
+              "line": null,
+              "line_end": 10,
+              "line_start": 9,
+              "source_order": null
+            },
+            "source_ref": null,
+            "tags": []
+          },
+          {
+            "description": "Tài khoản hệ thống",
+            "hash": "2d0dd177b740d3a4094860b3f050557e9ac0fe75184801c5b5eaf6eb35217f1c",
+            "id": "system",
+            "source": {
+              "checksum": "d16f78dad65b7dce1bc0991c38abba07e23e2f95ab664235b47f0d4167cb107d",
+              "file": "policy\\rbac.yaml",
+              "line": null,
+              "line_end": 4,
+              "line_start": 3,
+              "source_order": null
+            },
+            "source_ref": null,
+            "tags": []
+          }
+        ]
+      },
+      "business": []
+    },
+    "rules": {
+      "rules": [
+        {
+          "applies_to": "UpdateRole",
+          "default_result": null,
+          "description": "Không thể nâng cấp tài khoản lên system",
+          "hash": "26e7aec7f3fcb82ec8298078540bd6d0d32ccc14ef0b3807ae7d3a4a9439ed6f",
+          "id": "prevent_system_role_upgrade",
+          "inputs": [
+            "target_new_role"
+          ],
+          "outputs": [],
+          "severity": "error",
+          "source": {
+            "checksum": "c66f5a59ade412f0e744a898b0d28be69d0095f7537c231c27bbee6c8bcbf3b8",
+            "file": "rules\\rules.yaml",
+            "line": null,
+            "line_end": 72,
+            "line_start": 58,
+            "source_order": 2
+          },
+          "source_ref": "master-brief section 5",
+          "table": [
+            {
+              "conditions": {
+                "target_new_role": "system"
+              },
+              "result": {
+                "allow": false
+              }
+            }
+          ],
+          "tags": [
+            "authorization",
+            "role_management"
+          ]
+        },
+        {
+          "applies_to": "UpdateRole",
+          "default_result": null,
+          "description": "Chỉ tài khoản system mới có thể thay đổi role từ manager lên admin",
+          "hash": "dd64b23638a3d132a44b0fa2e8c82c773c374da99294609de251a466e188ff30",
+          "id": "role_upgrade_manager_to_admin",
+          "inputs": [
+            "requester_role",
+            "target_current_role",
+            "target_new_role"
+          ],
+          "outputs": [],
+          "severity": "error",
+          "source": {
+            "checksum": "c66f5a59ade412f0e744a898b0d28be69d0095f7537c231c27bbee6c8bcbf3b8",
+            "file": "rules\\rules.yaml",
+            "line": null,
+            "line_end": 57,
+            "line_start": 33,
+            "source_order": 1
+          },
+          "source_ref": "master-brief section 5",
+          "table": [
+            {
+              "conditions": {
+                "requester_role": "system",
+                "target_current_role": "manager",
+                "target_new_role": "admin"
+              },
+              "result": {
+                "allow": true
+              }
+            },
+            {
+              "conditions": {
+                "target_current_role": "manager",
+                "target_new_role": "admin"
+              },
+              "result": {
+                "allow": false
+              }
+            }
+          ],
+          "tags": [
+            "authorization",
+            "role_management"
+          ]
+        },
+        {
+          "applies_to": "UpdateRole",
+          "default_result": null,
+          "description": "Chỉ tài khoản system, admin mới có thể thay đổi role từ staff lên manager",
+          "hash": "0c103c678cabdbb5cc14dd7da15625aaba5f8cecfd0b62d73d6bf9dc2910994f",
+          "id": "role_upgrade_staff_to_manager",
+          "inputs": [
+            "requester_role",
+            "target_current_role",
+            "target_new_role"
+          ],
+          "outputs": [],
+          "severity": "error",
+          "source": {
+            "checksum": "c66f5a59ade412f0e744a898b0d28be69d0095f7537c231c27bbee6c8bcbf3b8",
+            "file": "rules\\rules.yaml",
+            "line": null,
+            "line_end": 32,
+            "line_start": 2,
+            "source_order": 0
+          },
+          "source_ref": "master-brief section 5",
+          "table": [
+            {
+              "conditions": {
+                "requester_role": "system",
+                "target_current_role": "staff",
+                "target_new_role": "manager"
+              },
+              "result": {
+                "allow": true
+              }
+            },
+            {
+              "conditions": {
+                "requester_role": "admin",
+                "target_current_role": "staff",
+                "target_new_role": "manager"
+              },
+              "result": {
+                "allow": true
+              }
+            },
+            {
+              "conditions": {
+                "target_current_role": "staff",
+                "target_new_role": "manager"
+              },
+              "result": {
+                "allow": false
+              }
+            }
+          ],
+          "tags": [
+            "authorization",
+            "role_management"
+          ]
+        }
+      ]
+    },
+    "scenarios": {
+      "scenarios": []
+    },
+    "workflow": {
+      "workflows": []
+    }
+  },
+  "schema_version": "2.0.0",
+  "version": "0.2.0"
+}
