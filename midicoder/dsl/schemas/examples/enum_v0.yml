@@ -1,0 +1,17 @@
+enums:
+  - id: subscription_plan
+    description: Subscription plans
+    values: ["free", "pro", "enterprise"]
+  - id: subscription_status
+    description: Subscription lifecycle statuses
+    values: ["trial", "active", "past_due", "cancelled"]
+  - id: invoice_status
+    description: Invoice statuses
+    values: ["draft", "issued", "paid", "void"]
+  - id: user_status
+    description: User account status
+    values: ["pending", "active", "disabled"]
+  - id: feature_flag_state
+    description: Feature flag states
+    values: ["enabled", "disabled", "rollout"]
+
