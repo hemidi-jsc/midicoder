@@ -1,0 +1,86 @@
+commands:
+  - id: create_user
+    description: Register new user
+    category: crud.create
+    tenant_scope: tenant
+    input:
+      - name: email
+        type: string
+      - name: password
+        type: string
+    returns:
+      - name: user_id
+        type: string
+    fetches: ["user"]
+    errors: ["user_already_exists"]
+    effects:
+      - id: db.insert
+        params: {entity: "user"}
+      - id: emit.event
+        params: {event: "user_registered"}
+  - id: invite_member
+    description: Invite member to organization
+    category: crud.create
+    tenant_scope: tenant
+    input:
+      - name: organization_id
+        type: Entity:organization
+      - name: email
+        type: string
+    returns:
+      - name: invitation_id
+        type: string
+    guards:
+      - id: auth.permission
+        params: {permission: "org:members:invite"}
+    effects:
+      - id: db.insert
+        params: {entity: "invitation"}
+      - id: send.email
+        params: {template: "invitation"}
+  - id: activate_subscription
+    description: Activate subscription after payment
+    category: subscription.activate
+    tenant_scope: tenant
+    input:
+      - name: subscription_id
+        type: string
+    fetches: ["subscription"]
+    errors: ["subscription_not_active", "payment_failed"]
+    effects:
+      - id: db.update
+        params: {entity: "subscription"}
+      - id: emit.event
+        params: {event: "subscription_activated"}
+  - id: cancel_subscription
+    description: Cancel active subscription
+    category: subscription.cancel
+    tenant_scope: tenant
+    input:
+      - name: subscription_id
+        type: string
+    fetches: ["subscription"]
+    guards:
+      - id: auth.permission
+        params: {permission: "billing:subscription:cancel"}
+    errors: ["subscription_not_active"]
+    effects:
+      - id: db.update
+        params: {entity: "subscription"}
+  - id: record_payment
+    description: Record payment webhook
+    category: billing.charge
+    tenant_scope: tenant
+    input:
+      - name: invoice_id
+        type: string
+      - name: amount
+        type: ValueObject:money
+    fetches: ["invoice"]
+    errors: ["payment_failed"]
+    effects:
+      - id: db.update
+        params: {entity: "invoice"}
+      - id: emit.event
+        params: {event: "invoice_paid"}
+

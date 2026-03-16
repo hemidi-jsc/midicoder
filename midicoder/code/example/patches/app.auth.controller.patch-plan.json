@@ -1,0 +1,141 @@
+{
+  "operations": [
+    {
+      "apply_hints": {
+        "create_file_if_missing": false,
+        "entrypoints": [],
+        "seams": [],
+        "suggest_path": "app/auth/controller.py",
+        "suggest_reason": "virtual_seam_available",
+        "symbols": [
+          {
+            "file": "app/auth/controller.py",
+            "kind": "class",
+            "language": "python",
+            "line": 10,
+            "name": "UserRegistrationRequest",
+            "scope": "module",
+            "signature": null
+          },
+          {
+            "file": "app/auth/controller.py",
+            "kind": "class",
+            "language": "python",
+            "line": 14,
+            "name": "UserRegistrationResponse",
+            "scope": "module",
+            "signature": null
+          },
+          {
+            "file": "app/auth/controller.py",
+            "kind": "async_function",
+            "language": "python",
+            "line": 22,
+            "name": "create_user",
+            "scope": "module",
+            "signature": "create_user(request: UserRegistrationRequest)"
+          },
+          {
+            "file": "app/auth/controller.py",
+            "kind": "class",
+            "language": "python",
+            "line": 39,
+            "name": "LoginRequest",
+            "scope": "module",
+            "signature": null
+          },
+          {
+            "file": "app/auth/controller.py",
+            "kind": "class",
+            "language": "python",
+            "line": 43,
+            "name": "LoginResponse",
+            "scope": "module",
+            "signature": null
+          },
+          {
+            "file": "app/auth/controller.py",
+            "kind": "async_function",
+            "language": "python",
+            "line": 49,
+            "name": "login",
+            "scope": "module",
+            "signature": "login(request: LoginRequest)"
+          }
+        ],
+        "virtual_seams": [
+          {
+            "begin_line": 10,
+            "confidence": 0.49,
+            "detail": "virtual:controller:auth",
+            "end_line": null,
+            "file": "app/auth/controller.py",
+            "group_id": "controller:auth",
+            "kind": "virtual",
+            "line": 10
+          },
+          {
+            "begin_line": 10,
+            "confidence": 0.84,
+            "detail": "virtual:pydantic_model:auth",
+            "end_line": null,
+            "file": "app/auth/controller.py",
+            "group_id": "pydantic_model:auth",
+            "kind": "virtual",
+            "line": 10
+          },
+          {
+            "begin_line": 21,
+            "confidence": 0.85,
+            "detail": "virtual:command_handler:auth",
+            "end_line": null,
+            "file": "app/auth/controller.py",
+            "group_id": "command_handler:auth",
+            "kind": "virtual",
+            "line": 21
+          },
+          {
+            "begin_line": 22,
+            "confidence": 0.68,
+            "detail": "virtual:async_function:auth",
+            "end_line": null,
+            "file": "app/auth/controller.py",
+            "group_id": "async_function:auth",
+            "kind": "virtual",
+            "line": 22
+          },
+          {
+            "begin_line": 43,
+            "confidence": 0.64,
+            "detail": "virtual:type:auth",
+            "end_line": null,
+            "file": "app/auth/controller.py",
+            "group_id": "type:auth",
+            "kind": "virtual",
+            "line": 43
+          }
+        ]
+      },
+      "content": "# region Command.update_role\nrouter = APIRouter(prefix=\"/auth\")\n\nclass UpdateRoleRequest(BaseModel):\n    requester_id: UUID = Field(..., description=\"ID của tài khoản yêu cầu thay đổi quyền\")\n    target_user_id: UUID = Field(..., description=\"ID của tài khoản cần phân quyền\")\n    new_role: str = Field(..., description=\"Tên quyền mới cần thay đổi\")\n\nclass UpdateRoleResponse(BaseModel):\n    user_id: UUID = Field(..., description=\"ID của user đã được cập nhật role\")\n    role: str = Field(..., description=\"Role mới của user\")\n\n@router.post(\"/user/role\", response_model=UpdateRoleResponse)\nasync def update_role(request: UpdateRoleRequest):\n    try:\n        result = update_role_service(\n            requester_id=request.requester_id,\n            target_user_id=request.target_user_id,\n            new_role=request.new_role\n        )\n        return UpdateRoleResponse(\n            user_id=result['user_id'],\n            role=result['role']\n        )\n    except ValueError as e:\n        raise HTTPException(status_code=400, detail=str(e))\n# endregion Command.update_role\n",
+      "group": "commands",
+      "imports": [
+        "from fastapi import APIRouter, Depends, HTTPException",
+        "from pydantic import BaseModel, Field",
+        "from uuid import UUID",
+        "from typing import Optional",
+        "from app.auth.service import update_role_service"
+      ],
+      "ir_ref": "Command.update_role",
+      "merge_mode": "patch",
+      "operation_type": "upsert_region",
+      "plan_rel_path": "commands/command-update-role.code-plan.json",
+      "region_content": "router = APIRouter(prefix=\"/auth\")\n\nclass UpdateRoleRequest(BaseModel):\n    requester_id: UUID = Field(..., description=\"ID của tài khoản yêu cầu thay đổi quyền\")\n    target_user_id: UUID = Field(..., description=\"ID của tài khoản cần phân quyền\")\n    new_role: str = Field(..., description=\"Tên quyền mới cần thay đổi\")\n\nclass UpdateRoleResponse(BaseModel):\n    user_id: UUID = Field(..., description=\"ID của user đã được cập nhật role\")\n    role: str = Field(..., description=\"Role mới của user\")\n\n@router.post(\"/user/role\", response_model=UpdateRoleResponse)\nasync def update_role(request: UpdateRoleRequest):\n    try:\n        result = update_role_service(\n            requester_id=request.requester_id,\n            target_user_id=request.target_user_id,\n            new_role=request.new_role\n        )\n        return UpdateRoleResponse(\n            user_id=result['user_id'],\n            role=result['role']\n        )\n    except ValueError as e:\n        raise HTTPException(status_code=400, detail=str(e))",
+      "region_end": "# endregion Command.update_role",
+      "region_start": "# region Command.update_role"
+    }
+  ],
+  "runtime_path": "app/auth/controller.py",
+  "schema_version": "2.0.0",
+  "stack": "fastapi",
+  "version": "0.2.0"
+}
