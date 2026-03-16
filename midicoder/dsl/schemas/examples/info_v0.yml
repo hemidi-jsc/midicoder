@@ -1,0 +1,16 @@
+info:
+  name: Midicoder SaaS Contracts
+  version: 1.0.0
+  description: Contract set for multi-tenant user, billing, and access flows.
+  author: Midicoder Team
+  license: MIT
+  repository: https://github.com/example/midicoder-saas-contracts
+  homepage: https://example.com/midicoder
+  documentation: https://docs.example.com/midicoder
+  keywords: ["saas", "contracts", "dsl", "multi-tenant"]
+  tags: ["reference", "production-like"]
+  stack: fastapi
+  frameworks: ["FastAPI", "Pydantic", "SQLAlchemy"]
+  languages: ["python", "sql"]
+  created_at: "2025-01-10T09:00:00Z"
+  updated_at: "2026-03-15T09:00:00Z"

@@ -1,0 +1,26 @@
+---
+title: GraphQL API Map
+---
+flowchart LR
+
+    subgraph Types["GraphQL Types"]
+        type_subscription["Subscription"]
+        type_user["User"]
+    end
+
+    subgraph Operations
+        query_subscriptions((subscriptions))
+        query_users((users))
+        mut_cancel_subscription((cancelSubscription))
+        mut_create_user((createUser))
+    end
+
+    classDef typeStyle fill:#90EE90,stroke:#333,stroke-width:2px
+    classDef operationStyle fill:#ADD8E6,stroke:#333,stroke-width:2px
+
+    class type_subscription typeStyle
+    class type_user typeStyle
+    class query_subscriptions operationStyle
+    class query_users operationStyle
+    class mut_cancel_subscription operationStyle
+    class mut_create_user operationStyle

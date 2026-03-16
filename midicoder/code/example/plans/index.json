@@ -1,0 +1,47 @@
+{
+  "bootstrap_contract": {
+    "entrypoint": "app/main.py",
+    "notes": "metadata_only; no runtime/codegen execution in code build phase",
+    "stack": "fastapi"
+  },
+  "file_ownership": {
+    "app/auth/controller.py": [
+      "Command.update_role"
+    ],
+    "app/sessions/model.py": [
+      "Entity.sessions"
+    ],
+    "app/users/model.py": [
+      "Entity.user"
+    ]
+  },
+  "generation_order": [
+    "entities",
+    "workflows",
+    "queries",
+    "commands",
+    "bootstrap"
+  ],
+  "merge_mode": {
+    "Command.update_role": "patch",
+    "Entity.sessions": "create",
+    "Entity.user": "create"
+  },
+  "plans": [
+    "commands/command-update-role.code-plan.json",
+    "entities/entity-sessions.code-plan.json",
+    "entities/entity-user.code-plan.json"
+  ],
+  "schema_version": "1.0.0",
+  "verification_pipeline": {
+    "enabled": false,
+    "notes": "metadata_only; run in downstream phases",
+    "steps": [
+      "lint",
+      "typecheck",
+      "unit",
+      "smoke"
+    ]
+  },
+  "version": "0.2.0"
+}
