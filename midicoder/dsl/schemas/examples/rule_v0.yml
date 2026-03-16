@@ -1,0 +1,41 @@
+rules:
+  - id: trial_user_limit
+    description: Limit trial users per organization
+    applies_to: create_user
+    inputs: ["plan", "current_user_count"]
+    severity: warning
+    rows:
+      - when: {plan: "free", current_user_count: {gte: 3}}
+        then: {deny: true}
+  - id: enterprise_discount
+    description: Discount for enterprise plans
+    applies_to: create_subscription
+    inputs: ["plan", "seats"]
+    severity: info
+    rows:
+      - when: {plan: "enterprise", seats: {gte: 100}}
+        then: {discount_percent: 20}
+  - id: quota_usage_limit
+    description: Enforce API quota per tenant
+    applies_to: call_api
+    inputs: ["tenant_id", "current_usage"]
+    severity: error
+    rows:
+      - when: {current_usage: {gte: 100000}}
+        then: {deny: true}
+  - id: invoice_auto_void
+    description: Auto void unpaid invoices
+    applies_to: check_invoice_status
+    inputs: ["status", "age_days"]
+    rows:
+      - when: {status: "draft", age_days: {gte: 30}}
+        then: {action: "void"}
+  - id: feature_flag_safe_rollout
+    description: Limit rollout to small percentage first
+    applies_to: start_rollout
+    inputs: ["rollout_percentage"]
+    severity: warning
+    rows:
+      - when: {rollout_percentage: {gt: 20}}
+        then: {warn: "high_rollout"}
+

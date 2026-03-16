@@ -1,0 +1,22 @@
+errors:
+  - id: user_already_exists
+    description: Email already registered
+    category: business
+    http_status: 409
+  - id: invalid_credentials
+    description: Wrong email or password
+    category: security
+    http_status: 401
+  - id: subscription_not_active
+    description: Subscription is not active
+    category: business
+    http_status: 403
+  - id: payment_failed
+    description: Payment provider declined charge
+    category: integration
+    http_status: 402
+  - id: quota_exceeded
+    description: Tenant has exceeded usage quota
+    category: business
+    http_status: 429
+

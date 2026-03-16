@@ -1,0 +1,29 @@
+# Virtual environments
+venv/
+.venv/
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environment variables
+.env
+.env.*
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test package
+.midicoder/
+src
+bak/
