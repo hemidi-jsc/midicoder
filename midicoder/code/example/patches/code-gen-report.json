@@ -1,0 +1,26 @@
+{
+  "errors": [],
+  "execution_order": [
+    "Entity.sessions",
+    "Entity.user",
+    "Command.update_role"
+  ],
+  "generated_patch_plans": [
+    "app.__init__.patch-plan.json",
+    "app.auth.__init__.patch-plan.json",
+    "app.auth.controller.patch-plan.json",
+    "app.main.patch-plan.json",
+    "app.sessions.__init__.patch-plan.json",
+    "app.sessions.model.patch-plan.json",
+    "app.users.__init__.patch-plan.json",
+    "app.users.model.patch-plan.json",
+    "requirements.txt.patch-plan.json"
+  ],
+  "generated_runtime_files": [],
+  "merge_actions": [],
+  "runtime_enabled": false,
+  "schema_version": "3.0.0",
+  "stack": "fastapi",
+  "version": "0.2.0",
+  "warnings": []
+}
