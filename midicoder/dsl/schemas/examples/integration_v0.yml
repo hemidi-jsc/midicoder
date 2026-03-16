@@ -1,0 +1,83 @@
+integrations:
+  - id: billing_api
+    type: rest_api
+    base_url: https://api.billing.local
+    auth:
+      type: bearer
+      secret_ref: Secret:ext_billing_token
+    timeouts:
+      connect_ms: 1000
+      read_ms: 3000
+      total_ms: 5000
+    retry:
+      max_attempts: 3
+      backoff_ms: 200
+      jitter: true
+    tags: ["billing"]
+
+  - id: aws_storage
+    type: aws
+    provider: aws
+    service: s3
+    auth:
+      type: aws_sigv4
+      secret_ref: Secret:aws_runtime_credentials
+    tags: ["file-storage"]
+
+operations:
+  - id: create_invoice
+    integration_id: Integration:billing_api
+    method: POST
+    path: /invoices
+    request_schema:
+      - name: user_id
+        type: string
+        required: true
+      - name: amount
+        type: decimal
+        required: true
+    response_schema:
+      - name: invoice_id
+        type: string
+        required: true
+    error_mapping:
+      - source_code: BILLING_429
+        target_error: BillingRateLimited
+
+s3_resources:
+  - integration_id: Integration:aws_storage
+    bucket: app-uploads
+    region: ap-southeast-1
+    operations: ["IntegrationOperation:put_object", "IntegrationOperation:get_object"]
+    path_template: users/{user_id}/files/{file_name}
+    encryption: AES256
+
+oauth2_providers:
+  - id: auth_server
+    issuer: https://auth.example.com
+    audience: midicoder-api
+    jwks_url: https://auth.example.com/.well-known/jwks.json
+    client_id_secret: Secret:oauth_client_id
+    client_secret_secret: Secret:oauth_client_secret
+    scopes: ["profile.read", "profile.write"]
+
+webhooks:
+  - id: payment_callback
+    direction: inbound
+    url_or_path: /webhooks/payment
+    method: POST
+    signature:
+      alg: hmac-sha256
+      secret_ref: Secret:webhook_payment_secret
+      header_name: X-Signature
+    events: ["payment.success", "payment.failed"]
+
+email_providers:
+  - id: mailer
+    transport: smtp
+    host: smtp.mail.local
+    port: 587
+    username_secret: Secret:smtp_username
+    password_secret: Secret:smtp_password
+    from_email: noreply@example.com
+    from_name: Midicoder

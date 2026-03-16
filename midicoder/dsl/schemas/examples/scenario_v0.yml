@@ -1,0 +1,60 @@
+scenarios:
+  - id: user_sign_up_and_activate
+    description: User signs up and activates subscription
+    actors: ["anonymous_user", "billing_provider"]
+    preconditions: []
+    steps:
+      - type: command
+        ref: create_user
+        input: {email: "user@example.com"}
+        expect: {errors: []}
+      - type: event
+        ref: user_registered
+        input: {}
+        expect: {}
+      - type: command
+        ref: activate_subscription
+        input: {subscription_id: "sub_1"}
+        expect: {}
+    postconditions: ["subscription.status == active"]
+  - id: tenant_admin_invites_member
+    description: Tenant admin invites member
+    actors: ["tenant_admin"]
+    preconditions: ["tenant exists"]
+    steps:
+      - type: command
+        ref: invite_member
+        input: {organization_id: "org_1", email: "member@example.com"}
+        expect: {}
+    postconditions: ["invitation created"]
+  - id: payment_failure_and_past_due
+    description: Payment fails and subscription becomes past_due
+    actors: ["billing_provider"]
+    preconditions: ["subscription.status == active"]
+    steps:
+      - type: event
+        ref: payment_failed
+        input: {subscription_id: "sub_1"}
+        expect: {}
+    postconditions: ["subscription.status == past_due"]
+  - id: admin_toggles_feature_flag
+    description: Admin toggles feature flag
+    actors: ["admin_user"]
+    preconditions: ["feature_flag.state == disabled"]
+    steps:
+      - type: command
+        ref: start_rollout
+        input: {key: "new-dashboard"}
+        expect: {}
+    postconditions: ["feature_flag.state == rollout"]
+  - id: support_resolves_ticket
+    description: Support agent resolves ticket
+    actors: ["support_agent"]
+    preconditions: ["ticket.status == open"]
+    steps:
+      - type: command
+        ref: resolve_ticket
+        input: {ticket_id: "t_1"}
+        expect: {}
+    postconditions: ["ticket.status == resolved"]
+
