@@ -37,6 +37,13 @@ Your Requirements → DSL Contracts → IR → Code Plans → Patches → Workin
 
 ## Installation
 
+### Step 1: Clone Repository
+
+```bash
+git clone https://github.com/hemidi-jsc/midicoder.git
+cd midicoder
+```
+
 ### Step 1: Create Virtual Environment
 
 ```bash
