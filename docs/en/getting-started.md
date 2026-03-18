@@ -44,7 +44,7 @@ git clone https://github.com/hemidi-jsc/midicoder.git
 cd midicoder
 ```
 
-### Step 1: Create Virtual Environment
+### Step 2: Create Virtual Environment
 
 ```bash
 # Create virtual environment
@@ -57,7 +57,7 @@ source .venv/bin/activate
 .venv\Scripts\activate
 ```
 
-### Step 2: Install Midi Coder
+### Step 3: Install Midi Coder
 
 ```bash
 # Upgrade pip
@@ -67,7 +67,7 @@ pip install -U pip
 pip install -e .
 ```
 
-### Step 3: Verify Installation
+### Step 4: Verify Installation
 
 ```bash
 # Check version
