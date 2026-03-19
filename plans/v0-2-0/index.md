@@ -12,6 +12,8 @@ Bản v0.2.0 là một đợt nâng cấp kiến trúc lớn với các mục ti
 6. Thay `runtime fix` từ LLM patching sang **deterministic remediation orchestration**, tạo remediation brief/version mới và chạy lại pipeline ở pha phù hợp.
 7. Loại bỏ khái niệm người dùng phải biết hoặc đặt seam. Hệ thống chỉ còn khái niệm **automatic seam map** được Midicoder tự động suy luận từ codebase.
 8. Mở rộng DSL/IR để đủ sức mô hình hóa SaaS lớn, modular monolith, và microservice multi-service.
+9. Đợt v0.2.0 chỉ tập trung **backend, microservice, big-app backend**; chưa đưa frontend support vào phạm vi chính thức.
+10. DSL mới phải hỗ trợ **full test generation** để dùng cho `runtime test`, với mục tiêu coverage tối thiểu **85%** ở generated test suite.
 
 ---
 
@@ -114,10 +116,10 @@ Lý do:
 - `contract repair`: sửa contract bằng rule-based diagnostics.
 - `index`: tạo automatic seam map + project graph + symbol graph.
 - `ir build`: compile contracts sang IR giàu ngữ nghĩa.
-- `code build`: compile IR sang canonical FastAPI executable code.
-- `code gen`: generate patch plan vào workdir/target stack từ canonical code + context.
+- `code build`: compile IR sang canonical FastAPI executable code cho **backend**.
+- `code gen`: generate patch plan vào workdir/target backend stack từ canonical code + context.
 - `code apply`: execute patch plan và reindex.
-- `runtime test`: verify chất lượng code thật.
+- `runtime test`: verify chất lượng code thật + generated tests + coverage.
 - `runtime fix`: tạo remediation cycle không cần LLM.
 
 ---
@@ -248,20 +250,31 @@ IR v0.2.0 nên có thêm:
 
 ## 6. Các tài liệu thiết kế command-level
 
-Bộ tài liệu chi tiết ở cùng thư mục này gồm:
+Bộ tài liệu được chia thành các subfolder theo thứ tự release patch trong nhánh `v0.2.0`:
 
-1. `brief-rewrite.md`
-2. `contract-gen.md`
-3. `contract-repair.md`
-4. `contract-check.md`
-5. `index-command.md`
-6. `code-build.md`
-7. `code-gen.md`
-8. `code-apply.md`
-9. `runtime-test.md`
-10. `runtime-fix.md`
+### 6.1 `01-contract-foundation/`
 
-> Ghi chú: file hiện tại là overview tổng thể; tài liệu command riêng cho `midicoder index` nằm ở `index-command.md`.
+1. `01-contract-foundation/brief-rewrite.md`
+2. `01-contract-foundation/contract-gen.md`
+3. `01-contract-foundation/contract-check.md`
+4. `01-contract-foundation/contract-repair.md`
+
+### 6.2 `02-index-context/`
+
+5. `02-index-context/index-command.md`
+
+### 6.3 `03-backend-codegen/`
+
+6. `03-backend-codegen/code-build.md`
+7. `03-backend-codegen/code-gen.md`
+8. `03-backend-codegen/code-apply.md`
+
+### 6.4 `04-runtime-quality/`
+
+9. `04-runtime-quality/runtime-test.md`
+10. `04-runtime-quality/runtime-fix.md`
+
+> Ghi chú: file hiện tại là overview tổng thể; roadmap này cố ý tập trung backend/microservice/backend-at-scale, không bao gồm frontend support trong patch set v0.2.0.
 
 ---
 

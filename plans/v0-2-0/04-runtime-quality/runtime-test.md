@@ -2,7 +2,7 @@
 
 ## 1. Mục tiêu sản phẩm
 
-`midicoder runtime test` không còn chỉ là “chạy app lên xem có boot được không”. Trong v0.2.0, command này trở thành **verification pipeline thật** cho workdir sau apply.
+`midicoder runtime test` không còn chỉ là “chạy app lên xem có boot được không”. Trong v0.2.0, command này trở thành **verification pipeline thật** cho workdir sau apply. Pipeline này phải dùng cả **generated test suite từ DSL/contracts** và enforce mục tiêu coverage tối thiểu **85%** cho backend scope được generate.
 
 ---
 
@@ -187,3 +187,30 @@ Mỗi stage cần:
 2. Có nên detect test impact graph từ changed files không?
 3. Có nên cho phép custom verification pipelines per stack không?
 
+
+
+## 14. Generated tests và coverage policy
+
+### 14.1 Test suite nguồn gốc từ DSL
+
+`runtime test` không chỉ chạy test mà developer tự viết tay. Ở v0.2.0 nó phải tiêu thụ cả test suite được sinh từ contracts/DSL, gồm:
+
+- unit tests cho application/domain logic
+- integration tests cho persistence/integration boundaries
+- API tests cho HTTP contracts
+- authorization/policy tests
+- workflow transition tests
+
+### 14.2 Coverage target
+
+- Mục tiêu mặc định của patch set này là **>= 85% code coverage** cho backend generated scope.
+- Coverage phải được đo và ghi artifact riêng.
+- Nếu coverage dưới ngưỡng, `runtime test` phải fail hoặc warning-hard theo policy cấu hình.
+
+### 14.3 Artifact bổ sung
+
+Cần bổ sung:
+
+- `coverage.xml` hoặc tương đương
+- `coverage-summary.json`
+- mapping từ generated test suite -> DSL contract refs

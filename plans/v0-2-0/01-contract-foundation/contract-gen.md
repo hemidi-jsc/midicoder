@@ -12,6 +12,17 @@ Tài liệu này mô tả:
 
 ## 2. Hiện trạng code hiện có
 
+## 2.1 Giới hạn phạm vi của đợt update này
+
+Pha `contract gen` của v0.2.0 chỉ tập trung vào **backend systems**:
+
+- modular monolith backend
+- microservice backend
+- big app backend
+- platform/service APIs
+
+Frontend support, UI contract generation, component/page DSL và frontend test synthesis **không nằm trong phạm vi patch set này**.
+
 ## 2.1 Entry point CLI
 
 `midicoder contract gen` nằm tại `midicoder/commands/contract.py::gen()`.
@@ -204,3 +215,41 @@ Giữ tinh thần `contract gen resume` hiện tại.
 3. trace rất chi tiết
 4. resume support
 
+
+
+## 8. Yêu cầu mới: DSL phải hỗ trợ full test generation
+
+Đây là yêu cầu chốt mới của v0.2.0:
+
+1. DSL phải đủ giàu để sinh được **full tests** cho backend.
+2. Test contracts không chỉ mô tả scenario mức cao, mà phải support:
+   - unit tests
+   - integration tests
+   - API tests
+   - fixture/test data contracts
+   - coverage expectations
+3. `testing/tests.yaml` không còn là optional artifact yếu; nó phải trở thành source quan trọng cho `runtime test`.
+4. Mỗi bounded context/service phải khai báo được tối thiểu:
+   - critical paths
+   - invariants
+   - error cases
+   - auth/policy cases
+   - idempotency/retry cases nếu có
+5. Bộ generated test suite phải hướng tới **coverage >= 85%** trên backend business/application layers.
+
+### 8.1 Hệ quả lên DSL
+
+Cần bổ sung vào DSL ít nhất các khái niệm:
+
+- test suites theo layer
+- fixtures / seed data contracts
+- mock/stub integration policies
+- expected coverage targets
+- critical user journeys / service flows
+- contract-derived assertions
+
+### 8.2 Hệ quả lên downstream phases
+
+- `ir build` phải compile test intents vào IR
+- `code build` phải sinh canonical test skeletons hoặc canonical test plans
+- `runtime test` phải dùng generated tests như một phần mặc định của verification pipeline

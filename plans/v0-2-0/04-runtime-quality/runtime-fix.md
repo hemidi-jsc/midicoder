@@ -8,7 +8,7 @@ Nhiệm vụ của command:
 
 1. đọc kết quả verification failures
 2. phân loại lỗi theo tầng
-3. xác định lỗi thuộc implementation hay contract/brief
+3. xác định lỗi thuộc implementation, contract, test-generation hay brief
 4. tạo remediation brief/task set
 5. tạo version mới
 6. chạy lại pipeline từ pha thích hợp
@@ -250,3 +250,17 @@ Artifacts bắt buộc:
 2. Có nên lưu diff giữa old/new brief trong remediation mode không?
 3. Có nên có confidence score để quyết định auto-rerun hay manual review?
 
+
+
+## 15. Quan hệ với generated tests
+
+Vì v0.2.0 yêu cầu DSL hỗ trợ full test generation, `runtime fix` phải hiểu thêm một lớp lỗi mới:
+
+- test_generation_defect
+- insufficient_coverage
+
+Nếu lỗi đến từ generated tests hoặc coverage < 85%, remediation route mặc định không phải patch tay testcase trong workdir, mà là quay về upstream artifact phù hợp:
+
+- contract/test DSL
+- IR test intents
+- canonical backend code/test build outputs

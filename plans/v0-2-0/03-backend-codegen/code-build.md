@@ -2,6 +2,18 @@
 
 ## 1. Mục tiêu sản phẩm
 
+## 1.1 Giới hạn phạm vi của patch set này
+
+Thiết kế trong tài liệu này chỉ tập trung vào **backend**:
+
+- FastAPI/Python backend canonical form
+- modular monolith backend
+- microservice backend
+- large backend applications
+
+Frontend generation/support không thuộc phạm vi patch set v0.2.0 này.
+
+
 `midicoder code build` compile IR thành **canonical FastAPI executable code**. Đây là thay đổi trọng tâm nhất của v0.2.0.
 
 Command này không còn sinh `pseudo_struct` như artifact trung gian chính. Thay vào đó, nó sinh ra:
