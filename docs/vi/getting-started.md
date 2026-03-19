@@ -37,7 +37,14 @@ Yêu cầu của bạn → DSL Contracts → IR → Code Plans → Patches → W
 
 ## Cài đặt
 
-### Bước 1: Tạo Virtual Environment
+### Bước 1: Clone repository
+
+```bash
+git clone https://github.com/hemidi-jsc/midicoder.git
+cd midicoder
+```
+
+### Bước 2: Tạo Virtual Environment
 
 ```bash
 # Tạo virtual environment
@@ -50,7 +57,7 @@ source .venv/bin/activate
 .venv\Scripts\activate
 ```
 
-### Bước 2: Cài đặt Midi Coder
+### Bước 3: Cài đặt Midi Coder
 
 ```bash
 # Nâng cấp pip
@@ -60,7 +67,7 @@ pip install -U pip
 pip install -e .
 ```
 
-### Bước 3: Xác minh Cài đặt
+### Bước 4: Xác minh Cài đặt
 
 ```bash
 # Kiểm tra version
