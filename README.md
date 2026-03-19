@@ -46,6 +46,8 @@ Midicoder đưa ra một hướng tiếp cận khác:
 
 ## Contract Coding
 
+> Xem tài liệu chi tiết tại đây: [docs.midicoder.com](https://docs.midicoder.com)
+
 Trước khi code được sinh ra, hệ thống sẽ tạo ra một **bộ contract DSL** mô tả:
 
 - domain
