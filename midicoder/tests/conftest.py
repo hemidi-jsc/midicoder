@@ -19,12 +19,16 @@ def tmp_workdir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def run_cli(args: Iterable[str], cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def run_cli(
+    args: Iterable[str], cwd: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
     pythonpath = full_env.get("PYTHONPATH", "")
-    full_env["PYTHONPATH"] = os.pathsep.join([str(REPO_ROOT), pythonpath]) if pythonpath else str(REPO_ROOT)
+    full_env["PYTHONPATH"] = (
+        os.pathsep.join([str(REPO_ROOT), pythonpath]) if pythonpath else str(REPO_ROOT)
+    )
     return subprocess.run(
         [sys.executable, "-m", "midicoder", *args],
         cwd=cwd,
@@ -140,5 +144,15 @@ rules:
 
 def assert_cli_success(result: subprocess.CompletedProcess[str]) -> None:
     assert result.returncode == 0, (
-        f"CLI failed with code {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        "CLI failed with code "
+        f"{result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     )
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        path_str = str(item.fspath)
+        if "/integration/" in path_str:
+            item.add_marker(pytest.mark.integration)
+        elif "/unit/" in path_str:
+            item.add_marker(pytest.mark.unit)
