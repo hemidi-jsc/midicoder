@@ -16,6 +16,8 @@ dependencies = [
   "ruamel.yaml>=0.17.0",
   "rich>=13.0.0",
   "questionary>=2.0.0",
+  "litellm>=1.74.0",
+  "aiohttp>=3.9.0",
   "tree_sitter>=0.21.3",
   "tree_sitter_languages>=1.10.2",
 ]

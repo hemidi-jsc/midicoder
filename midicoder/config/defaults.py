@@ -18,18 +18,26 @@ SUPPORTED_STACKS = [
 LLM_PROVIDERS = [
     "anthropic",
     "openai",
+    "openai_compatible",
+    "bedrock",
+    "azure",
+    "vertex_partner",
+    # Backward-compatible aliases
     "aws_bedrock",
     "azure_openai",
-    "google_vertex",
 ]
 
 PROVIDER_BASE_URLS = {
     "anthropic": "https://api.anthropic.com",
     "openai": "https://api.openai.com/v1",
+    "openai_compatible": "https://api.openai.com/v1",
     # Cloud providers typically derive endpoint/base routing from provider-specific options.
+    "bedrock": None,
+    "azure": None,
+    "vertex_partner": None,
+    # Backward-compatible aliases
     "aws_bedrock": None,
     "azure_openai": None,
-    "google_vertex": None,
 }
 
 PROVIDER_DEFAULT_MODELS = {
@@ -38,9 +46,26 @@ PROVIDER_DEFAULT_MODELS = {
         "cheap": "anthropic/claude-3-5-haiku-latest",
     },
     "openai": {
+        "high": "gpt-4o",
+        "cheap": "gpt-4o-mini",
+    },
+    "openai_compatible": {
         "high": "openai/gpt-4o",
         "cheap": "openai/gpt-4o-mini",
     },
+    "bedrock": {
+        "high": "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "cheap": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+    },
+    "azure": {
+        "high": "azure/gpt-4o",
+        "cheap": "azure/gpt-4o-mini",
+    },
+    "vertex_partner": {
+        "high": "vertex_ai/gemini-1.5-pro",
+        "cheap": "vertex_ai/gemini-1.5-flash",
+    },
+    # Backward-compatible aliases
     "aws_bedrock": {
         "high": "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
         "cheap": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
@@ -48,10 +73,6 @@ PROVIDER_DEFAULT_MODELS = {
     "azure_openai": {
         "high": "azure/gpt-4o",
         "cheap": "azure/gpt-4o-mini",
-    },
-    "google_vertex": {
-        "high": "vertex_ai/gemini-1.5-pro",
-        "cheap": "vertex_ai/gemini-1.5-flash",
     },
 }
 

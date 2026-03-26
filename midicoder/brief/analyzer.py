@@ -458,6 +458,12 @@ Analyze the brief thoroughly and make evidence-based decisions about which contr
             contract_files=contract_files,
         )
     except Exception as exc:
+        from midicoder.llm.client import LlmRequestError
+
+        # Keep transport/provider errors intact so command layer can apply
+        # user-friendly timeout/auth guidance without losing error category.
+        if isinstance(exc, LlmRequestError):
+            raise
         # No fallback - raise error
         preview = ""
         if "response" in locals() and hasattr(response, "content"):
@@ -504,6 +510,10 @@ def get_contract_files_from_master_brief(
             run_dir=run_dir,
         )
     except Exception as exc:
+        from midicoder.llm.client import LlmRequestError
+
+        if isinstance(exc, LlmRequestError):
+            raise
         raise RuntimeError(
             f"Failed to determine required contract files from master brief: {exc}"
         ) from exc

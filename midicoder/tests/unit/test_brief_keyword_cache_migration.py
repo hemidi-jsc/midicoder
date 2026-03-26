@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from midicoder.brief.analyzer import KEYWORD_CACHE_VERSION, get_keyword_map_cached
+from midicoder.llm.client import LlmRequestError
 
 
 def test_get_keyword_map_cached_migrates_legacy_cache_payload(tmp_path: Path) -> None:
@@ -56,3 +57,23 @@ def test_get_keyword_map_cached_migrates_legacy_cache_payload(tmp_path: Path) ->
 
     migrated = json.loads((cache_dir / "brief_keywords.json").read_text(encoding="utf-8"))
     assert migrated["cache_version"] == KEYWORD_CACHE_VERSION
+
+
+def test_get_keyword_map_cached_preserves_llm_request_error(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _raise_llm_error(*args, **kwargs):
+        raise LlmRequestError("LLM network error: timeout")
+
+    try:
+        get_keyword_map_cached(
+            cache_dir=cache_dir,
+            master_brief_text="new brief",
+            llm_config={},
+            call_llm_func=_raise_llm_error,
+            force_refresh=True,
+        )
+        assert False, "Expected LlmRequestError to propagate"
+    except LlmRequestError as exc:
+        assert "timeout" in str(exc).lower()

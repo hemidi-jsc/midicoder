@@ -561,10 +561,10 @@ def _apply_search_replace_blocks(
                 )
     
     if applied_count > 0:
-        print(f"[brief rewrite] ✓ Applied {applied_count}/{len(blocks)} change blocks")
+        print(f"[brief rewrite] OK Applied {applied_count}/{len(blocks)} change blocks")
     
     if errors:
-        print(f"[brief rewrite] ⚠ {len(errors)} blocks could not be applied (see errors.txt)")
+        print(f"[brief rewrite] WARN {len(errors)} blocks could not be applied (see errors.txt)")
     
     return content, errors
 
@@ -633,7 +633,7 @@ def rewrite_master_brief(
 
     virtual_seams = _load_virtual_seams(context_dir)
     if not virtual_seams:
-        print("[brief rewrite] ⚠ virtual_seams.json missing or empty; falling back to seams/symbols/exemplars.")
+        print("[brief rewrite] WARN virtual_seams.json missing or empty; falling back to seams/symbols/exemplars.")
     filtered_virtual_seams = _filter_seams(virtual_seams, keywords, symbol_names_by_file)
     seam_snippets = _collect_virtual_seam_snippets(repo_root, filtered_virtual_seams)
 
@@ -654,7 +654,7 @@ def rewrite_master_brief(
 
     snippets = _truncate_snippets(snippets)
     if not snippets:
-        print("[brief rewrite] ⚠ No snippets available for context summarization.")
+        print("[brief rewrite] WARN No snippets available for context summarization.")
 
     print("[brief rewrite] Running multi-pass rewrite...")
 
@@ -757,7 +757,7 @@ def rewrite_master_brief(
     blocks = _parse_search_replace_blocks(llm_response)
 
     if not blocks:
-        print("[brief rewrite] ℹ No changes recommended by LLM")
+        print("[brief rewrite] INFO No changes recommended by LLM")
         return original_content, llm_response, [], context_summaries, module_narratives
 
     print(f"[brief rewrite] Found {len(blocks)} suggested changes")
