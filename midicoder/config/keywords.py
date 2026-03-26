@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .defaults import LLM_PROVIDERS, SUPPORTED_STACKS
+
 
 @dataclass
 class ConfigKeyword:
@@ -54,7 +56,7 @@ class InitKeywords:
             description="Comma-separated tech stack(s)",
             type="multichoice",
             required=True,
-            choices=["fastapi", "nest", "angular"],
+            choices=SUPPORTED_STACKS,
             example="fastapi,nest",
         ),
         ConfigKeyword(
@@ -63,7 +65,7 @@ class InitKeywords:
             description="High-tier LLM provider",
             type="choice",
             required=True,
-            choices=["anthropic", "openai"],
+            choices=LLM_PROVIDERS,
             example="anthropic",
         ),
         ConfigKeyword(
@@ -77,9 +79,9 @@ class InitKeywords:
         ConfigKeyword(
             flag="--llm-high-url",
             env_var="MIDICODER_LLM_HIGH_URL",
-            description="High-tier LLM API base URL",
+            description="High-tier LLM API base URL (optional, provider-dependent)",
             type="text",
-            required=True,
+            required=False,
             example="https://api.anthropic.com",
         ),
         ConfigKeyword(
@@ -104,7 +106,7 @@ class InitKeywords:
             description="Cheap-tier LLM provider",
             type="choice",
             required=True,
-            choices=["anthropic", "openai"],
+            choices=LLM_PROVIDERS,
             example="anthropic",
         ),
         ConfigKeyword(
@@ -118,9 +120,9 @@ class InitKeywords:
         ConfigKeyword(
             flag="--llm-cheap-url",
             env_var="MIDICODER_LLM_CHEAP_URL",
-            description="Cheap-tier LLM API base URL",
+            description="Cheap-tier LLM API base URL (optional, provider-dependent)",
             type="text",
-            required=True,
+            required=False,
             example="https://api.anthropic.com",
         ),
         ConfigKeyword(
@@ -138,6 +140,105 @@ class InitKeywords:
             type="text",
             required=False,
             example="ANTHROPIC_API_KEY",
+        ),
+        # Provider-specific (AWS Bedrock)
+        ConfigKeyword(
+            flag="--llm-high-aws-bedrock-region",
+            env_var="MIDICODER_LLM_HIGH_AWS_BEDROCK_REGION",
+            description="AWS Bedrock region for high-tier provider=aws_bedrock",
+            type="text",
+            required=False,
+            example="us-east-1",
+        ),
+        ConfigKeyword(
+            flag="--llm-cheap-aws-bedrock-region",
+            env_var="MIDICODER_LLM_CHEAP_AWS_BEDROCK_REGION",
+            description="AWS Bedrock region for cheap-tier provider=aws_bedrock",
+            type="text",
+            required=False,
+            example="us-east-1",
+        ),
+        # Provider-specific (Azure OpenAI)
+        ConfigKeyword(
+            flag="--llm-high-azure-openai-endpoint",
+            env_var="MIDICODER_LLM_HIGH_AZURE_OPENAI_ENDPOINT",
+            description="Azure OpenAI endpoint for high-tier provider=azure_openai",
+            type="text",
+            required=False,
+            example="https://my-resource.openai.azure.com",
+        ),
+        ConfigKeyword(
+            flag="--llm-high-azure-openai-api-version",
+            env_var="MIDICODER_LLM_HIGH_AZURE_OPENAI_API_VERSION",
+            description="Azure OpenAI API version for high-tier provider=azure_openai",
+            type="text",
+            required=False,
+            example="2024-10-21",
+        ),
+        ConfigKeyword(
+            flag="--llm-high-azure-openai-deployment",
+            env_var="MIDICODER_LLM_HIGH_AZURE_OPENAI_DEPLOYMENT",
+            description="Azure OpenAI deployment name for high-tier provider=azure_openai",
+            type="text",
+            required=False,
+            example="gpt-4o-prod",
+        ),
+        ConfigKeyword(
+            flag="--llm-cheap-azure-openai-endpoint",
+            env_var="MIDICODER_LLM_CHEAP_AZURE_OPENAI_ENDPOINT",
+            description="Azure OpenAI endpoint for cheap-tier provider=azure_openai",
+            type="text",
+            required=False,
+            example="https://my-resource.openai.azure.com",
+        ),
+        ConfigKeyword(
+            flag="--llm-cheap-azure-openai-api-version",
+            env_var="MIDICODER_LLM_CHEAP_AZURE_OPENAI_API_VERSION",
+            description="Azure OpenAI API version for cheap-tier provider=azure_openai",
+            type="text",
+            required=False,
+            example="2024-10-21",
+        ),
+        ConfigKeyword(
+            flag="--llm-cheap-azure-openai-deployment",
+            env_var="MIDICODER_LLM_CHEAP_AZURE_OPENAI_DEPLOYMENT",
+            description="Azure OpenAI deployment name for cheap-tier provider=azure_openai",
+            type="text",
+            required=False,
+            example="gpt-4o-mini-dev",
+        ),
+        # Provider-specific (Google Vertex)
+        ConfigKeyword(
+            flag="--llm-high-google-vertex-project",
+            env_var="MIDICODER_LLM_HIGH_GOOGLE_VERTEX_PROJECT",
+            description="Google Vertex project id for high-tier provider=google_vertex",
+            type="text",
+            required=False,
+            example="my-gcp-project",
+        ),
+        ConfigKeyword(
+            flag="--llm-high-google-vertex-location",
+            env_var="MIDICODER_LLM_HIGH_GOOGLE_VERTEX_LOCATION",
+            description="Google Vertex location for high-tier provider=google_vertex",
+            type="text",
+            required=False,
+            example="us-central1",
+        ),
+        ConfigKeyword(
+            flag="--llm-cheap-google-vertex-project",
+            env_var="MIDICODER_LLM_CHEAP_GOOGLE_VERTEX_PROJECT",
+            description="Google Vertex project id for cheap-tier provider=google_vertex",
+            type="text",
+            required=False,
+            example="my-gcp-project",
+        ),
+        ConfigKeyword(
+            flag="--llm-cheap-google-vertex-location",
+            env_var="MIDICODER_LLM_CHEAP_GOOGLE_VERTEX_LOCATION",
+            description="Google Vertex location for cheap-tier provider=google_vertex",
+            type="text",
+            required=False,
+            example="us-central1",
         ),
     ]
     
@@ -183,7 +284,26 @@ class InitKeywords:
                 "--llm-cheap-key",
                 "--llm-cheap-key-env",
             ],
+            "Provider-specific (AWS Bedrock)": [
+                "--llm-high-aws-bedrock-region",
+                "--llm-cheap-aws-bedrock-region",
+            ],
+            "Provider-specific (Azure OpenAI)": [
+                "--llm-high-azure-openai-endpoint",
+                "--llm-high-azure-openai-api-version",
+                "--llm-high-azure-openai-deployment",
+                "--llm-cheap-azure-openai-endpoint",
+                "--llm-cheap-azure-openai-api-version",
+                "--llm-cheap-azure-openai-deployment",
+            ],
+            "Provider-specific (Google Vertex)": [
+                "--llm-high-google-vertex-project",
+                "--llm-high-google-vertex-location",
+                "--llm-cheap-google-vertex-project",
+                "--llm-cheap-google-vertex-location",
+            ],
             "Mode": ["--non-interactive", "--env-prefix"],
+            "Rewrite Policy": ["--rewrite-config"],
         }
         
         for category, flags in categories.items():
@@ -227,6 +347,12 @@ class InitKeywords:
                 elif flag == "--env-prefix":
                     print_normal(f"  {flag} TEXT{'':15} Environment variable prefix (default: MIDICODER_)")
                     print_normal("")
+                elif flag == "--rewrite-config":
+                    print_normal(
+                        f"  {flag:<28} Allow overwrite of existing config in non-interactive mode"
+                    )
+                    print_normal(f"{'':30} [dim]Env: MIDICODER_REWRITE_CONFIG=true[/dim]")
+                    print_normal("")
             
             print_normal("")
         
@@ -244,19 +370,30 @@ class InitKeywords:
         print_normal("    --working-dir /home/user/project \\")
         print_normal("    --stack fastapi,nest \\")
         print_normal("    --llm-high-provider anthropic \\")
-        print_normal("    --llm-high-model claude-sonnet-4-5 \\")
+        print_normal("    --llm-high-model anthropic/claude-3-7-sonnet-latest \\")
         print_normal("    --llm-high-url https://api.anthropic.com \\")
         print_normal("    --llm-high-key-env ANTHROPIC_API_KEY \\")
         print_normal("    --llm-cheap-provider anthropic \\")
-        print_normal("    --llm-cheap-model claude-3-5-haiku \\")
+        print_normal("    --llm-cheap-model anthropic/claude-3-5-haiku-latest \\")
         print_normal("    --llm-cheap-url https://api.anthropic.com \\")
         print_normal("    --llm-cheap-key-env ANTHROPIC_API_KEY")
+        print_normal("")
+        print_normal("[bold]Non-interactive with provider-specific Azure OpenAI fields:[/bold]")
+        print_normal("  midicoder init --non-interactive \\")
+        print_normal("    --working-dir /home/user/project \\")
+        print_normal("    --stack fastapi \\")
+        print_normal("    --llm-high-provider azure_openai \\")
+        print_normal("    --llm-high-model azure/gpt-4o \\")
+        print_normal("    --llm-high-azure-openai-endpoint https://my-resource.openai.azure.com \\")
+        print_normal("    --llm-high-azure-openai-api-version 2024-10-21 \\")
+        print_normal("    --llm-high-azure-openai-deployment gpt-4o-prod \\")
+        print_normal("    --llm-high-key-env AZURE_OPENAI_API_KEY")
         print_normal("")
         print_normal("[bold]Non-interactive with environment variables:[/bold]")
         print_normal("  export MIDICODER_WORKING_DIR=/home/user/project")
         print_normal("  export MIDICODER_STACK=fastapi,nest")
         print_normal("  export MIDICODER_LLM_HIGH_PROVIDER=anthropic")
-        print_normal("  export MIDICODER_LLM_HIGH_MODEL=claude-sonnet-4-5")
+        print_normal("  export MIDICODER_LLM_HIGH_MODEL=anthropic/claude-3-7-sonnet-latest")
         print_normal("  export MIDICODER_LLM_HIGH_URL=https://api.anthropic.com")
         print_normal("  export MIDICODER_LLM_HIGH_API_KEY=sk-ant-...")
         print_normal("  # ... set other env vars ...")

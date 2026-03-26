@@ -17,31 +17,56 @@ SUPPORTED_STACKS = [
 # LLM provider defaults
 LLM_PROVIDERS = [
     "anthropic",
-    "openai"
+    "openai",
+    "aws_bedrock",
+    "azure_openai",
+    "google_vertex",
 ]
 
 PROVIDER_BASE_URLS = {
     "anthropic": "https://api.anthropic.com",
-    "openai": "https://api.openai.com/v1"
+    "openai": "https://api.openai.com/v1",
+    # Cloud providers typically derive endpoint/base routing from provider-specific options.
+    "aws_bedrock": None,
+    "azure_openai": None,
+    "google_vertex": None,
 }
 
 PROVIDER_DEFAULT_MODELS = {
     "anthropic": {
-        "high": "claude-4-5-sonnet",
-        "cheap": "claude-3-5-haiku"
+        "high": "anthropic/claude-3-7-sonnet-latest",
+        "cheap": "anthropic/claude-3-5-haiku-latest",
     },
     "openai": {
-        "high": "gpt-4",
-        "cheap": "gpt-3.5-turbo"
-    }
+        "high": "openai/gpt-4o",
+        "cheap": "openai/gpt-4o-mini",
+    },
+    "aws_bedrock": {
+        "high": "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "cheap": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+    },
+    "azure_openai": {
+        "high": "azure/gpt-4o",
+        "cheap": "azure/gpt-4o-mini",
+    },
+    "google_vertex": {
+        "high": "vertex_ai/gemini-1.5-pro",
+        "cheap": "vertex_ai/gemini-1.5-flash",
+    },
 }
 
 # Common LLM model names for reference/autocomplete
 COMMON_MODEL_NAMES = [
-    "sonnet4-5",
-    "claude-3-5-haiku",
-    "gpt-4",
-    "gpt-3.5-turbo",
+    "anthropic/claude-3-7-sonnet-latest",
+    "anthropic/claude-3-5-haiku-latest",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+    "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+    "azure/gpt-4o",
+    "azure/gpt-4o-mini",
+    "vertex_ai/gemini-1.5-pro",
+    "vertex_ai/gemini-1.5-flash",
 ]
 
 # Configuration field management

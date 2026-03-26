@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from midicoder.config import ConfigManager
-from midicoder.config.defaults import DEFAULT_STACK, SUPPORTED_STACKS
+from midicoder.config.defaults import (
+    DEFAULT_STACK,
+    LLM_PROVIDERS,
+    PROVIDER_BASE_URLS,
+    SUPPORTED_STACKS,
+)
 from midicoder.io import prompt_confirm, print_warning, print_info
 
 from .base import (
@@ -18,6 +23,54 @@ from .base import (
     write_run_outputs,
     write_state,
 )
+
+PROVIDER_REQUIRED_FIELDS: dict[str, list[str]] = {
+    "anthropic": ["base_url"],
+    "openai": ["base_url"],
+    "aws_bedrock": ["aws_bedrock_region"],
+    "azure_openai": [
+        "azure_openai_endpoint",
+        "azure_openai_api_version",
+        "azure_openai_deployment",
+    ],
+    "google_vertex": [
+        "google_vertex_project",
+        "google_vertex_location",
+    ],
+}
+
+
+def _parse_optional_bool(value: Any) -> bool | None:
+    """Parse optional bool values from flag/env inputs."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean value: '{value}'")
+
+
+def _config_overwrite_requested(args: Any, env_prefix: str) -> bool:
+    """Resolve rewrite policy in non-interactive mode."""
+    raw = _get_value_with_priority(
+        getattr(args, "rewrite_config", None),
+        "REWRITE_CONFIG",
+        default=False,
+        env_prefix=env_prefix,
+    )
+    parsed = _parse_optional_bool(raw)
+    return bool(parsed) if parsed is not None else False
+
+
+def _get_flag_and_env_for_field(tier: str, field_name: str, env_prefix: str) -> tuple[str, str]:
+    """Build CLI flag/env key names from a config field."""
+    flag = f"--llm-{tier}-{field_name.replace('_', '-')}"
+    env_key = f"{env_prefix}LLM_{tier.upper()}_{field_name.upper()}"
+    return flag, env_key
 
 
 def _get_value_with_priority(
@@ -122,7 +175,12 @@ def _get_api_key(
     return None
 
 
-def _validate_required_config(config: dict, secrets: dict) -> list[str]:
+def _validate_required_config(
+    config: dict,
+    secrets: dict,
+    *,
+    env_prefix: str = "MIDICODER_",
+) -> list[str]:
     """
     Validate that all required configuration is present.
     
@@ -147,8 +205,6 @@ def _validate_required_config(config: dict, secrets: dict) -> list[str]:
                 )
     
     # Check LLM configuration
-    from midicoder.config.defaults import LLM_PROVIDERS
-    
     for tier in ["high", "cheap"]:
         tier_config = config.get("llm", {}).get(tier, {})
         
@@ -163,9 +219,15 @@ def _validate_required_config(config: dict, secrets: dict) -> list[str]:
         
         if not tier_config.get("model"):
             errors.append(f"LLM {tier} tier model is required")
-        
-        if not tier_config.get("base_url"):
-            errors.append(f"LLM {tier} tier base URL is required")
+
+        if provider in PROVIDER_REQUIRED_FIELDS:
+            for required_field in PROVIDER_REQUIRED_FIELDS[provider]:
+                if not tier_config.get(required_field):
+                    flag, env_key = _get_flag_and_env_for_field(tier, required_field, env_prefix)
+                    errors.append(
+                        f"LLM {tier} tier with provider '{provider}' requires '{required_field}'. "
+                        f"Set via {flag} or {env_key}."
+                    )
         
         # Check API key in secrets
         tier_secrets = secrets.get("llm", {}).get(tier, {})
@@ -178,6 +240,57 @@ def _validate_required_config(config: dict, secrets: dict) -> list[str]:
     return errors
 
 
+def _validate_init_payload(
+    config: dict,
+    llm_secrets: dict,
+    *,
+    env_prefix: str = "MIDICODER_",
+) -> list[str]:
+    """Shared init validation for both interactive and non-interactive flows."""
+    return _validate_required_config(config, {"llm": llm_secrets}, env_prefix=env_prefix)
+
+
+def _build_llm_tier_config(tier: str, args: Any, env_prefix: str) -> dict[str, Any]:
+    """Build one LLM tier config using naming convention for flag/env/config keys."""
+    provider = _get_value_with_priority(
+        getattr(args, f"llm_{tier}_provider", None),
+        f"LLM_{tier.upper()}_PROVIDER",
+        env_prefix=env_prefix,
+    )
+
+    tier_config: dict[str, Any] = {
+        "provider": provider,
+        "model": _get_value_with_priority(
+            getattr(args, f"llm_{tier}_model", None),
+            f"LLM_{tier.upper()}_MODEL",
+            env_prefix=env_prefix,
+        ),
+        "base_url": _get_value_with_priority(
+            getattr(args, f"llm_{tier}_url", None),
+            f"LLM_{tier.upper()}_URL",
+            default=PROVIDER_BASE_URLS.get(provider),
+            env_prefix=env_prefix,
+        ),
+    }
+
+    provider_specific_fields = [
+        "aws_bedrock_region",
+        "azure_openai_endpoint",
+        "azure_openai_api_version",
+        "azure_openai_deployment",
+        "google_vertex_project",
+        "google_vertex_location",
+    ]
+    for field in provider_specific_fields:
+        tier_config[field] = _get_value_with_priority(
+            getattr(args, f"llm_{tier}_{field}", None),
+            f"LLM_{tier.upper()}_{field.upper()}",
+            env_prefix=env_prefix,
+        )
+
+    return tier_config
+
+
 def _initialize_config_interactive(paths: MidicoderPaths) -> None:
     """Interactive initialization (existing behavior)."""
     if paths.config.exists():
@@ -186,11 +299,27 @@ def _initialize_config_interactive(paths: MidicoderPaths) -> None:
             default=False
         )
         if not overwrite:
-            print("Keeping existing config.")
-            return
+            from midicoder.io import print_error
+            print_error(
+                "Rewrite denied. Existing config was not changed.",
+                title="Rewrite Not Allowed",
+            )
+            raise SystemExit(1)
     
     config_manager = ConfigManager(paths)
-    config_manager.initialize_interactive()
+    from midicoder.io import print_error, print_info, print_normal
+
+    try:
+        config_manager.initialize_interactive(validate_fn=_validate_init_payload)
+    except ValueError as exc:
+        print_error("Configuration validation failed:", title="Error")
+        for line in str(exc).splitlines():
+            line = line.strip()
+            if line:
+                print_error(f"  • {line}")
+        print_normal("")
+        print_info("Please retry init and fill the missing provider-specific fields.")
+        raise SystemExit(1)
 
 
 def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None:
@@ -210,6 +339,23 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
     print_info("Initializing configuration (non-interactive mode)...", title="Init")
     
     env_prefix = getattr(args, "env_prefix", "MIDICODER_")
+
+    # CL010: explicit rewrite policy for non-interactive mode.
+    try:
+        rewrite_allowed = _config_overwrite_requested(args, env_prefix)
+    except ValueError as exc:
+        print_error(str(exc), title="Invalid rewrite setting")
+        print_info("Use --rewrite-config or set env value to true/false.")
+        raise SystemExit(1)
+
+    if paths.config.exists() and not rewrite_allowed:
+        print_error(
+            "Config already exists. Refusing to overwrite in non-interactive mode "
+            "without explicit rewrite permission.",
+            title="Rewrite Not Allowed",
+        )
+        print_info(f"Retry with --rewrite-config or set {env_prefix}REWRITE_CONFIG=true.")
+        raise SystemExit(1)
     
     # Build configuration using priority: flag > env var > default
     working_dir_raw = _get_value_with_priority(
@@ -242,40 +388,8 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
     
     # LLM configuration
     llm_config = {
-        "high": {
-            "provider": _get_value_with_priority(
-                getattr(args, "llm_high_provider", None),
-                "LLM_HIGH_PROVIDER",
-                env_prefix=env_prefix,
-            ),
-            "model": _get_value_with_priority(
-                getattr(args, "llm_high_model", None),
-                "LLM_HIGH_MODEL",
-                env_prefix=env_prefix,
-            ),
-            "base_url": _get_value_with_priority(
-                getattr(args, "llm_high_url", None),
-                "LLM_HIGH_URL",
-                env_prefix=env_prefix,
-            ),
-        },
-        "cheap": {
-            "provider": _get_value_with_priority(
-                getattr(args, "llm_cheap_provider", None),
-                "LLM_CHEAP_PROVIDER",
-                env_prefix=env_prefix,
-            ),
-            "model": _get_value_with_priority(
-                getattr(args, "llm_cheap_model", None),
-                "LLM_CHEAP_MODEL",
-                env_prefix=env_prefix,
-            ),
-            "base_url": _get_value_with_priority(
-                getattr(args, "llm_cheap_url", None),
-                "LLM_CHEAP_URL",
-                env_prefix=env_prefix,
-            ),
-        },
+        "high": _build_llm_tier_config("high", args, env_prefix),
+        "cheap": _build_llm_tier_config("cheap", args, env_prefix),
     }
     
     config = {
@@ -291,8 +405,8 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
     
     # Get API keys
     llm_secrets = {
-        "high": {},
-        "cheap": {},
+        "high": {"provider": llm_config["high"].get("provider")},
+        "cheap": {"provider": llm_config["cheap"].get("provider")},
     }
     
     for tier in ["high", "cheap"]:
@@ -304,7 +418,7 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
             llm_secrets[tier]["api_key"] = api_key
     
     # Validate configuration - wrap secrets in llm key
-    errors = _validate_required_config(config, {"llm": llm_secrets})
+    errors = _validate_init_payload(config, llm_secrets, env_prefix=env_prefix)
     if errors:
         print_error("Configuration validation failed:", title="Error")
         for error in errors:

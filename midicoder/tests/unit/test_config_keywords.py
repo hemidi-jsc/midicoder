@@ -74,10 +74,8 @@ class TestInitKeywords:
             "--stack",
             "--llm-high-provider",
             "--llm-high-model",
-            "--llm-high-url",
             "--llm-cheap-provider",
             "--llm-cheap-model",
-            "--llm-cheap-url",
         ]
 
         for flag in required_flags:
@@ -91,6 +89,37 @@ class TestInitKeywords:
             if kw.type in ["choice", "multichoice"]:
                 assert kw.choices is not None, f"Flag {kw.flag} is {kw.type} but has no choices"
                 assert len(kw.choices) > 0, f"Flag {kw.flag} has empty choices list"
+
+    def test_provider_keyword_choices_include_cloud_providers(self):
+        """Provider choices should include all supported cloud providers."""
+        high_kw = InitKeywords.get_by_flag("--llm-high-provider")
+        cheap_kw = InitKeywords.get_by_flag("--llm-cheap-provider")
+
+        assert high_kw is not None
+        assert cheap_kw is not None
+
+        for provider in ["anthropic", "openai", "aws_bedrock", "azure_openai", "google_vertex"]:
+            assert provider in high_kw.choices
+            assert provider in cheap_kw.choices
+
+    def test_provider_specific_keywords_are_registered(self):
+        """Provider-specific keywords should be listed for non-interactive init."""
+        expected_flags = [
+            "--llm-high-aws-bedrock-region",
+            "--llm-cheap-aws-bedrock-region",
+            "--llm-high-azure-openai-endpoint",
+            "--llm-high-azure-openai-api-version",
+            "--llm-high-azure-openai-deployment",
+            "--llm-cheap-azure-openai-endpoint",
+            "--llm-cheap-azure-openai-api-version",
+            "--llm-cheap-azure-openai-deployment",
+            "--llm-high-google-vertex-project",
+            "--llm-high-google-vertex-location",
+            "--llm-cheap-google-vertex-project",
+            "--llm-cheap-google-vertex-location",
+        ]
+        for flag in expected_flags:
+            assert InitKeywords.get_by_flag(flag) is not None
 
 
 class TestInitHelpers:
@@ -217,6 +246,19 @@ class TestInitHelpers:
         )
         assert result is None
 
+    def test_config_overwrite_requested_from_env(self):
+        """Rewrite policy should accept boolean env value when flag is not set."""
+        from midicoder.commands.init import _config_overwrite_requested
+
+        class Args:
+            rewrite_config = None
+
+        os.environ["MIDICODER_REWRITE_CONFIG"] = "true"
+        try:
+            assert _config_overwrite_requested(Args(), "MIDICODER_") is True
+        finally:
+            del os.environ["MIDICODER_REWRITE_CONFIG"]
+
 
 class TestConfigValidation:
     """Test configuration validation."""
@@ -306,3 +348,58 @@ class TestConfigValidation:
 
         errors = _validate_required_config(config, secrets)
         assert any("provider is required" in e for e in errors)
+
+    def test_validate_required_config_bedrock_requires_region(self):
+        """AWS Bedrock provider requires aws_bedrock_region instead of base_url."""
+        from midicoder.commands.init import _validate_required_config
+
+        config = {
+            "stack": ["fastapi"],
+            "llm": {
+                "high": {
+                    "provider": "aws_bedrock",
+                    "model": "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+                    "aws_bedrock_region": "us-east-1",
+                },
+                "cheap": {
+                    "provider": "aws_bedrock",
+                    "model": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+                    "aws_bedrock_region": "us-east-1",
+                },
+            },
+        }
+        secrets = {
+            "llm": {"high": {"api_key": "dummy"}, "cheap": {"api_key": "dummy"}}
+        }
+
+        errors = _validate_required_config(config, secrets)
+        assert len(errors) == 0
+
+    def test_validate_required_config_azure_requires_specific_fields(self):
+        """Azure OpenAI provider should fail when required provider-specific fields are missing."""
+        from midicoder.commands.init import _validate_required_config
+
+        config = {
+            "stack": ["fastapi"],
+            "llm": {
+                "high": {
+                    "provider": "azure_openai",
+                    "model": "azure/gpt-4o",
+                    "azure_openai_endpoint": "https://my-resource.openai.azure.com",
+                },
+                "cheap": {
+                    "provider": "azure_openai",
+                    "model": "azure/gpt-4o-mini",
+                    "azure_openai_endpoint": "https://my-resource.openai.azure.com",
+                    "azure_openai_api_version": "2024-10-21",
+                    "azure_openai_deployment": "gpt-4o-mini-dev",
+                },
+            },
+        }
+        secrets = {
+            "llm": {"high": {"api_key": "dummy"}, "cheap": {"api_key": "dummy"}}
+        }
+
+        errors = _validate_required_config(config, secrets)
+        assert any("azure_openai_api_version" in e for e in errors)
+        assert any("azure_openai_deployment" in e for e in errors)

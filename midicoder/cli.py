@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from midicoder.config.defaults import LLM_PROVIDERS
 from midicoder.commands import (
     brief as brief_commands,
     code as code_commands,
@@ -61,6 +62,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="MIDICODER_",
         help="Environment variable prefix (default: MIDICODER_)"
     )
+    init_parser.add_argument(
+        "--rewrite-config",
+        action="store_true",
+        default=None,
+        help="Allow overwriting existing .midicoder/config.json in non-interactive mode"
+    )
     
     # Working directory
     init_parser.add_argument(
@@ -80,7 +87,7 @@ def _build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--llm-high-provider",
         type=str,
-        choices=["anthropic", "openai"],
+        choices=LLM_PROVIDERS,
         help="High-tier LLM provider"
     )
     init_parser.add_argument(
@@ -108,7 +115,7 @@ def _build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--llm-cheap-provider",
         type=str,
-        choices=["anthropic", "openai"],
+        choices=LLM_PROVIDERS,
         help="Cheap-tier LLM provider"
     )
     init_parser.add_argument(
@@ -130,6 +137,72 @@ def _build_parser() -> argparse.ArgumentParser:
         "--llm-cheap-key-env",
         type=str,
         help="Environment variable name containing cheap-tier API key (recommended)"
+    )
+
+    # Provider-specific options (AWS Bedrock)
+    init_parser.add_argument(
+        "--llm-high-aws-bedrock-region",
+        type=str,
+        help="AWS Bedrock region for high-tier provider=aws_bedrock"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-aws-bedrock-region",
+        type=str,
+        help="AWS Bedrock region for cheap-tier provider=aws_bedrock"
+    )
+
+    # Provider-specific options (Azure OpenAI)
+    init_parser.add_argument(
+        "--llm-high-azure-openai-endpoint",
+        type=str,
+        help="Azure OpenAI endpoint for high-tier provider=azure_openai"
+    )
+    init_parser.add_argument(
+        "--llm-high-azure-openai-api-version",
+        type=str,
+        help="Azure OpenAI API version for high-tier provider=azure_openai"
+    )
+    init_parser.add_argument(
+        "--llm-high-azure-openai-deployment",
+        type=str,
+        help="Azure OpenAI deployment name for high-tier provider=azure_openai"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-azure-openai-endpoint",
+        type=str,
+        help="Azure OpenAI endpoint for cheap-tier provider=azure_openai"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-azure-openai-api-version",
+        type=str,
+        help="Azure OpenAI API version for cheap-tier provider=azure_openai"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-azure-openai-deployment",
+        type=str,
+        help="Azure OpenAI deployment name for cheap-tier provider=azure_openai"
+    )
+
+    # Provider-specific options (Google Vertex)
+    init_parser.add_argument(
+        "--llm-high-google-vertex-project",
+        type=str,
+        help="Google Vertex project id for high-tier provider=google_vertex"
+    )
+    init_parser.add_argument(
+        "--llm-high-google-vertex-location",
+        type=str,
+        help="Google Vertex location for high-tier provider=google_vertex"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-google-vertex-project",
+        type=str,
+        help="Google Vertex project id for cheap-tier provider=google_vertex"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-google-vertex-location",
+        type=str,
+        help="Google Vertex location for cheap-tier provider=google_vertex"
     )
     
     

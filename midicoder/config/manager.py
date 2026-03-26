@@ -5,10 +5,106 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .schema import apply_defaults, validate_config_dict
 from .secrets import SecretsManager
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    """Normalize prompt text into optional config value."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped if stripped else None
+
+
+def _prompt_provider_common_fields(
+    *,
+    tier_label: str,
+    provider: str,
+    default_base_url: str | None,
+):
+    """Prompt common fields shared by all providers."""
+    from midicoder.io import prompt_text, prompt_secret
+    from midicoder.io.messages import print_info
+
+    llm_url: str | None = None
+    if provider in {"anthropic", "openai"}:
+        llm_url = prompt_text("Base URL", default=default_base_url or "")
+    else:
+        print_info(
+            f"{tier_label} tier provider '{provider}' uses provider-specific connection settings."
+        )
+
+    llm_key = prompt_secret("API key", confirm=False)
+    return _normalize_optional_text(llm_url), _normalize_optional_text(llm_key)
+
+
+def _prompt_provider_specific_fields(
+    *,
+    provider: str,
+    tier_label: str,
+    defaults: dict[str, str | None] | None = None,
+) -> dict[str, str | None]:
+    """Prompt provider-specific fields and return full namespaced dict."""
+    from midicoder.io import prompt_text
+    from midicoder.io.messages import print_info
+
+    defaults = defaults or {}
+    fields = {
+        "aws_bedrock_region": None,
+        "azure_openai_endpoint": None,
+        "azure_openai_api_version": None,
+        "azure_openai_deployment": None,
+        "google_vertex_project": None,
+        "google_vertex_location": None,
+    }
+
+    if provider == "aws_bedrock":
+        print_info(f"{tier_label} tier requires AWS Bedrock region.")
+        fields["aws_bedrock_region"] = _normalize_optional_text(
+            prompt_text(
+                "AWS Bedrock region",
+                default=defaults.get("aws_bedrock_region") or "us-east-1",
+            )
+        )
+    elif provider == "azure_openai":
+        print_info(f"{tier_label} tier requires Azure OpenAI endpoint/api-version/deployment.")
+        fields["azure_openai_endpoint"] = _normalize_optional_text(
+            prompt_text(
+                "Azure OpenAI endpoint",
+                default=defaults.get("azure_openai_endpoint") or "",
+            )
+        )
+        fields["azure_openai_api_version"] = _normalize_optional_text(
+            prompt_text(
+                "Azure OpenAI API version",
+                default=defaults.get("azure_openai_api_version") or "2024-10-21",
+            )
+        )
+        fields["azure_openai_deployment"] = _normalize_optional_text(
+            prompt_text(
+                "Azure OpenAI deployment name",
+                default=defaults.get("azure_openai_deployment") or "",
+            )
+        )
+    elif provider == "google_vertex":
+        print_info(f"{tier_label} tier requires Google Vertex project/location.")
+        fields["google_vertex_project"] = _normalize_optional_text(
+            prompt_text(
+                "Google Vertex project id",
+                default=defaults.get("google_vertex_project") or "",
+            )
+        )
+        fields["google_vertex_location"] = _normalize_optional_text(
+            prompt_text(
+                "Google Vertex location",
+                default=defaults.get("google_vertex_location") or "us-central1",
+            )
+        )
+
+    return fields
 
 
 class ConfigManager:
@@ -233,7 +329,10 @@ class ConfigManager:
         
         return migrated
 
-    def initialize_interactive(self) -> None:
+    def initialize_interactive(
+        self,
+        validate_fn: Callable[[dict, dict], list[str]] | None = None,
+    ) -> None:
         """
         Interactive initialization wizard.
         
@@ -241,7 +340,7 @@ class ConfigManager:
             >>> manager = ConfigManager(paths)
             >>> manager.initialize_interactive()
         """
-        from midicoder.io import prompt_text, prompt_secret, prompt_choice, prompt_multichoice
+        from midicoder.io import prompt_text, prompt_choice, prompt_multichoice
         from midicoder.io.messages import print_info, print_success, print_normal
         from midicoder.io.validators import validate_directory_path, normalize_directory_path
         from midicoder.config.defaults import (
@@ -298,15 +397,15 @@ class ConfigManager:
             default=LLM_PROVIDERS[0]
         )
         
-        default_high_url = PROVIDER_BASE_URLS.get(llm_high_provider, "")
-        llm_high_url = prompt_text(
-            "Base URL",
-            default=default_high_url
+        default_high_url = PROVIDER_BASE_URLS.get(llm_high_provider)
+        llm_high_url, llm_high_key = _prompt_provider_common_fields(
+            tier_label="High",
+            provider=llm_high_provider,
+            default_base_url=default_high_url,
         )
-        
-        llm_high_key = prompt_secret(
-            "API key",
-            confirm=False
+        high_provider_specific = _prompt_provider_specific_fields(
+            provider=llm_high_provider,
+            tier_label="High",
         )
         
         default_high_model = PROVIDER_DEFAULT_MODELS.get(llm_high_provider, {}).get("high", "")
@@ -330,30 +429,43 @@ class ConfigManager:
         # If same provider as high, use high's values as defaults
         same_provider = (llm_cheap_provider == llm_high_provider)
         
+        default_cheap_url: str | None = None
         if same_provider:
-            default_cheap_url = llm_high_url or PROVIDER_BASE_URLS.get(llm_cheap_provider, "")
-            print_info(f"Using same provider as high-level. Base URL defaults to: {default_cheap_url}")
+            default_cheap_url = llm_high_url or PROVIDER_BASE_URLS.get(llm_cheap_provider)
+            if llm_cheap_provider in {"anthropic", "openai"}:
+                print_info(
+                    f"Using same provider as high-level. Base URL defaults to: {default_cheap_url}"
+                )
         else:
-            default_cheap_url = PROVIDER_BASE_URLS.get(llm_cheap_provider, "")
-        
-        llm_cheap_url = prompt_text(
-            "Base URL",
-            default=default_cheap_url
+            default_cheap_url = PROVIDER_BASE_URLS.get(llm_cheap_provider)
+
+        llm_cheap_url, llm_cheap_key = _prompt_provider_common_fields(
+            tier_label="Cheap",
+            provider=llm_cheap_provider,
+            default_base_url=default_cheap_url,
         )
-        
+
+        cheap_defaults = high_provider_specific if same_provider else None
+        cheap_provider_specific = _prompt_provider_specific_fields(
+            provider=llm_cheap_provider,
+            tier_label="Cheap",
+            defaults=cheap_defaults,
+        )
+
         if same_provider:
             print_info("Using same provider. You can reuse the same API key or enter a different one.")
-        
-        llm_cheap_key = prompt_secret(
-            "API key",
-            confirm=False
-        )
-        
+
         # If no key provided and same provider, reuse high key
         if not llm_cheap_key and same_provider:
             llm_cheap_key = llm_high_key
             if llm_cheap_key:
                 print_info("Using same API key as high-level configuration")
+
+        # If same provider and provider-specific fields left blank, reuse from high tier.
+        if same_provider:
+            for field_name, field_value in cheap_provider_specific.items():
+                if field_value is None and high_provider_specific.get(field_name):
+                    cheap_provider_specific[field_name] = high_provider_specific[field_name]
         
         default_cheap_model = PROVIDER_DEFAULT_MODELS.get(llm_cheap_provider, {}).get("cheap", "")
         print_info(f"Recommended model: {default_cheap_model}")
@@ -370,13 +482,15 @@ class ConfigManager:
             "llm": {
                 "high": {
                     "model": llm_high_model or None,
-                    "base_url": llm_high_url or None,
+                    "base_url": llm_high_url,
                     "provider": llm_high_provider or None,
+                    **high_provider_specific,
                 },
                 "cheap": {
                     "model": llm_cheap_model or None,
-                    "base_url": llm_cheap_url or None,
+                    "base_url": llm_cheap_url,
                     "provider": llm_cheap_provider or None,
+                    **cheap_provider_specific,
                 },
             },
             "cache": {
@@ -384,6 +498,22 @@ class ConfigManager:
                 "type": "ephemeral",
             },
         }
+
+        llm_secrets = {
+            "high": {
+                "provider": llm_high_provider or None,
+                "api_key": llm_high_key or None,
+            },
+            "cheap": {
+                "provider": llm_cheap_provider or None,
+                "api_key": llm_cheap_key or None,
+            },
+        }
+
+        if validate_fn:
+            errors = validate_fn(config, llm_secrets)
+            if errors:
+                raise ValueError("\n".join(errors))
         
         self.save(config)
         
@@ -391,10 +521,6 @@ class ConfigManager:
         secrets_manager = SecretsManager(self.paths.secrets)
         secrets_manager.initialize_empty()  # Initialize with all categories
         
-        llm_secrets = {
-            "high": {"api_key": llm_high_key or None},
-            "cheap": {"api_key": llm_cheap_key or None},
-        }
         secrets_manager.save_secrets("llm", llm_secrets)
         
         # Success summary

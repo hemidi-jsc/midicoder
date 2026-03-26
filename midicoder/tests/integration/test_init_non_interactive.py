@@ -25,6 +25,7 @@ class TestInitNonInteractive:
         assert "--working-dir" in captured.out
         assert "--stack" in captured.out
         assert "--llm-high-provider" in captured.out
+        assert "--rewrite-config" in captured.out
     
     def test_init_from_env_vars(self, tmp_path):
         """Test init using environment variables."""
@@ -262,3 +263,143 @@ class TestInitNonInteractive:
         finally:
             del os.environ["CUSTOM_HIGH_KEY"]
             del os.environ["CUSTOM_CHEAP_KEY"]
+
+    def test_init_with_azure_provider_specific_fields(self, tmp_path):
+        """Azure provider config should be accepted with provider-specific fields."""
+        os.environ["AZURE_HIGH_KEY"] = "sk-azure-high"
+        os.environ["AZURE_CHEAP_KEY"] = "sk-azure-cheap"
+
+        try:
+            class Args:
+                config_list = False
+                non_interactive = True
+                env_prefix = "MIDICODER_"
+                working_dir = str(tmp_path)
+                stack = "fastapi"
+                llm_high_provider = "azure_openai"
+                llm_high_model = "azure/gpt-4o"
+                llm_high_url = None
+                llm_high_key = None
+                llm_high_key_env = "AZURE_HIGH_KEY"
+                llm_high_aws_bedrock_region = None
+                llm_high_azure_openai_endpoint = "https://my-resource.openai.azure.com"
+                llm_high_azure_openai_api_version = "2024-10-21"
+                llm_high_azure_openai_deployment = "gpt-4o-prod"
+                llm_high_google_vertex_project = None
+                llm_high_google_vertex_location = None
+                llm_cheap_provider = "azure_openai"
+                llm_cheap_model = "azure/gpt-4o-mini"
+                llm_cheap_url = None
+                llm_cheap_key = None
+                llm_cheap_key_env = "AZURE_CHEAP_KEY"
+                llm_cheap_aws_bedrock_region = None
+                llm_cheap_azure_openai_endpoint = "https://my-resource.openai.azure.com"
+                llm_cheap_azure_openai_api_version = "2024-10-21"
+                llm_cheap_azure_openai_deployment = "gpt-4o-mini-dev"
+                llm_cheap_google_vertex_project = None
+                llm_cheap_google_vertex_location = None
+
+            run(tmp_path, Args())
+
+            paths = MidicoderPaths(root=tmp_path)
+            config = ConfigManager(paths).load()
+            assert config["llm"]["high"]["provider"] == "azure_openai"
+            assert config["llm"]["high"]["azure_openai_endpoint"] == "https://my-resource.openai.azure.com"
+            assert config["llm"]["high"]["azure_openai_api_version"] == "2024-10-21"
+            assert config["llm"]["high"]["azure_openai_deployment"] == "gpt-4o-prod"
+            assert config["llm"]["high"]["base_url"] is None
+
+        finally:
+            del os.environ["AZURE_HIGH_KEY"]
+            del os.environ["AZURE_CHEAP_KEY"]
+
+    def test_non_interactive_refuses_overwrite_without_rewrite_flag(self, tmp_path):
+        """Non-interactive mode should fail-fast when config exists and rewrite not allowed."""
+        os.environ["TEST_API_KEY_HIGH"] = "sk-high"
+        os.environ["TEST_API_KEY_CHEAP"] = "sk-cheap"
+
+        try:
+            class Args:
+                config_list = False
+                non_interactive = True
+                env_prefix = "MIDICODER_"
+                rewrite_config = False
+                working_dir = str(tmp_path)
+                stack = "fastapi"
+                llm_high_provider = "anthropic"
+                llm_high_model = "anthropic/claude-3-7-sonnet-latest"
+                llm_high_url = "https://api.anthropic.com"
+                llm_high_key = None
+                llm_high_key_env = "TEST_API_KEY_HIGH"
+                llm_high_aws_bedrock_region = None
+                llm_high_azure_openai_endpoint = None
+                llm_high_azure_openai_api_version = None
+                llm_high_azure_openai_deployment = None
+                llm_high_google_vertex_project = None
+                llm_high_google_vertex_location = None
+                llm_cheap_provider = "anthropic"
+                llm_cheap_model = "anthropic/claude-3-5-haiku-latest"
+                llm_cheap_url = "https://api.anthropic.com"
+                llm_cheap_key = None
+                llm_cheap_key_env = "TEST_API_KEY_CHEAP"
+                llm_cheap_aws_bedrock_region = None
+                llm_cheap_azure_openai_endpoint = None
+                llm_cheap_azure_openai_api_version = None
+                llm_cheap_azure_openai_deployment = None
+                llm_cheap_google_vertex_project = None
+                llm_cheap_google_vertex_location = None
+
+            run(tmp_path, Args())  # initial write
+
+            with pytest.raises(SystemExit):
+                run(tmp_path, Args())  # second write should fail without rewrite flag
+
+        finally:
+            del os.environ["TEST_API_KEY_HIGH"]
+            del os.environ["TEST_API_KEY_CHEAP"]
+
+    def test_non_interactive_allows_overwrite_with_rewrite_flag(self, tmp_path):
+        """Non-interactive mode should overwrite when rewrite flag is explicitly enabled."""
+        os.environ["TEST_API_KEY_HIGH"] = "sk-high"
+        os.environ["TEST_API_KEY_CHEAP"] = "sk-cheap"
+
+        try:
+            class Args:
+                config_list = False
+                non_interactive = True
+                env_prefix = "MIDICODER_"
+                rewrite_config = True
+                working_dir = str(tmp_path)
+                stack = "fastapi"
+                llm_high_provider = "anthropic"
+                llm_high_model = "anthropic/claude-3-7-sonnet-latest"
+                llm_high_url = "https://api.anthropic.com"
+                llm_high_key = None
+                llm_high_key_env = "TEST_API_KEY_HIGH"
+                llm_high_aws_bedrock_region = None
+                llm_high_azure_openai_endpoint = None
+                llm_high_azure_openai_api_version = None
+                llm_high_azure_openai_deployment = None
+                llm_high_google_vertex_project = None
+                llm_high_google_vertex_location = None
+                llm_cheap_provider = "anthropic"
+                llm_cheap_model = "anthropic/claude-3-5-haiku-latest"
+                llm_cheap_url = "https://api.anthropic.com"
+                llm_cheap_key = None
+                llm_cheap_key_env = "TEST_API_KEY_CHEAP"
+                llm_cheap_aws_bedrock_region = None
+                llm_cheap_azure_openai_endpoint = None
+                llm_cheap_azure_openai_api_version = None
+                llm_cheap_azure_openai_deployment = None
+                llm_cheap_google_vertex_project = None
+                llm_cheap_google_vertex_location = None
+
+            run(tmp_path, Args())
+            run(tmp_path, Args())  # overwrite permitted
+
+            config = ConfigManager(MidicoderPaths(root=tmp_path)).load()
+            assert config["llm"]["high"]["provider"] == "anthropic"
+
+        finally:
+            del os.environ["TEST_API_KEY_HIGH"]
+            del os.environ["TEST_API_KEY_CHEAP"]

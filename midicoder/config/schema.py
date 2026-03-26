@@ -7,6 +7,23 @@ from typing import Any
 from .defaults import CONFIG_FIELDS, DEFAULT_STACK
 
 
+def _get_default_llm_tier_config() -> dict:
+    """Get default LLM tier config (common + provider-specific fields)."""
+    return {
+        # Common fields (shared by all providers)
+        "provider": None,
+        "model": None,
+        "base_url": None,
+        # Provider-specific fields (namespace by provider prefix)
+        "aws_bedrock_region": None,
+        "azure_openai_endpoint": None,
+        "azure_openai_api_version": None,
+        "azure_openai_deployment": None,
+        "google_vertex_project": None,
+        "google_vertex_location": None,
+    }
+
+
 def get_config_template() -> dict:
     """
     Get a basic configuration template.
@@ -24,14 +41,8 @@ def get_config_template() -> dict:
         "stack": DEFAULT_STACK,
         "commands": [],
         "llm": {
-            "high": {
-                "model": None,
-                "base_url": None,
-            },
-            "cheap": {
-                "model": None,
-                "base_url": None,
-            },
+            "high": _get_default_llm_tier_config(),
+            "cheap": _get_default_llm_tier_config(),
         },
         "cache": {
             "enable": True,
@@ -70,7 +81,10 @@ def apply_defaults(config: dict) -> dict:
         result["commands"] = []
     
     if "llm" not in result:
-        result["llm"] = {}
+        result["llm"] = {
+            "high": _get_default_llm_tier_config(),
+            "cheap": _get_default_llm_tier_config(),
+        }
     
     if "cache" not in result:
         result["cache"] = {
