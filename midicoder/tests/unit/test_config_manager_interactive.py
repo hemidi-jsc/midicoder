@@ -79,9 +79,7 @@ def test_initialize_interactive_uses_shared_validator(monkeypatch, tmp_path) -> 
     text_answers = iter(
         [
             str(tmp_path),
-            "https://api.anthropic.com",
             "anthropic/claude-3-7-sonnet-latest",
-            "https://api.anthropic.com",
             "anthropic/claude-3-5-haiku-latest",
         ]
     )
@@ -97,6 +95,7 @@ def test_initialize_interactive_uses_shared_validator(monkeypatch, tmp_path) -> 
 
     def reject_validator(config, llm_secrets):
         assert config["llm"]["high"]["provider"] == "anthropic"
+        assert config["llm"]["high"]["base_url"] == "https://api.anthropic.com"
         assert llm_secrets["high"]["provider"] == "anthropic"
         return ["forced validation error"]
 

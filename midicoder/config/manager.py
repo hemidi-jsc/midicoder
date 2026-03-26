@@ -26,19 +26,25 @@ def _prompt_provider_common_fields(
     default_base_url: str | None,
 ):
     """Prompt common fields shared by all providers."""
-    from midicoder.io import prompt_text, prompt_secret
+    from midicoder.io import prompt_secret
     from midicoder.io.messages import print_info
 
-    llm_url: str | None = None
     if provider in {"anthropic", "openai"}:
-        llm_url = prompt_text("Base URL", default=default_base_url or "")
+        # Use default provider URL without asking user to type it.
+        llm_url = _normalize_optional_text(default_base_url)
+        if llm_url:
+            print_info(f"{tier_label} tier provider '{provider}' uses default base URL: {llm_url}")
+    elif provider == "openai_compatible":
+        from midicoder.io import prompt_text
+        llm_url = _normalize_optional_text(prompt_text("Base URL", default=default_base_url or ""))
     else:
+        llm_url = None
         print_info(
             f"{tier_label} tier provider '{provider}' uses provider-specific connection settings."
         )
 
     llm_key = prompt_secret("API key", confirm=False)
-    return _normalize_optional_text(llm_url), _normalize_optional_text(llm_key)
+    return llm_url, _normalize_optional_text(llm_key)
 
 
 def _prompt_provider_specific_fields(
@@ -53,23 +59,26 @@ def _prompt_provider_specific_fields(
 
     defaults = defaults or {}
     fields = {
+        "aws_region_name": None,
         "aws_bedrock_region": None,
         "azure_openai_endpoint": None,
         "azure_openai_api_version": None,
         "azure_openai_deployment": None,
-        "google_vertex_project": None,
-        "google_vertex_location": None,
+        "vertex_project": None,
+        "vertex_location": None,
     }
 
-    if provider == "aws_bedrock":
-        print_info(f"{tier_label} tier requires AWS Bedrock region.")
-        fields["aws_bedrock_region"] = _normalize_optional_text(
+    if provider in {"bedrock", "aws_bedrock"}:
+        print_info(f"{tier_label} tier requires AWS region.")
+        aws_region = _normalize_optional_text(
             prompt_text(
-                "AWS Bedrock region",
-                default=defaults.get("aws_bedrock_region") or "us-east-1",
+                "AWS region name",
+                default=defaults.get("aws_region_name") or defaults.get("aws_bedrock_region") or "us-east-1",
             )
         )
-    elif provider == "azure_openai":
+        fields["aws_region_name"] = aws_region
+        fields["aws_bedrock_region"] = aws_region
+    elif provider in {"azure", "azure_openai"}:
         print_info(f"{tier_label} tier requires Azure OpenAI endpoint/api-version/deployment.")
         fields["azure_openai_endpoint"] = _normalize_optional_text(
             prompt_text(
@@ -89,20 +98,22 @@ def _prompt_provider_specific_fields(
                 default=defaults.get("azure_openai_deployment") or "",
             )
         )
-    elif provider == "google_vertex":
-        print_info(f"{tier_label} tier requires Google Vertex project/location.")
-        fields["google_vertex_project"] = _normalize_optional_text(
+    elif provider == "vertex_partner":
+        print_info(f"{tier_label} tier requires Vertex project/location.")
+        vertex_project = _normalize_optional_text(
             prompt_text(
-                "Google Vertex project id",
-                default=defaults.get("google_vertex_project") or "",
+                "Vertex project id",
+                default=defaults.get("vertex_project") or "",
             )
         )
-        fields["google_vertex_location"] = _normalize_optional_text(
+        vertex_location = _normalize_optional_text(
             prompt_text(
-                "Google Vertex location",
-                default=defaults.get("google_vertex_location") or "us-central1",
+                "Vertex location",
+                default=defaults.get("vertex_location") or "us-central1",
             )
         )
+        fields["vertex_project"] = vertex_project
+        fields["vertex_location"] = vertex_location
 
     return fields
 
@@ -432,7 +443,7 @@ class ConfigManager:
         default_cheap_url: str | None = None
         if same_provider:
             default_cheap_url = llm_high_url or PROVIDER_BASE_URLS.get(llm_cheap_provider)
-            if llm_cheap_provider in {"anthropic", "openai"}:
+            if llm_cheap_provider in {"anthropic", "openai", "openai_compatible"}:
                 print_info(
                     f"Using same provider as high-level. Base URL defaults to: {default_cheap_url}"
                 )

@@ -15,12 +15,13 @@ def _get_default_llm_tier_config() -> dict:
         "model": None,
         "base_url": None,
         # Provider-specific fields (namespace by provider prefix)
+        "aws_region_name": None,
         "aws_bedrock_region": None,
         "azure_openai_endpoint": None,
         "azure_openai_api_version": None,
         "azure_openai_deployment": None,
-        "google_vertex_project": None,
-        "google_vertex_location": None,
+        "vertex_project": None,
+        "vertex_location": None,
     }
 
 

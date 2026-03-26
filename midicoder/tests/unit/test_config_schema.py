@@ -12,12 +12,13 @@ def test_config_template_includes_provider_specific_fields() -> None:
         assert "provider" in tier_cfg
         assert "model" in tier_cfg
         assert "base_url" in tier_cfg
+        assert "aws_region_name" in tier_cfg
         assert "aws_bedrock_region" in tier_cfg
         assert "azure_openai_endpoint" in tier_cfg
         assert "azure_openai_api_version" in tier_cfg
         assert "azure_openai_deployment" in tier_cfg
-        assert "google_vertex_project" in tier_cfg
-        assert "google_vertex_location" in tier_cfg
+        assert "vertex_project" in tier_cfg
+        assert "vertex_location" in tier_cfg
 
 
 def test_apply_defaults_is_backward_compatible_with_legacy_llm_shape() -> None:

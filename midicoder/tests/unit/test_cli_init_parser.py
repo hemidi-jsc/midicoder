@@ -13,13 +13,13 @@ def test_init_parser_accepts_new_provider_choices() -> None:
             "--stack",
             "fastapi",
             "--llm-high-provider",
-            "azure_openai",
+            "azure",
             "--llm-high-model",
             "azure/gpt-4o",
             "--llm-high-url",
             "https://example.com",
             "--llm-cheap-provider",
-            "google_vertex",
+            "vertex_partner",
             "--llm-cheap-model",
             "vertex_ai/gemini-1.5-flash",
             "--llm-cheap-url",
@@ -28,8 +28,8 @@ def test_init_parser_accepts_new_provider_choices() -> None:
     )
 
     assert args.command == "init"
-    assert args.llm_high_provider == "azure_openai"
-    assert args.llm_cheap_provider == "google_vertex"
+    assert args.llm_high_provider == "azure"
+    assert args.llm_cheap_provider == "vertex_partner"
 
 
 def test_init_parser_accepts_provider_specific_flags() -> None:
@@ -42,15 +42,15 @@ def test_init_parser_accepts_provider_specific_flags() -> None:
             "--stack",
             "fastapi",
             "--llm-high-provider",
-            "aws_bedrock",
+            "bedrock",
             "--llm-high-model",
             "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
             "--llm-high-url",
             "https://example.com",
-            "--llm-high-aws-bedrock-region",
+            "--llm-high-aws-region-name",
             "us-east-1",
             "--llm-cheap-provider",
-            "azure_openai",
+            "azure",
             "--llm-cheap-model",
             "azure/gpt-4o-mini",
             "--llm-cheap-url",
@@ -64,7 +64,7 @@ def test_init_parser_accepts_provider_specific_flags() -> None:
         ]
     )
 
-    assert args.llm_high_aws_bedrock_region == "us-east-1"
+    assert args.llm_high_aws_region_name == "us-east-1"
     assert args.llm_cheap_azure_openai_endpoint == "https://my-resource.openai.azure.com"
     assert args.llm_cheap_azure_openai_api_version == "2024-10-21"
     assert args.llm_cheap_azure_openai_deployment == "gpt-4o-mini-dev"

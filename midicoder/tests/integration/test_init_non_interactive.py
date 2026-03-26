@@ -227,6 +227,36 @@ class TestInitNonInteractive:
                 llm_cheap_key_env = None
             
             run(tmp_path, Args())
+
+    def test_init_allows_null_api_keys(self, tmp_path):
+        """Non-interactive init should allow omitted API keys for both tiers."""
+        class Args:
+            config_list = False
+            non_interactive = True
+            env_prefix = "MIDICODER_"
+            working_dir = str(tmp_path)
+            stack = "fastapi"
+            llm_high_provider = "anthropic"
+            llm_high_model = "claude-sonnet-4-5"
+            llm_high_url = "https://api.anthropic.com"
+            llm_high_key = None
+            llm_high_key_env = None
+            llm_cheap_provider = "anthropic"
+            llm_cheap_model = "claude-3-5-haiku"
+            llm_cheap_url = "https://api.anthropic.com"
+            llm_cheap_key = None
+            llm_cheap_key_env = None
+
+        run(tmp_path, Args())
+
+        paths = MidicoderPaths(root=tmp_path)
+        config = ConfigManager(paths).load()
+        assert config["llm"]["high"]["provider"] == "anthropic"
+        assert config["llm"]["cheap"]["provider"] == "anthropic"
+
+        llm_secrets = SecretsManager(paths.secrets).load_secrets("llm")
+        assert "api_key" not in llm_secrets["high"]
+        assert "api_key" not in llm_secrets["cheap"]
     
     def test_init_with_key_env_reference(self, tmp_path):
         """Test using --llm-*-key-env to reference custom env var."""
@@ -313,7 +343,7 @@ class TestInitNonInteractive:
             del os.environ["AZURE_HIGH_KEY"]
             del os.environ["AZURE_CHEAP_KEY"]
 
-    def test_non_interactive_refuses_overwrite_without_rewrite_flag(self, tmp_path):
+    def test_non_interactive_refuses_overwrite_without_rewrite_flag(self, tmp_path, capsys):
         """Non-interactive mode should fail-fast when config exists and rewrite not allowed."""
         os.environ["TEST_API_KEY_HIGH"] = "sk-high"
         os.environ["TEST_API_KEY_CHEAP"] = "sk-cheap"
@@ -354,11 +384,15 @@ class TestInitNonInteractive:
             with pytest.raises(SystemExit):
                 run(tmp_path, Args())  # second write should fail without rewrite flag
 
+            captured = capsys.readouterr()
+            assert "Overwrite Mode" in captured.out
+            assert "will be kept" in captured.out
+
         finally:
             del os.environ["TEST_API_KEY_HIGH"]
             del os.environ["TEST_API_KEY_CHEAP"]
 
-    def test_non_interactive_allows_overwrite_with_rewrite_flag(self, tmp_path):
+    def test_non_interactive_allows_overwrite_with_rewrite_flag(self, tmp_path, capsys):
         """Non-interactive mode should overwrite when rewrite flag is explicitly enabled."""
         os.environ["TEST_API_KEY_HIGH"] = "sk-high"
         os.environ["TEST_API_KEY_CHEAP"] = "sk-cheap"
@@ -395,10 +429,19 @@ class TestInitNonInteractive:
                 llm_cheap_google_vertex_location = None
 
             run(tmp_path, Args())
+            legacy_log = tmp_path / ".midicoder" / "runs" / "legacy-log.txt"
+            legacy_log.parent.mkdir(parents=True, exist_ok=True)
+            legacy_log.write_text("old-run-log", encoding="utf-8")
+
             run(tmp_path, Args())  # overwrite permitted
 
             config = ConfigManager(MidicoderPaths(root=tmp_path)).load()
             assert config["llm"]["high"]["provider"] == "anthropic"
+            assert legacy_log.exists()
+
+            captured = capsys.readouterr()
+            assert "Overwrite Mode" in captured.out
+            assert "will be kept" in captured.out
 
         finally:
             del os.environ["TEST_API_KEY_HIGH"]

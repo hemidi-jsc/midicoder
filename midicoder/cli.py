@@ -143,69 +143,80 @@ def _build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--llm-high-aws-bedrock-region",
         type=str,
-        help="AWS Bedrock region for high-tier provider=aws_bedrock"
+        help="AWS Bedrock region for high-tier provider=bedrock (legacy alias supported)"
+    )
+    init_parser.add_argument(
+        "--llm-high-aws-region-name",
+        type=str,
+        help="AWS region name for high-tier provider=bedrock"
     )
     init_parser.add_argument(
         "--llm-cheap-aws-bedrock-region",
         type=str,
-        help="AWS Bedrock region for cheap-tier provider=aws_bedrock"
+        help="AWS Bedrock region for cheap-tier provider=bedrock (legacy alias supported)"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-aws-region-name",
+        type=str,
+        help="AWS region name for cheap-tier provider=bedrock"
     )
 
     # Provider-specific options (Azure OpenAI)
     init_parser.add_argument(
         "--llm-high-azure-openai-endpoint",
         type=str,
-        help="Azure OpenAI endpoint for high-tier provider=azure_openai"
+        help="Azure OpenAI endpoint for high-tier provider=azure (legacy alias supported)"
     )
     init_parser.add_argument(
         "--llm-high-azure-openai-api-version",
         type=str,
-        help="Azure OpenAI API version for high-tier provider=azure_openai"
+        help="Azure OpenAI API version for high-tier provider=azure (legacy alias supported)"
     )
     init_parser.add_argument(
         "--llm-high-azure-openai-deployment",
         type=str,
-        help="Azure OpenAI deployment name for high-tier provider=azure_openai"
+        help="Azure OpenAI deployment name for high-tier provider=azure (legacy alias supported)"
     )
     init_parser.add_argument(
         "--llm-cheap-azure-openai-endpoint",
         type=str,
-        help="Azure OpenAI endpoint for cheap-tier provider=azure_openai"
+        help="Azure OpenAI endpoint for cheap-tier provider=azure (legacy alias supported)"
     )
     init_parser.add_argument(
         "--llm-cheap-azure-openai-api-version",
         type=str,
-        help="Azure OpenAI API version for cheap-tier provider=azure_openai"
+        help="Azure OpenAI API version for cheap-tier provider=azure (legacy alias supported)"
     )
     init_parser.add_argument(
         "--llm-cheap-azure-openai-deployment",
         type=str,
-        help="Azure OpenAI deployment name for cheap-tier provider=azure_openai"
+        help="Azure OpenAI deployment name for cheap-tier provider=azure (legacy alias supported)"
     )
 
-    # Provider-specific options (Google Vertex)
+    # Provider-specific options (Vertex Partner / Vertex AI)
     init_parser.add_argument(
-        "--llm-high-google-vertex-project",
+        "--llm-high-vertex-project",
         type=str,
-        help="Google Vertex project id for high-tier provider=google_vertex"
+        help="Vertex project id for high-tier provider=vertex_partner"
     )
     init_parser.add_argument(
-        "--llm-high-google-vertex-location",
+        "--llm-high-vertex-location",
         type=str,
-        help="Google Vertex location for high-tier provider=google_vertex"
+        help="Vertex location for high-tier provider=vertex_partner"
     )
     init_parser.add_argument(
-        "--llm-cheap-google-vertex-project",
+        "--llm-cheap-vertex-project",
         type=str,
-        help="Google Vertex project id for cheap-tier provider=google_vertex"
+        help="Vertex project id for cheap-tier provider=vertex_partner"
     )
     init_parser.add_argument(
-        "--llm-cheap-google-vertex-location",
+        "--llm-cheap-vertex-location",
         type=str,
-        help="Google Vertex location for cheap-tier provider=google_vertex"
+        help="Vertex location for cheap-tier provider=vertex_partner"
     )
+
     
-    
+
     index_parser = subparsers.add_parser("index")
     index_sub = index_parser.add_subparsers(dest="index_subcommand", required=False)
     reindex_parser = index_sub.add_parser("reindex")

@@ -25,19 +25,32 @@ from .base import (
 )
 
 PROVIDER_REQUIRED_FIELDS: dict[str, list[str]] = {
-    "anthropic": ["base_url"],
-    "openai": ["base_url"],
-    "aws_bedrock": ["aws_bedrock_region"],
-    "azure_openai": [
+    "openai_compatible": ["base_url"],
+    "bedrock": ["aws_region_name"],
+    "azure": [
         "azure_openai_endpoint",
         "azure_openai_api_version",
         "azure_openai_deployment",
     ],
-    "google_vertex": [
-        "google_vertex_project",
-        "google_vertex_location",
+    "vertex_partner": [
+        "vertex_project",
+        "vertex_location",
     ],
 }
+
+_PROVIDER_ALIASES: dict[str, str] = {
+    "aws_bedrock": "bedrock",
+    "azure_openai": "azure",
+}
+
+
+def _warn_existing_workspace_detected() -> None:
+    """Show overwrite behavior when an existing config is detected."""
+    print_warning(
+        "Config already exists. Overwrite will update config/secrets only.",
+        title="Overwrite Mode",
+    )
+    print_info("Existing runs, logs, versions, index, and other .midicoder data will be kept.")
 
 
 def _parse_optional_bool(value: Any) -> bool | None:
@@ -52,6 +65,16 @@ def _parse_optional_bool(value: Any) -> bool | None:
     if text in {"0", "false", "no", "n", "off"}:
         return False
     raise ValueError(f"Invalid boolean value: '{value}'")
+
+
+def _normalize_provider_name(provider: Any) -> str | None:
+    """Normalize provider aliases to canonical provider ids."""
+    if provider is None:
+        return None
+    text = str(provider).strip().lower()
+    if not text:
+        return None
+    return _PROVIDER_ALIASES.get(text, text)
 
 
 def _config_overwrite_requested(args: Any, env_prefix: str) -> bool:
@@ -208,7 +231,7 @@ def _validate_required_config(
     for tier in ["high", "cheap"]:
         tier_config = config.get("llm", {}).get(tier, {})
         
-        provider = tier_config.get("provider")
+        provider = _normalize_provider_name(tier_config.get("provider"))
         if not provider:
             errors.append(f"LLM {tier} tier provider is required")
         elif provider not in LLM_PROVIDERS:
@@ -220,6 +243,9 @@ def _validate_required_config(
         if not tier_config.get("model"):
             errors.append(f"LLM {tier} tier model is required")
 
+        # Backward-compatible field aliases.
+        if not tier_config.get("aws_region_name") and tier_config.get("aws_bedrock_region"):
+            tier_config["aws_region_name"] = tier_config.get("aws_bedrock_region")
         if provider in PROVIDER_REQUIRED_FIELDS:
             for required_field in PROVIDER_REQUIRED_FIELDS[provider]:
                 if not tier_config.get(required_field):
@@ -229,14 +255,6 @@ def _validate_required_config(
                         f"Set via {flag} or {env_key}."
                     )
         
-        # Check API key in secrets
-        tier_secrets = secrets.get("llm", {}).get(tier, {})
-        if not tier_secrets.get("api_key"):
-            errors.append(
-                f"LLM {tier} tier API key is required. "
-                f"Set via --llm-{tier}-key-env flag or MIDICODER_LLM_{tier.upper()}_API_KEY env var."
-            )
-    
     return errors
 
 
@@ -257,6 +275,7 @@ def _build_llm_tier_config(tier: str, args: Any, env_prefix: str) -> dict[str, A
         f"LLM_{tier.upper()}_PROVIDER",
         env_prefix=env_prefix,
     )
+    provider = _normalize_provider_name(provider)
 
     tier_config: dict[str, Any] = {
         "provider": provider,
@@ -274,12 +293,13 @@ def _build_llm_tier_config(tier: str, args: Any, env_prefix: str) -> dict[str, A
     }
 
     provider_specific_fields = [
+        "aws_region_name",
         "aws_bedrock_region",
         "azure_openai_endpoint",
         "azure_openai_api_version",
         "azure_openai_deployment",
-        "google_vertex_project",
-        "google_vertex_location",
+        "vertex_project",
+        "vertex_location",
     ]
     for field in provider_specific_fields:
         tier_config[field] = _get_value_with_priority(
@@ -288,12 +308,16 @@ def _build_llm_tier_config(tier: str, args: Any, env_prefix: str) -> dict[str, A
             env_prefix=env_prefix,
         )
 
+    # Fill canonical provider fields from legacy aliases if needed.
+    if not tier_config.get("aws_region_name") and tier_config.get("aws_bedrock_region"):
+        tier_config["aws_region_name"] = tier_config["aws_bedrock_region"]
     return tier_config
 
 
 def _initialize_config_interactive(paths: MidicoderPaths) -> None:
     """Interactive initialization (existing behavior)."""
     if paths.config.exists():
+        _warn_existing_workspace_detected()
         overwrite = prompt_confirm(
             "Config already exists. Overwrite?",
             default=False
@@ -349,6 +373,7 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
         raise SystemExit(1)
 
     if paths.config.exists() and not rewrite_allowed:
+        _warn_existing_workspace_detected()
         print_error(
             "Config already exists. Refusing to overwrite in non-interactive mode "
             "without explicit rewrite permission.",
@@ -356,6 +381,9 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
         )
         print_info(f"Retry with --rewrite-config or set {env_prefix}REWRITE_CONFIG=true.")
         raise SystemExit(1)
+
+    if paths.config.exists() and rewrite_allowed:
+        _warn_existing_workspace_detected()
     
     # Build configuration using priority: flag > env var > default
     working_dir_raw = _get_value_with_priority(
@@ -460,8 +488,6 @@ def run(root: Path, args: Any = None) -> None:
     
     paths = MidicoderPaths(root=root)
     ensure_base_layout(paths)
-    run_dir = create_run_dir(paths, "init")
-    
     state_before = read_state(paths)
     
     # Determine mode
@@ -471,10 +497,14 @@ def run(root: Path, args: Any = None) -> None:
     if non_interactive:
         os.environ["MIDICODER_NON_INTERACTIVE"] = "true"
     
-    if non_interactive:
+    (
         _initialize_config_non_interactive(paths, args)
-    else:
-        _initialize_config_interactive(paths)
+        if non_interactive
+        else _initialize_config_interactive(paths)
+    )
+
+    ensure_base_layout(paths)
+    run_dir = create_run_dir(paths, "init")
     
     state = read_state(paths)
     write_state(paths, state)

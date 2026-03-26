@@ -98,7 +98,14 @@ class TestInitKeywords:
         assert high_kw is not None
         assert cheap_kw is not None
 
-        for provider in ["anthropic", "openai", "aws_bedrock", "azure_openai", "google_vertex"]:
+        for provider in [
+            "anthropic",
+            "openai",
+            "openai_compatible",
+            "bedrock",
+            "azure",
+            "vertex_partner",
+        ]:
             assert provider in high_kw.choices
             assert provider in cheap_kw.choices
 
@@ -107,16 +114,18 @@ class TestInitKeywords:
         expected_flags = [
             "--llm-high-aws-bedrock-region",
             "--llm-cheap-aws-bedrock-region",
+            "--llm-high-aws-region-name",
+            "--llm-cheap-aws-region-name",
             "--llm-high-azure-openai-endpoint",
             "--llm-high-azure-openai-api-version",
             "--llm-high-azure-openai-deployment",
             "--llm-cheap-azure-openai-endpoint",
             "--llm-cheap-azure-openai-api-version",
             "--llm-cheap-azure-openai-deployment",
-            "--llm-high-google-vertex-project",
-            "--llm-high-google-vertex-location",
-            "--llm-cheap-google-vertex-project",
-            "--llm-cheap-google-vertex-location",
+            "--llm-high-vertex-project",
+            "--llm-high-vertex-location",
+            "--llm-cheap-vertex-project",
+            "--llm-cheap-vertex-location",
         ]
         for flag in expected_flags:
             assert InitKeywords.get_by_flag(flag) is not None
@@ -259,6 +268,36 @@ class TestInitHelpers:
         finally:
             del os.environ["MIDICODER_REWRITE_CONFIG"]
 
+    def test_build_llm_tier_config_keeps_openai_provider(self):
+        """OpenAI provider should remain canonical and keep OpenAI default base URL."""
+        from midicoder.commands.init import _build_llm_tier_config
+
+        class Args:
+            llm_high_provider = "openai"
+            llm_high_model = "openai/gpt-4o-mini"
+            llm_high_url = None
+            llm_high_aws_bedrock_region = None
+            llm_high_azure_openai_endpoint = None
+            llm_high_azure_openai_api_version = None
+            llm_high_azure_openai_deployment = None
+            llm_high_vertex_project = None
+            llm_high_vertex_location = None
+
+        tier_cfg = _build_llm_tier_config("high", Args(), "MIDICODER_")
+
+        assert tier_cfg["provider"] == "openai"
+        assert tier_cfg["base_url"] == "https://api.openai.com/v1"
+
+    def test_warn_existing_workspace_detected_message(self, capsys):
+        """Overwrite warning should state that non-config data is preserved."""
+        from midicoder.commands.init import _warn_existing_workspace_detected
+
+        _warn_existing_workspace_detected()
+        captured = capsys.readouterr()
+
+        assert "Overwrite Mode" in captured.out
+        assert "will be kept" in captured.out
+
 
 class TestConfigValidation:
     """Test configuration validation."""
@@ -309,8 +348,8 @@ class TestConfigValidation:
         errors = _validate_required_config(config, secrets)
         assert any("Unsupported stack" in e for e in errors)
 
-    def test_validate_required_config_missing_api_key(self):
-        """Test validation fails when API key is missing."""
+    def test_validate_required_config_missing_api_key_allowed(self):
+        """Init validation should allow missing API keys (nullable secrets)."""
         from midicoder.commands.init import _validate_required_config
 
         config = {
@@ -331,7 +370,8 @@ class TestConfigValidation:
         secrets = {"llm": {"high": {}, "cheap": {}}}
 
         errors = _validate_required_config(config, secrets)
-        assert any("API key is required" in e for e in errors)
+        assert not any("API key is required" in e for e in errors)
+        assert len(errors) == 0
 
     def test_validate_required_config_missing_llm_provider(self):
         """Test validation fails when LLM provider is missing."""
