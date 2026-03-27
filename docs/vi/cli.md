@@ -26,24 +26,43 @@ midicoder init --config-list
 - `--non-interactive, -y`: Chạy ở chế độ non-interactive
 - `--config-list`: Hiển thị tất cả configuration keywords và thoát
 - `--env-prefix`: Environment variable prefix (mặc định: `MIDICODER_`)
+- `--rewrite-config`: Cho phép ghi đè `.midicoder/config.json` trong non-interactive (hoặc set `MIDICODER_REWRITE_CONFIG=true`)
 - `--working-dir`: Đường dẫn working directory
 - `--stack`: Danh sách tech stack cách nhau bằng dấu phẩy (vd: `fastapi,nest,angular`)
-- `--llm-high-provider`: High-tier LLM provider (`anthropic` hoặc `openai`)
-- `--llm-high-model`: Tên model LLM high-tier
-- `--llm-high-url`: Base URL API LLM high-tier
-- `--llm-high-key-env`: Environment variable chứa API key high-tier (khuyến nghị)
-- `--llm-high-key`: API key high-tier (visible trong process list, dùng `--llm-high-key-env` thay thế)
-- `--llm-cheap-provider`: Cheap-tier LLM provider
-- `--llm-cheap-model`: Tên model LLM cheap-tier
-- `--llm-cheap-url`: Base URL API LLM cheap-tier
-- `--llm-cheap-key-env`: Environment variable chứa API key cheap-tier (khuyến nghị)
-- `--llm-cheap-key`: API key cheap-tier (visible trong process list)
+- Provider `openai_compatible`:
+  - `--llm-high-provider`: High-tier provider (`anthropic`, `openai`, `openai_compatible`, `bedrock`, `azure`, `vertex_partner`)
+  - `--llm-cheap-provider`: Cheap-tier LLM provider
+  - `--llm-high-model`, `--llm-high-url`, `--llm-high-key`, `--llm-high-key-env`
+  - `--llm-cheap-model`, `--llm-cheap-url`, `--llm-cheap-key`, `--llm-cheap-key-env`
+- Provider `anthropic`:
+  - `--llm-high-anthropic-model`, `--llm-high-anthropic-key`, `--llm-high-anthropic-key-env`
+  - `--llm-cheap-anthropic-model`, `--llm-cheap-anthropic-key`, `--llm-cheap-anthropic-key-env`
+- Provider `openai`:
+  - `--llm-high-openai-model`, `--llm-high-openai-key`, `--llm-high-openai-key-env`
+  - `--llm-cheap-openai-model`, `--llm-cheap-openai-key`, `--llm-cheap-openai-key-env`
+- Provider `bedrock`:
+  - `--llm-high-bedrock-model`, `--llm-high-aws-region-name`, `--llm-high-aws-access-key-id`, `--llm-high-aws-access-key-id-env`, `--llm-high-aws-secret-access-key`, `--llm-high-aws-secret-access-key-env`
+  - `--llm-cheap-bedrock-model`, `--llm-cheap-aws-region-name`, `--llm-cheap-aws-access-key-id`, `--llm-cheap-aws-access-key-id-env`, `--llm-cheap-aws-secret-access-key`, `--llm-cheap-aws-secret-access-key-env`
+- Provider `azure`:
+  - `--llm-high-azure-model`, `--llm-high-azure-key`, `--llm-high-azure-key-env`, `--llm-high-azure-openai-endpoint`, `--llm-high-azure-openai-api-version`, `--llm-high-azure-openai-deployment`
+  - `--llm-cheap-azure-model`, `--llm-cheap-azure-key`, `--llm-cheap-azure-key-env`, `--llm-cheap-azure-openai-endpoint`, `--llm-cheap-azure-openai-api-version`, `--llm-cheap-azure-openai-deployment`
+- Provider `vertex_partner`:
+  - `--llm-high-vertex-model`, `--llm-high-vertex-key`, `--llm-high-vertex-key-env`, `--llm-high-vertex-project`, `--llm-high-vertex-location`
+  - `--llm-cheap-vertex-model`, `--llm-cheap-vertex-key`, `--llm-cheap-vertex-key-env`, `--llm-cheap-vertex-project`, `--llm-cheap-vertex-location`
 
 **Outputs:**
 
 - `.midicoder/config.json`: Cấu hình chính
 - `.midicoder/secrets.json`: API keys (gitignored)
 - `.midicoder/state.json`: Pipeline state
+
+**Lưu ý hành vi:**
+
+- Interactive sẽ hỏi xác nhận trước khi ghi đè config đã tồn tại.
+- Non-interactive sẽ fail-fast nếu config đã có sẵn, trừ khi có quyền ghi đè rõ ràng (`--rewrite-config` hoặc `MIDICODER_REWRITE_CONFIG=true`).
+- Nếu dùng `--env-prefix` tùy chỉnh, tên env var rewrite sẽ theo prefix đó (ví dụ `MC_REWRITE_CONFIG=true` với `--env-prefix MC_`).
+- Khi ghi đè chỉ cập nhật `config.json` và `secrets.json`; các dữ liệu khác như runs/logs/versions/index vẫn giữ nguyên.
+- API key có thể để trống ở thời điểm init (một số provider dùng credential ngoài như IAM), nhưng có thể lỗi ở bước gọi LLM sau đó nếu thiếu key phù hợp.
 
 **Ví dụ:**
 
@@ -55,8 +74,11 @@ midicoder init
 export MIDICODER_WORKING_DIR=/path/to/project
 export MIDICODER_STACK=fastapi,nest
 export MIDICODER_LLM_HIGH_PROVIDER=anthropic
-export MIDICODER_LLM_HIGH_MODEL=claude-sonnet-4-5
-export MIDICODER_LLM_HIGH_API_KEY=sk-ant-...
+export MIDICODER_LLM_HIGH_ANTHROPIC_MODEL=anthropic/claude-3-7-sonnet-latest
+export MIDICODER_LLM_HIGH_ANTHROPIC_API_KEY=sk-ant-...
+export MIDICODER_LLM_CHEAP_PROVIDER=anthropic
+export MIDICODER_LLM_CHEAP_ANTHROPIC_MODEL=anthropic/claude-3-5-haiku-latest
+export MIDICODER_LLM_CHEAP_ANTHROPIC_API_KEY=sk-ant-...
 midicoder init --non-interactive
 
 # Non-interactive với CLI flags
@@ -65,11 +87,14 @@ midicoder init \
   --working-dir /path/to/project \
   --stack fastapi \
   --llm-high-provider anthropic \
-  --llm-high-model claude-sonnet-4-5 \
-  --llm-high-key-env ANTHROPIC_API_KEY \
+  --llm-high-anthropic-model anthropic/claude-3-7-sonnet-latest \
+  --llm-high-anthropic-key-env ANTHROPIC_API_KEY \
   --llm-cheap-provider anthropic \
-  --llm-cheap-model claude-3-5-haiku \
-  --llm-cheap-key-env ANTHROPIC_API_KEY
+  --llm-cheap-anthropic-model anthropic/claude-3-5-haiku-latest \
+  --llm-cheap-anthropic-key-env ANTHROPIC_API_KEY
+
+# Ghi đè config có sẵn trong non-interactive
+midicoder init --non-interactive --rewrite-config
 ```
 
 **Xem thêm:** [Hướng dẫn Non-Interactive](non-interactive.md)
@@ -1022,13 +1047,19 @@ Midi Coder tôn trọng các environment variables này:
 - `MIDICODER_WORKING_DIR`: Đường dẫn working directory
 - `MIDICODER_STACK`: Danh sách stack cách nhau bằng dấu phẩy
 - `MIDICODER_LLM_HIGH_PROVIDER`: High-tier LLM provider
-- `MIDICODER_LLM_HIGH_MODEL`: High-tier LLM model
-- `MIDICODER_LLM_HIGH_URL`: High-tier LLM base URL
-- `MIDICODER_LLM_HIGH_API_KEY`: High-tier API key
 - `MIDICODER_LLM_CHEAP_PROVIDER`: Cheap-tier LLM provider
-- `MIDICODER_LLM_CHEAP_MODEL`: Cheap-tier LLM model
-- `MIDICODER_LLM_CHEAP_URL`: Cheap-tier LLM base URL
-- `MIDICODER_LLM_CHEAP_API_KEY`: Cheap-tier API key
+- `MIDICODER_LLM_HIGH_MODEL`, `MIDICODER_LLM_HIGH_URL`, `MIDICODER_LLM_HIGH_API_KEY`: Dùng cho provider `openai_compatible` (high tier)
+- `MIDICODER_LLM_CHEAP_MODEL`, `MIDICODER_LLM_CHEAP_URL`, `MIDICODER_LLM_CHEAP_API_KEY`: Dùng cho provider `openai_compatible` (cheap tier)
+- `MIDICODER_LLM_HIGH_ANTHROPIC_MODEL`, `MIDICODER_LLM_HIGH_ANTHROPIC_API_KEY`: Dùng cho provider `anthropic` (high tier)
+- `MIDICODER_LLM_CHEAP_ANTHROPIC_MODEL`, `MIDICODER_LLM_CHEAP_ANTHROPIC_API_KEY`: Dùng cho provider `anthropic` (cheap tier)
+- `MIDICODER_LLM_HIGH_OPENAI_MODEL`, `MIDICODER_LLM_HIGH_OPENAI_API_KEY`: Dùng cho provider `openai` (high tier)
+- `MIDICODER_LLM_CHEAP_OPENAI_MODEL`, `MIDICODER_LLM_CHEAP_OPENAI_API_KEY`: Dùng cho provider `openai` (cheap tier)
+- `MIDICODER_LLM_HIGH_BEDROCK_MODEL`, `MIDICODER_LLM_HIGH_AWS_REGION_NAME`, `MIDICODER_LLM_HIGH_AWS_ACCESS_KEY_ID`, `MIDICODER_LLM_HIGH_AWS_SECRET_ACCESS_KEY`: Dùng cho provider `bedrock` (high tier)
+- `MIDICODER_LLM_CHEAP_BEDROCK_MODEL`, `MIDICODER_LLM_CHEAP_AWS_REGION_NAME`, `MIDICODER_LLM_CHEAP_AWS_ACCESS_KEY_ID`, `MIDICODER_LLM_CHEAP_AWS_SECRET_ACCESS_KEY`: Dùng cho provider `bedrock` (cheap tier)
+- `MIDICODER_LLM_HIGH_AZURE_MODEL`, `MIDICODER_LLM_HIGH_AZURE_API_KEY`, `MIDICODER_LLM_HIGH_AZURE_OPENAI_ENDPOINT`, `MIDICODER_LLM_HIGH_AZURE_OPENAI_API_VERSION`, `MIDICODER_LLM_HIGH_AZURE_OPENAI_DEPLOYMENT`: Dùng cho provider `azure` (high tier)
+- `MIDICODER_LLM_CHEAP_AZURE_MODEL`, `MIDICODER_LLM_CHEAP_AZURE_API_KEY`, `MIDICODER_LLM_CHEAP_AZURE_OPENAI_ENDPOINT`, `MIDICODER_LLM_CHEAP_AZURE_OPENAI_API_VERSION`, `MIDICODER_LLM_CHEAP_AZURE_OPENAI_DEPLOYMENT`: Dùng cho provider `azure` (cheap tier)
+- `MIDICODER_LLM_HIGH_VERTEX_MODEL`, `MIDICODER_LLM_HIGH_VERTEX_API_KEY`, `MIDICODER_LLM_HIGH_VERTEX_PROJECT`, `MIDICODER_LLM_HIGH_VERTEX_LOCATION`: Dùng cho provider `vertex_partner` (high tier)
+- `MIDICODER_LLM_CHEAP_VERTEX_MODEL`, `MIDICODER_LLM_CHEAP_VERTEX_API_KEY`, `MIDICODER_LLM_CHEAP_VERTEX_PROJECT`, `MIDICODER_LLM_CHEAP_VERTEX_LOCATION`: Dùng cho provider `vertex_partner` (cheap tier)
 
 ### Cho Runtime
 

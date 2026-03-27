@@ -11,11 +11,13 @@
   "commands": [],
   "llm": {
     "high": {
-      "model": "claude-3-5-sonnet-20241022",
+      "provider": "anthropic",
+      "model": "anthropic/claude-3-7-sonnet-latest",
       "base_url": "https://api.anthropic.com"
     },
     "cheap": {
-      "model": "claude-3-5-haiku-20241022",
+      "provider": "anthropic",
+      "model": "anthropic/claude-3-5-haiku-latest",
       "base_url": "https://api.anthropic.com"
     }
   },
@@ -37,6 +39,12 @@
   Dùng cho các bước nặng như `contract gen` và quyết định patch.
 - `llm.cheap`
   Dùng cho việc chuyển đổi code giữa các stack.
+- `llm.*.provider`
+  ID provider cho từng tier. Giá trị hỗ trợ: `anthropic`, `openai`, `openai_compatible`, `bedrock`, `azure`, `vertex_partner`.
+- Các trường provider-specific
+  Tùy provider, init có thể yêu cầu thêm các trường như `aws_region_name`, `azure_openai_endpoint`, `azure_openai_api_version`, `azure_openai_deployment`, `vertex_project`, `vertex_location`.
+- Secrets theo provider
+  Với `bedrock`, mỗi tier được cấu hình còn cần `aws_access_key_id` và `aws_secret_access_key` trong `.midicoder/secrets.json` (hoặc credential tương đương từ môi trường chạy).
 - `cache`
   Bật cache tạm cho LLM.
 - `snapshot_whitelist`
@@ -60,5 +68,14 @@
 1. Command-line flags
 2. Environment variables
 3. Default
+
+## Hành vi ghi đè trong non-interactive init
+
+Nếu config đã tồn tại, non-interactive init sẽ từ chối ghi đè trừ khi bật rõ ràng:
+
+- `--rewrite-config`, hoặc
+- `MIDICODER_REWRITE_CONFIG=true`
+
+Việc ghi đè chỉ cập nhật `.midicoder/config.json` và `.midicoder/secrets.json`; các artifacts khác như runs, logs, versions, index trong `.midicoder` vẫn được giữ nguyên.
 
 Xem thêm tại `non-interactive.md`.

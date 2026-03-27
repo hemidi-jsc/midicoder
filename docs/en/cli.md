@@ -26,24 +26,43 @@ midicoder init --config-list
 - `--non-interactive, -y`: Run in non-interactive mode
 - `--config-list`: Show all available configuration keywords and exit
 - `--env-prefix`: Environment variable prefix (default: `MIDICODER_`)
+- `--rewrite-config`: Allow overwrite of existing `.midicoder/config.json` in non-interactive mode (or set `MIDICODER_REWRITE_CONFIG=true`)
 - `--working-dir`: Working directory path
 - `--stack`: Comma-separated tech stack(s) (e.g., `fastapi,nest,angular`)
-- `--llm-high-provider`: High-tier LLM provider (`anthropic` or `openai`)
-- `--llm-high-model`: High-tier LLM model name
-- `--llm-high-url`: High-tier LLM API base URL
-- `--llm-high-key-env`: Environment variable containing high-tier API key (recommended)
-- `--llm-high-key`: High-tier API key (visible in process list, use `--llm-high-key-env` instead)
-- `--llm-cheap-provider`: Cheap-tier LLM provider
-- `--llm-cheap-model`: Cheap-tier LLM model name
-- `--llm-cheap-url`: Cheap-tier LLM API base URL
-- `--llm-cheap-key-env`: Environment variable containing cheap-tier API key (recommended)
-- `--llm-cheap-key`: Cheap-tier API key (visible in process list)
+- Provider `openai_compatible`:
+  - `--llm-high-provider`: High-tier provider (`anthropic`, `openai`, `openai_compatible`, `bedrock`, `azure`, `vertex_partner`)
+  - `--llm-cheap-provider`: Cheap-tier LLM provider
+  - `--llm-high-model`, `--llm-high-url`, `--llm-high-key`, `--llm-high-key-env`
+  - `--llm-cheap-model`, `--llm-cheap-url`, `--llm-cheap-key`, `--llm-cheap-key-env`
+- Provider `anthropic`:
+  - `--llm-high-anthropic-model`, `--llm-high-anthropic-key`, `--llm-high-anthropic-key-env`
+  - `--llm-cheap-anthropic-model`, `--llm-cheap-anthropic-key`, `--llm-cheap-anthropic-key-env`
+- Provider `openai`:
+  - `--llm-high-openai-model`, `--llm-high-openai-key`, `--llm-high-openai-key-env`
+  - `--llm-cheap-openai-model`, `--llm-cheap-openai-key`, `--llm-cheap-openai-key-env`
+- Provider `bedrock`:
+  - `--llm-high-bedrock-model`, `--llm-high-aws-region-name`, `--llm-high-aws-access-key-id`, `--llm-high-aws-access-key-id-env`, `--llm-high-aws-secret-access-key`, `--llm-high-aws-secret-access-key-env`
+  - `--llm-cheap-bedrock-model`, `--llm-cheap-aws-region-name`, `--llm-cheap-aws-access-key-id`, `--llm-cheap-aws-access-key-id-env`, `--llm-cheap-aws-secret-access-key`, `--llm-cheap-aws-secret-access-key-env`
+- Provider `azure`:
+  - `--llm-high-azure-model`, `--llm-high-azure-key`, `--llm-high-azure-key-env`, `--llm-high-azure-openai-endpoint`, `--llm-high-azure-openai-api-version`, `--llm-high-azure-openai-deployment`
+  - `--llm-cheap-azure-model`, `--llm-cheap-azure-key`, `--llm-cheap-azure-key-env`, `--llm-cheap-azure-openai-endpoint`, `--llm-cheap-azure-openai-api-version`, `--llm-cheap-azure-openai-deployment`
+- Provider `vertex_partner`:
+  - `--llm-high-vertex-model`, `--llm-high-vertex-key`, `--llm-high-vertex-key-env`, `--llm-high-vertex-project`, `--llm-high-vertex-location`
+  - `--llm-cheap-vertex-model`, `--llm-cheap-vertex-key`, `--llm-cheap-vertex-key-env`, `--llm-cheap-vertex-project`, `--llm-cheap-vertex-location`
 
 **Outputs:**
 
 - `.midicoder/config.json`: Main configuration
 - `.midicoder/secrets.json`: API keys (gitignored)
 - `.midicoder/state.json`: Pipeline state
+
+**Behavior notes:**
+
+- Interactive mode asks for confirmation before overwriting an existing config.
+- Non-interactive mode fails fast if config already exists unless overwrite is explicitly allowed (`--rewrite-config` or `MIDICODER_REWRITE_CONFIG=true`).
+- When using a custom `--env-prefix`, rewrite env name follows that prefix (for example `MC_REWRITE_CONFIG=true` for `--env-prefix MC_`).
+- Overwrite updates only `config.json` and `secrets.json`; existing runs/logs/versions/index are kept.
+- API keys are optional at init time (some providers can use external credentials such as IAM), but missing keys can still fail later when calling LLM APIs.
 
 **Examples:**
 
@@ -55,8 +74,11 @@ midicoder init
 export MIDICODER_WORKING_DIR=/path/to/project
 export MIDICODER_STACK=fastapi,nest
 export MIDICODER_LLM_HIGH_PROVIDER=anthropic
-export MIDICODER_LLM_HIGH_MODEL=claude-sonnet-4-5
-export MIDICODER_LLM_HIGH_API_KEY=sk-ant-...
+export MIDICODER_LLM_HIGH_ANTHROPIC_MODEL=anthropic/claude-3-7-sonnet-latest
+export MIDICODER_LLM_HIGH_ANTHROPIC_API_KEY=sk-ant-...
+export MIDICODER_LLM_CHEAP_PROVIDER=anthropic
+export MIDICODER_LLM_CHEAP_ANTHROPIC_MODEL=anthropic/claude-3-5-haiku-latest
+export MIDICODER_LLM_CHEAP_ANTHROPIC_API_KEY=sk-ant-...
 midicoder init --non-interactive
 
 # Non-interactive with CLI flags
@@ -65,11 +87,14 @@ midicoder init \
   --working-dir /path/to/project \
   --stack fastapi \
   --llm-high-provider anthropic \
-  --llm-high-model claude-sonnet-4-5 \
-  --llm-high-key-env ANTHROPIC_API_KEY \
+  --llm-high-anthropic-model anthropic/claude-3-7-sonnet-latest \
+  --llm-high-anthropic-key-env ANTHROPIC_API_KEY \
   --llm-cheap-provider anthropic \
-  --llm-cheap-model claude-3-5-haiku \
-  --llm-cheap-key-env ANTHROPIC_API_KEY
+  --llm-cheap-anthropic-model anthropic/claude-3-5-haiku-latest \
+  --llm-cheap-anthropic-key-env ANTHROPIC_API_KEY
+
+# Overwrite existing config in non-interactive mode
+midicoder init --non-interactive --rewrite-config
 ```
 
 **See also:** [Non-Interactive Guide](non-interactive.md)
@@ -1022,13 +1047,19 @@ Midi Coder respects these environment variables:
 - `MIDICODER_WORKING_DIR`: Working directory path
 - `MIDICODER_STACK`: Comma-separated stack list
 - `MIDICODER_LLM_HIGH_PROVIDER`: High-tier LLM provider
-- `MIDICODER_LLM_HIGH_MODEL`: High-tier LLM model
-- `MIDICODER_LLM_HIGH_URL`: High-tier LLM base URL
-- `MIDICODER_LLM_HIGH_API_KEY`: High-tier API key
 - `MIDICODER_LLM_CHEAP_PROVIDER`: Cheap-tier LLM provider
-- `MIDICODER_LLM_CHEAP_MODEL`: Cheap-tier LLM model
-- `MIDICODER_LLM_CHEAP_URL`: Cheap-tier LLM base URL
-- `MIDICODER_LLM_CHEAP_API_KEY`: Cheap-tier API key
+- `MIDICODER_LLM_HIGH_MODEL`, `MIDICODER_LLM_HIGH_URL`, `MIDICODER_LLM_HIGH_API_KEY`: For provider `openai_compatible` (high tier)
+- `MIDICODER_LLM_CHEAP_MODEL`, `MIDICODER_LLM_CHEAP_URL`, `MIDICODER_LLM_CHEAP_API_KEY`: For provider `openai_compatible` (cheap tier)
+- `MIDICODER_LLM_HIGH_ANTHROPIC_MODEL`, `MIDICODER_LLM_HIGH_ANTHROPIC_API_KEY`: For provider `anthropic` (high tier)
+- `MIDICODER_LLM_CHEAP_ANTHROPIC_MODEL`, `MIDICODER_LLM_CHEAP_ANTHROPIC_API_KEY`: For provider `anthropic` (cheap tier)
+- `MIDICODER_LLM_HIGH_OPENAI_MODEL`, `MIDICODER_LLM_HIGH_OPENAI_API_KEY`: For provider `openai` (high tier)
+- `MIDICODER_LLM_CHEAP_OPENAI_MODEL`, `MIDICODER_LLM_CHEAP_OPENAI_API_KEY`: For provider `openai` (cheap tier)
+- `MIDICODER_LLM_HIGH_BEDROCK_MODEL`, `MIDICODER_LLM_HIGH_AWS_REGION_NAME`, `MIDICODER_LLM_HIGH_AWS_ACCESS_KEY_ID`, `MIDICODER_LLM_HIGH_AWS_SECRET_ACCESS_KEY`: For provider `bedrock` (high tier)
+- `MIDICODER_LLM_CHEAP_BEDROCK_MODEL`, `MIDICODER_LLM_CHEAP_AWS_REGION_NAME`, `MIDICODER_LLM_CHEAP_AWS_ACCESS_KEY_ID`, `MIDICODER_LLM_CHEAP_AWS_SECRET_ACCESS_KEY`: For provider `bedrock` (cheap tier)
+- `MIDICODER_LLM_HIGH_AZURE_MODEL`, `MIDICODER_LLM_HIGH_AZURE_API_KEY`, `MIDICODER_LLM_HIGH_AZURE_OPENAI_ENDPOINT`, `MIDICODER_LLM_HIGH_AZURE_OPENAI_API_VERSION`, `MIDICODER_LLM_HIGH_AZURE_OPENAI_DEPLOYMENT`: For provider `azure` (high tier)
+- `MIDICODER_LLM_CHEAP_AZURE_MODEL`, `MIDICODER_LLM_CHEAP_AZURE_API_KEY`, `MIDICODER_LLM_CHEAP_AZURE_OPENAI_ENDPOINT`, `MIDICODER_LLM_CHEAP_AZURE_OPENAI_API_VERSION`, `MIDICODER_LLM_CHEAP_AZURE_OPENAI_DEPLOYMENT`: For provider `azure` (cheap tier)
+- `MIDICODER_LLM_HIGH_VERTEX_MODEL`, `MIDICODER_LLM_HIGH_VERTEX_API_KEY`, `MIDICODER_LLM_HIGH_VERTEX_PROJECT`, `MIDICODER_LLM_HIGH_VERTEX_LOCATION`: For provider `vertex_partner` (high tier)
+- `MIDICODER_LLM_CHEAP_VERTEX_MODEL`, `MIDICODER_LLM_CHEAP_VERTEX_API_KEY`, `MIDICODER_LLM_CHEAP_VERTEX_PROJECT`, `MIDICODER_LLM_CHEAP_VERTEX_LOCATION`: For provider `vertex_partner` (cheap tier)
 
 ### For Runtime
 

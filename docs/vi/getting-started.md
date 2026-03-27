@@ -92,15 +92,19 @@ Interactive wizard sẽ hỏi:
 - **Working directory**: Đường dẫn đến project của bạn (mặc định: thư mục hiện tại)
 - **Tech stack**: Chọn một hoặc nhiều (FastAPI, NestJS, Angular)
 - **High-tier LLM**: Cho complex tasks (contract generation, patch planning)
-  - Provider: Anthropic hoặc OpenAI
-  - Model: vd, `claude-sonnet-4-5` hoặc `gpt-4`
+  - Provider: `anthropic`, `openai`, `openai_compatible`, `bedrock`, `azure`, `vertex_partner`
+  - Model: vd, `anthropic/claude-3-7-sonnet-latest` hoặc `openai/gpt-4o`
   - API Key: API key của bạn
 - **Cheap-tier LLM**: Cho simple tasks (stack translation)
-  - Provider: Anthropic hoặc OpenAI
-  - Model: vd, `claude-3-5-haiku` hoặc `gpt-3.5-turbo`
+  - Provider: cùng danh sách như high-tier
+  - Model: vd, `anthropic/claude-3-5-haiku-latest` hoặc `openai/gpt-4o-mini`
   - API Key: API key của bạn
 
 **Kết quả:** Tạo `.midicoder/` với `config.json` và `secrets.json`
+
+Nếu `.midicoder/config.json` đã tồn tại:
+- Chế độ interactive sẽ hỏi xác nhận ghi đè.
+- Chế độ non-interactive cần quyền ghi đè rõ ràng (`--rewrite-config` hoặc `MIDICODER_REWRITE_CONFIG=true`).
 
 ### 2. Index Dự án của bạn
 
@@ -482,10 +486,10 @@ Cho automation, dùng chế độ non-interactive:
 export MIDICODER_WORKING_DIR=/app
 export MIDICODER_STACK=fastapi
 export MIDICODER_LLM_HIGH_PROVIDER=anthropic
-export MIDICODER_LLM_HIGH_MODEL=claude-sonnet-4-5
+export MIDICODER_LLM_HIGH_MODEL=anthropic/claude-3-7-sonnet-latest
 export MIDICODER_LLM_HIGH_API_KEY=$ANTHROPIC_API_KEY
 export MIDICODER_LLM_CHEAP_PROVIDER=anthropic
-export MIDICODER_LLM_CHEAP_MODEL=claude-3-5-haiku
+export MIDICODER_LLM_CHEAP_MODEL=anthropic/claude-3-5-haiku-latest
 export MIDICODER_LLM_CHEAP_API_KEY=$ANTHROPIC_API_KEY
 
 # Khởi tạo non-interactively

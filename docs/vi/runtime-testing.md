@@ -831,8 +831,11 @@ jobs:
             --working-dir . \
             --stack fastapi \
             --llm-high-provider anthropic \
-            --llm-high-model claude-sonnet-4-5 \
-            --llm-high-key-env ANTHROPIC_API_KEY
+            --llm-high-model anthropic/claude-3-7-sonnet-latest \
+            --llm-high-key-env ANTHROPIC_API_KEY \
+            --llm-cheap-provider anthropic \
+            --llm-cheap-model anthropic/claude-3-5-haiku-latest \
+            --llm-cheap-key-env ANTHROPIC_API_KEY
       
       - name: Index project
         run: midicoder index

@@ -92,15 +92,19 @@ The interactive wizard will ask:
 - **Working directory**: Path to your project (default: current directory)
 - **Tech stack**: Choose one or more (FastAPI, NestJS, Angular)
 - **High-tier LLM**: For complex tasks (contract generation, patch planning)
-  - Provider: Anthropic or OpenAI
-  - Model: e.g., `claude-sonnet-4-5` or `gpt-4`
+  - Provider: `anthropic`, `openai`, `openai_compatible`, `bedrock`, `azure`, `vertex_partner`
+  - Model: e.g., `anthropic/claude-3-7-sonnet-latest` or `openai/gpt-4o`
   - API Key: Your API key
 - **Cheap-tier LLM**: For simple tasks (stack translation)
-  - Provider: Anthropic or OpenAI
-  - Model: e.g., `claude-3-5-haiku` or `gpt-3.5-turbo`
+  - Provider: same choices as high-tier
+  - Model: e.g., `anthropic/claude-3-5-haiku-latest` or `openai/gpt-4o-mini`
   - API Key: Your API key
 
 **Result:** Creates `.midicoder/` with `config.json` and `secrets.json`
+
+If `.midicoder/config.json` already exists:
+- Interactive mode asks for overwrite confirmation.
+- Non-interactive mode requires explicit overwrite permission (`--rewrite-config` or `MIDICODER_REWRITE_CONFIG=true`).
 
 ### 2. Index Your Project
 
@@ -482,10 +486,10 @@ For automation, use non-interactive mode:
 export MIDICODER_WORKING_DIR=/app
 export MIDICODER_STACK=fastapi
 export MIDICODER_LLM_HIGH_PROVIDER=anthropic
-export MIDICODER_LLM_HIGH_MODEL=claude-sonnet-4-5
+export MIDICODER_LLM_HIGH_MODEL=anthropic/claude-3-7-sonnet-latest
 export MIDICODER_LLM_HIGH_API_KEY=$ANTHROPIC_API_KEY
 export MIDICODER_LLM_CHEAP_PROVIDER=anthropic
-export MIDICODER_LLM_CHEAP_MODEL=claude-3-5-haiku
+export MIDICODER_LLM_CHEAP_MODEL=anthropic/claude-3-5-haiku-latest
 export MIDICODER_LLM_CHEAP_API_KEY=$ANTHROPIC_API_KEY
 
 # Initialize non-interactively

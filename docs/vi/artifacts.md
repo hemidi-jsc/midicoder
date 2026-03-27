@@ -41,12 +41,12 @@ project-root/
   "llm": {
     "high": {
       "provider": "anthropic",
-      "model": "claude-sonnet-4-5",
+      "model": "anthropic/claude-3-7-sonnet-latest",
       "base_url": "https://api.anthropic.com"
     },
     "cheap": {
       "provider": "anthropic",
-      "model": "claude-3-5-haiku",
+      "model": "anthropic/claude-3-5-haiku-latest",
       "base_url": "https://api.anthropic.com"
     }
   },
@@ -418,7 +418,7 @@ Từ contract repair feedback FB-003:
   ],
   "llm_config": {
     "provider": "anthropic",
-    "model": "claude-sonnet-4-5"
+    "model": "anthropic/claude-3-7-sonnet-latest"
   },
   "target_stack": ["fastapi"],
   "total_passes": 3,
