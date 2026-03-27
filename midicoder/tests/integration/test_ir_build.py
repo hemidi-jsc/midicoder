@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.conftest import assert_cli_success, run_cli, write_minimal_contracts
+from midicoder.tests.conftest import assert_cli_success, run_cli, write_minimal_contracts
 
 
 def test_ir_build_generates_ir(tmp_workdir: Path) -> None:

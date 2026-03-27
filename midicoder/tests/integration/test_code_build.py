@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.conftest import assert_cli_success, run_cli, write_minimal_contracts
+from midicoder.tests.conftest import assert_cli_success, run_cli, write_minimal_contracts
 
 
 def test_code_plan_creates_index(tmp_workdir: Path) -> None:
@@ -19,7 +19,7 @@ def test_code_plan_creates_index(tmp_workdir: Path) -> None:
     ir_result = run_cli(["ir", "build"], tmp_workdir)
     assert_cli_success(ir_result)
 
-    plan_result = run_cli(["code", "plan"], tmp_workdir)
+    plan_result = run_cli(["code", "build"], tmp_workdir)
     assert_cli_success(plan_result)
 
     plans_root = tmp_workdir / ".midicoder" / "versions" / version / "plans"

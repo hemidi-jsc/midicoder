@@ -10,8 +10,8 @@ from typing import Iterable
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-TEXTURES_DIR = REPO_ROOT / "tests" / "textures" / "briefs"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+TEXTURES_DIR = Path(__file__).resolve().parent / "textures" / "briefs"
 
 
 @pytest.fixture()
@@ -35,6 +35,7 @@ def run_cli(
         env=full_env,
         capture_output=True,
         text=True,
+        input="",  # Force Non-TTY input to avoid interactive prompt issues
         check=False,
     )
 
@@ -52,7 +53,7 @@ def write_llm_config(root: Path) -> dict[str, str] | None:
     Prepare LLM config for tests by copying the repository-level
     `.midicoder/config.json` (and optional secrets) into the test workspace.
     """
-    repo_midicoder = REPO_ROOT.parent / ".midicoder"
+    repo_midicoder = REPO_ROOT / ".midicoder"
     repo_config_path = repo_midicoder / "config.json"
     if not repo_config_path.exists():
         return None

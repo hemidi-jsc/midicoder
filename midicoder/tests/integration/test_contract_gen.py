@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import assert_cli_success, copy_brief, run_cli, write_llm_config
+from midicoder.tests.conftest import assert_cli_success, copy_brief, run_cli, write_llm_config
 
 
 # Happy-path: khi đã có LLM config hợp lệ và master-brief,

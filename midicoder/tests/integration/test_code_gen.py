@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.conftest import assert_cli_success, run_cli, write_minimal_contracts
+from midicoder.tests.conftest import assert_cli_success, run_cli, write_minimal_contracts
 
 
 def test_code_gen_creates_runtime_code_index(tmp_workdir: Path) -> None:
@@ -21,7 +21,7 @@ def test_code_gen_creates_runtime_code_index(tmp_workdir: Path) -> None:
     ir_result = run_cli(["ir", "build"], tmp_workdir)
     assert_cli_success(ir_result)
 
-    plan_result = run_cli(["code", "plan"], tmp_workdir)
+    plan_result = run_cli(["code", "build"], tmp_workdir)
     assert_cli_success(plan_result)
 
     gen_result = run_cli(["code", "gen"], tmp_workdir)
@@ -68,7 +68,7 @@ def test_code_gen_is_deterministic_for_same_input(tmp_workdir: Path) -> None:
     ir_result = run_cli(["ir", "build"], tmp_workdir)
     assert_cli_success(ir_result)
 
-    plan_result = run_cli(["code", "plan"], tmp_workdir)
+    plan_result = run_cli(["code", "build"], tmp_workdir)
     assert_cli_success(plan_result)
 
     gen_first = run_cli(["code", "gen"], tmp_workdir)
@@ -99,7 +99,7 @@ def test_code_gen_runtime_flag_generates_runtime_artifacts(tmp_workdir: Path) ->
     ir_result = run_cli(["ir", "build"], tmp_workdir)
     assert_cli_success(ir_result)
 
-    plan_result = run_cli(["code", "plan"], tmp_workdir)
+    plan_result = run_cli(["code", "build"], tmp_workdir)
     assert_cli_success(plan_result)
 
     gen_result = run_cli(["code", "gen", "--runtime"], tmp_workdir)

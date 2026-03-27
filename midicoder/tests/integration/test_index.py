@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from tests.conftest import assert_cli_success, run_cli, write_llm_config
+from midicoder.tests.conftest import assert_cli_success, run_cli, write_llm_config
 
 
 def test_index_integration_full_workflow(tmp_workdir: Path) -> None:

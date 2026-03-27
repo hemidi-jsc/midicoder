@@ -7,7 +7,7 @@ from ruamel.yaml import YAML
 
 import pytest
 
-from tests.conftest import assert_cli_success, copy_brief, run_cli, write_llm_config, write_minimal_contracts
+from midicoder.tests.conftest import assert_cli_success, copy_brief, run_cli, write_llm_config, write_minimal_contracts
 
 
 def test_contract_repair_run_applies_updates(tmp_workdir: Path) -> None:

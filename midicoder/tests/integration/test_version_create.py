@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.conftest import assert_cli_success, run_cli
+from midicoder.tests.conftest import assert_cli_success, run_cli
 
 
 def test_version_create_sets_current_version(tmp_workdir: Path) -> None:

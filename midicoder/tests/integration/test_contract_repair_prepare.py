@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.conftest import assert_cli_success, run_cli, write_minimal_contracts
+from midicoder.tests.conftest import assert_cli_success, run_cli, write_minimal_contracts
 
 
 def test_contract_repair_prepare_validates_feedback(tmp_workdir: Path) -> None:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ruamel.yaml import YAML
 
-from tests.conftest import assert_cli_success, run_cli
+from midicoder.tests.conftest import assert_cli_success, run_cli
 
 
 def test_contract_feedback_creates_file(tmp_workdir: Path) -> None:
