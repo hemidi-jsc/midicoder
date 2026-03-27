@@ -141,19 +141,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # Provider-specific options (AWS Bedrock)
     init_parser.add_argument(
-        "--llm-high-aws-bedrock-region",
-        type=str,
-        help="AWS Bedrock region for high-tier provider=bedrock (legacy alias supported)"
-    )
-    init_parser.add_argument(
         "--llm-high-aws-region-name",
         type=str,
         help="AWS region name for high-tier provider=bedrock"
-    )
-    init_parser.add_argument(
-        "--llm-cheap-aws-bedrock-region",
-        type=str,
-        help="AWS Bedrock region for cheap-tier provider=bedrock (legacy alias supported)"
     )
     init_parser.add_argument(
         "--llm-cheap-aws-region-name",
@@ -165,32 +155,32 @@ def _build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--llm-high-azure-openai-endpoint",
         type=str,
-        help="Azure OpenAI endpoint for high-tier provider=azure (legacy alias supported)"
+        help="Azure OpenAI endpoint for high-tier provider=azure"
     )
     init_parser.add_argument(
         "--llm-high-azure-openai-api-version",
         type=str,
-        help="Azure OpenAI API version for high-tier provider=azure (legacy alias supported)"
+        help="Azure OpenAI API version for high-tier provider=azure"
     )
     init_parser.add_argument(
         "--llm-high-azure-openai-deployment",
         type=str,
-        help="Azure OpenAI deployment name for high-tier provider=azure (legacy alias supported)"
+        help="Azure OpenAI deployment name for high-tier provider=azure"
     )
     init_parser.add_argument(
         "--llm-cheap-azure-openai-endpoint",
         type=str,
-        help="Azure OpenAI endpoint for cheap-tier provider=azure (legacy alias supported)"
+        help="Azure OpenAI endpoint for cheap-tier provider=azure"
     )
     init_parser.add_argument(
         "--llm-cheap-azure-openai-api-version",
         type=str,
-        help="Azure OpenAI API version for cheap-tier provider=azure (legacy alias supported)"
+        help="Azure OpenAI API version for cheap-tier provider=azure"
     )
     init_parser.add_argument(
         "--llm-cheap-azure-openai-deployment",
         type=str,
-        help="Azure OpenAI deployment name for cheap-tier provider=azure (legacy alias supported)"
+        help="Azure OpenAI deployment name for cheap-tier provider=azure"
     )
 
     # Provider-specific options (Vertex Partner / Vertex AI)

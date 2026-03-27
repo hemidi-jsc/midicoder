@@ -40,9 +40,9 @@ def test_load_llm_config_allows_missing_base_url_for_bedrock(tmp_path: Path) -> 
         {
             "llm": {
                 "high": {
-                    "provider": "aws_bedrock",
+                    "provider": "bedrock",
                     "model": "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
-                    "aws_bedrock_region": "us-east-1",
+                    "aws_region_name": "us-east-1",
                 }
             },
             "cache": {"enable": True, "type": "ephemeral"},
@@ -54,7 +54,7 @@ def test_load_llm_config_allows_missing_base_url_for_bedrock(tmp_path: Path) -> 
 
     assert cfg.base_url is None
     assert cfg.model == "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0"
-    assert cfg.aws_bedrock_region == "us-east-1"
+    assert cfg.aws_region_name == "us-east-1"
     assert cfg.cache_enabled is True
     assert cfg.cache_type == "ephemeral"
 
@@ -67,7 +67,7 @@ def test_call_llm_uses_azure_deployment_model_and_provider_params(
         {
             "llm": {
                 "cheap": {
-                    "provider": "azure_openai",
+                    "provider": "azure",
                     "model": "gpt-4o-mini",
                     "azure_openai_deployment": "gpt4o-mini-deploy",
                     "azure_openai_endpoint": "https://example-azure.openai.azure.com",

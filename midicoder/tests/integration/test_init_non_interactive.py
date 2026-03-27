@@ -306,23 +306,21 @@ class TestInitNonInteractive:
                 env_prefix = "MIDICODER_"
                 working_dir = str(tmp_path)
                 stack = "fastapi"
-                llm_high_provider = "azure_openai"
+                llm_high_provider = "azure"
                 llm_high_model = "azure/gpt-4o"
                 llm_high_url = None
                 llm_high_key = None
                 llm_high_key_env = "AZURE_HIGH_KEY"
-                llm_high_aws_bedrock_region = None
                 llm_high_azure_openai_endpoint = "https://my-resource.openai.azure.com"
                 llm_high_azure_openai_api_version = "2024-10-21"
                 llm_high_azure_openai_deployment = "gpt-4o-prod"
                 llm_high_google_vertex_project = None
                 llm_high_google_vertex_location = None
-                llm_cheap_provider = "azure_openai"
+                llm_cheap_provider = "azure"
                 llm_cheap_model = "azure/gpt-4o-mini"
                 llm_cheap_url = None
                 llm_cheap_key = None
                 llm_cheap_key_env = "AZURE_CHEAP_KEY"
-                llm_cheap_aws_bedrock_region = None
                 llm_cheap_azure_openai_endpoint = "https://my-resource.openai.azure.com"
                 llm_cheap_azure_openai_api_version = "2024-10-21"
                 llm_cheap_azure_openai_deployment = "gpt-4o-mini-dev"
@@ -333,7 +331,7 @@ class TestInitNonInteractive:
 
             paths = MidicoderPaths(root=tmp_path)
             config = ConfigManager(paths).load()
-            assert config["llm"]["high"]["provider"] == "azure_openai"
+            assert config["llm"]["high"]["provider"] == "azure"
             assert config["llm"]["high"]["azure_openai_endpoint"] == "https://my-resource.openai.azure.com"
             assert config["llm"]["high"]["azure_openai_api_version"] == "2024-10-21"
             assert config["llm"]["high"]["azure_openai_deployment"] == "gpt-4o-prod"

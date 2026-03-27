@@ -13,7 +13,6 @@ def test_config_template_includes_provider_specific_fields() -> None:
         assert "model" in tier_cfg
         assert "base_url" in tier_cfg
         assert "aws_region_name" in tier_cfg
-        assert "aws_bedrock_region" in tier_cfg
         assert "azure_openai_endpoint" in tier_cfg
         assert "azure_openai_api_version" in tier_cfg
         assert "azure_openai_deployment" in tier_cfg
@@ -39,4 +38,4 @@ def test_apply_defaults_is_backward_compatible_with_legacy_llm_shape() -> None:
     assert loaded["llm"]["high"]["provider"] == "anthropic"
     assert loaded["llm"]["cheap"]["provider"] == "anthropic"
     # New fields are optional and therefore not required in existing config.
-    assert "aws_bedrock_region" not in loaded["llm"]["high"]
+    assert "aws_region_name" not in loaded["llm"]["high"]

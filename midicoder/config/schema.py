@@ -16,7 +16,6 @@ def _get_default_llm_tier_config() -> dict:
         "base_url": None,
         # Provider-specific fields (namespace by provider prefix)
         "aws_region_name": None,
-        "aws_bedrock_region": None,
         "azure_openai_endpoint": None,
         "azure_openai_api_version": None,
         "azure_openai_deployment": None,
@@ -158,7 +157,7 @@ def check_config_fields(config: dict) -> dict[str, list[str]]:
 
 def validate_config_dict(config: dict) -> list[str]:
     """
-    Validate configuration dictionary (backward compatibility).
+    Validate configuration dictionary.
     
     Args:
         config: Configuration dictionary to validate

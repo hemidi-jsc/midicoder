@@ -23,7 +23,6 @@ class LlmConfig:
     provider: str | None
     cache_enabled: bool
     cache_type: str | None
-    aws_bedrock_region: str | None = None
     aws_region_name: str | None = None
     azure_openai_endpoint: str | None = None
     azure_openai_api_version: str | None = None
@@ -132,21 +131,14 @@ def load_llm_config(paths: MidicoderPaths, *, tier: str) -> LlmConfig:
         provider=str(provider) if provider else None,
         cache_enabled=cache_enabled,
         cache_type=cache_type,
-        aws_bedrock_region=(
-            str(tier_config["aws_bedrock_region"])
-            if tier_config.get("aws_bedrock_region")
-            else None
-        ),
         aws_region_name=(
             str(
                 tier_config.get("aws_region_name")
                 or tier_config.get("aws_region")
-                or tier_config.get("aws_bedrock_region")
             )
             if (
                 tier_config.get("aws_region_name")
                 or tier_config.get("aws_region")
-                or tier_config.get("aws_bedrock_region")
             )
             else None
         ),

@@ -60,7 +60,6 @@ def _prompt_provider_specific_fields(
     defaults = defaults or {}
     fields = {
         "aws_region_name": None,
-        "aws_bedrock_region": None,
         "azure_openai_endpoint": None,
         "azure_openai_api_version": None,
         "azure_openai_deployment": None,
@@ -68,17 +67,16 @@ def _prompt_provider_specific_fields(
         "vertex_location": None,
     }
 
-    if provider in {"bedrock", "aws_bedrock"}:
+    if provider == "bedrock":
         print_info(f"{tier_label} tier requires AWS region.")
         aws_region = _normalize_optional_text(
             prompt_text(
                 "AWS region name",
-                default=defaults.get("aws_region_name") or defaults.get("aws_bedrock_region") or "us-east-1",
+                default=defaults.get("aws_region_name") or "us-east-1",
             )
         )
         fields["aws_region_name"] = aws_region
-        fields["aws_bedrock_region"] = aws_region
-    elif provider in {"azure", "azure_openai"}:
+    elif provider == "azure":
         print_info(f"{tier_label} tier requires Azure OpenAI endpoint/api-version/deployment.")
         fields["azure_openai_endpoint"] = _normalize_optional_text(
             prompt_text(

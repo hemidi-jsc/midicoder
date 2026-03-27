@@ -38,12 +38,6 @@ PROVIDER_REQUIRED_FIELDS: dict[str, list[str]] = {
     ],
 }
 
-_PROVIDER_ALIASES: dict[str, str] = {
-    "aws_bedrock": "bedrock",
-    "azure_openai": "azure",
-}
-
-
 def _warn_existing_workspace_detected() -> None:
     """Show overwrite behavior when an existing config is detected."""
     print_warning(
@@ -68,13 +62,13 @@ def _parse_optional_bool(value: Any) -> bool | None:
 
 
 def _normalize_provider_name(provider: Any) -> str | None:
-    """Normalize provider aliases to canonical provider ids."""
+    """Normalize provider id from input value."""
     if provider is None:
         return None
     text = str(provider).strip().lower()
     if not text:
         return None
-    return _PROVIDER_ALIASES.get(text, text)
+    return text
 
 
 def _config_overwrite_requested(args: Any, env_prefix: str) -> bool:
@@ -243,9 +237,6 @@ def _validate_required_config(
         if not tier_config.get("model"):
             errors.append(f"LLM {tier} tier model is required")
 
-        # Backward-compatible field aliases.
-        if not tier_config.get("aws_region_name") and tier_config.get("aws_bedrock_region"):
-            tier_config["aws_region_name"] = tier_config.get("aws_bedrock_region")
         if provider in PROVIDER_REQUIRED_FIELDS:
             for required_field in PROVIDER_REQUIRED_FIELDS[provider]:
                 if not tier_config.get(required_field):
@@ -294,7 +285,6 @@ def _build_llm_tier_config(tier: str, args: Any, env_prefix: str) -> dict[str, A
 
     provider_specific_fields = [
         "aws_region_name",
-        "aws_bedrock_region",
         "azure_openai_endpoint",
         "azure_openai_api_version",
         "azure_openai_deployment",
@@ -308,9 +298,6 @@ def _build_llm_tier_config(tier: str, args: Any, env_prefix: str) -> dict[str, A
             env_prefix=env_prefix,
         )
 
-    # Fill canonical provider fields from legacy aliases if needed.
-    if not tier_config.get("aws_region_name") and tier_config.get("aws_bedrock_region"):
-        tier_config["aws_region_name"] = tier_config["aws_bedrock_region"]
     return tier_config
 
 
@@ -373,7 +360,6 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
         raise SystemExit(1)
 
     if paths.config.exists() and not rewrite_allowed:
-        _warn_existing_workspace_detected()
         print_error(
             "Config already exists. Refusing to overwrite in non-interactive mode "
             "without explicit rewrite permission.",

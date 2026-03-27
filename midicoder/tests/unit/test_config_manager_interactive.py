@@ -9,7 +9,7 @@ def test_initialize_interactive_with_azure_provider_specific_fields(monkeypatch,
     paths = MidicoderPaths(root=tmp_path)
     manager = ConfigManager(paths)
 
-    choice_answers = iter(["azure_openai", "azure_openai"])
+    choice_answers = iter(["azure", "azure"])
     text_answers = iter(
         [
             str(tmp_path),  # working directory
@@ -50,14 +50,14 @@ def test_initialize_interactive_with_azure_provider_specific_fields(monkeypatch,
     manager.initialize_interactive()
 
     config = manager.load()
-    assert config["llm"]["high"]["provider"] == "azure_openai"
+    assert config["llm"]["high"]["provider"] == "azure"
     assert config["llm"]["high"]["base_url"] is None
     assert config["llm"]["high"]["azure_openai_endpoint"] == "https://my-resource.openai.azure.com"
     assert config["llm"]["high"]["azure_openai_api_version"] == "2024-10-21"
     assert config["llm"]["high"]["azure_openai_deployment"] == "gpt-4o-prod"
 
     # Cheap tier should reuse provider-specific fields from high when blank.
-    assert config["llm"]["cheap"]["provider"] == "azure_openai"
+    assert config["llm"]["cheap"]["provider"] == "azure"
     assert config["llm"]["cheap"]["base_url"] is None
     assert config["llm"]["cheap"]["azure_openai_endpoint"] == "https://my-resource.openai.azure.com"
     assert config["llm"]["cheap"]["azure_openai_api_version"] == "2024-10-21"
@@ -66,8 +66,8 @@ def test_initialize_interactive_with_azure_provider_specific_fields(monkeypatch,
     llm_secrets = SecretsManager(paths.secrets).load_secrets("llm")
     assert llm_secrets["high"]["api_key"] == "sk-high"
     assert llm_secrets["cheap"]["api_key"] == "sk-high"
-    assert llm_secrets["high"]["provider"] == "azure_openai"
-    assert llm_secrets["cheap"]["provider"] == "azure_openai"
+    assert llm_secrets["high"]["provider"] == "azure"
+    assert llm_secrets["cheap"]["provider"] == "azure"
 
 
 def test_initialize_interactive_uses_shared_validator(monkeypatch, tmp_path) -> None:

@@ -48,10 +48,8 @@ def get_adapter(config: LlmConfig) -> ProviderAdapter:
         "openai_compatible": "openai_compatible",
         "anthropic": "anthropic",
         "azure": "azure",
-        "azure_openai": "azure",
         "vertex_partner": "vertex_partner",
         "bedrock": "bedrock",
-        "aws_bedrock": "bedrock",
     }.get(provider_raw, provider_raw)
 
     if not provider:

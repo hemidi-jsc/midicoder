@@ -158,27 +158,11 @@ class InitKeywords:
             required=False,
             example="us-east-1",
         ),
-        ConfigKeyword(
-            flag="--llm-high-aws-bedrock-region",
-            env_var="MIDICODER_LLM_HIGH_AWS_BEDROCK_REGION",
-            description="AWS Bedrock region for high-tier provider=bedrock (legacy alias)",
-            type="text",
-            required=False,
-            example="us-east-1",
-        ),
-        ConfigKeyword(
-            flag="--llm-cheap-aws-bedrock-region",
-            env_var="MIDICODER_LLM_CHEAP_AWS_BEDROCK_REGION",
-            description="AWS Bedrock region for cheap-tier provider=bedrock (legacy alias)",
-            type="text",
-            required=False,
-            example="us-east-1",
-        ),
         # Provider-specific (Azure OpenAI)
         ConfigKeyword(
             flag="--llm-high-azure-openai-endpoint",
             env_var="MIDICODER_LLM_HIGH_AZURE_OPENAI_ENDPOINT",
-            description="Azure OpenAI endpoint for high-tier provider=azure (legacy alias)",
+            description="Azure OpenAI endpoint for high-tier provider=azure",
             type="text",
             required=False,
             example="https://my-resource.openai.azure.com",
@@ -186,7 +170,7 @@ class InitKeywords:
         ConfigKeyword(
             flag="--llm-high-azure-openai-api-version",
             env_var="MIDICODER_LLM_HIGH_AZURE_OPENAI_API_VERSION",
-            description="Azure OpenAI API version for high-tier provider=azure (legacy alias)",
+            description="Azure OpenAI API version for high-tier provider=azure",
             type="text",
             required=False,
             example="2024-10-21",
@@ -194,7 +178,7 @@ class InitKeywords:
         ConfigKeyword(
             flag="--llm-high-azure-openai-deployment",
             env_var="MIDICODER_LLM_HIGH_AZURE_OPENAI_DEPLOYMENT",
-            description="Azure OpenAI deployment name for high-tier provider=azure (legacy alias)",
+            description="Azure OpenAI deployment name for high-tier provider=azure",
             type="text",
             required=False,
             example="gpt-4o-prod",
@@ -202,7 +186,7 @@ class InitKeywords:
         ConfigKeyword(
             flag="--llm-cheap-azure-openai-endpoint",
             env_var="MIDICODER_LLM_CHEAP_AZURE_OPENAI_ENDPOINT",
-            description="Azure OpenAI endpoint for cheap-tier provider=azure (legacy alias)",
+            description="Azure OpenAI endpoint for cheap-tier provider=azure",
             type="text",
             required=False,
             example="https://my-resource.openai.azure.com",
@@ -210,7 +194,7 @@ class InitKeywords:
         ConfigKeyword(
             flag="--llm-cheap-azure-openai-api-version",
             env_var="MIDICODER_LLM_CHEAP_AZURE_OPENAI_API_VERSION",
-            description="Azure OpenAI API version for cheap-tier provider=azure (legacy alias)",
+            description="Azure OpenAI API version for cheap-tier provider=azure",
             type="text",
             required=False,
             example="2024-10-21",
@@ -218,7 +202,7 @@ class InitKeywords:
         ConfigKeyword(
             flag="--llm-cheap-azure-openai-deployment",
             env_var="MIDICODER_LLM_CHEAP_AZURE_OPENAI_DEPLOYMENT",
-            description="Azure OpenAI deployment name for cheap-tier provider=azure (legacy alias)",
+            description="Azure OpenAI deployment name for cheap-tier provider=azure",
             type="text",
             required=False,
             example="gpt-4o-mini-dev",
@@ -303,8 +287,6 @@ class InitKeywords:
             "Provider-specific (AWS Bedrock)": [
                 "--llm-high-aws-region-name",
                 "--llm-cheap-aws-region-name",
-                "--llm-high-aws-bedrock-region",
-                "--llm-cheap-aws-bedrock-region",
             ],
             "Provider-specific (Azure OpenAI)": [
                 "--llm-high-azure-openai-endpoint",
@@ -400,7 +382,7 @@ class InitKeywords:
         print_normal("  midicoder init --non-interactive \\")
         print_normal("    --working-dir /home/user/project \\")
         print_normal("    --stack fastapi \\")
-        print_normal("    --llm-high-provider azure_openai \\")
+        print_normal("    --llm-high-provider azure \\")
         print_normal("    --llm-high-model azure/gpt-4o \\")
         print_normal("    --llm-high-azure-openai-endpoint https://my-resource.openai.azure.com \\")
         print_normal("    --llm-high-azure-openai-api-version 2024-10-21 \\")

@@ -16,7 +16,7 @@ class BedrockAdapter(BaseAdapter):
 
     def completion_params(self, config: LlmConfig) -> dict[str, Any]:
         params: dict[str, Any] = {}
-        region = config.aws_region_name or config.aws_bedrock_region
+        region = config.aws_region_name
         if region:
             params["aws_region_name"] = region
         return params

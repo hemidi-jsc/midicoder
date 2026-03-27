@@ -112,8 +112,6 @@ class TestInitKeywords:
     def test_provider_specific_keywords_are_registered(self):
         """Provider-specific keywords should be listed for non-interactive init."""
         expected_flags = [
-            "--llm-high-aws-bedrock-region",
-            "--llm-cheap-aws-bedrock-region",
             "--llm-high-aws-region-name",
             "--llm-cheap-aws-region-name",
             "--llm-high-azure-openai-endpoint",
@@ -390,21 +388,21 @@ class TestConfigValidation:
         assert any("provider is required" in e for e in errors)
 
     def test_validate_required_config_bedrock_requires_region(self):
-        """AWS Bedrock provider requires aws_bedrock_region instead of base_url."""
+        """Bedrock provider requires aws_region_name instead of base_url."""
         from midicoder.commands.init import _validate_required_config
 
         config = {
             "stack": ["fastapi"],
             "llm": {
                 "high": {
-                    "provider": "aws_bedrock",
+                    "provider": "bedrock",
                     "model": "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
-                    "aws_bedrock_region": "us-east-1",
+                    "aws_region_name": "us-east-1",
                 },
                 "cheap": {
-                    "provider": "aws_bedrock",
+                    "provider": "bedrock",
                     "model": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
-                    "aws_bedrock_region": "us-east-1",
+                    "aws_region_name": "us-east-1",
                 },
             },
         }
@@ -423,12 +421,12 @@ class TestConfigValidation:
             "stack": ["fastapi"],
             "llm": {
                 "high": {
-                    "provider": "azure_openai",
+                    "provider": "azure",
                     "model": "azure/gpt-4o",
                     "azure_openai_endpoint": "https://my-resource.openai.azure.com",
                 },
                 "cheap": {
-                    "provider": "azure_openai",
+                    "provider": "azure",
                     "model": "azure/gpt-4o-mini",
                     "azure_openai_endpoint": "https://my-resource.openai.azure.com",
                     "azure_openai_api_version": "2024-10-21",

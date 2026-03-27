@@ -22,9 +22,6 @@ LLM_PROVIDERS = [
     "bedrock",
     "azure",
     "vertex_partner",
-    # Backward-compatible aliases
-    "aws_bedrock",
-    "azure_openai",
 ]
 
 PROVIDER_BASE_URLS = {
@@ -35,9 +32,6 @@ PROVIDER_BASE_URLS = {
     "bedrock": None,
     "azure": None,
     "vertex_partner": None,
-    # Backward-compatible aliases
-    "aws_bedrock": None,
-    "azure_openai": None,
 }
 
 PROVIDER_DEFAULT_MODELS = {
@@ -64,15 +58,6 @@ PROVIDER_DEFAULT_MODELS = {
     "vertex_partner": {
         "high": "vertex_ai/gemini-1.5-pro",
         "cheap": "vertex_ai/gemini-1.5-flash",
-    },
-    # Backward-compatible aliases
-    "aws_bedrock": {
-        "high": "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
-        "cheap": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
-    },
-    "azure_openai": {
-        "high": "azure/gpt-4o",
-        "cheap": "azure/gpt-4o-mini",
     },
 }
 
