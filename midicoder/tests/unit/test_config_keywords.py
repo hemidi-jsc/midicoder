@@ -113,7 +113,15 @@ class TestInitKeywords:
         """Provider-specific keywords should be listed for non-interactive init."""
         expected_flags = [
             "--llm-high-aws-region-name",
+            "--llm-high-aws-access-key-id",
+            "--llm-high-aws-access-key-id-env",
+            "--llm-high-aws-secret-access-key",
+            "--llm-high-aws-secret-access-key-env",
             "--llm-cheap-aws-region-name",
+            "--llm-cheap-aws-access-key-id",
+            "--llm-cheap-aws-access-key-id-env",
+            "--llm-cheap-aws-secret-access-key",
+            "--llm-cheap-aws-secret-access-key-env",
             "--llm-high-azure-openai-endpoint",
             "--llm-high-azure-openai-api-version",
             "--llm-high-azure-openai-deployment",
@@ -407,11 +415,45 @@ class TestConfigValidation:
             },
         }
         secrets = {
-            "llm": {"high": {"api_key": "dummy"}, "cheap": {"api_key": "dummy"}}
+            "llm": {
+                "high": {
+                    "aws_access_key_id": "AKIAHIGH",
+                    "aws_secret_access_key": "HIGHSECRET",
+                },
+                "cheap": {
+                    "aws_access_key_id": "AKIACHEAP",
+                    "aws_secret_access_key": "CHEAPSECRET",
+                },
+            }
         }
 
         errors = _validate_required_config(config, secrets)
         assert len(errors) == 0
+
+    def test_validate_required_config_bedrock_requires_aws_credentials(self):
+        """Bedrock provider should fail validation when AWS credentials are missing."""
+        from midicoder.commands.init import _validate_required_config
+
+        config = {
+            "stack": ["fastapi"],
+            "llm": {
+                "high": {
+                    "provider": "bedrock",
+                    "model": "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+                    "aws_region_name": "us-east-1",
+                },
+                "cheap": {
+                    "provider": "bedrock",
+                    "model": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+                    "aws_region_name": "us-east-1",
+                },
+            },
+        }
+        secrets = {"llm": {"high": {}, "cheap": {}}}
+
+        errors = _validate_required_config(config, secrets)
+        assert any("aws_access_key_id" in e for e in errors)
+        assert any("aws_secret_access_key" in e for e in errors)
 
     def test_validate_required_config_azure_requires_specific_fields(self):
         """Azure OpenAI provider should fail when required provider-specific fields are missing."""

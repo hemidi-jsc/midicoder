@@ -47,7 +47,14 @@ def test_load_llm_config_allows_missing_base_url_for_bedrock(tmp_path: Path) -> 
             },
             "cache": {"enable": True, "type": "ephemeral"},
         },
-        secrets={"llm": {"high": {"api_key": "test-key"}}},
+        secrets={
+            "llm": {
+                "high": {
+                    "aws_access_key_id": "AKIAHIGH",
+                    "aws_secret_access_key": "HIGHSECRET",
+                }
+            }
+        },
     )
 
     cfg = load_llm_config(paths, tier="high")
@@ -55,6 +62,8 @@ def test_load_llm_config_allows_missing_base_url_for_bedrock(tmp_path: Path) -> 
     assert cfg.base_url is None
     assert cfg.model == "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0"
     assert cfg.aws_region_name == "us-east-1"
+    assert cfg.aws_access_key_id == "AKIAHIGH"
+    assert cfg.aws_secret_access_key == "HIGHSECRET"
     assert cfg.cache_enabled is True
     assert cfg.cache_type == "ephemeral"
 
@@ -436,17 +445,21 @@ def test_call_llm_maps_bedrock_provider(monkeypatch: pytest.MonkeyPatch) -> None
     cfg = LlmConfig(
         base_url=None,
         model="anthropic.claude-3-5-sonnet-20240620-v1:0",
-        api_key="k",
+        api_key=None,
         provider="bedrock",
         cache_enabled=False,
         cache_type=None,
         aws_region_name="us-east-1",
+        aws_access_key_id="AKIAEXAMPLE",
+        aws_secret_access_key="SECRETEXAMPLE",
     )
 
     call_llm(cfg, prompt="hello")
 
     assert captured["model"] == "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0"
     assert captured["aws_region_name"] == "us-east-1"
+    assert captured["aws_access_key_id"] == "AKIAEXAMPLE"
+    assert captured["aws_secret_access_key"] == "SECRETEXAMPLE"
 
 
 def test_call_llm_extract_headers_forces_litellm_timeout_300_seconds(

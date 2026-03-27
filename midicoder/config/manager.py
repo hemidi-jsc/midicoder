@@ -43,7 +43,13 @@ def _prompt_provider_common_fields(
             f"{tier_label} tier provider '{provider}' uses provider-specific connection settings."
         )
 
-    llm_key = prompt_secret("API key", confirm=False)
+    if provider == "bedrock":
+        print_info(
+            f"{tier_label} tier provider '{provider}' uses AWS credentials, not a generic API key."
+        )
+        llm_key = None
+    else:
+        llm_key = prompt_secret("API key", confirm=False)
     return llm_url, _normalize_optional_text(llm_key)
 
 
@@ -112,6 +118,37 @@ def _prompt_provider_specific_fields(
         )
         fields["vertex_project"] = vertex_project
         fields["vertex_location"] = vertex_location
+
+    return fields
+
+
+def _prompt_provider_secret_fields(
+    *,
+    provider: str,
+    tier_label: str,
+    defaults: dict[str, str | None] | None = None,
+) -> dict[str, str | None]:
+    """Prompt provider-specific secret fields (stored in secrets.json)."""
+    from midicoder.io import prompt_text, prompt_secret
+    from midicoder.io.messages import print_info
+
+    defaults = defaults or {}
+    fields = {
+        "aws_access_key_id": None,
+        "aws_secret_access_key": None,
+    }
+
+    if provider == "bedrock":
+        print_info(f"{tier_label} tier Bedrock requires AWS access key credentials.")
+        fields["aws_access_key_id"] = _normalize_optional_text(
+            prompt_text(
+                "AWS access key id",
+                default=defaults.get("aws_access_key_id") or "",
+            )
+        )
+        fields["aws_secret_access_key"] = _normalize_optional_text(
+            prompt_secret("AWS secret access key", confirm=False)
+        )
 
     return fields
 
@@ -416,6 +453,10 @@ class ConfigManager:
             provider=llm_high_provider,
             tier_label="High",
         )
+        high_provider_secrets = _prompt_provider_secret_fields(
+            provider=llm_high_provider,
+            tier_label="High",
+        )
         
         default_high_model = PROVIDER_DEFAULT_MODELS.get(llm_high_provider, {}).get("high", "")
         print_info(f"Recommended model: {default_high_model}")
@@ -460,6 +501,12 @@ class ConfigManager:
             tier_label="Cheap",
             defaults=cheap_defaults,
         )
+        cheap_secret_defaults = high_provider_secrets if same_provider else None
+        cheap_provider_secrets = _prompt_provider_secret_fields(
+            provider=llm_cheap_provider,
+            tier_label="Cheap",
+            defaults=cheap_secret_defaults,
+        )
 
         if same_provider:
             print_info("Using same provider. You can reuse the same API key or enter a different one.")
@@ -475,6 +522,9 @@ class ConfigManager:
             for field_name, field_value in cheap_provider_specific.items():
                 if field_value is None and high_provider_specific.get(field_name):
                     cheap_provider_specific[field_name] = high_provider_specific[field_name]
+            for field_name, field_value in cheap_provider_secrets.items():
+                if field_value is None and high_provider_secrets.get(field_name):
+                    cheap_provider_secrets[field_name] = high_provider_secrets[field_name]
         
         default_cheap_model = PROVIDER_DEFAULT_MODELS.get(llm_cheap_provider, {}).get("cheap", "")
         print_info(f"Recommended model: {default_cheap_model}")
@@ -512,10 +562,12 @@ class ConfigManager:
             "high": {
                 "provider": llm_high_provider or None,
                 "api_key": llm_high_key or None,
+                **high_provider_secrets,
             },
             "cheap": {
                 "provider": llm_cheap_provider or None,
                 "api_key": llm_cheap_key or None,
+                **cheap_provider_secrets,
             },
         }
 

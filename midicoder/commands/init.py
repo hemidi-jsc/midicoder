@@ -37,6 +37,9 @@ PROVIDER_REQUIRED_FIELDS: dict[str, list[str]] = {
         "vertex_location",
     ],
 }
+PROVIDER_REQUIRED_SECRET_FIELDS: dict[str, list[str]] = {
+    "bedrock": ["aws_access_key_id", "aws_secret_access_key"],
+}
 
 def _warn_existing_workspace_detected() -> None:
     """Show overwrite behavior when an existing config is detected."""
@@ -88,6 +91,12 @@ def _get_flag_and_env_for_field(tier: str, field_name: str, env_prefix: str) -> 
     flag = f"--llm-{tier}-{field_name.replace('_', '-')}"
     env_key = f"{env_prefix}LLM_{tier.upper()}_{field_name.upper()}"
     return flag, env_key
+
+
+def _get_flag_and_env_for_secret(tier: str, field_name: str, env_prefix: str) -> tuple[str, str, str]:
+    """Build CLI flag/env key names for secret fields."""
+    flag, env_key = _get_flag_and_env_for_field(tier, field_name, env_prefix)
+    return flag, f"{flag}-env", env_key
 
 
 def _get_value_with_priority(
@@ -192,6 +201,49 @@ def _get_api_key(
     return None
 
 
+def _get_secret_value(
+    *,
+    tier: str,
+    secret_name: str,
+    value_direct: str | None,
+    value_env_name: str | None,
+    env_prefix: str,
+) -> str | None:
+    """
+    Resolve a provider secret from direct flag, env-ref flag, or default env name.
+
+    Priority: direct flag > env-ref flag > MIDICODER_LLM_<TIER>_<SECRET_NAME>.
+    """
+    if value_direct:
+        print_warning(
+            f"⚠️  Secret '{secret_name}' for {tier} tier provided directly via flag. "
+            f"This may be visible in process list (ps, top, etc.). "
+            f"Prefer --llm-{tier}-{secret_name.replace('_', '-')}-env."
+        )
+        return value_direct
+
+    if value_env_name:
+        env_value = os.getenv(value_env_name)
+        if env_value:
+            print_info(
+                f"✓ Using secret '{secret_name}' for {tier} tier from env var: {value_env_name}"
+            )
+            return env_value
+        print_warning(
+            f"Environment variable {value_env_name} not found for secret '{secret_name}' ({tier} tier)"
+        )
+
+    default_env_var = f"{env_prefix}LLM_{tier.upper()}_{secret_name.upper()}"
+    env_value = os.getenv(default_env_var)
+    if env_value:
+        print_info(
+            f"✓ Using secret '{secret_name}' for {tier} tier from env var: {default_env_var}"
+        )
+        return env_value
+
+    return None
+
+
 def _validate_required_config(
     config: dict,
     secrets: dict,
@@ -224,6 +276,7 @@ def _validate_required_config(
     # Check LLM configuration
     for tier in ["high", "cheap"]:
         tier_config = config.get("llm", {}).get(tier, {})
+        tier_secrets = secrets.get("llm", {}).get(tier, {}) if isinstance(secrets, dict) else {}
         
         provider = _normalize_provider_name(tier_config.get("provider"))
         if not provider:
@@ -244,6 +297,17 @@ def _validate_required_config(
                     errors.append(
                         f"LLM {tier} tier with provider '{provider}' requires '{required_field}'. "
                         f"Set via {flag} or {env_key}."
+                    )
+
+        if provider in PROVIDER_REQUIRED_SECRET_FIELDS:
+            for required_secret in PROVIDER_REQUIRED_SECRET_FIELDS[provider]:
+                if not tier_secrets.get(required_secret):
+                    flag, env_flag, env_key = _get_flag_and_env_for_secret(
+                        tier, required_secret, env_prefix
+                    )
+                    errors.append(
+                        f"LLM {tier} tier with provider '{provider}' requires secret "
+                        f"'{required_secret}'. Set via {flag}, {env_key}, or {env_flag}."
                     )
         
     return errors
@@ -430,6 +494,31 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
         api_key = _get_api_key(tier, key_direct, key_env_name, env_prefix)
         if api_key:
             llm_secrets[tier]["api_key"] = api_key
+
+    for tier in ["high", "cheap"]:
+        provider = llm_config[tier].get("provider")
+        if provider != "bedrock":
+            continue
+
+        access_key = _get_secret_value(
+            tier=tier,
+            secret_name="aws_access_key_id",
+            value_direct=getattr(args, f"llm_{tier}_aws_access_key_id", None),
+            value_env_name=getattr(args, f"llm_{tier}_aws_access_key_id_env", None),
+            env_prefix=env_prefix,
+        )
+        if access_key:
+            llm_secrets[tier]["aws_access_key_id"] = access_key
+
+        secret_key = _get_secret_value(
+            tier=tier,
+            secret_name="aws_secret_access_key",
+            value_direct=getattr(args, f"llm_{tier}_aws_secret_access_key", None),
+            value_env_name=getattr(args, f"llm_{tier}_aws_secret_access_key_env", None),
+            env_prefix=env_prefix,
+        )
+        if secret_key:
+            llm_secrets[tier]["aws_secret_access_key"] = secret_key
     
     # Validate configuration - wrap secrets in llm key
     errors = _validate_init_payload(config, llm_secrets, env_prefix=env_prefix)

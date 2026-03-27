@@ -146,9 +146,49 @@ def _build_parser() -> argparse.ArgumentParser:
         help="AWS region name for high-tier provider=bedrock"
     )
     init_parser.add_argument(
+        "--llm-high-aws-access-key-id",
+        type=str,
+        help="AWS access key id for high-tier provider=bedrock (WARNING: visible in process list)"
+    )
+    init_parser.add_argument(
+        "--llm-high-aws-access-key-id-env",
+        type=str,
+        help="Environment variable name containing AWS access key id for high-tier provider=bedrock"
+    )
+    init_parser.add_argument(
+        "--llm-high-aws-secret-access-key",
+        type=str,
+        help="AWS secret access key for high-tier provider=bedrock (WARNING: visible in process list)"
+    )
+    init_parser.add_argument(
+        "--llm-high-aws-secret-access-key-env",
+        type=str,
+        help="Environment variable name containing AWS secret access key for high-tier provider=bedrock"
+    )
+    init_parser.add_argument(
         "--llm-cheap-aws-region-name",
         type=str,
         help="AWS region name for cheap-tier provider=bedrock"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-aws-access-key-id",
+        type=str,
+        help="AWS access key id for cheap-tier provider=bedrock (WARNING: visible in process list)"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-aws-access-key-id-env",
+        type=str,
+        help="Environment variable name containing AWS access key id for cheap-tier provider=bedrock"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-aws-secret-access-key",
+        type=str,
+        help="AWS secret access key for cheap-tier provider=bedrock (WARNING: visible in process list)"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-aws-secret-access-key-env",
+        type=str,
+        help="Environment variable name containing AWS secret access key for cheap-tier provider=bedrock"
     )
 
     # Provider-specific options (Azure OpenAI)

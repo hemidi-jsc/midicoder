@@ -34,7 +34,15 @@ def _make_non_interactive_args(root: Path, **overrides: object) -> SimpleNamespa
         "llm_cheap_key": None,
         "llm_cheap_key_env": None,
         "llm_high_aws_region_name": None,
+        "llm_high_aws_access_key_id": None,
+        "llm_high_aws_access_key_id_env": None,
+        "llm_high_aws_secret_access_key": None,
+        "llm_high_aws_secret_access_key_env": None,
         "llm_cheap_aws_region_name": None,
+        "llm_cheap_aws_access_key_id": None,
+        "llm_cheap_aws_access_key_id_env": None,
+        "llm_cheap_aws_secret_access_key": None,
+        "llm_cheap_aws_secret_access_key_env": None,
         "llm_high_azure_openai_endpoint": None,
         "llm_high_azure_openai_api_version": None,
         "llm_high_azure_openai_deployment": None,
@@ -294,3 +302,19 @@ class TestInitEdgeCases:
         monkeypatch.setenv("MIDICODER_REWRITE_CONFIG", "maybe")
         with pytest.raises(SystemExit):
             run(tmp_path, _make_non_interactive_args(tmp_path, rewrite_config=None))
+
+    def test_bedrock_non_interactive_requires_credentials(self, tmp_path: Path) -> None:
+        """Bedrock init must require aws_access_key_id and aws_secret_access_key."""
+        args = _make_non_interactive_args(
+            tmp_path,
+            llm_high_provider="bedrock",
+            llm_high_model="bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+            llm_high_url=None,
+            llm_high_aws_region_name="us-east-1",
+            llm_cheap_provider="bedrock",
+            llm_cheap_model="bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+            llm_cheap_url=None,
+            llm_cheap_aws_region_name="us-east-1",
+        )
+        with pytest.raises(SystemExit):
+            run(tmp_path, args)

@@ -19,4 +19,8 @@ class BedrockAdapter(BaseAdapter):
         region = config.aws_region_name
         if region:
             params["aws_region_name"] = region
+        if config.aws_access_key_id:
+            params["aws_access_key_id"] = config.aws_access_key_id
+        if config.aws_secret_access_key:
+            params["aws_secret_access_key"] = config.aws_secret_access_key
         return params

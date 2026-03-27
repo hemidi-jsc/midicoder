@@ -49,6 +49,10 @@ def test_init_parser_accepts_provider_specific_flags() -> None:
             "https://example.com",
             "--llm-high-aws-region-name",
             "us-east-1",
+            "--llm-high-aws-access-key-id",
+            "AKIAEXAMPLE",
+            "--llm-high-aws-secret-access-key",
+            "secret-value",
             "--llm-cheap-provider",
             "azure",
             "--llm-cheap-model",
@@ -65,6 +69,8 @@ def test_init_parser_accepts_provider_specific_flags() -> None:
     )
 
     assert args.llm_high_aws_region_name == "us-east-1"
+    assert args.llm_high_aws_access_key_id == "AKIAEXAMPLE"
+    assert args.llm_high_aws_secret_access_key == "secret-value"
     assert args.llm_cheap_azure_openai_endpoint == "https://my-resource.openai.azure.com"
     assert args.llm_cheap_azure_openai_api_version == "2024-10-21"
     assert args.llm_cheap_azure_openai_deployment == "gpt-4o-mini-dev"

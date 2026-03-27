@@ -24,6 +24,8 @@ class LlmConfig:
     cache_enabled: bool
     cache_type: str | None
     aws_region_name: str | None = None
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
     azure_openai_endpoint: str | None = None
     azure_openai_api_version: str | None = None
     azure_openai_deployment: str | None = None
@@ -48,7 +50,7 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _read_secret_api_key(paths: MidicoderPaths, tier: str) -> str | None:
+def _read_secret_field(paths: MidicoderPaths, tier: str, field: str) -> str | None:
     secrets_path = paths.secrets / "secrets.json"
     if not secrets_path.exists():
         return None
@@ -57,10 +59,10 @@ def _read_secret_api_key(paths: MidicoderPaths, tier: str) -> str | None:
     if isinstance(secrets, dict):
         llm_section = secrets.get("llm", {})
         tier_section = llm_section.get(tier, {}) if isinstance(llm_section, dict) else {}
-        if isinstance(tier_section, dict) and tier_section.get("api_key"):
-            return str(tier_section["api_key"])
-        if secrets.get("api_key"):
-            return str(secrets["api_key"])
+        if isinstance(tier_section, dict) and tier_section.get(field):
+            return str(tier_section[field])
+        if secrets.get(field):
+            return str(secrets[field])
     return None
 
 
@@ -113,7 +115,7 @@ def load_llm_config(paths: MidicoderPaths, *, tier: str) -> LlmConfig:
 
     model = tier_config.get("model") or tier_config.get("model_name")
     provider = tier_config.get("provider")
-    api_key = tier_config.get("api_key") or _read_secret_api_key(paths, tier)
+    api_key = tier_config.get("api_key") or _read_secret_field(paths, tier, "api_key")
     base_url = tier_config.get("base_url") or tier_config.get("baseUrl")
     timeout_seconds = _normalize_timeout_seconds(
         tier_config.get("timeout_seconds") or tier_config.get("timeout")
@@ -141,6 +143,16 @@ def load_llm_config(paths: MidicoderPaths, *, tier: str) -> LlmConfig:
                 or tier_config.get("aws_region")
             )
             else None
+        ),
+        aws_access_key_id=(
+            str(tier_config["aws_access_key_id"])
+            if tier_config.get("aws_access_key_id")
+            else _read_secret_field(paths, tier, "aws_access_key_id")
+        ),
+        aws_secret_access_key=(
+            str(tier_config["aws_secret_access_key"])
+            if tier_config.get("aws_secret_access_key")
+            else _read_secret_field(paths, tier, "aws_secret_access_key")
         ),
         azure_openai_endpoint=(
             str(tier_config["azure_openai_endpoint"])
