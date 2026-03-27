@@ -75,15 +75,15 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         help="Working directory path"
     )
-    
+
     # Stack
     init_parser.add_argument(
         "--stack",
         type=str,
         help="Comma-separated tech stack(s) (e.g., fastapi,nest,angular)"
     )
-    
-    # LLM High Tier
+
+    # LLM provider selectors
     init_parser.add_argument(
         "--llm-high-provider",
         type=str,
@@ -91,60 +91,106 @@ def _build_parser() -> argparse.ArgumentParser:
         help="High-tier LLM provider"
     )
     init_parser.add_argument(
-        "--llm-high-model",
-        type=str,
-        help="High-tier LLM model name (e.g., claude-sonnet-4-5)"
-    )
-    init_parser.add_argument(
-        "--llm-high-url",
-        type=str,
-        help="High-tier LLM API base URL"
-    )
-    init_parser.add_argument(
-        "--llm-high-key",
-        type=str,
-        help="High-tier API key (WARNING: visible in process list, use --llm-high-key-env instead)"
-    )
-    init_parser.add_argument(
-        "--llm-high-key-env",
-        type=str,
-        help="Environment variable name containing high-tier API key (recommended)"
-    )
-    
-    # LLM Cheap Tier
-    init_parser.add_argument(
         "--llm-cheap-provider",
         type=str,
         choices=LLM_PROVIDERS,
         help="Cheap-tier LLM provider"
     )
+
+    # Provider-specific (OpenAI Compatible): keeps generic names for backwards familiarity.
+    init_parser.add_argument(
+        "--llm-high-model",
+        type=str,
+        help="High-tier model for provider=openai_compatible"
+    )
+    init_parser.add_argument(
+        "--llm-high-url",
+        type=str,
+        help="High-tier base URL for provider=openai_compatible"
+    )
+    init_parser.add_argument(
+        "--llm-high-key",
+        type=str,
+        help="High-tier API key for provider=openai_compatible (WARNING: visible in process list, use --llm-high-key-env instead)"
+    )
+    init_parser.add_argument(
+        "--llm-high-key-env",
+        type=str,
+        help="Env var name containing high-tier API key for provider=openai_compatible"
+    )
     init_parser.add_argument(
         "--llm-cheap-model",
         type=str,
-        help="Cheap-tier LLM model name (e.g., claude-3-5-haiku)"
+        help="Cheap-tier model for provider=openai_compatible"
     )
     init_parser.add_argument(
         "--llm-cheap-url",
         type=str,
-        help="Cheap-tier LLM API base URL"
+        help="Cheap-tier base URL for provider=openai_compatible"
     )
     init_parser.add_argument(
         "--llm-cheap-key",
         type=str,
-        help="Cheap-tier API key (WARNING: visible in process list, use --llm-cheap-key-env instead)"
+        help="Cheap-tier API key for provider=openai_compatible (WARNING: visible in process list, use --llm-cheap-key-env instead)"
     )
     init_parser.add_argument(
         "--llm-cheap-key-env",
         type=str,
-        help="Environment variable name containing cheap-tier API key (recommended)"
+        help="Env var name containing cheap-tier API key for provider=openai_compatible"
     )
 
-    # Provider-specific options (AWS Bedrock)
+    # Provider-specific (Anthropic)
+    init_parser.add_argument("--llm-high-anthropic-model", type=str, help="High-tier model for provider=anthropic")
     init_parser.add_argument(
-        "--llm-high-aws-region-name",
+        "--llm-high-anthropic-key",
         type=str,
-        help="AWS region name for high-tier provider=bedrock"
+        help="High-tier API key for provider=anthropic (WARNING: visible in process list, use --llm-high-anthropic-key-env instead)"
     )
+    init_parser.add_argument(
+        "--llm-high-anthropic-key-env",
+        type=str,
+        help="Env var name containing high-tier API key for provider=anthropic"
+    )
+    init_parser.add_argument("--llm-cheap-anthropic-model", type=str, help="Cheap-tier model for provider=anthropic")
+    init_parser.add_argument(
+        "--llm-cheap-anthropic-key",
+        type=str,
+        help="Cheap-tier API key for provider=anthropic (WARNING: visible in process list, use --llm-cheap-anthropic-key-env instead)"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-anthropic-key-env",
+        type=str,
+        help="Env var name containing cheap-tier API key for provider=anthropic"
+    )
+
+    # Provider-specific (OpenAI)
+    init_parser.add_argument("--llm-high-openai-model", type=str, help="High-tier model for provider=openai")
+    init_parser.add_argument(
+        "--llm-high-openai-key",
+        type=str,
+        help="High-tier API key for provider=openai (WARNING: visible in process list, use --llm-high-openai-key-env instead)"
+    )
+    init_parser.add_argument(
+        "--llm-high-openai-key-env",
+        type=str,
+        help="Env var name containing high-tier API key for provider=openai"
+    )
+    init_parser.add_argument("--llm-cheap-openai-model", type=str, help="Cheap-tier model for provider=openai")
+    init_parser.add_argument(
+        "--llm-cheap-openai-key",
+        type=str,
+        help="Cheap-tier API key for provider=openai (WARNING: visible in process list, use --llm-cheap-openai-key-env instead)"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-openai-key-env",
+        type=str,
+        help="Env var name containing cheap-tier API key for provider=openai"
+    )
+
+    # Provider-specific (AWS Bedrock)
+    init_parser.add_argument("--llm-high-bedrock-model", type=str, help="High-tier model for provider=bedrock")
+    init_parser.add_argument("--llm-cheap-bedrock-model", type=str, help="Cheap-tier model for provider=bedrock")
+    init_parser.add_argument("--llm-high-aws-region-name", type=str, help="AWS region name for high-tier provider=bedrock")
     init_parser.add_argument(
         "--llm-high-aws-access-key-id",
         type=str,
@@ -165,11 +211,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         help="Environment variable name containing AWS secret access key for high-tier provider=bedrock"
     )
-    init_parser.add_argument(
-        "--llm-cheap-aws-region-name",
-        type=str,
-        help="AWS region name for cheap-tier provider=bedrock"
-    )
+    init_parser.add_argument("--llm-cheap-aws-region-name", type=str, help="AWS region name for cheap-tier provider=bedrock")
     init_parser.add_argument(
         "--llm-cheap-aws-access-key-id",
         type=str,
@@ -191,7 +233,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Environment variable name containing AWS secret access key for cheap-tier provider=bedrock"
     )
 
-    # Provider-specific options (Azure OpenAI)
+    # Provider-specific (Azure OpenAI)
+    init_parser.add_argument("--llm-high-azure-model", type=str, help="High-tier model for provider=azure")
+    init_parser.add_argument(
+        "--llm-high-azure-key",
+        type=str,
+        help="High-tier API key for provider=azure (WARNING: visible in process list, use --llm-high-azure-key-env instead)"
+    )
+    init_parser.add_argument(
+        "--llm-high-azure-key-env",
+        type=str,
+        help="Env var name containing high-tier API key for provider=azure"
+    )
     init_parser.add_argument(
         "--llm-high-azure-openai-endpoint",
         type=str,
@@ -206,6 +259,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--llm-high-azure-openai-deployment",
         type=str,
         help="Azure OpenAI deployment name for high-tier provider=azure"
+    )
+    init_parser.add_argument("--llm-cheap-azure-model", type=str, help="Cheap-tier model for provider=azure")
+    init_parser.add_argument(
+        "--llm-cheap-azure-key",
+        type=str,
+        help="Cheap-tier API key for provider=azure (WARNING: visible in process list, use --llm-cheap-azure-key-env instead)"
+    )
+    init_parser.add_argument(
+        "--llm-cheap-azure-key-env",
+        type=str,
+        help="Env var name containing cheap-tier API key for provider=azure"
     )
     init_parser.add_argument(
         "--llm-cheap-azure-openai-endpoint",
@@ -223,27 +287,33 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Azure OpenAI deployment name for cheap-tier provider=azure"
     )
 
-    # Provider-specific options (Vertex Partner / Vertex AI)
+    # Provider-specific (Vertex Partner / Vertex AI)
+    init_parser.add_argument("--llm-high-vertex-model", type=str, help="High-tier model for provider=vertex_partner")
     init_parser.add_argument(
-        "--llm-high-vertex-project",
+        "--llm-high-vertex-key",
         type=str,
-        help="Vertex project id for high-tier provider=vertex_partner"
+        help="High-tier API key for provider=vertex_partner (WARNING: visible in process list, use --llm-high-vertex-key-env instead)"
     )
     init_parser.add_argument(
-        "--llm-high-vertex-location",
+        "--llm-high-vertex-key-env",
         type=str,
-        help="Vertex location for high-tier provider=vertex_partner"
+        help="Env var name containing high-tier API key for provider=vertex_partner"
+    )
+    init_parser.add_argument("--llm-high-vertex-project", type=str, help="Vertex project id for high-tier provider=vertex_partner")
+    init_parser.add_argument("--llm-high-vertex-location", type=str, help="Vertex location for high-tier provider=vertex_partner")
+    init_parser.add_argument("--llm-cheap-vertex-model", type=str, help="Cheap-tier model for provider=vertex_partner")
+    init_parser.add_argument(
+        "--llm-cheap-vertex-key",
+        type=str,
+        help="Cheap-tier API key for provider=vertex_partner (WARNING: visible in process list, use --llm-cheap-vertex-key-env instead)"
     )
     init_parser.add_argument(
-        "--llm-cheap-vertex-project",
+        "--llm-cheap-vertex-key-env",
         type=str,
-        help="Vertex project id for cheap-tier provider=vertex_partner"
+        help="Env var name containing cheap-tier API key for provider=vertex_partner"
     )
-    init_parser.add_argument(
-        "--llm-cheap-vertex-location",
-        type=str,
-        help="Vertex location for cheap-tier provider=vertex_partner"
-    )
+    init_parser.add_argument("--llm-cheap-vertex-project", type=str, help="Vertex project id for cheap-tier provider=vertex_partner")
+    init_parser.add_argument("--llm-cheap-vertex-location", type=str, help="Vertex location for cheap-tier provider=vertex_partner")
 
     
 

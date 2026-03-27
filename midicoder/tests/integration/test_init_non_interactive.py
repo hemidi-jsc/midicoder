@@ -1,446 +1,105 @@
-"""Integration tests for non-interactive init."""
+"""Integration tests for `midicoder init --non-interactive`."""
 
-import os
+from __future__ import annotations
+
+import json
 from pathlib import Path
+
 import pytest
 
-from midicoder.commands.init import run
-from midicoder.config import ConfigManager, SecretsManager
-from midicoder.commands.base import MidicoderPaths
+from midicoder.cli import main
 
 
-class TestInitNonInteractive:
-    """Test non-interactive initialization."""
-    
-    def test_config_list_flag(self, capsys, tmp_path):
-        """Test --config-list flag shows help and exits."""
-        class Args:
-            config_list = True
-            non_interactive = False
-        
-        run(tmp_path, Args())
-        
-        captured = capsys.readouterr()
-        assert "Configuration Keywords" in captured.out
-        assert "--working-dir" in captured.out
-        assert "--stack" in captured.out
-        assert "--llm-high-provider" in captured.out
-        assert "--rewrite-config" in captured.out
-    
-    def test_init_from_env_vars(self, tmp_path):
-        """Test init using environment variables."""
-        # Set environment variables
-        os.environ.update({
-            "MIDICODER_WORKING_DIR": str(tmp_path),
-            "MIDICODER_STACK": "fastapi,nest",
-            "MIDICODER_LLM_HIGH_PROVIDER": "anthropic",
-            "MIDICODER_LLM_HIGH_MODEL": "claude-sonnet-4-5",
-            "MIDICODER_LLM_HIGH_URL": "https://api.anthropic.com",
-            "MIDICODER_LLM_HIGH_API_KEY": "sk-test-123",
-            "MIDICODER_LLM_CHEAP_PROVIDER": "anthropic",
-            "MIDICODER_LLM_CHEAP_MODEL": "claude-3-5-haiku",
-            "MIDICODER_LLM_CHEAP_URL": "https://api.anthropic.com",
-            "MIDICODER_LLM_CHEAP_API_KEY": "sk-test-456",
-        })
-        
-        try:
-            # Mock args
-            class Args:
-                config_list = False
-                non_interactive = True
-                env_prefix = "MIDICODER_"
-                working_dir = None
-                stack = None
-                llm_high_provider = None
-                llm_high_model = None
-                llm_high_url = None
-                llm_high_key = None
-                llm_high_key_env = None
-                llm_cheap_provider = None
-                llm_cheap_model = None
-                llm_cheap_url = None
-                llm_cheap_key = None
-                llm_cheap_key_env = None
-            
-            run(tmp_path, Args())
-            
-            # Verify config
-            paths = MidicoderPaths(root=tmp_path)
-            config_manager = ConfigManager(paths)
-            config = config_manager.load()
-            
-            assert config["working_dir"] == str(tmp_path)
-            assert config["stack"] == ["fastapi", "nest"]
-            assert config["llm"]["high"]["provider"] == "anthropic"
-            assert config["llm"]["high"]["model"] == "claude-sonnet-4-5"
-            
-            # Verify secrets
-            secrets_manager = SecretsManager(paths.secrets)
-            llm_secrets = secrets_manager.load_secrets("llm")
-            assert llm_secrets["high"]["api_key"] == "sk-test-123"
-            assert llm_secrets["cheap"]["api_key"] == "sk-test-456"
-        
-        finally:
-            # Cleanup
-            for key in list(os.environ.keys()):
-                if key.startswith("MIDICODER_"):
-                    del os.environ[key]
-    
-    def test_init_from_command_args(self, tmp_path):
-        """Test init using command-line arguments."""
-        os.environ["TEST_API_KEY_HIGH"] = "sk-cmd-123"
-        os.environ["TEST_API_KEY_CHEAP"] = "sk-cmd-456"
-        
-        try:
-            # Mock args
-            class Args:
-                config_list = False
-                non_interactive = True
-                env_prefix = "MIDICODER_"
-                working_dir = str(tmp_path)
-                stack = "nest,angular"
-                llm_high_provider = "anthropic"
-                llm_high_model = "claude-sonnet-4-5"
-                llm_high_url = "https://api.anthropic.com"
-                llm_high_key = None
-                llm_high_key_env = "TEST_API_KEY_HIGH"
-                llm_cheap_provider = "anthropic"
-                llm_cheap_model = "claude-3-5-haiku"
-                llm_cheap_url = "https://api.anthropic.com"
-                llm_cheap_key = None
-                llm_cheap_key_env = "TEST_API_KEY_CHEAP"
-            
-            run(tmp_path, Args())
-            
-            # Verify config
-            paths = MidicoderPaths(root=tmp_path)
-            config_manager = ConfigManager(paths)
-            config = config_manager.load()
-            
-            assert config["working_dir"] == str(tmp_path)
-            assert config["stack"] == ["nest", "angular"]
-            assert config["llm"]["high"]["model"] == "claude-sonnet-4-5"
-            
-            # Verify secrets from env vars
-            secrets_manager = SecretsManager(paths.secrets)
-            llm_secrets = secrets_manager.load_secrets("llm")
-            assert llm_secrets["high"]["api_key"] == "sk-cmd-123"
-            assert llm_secrets["cheap"]["api_key"] == "sk-cmd-456"
-        
-        finally:
-            del os.environ["TEST_API_KEY_HIGH"]
-            del os.environ["TEST_API_KEY_CHEAP"]
-    
-    def test_init_priority_flag_over_env(self, tmp_path):
-        """Test that flags take priority over environment variables."""
-        os.environ["MIDICODER_STACK"] = "fastapi"
-        os.environ["MIDICODER_LLM_HIGH_API_KEY"] = "sk-env-key"
-        os.environ["MIDICODER_LLM_CHEAP_API_KEY"] = "sk-env-key-cheap"
-        os.environ["MIDICODER_LLM_HIGH_PROVIDER"] = "anthropic"
-        os.environ["MIDICODER_LLM_HIGH_MODEL"] = "claude-sonnet-4-5"
-        os.environ["MIDICODER_LLM_HIGH_URL"] = "https://api.anthropic.com"
-        os.environ["MIDICODER_LLM_CHEAP_PROVIDER"] = "anthropic"
-        os.environ["MIDICODER_LLM_CHEAP_MODEL"] = "claude-3-5-haiku"
-        os.environ["MIDICODER_LLM_CHEAP_URL"] = "https://api.anthropic.com"
-        
-        try:
-            class Args:
-                config_list = False
-                non_interactive = True
-                env_prefix = "MIDICODER_"
-                working_dir = str(tmp_path)
-                stack = "nest,angular"  # Flag overrides env var
-                llm_high_provider = "anthropic"
-                llm_high_model = "claude-sonnet-4-5"
-                llm_high_url = "https://api.anthropic.com"
-                llm_high_key = None
-                llm_high_key_env = None
-                llm_cheap_provider = "anthropic"
-                llm_cheap_model = "claude-3-5-haiku"
-                llm_cheap_url = "https://api.anthropic.com"
-                llm_cheap_key = None
-                llm_cheap_key_env = None
-            
-            run(tmp_path, Args())
-            
-            paths = MidicoderPaths(root=tmp_path)
-            config_manager = ConfigManager(paths)
-            config = config_manager.load()
-            
-            # Flag should override env var
-            assert config["stack"] == ["nest", "angular"]
-            
-            # Env var should be used for API key (no flag provided)
-            secrets_manager = SecretsManager(paths.secrets)
-            llm_secrets = secrets_manager.load_secrets("llm")
-            assert llm_secrets["high"]["api_key"] == "sk-env-key"
-        
-        finally:
-            for key in ["MIDICODER_STACK", "MIDICODER_LLM_HIGH_API_KEY", 
-                       "MIDICODER_LLM_CHEAP_API_KEY", "MIDICODER_LLM_HIGH_PROVIDER",
-                       "MIDICODER_LLM_HIGH_MODEL", "MIDICODER_LLM_HIGH_URL",
-                       "MIDICODER_LLM_CHEAP_PROVIDER", "MIDICODER_LLM_CHEAP_MODEL",
-                       "MIDICODER_LLM_CHEAP_URL"]:
-                if key in os.environ:
-                    del os.environ[key]
-    
-    def test_init_validation_error_missing_required(self, tmp_path):
-        """Test that validation errors are caught."""
-        with pytest.raises(SystemExit):
-            class Args:
-                config_list = False
-                non_interactive = True
-                env_prefix = "MIDICODER_"
-                working_dir = str(tmp_path)
-                stack = "fastapi"
-                llm_high_provider = None  # Missing required
-                llm_high_model = None
-                llm_high_url = None
-                llm_high_key = None
-                llm_high_key_env = None
-                llm_cheap_provider = None
-                llm_cheap_model = None
-                llm_cheap_url = None
-                llm_cheap_key = None
-                llm_cheap_key_env = None
-            
-            run(tmp_path, Args())
-    
-    def test_init_validation_error_invalid_stack(self, tmp_path):
-        """Test validation fails for invalid stack."""
-        with pytest.raises(SystemExit):
-            class Args:
-                config_list = False
-                non_interactive = True
-                env_prefix = "MIDICODER_"
-                working_dir = str(tmp_path)
-                stack = "invalid-stack"  # Invalid
-                llm_high_provider = "anthropic"
-                llm_high_model = "claude-sonnet-4-5"
-                llm_high_url = "https://api.anthropic.com"
-                llm_high_key = "sk-test"
-                llm_high_key_env = None
-                llm_cheap_provider = "anthropic"
-                llm_cheap_model = "claude-3-5-haiku"
-                llm_cheap_url = "https://api.anthropic.com"
-                llm_cheap_key = "sk-test"
-                llm_cheap_key_env = None
-            
-            run(tmp_path, Args())
+def _base_flags(workdir: Path) -> list[str]:
+    return [
+        "init",
+        "--non-interactive",
+        "--working-dir",
+        str(workdir),
+        "--stack",
+        "fastapi",
+        "--llm-high-provider",
+        "anthropic",
+        "--llm-high-anthropic-model",
+        "anthropic/claude-3-7-sonnet-latest",
+        "--llm-cheap-provider",
+        "anthropic",
+        "--llm-cheap-anthropic-model",
+        "anthropic/claude-3-5-haiku-latest",
+    ]
 
-    def test_init_allows_null_api_keys(self, tmp_path):
-        """Non-interactive init should allow omitted API keys for both tiers."""
-        class Args:
-            config_list = False
-            non_interactive = True
-            env_prefix = "MIDICODER_"
-            working_dir = str(tmp_path)
-            stack = "fastapi"
-            llm_high_provider = "anthropic"
-            llm_high_model = "claude-sonnet-4-5"
-            llm_high_url = "https://api.anthropic.com"
-            llm_high_key = None
-            llm_high_key_env = None
-            llm_cheap_provider = "anthropic"
-            llm_cheap_model = "claude-3-5-haiku"
-            llm_cheap_url = "https://api.anthropic.com"
-            llm_cheap_key = None
-            llm_cheap_key_env = None
 
-        run(tmp_path, Args())
+def test_non_interactive_respects_flag_over_env_priority(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MIDICODER_STACK", "nest")
 
-        paths = MidicoderPaths(root=tmp_path)
-        config = ConfigManager(paths).load()
-        assert config["llm"]["high"]["provider"] == "anthropic"
-        assert config["llm"]["cheap"]["provider"] == "anthropic"
+    rc = main(_base_flags(tmp_path) + ["--stack", "fastapi,angular"])
 
-        llm_secrets = SecretsManager(paths.secrets).load_secrets("llm")
-        assert "api_key" not in llm_secrets["high"]
-        assert "api_key" not in llm_secrets["cheap"]
-    
-    def test_init_with_key_env_reference(self, tmp_path):
-        """Test using --llm-*-key-env to reference custom env var."""
-        os.environ["CUSTOM_HIGH_KEY"] = "sk-custom-high"
-        os.environ["CUSTOM_CHEAP_KEY"] = "sk-custom-cheap"
-        
-        try:
-            class Args:
-                config_list = False
-                non_interactive = True
-                env_prefix = "MIDICODER_"
-                working_dir = str(tmp_path)
-                stack = "fastapi"
-                llm_high_provider = "anthropic"
-                llm_high_model = "claude-sonnet-4-5"
-                llm_high_url = "https://api.anthropic.com"
-                llm_high_key = None
-                llm_high_key_env = "CUSTOM_HIGH_KEY"
-                llm_cheap_provider = "anthropic"
-                llm_cheap_model = "claude-3-5-haiku"
-                llm_cheap_url = "https://api.anthropic.com"
-                llm_cheap_key = None
-                llm_cheap_key_env = "CUSTOM_CHEAP_KEY"
-            
-            run(tmp_path, Args())
-            
-            paths = MidicoderPaths(root=tmp_path)
-            secrets_manager = SecretsManager(paths.secrets)
-            llm_secrets = secrets_manager.load_secrets("llm")
-            
-            assert llm_secrets["high"]["api_key"] == "sk-custom-high"
-            assert llm_secrets["cheap"]["api_key"] == "sk-custom-cheap"
-        
-        finally:
-            del os.environ["CUSTOM_HIGH_KEY"]
-            del os.environ["CUSTOM_CHEAP_KEY"]
+    assert rc == 0
+    payload = json.loads((tmp_path / ".midicoder" / "config.json").read_text(encoding="utf-8"))
+    assert payload["stack"] == ["fastapi", "angular"]
 
-    def test_init_with_azure_provider_specific_fields(self, tmp_path):
-        """Azure provider config should be accepted with provider-specific fields."""
-        os.environ["AZURE_HIGH_KEY"] = "sk-azure-high"
-        os.environ["AZURE_CHEAP_KEY"] = "sk-azure-cheap"
 
-        try:
-            class Args:
-                config_list = False
-                non_interactive = True
-                env_prefix = "MIDICODER_"
-                working_dir = str(tmp_path)
-                stack = "fastapi"
-                llm_high_provider = "azure"
-                llm_high_model = "azure/gpt-4o"
-                llm_high_url = None
-                llm_high_key = None
-                llm_high_key_env = "AZURE_HIGH_KEY"
-                llm_high_azure_openai_endpoint = "https://my-resource.openai.azure.com"
-                llm_high_azure_openai_api_version = "2024-10-21"
-                llm_high_azure_openai_deployment = "gpt-4o-prod"
-                llm_high_google_vertex_project = None
-                llm_high_google_vertex_location = None
-                llm_cheap_provider = "azure"
-                llm_cheap_model = "azure/gpt-4o-mini"
-                llm_cheap_url = None
-                llm_cheap_key = None
-                llm_cheap_key_env = "AZURE_CHEAP_KEY"
-                llm_cheap_azure_openai_endpoint = "https://my-resource.openai.azure.com"
-                llm_cheap_azure_openai_api_version = "2024-10-21"
-                llm_cheap_azure_openai_deployment = "gpt-4o-mini-dev"
-                llm_cheap_google_vertex_project = None
-                llm_cheap_google_vertex_location = None
+def test_non_interactive_refuses_second_run_without_explicit_rewrite(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
 
-            run(tmp_path, Args())
+    assert main(_base_flags(tmp_path)) == 0
 
-            paths = MidicoderPaths(root=tmp_path)
-            config = ConfigManager(paths).load()
-            assert config["llm"]["high"]["provider"] == "azure"
-            assert config["llm"]["high"]["azure_openai_endpoint"] == "https://my-resource.openai.azure.com"
-            assert config["llm"]["high"]["azure_openai_api_version"] == "2024-10-21"
-            assert config["llm"]["high"]["azure_openai_deployment"] == "gpt-4o-prod"
-            assert config["llm"]["high"]["base_url"] is None
+    with pytest.raises(SystemExit):
+        main(_base_flags(tmp_path))
 
-        finally:
-            del os.environ["AZURE_HIGH_KEY"]
-            del os.environ["AZURE_CHEAP_KEY"]
 
-    def test_non_interactive_refuses_overwrite_without_rewrite_flag(self, tmp_path, capsys):
-        """Non-interactive mode should fail-fast when config exists and rewrite not allowed."""
-        os.environ["TEST_API_KEY_HIGH"] = "sk-high"
-        os.environ["TEST_API_KEY_CHEAP"] = "sk-cheap"
+def test_non_interactive_rewrite_with_custom_prefix_env_keeps_legacy_data(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
 
-        try:
-            class Args:
-                config_list = False
-                non_interactive = True
-                env_prefix = "MIDICODER_"
-                rewrite_config = False
-                working_dir = str(tmp_path)
-                stack = "fastapi"
-                llm_high_provider = "anthropic"
-                llm_high_model = "anthropic/claude-3-7-sonnet-latest"
-                llm_high_url = "https://api.anthropic.com"
-                llm_high_key = None
-                llm_high_key_env = "TEST_API_KEY_HIGH"
-                llm_high_aws_bedrock_region = None
-                llm_high_azure_openai_endpoint = None
-                llm_high_azure_openai_api_version = None
-                llm_high_azure_openai_deployment = None
-                llm_high_google_vertex_project = None
-                llm_high_google_vertex_location = None
-                llm_cheap_provider = "anthropic"
-                llm_cheap_model = "anthropic/claude-3-5-haiku-latest"
-                llm_cheap_url = "https://api.anthropic.com"
-                llm_cheap_key = None
-                llm_cheap_key_env = "TEST_API_KEY_CHEAP"
-                llm_cheap_aws_bedrock_region = None
-                llm_cheap_azure_openai_endpoint = None
-                llm_cheap_azure_openai_api_version = None
-                llm_cheap_azure_openai_deployment = None
-                llm_cheap_google_vertex_project = None
-                llm_cheap_google_vertex_location = None
+    assert main(_base_flags(tmp_path)) == 0
 
-            run(tmp_path, Args())  # initial write
+    legacy_file = tmp_path / ".midicoder" / "runs" / "legacy.log"
+    legacy_file.parent.mkdir(parents=True, exist_ok=True)
+    legacy_file.write_text("preserve", encoding="utf-8")
 
-            with pytest.raises(SystemExit):
-                run(tmp_path, Args())  # second write should fail without rewrite flag
+    monkeypatch.setenv("MC_REWRITE_CONFIG", "true")
+    rc = main(
+        _base_flags(tmp_path)
+        + [
+            "--env-prefix",
+            "MC_",
+            "--stack",
+            "fastapi,nest",
+        ]
+    )
 
-            captured = capsys.readouterr()
-            assert "Overwrite Mode" in captured.out
-            assert "will be kept" in captured.out
+    assert rc == 0
+    config = json.loads((tmp_path / ".midicoder" / "config.json").read_text(encoding="utf-8"))
+    assert config["stack"] == ["fastapi", "nest"]
+    assert legacy_file.exists()
 
-        finally:
-            del os.environ["TEST_API_KEY_HIGH"]
-            del os.environ["TEST_API_KEY_CHEAP"]
 
-    def test_non_interactive_allows_overwrite_with_rewrite_flag(self, tmp_path, capsys):
-        """Non-interactive mode should overwrite when rewrite flag is explicitly enabled."""
-        os.environ["TEST_API_KEY_HIGH"] = "sk-high"
-        os.environ["TEST_API_KEY_CHEAP"] = "sk-cheap"
+def test_non_interactive_validates_provider_specific_requirements(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
 
-        try:
-            class Args:
-                config_list = False
-                non_interactive = True
-                env_prefix = "MIDICODER_"
-                rewrite_config = True
-                working_dir = str(tmp_path)
-                stack = "fastapi"
-                llm_high_provider = "anthropic"
-                llm_high_model = "anthropic/claude-3-7-sonnet-latest"
-                llm_high_url = "https://api.anthropic.com"
-                llm_high_key = None
-                llm_high_key_env = "TEST_API_KEY_HIGH"
-                llm_high_aws_bedrock_region = None
-                llm_high_azure_openai_endpoint = None
-                llm_high_azure_openai_api_version = None
-                llm_high_azure_openai_deployment = None
-                llm_high_google_vertex_project = None
-                llm_high_google_vertex_location = None
-                llm_cheap_provider = "anthropic"
-                llm_cheap_model = "anthropic/claude-3-5-haiku-latest"
-                llm_cheap_url = "https://api.anthropic.com"
-                llm_cheap_key = None
-                llm_cheap_key_env = "TEST_API_KEY_CHEAP"
-                llm_cheap_aws_bedrock_region = None
-                llm_cheap_azure_openai_endpoint = None
-                llm_cheap_azure_openai_api_version = None
-                llm_cheap_azure_openai_deployment = None
-                llm_cheap_google_vertex_project = None
-                llm_cheap_google_vertex_location = None
-
-            run(tmp_path, Args())
-            legacy_log = tmp_path / ".midicoder" / "runs" / "legacy-log.txt"
-            legacy_log.parent.mkdir(parents=True, exist_ok=True)
-            legacy_log.write_text("old-run-log", encoding="utf-8")
-
-            run(tmp_path, Args())  # overwrite permitted
-
-            config = ConfigManager(MidicoderPaths(root=tmp_path)).load()
-            assert config["llm"]["high"]["provider"] == "anthropic"
-            assert legacy_log.exists()
-
-            captured = capsys.readouterr()
-            assert "Overwrite Mode" in captured.out
-            assert "will be kept" in captured.out
-
-        finally:
-            del os.environ["TEST_API_KEY_HIGH"]
-            del os.environ["TEST_API_KEY_CHEAP"]
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "init",
+                "--non-interactive",
+                "--working-dir",
+                str(tmp_path),
+                "--stack",
+                "fastapi",
+                "--llm-high-provider",
+                "azure",
+                "--llm-high-azure-model",
+                "azure/gpt-4o",
+                "--llm-cheap-provider",
+                "anthropic",
+                "--llm-cheap-anthropic-model",
+                "anthropic/claude-3-5-haiku-latest",
+            ]
+        )

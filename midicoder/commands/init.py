@@ -201,6 +201,119 @@ def _get_api_key(
     return None
 
 
+def _get_provider_model(
+    *,
+    tier: str,
+    provider: str | None,
+    args: Any,
+    env_prefix: str,
+) -> str | None:
+    """Resolve model name by provider-specific flag/env contract."""
+    if provider == "openai_compatible":
+        return _get_value_with_priority(
+            getattr(args, f"llm_{tier}_model", None),
+            f"LLM_{tier.upper()}_MODEL",
+            env_prefix=env_prefix,
+        )
+    if provider == "anthropic":
+        return _get_value_with_priority(
+            getattr(args, f"llm_{tier}_anthropic_model", None),
+            f"LLM_{tier.upper()}_ANTHROPIC_MODEL",
+            env_prefix=env_prefix,
+        )
+    if provider == "openai":
+        return _get_value_with_priority(
+            getattr(args, f"llm_{tier}_openai_model", None),
+            f"LLM_{tier.upper()}_OPENAI_MODEL",
+            env_prefix=env_prefix,
+        )
+    if provider == "bedrock":
+        return _get_value_with_priority(
+            getattr(args, f"llm_{tier}_bedrock_model", None),
+            f"LLM_{tier.upper()}_BEDROCK_MODEL",
+            env_prefix=env_prefix,
+        )
+    if provider == "azure":
+        return _get_value_with_priority(
+            getattr(args, f"llm_{tier}_azure_model", None),
+            f"LLM_{tier.upper()}_AZURE_MODEL",
+            env_prefix=env_prefix,
+        )
+    if provider == "vertex_partner":
+        return _get_value_with_priority(
+            getattr(args, f"llm_{tier}_vertex_model", None),
+            f"LLM_{tier.upper()}_VERTEX_MODEL",
+            env_prefix=env_prefix,
+        )
+    return None
+
+
+def _get_provider_api_key(
+    *,
+    tier: str,
+    provider: str | None,
+    args: Any,
+    env_prefix: str,
+) -> str | None:
+    """Resolve API key by provider-specific flag/env contract."""
+    if provider == "openai_compatible":
+        return _get_api_key(
+            tier,
+            getattr(args, f"llm_{tier}_key", None),
+            getattr(args, f"llm_{tier}_key_env", None),
+            env_prefix,
+        )
+
+    provider_key_token = {
+        "anthropic": "anthropic",
+        "openai": "openai",
+        "azure": "azure",
+        "vertex_partner": "vertex",
+    }.get(provider or "")
+
+    if provider_key_token:
+        key_direct = _get_value_with_priority(
+            getattr(args, f"llm_{tier}_{provider_key_token}_key", None),
+            f"LLM_{tier.upper()}_{provider_key_token.upper()}_API_KEY",
+            env_prefix=env_prefix,
+        )
+        key_env_name = _get_value_with_priority(
+            getattr(args, f"llm_{tier}_{provider_key_token}_key_env", None),
+            f"LLM_{tier.upper()}_{provider_key_token.upper()}_API_KEY_ENV",
+            env_prefix=env_prefix,
+        )
+        return _get_api_key(
+            f"{tier}-{provider_key_token}",
+            key_direct,
+            key_env_name,
+            env_prefix,
+        )
+
+    return None
+
+
+def _required_model_flag_and_env(provider: str, tier: str, env_prefix: str) -> tuple[str, str]:
+    """Return the model flag/env key to show in validation errors."""
+    mapping = {
+        "openai_compatible": (f"--llm-{tier}-model", f"{env_prefix}LLM_{tier.upper()}_MODEL"),
+        "anthropic": (
+            f"--llm-{tier}-anthropic-model",
+            f"{env_prefix}LLM_{tier.upper()}_ANTHROPIC_MODEL",
+        ),
+        "openai": (f"--llm-{tier}-openai-model", f"{env_prefix}LLM_{tier.upper()}_OPENAI_MODEL"),
+        "bedrock": (
+            f"--llm-{tier}-bedrock-model",
+            f"{env_prefix}LLM_{tier.upper()}_BEDROCK_MODEL",
+        ),
+        "azure": (f"--llm-{tier}-azure-model", f"{env_prefix}LLM_{tier.upper()}_AZURE_MODEL"),
+        "vertex_partner": (
+            f"--llm-{tier}-vertex-model",
+            f"{env_prefix}LLM_{tier.upper()}_VERTEX_MODEL",
+        ),
+    }
+    return mapping.get(provider, (f"--llm-{tier}-model", f"{env_prefix}LLM_{tier.upper()}_MODEL"))
+
+
 def _get_secret_value(
     *,
     tier: str,
@@ -288,7 +401,14 @@ def _validate_required_config(
             )
         
         if not tier_config.get("model"):
-            errors.append(f"LLM {tier} tier model is required")
+            if provider:
+                flag, env_key = _required_model_flag_and_env(provider, tier, env_prefix)
+                errors.append(
+                    f"LLM {tier} tier model is required for provider '{provider}'. "
+                    f"Set via {flag} or {env_key}."
+                )
+            else:
+                errors.append(f"LLM {tier} tier model is required")
 
         if provider in PROVIDER_REQUIRED_FIELDS:
             for required_field in PROVIDER_REQUIRED_FIELDS[provider]:
@@ -332,19 +452,26 @@ def _build_llm_tier_config(tier: str, args: Any, env_prefix: str) -> dict[str, A
     )
     provider = _normalize_provider_name(provider)
 
-    tier_config: dict[str, Any] = {
-        "provider": provider,
-        "model": _get_value_with_priority(
-            getattr(args, f"llm_{tier}_model", None),
-            f"LLM_{tier.upper()}_MODEL",
-            env_prefix=env_prefix,
-        ),
-        "base_url": _get_value_with_priority(
+    base_url: str | None = None
+    if provider == "openai_compatible":
+        base_url = _get_value_with_priority(
             getattr(args, f"llm_{tier}_url", None),
             f"LLM_{tier.upper()}_URL",
             default=PROVIDER_BASE_URLS.get(provider),
             env_prefix=env_prefix,
+        )
+    else:
+        base_url = PROVIDER_BASE_URLS.get(provider)
+
+    tier_config: dict[str, Any] = {
+        "provider": provider,
+        "model": _get_provider_model(
+            tier=tier,
+            provider=provider,
+            args=args,
+            env_prefix=env_prefix,
         ),
+        "base_url": base_url,
     }
 
     provider_specific_fields = [
@@ -488,10 +615,12 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
     }
     
     for tier in ["high", "cheap"]:
-        key_direct = getattr(args, f"llm_{tier}_key", None)
-        key_env_name = getattr(args, f"llm_{tier}_key_env", None)
-        
-        api_key = _get_api_key(tier, key_direct, key_env_name, env_prefix)
+        api_key = _get_provider_api_key(
+            tier=tier,
+            provider=llm_config[tier].get("provider"),
+            args=args,
+            env_prefix=env_prefix,
+        )
         if api_key:
             llm_secrets[tier]["api_key"] = api_key
 

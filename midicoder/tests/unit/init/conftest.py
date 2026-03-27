@@ -1,0 +1,76 @@
+"""Shared fixtures/helpers for init-unit test suite."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+
+
+def make_non_interactive_args(root: Path, **overrides: object) -> SimpleNamespace:
+    """Build args object matching the `midicoder init` parser fields."""
+    defaults: dict[str, object] = {
+        "config_list": False,
+        "non_interactive": True,
+        "env_prefix": "MIDICODER_",
+        "rewrite_config": None,
+        "working_dir": str(root),
+        "stack": "fastapi",
+        "llm_high_provider": "anthropic",
+        "llm_high_model": None,
+        "llm_high_url": None,
+        "llm_high_key": None,
+        "llm_high_key_env": None,
+        "llm_high_anthropic_model": "anthropic/claude-3-7-sonnet-latest",
+        "llm_high_anthropic_key": None,
+        "llm_high_anthropic_key_env": None,
+        "llm_high_openai_model": None,
+        "llm_high_openai_key": None,
+        "llm_high_openai_key_env": None,
+        "llm_high_bedrock_model": None,
+        "llm_high_azure_model": None,
+        "llm_high_azure_key": None,
+        "llm_high_azure_key_env": None,
+        "llm_high_vertex_model": None,
+        "llm_high_vertex_key": None,
+        "llm_high_vertex_key_env": None,
+        "llm_cheap_provider": "anthropic",
+        "llm_cheap_model": None,
+        "llm_cheap_url": None,
+        "llm_cheap_key": None,
+        "llm_cheap_key_env": None,
+        "llm_cheap_anthropic_model": "anthropic/claude-3-5-haiku-latest",
+        "llm_cheap_anthropic_key": None,
+        "llm_cheap_anthropic_key_env": None,
+        "llm_cheap_openai_model": None,
+        "llm_cheap_openai_key": None,
+        "llm_cheap_openai_key_env": None,
+        "llm_cheap_bedrock_model": None,
+        "llm_cheap_azure_model": None,
+        "llm_cheap_azure_key": None,
+        "llm_cheap_azure_key_env": None,
+        "llm_cheap_vertex_model": None,
+        "llm_cheap_vertex_key": None,
+        "llm_cheap_vertex_key_env": None,
+        "llm_high_aws_region_name": None,
+        "llm_high_aws_access_key_id": None,
+        "llm_high_aws_access_key_id_env": None,
+        "llm_high_aws_secret_access_key": None,
+        "llm_high_aws_secret_access_key_env": None,
+        "llm_cheap_aws_region_name": None,
+        "llm_cheap_aws_access_key_id": None,
+        "llm_cheap_aws_access_key_id_env": None,
+        "llm_cheap_aws_secret_access_key": None,
+        "llm_cheap_aws_secret_access_key_env": None,
+        "llm_high_azure_openai_endpoint": None,
+        "llm_high_azure_openai_api_version": None,
+        "llm_high_azure_openai_deployment": None,
+        "llm_cheap_azure_openai_endpoint": None,
+        "llm_cheap_azure_openai_api_version": None,
+        "llm_cheap_azure_openai_deployment": None,
+        "llm_high_vertex_project": None,
+        "llm_high_vertex_location": None,
+        "llm_cheap_vertex_project": None,
+        "llm_cheap_vertex_location": None,
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
