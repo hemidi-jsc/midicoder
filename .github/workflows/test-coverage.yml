@@ -1,10 +1,10 @@
-name: CI
+name: Test and collect coverage report
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main", "development" ]
   pull_request:
-    branches: [ "main", "develop" ]
+    branches: [ "main", "development" ]
 
 jobs:
   test:
