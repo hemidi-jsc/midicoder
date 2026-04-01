@@ -1,4 +1,4 @@
-name: Format check report
+name: "CI Pipeline: Code Formatting Analysis"
 
 on:
   push:
@@ -7,46 +7,126 @@ on:
     branches: [ "main", "development" ]
 
 jobs:
-  format-check:
+  format-analysis:
+    name: "Enforce Code Style"
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: "Checkout Codebase"
         uses: actions/checkout@v6
 
-      - name: Setup Python
+      - name: "Setup Python Environment"
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
-      - name: Install tools
+      - name: "Install Formatter Dependencies"
         run: |
+          python -m pip install --upgrade pip
           pip install black isort
 
-      - name: Run Black (report)
+      - name: "Review Code Formatting (Black)"
+        id: black
+        if: always()
         run: |
-          black --check --diff . > black-report.txt || true
+          BLACK_FILES=0
+          BLACK_STATUS=Passed
+          BLACK_EXIT=0
 
-      - name: Run isort (report)
+          black --check --diff . 2>&1 | tee black_output.txt
+          BLACK_EXIT=${PIPESTATUS[0]}
+
+          if [[ $BLACK_EXIT != 0 ]]; then
+            BLACK_STATUS=Failed
+            BLACK_FILES=$(grep -c '^would reformat' black_output.txt 2>/dev/null || true)
+            BLACK_FILES=${BLACK_FILES:-0}
+            # Save diff for summary (strip ANSI colour codes)
+            grep -E '^(---|\.\.\.| @@|\+|-)' black_output.txt | head -100 > /tmp/black_diff.txt || true
+          fi
+
+          echo "BLACK_FILES=$BLACK_FILES" >> $GITHUB_ENV
+          echo "BLACK_EXIT=$BLACK_EXIT" >> $GITHUB_ENV
+          echo "BLACK_STATUS=$BLACK_STATUS" >> $GITHUB_ENV
+
+      - name: "Review Import Ordering (isort)"
+        id: isort
+        if: always()
         run: |
-          isort --check-only --diff . > isort-report.txt || true
+          ISORT_STATUS=Passed
+          ISORT_EXIT=0
 
-      - name: Show summary
+          isort --check-only --diff . 2>&1 | tee isort_output.txt
+          ISORT_EXIT=${PIPESTATUS[0]}
+
+          if [[ $ISORT_EXIT != 0 ]]; then
+            ISORT_STATUS=Failed
+            # Save diff for summary
+            grep -E '^(---|\.\.\.| @@|\+|-)' isort_output.txt | head -100 > /tmp/isort_diff.txt || true
+          fi
+
+          echo "ISORT_EXIT=$ISORT_EXIT" >> $GITHUB_ENV
+          echo "ISORT_STATUS=$ISORT_STATUS" >> $GITHUB_ENV
+
+      - name: "Generate Formatting Analysis Summary"
+        if: always()
         run: |
-          echo "==== BLACK REPORT ===="
-          cat black-report.txt
-          echo "==== ISORT REPORT ===="
-          cat isort-report.txt
+          if [[ "${{ env.BLACK_EXIT }}" == "0" && "${{ env.ISORT_EXIT }}" == "0" ]]; then
+            FINAL_STATUS="Passed"
+          else
+            FINAL_STATUS="Failed"
+          fi
 
-      - name: Fail if needed
+          BLACK_DIFF=$(cat /tmp/black_diff.txt 2>/dev/null || true)
+          ISORT_DIFF=$(cat /tmp/isort_diff.txt 2>/dev/null || true)
+
+          {
+            echo "# CI Workflow Summary"
+            echo ""
+            echo "## General"
+            echo "- **Repo:** ${{ github.repository }}"
+            echo "- **Branch:** ${{ github.ref_name }}"
+            echo "- **Commit:** \`${{ github.sha }}\`"
+            echo "- **Author:** ${{ github.actor }}"
+            echo "- **Workflow:** ${{ github.workflow }}"
+            echo "- **Run:** ${{ github.run_number }}"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Code Formatting Results"
+            echo "| Formatter | Status | Files to Reformat |"
+            echo "|-----------|--------|-------------------|"
+            echo "| Black     | ${{ env.BLACK_STATUS }} | ${{ env.BLACK_FILES }} |"
+            echo "| isort     | ${{ env.ISORT_STATUS }} | — |"
+            echo ""
+            echo "---"
+
+            if [[ "${{ env.BLACK_EXIT }}" != "0" ]] && [[ -n "$BLACK_DIFF" ]]; then
+              echo ""
+              echo "## Black — Required Changes"
+              echo "\`\`\`diff"
+              echo "$BLACK_DIFF"
+              echo "\`\`\`"
+              echo ""
+              echo "---"
+            fi
+
+            if [[ "${{ env.ISORT_EXIT }}" != "0" ]] && [[ -n "$ISORT_DIFF" ]]; then
+              echo ""
+              echo "## isort — Required Changes"
+              echo "\`\`\`diff"
+              echo "$ISORT_DIFF"
+              echo "\`\`\`"
+              echo ""
+              echo "---"
+            fi
+
+            echo ""
+            echo "## Final Status"
+            echo "> ${FINAL_STATUS}"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: "Validate Style Standards"
+        if: always()
         run: |
           black --check .
           isort --check-only .
-
-      - name: Upload reports
-        uses: actions/upload-artifact@v6
-        with:
-          name: format-reports
-          path: |
-            black-report.txt
-            isort-report.txt
