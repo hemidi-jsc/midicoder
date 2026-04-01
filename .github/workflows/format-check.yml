@@ -1,0 +1,52 @@
+name: Format check report
+
+on:
+  push:
+    branches: [ "main", "development" ]
+  pull_request:
+    branches: [ "main", "development" ]
+
+jobs:
+  format-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install tools
+        run: |
+          pip install black isort
+
+      - name: Run Black (report)
+        run: |
+          black --check --diff . > black-report.txt || true
+
+      - name: Run isort (report)
+        run: |
+          isort --check-only --diff . > isort-report.txt || true
+
+      - name: Show summary
+        run: |
+          echo "==== BLACK REPORT ===="
+          cat black-report.txt
+          echo "==== ISORT REPORT ===="
+          cat isort-report.txt
+
+      - name: Fail if needed
+        run: |
+          black --check .
+          isort --check-only .
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v6
+        with:
+          name: format-reports
+          path: |
+            black-report.txt
+            isort-report.txt
