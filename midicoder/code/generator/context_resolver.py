@@ -111,9 +111,9 @@ def build_item_context(
         normalized_path = runtime_path.replace("\\", "/").lstrip("./")
         generated_runtime_snapshots[normalized_path] = content
         if normalized_path.endswith(".py"):
-            generated_symbol_index[
-                _runtime_path_to_module(normalized_path)
-            ] = _extract_python_exports(content)
+            generated_symbol_index[_runtime_path_to_module(normalized_path)] = (
+                _extract_python_exports(content)
+            )
 
     return {
         "ir_ref": plan_item.ir_ref,

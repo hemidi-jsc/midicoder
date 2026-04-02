@@ -167,9 +167,11 @@ def _build_io_reconciliation(
             "command_outputs": sorted(command_fields),
             "query_outputs": sorted(query_fields),
         },
-        "status": "consistent"
-        if (not public_fields or public_fields.issubset(outputs | runtime_fields))
-        else "needs_runtime_bridge",
+        "status": (
+            "consistent"
+            if (not public_fields or public_fields.issubset(outputs | runtime_fields))
+            else "needs_runtime_bridge"
+        ),
     }
 
 
@@ -275,7 +277,7 @@ def _build_merge_contract(
 
 
 def _build_route_indexes(
-    modules: dict[str, Any]
+    modules: dict[str, Any],
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
     routes = _resolve_records(modules, "api.http.routes")
     by_command: dict[str, list[dict[str, Any]]] = {}
@@ -368,7 +370,7 @@ def _build_error_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any]
 
 
 def _build_workflow_transition_index(
-    modules: dict[str, Any]
+    modules: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
     workflows = _resolve_records(modules, "workflow.workflows")
     by_command: dict[str, list[dict[str, Any]]] = {}
@@ -402,9 +404,7 @@ def _build_workflow_transition_index(
     return by_command
 
 
-def _build_io_index(
-    modules: dict[str, Any]
-) -> tuple[
+def _build_io_index(modules: dict[str, Any]) -> tuple[
     dict[str, dict[str, list[dict[str, Any]]]],
     dict[str, dict[str, dict[str, list[dict[str, Any]]]]],
 ]:

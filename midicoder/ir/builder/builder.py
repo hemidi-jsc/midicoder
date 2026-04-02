@@ -1745,12 +1745,16 @@ def _build_http_route_ir(
         query=query_ref,
         description=route.description,
         auth=route.auth,
-        request_schema=[_build_field_ir(f) for f in route.request_schema]
-        if route.request_schema
-        else [],
-        response_schema=[_build_field_ir(f) for f in route.response_schema]
-        if route.response_schema
-        else None,
+        request_schema=(
+            [_build_field_ir(f) for f in route.request_schema]
+            if route.request_schema
+            else []
+        ),
+        response_schema=(
+            [_build_field_ir(f) for f in route.response_schema]
+            if route.response_schema
+            else None
+        ),
         deprecated=route.deprecated,
         tags=route.tags,
         source_ref=route.source,
@@ -2163,13 +2167,13 @@ def _build_scenario_ir(
         id=normalizer.normalize_id(scenario.id),
         description=scenario.description,
         actors=scenario.actors if hasattr(scenario, "actors") else [],
-        preconditions=scenario.preconditions
-        if hasattr(scenario, "preconditions")
-        else [],
+        preconditions=(
+            scenario.preconditions if hasattr(scenario, "preconditions") else []
+        ),
         steps=steps,
-        postconditions=scenario.postconditions
-        if hasattr(scenario, "postconditions")
-        else [],
+        postconditions=(
+            scenario.postconditions if hasattr(scenario, "postconditions") else []
+        ),
         tags=scenario.tags if hasattr(scenario, "tags") else [],
         source_ref=scenario.source if hasattr(scenario, "source") else None,
         source=SourceMetadata(
@@ -2250,9 +2254,11 @@ def _build_persistence_datasource_ir(
         db_schema=getattr(datasource, "db_schema", None),
         default=datasource.default,
         options=datasource.options,
-        integration=_build_typed_ref(integration_ref, normalizer, "Integration")
-        if integration_ref
-        else None,
+        integration=(
+            _build_typed_ref(integration_ref, normalizer, "Integration")
+            if integration_ref
+            else None
+        ),
         source=SourceMetadata(
             file=file,
             checksum=checksum,
@@ -2278,11 +2284,11 @@ def _build_persistence_table_ir(
         id=normalizer.normalize_id(table.id),
         description=table.description,
         datasource=table.datasource,
-        operation=_build_typed_ref(
-            table.operation_id, normalizer, "IntegrationOperation"
-        )
-        if getattr(table, "operation_id", None)
-        else None,
+        operation=(
+            _build_typed_ref(table.operation_id, normalizer, "IntegrationOperation")
+            if getattr(table, "operation_id", None)
+            else None
+        ),
         columns=[
             PersistenceColumnIR(
                 name=c.name,
@@ -2746,12 +2752,16 @@ def _build_transition_ir(transition: Any, normalizer: Normalizer) -> TransitionI
     return TransitionIR(
         from_state=transition.from_state,
         to_state=transition.to_state,
-        on_command=_build_typed_ref(transition.on_command, normalizer, "Command")
-        if transition.on_command
-        else None,
-        on_event=_build_typed_ref(transition.on_event, normalizer, "Event")
-        if transition.on_event
-        else None,
+        on_command=(
+            _build_typed_ref(transition.on_command, normalizer, "Command")
+            if transition.on_command
+            else None
+        ),
+        on_event=(
+            _build_typed_ref(transition.on_event, normalizer, "Event")
+            if transition.on_event
+            else None
+        ),
         guards=[_build_guard_ir(g) for g in transition.guards],
         effects=[_build_effect_ir(e) for e in transition.effects],
         description=getattr(transition, "description", None),

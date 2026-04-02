@@ -203,9 +203,7 @@ def build_virtual_seams_from_symbols(
         kind_bonus = (
             0.10
             if representative_kind == "class"
-            else 0.06
-            if representative_kind == "function"
-            else 0.0
+            else 0.06 if representative_kind == "function" else 0.0
         )
         symbol_count_bonus = min(0.12, max(len(symbols_sorted) - 1, 0) * 0.02)
         span_bonus = 0.0

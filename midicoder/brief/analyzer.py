@@ -412,12 +412,12 @@ Analyze the brief thoroughly and make evidence-based decisions about which contr
         # Save full request info
         request_info = {
             "model": llm_config.model if hasattr(llm_config, "model") else "unknown",
-            "base_url": llm_config.base_url
-            if hasattr(llm_config, "base_url")
-            else "unknown",
-            "provider": llm_config.provider
-            if hasattr(llm_config, "provider")
-            else None,
+            "base_url": (
+                llm_config.base_url if hasattr(llm_config, "base_url") else "unknown"
+            ),
+            "provider": (
+                llm_config.provider if hasattr(llm_config, "provider") else None
+            ),
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},

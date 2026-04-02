@@ -773,12 +773,16 @@ def profile_from_dict(payload: dict[str, Any]) -> ProjectProfile:
         language=str(payload.get("language", "unknown")),
         stack=list(stack) if isinstance(stack, list) else [],
         orm=str(payload.get("orm")) if payload.get("orm") is not None else None,
-        di_style=str(payload.get("di_style"))
-        if payload.get("di_style") is not None
-        else None,
-        error_handling=str(payload.get("error_handling"))
-        if payload.get("error_handling") is not None
-        else None,
+        di_style=(
+            str(payload.get("di_style"))
+            if payload.get("di_style") is not None
+            else None
+        ),
+        error_handling=(
+            str(payload.get("error_handling"))
+            if payload.get("error_handling") is not None
+            else None
+        ),
         conventions=conventions if isinstance(conventions, dict) else {},
     )
 

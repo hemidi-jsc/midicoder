@@ -190,7 +190,7 @@ def _collect_external_modules_from_operations(
 
 
 def _collect_python_runtime_files(
-    patch_plan_operations: dict[str, list[dict[str, Any]]]
+    patch_plan_operations: dict[str, list[dict[str, Any]]],
 ) -> list[str]:
     files = [
         _normalize_path(path)

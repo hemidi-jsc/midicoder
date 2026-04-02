@@ -582,9 +582,11 @@ def validate_single_contract_file(
                 message = error.get("msg", "Invalid schema")
                 validation_errors.append(
                     {
-                        "location": f"{contract_path}:{location}"
-                        if location
-                        else str(contract_path),
+                        "location": (
+                            f"{contract_path}:{location}"
+                            if location
+                            else str(contract_path)
+                        ),
                         "message": message,
                     }
                 )

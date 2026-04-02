@@ -172,7 +172,7 @@ def _resolve_records(modules: dict[str, Any], bucket: str) -> list[dict[str, Any
 
 
 def _build_route_indexes(
-    modules: dict[str, Any]
+    modules: dict[str, Any],
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
     routes = _resolve_records(modules, "api.http.routes")
     by_command: dict[str, list[dict[str, Any]]] = {}
@@ -271,7 +271,7 @@ def _build_policy_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any
 
 
 def _build_workflow_transition_index(
-    modules: dict[str, Any]
+    modules: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
     workflows = _resolve_records(modules, "workflow.workflows")
     by_command: dict[str, list[dict[str, Any]]] = {}

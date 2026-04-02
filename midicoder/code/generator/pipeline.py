@@ -692,9 +692,9 @@ def _detect_internal_import_cycle(
         normalized = _normalize_path(path)
         if not normalized.endswith(".py"):
             continue
-        module_to_imports[
-            _runtime_path_to_module(normalized)
-        ] = _collect_module_imports(content)
+        module_to_imports[_runtime_path_to_module(normalized)] = (
+            _collect_module_imports(content)
+        )
 
     candidate_module = _runtime_path_to_module(runtime_path)
     module_to_imports[candidate_module] = _collect_module_imports(candidate_block)
@@ -982,9 +982,11 @@ def _build_patch_plan_targets(
         targets.append(
             {
                 "runtime_path": runtime_path,
-                "patch_plan_file": f"{runtime_path[:-3].replace('/', '.')}.patch-plan.json"
-                if runtime_path.endswith(".py")
-                else f"{runtime_path.replace('/', '.')}.patch-plan.json",
+                "patch_plan_file": (
+                    f"{runtime_path[:-3].replace('/', '.')}.patch-plan.json"
+                    if runtime_path.endswith(".py")
+                    else f"{runtime_path.replace('/', '.')}.patch-plan.json"
+                ),
                 "operation_count": len(operations),
                 "ir_refs": [
                     str(op.get("ir_ref")) for op in operations if op.get("ir_ref")

@@ -264,9 +264,9 @@ def apply(
             "applied_files": result.get("applied_files", []),
             "failed_files": result.get("failed_files", []),
             "errors": errors if isinstance(errors, list) else [],
-            "reindex_errors": reindex_errors
-            if isinstance(reindex_errors, list)
-            else [],
+            "reindex_errors": (
+                reindex_errors if isinstance(reindex_errors, list) else []
+            ),
             "backup_paths": result.get("backup_paths", []),
             "restored_files": result.get("restored_files", []),
             "report_path": result.get("report_path"),

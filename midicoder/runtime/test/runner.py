@@ -163,9 +163,9 @@ class FastAPIRunner:
                             message=f"App failed to start within {self.config.timeout}s",
                             file=None,
                             line=None,
-                            traceback="\n".join(debug_lines[-20:])
-                            if debug_lines
-                            else "",
+                            traceback=(
+                                "\n".join(debug_lines[-20:]) if debug_lines else ""
+                            ),
                         )
                     )
 

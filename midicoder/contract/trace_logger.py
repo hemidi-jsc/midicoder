@@ -273,9 +273,11 @@ def build_generation_summary(
         "version": version,
         "status": status,
         "created_files": created_files,
-        "llm_model": llm_config.model
-        if isinstance(llm_config, LlmConfig)
-        else llm_config.get("model", "unknown"),
+        "llm_model": (
+            llm_config.model
+            if isinstance(llm_config, LlmConfig)
+            else llm_config.get("model", "unknown")
+        ),
         "stack": stack_target,
         "task": task_name,
         "passes": len(all_traces),

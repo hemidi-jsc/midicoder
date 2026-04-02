@@ -241,9 +241,9 @@ def get_fallback_schema_for_file(
             "fallback": True,
             "warning": "Schema extraction failed. Do not infer structure from generic patterns.",
             "error": error_msg,
-            "schema_tree_keys": list(schema_tree.keys())
-            if isinstance(schema_tree, dict)
-            else [],
+            "schema_tree_keys": (
+                list(schema_tree.keys()) if isinstance(schema_tree, dict) else []
+            ),
             "extraction_summary": {
                 "file_path": file_path,
                 "modules_found": 0,

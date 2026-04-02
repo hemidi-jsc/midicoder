@@ -7,23 +7,23 @@ described in Section 5-6 of the technical documentation.
 
 Examples:
     Load all symbols and search for User-related items:
-    
+
         from midicoder.context.query import load_symbols, search_symbols
-        
+
         symbols = load_symbols('.midicoder/context')
         user_symbols = search_symbols(r'User', symbols)
-        
+
     Filter exemplars by kind:
-    
+
         from midicoder.context.query import load_exemplars, filter_exemplars_by_kind
-        
+
         exemplars = load_exemplars('.midicoder/context')
         handlers = filter_exemplars_by_kind('command_handler', exemplars)
-        
+
     Get all entry points:
-    
+
         from midicoder.context.query import load_entrypoints
-        
+
         entrypoints = load_entrypoints('.midicoder/context')
 """
 

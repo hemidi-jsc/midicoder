@@ -177,9 +177,9 @@ class CrossRefChecker:
                                 file=file,
                                 message=f"Field '{field.name}' references unknown {ref_type} '{ref_id}'",
                                 path=f"{field_path}.type",
-                                context={"suggestion": suggestion}
-                                if suggestion
-                                else {},
+                                context=(
+                                    {"suggestion": suggestion} if suggestion else {}
+                                ),
                             )
 
     def _check_commands(self, data: CommandsFile, file: str) -> None:
@@ -824,9 +824,11 @@ class CrossRefChecker:
                         code=E306,
                         file=file,
                         message=f"Projection '{projection.id}' references unknown persistence table '{storage_raw}'",
-                        path=f"{path}.storage_ref"
-                        if getattr(projection, "storage_ref", None)
-                        else f"{path}.storage",
+                        path=(
+                            f"{path}.storage_ref"
+                            if getattr(projection, "storage_ref", None)
+                            else f"{path}.storage"
+                        ),
                     )
 
     def _check_graphql_api(self, data: GraphQLApiFile, file: str) -> None:
