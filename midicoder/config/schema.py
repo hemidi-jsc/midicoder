@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from .defaults import CONFIG_FIELDS, DEFAULT_STACK
 
 
