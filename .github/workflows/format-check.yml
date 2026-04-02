@@ -129,4 +129,4 @@ jobs:
         if: always()
         run: |
           black --check .
-          isort --check-only .
+          isort . --profile black --check-only
