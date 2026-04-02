@@ -55,7 +55,7 @@ jobs:
           ISORT_STATUS=Passed
           ISORT_EXIT=0
 
-          isort --check-only --diff . 2>&1 | tee isort_output.txt
+          isort . --profile black --check-only 2>&1 | tee isort_output.txt
           ISORT_EXIT=${PIPESTATUS[0]}
 
           if [[ $ISORT_EXIT != 0 ]]; then
