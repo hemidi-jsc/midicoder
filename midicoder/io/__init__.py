@@ -17,8 +17,8 @@ try:
     from .prompt import (
         prompt_array,
         prompt_choice,
-        prompt_multichoice,
         prompt_confirm,
+        prompt_multichoice,
         prompt_multiline,
         prompt_secret,
         prompt_text,

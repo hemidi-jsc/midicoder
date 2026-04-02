@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-
 GROUP_ID_PATTERN = re.compile(r"midicoder:(?:begin|end)\s*(.*)$", re.IGNORECASE)
 REAL_SEAM_CONFIDENCE = 0.98
 EXEMPLAR_GROUP_PENALTY = 0.95

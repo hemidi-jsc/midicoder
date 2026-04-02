@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from .model_meta import ModelMeta
 from .named_field_model import NamedField
 
-
 VALUE_OBJECT_CATEGORY_CATALOG = {
     "money",
     "address",

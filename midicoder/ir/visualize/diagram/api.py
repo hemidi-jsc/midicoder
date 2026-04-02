@@ -13,7 +13,7 @@ from .base import (
 )
 
 if TYPE_CHECKING:
-    from ...schema.ir_schema import ApiIR, HttpRouteIR, ApplicationIR, DomainIR
+    from ...schema.ir_schema import ApiIR, ApplicationIR, DomainIR, HttpRouteIR
 
 
 class ApiDiagramGenerator(DiagramGenerator):

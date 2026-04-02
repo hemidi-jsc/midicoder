@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # Confidence levels (aligned with intent.py)
 CONFIDENCE_CERTAIN = 1.0
 CONFIDENCE_HIGH = 0.9

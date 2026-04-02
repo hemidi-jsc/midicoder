@@ -531,23 +531,23 @@ def validate_single_contract_file(
         # Fallback: try simple schema validation only
         try:
             from midicoder.dsl.loader import (
-                load_glossary,
+                load_commands,
                 load_entities,
                 load_errors,
                 load_events,
-                load_commands,
+                load_glossary,
                 load_http,
                 load_info,
-                load_rules,
-                load_workflows,
-                load_persistence,
                 load_integrations,
+                load_observability,
+                load_persistence,
                 load_profiles,
+                load_reliability,
+                load_rules,
                 load_secrets_contract,
                 load_security_baseline,
-                load_reliability,
-                load_observability,
                 load_testing,
+                load_workflows,
             )
 
             file_type = determine_file_type(file_path)

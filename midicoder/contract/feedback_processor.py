@@ -148,7 +148,7 @@ def determine_file_repair_order(grouped_files: dict[str, list[Any]]) -> list[str
         "policy",  # policies (any *policy*.yaml)
     ]
 
-    from midicoder.contract.contract_utils import is_foundation_file, is_dependent_file
+    from midicoder.contract.contract_utils import is_dependent_file, is_foundation_file
 
     files_to_process = set(grouped_files.keys())
     foundation_files = []
@@ -255,7 +255,9 @@ def create_feedback_file(
         Tuple of (feedback_path, new_items_count)
     """
     from datetime import datetime, timezone
+
     from ruamel.yaml import YAML
+
     from midicoder.commands.base import write_yaml
     from midicoder.contract.contract_utils import (
         issue_to_feedback_target,

@@ -10,7 +10,6 @@ from typing import Any
 
 from ruamel.yaml import YAML
 
-
 _yaml_writer = YAML()
 _yaml_writer.default_flow_style = False
 _yaml_writer.indent(mapping=2, sequence=4, offset=2)

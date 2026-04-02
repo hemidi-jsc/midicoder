@@ -9,47 +9,47 @@ from typing import Any
 MAX_LLM_TOKENS = 64000
 MAX_DISPLAYED_ISSUES = 5
 
+from midicoder.brief.analyzer import (
+    get_contract_files_from_master_brief,
+)
+from midicoder.contract.contract_utils import (
+    analyze_run_logs,
+    read_json,
+    read_schema_tree,
+    validate_contract_file,
+    write_contract_files,
+)
 from midicoder.contract.contract_validator import check_contract
+from midicoder.contract.feedback_processor import (
+    create_feedback_file,
+    determine_file_repair_order,
+    group_feedback_by_file,
+    report_repair_status,
+    validate_feedback,
+)
+from midicoder.contract.file_processor import process_file_feedback_items
 from midicoder.contract.prompt_builder import (
     build_contract_context_block,
     build_contract_prompt,
     build_contract_system_prompt,
 )
+from midicoder.contract.trace_logger import (
+    build_generation_summary,
+    print_resume_summary,
+    print_trace_summary,
+    save_error_artifacts,
+    save_generation_prompt,
+    save_generation_response,
+    save_generation_trace,
+    save_processed_response,
+    save_resume_context,
+    validate_parsed_files,
+)
 from midicoder.contract.yaml_processor import (
     parse_contract_documents,
     strip_yaml_code_fences,
 )
-from midicoder.contract.contract_utils import (
-    read_json,
-    read_schema_tree,
-    write_contract_files,
-    analyze_run_logs,
-    validate_contract_file,
-)
-from midicoder.brief.analyzer import (
-    get_contract_files_from_master_brief,
-)
-from midicoder.contract.feedback_processor import (
-    validate_feedback,
-    create_feedback_file,
-    report_repair_status,
-    group_feedback_by_file,
-    determine_file_repair_order,
-)
-from midicoder.contract.file_processor import process_file_feedback_items
-from midicoder.contract.trace_logger import (
-    save_generation_trace,
-    print_trace_summary,
-    save_generation_prompt,
-    save_generation_response,
-    save_processed_response,
-    validate_parsed_files,
-    save_error_artifacts,
-    build_generation_summary,
-    save_resume_context,
-    print_resume_summary,
-)
-from midicoder.llm.client import call_llm, load_llm_config, LlmConfig
+from midicoder.llm.client import LlmConfig, call_llm, load_llm_config
 from midicoder.llm.context_builder import build_context_for_contract_gen
 
 from .base import (

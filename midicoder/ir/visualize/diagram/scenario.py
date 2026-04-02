@@ -12,7 +12,7 @@ from .base import (
 )
 
 if TYPE_CHECKING:
-    from ...schema.ir_schema import ScenariosIR, ScenarioIR, ScenarioStepIR
+    from ...schema.ir_schema import ScenarioIR, ScenariosIR, ScenarioStepIR
 
 
 class ScenarioDiagramGenerator(DiagramGenerator):

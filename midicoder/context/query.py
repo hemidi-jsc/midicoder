@@ -27,13 +27,12 @@ Examples:
         entrypoints = load_entrypoints('.midicoder/context')
 """
 
+import fnmatch
 import json
 import re
-import fnmatch
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Pattern
 from difflib import unified_diff
-
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Pattern
 
 # Type aliases for better readability
 Symbol = Dict[str, Any]

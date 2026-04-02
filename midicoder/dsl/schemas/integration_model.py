@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, constr
 from .model_meta import ModelMeta
 from .named_field_model import NamedField
 
-
 INTEGRATION_TYPE_CATALOG = {
     "rest_api",
     "aws",

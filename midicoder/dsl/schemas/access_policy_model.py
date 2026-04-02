@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field, constr, field_validator
 
 from .model_meta import ModelMeta
 
-
 PERMISSION_ACTION_CATALOG = {
     "read",
     "write",

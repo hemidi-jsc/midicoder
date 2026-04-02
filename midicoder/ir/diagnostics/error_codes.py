@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
 # Schema errors (E1xx)
 E101 = "MISSING_REQUIRED_FIELD"
 E102 = "INVALID_FIELD_TYPE"

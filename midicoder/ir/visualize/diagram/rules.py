@@ -12,7 +12,7 @@ from .base import (
 )
 
 if TYPE_CHECKING:
-    from ...schema.ir_schema import RulesIR, RuleIR
+    from ...schema.ir_schema import RuleIR, RulesIR
 
 
 class RulesDiagramGenerator(DiagramGenerator):

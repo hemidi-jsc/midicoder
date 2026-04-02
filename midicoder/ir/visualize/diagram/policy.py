@@ -12,7 +12,7 @@ from .base import (
 )
 
 if TYPE_CHECKING:
-    from ...schema.ir_schema import PolicyIR, AccessPolicyIR, BusinessPolicyIR
+    from ...schema.ir_schema import AccessPolicyIR, BusinessPolicyIR, PolicyIR
 
 
 class PolicyDiagramGenerator(DiagramGenerator):

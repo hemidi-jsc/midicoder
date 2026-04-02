@@ -18,76 +18,76 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..validation.cross_ref import CrossRefChecker
 from ..diagnostics.error_codes import ErrorReporter
+from ..diagnostics.logging import header, log, safe_print
+from ..normalize.normalizer import Normalizer
 from ..schema.ir_schema import (
     IR,
     ApiIR,
     ApplicationIR,
+    CircuitBreakerPolicyIR,
     CommandIR,
+    ConstraintIR,
+    ContractTestCaseIR,
+    ContractTestStepIR,
+    CorsPolicyIR,
     DomainIR,
+    EffectIR,
+    EmailProviderIR,
     EntityIR,
     EnumIR,
+    EnvironmentProfileIR,
+    ErrorHandlerIR,
     ErrorIR,
+    ErrorMapIR,
     EventIR,
     FieldIR,
+    GuardIR,
     HttpApiIR,
     HttpRouteIR,
     IndexIR,
-    ConstraintIR,
-    GuardIR,
-    EffectIR,
+    IntegrationAuthIR,
+    IntegrationsIR,
+    IntegrationTargetIR,
     IRIndexes,
     IRMeta,
     IRModules,
+    OAuth2ProviderIR,
+    ObservabilityTargetIR,
+    OpsIR,
+    PersistenceColumnIR,
+    PersistenceDatasourceIR,
+    PersistenceIndexIR,
+    PersistenceIR,
+    PersistenceTableIR,
+    PiiMaskingRuleIR,
     PolicyIR,
     ProjectionIR,
     QueryIR,
+    RateLimitPolicyIR,
+    RateLimitRuleIR,
     RefIR,
+    ReliabilityPolicyIR,
+    RestApiOperationIR,
+    RetryPolicyIR,
     RulesIR,
+    S3ResourceIR,
     ScenariosIR,
+    SecretRefIR,
+    SecurityBaselineIR,
+    SignaturePolicyIR,
     SourceMetadata,
+    StateIR,
     Stats,
-    Warning,
+    TestingIR,
+    TimeoutPolicyIR,
+    TransitionIR,
     ValueObjectIR,
+    Warning,
+    WebhookEndpointIR,
     WorkflowIR,
     WorkflowModuleIR,
-    StateIR,
-    TransitionIR,
-    ErrorHandlerIR,
-    PersistenceIR,
-    PersistenceDatasourceIR,
-    PersistenceTableIR,
-    PersistenceColumnIR,
-    PersistenceIndexIR,
-    IntegrationsIR,
-    IntegrationTargetIR,
-    RestApiOperationIR,
-    ErrorMapIR,
-    S3ResourceIR,
-    EmailProviderIR,
-    OAuth2ProviderIR,
-    SignaturePolicyIR,
-    WebhookEndpointIR,
-    IntegrationAuthIR,
-    TimeoutPolicyIR,
-    RetryPolicyIR,
-    RateLimitPolicyIR,
-    CircuitBreakerPolicyIR,
-    OpsIR,
-    EnvironmentProfileIR,
-    SecretRefIR,
-    CorsPolicyIR,
-    RateLimitRuleIR,
-    PiiMaskingRuleIR,
-    SecurityBaselineIR,
-    ReliabilityPolicyIR,
-    ObservabilityTargetIR,
-    TestingIR,
-    ContractTestCaseIR,
-    ContractTestStepIR,
 )
-from ..normalize.normalizer import Normalizer
 from ..symbols.symbol_table import (
     SYMBOL_TYPE_COMMAND,
     SYMBOL_TYPE_ENTITY,
@@ -111,8 +111,8 @@ from ..symbols.symbol_table import (
     SYMBOL_TYPE_WORKFLOW,
     SymbolTable,
 )
+from ..validation.cross_ref import CrossRefChecker
 from ..validation.validator import Validator
-from ..diagnostics.logging import header, log, safe_print
 
 
 def _load_schema_tree(root: Path) -> dict[str, Any]:
@@ -272,9 +272,9 @@ def build_ir(
 
     # Optional: intent statistics
     from ..analysis.intent import (
+        compute_confidence_distribution,
         compute_intent_stats,
         compute_intent_summary,
-        compute_confidence_distribution,
     )
 
     ir.meta.intent = compute_intent_stats(ir)
@@ -419,8 +419,8 @@ def _build_symbol_table(
         IntegrationsFile,
         PersistenceModelFile,
         ProjectionsFile,
-        ReliabilityPoliciesFile,
         QueriesFile,
+        ReliabilityPoliciesFile,
         RulesFile,
         ScenariosFile,
         SecretsContractFile,
@@ -1821,7 +1821,7 @@ def _build_graphql_type_ir(
 
     line_info = get_line_info(file, gql_type.name)
 
-    from ..schema.ir_schema import GraphQLTypeIR, GraphQLFieldIR
+    from ..schema.ir_schema import GraphQLFieldIR, GraphQLTypeIR
 
     fields = []
     for field in gql_type.fields:
@@ -1955,8 +1955,8 @@ def _build_access_policy_ir(
     data: Any, file: str, checksum: str, normalizer: Normalizer
 ) -> Any:
     """Build AccessPolicyIR from AccessPolicyFile."""
-    from ..schema.ir_schema import AccessPolicyIR, RoleIR, PermissionIR, BindingIR
     from ..diagnostics.line_info_cache import get_line_info
+    from ..schema.ir_schema import AccessPolicyIR, BindingIR, PermissionIR, RoleIR
 
     access = data.access
 
@@ -2025,8 +2025,8 @@ def _build_business_policy_ir(
     source_order: int = 0,
 ) -> Any:
     """Build BusinessPolicyIR from Policy model."""
-    from ..schema.ir_schema import BusinessPolicyIR, PolicyConditionIR, PolicyEffectIR
     from ..diagnostics.line_info_cache import get_line_info
+    from ..schema.ir_schema import BusinessPolicyIR, PolicyConditionIR, PolicyEffectIR
 
     line_info = get_line_info(file, policy.id)
 
@@ -2077,8 +2077,8 @@ def _build_rule_ir(
     source_order: int = 0,
 ) -> Any:
     """Build RuleIR from Rule model."""
-    from ..schema.ir_schema import RuleIR, RuleRowIR
     from ..diagnostics.line_info_cache import get_line_info
+    from ..schema.ir_schema import RuleIR, RuleRowIR
 
     line_info = get_line_info(file, rule.id)
 

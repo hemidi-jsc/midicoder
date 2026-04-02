@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 _IMPORT_RE = re.compile(r"^(from\s+[A-Za-z0-9_\.]+\s+import\s+.+|import\s+.+)$")
 _FROM_RE = re.compile(r"^from\s+([A-Za-z0-9_\.]+)\s+import\s+(.+)$")
 _PLAIN_IMPORT_RE = re.compile(r"^import\s+(.+)$")

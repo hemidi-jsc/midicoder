@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from .model_meta import ModelMeta
 
-
 ERROR_CATEGORY_CATALOG = {
     "validation",
     "business",

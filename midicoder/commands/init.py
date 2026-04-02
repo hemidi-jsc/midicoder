@@ -8,7 +8,7 @@ from typing import Any
 
 from midicoder.config import ConfigManager
 from midicoder.config.defaults import DEFAULT_STACK, SUPPORTED_STACKS
-from midicoder.io import prompt_confirm, print_warning, print_info
+from midicoder.io import print_info, print_warning, prompt_confirm
 
 from .base import (
     MidicoderPaths,
@@ -204,7 +204,7 @@ def _initialize_config_non_interactive(paths: MidicoderPaths, args: Any) -> None
         SystemExit: If validation fails
     """
     from midicoder.config import SecretsManager
-    from midicoder.io import print_error, print_success, print_normal
+    from midicoder.io import print_error, print_normal, print_success
 
     print_info("Initializing configuration (non-interactive mode)...", title="Init")
 

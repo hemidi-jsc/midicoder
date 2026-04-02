@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field, model_validator
 
 from .model_meta import ModelMeta
 
-
 SCENARIO_STEP_TYPE_CATALOG = {
     "command",
     "query",

@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .diagram.api import ApiDiagramGenerator
+from .diagram.base import MermaidRenderer
 from .diagram.command import CommandGraphGenerator
 from .diagram.entity import EntityDiagramGenerator
-from .diagram.workflow import WorkflowDiagramGenerator
 from .diagram.policy import PolicyDiagramGenerator
 from .diagram.rules import RulesDiagramGenerator
 from .diagram.scenario import ScenarioDiagramGenerator
-from .diagram.base import MermaidRenderer
+from .diagram.workflow import WorkflowDiagramGenerator
 from .spec_map import VisualSpecRegistry
 
 if TYPE_CHECKING:

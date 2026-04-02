@@ -8,7 +8,6 @@ from .guard_effect_model import EffectRef, GuardRef
 from .model_meta import ModelMeta
 from .named_field_model import NamedField
 
-
 COMMAND_CATEGORY_CATALOG = {
     "crud.create",
     "crud.update",

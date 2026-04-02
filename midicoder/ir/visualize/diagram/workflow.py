@@ -13,7 +13,7 @@ from .base import (
 )
 
 if TYPE_CHECKING:
-    from ...schema.ir_schema import WorkflowIR, StateIR, TransitionIR
+    from ...schema.ir_schema import StateIR, TransitionIR, WorkflowIR
 
 
 class WorkflowDiagramGenerator(DiagramGenerator):

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import ast
+import logging
+import re
 from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass
-import logging
-import re
 from pathlib import Path
 
 from ..core.models import Exemplar, Symbol

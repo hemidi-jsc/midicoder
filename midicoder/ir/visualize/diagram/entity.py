@@ -13,7 +13,7 @@ from .base import (
 )
 
 if TYPE_CHECKING:
-    from ...schema.ir_schema import EntityIR, ValueObjectIR, FieldIR, DomainIR
+    from ...schema.ir_schema import DomainIR, EntityIR, FieldIR, ValueObjectIR
 
 
 class EntityDiagramGenerator(DiagramGenerator):

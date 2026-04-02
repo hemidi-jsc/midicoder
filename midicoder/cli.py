@@ -5,17 +5,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from midicoder.commands import (
-    brief as brief_commands,
-    code as code_commands,
-    config as config_commands,
-    contract as contract_commands,
-    index as index_commands,
-    init as init_commands,
-    ir as ir_commands,
-    runtime as runtime_commands,
-    version as version_commands,
-)
+from midicoder.commands import brief as brief_commands
+from midicoder.commands import code as code_commands
+from midicoder.commands import config as config_commands
+from midicoder.commands import contract as contract_commands
+from midicoder.commands import index as index_commands
+from midicoder.commands import init as init_commands
+from midicoder.commands import ir as ir_commands
+from midicoder.commands import runtime as runtime_commands
+from midicoder.commands import version as version_commands
 
 
 def _find_midicoder_root() -> Path:

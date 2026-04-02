@@ -8,7 +8,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .defaults import SECRETS_FILE_NAME, SECRET_CATEGORIES
+from .defaults import SECRET_CATEGORIES, SECRETS_FILE_NAME
 
 
 class SecretsManager:

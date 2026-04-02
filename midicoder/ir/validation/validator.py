@@ -7,23 +7,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import midicoder.dsl.models as dsl_models
 from pydantic import BaseModel, ValidationError
 
+import midicoder.dsl.models as dsl_models
 from midicoder.dsl import loader
-from ..diagnostics.line_tracker import get_nested_line_number
 from midicoder.dsl.catalogs import (
     AUTH_TYPE_CATALOG,
     AWS_SERVICE_CATALOG,
     AZURE_SERVICE_CATALOG,
-    COMMAND_CATEGORY_CATALOG,
     CLOUD_PROVIDER_CATALOG,
+    COMMAND_CATEGORY_CATALOG,
     CONSTRAINT_TYPE_CATALOG,
-    EMAIL_TRANSPORT_CATALOG,
     EFFECT_CATALOG,
+    EMAIL_TRANSPORT_CATALOG,
     ENVIRONMENT_CATALOG,
     ERROR_CATEGORY_CATALOG,
     EVENT_KIND_CATALOG,
+    GCP_SERVICE_CATALOG,
     GUARD_CATALOG,
     HTTP_METHOD_CATALOG,
     INTEGRATION_TYPE_CATALOG,
@@ -31,11 +31,10 @@ from midicoder.dsl.catalogs import (
     QUERY_CATEGORY_CATALOG,
     RELIABILITY_TARGET_KIND_CATALOG,
     TENANT_SCOPE_CATALOG,
-    TEST_KIND_CATALOG,
     TEST_FRAMEWORK_CATALOG,
+    TEST_KIND_CATALOG,
     VALUE_OBJECT_CATEGORY_CATALOG,
     WEBHOOK_SIGNATURE_ALG_CATALOG,
-    GCP_SERVICE_CATALOG,
 )
 from midicoder.dsl.models import (
     CommandsFile,
@@ -75,6 +74,7 @@ from ..diagnostics.error_codes import (
     E212,
     ErrorReporter,
 )
+from ..diagnostics.line_tracker import get_nested_line_number
 
 
 @dataclass(frozen=True)

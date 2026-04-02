@@ -46,24 +46,24 @@ def process_file_feedback_items(
         Dict with repair results including success status, patches applied, errors
     """
     from midicoder.contract.contract_utils import (
-        validate_single_contract_file,
         normalize_contract_path,
+        validate_single_contract_file,
+        write_memos,
     )
+    from midicoder.contract.feedback_processor import update_file_feedback_items_status
+    from midicoder.contract.patch_manager import apply_contract_patches
+    from midicoder.contract.prompt_builder import CONTRACT_REPAIR_SYSTEM_PROMPT
     from midicoder.contract.repair_builder import (
         build_direct_repair_prompt,
-        extract_existing_ids_from_file,
         extract_available_reference_ids,
+        extract_existing_ids_from_file,
         save_repair_debug_files,
     )
     from midicoder.contract.schema_helper import get_comprehensive_schema_for_file
-    from midicoder.contract.patch_manager import apply_contract_patches
     from midicoder.contract.yaml_processor import (
-        strip_yaml_code_fences,
         parse_repair_plan,
+        strip_yaml_code_fences,
     )
-    from midicoder.contract.contract_utils import write_memos
-    from midicoder.contract.feedback_processor import update_file_feedback_items_status
-    from midicoder.contract.prompt_builder import CONTRACT_REPAIR_SYSTEM_PROMPT
 
     start_time = time.time()
 

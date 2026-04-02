@@ -237,25 +237,26 @@ class ConfigManager:
             >>> manager = ConfigManager(paths)
             >>> manager.initialize_interactive()
         """
-        from midicoder.io import (
-            prompt_text,
-            prompt_secret,
-            prompt_choice,
-            prompt_multichoice,
-        )
-        from midicoder.io.messages import print_info, print_success, print_normal
-        from midicoder.io.validators import (
-            validate_directory_path,
-            normalize_directory_path,
-        )
+        import os
+
         from midicoder.config.defaults import (
             DEFAULT_STACK,
-            SUPPORTED_STACKS,
             LLM_PROVIDERS,
             PROVIDER_BASE_URLS,
             PROVIDER_DEFAULT_MODELS,
+            SUPPORTED_STACKS,
         )
-        import os
+        from midicoder.io import (
+            prompt_choice,
+            prompt_multichoice,
+            prompt_secret,
+            prompt_text,
+        )
+        from midicoder.io.messages import print_info, print_normal, print_success
+        from midicoder.io.validators import (
+            normalize_directory_path,
+            validate_directory_path,
+        )
 
         print_info("Initializing Midicoder configuration...", title="Setup Wizard")
 

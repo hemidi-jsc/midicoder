@@ -260,8 +260,8 @@ def explain_location_format(location: str) -> str:
 def extract_existing_ids_from_file(contract_path: Path) -> dict[str, list[str]]:
     """Extract existing IDs from contract file."""
     from midicoder.contract.contract_utils import (
-        load_yaml_safe,
         extract_ids_from_yaml_list,
+        load_yaml_safe,
     )
 
     try:
@@ -352,8 +352,8 @@ def extract_available_reference_ids(
 
         try:
             from midicoder.contract.contract_utils import (
-                load_yaml_safe,
                 extract_ids_from_yaml_list,
+                load_yaml_safe,
             )
 
             content = full_path.read_text(encoding="utf-8")

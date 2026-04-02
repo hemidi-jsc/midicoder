@@ -160,7 +160,7 @@ class InitKeywords:
     @classmethod
     def print_help(cls) -> None:
         """Print formatted help for all keywords."""
-        from midicoder.io import print_normal, print_info
+        from midicoder.io import print_info, print_normal
 
         print_info(
             "Available configuration keywords for 'midicoder init':",

@@ -6,8 +6,8 @@ from typing import Any, get_args, get_origin
 from pydantic import BaseModel
 from ruamel.yaml import YAML
 
-from . import DSL_SCHEMA_VERSION
 from . import (
+    DSL_SCHEMA_VERSION,
     access_policy_model,
     command_model,
     entity_model,
@@ -24,8 +24,8 @@ from . import (
     observability_model,
     persistence_model,
     policy_model,
-    projection_model,
     profiles_model,
+    projection_model,
     query_model,
     reliability_model,
     rule_model,
@@ -37,7 +37,6 @@ from . import (
     workflow_model,
 )
 from .model_meta import ModelMeta
-
 
 yaml = YAML(typ="rt")
 

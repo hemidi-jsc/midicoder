@@ -27,12 +27,11 @@ from midicoder.dsl.catalogs import (
     TEST_KIND_CATALOG,
     WEBHOOK_SIGNATURE_ALG_CATALOG,
 )
-from midicoder.dsl.schemas.entity_model import CONSTRAINT_TYPE_CATALOG
 from midicoder.dsl.loader import (
     load_access_policy,
     load_commands,
-    load_enums,
     load_entities,
+    load_enums,
     load_errors,
     load_events,
     load_glossary,
@@ -68,10 +67,10 @@ from midicoder.dsl.models import (
     InfoFile,
     IntegrationsFile,
     ObservabilityFile,
-    PersistenceModelFile,
     Permission,
-    Policy,
+    PersistenceModelFile,
     PoliciesFile,
+    Policy,
     ProfilesFile,
     ProjectionsFile,
     QueriesFile,
@@ -84,6 +83,7 @@ from midicoder.dsl.models import (
     ValueObjectsFile,
     WorkflowsFile,
 )
+from midicoder.dsl.schemas.entity_model import CONSTRAINT_TYPE_CATALOG
 from midicoder.dsl.schemas.named_field_model import extract_type_refs
 
 

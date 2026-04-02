@@ -5,7 +5,6 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, model_validator
 
 from .integration_model import IntegrationOperationRefStr, IntegrationRefStr
-
 from .model_meta import ModelMeta
 
 

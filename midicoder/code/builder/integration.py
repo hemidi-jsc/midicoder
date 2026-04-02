@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import IRPlanItem, IntegrationContext, RequiredFile, SuggestedPath
+from .models import IntegrationContext, IRPlanItem, RequiredFile, SuggestedPath
 
 
 def build_integration_context(

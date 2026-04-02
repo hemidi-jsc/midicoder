@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from midicoder.brief.analyzer import (
-    refresh_contract_analysis,
     print_analysis_summary,
+    refresh_contract_analysis,
 )
+from midicoder.brief.rewriter import rewrite_master_brief as rewrite_func
 from midicoder.brief.rewriter import (
-    rewrite_master_brief as rewrite_func,
     save_rewritten_master_brief,
 )
 from midicoder.llm.client import call_llm, load_llm_config

@@ -7,7 +7,6 @@ from pathlib import Path
 
 from midicoder.commands import code as code_commands
 
-
 AUTO_FIX_LOOP_MAX_ITERATIONS = 10
 
 

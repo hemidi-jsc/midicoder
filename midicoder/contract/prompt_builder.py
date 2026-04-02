@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-
 CONTRACT_SYSTEM_PROMPT = "\n".join(
     [
         "# Master-Brief-Driven Contract Generator",

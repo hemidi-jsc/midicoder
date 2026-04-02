@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import ctypes
 import logging
-from pathlib import Path
 import warnings
+from pathlib import Path
 
 import tree_sitter_languages
 from tree_sitter import Language, Parser

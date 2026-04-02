@@ -8,10 +8,9 @@ from typing import Any, Iterable
 
 from midicoder.dsl.models import GraphQLApiFile, HttpApiFile, WorkflowsFile
 
-from ..schema.ir_schema import IntentIR, IR, IntentStats
-from ..symbols.symbol_table import SYMBOL_TYPE_COMMAND, SYMBOL_TYPE_QUERY
 from ..normalize.normalizer import Normalizer
-
+from ..schema.ir_schema import IR, IntentIR, IntentStats
+from ..symbols.symbol_table import SYMBOL_TYPE_COMMAND, SYMBOL_TYPE_QUERY
 
 UNKNOWN_MODULE = "unknown"
 
@@ -342,7 +341,7 @@ def validate_intents(
     reporter: Any,
 ) -> None:
     """Validate inferred intents and emit warnings/errors."""
-    from ..diagnostics.error_codes import E321, W302, W303, I304, I305
+    from ..diagnostics.error_codes import E321, I304, I305, W302, W303
 
     target_groups = [
         ("Entity", ir.modules.domain.entities),
@@ -996,8 +995,8 @@ def _module_from_id_pattern(
     """Extract module from ID pattern using schema-driven catalogs."""
     from .schema_parser import (
         extract_catalogs,
-        extract_verb_prefixes_from_catalog,
         extract_event_suffixes_from_catalog,
+        extract_verb_prefixes_from_catalog,
         get_pluralization_rules,
     )
 
