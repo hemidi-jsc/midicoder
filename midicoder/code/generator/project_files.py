@@ -449,7 +449,6 @@ def _validate_project_file_payload(
                 if runtime_path.endswith("/__init__.py")
                 else ""
             )
-            module_name_exceptions = {"main"} if package_dir == "app" else set()
             package_module_name = package_dir.replace("/", ".")
             if package_dir == "app":
                 for node in tree.body:
@@ -490,10 +489,6 @@ def _validate_project_file_payload(
                         None,
                         "__all__ must use plain assignment (__all__ = [...]), not type annotation",
                     )
-            module_exports_raw = context_payload.get("package_module_exports")
-            module_exports = (
-                module_exports_raw if isinstance(module_exports_raw, dict) else {}
-            )
             available = {
                 name
                 for name in (context_payload.get("package_export_candidates") or [])

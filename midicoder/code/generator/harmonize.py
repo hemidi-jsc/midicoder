@@ -45,11 +45,6 @@ def _normalize_imports(
     if plain_map:
         normalized.append(f"import {', '.join(sorted(plain_map))}")
     normalized.extend(sorted(set(passthrough)))
-    semantic_imports = {
-        f"from {module} import {name}"
-        for module, names in from_map.items()
-        for name in names
-    } | {f"import {name}" for name in plain_map}
     return normalized, raw_seen, from_map, plain_map
 
 

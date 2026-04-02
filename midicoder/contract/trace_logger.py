@@ -218,7 +218,7 @@ def save_error_artifacts(
                 error_details.append(
                     f"Consider simplifying {target_file} or splitting into smaller contracts"
                 )
-        except:
+        except Exception:
             pass
 
     # Save processed content for debugging if available

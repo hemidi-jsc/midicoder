@@ -128,26 +128,6 @@ def determine_file_repair_order(grouped_files: dict[str, list[Any]]) -> list[str
     Uses dynamic pattern matching to identify foundation vs dependent files
     without hardcoding specific file paths.
     """
-    # Dynamic dependency classification based on file patterns
-    foundation_patterns = [
-        "error",  # error definitions (any *error*.yaml)
-        "entit",  # entity definitions (any *entit*.yaml)
-        "event",  # event definitions (any *event*.yaml)
-        "glossary",  # terminology (any *glossary*.yaml)
-        "info",  # project metadata (any *info*.yaml)
-        "meta",  # metadata files (any *meta*.yaml)
-    ]
-
-    dependent_patterns = [
-        "command",  # commands (any *command*.yaml)
-        "quer",  # queries (any *quer*.yaml)
-        "http",  # HTTP APIs (any *http*.yaml)
-        "api",  # API files (any *api*.yaml)
-        "rule",  # rules (any *rule*.yaml)
-        "workflow",  # workflows (any *workflow*.yaml)
-        "policy",  # policies (any *policy*.yaml)
-    ]
-
     from midicoder.contract.contract_utils import is_dependent_file, is_foundation_file
 
     files_to_process = set(grouped_files.keys())

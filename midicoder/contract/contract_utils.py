@@ -233,7 +233,7 @@ def analyze_run_logs(
                 trace_data = json.loads(trace_file.read_text(encoding="utf-8"))
                 batch = trace_data.get("batch", [])
                 attempted_files.update(batch)
-            except:
+            except Exception:
                 continue
 
         # Alternative: check prompt files to see what was attempted
@@ -246,7 +246,7 @@ def analyze_run_logs(
                     for required_file in required_files:
                         if required_file in content:
                             attempted_files.add(required_file)
-                except:
+                except Exception:
                     continue
 
         # Check response files to see what actually got processed
@@ -263,7 +263,7 @@ def analyze_run_logs(
                         .get("message", {})
                         .get("content", "")
                     )
-                except:
+                except Exception:
                     # If not JSON, treat as direct content
                     llm_content = content
 
@@ -289,13 +289,13 @@ def analyze_run_logs(
                                         and not llm_content.strip().endswith("type")
                                     ):
                                         successful_files.add(required_file)
-                            except:
+                            except Exception:
                                 pass
                         elif not llm_content.strip().endswith(("type", "type:")):
                             # Heuristic: if content doesn't end abruptly, consider it successful
                             successful_files.add(required_file)
 
-            except:
+            except Exception:
                 continue
 
     except Exception as e:

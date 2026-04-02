@@ -5,10 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-# Constants
-MAX_LLM_TOKENS = 64000
-MAX_DISPLAYED_ISSUES = 5
-
 from midicoder.brief.analyzer import (
     get_contract_files_from_master_brief,
 )
@@ -58,6 +54,10 @@ from .base import (
     read_state,
     write_run_outputs,
 )
+
+# Constants
+MAX_LLM_TOKENS = 64000
+MAX_DISPLAYED_ISSUES = 5
 
 
 def _setup_contract_command(root: Path) -> tuple[MidicoderPaths, dict[str, Any], str]:
@@ -203,6 +203,7 @@ def _generate_contract_files(
     created_paths: set[Path] = set()
     status = "failed"
     error_message = None
+    generation_exc: Exception | None = None
     all_traces: list[dict[str, Any]] = []
 
     try:
@@ -297,6 +298,7 @@ def _generate_contract_files(
 
         status = "generated"
     except Exception as exc:
+        generation_exc = exc
         error_message = str(exc)
 
     summary = build_generation_summary(
@@ -325,7 +327,7 @@ def _generate_contract_files(
         print(f"[{task_name}] FAILED – {error_message or 'unknown error'}")
 
         # Exit cleanly for LLM errors to avoid showing traceback
-        if "exc" in locals() and isinstance(exc, LlmRequestError):
+        if generation_exc and isinstance(generation_exc, LlmRequestError):
             import sys
 
             sys.exit(1)
@@ -486,7 +488,6 @@ def repair_run(root: Path) -> None:
         raise RuntimeError("contract-feedbacks.yml is invalid.")
 
     run_dir = create_run_dir(paths, "contract_repair_run")
-    contracts_root = paths.versions / version / "contracts"
     master_brief_path = paths.versions / version / "master-brief.md"
     llm_config = load_llm_config(paths, tier="high")
     schema_tree = read_schema_tree(paths.root)
