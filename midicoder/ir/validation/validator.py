@@ -49,7 +49,6 @@ from midicoder.dsl.models import (
     ProfilesFile,
     QueriesFile,
     ReliabilityPoliciesFile,
-    RulesFile,
     SecretsContractFile,
     SecurityBaselineFile,
     TestingFile,

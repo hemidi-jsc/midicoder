@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .base import (
@@ -13,7 +12,7 @@ from .base import (
 )
 
 if TYPE_CHECKING:
-    from ...schema.ir_schema import DomainIR, EntityIR, FieldIR, ValueObjectIR
+    from ...schema.ir_schema import DomainIR, EntityIR, FieldIR
 
 
 class EntityDiagramGenerator(DiagramGenerator):

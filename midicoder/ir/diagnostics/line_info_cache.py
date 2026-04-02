@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .line_tracker import extract_line_info, get_line_range
+from .line_tracker import extract_line_info
 
 
 class LineInfoCache:

@@ -997,7 +997,6 @@ def _module_from_id_pattern(
         extract_catalogs,
         extract_event_suffixes_from_catalog,
         extract_verb_prefixes_from_catalog,
-        get_pluralization_rules,
     )
 
     if not element_id:

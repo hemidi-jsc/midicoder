@@ -17,7 +17,6 @@ from midicoder.contract.contract_utils import (
     read_json,
     read_schema_tree,
     validate_contract_file,
-    write_contract_files,
 )
 from midicoder.contract.contract_validator import check_contract
 from midicoder.contract.feedback_processor import (
@@ -42,7 +41,6 @@ from midicoder.contract.trace_logger import (
     save_generation_response,
     save_generation_trace,
     save_processed_response,
-    save_resume_context,
     validate_parsed_files,
 )
 from midicoder.contract.yaml_processor import (

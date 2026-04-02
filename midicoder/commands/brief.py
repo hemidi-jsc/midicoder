@@ -112,7 +112,7 @@ def analyze(root: Path) -> None:
         print_analysis_summary(required_files, keyword_data)
 
         status = "analyzed"
-        print(f"[brief analyze] ✓ Analysis completed successfully")
+        print("[brief analyze] ✓ Analysis completed successfully")
         print(f"[brief analyze] ✓ Logs saved to: {run_dir.name}")
 
     except Exception as exc:
@@ -138,17 +138,17 @@ def analyze(root: Path) -> None:
 
             # User-friendly error message
             if "504" in str(exc) or "Gateway Time-out" in str(exc):
-                print(f"[brief analyze] ERROR: LLM server timeout (504)")
+                print("[brief analyze] ERROR: LLM server timeout (504)")
                 print(
-                    f"[brief analyze] → The master brief might be too long or the server is overloaded"
+                    "[brief analyze] → The master brief might be too long or the server is overloaded"
                 )
                 print(
-                    f"[brief analyze] → Try again later or use a different LLM provider"
+                    "[brief analyze] → Try again later or use a different LLM provider"
                 )
             elif "timeout" in str(exc).lower():
-                print(f"[brief analyze] ERROR: Request timeout")
-                print(f"[brief analyze] → The LLM server took too long to respond")
-                print(f"[brief analyze] → Try again later")
+                print("[brief analyze] ERROR: Request timeout")
+                print("[brief analyze] → The LLM server took too long to respond")
+                print("[brief analyze] → Try again later")
             else:
                 print(f"[brief analyze] ERROR: {error_message}")
         else:
@@ -264,14 +264,14 @@ def rewrite(root: Path) -> None:
 
         status = "rewritten"
 
-        print(f"[brief rewrite] ✓ Master brief improvements applied")
+        print("[brief rewrite] ✓ Master brief improvements applied")
         print(f"[brief rewrite] ✓ Updated file: {output_path.name}")
-        print(f"[brief rewrite] ✓ Analysis saved: master-brief.analysis.md")
+        print("[brief rewrite] ✓ Analysis saved: master-brief.analysis.md")
         if apply_errors:
-            print(f"[brief rewrite] ✓ Errors log: master-brief.errors.txt")
+            print("[brief rewrite] ✓ Errors log: master-brief.errors.txt")
         print(f"[brief rewrite] ✓ Run logs: {run_dir.name}")
         print(
-            f"[brief rewrite] → Review the changes and replace master-brief.md if satisfied"
+            "[brief rewrite] → Review the changes and replace master-brief.md if satisfied"
         )
 
     except Exception as exc:
@@ -297,17 +297,17 @@ def rewrite(root: Path) -> None:
 
             # User-friendly error message
             if "504" in str(exc) or "Gateway Time-out" in str(exc):
-                print(f"[brief rewrite] ERROR: LLM server timeout (504)")
+                print("[brief rewrite] ERROR: LLM server timeout (504)")
                 print(
-                    f"[brief rewrite] → The master brief might be too long or the server is overloaded"
+                    "[brief rewrite] → The master brief might be too long or the server is overloaded"
                 )
                 print(
-                    f"[brief rewrite] → Try again later or use a different LLM provider"
+                    "[brief rewrite] → Try again later or use a different LLM provider"
                 )
             elif "timeout" in str(exc).lower():
-                print(f"[brief rewrite] ERROR: Request timeout")
-                print(f"[brief rewrite] → The LLM server took too long to respond")
-                print(f"[brief rewrite] → Try again later")
+                print("[brief rewrite] ERROR: Request timeout")
+                print("[brief rewrite] → The LLM server took too long to respond")
+                print("[brief rewrite] → Try again later")
             else:
                 print(f"[brief rewrite] ERROR: {error_message}")
         else:

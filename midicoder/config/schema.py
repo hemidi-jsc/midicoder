@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from .defaults import CONFIG_FIELDS, DEFAULT_STACK
 

@@ -7,7 +7,6 @@ to help users fix errors quickly.
 from __future__ import annotations
 
 from difflib import get_close_matches
-from typing import Any
 
 from ..symbols.symbol_table import SymbolTable
 

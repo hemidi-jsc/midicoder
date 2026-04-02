@@ -209,7 +209,7 @@ def process_file_feedback_items(
         success = len(patch_errors) == 0
 
         if success:
-            print(f"[file processor] File repair: SUCCESS")
+            print("[file processor] File repair: SUCCESS")
         else:
             print(
                 f"[file processor] File repair: FAILED - {'; '.join(patch_errors[:2])}"
@@ -283,7 +283,6 @@ def _apply_rbac_repair_safety_fixes(contracts_root: Path) -> list[str]:
     """Apply deterministic safety fixes after rbac patching to reduce semantic regressions."""
     from midicoder.commands.base import write_yaml
     from midicoder.contract.contract_utils import (
-        extract_ids_from_yaml_list,
         load_yaml_safe,
     )
 

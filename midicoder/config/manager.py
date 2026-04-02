@@ -402,7 +402,7 @@ class ConfigManager:
         print_normal(
             f"  • Cheap LLM: [cyan]{llm_cheap_model}[/cyan] ([dim]{llm_cheap_provider}[/dim])"
         )
-        print_normal(f"  • Cache: [cyan]enabled[/cyan] ([dim]ephemeral[/dim])")
+        print_normal("  • Cache: [cyan]enabled[/cyan] ([dim]ephemeral[/dim])")
 
 
 def _deep_merge(target: dict, source: dict) -> None:

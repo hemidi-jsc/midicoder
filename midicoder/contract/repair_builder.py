@@ -162,7 +162,7 @@ def build_direct_repair_prompt(
             "```",
             "",
             "**Output Requirements:**",
-            f"✅ Return ONLY the YAML structure above (no markdown headers, no explanations)",
+            "✅ Return ONLY the YAML structure above (no markdown headers, no explanations)",
             f"✅ Fix all {len(feedback_items)} feedback items with exact patch locations",
             "✅ Use schema_cheatsheet for 100% schema compliance",
             "✅ ONLY use IDs from 'Available Reference IDs' - never invent new ones",

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Tuple
 
 
 def read_source_lines(repo_root: Path | None, file_path: str) -> list[str] | None:

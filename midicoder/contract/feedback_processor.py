@@ -254,7 +254,6 @@ def create_feedback_file(
     Returns:
         Tuple of (feedback_path, new_items_count)
     """
-    from datetime import datetime, timezone
 
     from ruamel.yaml import YAML
 

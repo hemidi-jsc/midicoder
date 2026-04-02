@@ -2951,7 +2951,7 @@ def _extract_guard_usage(
             issues.append(
                 ContractIssue(
                     location,
-                    f"auth.role 'role' parameter should be a string, not a list. Use 'roles' for multiple roles or choose one role.",
+                    "auth.role 'role' parameter should be a string, not a list. Use 'roles' for multiple roles or choose one role.",
                 )
             )
             return
@@ -3021,7 +3021,7 @@ def _extract_guard_usage(
             issues.append(
                 ContractIssue(
                     location,
-                    f"auth.permission 'permission' parameter should be a string, not a list. Use 'permissions' for multiple permissions or choose one permission.",
+                    "auth.permission 'permission' parameter should be a string, not a list. Use 'permissions' for multiple permissions or choose one permission.",
                 )
             )
             return

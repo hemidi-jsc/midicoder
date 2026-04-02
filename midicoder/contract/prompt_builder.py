@@ -320,7 +320,7 @@ def build_contract_system_prompt(
             "",
             f"**Project Version:** {version}",
             f"**Technology Stack:** {stack_label}",
-            f"**Generation Mode:** Master-brief-driven contract creation",
+            "**Generation Mode:** Master-brief-driven contract creation",
             "",
             "## Mission Statement",
             "",

@@ -32,7 +32,7 @@ import json
 import re
 from difflib import unified_diff
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Pattern
+from typing import Any, Dict, List, Optional
 
 # Type aliases for better readability
 Symbol = Dict[str, Any]
