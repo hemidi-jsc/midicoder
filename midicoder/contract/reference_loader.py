@@ -15,7 +15,9 @@ def _load_yaml(path: Path) -> Any | None:
         return None
 
 
-def _assign(destination: dict[str, list[str]], key: str, values: list[str] | None) -> None:
+def _assign(
+    destination: dict[str, list[str]], key: str, values: list[str] | None
+) -> None:
     if not values:
         return
     destination[key] = sorted({str(value) for value in values if str(value).strip()})
@@ -33,9 +35,15 @@ def collect_reference_catalog(contracts_root: Path) -> dict[str, list[str]]:
     if isinstance(rbac_data, dict):
         access = rbac_data.get("access") or {}
         if isinstance(access, dict):
-            roles = [role.get("id") for role in access.get("roles") or [] if isinstance(role, dict)]
+            roles = [
+                role.get("id")
+                for role in access.get("roles") or []
+                if isinstance(role, dict)
+            ]
             permissions = [
-                permission.get("id") for permission in access.get("permissions") or [] if isinstance(permission, dict)
+                permission.get("id")
+                for permission in access.get("permissions") or []
+                if isinstance(permission, dict)
             ]
             _assign(references, "available_roles", roles)
             _assign(references, "available_permissions", permissions)
@@ -49,7 +57,9 @@ def collect_reference_catalog(contracts_root: Path) -> dict[str, list[str]]:
             if isinstance(datasource, dict)
         ]
         tables = [
-            table.get("id") for table in persistence_data.get("tables") or [] if isinstance(table, dict)
+            table.get("id")
+            for table in persistence_data.get("tables") or []
+            if isinstance(table, dict)
         ]
         _assign(references, "available_persistence_datasources", datasources)
         _assign(references, "available_persistence_tables", tables)
@@ -91,9 +101,16 @@ def collect_reference_catalog(contracts_root: Path) -> dict[str, list[str]]:
     commands_data = _load_yaml(commands_path)
     queries_data = _load_yaml(queries_path)
     if isinstance(commands_data, dict):
-        _assign(references, "existing_commands", extract_ids_from_yaml_list(commands_data, "commands"))
+        _assign(
+            references,
+            "existing_commands",
+            extract_ids_from_yaml_list(commands_data, "commands"),
+        )
     if isinstance(queries_data, dict):
-        _assign(references, "existing_queries", extract_ids_from_yaml_list(queries_data, "queries"))
+        _assign(
+            references,
+            "existing_queries",
+            extract_ids_from_yaml_list(queries_data, "queries"),
+        )
 
     return references
-

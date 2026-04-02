@@ -76,4 +76,3 @@ class ScenariosFile(BaseModel):
     scenarios: list[Scenario]
 
     model_config = {"extra": "forbid"}
-

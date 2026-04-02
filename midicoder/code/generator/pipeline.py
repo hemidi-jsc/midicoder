@@ -80,10 +80,18 @@ def _extract_python_exports(content: str) -> list[str]:
                 exports.add(node.name)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id and not target.id.startswith("_"):
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id
+                    and not target.id.startswith("_")
+                ):
                     exports.add(target.id)
         elif isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name) and node.target.id and not node.target.id.startswith("_"):
+            if (
+                isinstance(node.target, ast.Name)
+                and node.target.id
+                and not node.target.id.startswith("_")
+            ):
                 exports.add(node.target.id)
     return sorted(exports)
 
@@ -111,7 +119,9 @@ def _module_allowed(module: str, allowed_modules: set[str]) -> bool:
     return any(existing.startswith(module + ".") for existing in allowed_modules)
 
 
-def _collect_missing_internal_modules(block: str, *, allowed_modules: set[str]) -> list[str]:
+def _collect_missing_internal_modules(
+    block: str, *, allowed_modules: set[str]
+) -> list[str]:
     import_pattern = re.compile(r"^\s*import\s+(.+)$")
     from_pattern = re.compile(r"^\s*from\s+([A-Za-z_][\w\.]*)\s+import\s+.+$")
     missing: set[str] = set()
@@ -123,7 +133,9 @@ def _collect_missing_internal_modules(block: str, *, allowed_modules: set[str]) 
         from_match = from_pattern.match(line)
         if from_match:
             module = _canonicalize_internal_module(from_match.group(1))
-            if module.startswith("app.") and not _module_allowed(module, allowed_modules):
+            if module.startswith("app.") and not _module_allowed(
+                module, allowed_modules
+            ):
                 missing.add(module)
             continue
 
@@ -142,10 +154,18 @@ def _payload_requires_db(payload: dict[str, Any]) -> bool:
     pseudo_struct = payload.get("pseudo_struct") if isinstance(payload, dict) else {}
     if not isinstance(pseudo_struct, dict):
         return False
-    dependencies = pseudo_struct.get("dependencies") if isinstance(pseudo_struct.get("dependencies"), dict) else {}
+    dependencies = (
+        pseudo_struct.get("dependencies")
+        if isinstance(pseudo_struct.get("dependencies"), dict)
+        else {}
+    )
     if isinstance(dependencies.get("reads"), list) and dependencies.get("reads"):
         return True
-    steps = pseudo_struct.get("steps") if isinstance(pseudo_struct.get("steps"), list) else []
+    steps = (
+        pseudo_struct.get("steps")
+        if isinstance(pseudo_struct.get("steps"), list)
+        else []
+    )
     for step in steps:
         if not isinstance(step, dict):
             continue
@@ -168,7 +188,7 @@ def _build_default_db_provider_operation() -> dict[str, Any]:
         "from collections.abc import Generator\n\n"
         "def get_db() -> Generator[object, None, None]:\n"
         "    raise RuntimeError(\n"
-        "        \"Database session provider is not configured. Wire SQLAlchemy session in app/shared/db.py\"\n"
+        '        "Database session provider is not configured. Wire SQLAlchemy session in app/shared/db.py"\n'
         "    )\n\n"
         "def get_db_session() -> Generator[object, None, None]:\n"
         "    return get_db()\n"
@@ -198,7 +218,14 @@ def _build_default_db_provider_operation() -> dict[str, Any]:
 
 def _load_ir_for_version(workspace_root: Path, version: str) -> dict[str, Any]:
     normalized_version = str(version).strip().strip("/\\")
-    ir_path = workspace_root / ".midicoder" / "versions" / normalized_version / "irs" / "ir.json"
+    ir_path = (
+        workspace_root
+        / ".midicoder"
+        / "versions"
+        / normalized_version
+        / "irs"
+        / "ir.json"
+    )
     try:
         if not ir_path.exists():
             return {}
@@ -240,7 +267,9 @@ def _resolve_default_datasource(ir_payload: dict[str, Any]) -> dict[str, Any] | 
             persistence = modules.get("persistence") or {}
         elif isinstance(ir_payload.get("persistence"), dict):
             persistence = ir_payload.get("persistence") or {}
-    datasources = persistence.get("datasources") if isinstance(persistence, dict) else []
+    datasources = (
+        persistence.get("datasources") if isinstance(persistence, dict) else []
+    )
     if not isinstance(datasources, list):
         return None
     valid_datasources = [item for item in datasources if isinstance(item, dict)]
@@ -252,7 +281,9 @@ def _resolve_default_datasource(ir_payload: dict[str, Any]) -> dict[str, Any] | 
     return valid_datasources[0]
 
 
-def _build_sqlalchemy_db_provider_operation(*, datasource: dict[str, Any] | None = None) -> dict[str, Any]:
+def _build_sqlalchemy_db_provider_operation(
+    *, datasource: dict[str, Any] | None = None
+) -> dict[str, Any]:
     ir_ref = "ProjectFile.db_provider.app_shared_db_py"
     datasource_id = ""
     if isinstance(datasource, dict):
@@ -308,7 +339,9 @@ def _get_config_bool(config: dict[str, Any], key: str, default: bool) -> bool:
     return bool(value)
 
 
-def _get_config_int(config: dict[str, Any], key: str, default: int, *, min_value: int, max_value: int) -> int:
+def _get_config_int(
+    config: dict[str, Any], key: str, default: int, *, min_value: int, max_value: int
+) -> int:
     value = config.get(key, default)
     try:
         parsed = int(value)
@@ -343,12 +376,18 @@ def _collect_generation_validation_errors(
             has_future_annotations = True
             break
 
-    missing_modules = _collect_missing_internal_modules(block, allowed_modules=allowed_modules)
+    missing_modules = _collect_missing_internal_modules(
+        block, allowed_modules=allowed_modules
+    )
     for module in missing_modules:
         errors.append(f"Missing internal module import: {module}")
 
-    symbol_index = generated_symbol_index if isinstance(generated_symbol_index, dict) else {}
-    existing_index = existing_symbol_index if isinstance(existing_symbol_index, dict) else {}
+    symbol_index = (
+        generated_symbol_index if isinstance(generated_symbol_index, dict) else {}
+    )
+    existing_index = (
+        existing_symbol_index if isinstance(existing_symbol_index, dict) else {}
+    )
     try:
         tree = ast.parse(block)
     except SyntaxError:
@@ -368,7 +407,9 @@ def _collect_generation_validation_errors(
                 expected_exports = existing_index.get(module)
             if not isinstance(expected_exports, list) or not expected_exports:
                 continue
-            exported = {name for name in expected_exports if isinstance(name, str) and name}
+            exported = {
+                name for name in expected_exports if isinstance(name, str) and name
+            }
             for alias in node.names:
                 if not alias.name or alias.name == "*":
                     continue
@@ -379,7 +420,9 @@ def _collect_generation_validation_errors(
                     )
 
     _, region_content = _parse_operation_block(block=block, ir_ref=str(item.ir_ref))
-    region_lines = [line.strip() for line in region_content.splitlines() if line.strip()]
+    region_lines = [
+        line.strip() for line in region_content.splitlines() if line.strip()
+    ]
     non_comment_lines = [line for line in region_lines if not line.startswith("#")]
     lowered = region_content.lower()
 
@@ -397,18 +440,30 @@ def _collect_generation_validation_errors(
         errors.append("Region content contains TODO/FIXME placeholders.")
 
     payload = item.payload if isinstance(item.payload, dict) else {}
-    pseudo_struct = payload.get("pseudo_struct") if isinstance(payload.get("pseudo_struct"), dict) else {}
-    intent = pseudo_struct.get("intent") if isinstance(pseudo_struct.get("intent"), dict) else {}
+    pseudo_struct = (
+        payload.get("pseudo_struct")
+        if isinstance(payload.get("pseudo_struct"), dict)
+        else {}
+    )
+    intent = (
+        pseudo_struct.get("intent")
+        if isinstance(pseudo_struct.get("intent"), dict)
+        else {}
+    )
     intent_kind = str(intent.get("kind") or "").strip().lower()
     integration_contract = (
-        payload.get("integration_contract") if isinstance(payload.get("integration_contract"), dict) else {}
+        payload.get("integration_contract")
+        if isinstance(payload.get("integration_contract"), dict)
+        else {}
     )
 
     if runtime_path.endswith("/controller.py"):
         route_contract = integration_contract.get("route_handler_contract")
         has_routes = isinstance(route_contract, list) and bool(route_contract)
         if has_routes and "@router." not in region_content:
-            errors.append("Controller with route contract must contain @router decorators.")
+            errors.append(
+                "Controller with route contract must contain @router decorators."
+            )
         if has_routes:
             for route in route_contract:
                 if not isinstance(route, dict):
@@ -416,7 +471,10 @@ def _collect_generation_validation_errors(
                 handler_symbol = route.get("handler_symbol")
                 if not isinstance(handler_symbol, str) or not handler_symbol.strip():
                     continue
-                if not re.search(rf"\b(?:async\s+def|def)\s+{re.escape(handler_symbol)}\b", region_content):
+                if not re.search(
+                    rf"\b(?:async\s+def|def)\s+{re.escape(handler_symbol)}\b",
+                    region_content,
+                ):
                     errors.append(f"Missing route handler function: {handler_symbol}")
 
     service_signature = (
@@ -424,12 +482,22 @@ def _collect_generation_validation_errors(
         if isinstance(integration_contract.get("service_signature"), dict)
         else {}
     )
-    service_name = service_signature.get("name") if isinstance(service_signature, dict) else None
-    if runtime_path.endswith("/service.py") and isinstance(service_name, str) and service_name.strip():
-        if not re.search(rf"\b(?:async\s+def|def)\s+{re.escape(service_name)}\b", region_content):
+    service_name = (
+        service_signature.get("name") if isinstance(service_signature, dict) else None
+    )
+    if (
+        runtime_path.endswith("/service.py")
+        and isinstance(service_name, str)
+        and service_name.strip()
+    ):
+        if not re.search(
+            rf"\b(?:async\s+def|def)\s+{re.escape(service_name)}\b", region_content
+        ):
             errors.append(f"Missing service function: {service_name}")
 
-    if (runtime_path.endswith("/model.py") or intent_kind == "model") and "class " not in region_content:
+    if (
+        runtime_path.endswith("/model.py") or intent_kind == "model"
+    ) and "class " not in region_content:
         errors.append("Model target should define at least one class.")
 
     if runtime_path.endswith("/model.py"):
@@ -471,10 +539,18 @@ def _collect_generation_validation_errors(
 
     # Enforce real persistence implementation for DB-related command/query flows.
     db_required = False
-    dependencies = pseudo_struct.get("dependencies") if isinstance(pseudo_struct.get("dependencies"), dict) else {}
+    dependencies = (
+        pseudo_struct.get("dependencies")
+        if isinstance(pseudo_struct.get("dependencies"), dict)
+        else {}
+    )
     if isinstance(dependencies.get("reads"), list) and dependencies.get("reads"):
         db_required = True
-    steps = pseudo_struct.get("steps") if isinstance(pseudo_struct.get("steps"), list) else []
+    steps = (
+        pseudo_struct.get("steps")
+        if isinstance(pseudo_struct.get("steps"), list)
+        else []
+    )
     for step in steps:
         if not isinstance(step, dict):
             continue
@@ -498,7 +574,9 @@ def _collect_generation_validation_errors(
         lowered_region = region_content.lower()
         for marker in forbidden_markers:
             if marker in lowered_region:
-                errors.append("DB contract requires real persistence logic, but simulated/mock wording was detected.")
+                errors.append(
+                    "DB contract requires real persistence logic, but simulated/mock wording was detected."
+                )
                 break
 
         persistence_patterns = (
@@ -522,18 +600,34 @@ def _collect_generation_validation_errors(
             errors.append(
                 "DB contract requires concrete persistence code (repository/session/ORM), but no persistence signal was found."
             )
-        if ("return [" in region_content or "return {" in region_content) and not has_persistence_signal:
-            errors.append("Likely in-memory stub detected for DB flow (hardcoded return collection without persistence).")
+        if (
+            "return [" in region_content or "return {" in region_content
+        ) and not has_persistence_signal:
+            errors.append(
+                "Likely in-memory stub detected for DB flow (hardcoded return collection without persistence)."
+            )
 
     # Validate type mismatches against pseudo_struct schemas (without hardcoded business rules).
-    api_struct = pseudo_struct.get("api") if isinstance(pseudo_struct.get("api"), dict) else {}
-    routes = api_struct.get("routes") if isinstance(api_struct.get("routes"), list) else []
+    api_struct = (
+        pseudo_struct.get("api") if isinstance(pseudo_struct.get("api"), dict) else {}
+    )
+    routes = (
+        api_struct.get("routes") if isinstance(api_struct.get("routes"), list) else []
+    )
     string_fields: set[str] = set()
     for route in routes:
         if not isinstance(route, dict):
             continue
-        request_schema = route.get("request_schema") if isinstance(route.get("request_schema"), list) else []
-        response_schema = route.get("response_schema") if isinstance(route.get("response_schema"), list) else []
+        request_schema = (
+            route.get("request_schema")
+            if isinstance(route.get("request_schema"), list)
+            else []
+        )
+        response_schema = (
+            route.get("response_schema")
+            if isinstance(route.get("response_schema"), list)
+            else []
+        )
         for field in request_schema + response_schema:
             if not isinstance(field, dict):
                 continue
@@ -551,9 +645,15 @@ def _collect_generation_validation_errors(
                 if not isinstance(node, ast.Call):
                     continue
                 for kw in node.keywords:
-                    if not isinstance(kw, ast.keyword) or not kw.arg or kw.arg not in string_fields:
+                    if (
+                        not isinstance(kw, ast.keyword)
+                        or not kw.arg
+                        or kw.arg not in string_fields
+                    ):
                         continue
-                    if isinstance(kw.value, ast.Constant) and not isinstance(kw.value.value, str):
+                    if isinstance(kw.value, ast.Constant) and not isinstance(
+                        kw.value.value, str
+                    ):
                         errors.append(
                             f"Field '{kw.arg}' is string by contract but assigned non-string literal."
                         )
@@ -592,7 +692,9 @@ def _detect_internal_import_cycle(
         normalized = _normalize_path(path)
         if not normalized.endswith(".py"):
             continue
-        module_to_imports[_runtime_path_to_module(normalized)] = _collect_module_imports(content)
+        module_to_imports[
+            _runtime_path_to_module(normalized)
+        ] = _collect_module_imports(content)
 
     candidate_module = _runtime_path_to_module(runtime_path)
     module_to_imports[candidate_module] = _collect_module_imports(candidate_block)
@@ -636,7 +738,9 @@ def _detect_internal_import_cycle(
     return cycle_paths
 
 
-def _sanitize_hint_entry(entry: dict[str, Any], *, max_keys: int = 12) -> dict[str, Any]:
+def _sanitize_hint_entry(
+    entry: dict[str, Any], *, max_keys: int = 12
+) -> dict[str, Any]:
     preferred = [
         "id",
         "name",
@@ -677,7 +781,15 @@ def _sanitize_hint_entry(entry: dict[str, Any], *, max_keys: int = 12) -> dict[s
 
 def _match_hint_entry(entry: dict[str, Any], *, runtime_path: str, ir_ref: str) -> bool:
     runtime_norm = _normalize_path(runtime_path)
-    path_keys = ["path", "file", "file_path", "runtime_path", "target", "target_path", "module_path"]
+    path_keys = [
+        "path",
+        "file",
+        "file_path",
+        "runtime_path",
+        "target",
+        "target_path",
+        "module_path",
+    ]
     for key in path_keys:
         value = entry.get(key)
         if isinstance(value, str):
@@ -694,7 +806,9 @@ def _match_hint_entry(entry: dict[str, Any], *, runtime_path: str, ir_ref: str) 
             return True
 
     owners = entry.get("owners")
-    if isinstance(owners, list) and any(isinstance(x, str) and x == ir_ref for x in owners):
+    if isinstance(owners, list) and any(
+        isinstance(x, str) and x == ir_ref for x in owners
+    ):
         return True
     return False
 
@@ -756,7 +870,9 @@ def _parse_operation_block(*, block: str, ir_ref: str) -> tuple[list[str], str]:
     return imports, region_content
 
 
-def _ensure_model_future_annotations(block: str, *, runtime_path: str, ir_ref: str) -> str:
+def _ensure_model_future_annotations(
+    block: str, *, runtime_path: str, ir_ref: str
+) -> str:
     if not runtime_path.endswith("/model.py"):
         return block
     if "from __future__ import annotations" in block:
@@ -768,7 +884,9 @@ def _ensure_model_future_annotations(block: str, *, runtime_path: str, ir_ref: s
     return "from __future__ import annotations\n" + block
 
 
-def _normalize_model_annotation_collisions(block: str, *, runtime_path: str, ir_ref: str) -> str:
+def _normalize_model_annotation_collisions(
+    block: str, *, runtime_path: str, ir_ref: str
+) -> str:
     if not runtime_path.endswith("/model.py"):
         return block
     imports, region_content = _parse_operation_block(block=block, ir_ref=ir_ref)
@@ -868,7 +986,9 @@ def _build_patch_plan_targets(
                 if runtime_path.endswith(".py")
                 else f"{runtime_path.replace('/', '.')}.patch-plan.json",
                 "operation_count": len(operations),
-                "ir_refs": [str(op.get("ir_ref")) for op in operations if op.get("ir_ref")],
+                "ir_refs": [
+                    str(op.get("ir_ref")) for op in operations if op.get("ir_ref")
+                ],
             }
         )
     return targets
@@ -916,8 +1036,16 @@ def _upsert_operation_by_ir_ref(
             if existing == operation:
                 return False
             merged = dict(existing)
-            old_imports = existing.get("imports") if isinstance(existing.get("imports"), list) else []
-            new_imports = operation.get("imports") if isinstance(operation.get("imports"), list) else []
+            old_imports = (
+                existing.get("imports")
+                if isinstance(existing.get("imports"), list)
+                else []
+            )
+            new_imports = (
+                operation.get("imports")
+                if isinstance(operation.get("imports"), list)
+                else []
+            )
             # Preserve import lines exactly as emitted by LLM; do not normalize or deduplicate.
             merged["imports"] = [x for x in old_imports if isinstance(x, str)] + [
                 x for x in new_imports if isinstance(x, str)
@@ -925,14 +1053,27 @@ def _upsert_operation_by_ir_ref(
 
             old_region = str(existing.get("region_content") or "").strip()
             new_region = str(operation.get("region_content") or "").strip()
-            if old_region and new_region and old_region != new_region and old_region not in new_region:
+            if (
+                old_region
+                and new_region
+                and old_region != new_region
+                and old_region not in new_region
+            ):
                 merged_region = f"{old_region}\n\n{new_region}"
             else:
                 merged_region = new_region or old_region
             merged["region_content"] = merged_region
 
-            region_start = str(operation.get("region_start") or existing.get("region_start") or f"# region {ir_ref}")
-            region_end = str(operation.get("region_end") or existing.get("region_end") or f"# endregion {ir_ref}")
+            region_start = str(
+                operation.get("region_start")
+                or existing.get("region_start")
+                or f"# region {ir_ref}"
+            )
+            region_end = str(
+                operation.get("region_end")
+                or existing.get("region_end")
+                or f"# endregion {ir_ref}"
+            )
             merged["region_start"] = region_start
             merged["region_end"] = region_end
             merged["content"] = f"{region_start}\n{merged_region}\n{region_end}\n"
@@ -1043,7 +1184,9 @@ def build_runtime_code(
 
     if db_required_for_version:
         db_runtime_path = _module_to_runtime_path(_CANONICAL_DB_MODULE)
-        db_operation = _build_sqlalchemy_db_provider_operation(datasource=default_datasource)
+        db_operation = _build_sqlalchemy_db_provider_operation(
+            datasource=default_datasource
+        )
         if _upsert_operation_by_ir_ref(
             patch_plan_operations.setdefault(db_runtime_path, []),
             db_operation,
@@ -1086,7 +1229,9 @@ def build_runtime_code(
             context["existing_internal_modules"] = sorted(existing_internal_modules)
             _progress(f"  -> Building patch-plan op for: {runtime_path}")
             use_llm = _get_config_bool(cfg, "code_gen_use_llm", True)
-            validation_enabled = _get_config_bool(cfg, "code_gen_validate_and_regen", True)
+            validation_enabled = _get_config_bool(
+                cfg, "code_gen_validate_and_regen", True
+            )
             max_attempts = _get_config_int(
                 cfg,
                 "code_gen_validation_max_attempts",
@@ -1148,7 +1293,9 @@ def build_runtime_code(
                     candidate_block=candidate,
                 )
                 for cycle in cycle_paths:
-                    validation_errors.append(f"Circular internal import detected: {cycle}")
+                    validation_errors.append(
+                        f"Circular internal import detected: {cycle}"
+                    )
                 if not validation_errors:
                     llm_content = candidate
                     last_validation_errors = []
@@ -1160,7 +1307,9 @@ def build_runtime_code(
                     + "; ".join(validation_errors)
                 )
                 if attempt < max_attempts:
-                    _progress(f"     Validation failed; regenerating ({attempt + 1}/{max_attempts})")
+                    _progress(
+                        f"     Validation failed; regenerating ({attempt + 1}/{max_attempts})"
+                    )
 
             if llm_content:
                 block = llm_content
@@ -1176,8 +1325,12 @@ def build_runtime_code(
                 _progress(f"     ERROR: {error_message}")
                 continue
             touched_patch_paths: set[str] = set()
-            imports, region_content = _parse_operation_block(block=block, ir_ref=item.ir_ref)
-            canonical_block = _build_region_block(ir_ref=item.ir_ref, region_content=region_content)
+            imports, region_content = _parse_operation_block(
+                block=block, ir_ref=item.ir_ref
+            )
+            canonical_block = _build_region_block(
+                ir_ref=item.ir_ref, region_content=region_content
+            )
 
             main_operation = {
                 "operation_type": "upsert_region",
@@ -1234,9 +1387,15 @@ def build_runtime_code(
                     patch_preview_cache[runtime_path] = preview_merged.content
                 else:
                     previous = patch_preview_cache.get(runtime_path, "")
-                    patch_preview_cache[runtime_path] = (previous + "\n" + block).strip() + "\n"
+                    patch_preview_cache[runtime_path] = (
+                        previous + "\n" + block
+                    ).strip() + "\n"
 
-    project_touched_paths, project_warnings, project_errors = generate_project_file_patch_operations(
+    (
+        project_touched_paths,
+        project_warnings,
+        project_errors,
+    ) = generate_project_file_patch_operations(
         workspace_root=workspace_root,
         config=cfg,
         context_profile=context_profile,
@@ -1278,15 +1437,21 @@ def build_runtime_code(
         errors.extend(runtime_errors)
 
     _progress("Writing patches index...")
-    patch_plan_targets = _build_patch_plan_targets(patch_plan_operations=patch_plan_operations)
+    patch_plan_targets = _build_patch_plan_targets(
+        patch_plan_operations=patch_plan_operations
+    )
     index_path = write_patches_index(
         patches_root=patches_root,
         version=version,
         stack=stack,
-        generated_patch_plans=[str(Path(x).relative_to(patches_root)) for x in generated_patch_plans],
+        generated_patch_plans=[
+            str(Path(x).relative_to(patches_root)) for x in generated_patch_plans
+        ],
         patch_plan_targets=patch_plan_targets,
         runtime_enabled=runtime_enabled,
-        generated_runtime_files=[str(Path(x).relative_to(patches_root)) for x in generated_runtime_files],
+        generated_runtime_files=[
+            str(Path(x).relative_to(patches_root)) for x in generated_runtime_files
+        ],
         execution_order=execution_order,
     )
     _progress("Writing code generation report...")
@@ -1295,8 +1460,12 @@ def build_runtime_code(
         version=version,
         stack=stack,
         runtime_enabled=runtime_enabled,
-        generated_patch_plans=[str(Path(x).relative_to(patches_root)) for x in generated_patch_plans],
-        generated_runtime_files=[str(Path(x).relative_to(patches_root)) for x in generated_runtime_files],
+        generated_patch_plans=[
+            str(Path(x).relative_to(patches_root)) for x in generated_patch_plans
+        ],
+        generated_runtime_files=[
+            str(Path(x).relative_to(patches_root)) for x in generated_runtime_files
+        ],
         warnings=warnings,
         errors=errors,
         execution_order=execution_order,
@@ -1304,8 +1473,12 @@ def build_runtime_code(
     )
 
     return BuildRuntimeCodeResult(
-        generated_patch_plans=sorted(set(str(Path(x).relative_to(patches_root)) for x in generated_patch_plans)),
-        generated_runtime_files=sorted(set(str(Path(x).relative_to(patches_root)) for x in generated_runtime_files)),
+        generated_patch_plans=sorted(
+            set(str(Path(x).relative_to(patches_root)) for x in generated_patch_plans)
+        ),
+        generated_runtime_files=sorted(
+            set(str(Path(x).relative_to(patches_root)) for x in generated_runtime_files)
+        ),
         runtime_enabled=runtime_enabled,
         generated_items=len(execution_order),
         warnings=warnings,

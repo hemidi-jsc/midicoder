@@ -10,7 +10,12 @@ from .io import (
     load_real_seams,
     load_symbol_virtual_seams,
 )
-from .utils import _coerce_float, _coerce_line, _is_exemplar_source, _strip_internal_fields
+from .utils import (
+    _coerce_float,
+    _coerce_line,
+    _is_exemplar_source,
+    _strip_internal_fields,
+)
 
 
 def deduplicate_virtual_seams(seams: Iterable[dict]) -> list[dict]:
@@ -29,7 +34,9 @@ def deduplicate_virtual_seams(seams: Iterable[dict]) -> list[dict]:
         by_group.setdefault((file_path, group_id), []).append(seam)
 
     temp_deduped: list[dict] = []
-    for (_, _), items in sorted(by_group.items(), key=lambda entry: (entry[0][0], entry[0][1])):
+    for (_, _), items in sorted(
+        by_group.items(), key=lambda entry: (entry[0][0], entry[0][1])
+    ):
         best = sorted(
             items,
             key=lambda item: (
@@ -41,7 +48,7 @@ def deduplicate_virtual_seams(seams: Iterable[dict]) -> list[dict]:
         temp_deduped.append(best)
 
     # Pass 2: Deduplicate by (file, line).
-    # If multiple different group_ids point to the exact same line, they likely 
+    # If multiple different group_ids point to the exact same line, they likely
     # represent the same code block (e.g. a class being both 'controller' and 'pydantic_model').
     # We keep the one with the more specific or "better" detail/group_id.
     by_line: dict[tuple[str, int], list[dict]] = {}
@@ -53,7 +60,7 @@ def deduplicate_virtual_seams(seams: Iterable[dict]) -> list[dict]:
         by_line.setdefault((file_path, line), []).append(seam)
 
     final_deduped: list[dict] = []
-    
+
     # Priority for kinds when line is the same
     KIND_PRIORITY = {
         "controller": 10,
@@ -76,18 +83,20 @@ def deduplicate_virtual_seams(seams: Iterable[dict]) -> list[dict]:
         kind = group_id.split(":")[0] if ":" in group_id else group_id
         return KIND_PRIORITY.get(kind, 0)
 
-    for (_, _), items in sorted(by_line.items(), key=lambda entry: (entry[0][0], entry[0][1])):
+    for (_, _), items in sorted(
+        by_line.items(), key=lambda entry: (entry[0][0], entry[0][1])
+    ):
         if len(items) == 1:
             final_deduped.append(items[0])
             continue
-            
+
         best = sorted(
             items,
             key=lambda item: (
                 -_get_seam_priority(item),
                 -_coerce_float(item.get("confidence"), 0.0),
                 str(item.get("group_id", "")),
-            )
+            ),
         )[0]
         final_deduped.append(best)
 
@@ -134,18 +143,28 @@ def build_virtual_seams(
     """Run full virtual seams pipeline and return merged seams list."""
     real_seams_map, real_seams_list = load_real_seams(context_dir)
     exemplar_seams = load_exemplar_virtual_seams(context_dir, repo_root=repo_root)
-    covered_group_ids = {str(s.get("group_id")) for s in exemplar_seams if isinstance(s, dict)}
+    covered_group_ids = {
+        str(s.get("group_id")) for s in exemplar_seams if isinstance(s, dict)
+    }
 
-    symbol_seams = load_symbol_virtual_seams(context_dir, covered_group_ids, repo_root=repo_root)
+    symbol_seams = load_symbol_virtual_seams(
+        context_dir, covered_group_ids, repo_root=repo_root
+    )
     covered_group_ids.update(
-        str(s.get("group_id")) for s in symbol_seams if isinstance(s, dict) and s.get("group_id")
+        str(s.get("group_id"))
+        for s in symbol_seams
+        if isinstance(s, dict) and s.get("group_id")
     )
 
-    entrypoint_seams = load_entrypoint_virtual_seams(context_dir, covered_group_ids, repo_root=repo_root)
+    entrypoint_seams = load_entrypoint_virtual_seams(
+        context_dir, covered_group_ids, repo_root=repo_root
+    )
 
     all_virtual = exemplar_seams + symbol_seams + entrypoint_seams
     deduped_virtual = deduplicate_virtual_seams(all_virtual)
-    return merge_real_and_virtual_seams(real_seams_map, real_seams_list, deduped_virtual)
+    return merge_real_and_virtual_seams(
+        real_seams_map, real_seams_list, deduped_virtual
+    )
 
 
 def write_virtual_seams(
@@ -158,7 +177,9 @@ def write_virtual_seams(
     seams = build_virtual_seams(context_path, repo_root=repo_root)
     output_path = context_path / "virtual_seams.json"
     output_path.write_text(
-        json.dumps(_strip_internal_fields(seams), indent=2, sort_keys=True, ensure_ascii=False),
+        json.dumps(
+            _strip_internal_fields(seams), indent=2, sort_keys=True, ensure_ascii=False
+        ),
         encoding="utf-8",
     )
     return _strip_internal_fields(seams)

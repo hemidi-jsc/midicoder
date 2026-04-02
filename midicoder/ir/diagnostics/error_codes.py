@@ -65,16 +65,16 @@ E904 = "UNEXPECTED_EXCEPTION"
 @dataclass
 class CompilerError:
     """Represents a compilation error or warning."""
-    
-    stage: str                    # "load", "schema", "lint", "cross_ref", "normalize", "build"
-    severity: str                 # "error" | "warning" | "info"
-    code: str                     # Error code (e.g., "E201")
-    file: str                     # Relative path to contract file
-    line: int | None              # Line number if available
-    path: str                     # JSON path in file (e.g., "commands[0].fetches[1]")
-    message: str                  # Human-readable error message
-    context: dict[str, Any]       # Additional context for debugging
-    
+
+    stage: str  # "load", "schema", "lint", "cross_ref", "normalize", "build"
+    severity: str  # "error" | "warning" | "info"
+    code: str  # Error code (e.g., "E201")
+    file: str  # Relative path to contract file
+    line: int | None  # Line number if available
+    path: str  # JSON path in file (e.g., "commands[0].fetches[1]")
+    message: str  # Human-readable error message
+    context: dict[str, Any]  # Additional context for debugging
+
     def __str__(self) -> str:
         """Format error for display."""
         location = f"{self.file}"
@@ -82,7 +82,7 @@ class CompilerError:
             location += f":{self.line}"
         if self.path:
             location += f" ({self.path})"
-        
+
         if self.severity == "error":
             severity_marker = "ERR"
         elif self.severity == "info":
@@ -90,22 +90,22 @@ class CompilerError:
         else:
             severity_marker = "WRN"
         result = f"{severity_marker} {location}\n  [{self.code}] {self.message}"
-        
+
         # Add suggestion if available in context
         if self.context.get("suggestion"):
             result += f"\n  Suggestion: {self.context['suggestion']}"
-        
+
         return result
 
 
 class ErrorReporter:
     """Collects and reports compilation errors, warnings, and info."""
-    
+
     def __init__(self) -> None:
         self.errors: list[CompilerError] = []
         self.warnings: list[CompilerError] = []
         self.infos: list[CompilerError] = []
-    
+
     def add_error(
         self,
         stage: str,
@@ -128,14 +128,14 @@ class ErrorReporter:
             message=message,
             context=context or {},
         )
-        
+
         if severity == "error":
             self.errors.append(error)
         elif severity == "info":
             self.infos.append(error)
         else:
             self.warnings.append(error)
-    
+
     def add_exception(
         self,
         stage: str,
@@ -152,11 +152,11 @@ class ErrorReporter:
             line=line,
             context={"exception_type": type(exception).__name__},
         )
-    
+
     def has_errors(self) -> bool:
         """Check if there are any errors."""
         return len(self.errors) > 0
-    
+
     def format_report(
         self,
         show_warnings: bool = True,
@@ -166,7 +166,7 @@ class ErrorReporter:
     ) -> str:
         """
         Format errors and warnings for console output.
-        
+
         Args:
             show_warnings: Include warnings in output
             show_context: Show code context for errors with line numbers
@@ -182,7 +182,9 @@ class ErrorReporter:
             if lines:
                 lines.append("")
             lines.append(f"Warnings ({len(self.warnings)})")
-            lines.extend(self._format_group(self.warnings, contracts_root, show_context))
+            lines.extend(
+                self._format_group(self.warnings, contracts_root, show_context)
+            )
 
         if show_infos and self.infos:
             if lines:
@@ -229,7 +231,9 @@ class ErrorReporter:
                     location_bits.append(err.path)
                 if err.line is not None:
                     location_bits.append(f"line {err.line}")
-                location = " @ ".join(location_bits) if location_bits else "location unknown"
+                location = (
+                    " @ ".join(location_bits) if location_bits else "location unknown"
+                )
 
                 lines.append(
                     f"  {idx:02d} {err.code} [{err.stage}] {location}: {err.message}"
@@ -253,7 +257,7 @@ class ErrorReporter:
         if lines and lines[-1] == "":
             lines.pop()
         return lines
-    
+
     def _format_code_context(
         self,
         error: CompilerError,
@@ -264,32 +268,32 @@ class ErrorReporter:
         """Format code context around error line."""
         try:
             from pathlib import Path
-            
+
             file_path = Path(contracts_root) / error.file
             if not file_path.exists():
                 return []
-            
-            with open(file_path, 'r', encoding='utf-8') as f:
+
+            with open(file_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-            
+
             # Calculate range
             start = max(0, error.line - context_lines - 1)
             end = min(len(lines), error.line + context_lines)
-            
+
             # Format output
             result = [f"{prefix}context:"]
             for i in range(start, end):
                 line_num = i + 1
                 line_content = lines[i].rstrip()
-                
+
                 # Add arrow indicator for error line
                 if line_num == error.line:
                     result.append(f"{prefix}{line_num:4d} | {line_content}  <- error")
                 else:
                     result.append(f"{prefix}{line_num:4d} | {line_content}")
-            
+
             return result
-        
+
         except (FileNotFoundError, IOError, IndexError):
             return []
 

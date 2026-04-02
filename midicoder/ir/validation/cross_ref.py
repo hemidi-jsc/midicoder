@@ -64,7 +64,7 @@ from ..symbols.symbol_table import (
 
 class CrossRefChecker:
     """Checks cross-references between contract objects."""
-    
+
     def __init__(self, symbol_table: SymbolTable, reporter: ErrorReporter) -> None:
         self.symbols = symbol_table
         self.reporter = reporter
@@ -76,7 +76,7 @@ class CrossRefChecker:
 
     def _warning_severity(self) -> str:
         return "error" if self.strict_cross_ref else "warning"
-    
+
     def check_file(self, data: Any, file: str) -> None:
         """Check cross-references in a validated file."""
         if isinstance(data, EntitiesFile):
@@ -113,23 +113,23 @@ class CrossRefChecker:
             self._check_observability(data, file)
         elif isinstance(data, TestingFile):
             self._check_testing(data, file)
-    
+
     def _check_entities(self, data: EntitiesFile, file: str) -> None:
         """Check field type references in entities."""
         for idx, entity in enumerate(data.entities):
             path = f"entities[{idx}]"
             self._check_field_types(entity.fields, file, f"{path}.fields")
-    
+
     def _check_value_objects(self, data: ValueObjectsFile, file: str) -> None:
         """Check field type references in value objects."""
         for idx, vo in enumerate(data.value_objects):
             path = f"value_objects[{idx}]"
             self._check_field_types(vo.fields, file, f"{path}.fields")
-    
+
     def _check_field_types(self, fields: list, file: str, base_path: str) -> None:
         """
         Check that field types with references (Entity:xxx, Enum:xxx) are valid.
-        
+
         Supports formats:
         - Entity:user_id
         - ValueObject:address
@@ -138,27 +138,27 @@ class CrossRefChecker:
         for idx, field in enumerate(fields):
             field_path = f"{base_path}[{idx}]"
             field_type = field.type
-            
+
             # Check if type contains a reference (Type:id format)
-            if ':' in field_type:
-                parts = field_type.split(':', 1)
+            if ":" in field_type:
+                parts = field_type.split(":", 1)
                 if len(parts) == 2:
                     ref_type, ref_id = parts
-                    
+
                     # Map type names to symbol types
                     type_map = {
-                        'Entity': SYMBOL_TYPE_ENTITY,
-                        'ValueObject': SYMBOL_TYPE_VALUE_OBJECT,
-                        'Enum': SYMBOL_TYPE_ENUM,
-                        'Integration': SYMBOL_TYPE_INTEGRATION,
-                        'IntegrationOperation': SYMBOL_TYPE_INTEGRATION_OPERATION,
-                        'Role': SYMBOL_TYPE_ROLE,
-                        'Permission': SYMBOL_TYPE_PERMISSION,
-                        'Scenario': SYMBOL_TYPE_SCENARIO,
-                        'PersistenceTable': SYMBOL_TYPE_PERSISTENCE_TABLE,
-                        'PersistenceDatasource': SYMBOL_TYPE_PERSISTENCE_DATASOURCE,
+                        "Entity": SYMBOL_TYPE_ENTITY,
+                        "ValueObject": SYMBOL_TYPE_VALUE_OBJECT,
+                        "Enum": SYMBOL_TYPE_ENUM,
+                        "Integration": SYMBOL_TYPE_INTEGRATION,
+                        "IntegrationOperation": SYMBOL_TYPE_INTEGRATION_OPERATION,
+                        "Role": SYMBOL_TYPE_ROLE,
+                        "Permission": SYMBOL_TYPE_PERMISSION,
+                        "Scenario": SYMBOL_TYPE_SCENARIO,
+                        "PersistenceTable": SYMBOL_TYPE_PERSISTENCE_TABLE,
+                        "PersistenceDatasource": SYMBOL_TYPE_PERSISTENCE_DATASOURCE,
                     }
-                    
+
                     if ref_type in type_map:
                         symbol_type = type_map[ref_type]
                         ref_id_normalized = self._normalize_id(ref_id)
@@ -170,31 +170,33 @@ class CrossRefChecker:
                                 ref_id_normalized,
                                 self.symbols,
                             )
-                            
+
                             self.reporter.add_error(
                                 stage="cross_ref",
                                 code=E317,
                                 file=file,
                                 message=f"Field '{field.name}' references unknown {ref_type} '{ref_id}'",
                                 path=f"{field_path}.type",
-                                context={"suggestion": suggestion} if suggestion else {},
+                                context={"suggestion": suggestion}
+                                if suggestion
+                                else {},
                             )
-    
+
     def _check_commands(self, data: CommandsFile, file: str) -> None:
         """Check cross-references in commands."""
         for idx, command in enumerate(data.commands):
             path = f"commands[{idx}]"
-            
+
             # Check field types in input and returns
             self._check_field_types(command.input, file, f"{path}.input")
             self._check_field_types(command.returns, file, f"{path}.returns")
-            
+
             # Check fetches → Entity
             for fetch_idx, fetch_ref in enumerate(command.fetches):
                 entity_id_raw, entity_id = self._extract_id_pair(fetch_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_ENTITY, entity_id):
                     suggestion = suggest_for_unresolved_entity(entity_id, self.symbols)
-                    
+
                     self.reporter.add_error(
                         stage="cross_ref",
                         code=E301,
@@ -205,7 +207,9 @@ class CrossRefChecker:
                     )
 
             # Check RBAC links
-            for role_idx, role_ref in enumerate(getattr(command, "required_roles", []) or []):
+            for role_idx, role_ref in enumerate(
+                getattr(command, "required_roles", []) or []
+            ):
                 role_raw, role_id = self._extract_id_pair(role_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_ROLE, role_id):
                     self.reporter.add_error(
@@ -215,7 +219,9 @@ class CrossRefChecker:
                         message=f"Command '{command.id}' references unknown role '{role_raw}'",
                         path=f"{path}.required_roles[{role_idx}]",
                     )
-            for perm_idx, perm_ref in enumerate(getattr(command, "required_permissions", []) or []):
+            for perm_idx, perm_ref in enumerate(
+                getattr(command, "required_permissions", []) or []
+            ):
                 perm_raw, perm_id = self._extract_id_pair(perm_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_PERMISSION, perm_id):
                     self.reporter.add_error(
@@ -227,7 +233,9 @@ class CrossRefChecker:
                     )
 
             # Check persistence links
-            for table_idx, table_ref in enumerate(getattr(command, "writes_to", []) or []):
+            for table_idx, table_ref in enumerate(
+                getattr(command, "writes_to", []) or []
+            ):
                 table_raw, table_id = self._extract_id_pair(table_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_PERSISTENCE_TABLE, table_id):
                     self.reporter.add_error(
@@ -248,13 +256,13 @@ class CrossRefChecker:
                         message=f"Command '{command.id}' references unknown datasource '{ds_raw}'",
                         path=f"{path}.datasource",
                     )
-            
+
             # Check errors → Error
             for error_idx, error_ref in enumerate(command.errors):
                 error_id_raw, error_id = self._extract_id_pair(error_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_ERROR, error_id):
                     suggestion = suggest_for_unresolved_error(error_id, self.symbols)
-                    
+
                     self.reporter.add_error(
                         stage="cross_ref",
                         code=E303,
@@ -263,13 +271,13 @@ class CrossRefChecker:
                         path=f"{path}.errors[{error_idx}]",
                         context={"suggestion": suggestion} if suggestion else {},
                     )
-            
+
             # Check emits → Event (if specified)
             for emit_idx, emit_ref in enumerate(command.emits):
                 event_id_raw, event_id = self._extract_id_pair(emit_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_EVENT, event_id):
                     suggestion = suggest_for_unresolved_event(event_id, self.symbols)
-                    
+
                     # Warning only - events might be implicit from effects
                     self.reporter.add_error(
                         stage="cross_ref",
@@ -318,7 +326,9 @@ class CrossRefChecker:
 
                 if operation_id:
                     op_raw, op_id = self._extract_id_pair(operation_id)
-                    if not self.symbols.resolve(SYMBOL_TYPE_INTEGRATION_OPERATION, op_id):
+                    if not self.symbols.resolve(
+                        SYMBOL_TYPE_INTEGRATION_OPERATION, op_id
+                    ):
                         self.reporter.add_error(
                             stage="cross_ref",
                             code=E306,
@@ -353,16 +363,16 @@ class CrossRefChecker:
                                 message=f"Command '{command.id}' auth.permission references unknown permission '{perm_raw}'",
                                 path=f"{path}.guards[{guard_idx}].params.permission",
                             )
-    
+
     def _check_queries(self, data: QueriesFile, file: str) -> None:
         """Check cross-references in queries."""
         for idx, query in enumerate(data.queries):
             path = f"queries[{idx}]"
-            
+
             # Check field types in input and returns
             self._check_field_types(query.input, file, f"{path}.input")
             self._check_field_types(query.returns, file, f"{path}.returns")
-            
+
             # Check reads → Entity
             for read_idx, read_ref in enumerate(query.reads):
                 entity_id_raw, entity_id = self._extract_id_pair(read_ref)
@@ -375,7 +385,9 @@ class CrossRefChecker:
                         path=f"{path}.reads[{read_idx}]",
                     )
 
-            for role_idx, role_ref in enumerate(getattr(query, "required_roles", []) or []):
+            for role_idx, role_ref in enumerate(
+                getattr(query, "required_roles", []) or []
+            ):
                 role_raw, role_id = self._extract_id_pair(role_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_ROLE, role_id):
                     self.reporter.add_error(
@@ -385,7 +397,9 @@ class CrossRefChecker:
                         message=f"Query '{query.id}' references unknown role '{role_raw}'",
                         path=f"{path}.required_roles[{role_idx}]",
                     )
-            for perm_idx, perm_ref in enumerate(getattr(query, "required_permissions", []) or []):
+            for perm_idx, perm_ref in enumerate(
+                getattr(query, "required_permissions", []) or []
+            ):
                 perm_raw, perm_id = self._extract_id_pair(perm_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_PERMISSION, perm_id):
                     self.reporter.add_error(
@@ -395,7 +409,9 @@ class CrossRefChecker:
                         message=f"Query '{query.id}' references unknown permission '{perm_raw}'",
                         path=f"{path}.required_permissions[{perm_idx}]",
                     )
-            for table_idx, table_ref in enumerate(getattr(query, "reads_from", []) or []):
+            for table_idx, table_ref in enumerate(
+                getattr(query, "reads_from", []) or []
+            ):
                 table_raw, table_id = self._extract_id_pair(table_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_PERSISTENCE_TABLE, table_id):
                     self.reporter.add_error(
@@ -416,12 +432,12 @@ class CrossRefChecker:
                         message=f"Query '{query.id}' references unknown datasource '{ds_raw}'",
                         path=f"{path}.datasource",
                     )
-    
+
     def _check_workflows(self, data: WorkflowsFile, file: str) -> None:
         """Check cross-references in workflows."""
         for idx, workflow in enumerate(data.workflows):
             path = f"workflows[{idx}]"
-            
+
             # Check entity → Entity
             entity_id_raw, entity_id = self._extract_id_pair(workflow.entity)
             if not self.symbols.resolve(SYMBOL_TYPE_ENTITY, entity_id):
@@ -432,7 +448,9 @@ class CrossRefChecker:
                     message=f"Workflow '{workflow.id}' references unknown entity '{entity_id_raw}'",
                     path=f"{path}.entity",
                 )
-            for scenario_idx, scenario_ref in enumerate(getattr(workflow, "scenarios", []) or []):
+            for scenario_idx, scenario_ref in enumerate(
+                getattr(workflow, "scenarios", []) or []
+            ):
                 scenario_raw, scenario_id = self._extract_id_pair(scenario_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_SCENARIO, scenario_id):
                     self.reporter.add_error(
@@ -444,7 +462,9 @@ class CrossRefChecker:
                         severity=self._warning_severity(),
                     )
 
-            for role_idx, role_ref in enumerate(getattr(workflow, "required_roles", []) or []):
+            for role_idx, role_ref in enumerate(
+                getattr(workflow, "required_roles", []) or []
+            ):
                 role_raw, role_id = self._extract_id_pair(role_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_ROLE, role_id):
                     self.reporter.add_error(
@@ -454,7 +474,9 @@ class CrossRefChecker:
                         message=f"Workflow '{workflow.id}' references unknown role '{role_raw}'",
                         path=f"{path}.required_roles[{role_idx}]",
                     )
-            for perm_idx, perm_ref in enumerate(getattr(workflow, "required_permissions", []) or []):
+            for perm_idx, perm_ref in enumerate(
+                getattr(workflow, "required_permissions", []) or []
+            ):
                 perm_raw, perm_id = self._extract_id_pair(perm_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_PERMISSION, perm_id):
                     self.reporter.add_error(
@@ -464,11 +486,11 @@ class CrossRefChecker:
                         message=f"Workflow '{workflow.id}' references unknown permission '{perm_raw}'",
                         path=f"{path}.required_permissions[{perm_idx}]",
                     )
-            
+
             # Check transitions
             for trans_idx, transition in enumerate(workflow.transitions):
                 trans_path = f"{path}.transitions[{trans_idx}]"
-                
+
                 # Check on_command → Command
                 if transition.on_command:
                     cmd_id_raw, cmd_id = self._extract_id_pair(transition.on_command)
@@ -480,7 +502,7 @@ class CrossRefChecker:
                             message=f"Workflow '{workflow.id}' transition references unknown command '{cmd_id_raw}'",
                             path=f"{trans_path}.on_command",
                         )
-                
+
                 # Check on_event → Event
                 if transition.on_event:
                     event_id_raw, event_id = self._extract_id_pair(transition.on_event)
@@ -511,7 +533,9 @@ class CrossRefChecker:
                         perm_ref = params.get("permission")
                         if perm_ref:
                             perm_raw, perm_id = self._extract_id_pair(perm_ref)
-                            if not self.symbols.resolve(SYMBOL_TYPE_PERMISSION, perm_id):
+                            if not self.symbols.resolve(
+                                SYMBOL_TYPE_PERMISSION, perm_id
+                            ):
                                 self.reporter.add_error(
                                     stage="cross_ref",
                                     code=E305,
@@ -543,7 +567,9 @@ class CrossRefChecker:
                         operation_id = params.get("operation_id")
                         if target:
                             target_raw, target_id = self._extract_id_pair(target)
-                            if not self.symbols.resolve(SYMBOL_TYPE_INTEGRATION, target_id):
+                            if not self.symbols.resolve(
+                                SYMBOL_TYPE_INTEGRATION, target_id
+                            ):
                                 self.reporter.add_error(
                                     stage="cross_ref",
                                     code=E306,
@@ -553,7 +579,9 @@ class CrossRefChecker:
                                 )
                         if operation_id:
                             op_raw, op_id = self._extract_id_pair(operation_id)
-                            if not self.symbols.resolve(SYMBOL_TYPE_INTEGRATION_OPERATION, op_id):
+                            if not self.symbols.resolve(
+                                SYMBOL_TYPE_INTEGRATION_OPERATION, op_id
+                            ):
                                 self.reporter.add_error(
                                     stage="cross_ref",
                                     code=E306,
@@ -561,7 +589,7 @@ class CrossRefChecker:
                                     message=f"Workflow '{workflow.id}' references unknown integration operation '{op_raw}'",
                                     path=f"{trans_path}.effects[{effect_idx}].params.operation_id",
                                 )
-            
+
             # Check error_handlers
             for handler_idx, handler in enumerate(workflow.error_handlers):
                 error_id_raw, error_id = self._extract_id_pair(handler.error)
@@ -573,7 +601,7 @@ class CrossRefChecker:
                         message=f"Workflow '{workflow.id}' error handler references unknown error '{error_id_raw}'",
                         path=f"{path}.error_handlers[{handler_idx}].error",
                     )
-    
+
     def _check_http_api(self, data: HttpApiFile, file: str) -> None:
         """Check cross-references in HTTP API."""
         for idx, route in enumerate(data.routes):
@@ -641,17 +669,19 @@ class CrossRefChecker:
                                 message=f"Route '{route.method} {route.path}' auth references unknown permission '{perm_raw}'",
                                 path=f"{path}.auth",
                             )
-    
+
     def _check_rules(self, data: RulesFile, file: str) -> None:
         """Check cross-references in rules."""
         for idx, rule in enumerate(data.rules):
             path = f"rules[{idx}]"
-            
-            if hasattr(rule, 'applies_to') and rule.applies_to:
+
+            if hasattr(rule, "applies_to") and rule.applies_to:
                 target_kind = "command"
                 target_ref = rule.applies_to
                 if ":" in str(rule.applies_to):
-                    target_kind, target_ref = [part.strip() for part in str(rule.applies_to).split(":", 1)]
+                    target_kind, target_ref = [
+                        part.strip() for part in str(rule.applies_to).split(":", 1)
+                    ]
                 target_raw, target_id = self._extract_id_pair(target_ref)
                 symbol_type = {
                     "command": SYMBOL_TYPE_COMMAND,
@@ -688,7 +718,7 @@ class CrossRefChecker:
                         path=f"{path}.applies_to_scenario",
                         severity=self._warning_severity(),
                     )
-    
+
     def _check_scenarios(self, data: ScenariosFile, file: str) -> None:
         """Check cross-references in scenarios."""
         for idx, scenario in enumerate(data.scenarios):
@@ -717,23 +747,23 @@ class CrossRefChecker:
                         stage="cross_ref",
                         code=E305,
                         file=file,
-                                message=f"Scenario '{scenario.id}' actor references unknown role '{actor_raw}'",
-                                path=(
-                                    f"{path}.actor_roles[{actor_idx}]"
-                                    if not using_legacy_actors
-                                    else f"{path}.actors[{actor_idx}]"
-                                ),
-                                severity=self._warning_severity(),
-                            )
-            
+                        message=f"Scenario '{scenario.id}' actor references unknown role '{actor_raw}'",
+                        path=(
+                            f"{path}.actor_roles[{actor_idx}]"
+                            if not using_legacy_actors
+                            else f"{path}.actors[{actor_idx}]"
+                        ),
+                        severity=self._warning_severity(),
+                    )
+
             # Check steps
             for step_idx, step in enumerate(scenario.steps):
                 step_path = f"{path}.steps[{step_idx}]"
-                
+
                 # Depending on step type, check appropriate references
-                if hasattr(step, 'ref') and step.ref:
+                if hasattr(step, "ref") and step.ref:
                     ref_id_raw, ref_id = self._extract_id_pair(step.ref)
-                    
+
                     # Try to resolve as Command first, then Query, then Event
                     if step.type == "command":
                         if not self.symbols.resolve(SYMBOL_TYPE_COMMAND, ref_id):
@@ -783,7 +813,9 @@ class CrossRefChecker:
                         path=f"{path}.source_events[{event_idx}]",
                     )
 
-            storage_ref = getattr(projection, "storage_ref", None) or getattr(projection, "storage", None)
+            storage_ref = getattr(projection, "storage_ref", None) or getattr(
+                projection, "storage", None
+            )
             if storage_ref:
                 storage_raw, storage_id = self._extract_id_pair(storage_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_PERSISTENCE_TABLE, storage_id):
@@ -792,21 +824,23 @@ class CrossRefChecker:
                         code=E306,
                         file=file,
                         message=f"Projection '{projection.id}' references unknown persistence table '{storage_raw}'",
-                        path=f"{path}.storage_ref" if getattr(projection, "storage_ref", None) else f"{path}.storage",
+                        path=f"{path}.storage_ref"
+                        if getattr(projection, "storage_ref", None)
+                        else f"{path}.storage",
                     )
-    
+
     def _check_graphql_api(self, data: GraphQLApiFile, file: str) -> None:
         """Check cross-references in GraphQL API."""
         # Check GraphQL queries
         for idx, gql_query in enumerate(data.api.queries):
             path = f"api.queries[{idx}]"
-            
+
             # Check resolver references
-            if hasattr(gql_query, 'resolver') and gql_query.resolver:
+            if hasattr(gql_query, "resolver") and gql_query.resolver:
                 resolver = gql_query.resolver
-                
-                if resolver.startswith('Command:'):
-                    cmd_id_raw = resolver.split(':', 1)[1]
+
+                if resolver.startswith("Command:"):
+                    cmd_id_raw = resolver.split(":", 1)[1]
                     cmd_id = self._normalize_id(cmd_id_raw)
                     if not self.symbols.resolve(SYMBOL_TYPE_COMMAND, cmd_id):
                         self.reporter.add_error(
@@ -816,8 +850,8 @@ class CrossRefChecker:
                             message=f"GraphQL query '{gql_query.name}' resolver references unknown command '{cmd_id_raw}'",
                             path=f"{path}.resolver",
                         )
-                elif resolver.startswith('Query:'):
-                    query_id_raw = resolver.split(':', 1)[1]
+                elif resolver.startswith("Query:"):
+                    query_id_raw = resolver.split(":", 1)[1]
                     query_id = self._normalize_id(query_id_raw)
                     if not self.symbols.resolve(SYMBOL_TYPE_QUERY, query_id):
                         self.reporter.add_error(
@@ -827,17 +861,17 @@ class CrossRefChecker:
                             message=f"GraphQL query '{gql_query.name}' resolver references unknown query '{query_id_raw}'",
                             path=f"{path}.resolver",
                         )
-        
+
         # Check GraphQL mutations
         for idx, gql_mutation in enumerate(data.api.mutations):
             path = f"api.mutations[{idx}]"
-            
+
             # Check resolver references
-            if hasattr(gql_mutation, 'resolver') and gql_mutation.resolver:
+            if hasattr(gql_mutation, "resolver") and gql_mutation.resolver:
                 resolver = gql_mutation.resolver
-                
-                if resolver.startswith('Command:'):
-                    cmd_id_raw = resolver.split(':', 1)[1]
+
+                if resolver.startswith("Command:"):
+                    cmd_id_raw = resolver.split(":", 1)[1]
                     cmd_id = self._normalize_id(cmd_id_raw)
                     if not self.symbols.resolve(SYMBOL_TYPE_COMMAND, cmd_id):
                         self.reporter.add_error(
@@ -847,29 +881,31 @@ class CrossRefChecker:
                             message=f"GraphQL mutation '{gql_mutation.name}' resolver references unknown command '{cmd_id_raw}'",
                             path=f"{path}.resolver",
                         )
-        
+
         # Check GraphQL types - validate field types reference known entities
         for idx, gql_type in enumerate(data.api.types):
             path = f"api.types[{idx}]"
-            
+
             for field_idx, field in enumerate(gql_type.fields):
                 field_path = f"{path}.fields[{field_idx}]"
-                
+
                 # Check if field type references an entity
                 field_type = field.type
-                
+
                 # Remove array/optional wrappers
-                if field_type.startswith('Array['):
+                if field_type.startswith("Array["):
                     field_type = field_type[6:-1]
-                if field_type.startswith('Optional['):
+                if field_type.startswith("Optional["):
                     field_type = field_type[9:-1]
-                
+
                 # Check if it's an entity reference
-                if ':' in field_type:
-                    ref_type, ref_id = field_type.split(':', 1)
-                    if ref_type == 'Entity':
+                if ":" in field_type:
+                    ref_type, ref_id = field_type.split(":", 1)
+                    if ref_type == "Entity":
                         ref_id_normalized = self._normalize_id(ref_id)
-                        if not self.symbols.resolve(SYMBOL_TYPE_ENTITY, ref_id_normalized):
+                        if not self.symbols.resolve(
+                            SYMBOL_TYPE_ENTITY, ref_id_normalized
+                        ):
                             self.reporter.add_error(
                                 stage="cross_ref",
                                 code=E301,
@@ -878,17 +914,17 @@ class CrossRefChecker:
                                 path=f"{field_path}.type",
                                 severity=self._warning_severity(),
                             )
-    
+
     def _check_access_policy(self, data: AccessPolicyFile, file: str) -> None:
         """Check cross-references in access policy."""
         # Build maps of roles and permissions for validation
         role_ids = {role.id for role in data.access.roles}
         permission_ids = {perm.id for perm in data.access.permissions}
-        
+
         # Check bindings reference valid roles and permissions
         for idx, binding in enumerate(data.access.bindings):
             path = f"access.bindings[{idx}]"
-            
+
             # Check role exists
             if binding.role not in role_ids:
                 self.reporter.add_error(
@@ -898,7 +934,7 @@ class CrossRefChecker:
                     message=f"Binding references unknown role '{binding.role}'",
                     path=f"{path}.role",
                 )
-            
+
             # Check permissions exist
             for perm_idx, perm_id in enumerate(binding.permissions):
                 if perm_id not in permission_ids:
@@ -909,7 +945,7 @@ class CrossRefChecker:
                         message=f"Binding references unknown permission '{perm_id}'",
                         path=f"{path}.permissions[{perm_idx}]",
                     )
-        
+
         # Check permission resources reference valid domain symbols/resources.
         for idx, perm in enumerate(data.access.permissions):
             path = f"access.permissions[{idx}]"
@@ -917,7 +953,9 @@ class CrossRefChecker:
             if not perm.resource or ":" not in perm.resource:
                 continue
 
-            resource_kind, resource_ref = [segment.strip() for segment in perm.resource.split(":", 1)]
+            resource_kind, resource_ref = [
+                segment.strip() for segment in perm.resource.split(":", 1)
+            ]
             lowered_kind = resource_kind.lower()
             symbol_type = {
                 "entity": SYMBOL_TYPE_ENTITY,
@@ -948,29 +986,31 @@ class CrossRefChecker:
                     path=f"{path}.resource",
                     severity=self._warning_severity(),
                 )
-    
+
     def _check_policies(self, data: PoliciesFile, file: str) -> None:
         """Check cross-references in business policies."""
         # Business policies might reference entities, commands, etc.
         for idx, policy in enumerate(data.policies):
             path = f"policies[{idx}]"
-            
+
             # Check if policy has any entity/command references in conditions
             for cond_idx, condition in enumerate(policy.conditions):
                 cond_path = f"{path}.conditions[{cond_idx}]"
-                
+
                 # Check if field references an entity field
-                if hasattr(condition, 'field') and condition.field:
+                if hasattr(condition, "field") and condition.field:
                     field_ref = condition.field
-                    
+
                     # Format: Entity:entity_id.field_name
-                    if ':' in field_ref and '.' in field_ref:
-                        entity_part, field_name = field_ref.split('.', 1)
-                        if ':' in entity_part:
-                            ref_type, ref_id = entity_part.split(':', 1)
-                            if ref_type == 'Entity':
+                    if ":" in field_ref and "." in field_ref:
+                        entity_part, field_name = field_ref.split(".", 1)
+                        if ":" in entity_part:
+                            ref_type, ref_id = entity_part.split(":", 1)
+                            if ref_type == "Entity":
                                 ref_id_normalized = self._normalize_id(ref_id)
-                                if not self.symbols.resolve(SYMBOL_TYPE_ENTITY, ref_id_normalized):
+                                if not self.symbols.resolve(
+                                    SYMBOL_TYPE_ENTITY, ref_id_normalized
+                                ):
                                     self.reporter.add_error(
                                         stage="cross_ref",
                                         code=E301,
@@ -1212,7 +1252,9 @@ class CrossRefChecker:
 
     def _check_testing(self, data: TestingFile, file: str) -> None:
         for test_idx, test_case in enumerate(data.tests):
-            scenario_ref = getattr(test_case, "scenario", None) or getattr(test_case, "scenario_id", None)
+            scenario_ref = getattr(test_case, "scenario", None) or getattr(
+                test_case, "scenario_id", None
+            )
             if scenario_ref:
                 raw_id, scenario_id = self._extract_id_pair(scenario_ref)
                 if not self.symbols.resolve(SYMBOL_TYPE_SCENARIO, scenario_id):
@@ -1253,11 +1295,11 @@ class CrossRefChecker:
                             message=f"Test step references unknown event '{raw_id}'",
                             path=step_path,
                         )
-    
+
     def _extract_id(self, ref: Any) -> str:
         """
         Extract ID from a reference.
-        
+
         Handles:
         - Simple string: "entity_id"
         - Type:ID format: "Entity:user"

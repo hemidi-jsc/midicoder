@@ -17,8 +17,16 @@ from .models import CodePlanItem, IRPlanItem, PlanMeta, RequiredFile, SuggestedP
 def build_plan_stub(item: IRPlanItem, stack: str) -> str:
     inputs = item.io_contract.get("inputs", [])
     outputs = item.io_contract.get("outputs", [])
-    route_count = len(item.api_contract.get("routes", [])) if isinstance(item.api_contract, dict) else 0
-    workflow_transition_count = len(item.state_contract.get("workflow_transitions", [])) if isinstance(item.state_contract, dict) else 0
+    route_count = (
+        len(item.api_contract.get("routes", []))
+        if isinstance(item.api_contract, dict)
+        else 0
+    )
+    workflow_transition_count = (
+        len(item.state_contract.get("workflow_transitions", []))
+        if isinstance(item.state_contract, dict)
+        else 0
+    )
     return (
         f"# plan-level stub\n"
         f"# ir_ref: {item.id}\n"
@@ -140,8 +148,12 @@ def build_pseudo_struct(item: IRPlanItem, stack: str) -> dict[str, Any]:
         },
         "api": {
             "routes": routes,
-            "request_mapping": _build_route_request_mapping(routes, item.io_contract.get("inputs", [])),
-            "response_mapping": _build_route_response_mapping(routes, item.io_contract.get("outputs", [])),
+            "request_mapping": _build_route_request_mapping(
+                routes, item.io_contract.get("inputs", [])
+            ),
+            "response_mapping": _build_route_response_mapping(
+                routes, item.io_contract.get("outputs", [])
+            ),
         },
         "trace": item.trace_contract,
     }
@@ -155,37 +167,101 @@ def build_pseudo_struct(item: IRPlanItem, stack: str) -> dict[str, Any]:
     return pseudo_struct
 
 
-def build_required_files(target: str, suggested_paths: list[SuggestedPath]) -> list[RequiredFile]:
+def build_required_files(
+    target: str, suggested_paths: list[SuggestedPath]
+) -> list[RequiredFile]:
     primary = suggested_paths[0].file if suggested_paths else ""
     directory = _parent_dir(primary)
     normalized_target = target.strip().lower()
 
     if normalized_target == "fastapi_endpoint":
         return [
-            RequiredFile(path_pattern=f"{directory}/controller.py", required=True, role="endpoint_controller", reason="HTTP endpoint"),
-            RequiredFile(path_pattern=f"{directory}/schema.py", required=True, role="dto_schema", reason="request/response contract"),
-            RequiredFile(path_pattern=f"{directory}/service.py", required=True, role="business_service", reason="runtime business logic"),
+            RequiredFile(
+                path_pattern=f"{directory}/controller.py",
+                required=True,
+                role="endpoint_controller",
+                reason="HTTP endpoint",
+            ),
+            RequiredFile(
+                path_pattern=f"{directory}/schema.py",
+                required=True,
+                role="dto_schema",
+                reason="request/response contract",
+            ),
+            RequiredFile(
+                path_pattern=f"{directory}/service.py",
+                required=True,
+                role="business_service",
+                reason="runtime business logic",
+            ),
         ]
     if normalized_target == "fastapi_model":
         return [
-            RequiredFile(path_pattern=f"{directory}/model.py", required=True, role="domain_model", reason="runtime entity model"),
-            RequiredFile(path_pattern=f"{directory}/migrations/*.py", required=False, role="migration_stub", reason="optional persistence migration"),
+            RequiredFile(
+                path_pattern=f"{directory}/model.py",
+                required=True,
+                role="domain_model",
+                reason="runtime entity model",
+            ),
+            RequiredFile(
+                path_pattern=f"{directory}/migrations/*.py",
+                required=False,
+                role="migration_stub",
+                reason="optional persistence migration",
+            ),
         ]
     if normalized_target == "nest_endpoint":
         return [
-            RequiredFile(path_pattern=f"{directory}/*.controller.ts", required=True, role="endpoint_controller", reason="HTTP endpoint"),
-            RequiredFile(path_pattern=f"{directory}/*.service.ts", required=True, role="business_service", reason="runtime business logic"),
-            RequiredFile(path_pattern=f"{directory}/dto/*.dto.ts", required=True, role="dto_schema", reason="request/response contract"),
-            RequiredFile(path_pattern=f"{directory}/*.module.ts", required=True, role="module_wiring", reason="dependency wiring"),
+            RequiredFile(
+                path_pattern=f"{directory}/*.controller.ts",
+                required=True,
+                role="endpoint_controller",
+                reason="HTTP endpoint",
+            ),
+            RequiredFile(
+                path_pattern=f"{directory}/*.service.ts",
+                required=True,
+                role="business_service",
+                reason="runtime business logic",
+            ),
+            RequiredFile(
+                path_pattern=f"{directory}/dto/*.dto.ts",
+                required=True,
+                role="dto_schema",
+                reason="request/response contract",
+            ),
+            RequiredFile(
+                path_pattern=f"{directory}/*.module.ts",
+                required=True,
+                role="module_wiring",
+                reason="dependency wiring",
+            ),
         ]
     if normalized_target == "nest_model":
         return [
-            RequiredFile(path_pattern=f"{directory}/*.entity.ts", required=True, role="domain_model", reason="runtime entity model"),
-            RequiredFile(path_pattern=f"{directory}/migrations/*.ts", required=False, role="migration_stub", reason="optional persistence migration"),
+            RequiredFile(
+                path_pattern=f"{directory}/*.entity.ts",
+                required=True,
+                role="domain_model",
+                reason="runtime entity model",
+            ),
+            RequiredFile(
+                path_pattern=f"{directory}/migrations/*.ts",
+                required=False,
+                role="migration_stub",
+                reason="optional persistence migration",
+            ),
         ]
 
     if primary:
-        return [RequiredFile(path_pattern=primary, required=True, role="primary_output", reason="resolved from suggested path")]
+        return [
+            RequiredFile(
+                path_pattern=primary,
+                required=True,
+                role="primary_output",
+                reason="resolved from suggested path",
+            )
+        ]
     return []
 
 
@@ -214,7 +290,10 @@ def collect_used_ir_kinds(item: IRPlanItem, ir: dict[str, Any]) -> list[str]:
 def build_plan_meta(item: IRPlanItem, ir: dict[str, Any]) -> PlanMeta:
     source_checksum = _ir_source_checksum(ir)
     return PlanMeta(
-        generated_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        generated_at=datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z"),
         generator_version=__version__,
         source_ir_checksum=source_checksum,
         ir_kinds_used=collect_used_ir_kinds(item, ir),
@@ -266,7 +345,9 @@ def _parent_dir(path: str) -> str:
     return "." if parent in {"", "."} else parent
 
 
-def _build_route_request_mapping(routes: list[Any], inputs: list[Any]) -> list[dict[str, Any]]:
+def _build_route_request_mapping(
+    routes: list[Any], inputs: list[Any]
+) -> list[dict[str, Any]]:
     input_names = {
         str(field.get("name", "")).strip()
         for field in inputs
@@ -297,7 +378,9 @@ def _build_route_request_mapping(routes: list[Any], inputs: list[Any]) -> list[d
     return mappings
 
 
-def _build_route_response_mapping(routes: list[Any], outputs: list[Any]) -> list[dict[str, Any]]:
+def _build_route_response_mapping(
+    routes: list[Any], outputs: list[Any]
+) -> list[dict[str, Any]]:
     output_names = {
         str(field.get("name", "")).strip()
         for field in outputs

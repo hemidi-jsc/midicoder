@@ -24,12 +24,12 @@ def _find_midicoder_root() -> Path:
     Searches up from current working directory.
     """
     current = Path.cwd()
-    
+
     # Check current directory and all parent directories
     for path in [current] + list(current.parents):
         if (path / ".midicoder").exists():
             return path
-    
+
     # If no .midicoder found, return current directory (for init command)
     return current
 
@@ -39,100 +39,94 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Init command with non-interactive support
-    init_parser = subparsers.add_parser("init", help="Initialize .midicoder workspace and configuration")
+    init_parser = subparsers.add_parser(
+        "init", help="Initialize .midicoder workspace and configuration"
+    )
 
     # Discovery
     init_parser.add_argument(
         "--config-list",
         action="store_true",
-        help="Show all available configuration keywords and exit"
+        help="Show all available configuration keywords and exit",
     )
-    
+
     # Mode
     init_parser.add_argument(
-        "--non-interactive", "-y",
+        "--non-interactive",
+        "-y",
         action="store_true",
-        help="Run in non-interactive mode, use flags/env vars/defaults"
+        help="Run in non-interactive mode, use flags/env vars/defaults",
     )
-    
+
     init_parser.add_argument(
         "--env-prefix",
         type=str,
         default="MIDICODER_",
-        help="Environment variable prefix (default: MIDICODER_)"
+        help="Environment variable prefix (default: MIDICODER_)",
     )
-    
+
     # Working directory
-    init_parser.add_argument(
-        "--working-dir",
-        type=str,
-        help="Working directory path"
-    )
-    
+    init_parser.add_argument("--working-dir", type=str, help="Working directory path")
+
     # Stack
     init_parser.add_argument(
         "--stack",
         type=str,
-        help="Comma-separated tech stack(s) (e.g., fastapi,nest,angular)"
+        help="Comma-separated tech stack(s) (e.g., fastapi,nest,angular)",
     )
-    
+
     # LLM High Tier
     init_parser.add_argument(
         "--llm-high-provider",
         type=str,
         choices=["anthropic", "openai"],
-        help="High-tier LLM provider"
+        help="High-tier LLM provider",
     )
     init_parser.add_argument(
         "--llm-high-model",
         type=str,
-        help="High-tier LLM model name (e.g., claude-sonnet-4-5)"
+        help="High-tier LLM model name (e.g., claude-sonnet-4-5)",
     )
     init_parser.add_argument(
-        "--llm-high-url",
-        type=str,
-        help="High-tier LLM API base URL"
+        "--llm-high-url", type=str, help="High-tier LLM API base URL"
     )
     init_parser.add_argument(
         "--llm-high-key",
         type=str,
-        help="High-tier API key (WARNING: visible in process list, use --llm-high-key-env instead)"
+        help="High-tier API key (WARNING: visible in process list, use --llm-high-key-env instead)",
     )
     init_parser.add_argument(
         "--llm-high-key-env",
         type=str,
-        help="Environment variable name containing high-tier API key (recommended)"
+        help="Environment variable name containing high-tier API key (recommended)",
     )
-    
+
     # LLM Cheap Tier
     init_parser.add_argument(
         "--llm-cheap-provider",
         type=str,
         choices=["anthropic", "openai"],
-        help="Cheap-tier LLM provider"
+        help="Cheap-tier LLM provider",
     )
     init_parser.add_argument(
         "--llm-cheap-model",
         type=str,
-        help="Cheap-tier LLM model name (e.g., claude-3-5-haiku)"
+        help="Cheap-tier LLM model name (e.g., claude-3-5-haiku)",
     )
     init_parser.add_argument(
-        "--llm-cheap-url",
-        type=str,
-        help="Cheap-tier LLM API base URL"
+        "--llm-cheap-url", type=str, help="Cheap-tier LLM API base URL"
     )
     init_parser.add_argument(
         "--llm-cheap-key",
         type=str,
-        help="Cheap-tier API key (WARNING: visible in process list, use --llm-cheap-key-env instead)"
+        help="Cheap-tier API key (WARNING: visible in process list, use --llm-cheap-key-env instead)",
     )
     init_parser.add_argument(
         "--llm-cheap-key-env",
         type=str,
-        help="Environment variable name containing cheap-tier API key (recommended)"
+        help="Environment variable name containing cheap-tier API key (recommended)",
     )
-    
-    
+
     index_parser = subparsers.add_parser("index")
     index_sub = index_parser.add_subparsers(dest="index_subcommand", required=False)
     reindex_parser = index_sub.add_parser("reindex")
@@ -145,33 +139,35 @@ def _build_parser() -> argparse.ArgumentParser:
 
     config_parser = subparsers.add_parser("config")
     config_sub = config_parser.add_subparsers(dest="subcommand", required=True)
-    
+
     config_get = config_sub.add_parser("get")
     config_get.add_argument("key")
-    
+
     config_set = config_sub.add_parser("set")
     config_set.add_argument("key")
     config_set.add_argument("value")
-    
+
     config_sub.add_parser("list")
     config_sub.add_parser("validate")
-    
+
     config_secrets = config_sub.add_parser("secrets")
-    config_secrets_sub = config_secrets.add_subparsers(dest="secrets_subcommand", required=True)
-    
+    config_secrets_sub = config_secrets.add_subparsers(
+        dest="secrets_subcommand", required=True
+    )
+
     config_secrets_sub.add_parser("list")
-    
+
     config_secrets_get = config_secrets_sub.add_parser("get")
     config_secrets_get.add_argument("category")
     config_secrets_get.add_argument("key")
-    
+
     config_secrets_set = config_secrets_sub.add_parser("set")
     config_secrets_set.add_argument("category")
     config_secrets_set.add_argument("key")
-    
+
     config_secrets_delete = config_secrets_sub.add_parser("delete")
     config_secrets_delete.add_argument("category")
-    
+
     config_sub.add_parser("reset")
 
     version_parser = subparsers.add_parser("version")
@@ -186,23 +182,29 @@ def _build_parser() -> argparse.ArgumentParser:
 
     contract_parser = subparsers.add_parser("contract")
     contract_sub = contract_parser.add_subparsers(dest="subcommand", required=True)
-    
+
     contract_gen = contract_sub.add_parser("gen")
-    contract_gen_sub = contract_gen.add_subparsers(dest="gen_subcommand", required=False)
+    contract_gen_sub = contract_gen.add_subparsers(
+        dest="gen_subcommand", required=False
+    )
     contract_gen_sub.add_parser("resume")
-    
+
     contract_sub.add_parser("check")
     contract_sub.add_parser("feedback")
-    
+
     contract_repair = contract_sub.add_parser("repair")
-    contract_repair_sub = contract_repair.add_subparsers(dest="repair_subcommand", required=True)
+    contract_repair_sub = contract_repair.add_subparsers(
+        dest="repair_subcommand", required=True
+    )
     contract_repair_sub.add_parser("prepare")
     contract_repair_sub.add_parser("run")
 
     ir_parser = subparsers.add_parser("ir")
     ir_sub = ir_parser.add_subparsers(dest="subcommand", required=True)
     ir_build = ir_sub.add_parser("build")
-    ir_build.add_argument("--skip-diagrams", action="store_true", help="Skip diagram generation")
+    ir_build.add_argument(
+        "--skip-diagrams", action="store_true", help="Skip diagram generation"
+    )
 
     code_parser = subparsers.add_parser("code")
     code_sub = code_parser.add_subparsers(dest="subcommand", required=True)
@@ -217,9 +219,15 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also generate runtime source files into .midicoder/.../patches/runtime",
     )
-    code_apply = code_sub.add_parser("apply", help="Apply generated patch-plans into working_dir")
-    code_apply.add_argument("--force", action="store_true", help="Force apply when conflict is detected")
-    code_apply.add_argument("--dry-run", action="store_true", help="Preview apply without writing files")
+    code_apply = code_sub.add_parser(
+        "apply", help="Apply generated patch-plans into working_dir"
+    )
+    code_apply.add_argument(
+        "--force", action="store_true", help="Force apply when conflict is detected"
+    )
+    code_apply.add_argument(
+        "--dry-run", action="store_true", help="Preview apply without writing files"
+    )
     code_apply.add_argument(
         "--no-reindex",
         action="store_true",
@@ -233,48 +241,43 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # Runtime commands
     runtime_parser = subparsers.add_parser(
-        "runtime",
-        help="Runtime testing and auto-fix commands"
+        "runtime", help="Runtime testing and auto-fix commands"
     )
     runtime_sub = runtime_parser.add_subparsers(dest="subcommand", required=True)
-    
+
     # Runtime test
     runtime_test = runtime_sub.add_parser(
-        "test",
-        help="Run FastAPI application and detect runtime errors"
+        "test", help="Run FastAPI application and detect runtime errors"
     )
     runtime_test.add_argument(
         "--timeout",
         type=int,
         default=30,
-        help="Timeout in seconds for app startup (default: 30)"
+        help="Timeout in seconds for app startup (default: 30)",
     )
     runtime_test.add_argument(
         "--port",
         type=int,
         default=8000,
-        help="Port for FastAPI application (default: 8000)"
+        help="Port for FastAPI application (default: 8000)",
     )
     runtime_test.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Show verbose output during test"
+        "--verbose", action="store_true", help="Show verbose output during test"
     )
-    
+
     # Runtime fix
     runtime_fix = runtime_sub.add_parser(
-        "fix",
-        help="Generate patch plans to fix runtime errors using LLM"
+        "fix", help="Generate patch plans to fix runtime errors using LLM"
     )
     runtime_fix.add_argument(
         "--log-timestamp",
         type=str,
-        help="Specific log timestamp to fix (default: latest error log)"
+        help="Specific log timestamp to fix (default: latest error log)",
     )
     runtime_fix.add_argument(
         "--dry-run",
         action="store_true",
-        help="Preview fixes without saving patch plans"
+        help="Preview fixes without saving patch plans",
     )
     runtime_fix.add_argument(
         "--auto-apply",
@@ -344,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "brief" and args.subcommand == "rewrite":
         brief_commands.rewrite(root)
     elif args.command == "contract" and args.subcommand == "gen":
-        if hasattr(args, 'gen_subcommand') and args.gen_subcommand == "resume":
+        if hasattr(args, "gen_subcommand") and args.gen_subcommand == "resume":
             contract_commands.gen_resume(root)
         else:
             contract_commands.gen(root)
@@ -360,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             parser.error("Unknown contract repair subcommand")
     elif args.command == "ir" and args.subcommand == "build":
-        skip_diagrams = getattr(args, 'skip_diagrams', False)
+        skip_diagrams = getattr(args, "skip_diagrams", False)
         ir_commands.build(root, skip_diagrams=skip_diagrams)
     elif args.command == "code" and args.subcommand == "build":
         code_commands.build(root)

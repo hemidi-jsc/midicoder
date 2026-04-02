@@ -100,7 +100,9 @@ AZURE_SERVICE_CATALOG = {
 # Typed refs (string form) used across integrations contracts.
 # Canonical form uses `Type:id`, while bare `id` is kept for backward compatibility.
 IntegrationRefStr = constr(pattern=r"^(Integration:)?[A-Za-z_][A-Za-z0-9_]*$")
-IntegrationOperationRefStr = constr(pattern=r"^(IntegrationOperation:)?[A-Za-z_][A-Za-z0-9_]*$")
+IntegrationOperationRefStr = constr(
+    pattern=r"^(IntegrationOperation:)?[A-Za-z_][A-Za-z0-9_]*$"
+)
 SecretRefStr = constr(pattern=r"^(Secret:)?[A-Za-z_][A-Za-z0-9_]*$")
 
 

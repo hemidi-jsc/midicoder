@@ -11,8 +11,8 @@ from .constants import MAX_FILES_TO_CHECK
 logger = logging.getLogger(__name__)
 
 FASTAPI_PATTERN = re.compile(
-    r'(?:from\s+fastapi\s+import|FastAPI\(|APIRouter\(|@(?:app|router)\.(?:get|post|put|delete|patch))',
-    re.MULTILINE
+    r"(?:from\s+fastapi\s+import|FastAPI\(|APIRouter\(|@(?:app|router)\.(?:get|post|put|delete|patch))",
+    re.MULTILINE,
 )
 
 
@@ -32,7 +32,9 @@ class FastAPIDetector:
                     return True
             elif path.name == "requirements.txt":
                 content = scanner.get_content(path)
-                if content and re.search(r'^fastapi[>=<\[]', content, re.IGNORECASE | re.MULTILINE):
+                if content and re.search(
+                    r"^fastapi[>=<\[]", content, re.IGNORECASE | re.MULTILINE
+                ):
                     logger.debug("FastAPI detected in requirements.txt")
                     return True
 

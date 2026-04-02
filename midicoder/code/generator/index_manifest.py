@@ -13,18 +13,24 @@ def _plan_group(rel_path: str) -> str:
 def load_index_manifest(plans_dir: Path) -> IndexManifest:
     index_path = plans_dir / "index.json"
     if not index_path.exists():
-        raise RuntimeError("plans/index.json is missing. Run `code plan` before `code gen`.")
+        raise RuntimeError(
+            "plans/index.json is missing. Run `code plan` before `code gen`."
+        )
 
     payload = json.loads(index_path.read_text(encoding="utf-8"))
     raw_plans = payload.get("plans")
-    if not isinstance(raw_plans, list) or not all(isinstance(it, str) for it in raw_plans):
+    if not isinstance(raw_plans, list) or not all(
+        isinstance(it, str) for it in raw_plans
+    ):
         raise ValueError("plans/index.json must contain 'plans' as list[str].")
 
     refs = [PlanRef(rel_path=rel, group=_plan_group(rel)) for rel in raw_plans]
     return IndexManifest(
         version=str(payload.get("version", "unknown")),
         plans=refs,
-        generation_order=[str(x) for x in payload.get("generation_order", []) if isinstance(x, str)],
+        generation_order=[
+            str(x) for x in payload.get("generation_order", []) if isinstance(x, str)
+        ],
         merge_mode={
             str(k): str(v)
             for k, v in payload.get("merge_mode", {}).items()

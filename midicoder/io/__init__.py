@@ -12,6 +12,7 @@ from .messages import (
     print_table,
     print_warning,
 )
+
 try:
     from .prompt import (
         prompt_array,

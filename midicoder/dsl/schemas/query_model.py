@@ -68,4 +68,3 @@ class QueriesFile(BaseModel):
     queries: list[Query]
 
     model_config = {"extra": "forbid"}
-

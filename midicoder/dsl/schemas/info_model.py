@@ -23,7 +23,7 @@ class ProjectInfo(BaseModel):
     languages: list[str] = Field(default_factory=list)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
-    
+
     model_config = {"extra": "forbid"}
 
     model_meta: ClassVar[ModelMeta] = ModelMeta(
@@ -49,5 +49,5 @@ class ProjectInfo(BaseModel):
 
 class InfoFile(BaseModel):
     info: ProjectInfo
-    
+
     model_config = {"extra": "forbid"}

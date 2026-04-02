@@ -18,7 +18,7 @@ from .models import ErrorInfo, RuntimeTestResult
 @dataclass
 class TestConfig:
     """Configuration for runtime test."""
-    
+
     workspace_root: Path
     working_dir: Path
     timeout: int = 30  # seconds
@@ -28,36 +28,39 @@ class TestConfig:
 
 class FastAPIRunner:
     """Run FastAPI application and capture output."""
-    
+
     def __init__(self, config: TestConfig):
         self.config = config
         self.process: Optional[subprocess.Popen] = None
         self.logger = RuntimeLogger(config.workspace_root)
-    
+
     def start(self) -> RuntimeTestResult:
         """Start FastAPI app and monitor for errors."""
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         log_dir = self.config.workspace_root / ".midicoder" / "logs" / timestamp
         log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Detect Python executable from working_dir venv or use system python
         python_executable = self._find_python_executable()
-        
+
         # Command to run FastAPI with uvicorn
         cmd = [
             str(python_executable),
             "-m",
             "uvicorn",
             "app.main:app",
-            "--host", "0.0.0.0",
-            "--port", str(self.config.port),
-            "--log-level", "debug",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            str(self.config.port),
+            "--log-level",
+            "debug",
         ]
-        
+
         errors: list[ErrorInfo] = []
         debug_lines: list[str] = []
         success = False
-        
+
         try:
             self.process = subprocess.Popen(
                 cmd,
@@ -68,12 +71,12 @@ class FastAPIRunner:
                 bufsize=1,
                 universal_newlines=True,
             )
-            
+
             start_time = time.time()
             startup_detected = False
             current_traceback: list[str] = []
             in_traceback = False
-            
+
             # Monitor output for startup or errors
             while time.time() - start_time < self.config.timeout:
                 if self.process.poll() is not None:
@@ -94,53 +97,64 @@ class FastAPIRunner:
                                     current_traceback = []
                                     in_traceback = False
                     break
-                
+
                 line = self.process.stdout.readline() if self.process.stdout else ""
                 if not line:
                     time.sleep(0.1)
                     continue
-                
+
                 line = line.rstrip()
                 debug_lines.append(line)
-                
+
                 if self.config.verbose:
                     print(line)
-                
+
                 # Check for successful startup
-                if "Uvicorn running on" in line or "Application startup complete" in line:
+                if (
+                    "Uvicorn running on" in line
+                    or "Application startup complete" in line
+                ):
                     startup_detected = True
                     success = True
                     break
-                
+
                 # Track traceback
                 if "Traceback (most recent call last):" in line:
                     in_traceback = True
                     current_traceback = [line]
                     continue
-                
+
                 if in_traceback:
                     current_traceback.append(line)
                     # Check if traceback ended (error line like "ImportError: ...")
                     if line and not line.startswith(" ") and not line.startswith("\t"):
-                        if any(err_type in line for err_type in ["Error:", "Exception:"]):
+                        if any(
+                            err_type in line for err_type in ["Error:", "Exception:"]
+                        ):
                             # Traceback complete, create error
                             error_info = ErrorInfo(
                                 type=self._classify_error_type(line),
                                 message=line,
-                                file=self._extract_file_from_traceback(current_traceback),
-                                line=self._extract_line_from_traceback(current_traceback),
+                                file=self._extract_file_from_traceback(
+                                    current_traceback
+                                ),
+                                line=self._extract_line_from_traceback(
+                                    current_traceback
+                                ),
                                 traceback="\n".join(current_traceback),
                             )
                             errors.append(error_info)
                             current_traceback = []
                             in_traceback = False
                     continue
-                
+
                 # Check for errors outside traceback
-                error_info = self._parse_error_line(line, current_traceback, in_traceback)
+                error_info = self._parse_error_line(
+                    line, current_traceback, in_traceback
+                )
                 if error_info and not in_traceback:
                     errors.append(error_info)
-            
+
             # If timeout or no startup detected
             if not startup_detected and self.process.poll() is None:
                 if not errors:
@@ -150,10 +164,12 @@ class FastAPIRunner:
                             message=f"App failed to start within {self.config.timeout}s",
                             file=None,
                             line=None,
-                            traceback="\n".join(debug_lines[-20:]) if debug_lines else "",
+                            traceback="\n".join(debug_lines[-20:])
+                            if debug_lines
+                            else "",
                         )
                     )
-        
+
         except Exception as exc:
             errors.append(
                 ErrorInfo(
@@ -164,7 +180,7 @@ class FastAPIRunner:
                     traceback="",
                 )
             )
-        
+
         finally:
             # Cleanup: stop the process
             if self.process and self.process.poll() is None:
@@ -173,7 +189,7 @@ class FastAPIRunner:
                     self.process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     self.process.kill()
-        
+
         # Save logs
         result = RuntimeTestResult(
             timestamp=timestamp,
@@ -183,11 +199,11 @@ class FastAPIRunner:
             log_dir=str(log_dir),
             debug_output=debug_lines,
         )
-        
+
         self.logger.save_logs(log_dir, result)
-        
+
         return result
-    
+
     def _parse_error_line(
         self,
         line: str,
@@ -198,7 +214,7 @@ class FastAPIRunner:
         # Skip if in traceback (handled separately)
         if in_traceback:
             return None
-        
+
         # Import error patterns
         if "ImportError:" in line or "ModuleNotFoundError:" in line:
             return ErrorInfo(
@@ -208,7 +224,7 @@ class FastAPIRunner:
                 line=None,
                 traceback="",
             )
-        
+
         # Syntax error patterns
         if "SyntaxError:" in line:
             return ErrorInfo(
@@ -218,7 +234,7 @@ class FastAPIRunner:
                 line=None,
                 traceback="",
             )
-        
+
         # FastAPI specific errors
         if "ERROR:" in line or "CRITICAL:" in line:
             return ErrorInfo(
@@ -228,9 +244,9 @@ class FastAPIRunner:
                 line=None,
                 traceback="",
             )
-        
+
         return None
-    
+
     def _classify_error_type(self, error_line: str) -> str:
         """Classify error type from error line."""
         if "ImportError" in error_line or "ModuleNotFoundError" in error_line:
@@ -247,27 +263,27 @@ class FastAPIRunner:
             return "value_error"
         else:
             return "runtime_error"
-    
+
     def _extract_file_from_traceback(self, traceback: list[str]) -> Optional[str]:
         """Extract file path from traceback."""
         import re
-        
+
         for line in traceback:
             match = re.search(r'File "([^"]+)"', line)
             if match:
                 return match.group(1)
         return None
-    
+
     def _extract_line_from_traceback(self, traceback: list[str]) -> Optional[int]:
         """Extract line number from traceback."""
         import re
-        
+
         for line in traceback:
-            match = re.search(r'line (\d+)', line)
+            match = re.search(r"line (\d+)", line)
             if match:
                 return int(match.group(1))
         return None
-    
+
     def _find_python_executable(self) -> Path:
         """Find Python executable from working_dir venv or use system python."""
         # Check for venv in working_dir
@@ -277,11 +293,11 @@ class FastAPIRunner:
             self.config.working_dir / ".venv" / "Scripts" / "python.exe",  # Windows
             self.config.working_dir / ".venv" / "bin" / "python",  # Unix
         ]
-        
+
         for venv_python in venv_paths:
             if venv_python.exists():
                 return venv_python
-        
+
         # Fallback to system python
         return Path(sys.executable)
 
@@ -295,16 +311,16 @@ def run_runtime_test(
     """Run runtime test with configuration."""
     from midicoder.commands.base import MidicoderPaths
     from midicoder.config.manager import ConfigManager
-    
+
     paths = MidicoderPaths(root=workspace_root)
     config_mgr = ConfigManager(paths)
     config = config_mgr.load()
-    
+
     working_dir_str = config.get("working_dir", ".")
     working_dir = Path(working_dir_str)
     if not working_dir.is_absolute():
         working_dir = (workspace_root / working_dir).resolve()
-    
+
     test_config = TestConfig(
         workspace_root=workspace_root,
         working_dir=working_dir,
@@ -312,6 +328,6 @@ def run_runtime_test(
         port=port,
         verbose=verbose,
     )
-    
+
     runner = FastAPIRunner(test_config)
     return runner.start()

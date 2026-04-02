@@ -81,4 +81,3 @@ class PoliciesFile(BaseModel):
     policies: list[Policy]
 
     model_config = {"extra": "forbid"}
-

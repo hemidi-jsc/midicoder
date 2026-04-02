@@ -110,6 +110,7 @@ def _has_parent_symbol(record: dict) -> bool:
         return scope.strip() not in top_level_scopes
     return bool(scope)
 
+
 def _is_exemplar_source(item: dict) -> int:
     source = str(item.get("_source", "")).lower()
     return 1 if source == "exemplar" else 0

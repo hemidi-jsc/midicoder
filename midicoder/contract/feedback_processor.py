@@ -23,23 +23,27 @@ def load_feedback_data(feedback_path: Path) -> dict[str, Any]:
     if data is None:
         return {}
     if not isinstance(data, dict):
-        raise RuntimeError("contract-feedbacks.yml must contain a YAML mapping at the root.")
+        raise RuntimeError(
+            "contract-feedbacks.yml must contain a YAML mapping at the root."
+        )
     return data
 
 
-def validate_feedback(paths: Any, *, version: str, feedback_path: Path) -> tuple[FeedbackFile | None, list[str]]:
+def validate_feedback(
+    paths: Any, *, version: str, feedback_path: Path
+) -> tuple[FeedbackFile | None, list[str]]:
     """
     Validate feedback file structure and content.
-    
+
     Returns:
         Tuple of (validated_feedback, errors)
     """
     from midicoder.contract.yaml_processor import _normalize_contract_path
-    
+
     data = load_feedback_data(feedback_path)
     errors: list[str] = []
     feedback = None
-    
+
     try:
         feedback = FeedbackFile.model_validate(data)
     except ValidationError as exc:
@@ -96,13 +100,14 @@ def update_feedback_status(
 def write_feedback_file(path: Path, feedback: FeedbackFile) -> None:
     """Write feedback file with proper formatting."""
     from midicoder.commands.base import write_yaml
+
     write_yaml(path, feedback.model_dump(mode="python"))
 
 
 def group_feedback_by_file(pending_items: list[Any]) -> dict[str, list[Any]]:
     """
     Group feedback items by file path for file-level repair processing.
-    
+
     This enables comprehensive file-level repair that maintains consistency
     and provides better context than single-item repairs.
     """
@@ -112,44 +117,44 @@ def group_feedback_by_file(pending_items: list[Any]) -> dict[str, list[Any]]:
         if file_path not in grouped:
             grouped[file_path] = []
         grouped[file_path].append(item)
-    
+
     return grouped
 
 
 def determine_file_repair_order(grouped_files: dict[str, list[Any]]) -> list[str]:
     """
     Determine optimal order for file repairs based on dependencies.
-    
+
     Uses dynamic pattern matching to identify foundation vs dependent files
     without hardcoding specific file paths.
     """
     # Dynamic dependency classification based on file patterns
     foundation_patterns = [
-        "error",     # error definitions (any *error*.yaml)
-        "entit",     # entity definitions (any *entit*.yaml)  
-        "event",     # event definitions (any *event*.yaml)
+        "error",  # error definitions (any *error*.yaml)
+        "entit",  # entity definitions (any *entit*.yaml)
+        "event",  # event definitions (any *event*.yaml)
         "glossary",  # terminology (any *glossary*.yaml)
-        "info",      # project metadata (any *info*.yaml)
-        "meta"       # metadata files (any *meta*.yaml)
+        "info",  # project metadata (any *info*.yaml)
+        "meta",  # metadata files (any *meta*.yaml)
     ]
-    
+
     dependent_patterns = [
-        "command",   # commands (any *command*.yaml) 
-        "quer",      # queries (any *quer*.yaml)
-        "http",      # HTTP APIs (any *http*.yaml)
-        "api",       # API files (any *api*.yaml)
-        "rule",      # rules (any *rule*.yaml)
+        "command",  # commands (any *command*.yaml)
+        "quer",  # queries (any *quer*.yaml)
+        "http",  # HTTP APIs (any *http*.yaml)
+        "api",  # API files (any *api*.yaml)
+        "rule",  # rules (any *rule*.yaml)
         "workflow",  # workflows (any *workflow*.yaml)
-        "policy"     # policies (any *policy*.yaml)
+        "policy",  # policies (any *policy*.yaml)
     ]
-    
+
     from midicoder.contract.contract_utils import is_foundation_file, is_dependent_file
-    
+
     files_to_process = set(grouped_files.keys())
     foundation_files = []
     dependent_files = []
     other_files = []
-    
+
     # Classify files using centralized helper functions
     for file_path in files_to_process:
         if is_foundation_file(file_path):
@@ -158,7 +163,7 @@ def determine_file_repair_order(grouped_files: dict[str, list[Any]]) -> list[str
             dependent_files.append(file_path)
         else:
             other_files.append(file_path)
-    
+
     # Return ordered list: foundation → other → dependent
     return sorted(foundation_files) + sorted(other_files) + sorted(dependent_files)
 
@@ -169,15 +174,17 @@ def update_file_feedback_items_status(
     feedback_updates: list[dict[str, Any]],
     feedback_items: list[Any],
     success: bool,
-    error_message: str | None = None
+    error_message: str | None = None,
 ) -> None:
     """
     Update feedback status for all items in a file after file-level processing.
     """
     try:
         feedback_path = paths.versions / version / "contract-feedbacks.yml"
-        feedback, errors = validate_feedback(paths, version=version, feedback_path=feedback_path)
-        
+        feedback, errors = validate_feedback(
+            paths, version=version, feedback_path=feedback_path
+        )
+
         if feedback and not errors:
             # Apply LLM-generated status updates
             failed_ids = {item.id for item in feedback_items} if not success else set()
@@ -188,15 +195,19 @@ def update_file_feedback_items_status(
                 error_message=error_message,
             )
             write_feedback_file(feedback_path, feedback)
-            
-            status_text = 'done' if success else 'error'
+
+            status_text = "done" if success else "error"
             item_ids = [item.id for item in feedback_items]
             print(f"[feedback] Updated status for {len(item_ids)} items: {status_text}")
             print(f"[feedback] Items: {', '.join(item_ids)}")
         else:
-            print(f"[feedback] Warning: Could not update status for {len(feedback_items)} items")
+            print(
+                f"[feedback] Warning: Could not update status for {len(feedback_items)} items"
+            )
     except Exception as exc:
-        print(f"[feedback] Error updating status for {len(feedback_items)} items: {exc}")
+        print(
+            f"[feedback] Error updating status for {len(feedback_items)} items: {exc}"
+        )
 
 
 def update_single_feedback_item_status(
@@ -205,15 +216,17 @@ def update_single_feedback_item_status(
     feedback_updates: list[dict[str, Any]],
     item_id: str,
     success: bool,
-    error_message: str | None = None
+    error_message: str | None = None,
 ) -> None:
     """
     Update feedback status immediately after processing single item.
     """
     try:
         feedback_path = paths.versions / version / "contract-feedbacks.yml"
-        feedback, errors = validate_feedback(paths, version=version, feedback_path=feedback_path)
-        
+        feedback, errors = validate_feedback(
+            paths, version=version, feedback_path=feedback_path
+        )
+
         if feedback and not errors:
             # Apply LLM-generated status updates
             update_feedback_status(
@@ -223,7 +236,9 @@ def update_single_feedback_item_status(
                 error_message=error_message,
             )
             write_feedback_file(feedback_path, feedback)
-            print(f"[feedback] Updated status for {item_id}: {'done' if success else 'error'}")
+            print(
+                f"[feedback] Updated status for {item_id}: {'done' if success else 'error'}"
+            )
         else:
             print(f"[feedback] Warning: Could not update status for {item_id}")
     except Exception as exc:
@@ -231,21 +246,21 @@ def update_single_feedback_item_status(
 
 
 def create_feedback_file(
-    paths: Any,
-    version: str,
-    contracts_root: Path,
-    issues: list[Any]
+    paths: Any, version: str, contracts_root: Path, issues: list[Any]
 ) -> tuple[Path, int]:
     """
     Create or update feedback file from contract validation issues.
-    
+
     Returns:
         Tuple of (feedback_path, new_items_count)
     """
     from datetime import datetime, timezone
     from ruamel.yaml import YAML
     from midicoder.commands.base import write_yaml
-    from midicoder.contract.contract_utils import issue_to_feedback_target, next_feedback_index
+    from midicoder.contract.contract_utils import (
+        issue_to_feedback_target,
+        next_feedback_index,
+    )
 
     version_root = paths.versions / str(version)
     feedback_path = version_root / "contract-feedbacks.yml"
@@ -308,9 +323,11 @@ def create_feedback_file(
     # Get next available index for new feedback items
     next_index = next_feedback_index(feedback_items)
     new_items_count = 0
-    
+
     for issue in issues:
-        file_value, location_value = issue_to_feedback_target(contracts_root, issue.location)
+        file_value, location_value = issue_to_feedback_target(
+            contracts_root, issue.location
+        )
         signature = (file_value, location_value, str(issue.message).strip())
 
         existing_item = existing_by_signature.get(signature)
@@ -336,11 +353,13 @@ def create_feedback_file(
         new_items_count += 1
 
     write_yaml(feedback_path, feedback_data)
-    
+
     return feedback_path, new_items_count
 
 
-def report_repair_status(*, label: str, feedback: FeedbackFile | None, errors: list[str]) -> None:
+def report_repair_status(
+    *, label: str, feedback: FeedbackFile | None, errors: list[str]
+) -> None:
     """Report repair validation status."""
     if errors:
         print(f"[contract repair {label}] FAILED – {len(errors)} error(s) found")

@@ -71,8 +71,13 @@ def _service_block(plan_item: PlanItemRuntime) -> str:
     pseudo = plan_item.payload.get("pseudo_struct", {})
     inputs = pseudo.get("inputs", []) if isinstance(pseudo, dict) else []
     outputs = pseudo.get("outputs", []) if isinstance(pseudo, dict) else []
-    args = ", ".join(f"{str(i.get('name', 'arg'))}: str" for i in inputs if isinstance(i, dict))
-    lines = [f"# region {plan_item.ir_ref}", f"def handle_{plan_item.ir_ref.replace('.', '_').lower()}({args}) -> dict[str, Any]:"]
+    args = ", ".join(
+        f"{str(i.get('name', 'arg'))}: str" for i in inputs if isinstance(i, dict)
+    )
+    lines = [
+        f"# region {plan_item.ir_ref}",
+        f"def handle_{plan_item.ir_ref.replace('.', '_').lower()}({args}) -> dict[str, Any]:",
+    ]
     lines.append("    return {")
     for output in outputs:
         if isinstance(output, dict):
@@ -171,7 +176,9 @@ def base_file_content(runtime_path: str) -> str:
     if normalized.endswith("/service.py"):
         return "from __future__ import annotations\n\nfrom typing import Any\n\n"
     if normalized.endswith("/schema.py"):
-        return "from __future__ import annotations\n\nfrom pydantic import BaseModel\n\n"
+        return (
+            "from __future__ import annotations\n\nfrom pydantic import BaseModel\n\n"
+        )
     if normalized.endswith("/controller.py"):
         return (
             "from __future__ import annotations\n\n"

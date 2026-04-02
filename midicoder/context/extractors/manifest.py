@@ -6,7 +6,14 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..core.models import EntryPoint, Exemplar, IndexManifest, ProjectProfile, Seam, Symbol
+from ..core.models import (
+    EntryPoint,
+    Exemplar,
+    IndexManifest,
+    ProjectProfile,
+    Seam,
+    Symbol,
+)
 from ..core.scanner import ProjectScanner
 from .constants import TOOL_VERSION
 
@@ -50,7 +57,9 @@ def build_index_manifest(
 
     entrypoints_by_kind: dict[str, int] = {}
     for entrypoint in entrypoints:
-        entrypoints_by_kind[entrypoint.kind] = entrypoints_by_kind.get(entrypoint.kind, 0) + 1
+        entrypoints_by_kind[entrypoint.kind] = (
+            entrypoints_by_kind.get(entrypoint.kind, 0) + 1
+        )
 
     exemplars_by_kind: dict[str, int] = {}
     for exemplar in exemplars:

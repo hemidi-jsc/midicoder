@@ -8,8 +8,14 @@ system can rely on a single import location.
 from __future__ import annotations
 
 from .schemas.access_policy_model import PERMISSION_ACTION_CATALOG
-from .schemas.command_model import COMMAND_CATEGORY_CATALOG, TENANT_SCOPE_CATALOG as COMMAND_TENANT_SCOPE_CATALOG
-from .schemas.entity_model import CONSTRAINT_TYPE_CATALOG, TENANT_SCOPE_CATALOG as ENTITY_TENANT_SCOPE_CATALOG
+from .schemas.command_model import (
+    COMMAND_CATEGORY_CATALOG,
+    TENANT_SCOPE_CATALOG as COMMAND_TENANT_SCOPE_CATALOG,
+)
+from .schemas.entity_model import (
+    CONSTRAINT_TYPE_CATALOG,
+    TENANT_SCOPE_CATALOG as ENTITY_TENANT_SCOPE_CATALOG,
+)
 from .schemas.error_model import ERROR_CATEGORY_CATALOG
 from .schemas.event_model import EVENT_KIND_CATALOG
 from .schemas.glossary_model import GLOSSARY_CATEGORY_CATALOG
@@ -26,7 +32,11 @@ from .schemas.integration_model import (
     INTEGRATION_TYPE_CATALOG,
     WEBHOOK_SIGNATURE_ALG_CATALOG,
 )
-from .schemas.named_field_model import COMPOSITE_TYPE_CATALOG, REF_TYPE_PREFIXES, SCALAR_TYPE_CATALOG
+from .schemas.named_field_model import (
+    COMPOSITE_TYPE_CATALOG,
+    REF_TYPE_PREFIXES,
+    SCALAR_TYPE_CATALOG,
+)
 from .schemas.observability_model import OBSERVABILITY_KIND_CATALOG
 from .schemas.persistence_model import (
     PERSISTENCE_CONNECTOR_CATALOG,

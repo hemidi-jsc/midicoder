@@ -33,7 +33,9 @@ def _resolve_languages_library_path() -> Path:
         path = package_dir / candidate
         if path.exists():
             return path
-    raise FileNotFoundError(f"tree_sitter_languages shared library not found in {package_dir}")
+    raise FileNotFoundError(
+        f"tree_sitter_languages shared library not found in {package_dir}"
+    )
 
 
 def _get_languages_library_handle() -> ctypes.CDLL:
@@ -52,7 +54,9 @@ def _load_language_from_library(language_name: str) -> Language:
     try:
         loader = getattr(lib, symbol_name)
     except AttributeError as exc:
-        raise RuntimeError(f"Grammar symbol not found in shared library: {symbol_name}") from exc
+        raise RuntimeError(
+            f"Grammar symbol not found in shared library: {symbol_name}"
+        ) from exc
 
     loader.restype = ctypes.c_void_p
     language_ptr = loader()
@@ -104,7 +108,9 @@ def _language_for_path(path: Path) -> tuple[str, str]:
 
 
 class JavaScriptAnalyzer:
-    def analyze(self, scanner: ProjectScanner, target_files: set[str] | None = None) -> tuple[list[Symbol], list[ErrorRecord]]:
+    def analyze(
+        self, scanner: ProjectScanner, target_files: set[str] | None = None
+    ) -> tuple[list[Symbol], list[ErrorRecord]]:
         symbols: list[Symbol] = []
         errors: list[ErrorRecord] = []
         parser_by_language: dict[str, Parser | None] = {}
@@ -132,7 +138,9 @@ class JavaScriptAnalyzer:
                     ErrorRecord(
                         kind="js_parse_error",
                         file=relative_path,
-                        detail=PARSER_INIT_ERRORS.get(language_name, "Parser unavailable"),
+                        detail=PARSER_INIT_ERRORS.get(
+                            language_name, "Parser unavailable"
+                        ),
                     )
                 )
                 continue
@@ -140,7 +148,11 @@ class JavaScriptAnalyzer:
             try:
                 tree = parser.parse(content.encode("utf-8"))
             except Exception as exc:
-                errors.append(ErrorRecord(kind="js_parse_error", file=relative_path, detail=str(exc)))
+                errors.append(
+                    ErrorRecord(
+                        kind="js_parse_error", file=relative_path, detail=str(exc)
+                    )
+                )
                 continue
 
             symbols.extend(
@@ -155,7 +167,9 @@ class JavaScriptAnalyzer:
         return symbols, errors
 
 
-def _extract_symbols_from_tree(tree, source_bytes: bytes, relative_path: str, language: str) -> list[Symbol]:
+def _extract_symbols_from_tree(
+    tree, source_bytes: bytes, relative_path: str, language: str
+) -> list[Symbol]:
     symbols: list[Symbol] = []
     seen: set[tuple[str, int, str]] = set()
 
@@ -177,7 +191,9 @@ def _extract_symbols_from_tree(tree, source_bytes: bytes, relative_path: str, la
         )
 
     def node_text(node) -> str:
-        return source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="ignore")
+        return source_bytes[node.start_byte : node.end_byte].decode(
+            "utf-8", errors="ignore"
+        )
 
     def node_line(node) -> int:
         return node.start_point[0] + 1
@@ -185,13 +201,21 @@ def _extract_symbols_from_tree(tree, source_bytes: bytes, relative_path: str, la
     def get_name(node) -> str | None:
         if node is None:
             return None
-        if node.type in {"identifier", "property_identifier", "private_property_identifier"}:
+        if node.type in {
+            "identifier",
+            "property_identifier",
+            "private_property_identifier",
+        }:
             return node_text(node)
         name_node = node.child_by_field_name("name")
         if name_node:
             return node_text(name_node)
         for child in node.named_children:
-            if child.type in {"identifier", "property_identifier", "private_property_identifier"}:
+            if child.type in {
+                "identifier",
+                "property_identifier",
+                "private_property_identifier",
+            }:
                 return node_text(child)
         return None
 
@@ -210,16 +234,34 @@ def _extract_symbols_from_tree(tree, source_bytes: bytes, relative_path: str, la
                 method_name = get_name(element)
                 if not method_name or method_name == "constructor":
                     continue
-                add_symbol(f"{class_name}.{method_name}", "method", node_line(element), class_name)
+                add_symbol(
+                    f"{class_name}.{method_name}",
+                    "method",
+                    node_line(element),
+                    class_name,
+                )
                 continue
 
-            if element.type in {"public_field_definition", "property_definition", "field_definition"}:
+            if element.type in {
+                "public_field_definition",
+                "property_definition",
+                "field_definition",
+            }:
                 field_name = get_name(element)
                 if not field_name or field_name == "constructor":
                     continue
                 value = element.child_by_field_name("value")
-                if value and value.type in {"arrow_function", "function", "function_expression"}:
-                    add_symbol(f"{class_name}.{field_name}", "method", node_line(element), class_name)
+                if value and value.type in {
+                    "arrow_function",
+                    "function",
+                    "function_expression",
+                }:
+                    add_symbol(
+                        f"{class_name}.{field_name}",
+                        "method",
+                        node_line(element),
+                        class_name,
+                    )
 
     def handle_variable_declaration(node, scope: str) -> None:
         for declarator in node.named_children:
@@ -292,12 +334,18 @@ def _extract_symbols_from_tree(tree, source_bytes: bytes, relative_path: str, la
             for spec in export_clause.named_children:
                 if spec.type == "export_specifier":
                     identifiers = [
-                        child for child in spec.named_children
+                        child
+                        for child in spec.named_children
                         if child.type in {"identifier", "property_identifier"}
                     ]
                     if identifiers:
                         exported_ident = identifiers[-1]
-                        add_symbol(node_text(exported_ident), "export", node_line(exported_ident), "export")
+                        add_symbol(
+                            node_text(exported_ident),
+                            "export",
+                            node_line(exported_ident),
+                            "export",
+                        )
                 elif spec.type in {"identifier", "property_identifier"}:
                     add_symbol(node_text(spec), "export", node_line(spec), "export")
             return

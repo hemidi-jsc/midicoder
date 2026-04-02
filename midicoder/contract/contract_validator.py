@@ -167,7 +167,9 @@ def _lint_model_meta_graph() -> list[ContractIssue]:
                 seen.add(ref_kind)
                 if ref_kind in known_kinds:
                     continue
-                suggestions = difflib.get_close_matches(ref_kind, sorted(known_kinds), n=1, cutoff=0.75)
+                suggestions = difflib.get_close_matches(
+                    ref_kind, sorted(known_kinds), n=1, cutoff=0.75
+                )
                 if suggestions:
                     issues.append(
                         ContractIssue(
@@ -338,15 +340,25 @@ def _lint_named_field_types(
         for kind, ref_id in refs:
             if kind == "entity":
                 if ref_id not in entity_ids:
-                    issues.append(ContractIssue(location, f"type references unknown entity '{ref_id}'"))
+                    issues.append(
+                        ContractIssue(
+                            location, f"type references unknown entity '{ref_id}'"
+                        )
+                    )
             elif kind == "valueobject":
                 if ref_id not in value_object_ids:
                     issues.append(
-                        ContractIssue(location, f"type references unknown value object '{ref_id}'")
+                        ContractIssue(
+                            location, f"type references unknown value object '{ref_id}'"
+                        )
                     )
             elif kind == "enum":
                 if ref_id not in enum_ids:
-                    issues.append(ContractIssue(location, f"type references unknown enum '{ref_id}'"))
+                    issues.append(
+                        ContractIssue(
+                            location, f"type references unknown enum '{ref_id}'"
+                        )
+                    )
             elif kind == "legacy":
                 if (
                     ref_id not in entity_ids
@@ -397,7 +409,9 @@ def _lint_query_references(
                     )
                 )
 
-        for role_index, role_ref in enumerate(getattr(query, "required_roles", []) or []):
+        for role_index, role_ref in enumerate(
+            getattr(query, "required_roles", []) or []
+        ):
             role_raw, role_id = _extract_simple_ref(role_ref)
             if role_id not in role_ids:
                 issues.append(
@@ -409,7 +423,9 @@ def _lint_query_references(
                         f"required_roles references unknown role '{role_raw}'",
                     )
                 )
-        for perm_index, perm_ref in enumerate(getattr(query, "required_permissions", []) or []):
+        for perm_index, perm_ref in enumerate(
+            getattr(query, "required_permissions", []) or []
+        ):
             perm_raw, perm_id = _extract_simple_ref(perm_ref)
             if perm_id not in permission_ids:
                 issues.append(
@@ -462,7 +478,9 @@ def _lint_command_references(
 ) -> list[ContractIssue]:
     issues: list[ContractIssue] = []
     requires_events = any(
-        effect.id == "emit.event" for command in commands.commands for effect in command.effects
+        effect.id == "emit.event"
+        for command in commands.commands
+        for effect in command.effects
     )
     if events_missing and requires_events:
         issues.append(
@@ -496,7 +514,9 @@ def _lint_command_references(
                     )
                 )
 
-        for role_index, role_ref in enumerate(getattr(command, "required_roles", []) or []):
+        for role_index, role_ref in enumerate(
+            getattr(command, "required_roles", []) or []
+        ):
             role_raw, role_id = _extract_simple_ref(role_ref)
             if role_id not in role_ids:
                 issues.append(
@@ -508,7 +528,9 @@ def _lint_command_references(
                         f"required_roles references unknown role '{role_raw}'",
                     )
                 )
-        for perm_index, perm_ref in enumerate(getattr(command, "required_permissions", []) or []):
+        for perm_index, perm_ref in enumerate(
+            getattr(command, "required_permissions", []) or []
+        ):
             perm_raw, perm_id = _extract_simple_ref(perm_ref)
             if perm_id not in permission_ids:
                 issues.append(
@@ -520,7 +542,9 @@ def _lint_command_references(
                         f"required_permissions references unknown permission '{perm_raw}'",
                     )
                 )
-        for table_index, table_ref in enumerate(getattr(command, "writes_to", []) or []):
+        for table_index, table_ref in enumerate(
+            getattr(command, "writes_to", []) or []
+        ):
             table_raw, table_id = _extract_simple_ref(table_ref)
             if table_id not in persistence_table_ids:
                 issues.append(
@@ -571,7 +595,9 @@ def _lint_command_references(
             if event_id not in event_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(commands_path, f"{command_prefix}.emits[{emit_index}]"),
+                        _format_location(
+                            commands_path, f"{command_prefix}.emits[{emit_index}]"
+                        ),
                         f"emits references unknown event '{event_id}'",
                     )
                 )
@@ -619,7 +645,9 @@ def _lint_rule_references(
             if scenario_id not in scenario_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(rules_path, f"rules[{rule_index}].applies_to_scenario"),
+                        _format_location(
+                            rules_path, f"rules[{rule_index}].applies_to_scenario"
+                        ),
                         f"applies_to_scenario references unknown scenario '{scenario_ref}'",
                     )
                 )
@@ -628,7 +656,9 @@ def _lint_rule_references(
         target_kind = "command"
         target_ref = rule.applies_to
         if ":" in rule.applies_to:
-            target_kind, target_ref = [part.strip() for part in rule.applies_to.split(":", 1)]
+            target_kind, target_ref = [
+                part.strip() for part in rule.applies_to.split(":", 1)
+            ]
         elif target_ref in query_ids and target_ref not in command_ids:
             # Backward compatibility: untyped applies_to historically defaulted to command.
             # If the ref exists only as a query ID, treat it as query to avoid false negatives.
@@ -710,7 +740,7 @@ def _lint_workflow_references(
     issues: list[ContractIssue] = []
     for workflow_index, workflow in enumerate(workflows.workflows):
         workflow_prefix = f"workflows[{workflow_index}]"
-        
+
         # Validate workflow.entity references
         if workflow.entity not in entity_ids:
             issues.append(
@@ -719,63 +749,78 @@ def _lint_workflow_references(
                     f"entity references unknown entity '{workflow.entity}'",
                 )
             )
-        
-        for scenario_index, scenario_ref in enumerate(getattr(workflow, "scenarios", []) or []):
+
+        for scenario_index, scenario_ref in enumerate(
+            getattr(workflow, "scenarios", []) or []
+        ):
             _, scenario_id = _extract_simple_ref(scenario_ref)
             if scenario_id not in scenario_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(workflows_path, f"{workflow_prefix}.scenarios[{scenario_index}]"),
+                        _format_location(
+                            workflows_path,
+                            f"{workflow_prefix}.scenarios[{scenario_index}]",
+                        ),
                         f"scenarios references unknown scenario '{scenario_ref}'",
                     )
                 )
-        
+
         # Collect state IDs for validation
         state_ids = {state.id for state in workflow.states}
-        
+
         # Validate initial_state exists in states
         if workflow.initial_state not in state_ids:
             issues.append(
                 ContractIssue(
-                    _format_location(workflows_path, f"{workflow_prefix}.initial_state"),
+                    _format_location(
+                        workflows_path, f"{workflow_prefix}.initial_state"
+                    ),
                     f"initial_state '{workflow.initial_state}' not found in states",
                 )
             )
-        
+
         # Validate transitions
         for transition_index, transition in enumerate(workflow.transitions):
             transition_prefix = f"{workflow_prefix}.transitions[{transition_index}]"
-            
+
             # Validate from_state and to_state
             if transition.from_state not in state_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(workflows_path, f"{transition_prefix}.from_state"),
+                        _format_location(
+                            workflows_path, f"{transition_prefix}.from_state"
+                        ),
                         f"from_state '{transition.from_state}' not found in states",
                     )
                 )
             if transition.to_state not in state_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(workflows_path, f"{transition_prefix}.to_state"),
+                        _format_location(
+                            workflows_path, f"{transition_prefix}.to_state"
+                        ),
                         f"to_state '{transition.to_state}' not found in states",
                     )
                 )
-            
+
             # Validate on_command references
             if transition.on_command and transition.on_command not in command_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(workflows_path, f"{transition_prefix}.on_command"),
+                        _format_location(
+                            workflows_path, f"{transition_prefix}.on_command"
+                        ),
                         f"on_command references unknown command '{transition.on_command}'",
                     )
                 )
-            
+
             # Validate on_event references
             if transition.on_event and transition.on_event not in event_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(workflows_path, f"{transition_prefix}.on_event"),
+                        _format_location(
+                            workflows_path, f"{transition_prefix}.on_event"
+                        ),
                         f"on_event references unknown event '{transition.on_event}'",
                     )
                 )
@@ -806,11 +851,11 @@ def _lint_workflow_references(
                     event_ids=event_ids,
                 )
                 issues.extend(effect_issues)
-        
+
         # Validate error handlers
         for handler_index, handler in enumerate(workflow.error_handlers):
             handler_prefix = f"{workflow_prefix}.error_handlers[{handler_index}]"
-            
+
             # Validate error references
             if handler.error not in error_ids:
                 issues.append(
@@ -819,35 +864,47 @@ def _lint_workflow_references(
                         f"error references unknown error '{handler.error}'",
                     )
                 )
-            
+
             # Validate transition_to if present
             if handler.transition_to and handler.transition_to not in state_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(workflows_path, f"{handler_prefix}.transition_to"),
+                        _format_location(
+                            workflows_path, f"{handler_prefix}.transition_to"
+                        ),
                         f"transition_to '{handler.transition_to}' not found in states",
                     )
                 )
 
-        for role_index, role_ref in enumerate(getattr(workflow, "required_roles", []) or []):
+        for role_index, role_ref in enumerate(
+            getattr(workflow, "required_roles", []) or []
+        ):
             role_raw, role_id = _extract_simple_ref(role_ref)
             if role_id not in role_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(workflows_path, f"{workflow_prefix}.required_roles[{role_index}]"),
+                        _format_location(
+                            workflows_path,
+                            f"{workflow_prefix}.required_roles[{role_index}]",
+                        ),
                         f"required_roles references unknown role '{role_raw}'",
                     )
                 )
-        for perm_index, perm_ref in enumerate(getattr(workflow, "required_permissions", []) or []):
+        for perm_index, perm_ref in enumerate(
+            getattr(workflow, "required_permissions", []) or []
+        ):
             perm_raw, perm_id = _extract_simple_ref(perm_ref)
             if perm_id not in permission_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(workflows_path, f"{workflow_prefix}.required_permissions[{perm_index}]"),
+                        _format_location(
+                            workflows_path,
+                            f"{workflow_prefix}.required_permissions[{perm_index}]",
+                        ),
                         f"required_permissions references unknown permission '{perm_raw}'",
                     )
                 )
-    
+
     return issues
 
 
@@ -863,11 +920,11 @@ def _lint_scenario_references(
     issues: list[ContractIssue] = []
     for scenario_index, scenario in enumerate(scenarios.scenarios):
         scenario_prefix = f"scenarios[{scenario_index}]"
-        
+
         # Validate steps
         for step_index, step in enumerate(scenario.steps):
             step_prefix = f"{scenario_prefix}.steps[{step_index}]"
-            
+
             # Validate step.ref based on step.type
             if step.type == "command":
                 if step.ref not in command_ids:
@@ -893,7 +950,7 @@ def _lint_scenario_references(
                             f"step of type 'event' references unknown event '{step.ref}'",
                         )
                     )
-    
+
     return issues
 
 
@@ -908,7 +965,7 @@ def _lint_projection_references(
     issues: list[ContractIssue] = []
     for projection_index, projection in enumerate(projections.projections):
         projection_prefix = f"projections[{projection_index}]"
-        
+
         # Validate source_events references
         for event_index, event_id in enumerate(projection.source_events):
             if event_id not in event_ids:
@@ -928,7 +985,9 @@ def _lint_projection_references(
             if persistence_table_ids and storage_ref not in persistence_table_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(projections_path, f"{projection_prefix}.storage"),
+                        _format_location(
+                            projections_path, f"{projection_prefix}.storage"
+                        ),
                         f"storage references unknown persistence table '{projection.storage}'",
                     )
                 )
@@ -937,11 +996,13 @@ def _lint_projection_references(
             if storage_id not in persistence_table_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(projections_path, f"{projection_prefix}.storage_ref"),
+                        _format_location(
+                            projections_path, f"{projection_prefix}.storage_ref"
+                        ),
                         f"storage_ref references unknown persistence table '{storage_raw}'",
                     )
                 )
-    
+
     return issues
 
 
@@ -978,7 +1039,9 @@ def _lint_persistence_references(
                 )
             )
         if getattr(datasource, "integration_id", None):
-            integration_raw, integration_id = _extract_simple_ref(datasource.integration_id)
+            integration_raw, integration_id = _extract_simple_ref(
+                datasource.integration_id
+            )
             if integration_id not in integration_ids:
                 issues.append(
                     ContractIssue(
@@ -1004,7 +1067,9 @@ def _lint_persistence_references(
             if table.datasource not in datasource_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(persistence_path, f"{table_prefix}.datasource"),
+                        _format_location(
+                            persistence_path, f"{table_prefix}.datasource"
+                        ),
                         f"datasource '{table.datasource}' not found",
                     )
                 )
@@ -1020,7 +1085,9 @@ def _lint_persistence_references(
             if op_id not in operation_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(persistence_path, f"{table_prefix}.operation_id"),
+                        _format_location(
+                            persistence_path, f"{table_prefix}.operation_id"
+                        ),
                         f"operation_id references unknown integration operation '{operation_raw}'",
                     )
                 )
@@ -1069,7 +1136,8 @@ def _lint_persistence_references(
 
     # Validate foreign key target table/column references
     table_column_map = {
-        table.id: {column.name for column in table.columns} for table in persistence.tables
+        table.id: {column.name for column in table.columns}
+        for table in persistence.tables
     }
     for table_idx, table in enumerate(persistence.tables):
         table_prefix = f"tables[{table_idx}]"
@@ -1143,21 +1211,33 @@ def _lint_integration_references(
                     f"cloud provider '{target.provider}' is not supported",
                 )
             )
-        if target.provider == "aws" and target.service and target.service not in AWS_SERVICE_CATALOG:
+        if (
+            target.provider == "aws"
+            and target.service
+            and target.service not in AWS_SERVICE_CATALOG
+        ):
             issues.append(
                 ContractIssue(
                     _format_location(integrations_path, f"{prefix}.service"),
                     f"AWS service '{target.service}' is not supported",
                 )
             )
-        if target.provider == "gcp" and target.service and target.service not in GCP_SERVICE_CATALOG:
+        if (
+            target.provider == "gcp"
+            and target.service
+            and target.service not in GCP_SERVICE_CATALOG
+        ):
             issues.append(
                 ContractIssue(
                     _format_location(integrations_path, f"{prefix}.service"),
                     f"GCP service '{target.service}' is not supported",
                 )
             )
-        if target.provider == "azure" and target.service and target.service not in AZURE_SERVICE_CATALOG:
+        if (
+            target.provider == "azure"
+            and target.service
+            and target.service not in AZURE_SERVICE_CATALOG
+        ):
             issues.append(
                 ContractIssue(
                     _format_location(integrations_path, f"{prefix}.service"),
@@ -1176,11 +1256,17 @@ def _lint_integration_references(
             if secret_id not in secret_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"{prefix}.auth.secret_ref"),
+                        _format_location(
+                            integrations_path, f"{prefix}.auth.secret_ref"
+                        ),
                         f"auth.secret_ref references unknown secret '{secret_raw}'",
                     )
                 )
-        if target.auth and target.auth.secret_ref and not _extract_simple_ref(target.auth.secret_ref)[0].startswith("Secret:"):
+        if (
+            target.auth
+            and target.auth.secret_ref
+            and not _extract_simple_ref(target.auth.secret_ref)[0].startswith("Secret:")
+        ):
             issues.append(
                 ContractIssue(
                     _format_location(integrations_path, f"{prefix}.auth.secret_ref"),
@@ -1192,7 +1278,9 @@ def _lint_integration_references(
         if op.integration_id not in integration_ids:
             issues.append(
                 ContractIssue(
-                    _format_location(integrations_path, f"operations[{idx}].integration_id"),
+                    _format_location(
+                        integrations_path, f"operations[{idx}].integration_id"
+                    ),
                     f"operation references unknown integration '{op.integration_id}'",
                 )
             )
@@ -1212,7 +1300,9 @@ def _lint_integration_references(
         if s3_resource.integration_id not in integration_ids:
             issues.append(
                 ContractIssue(
-                    _format_location(integrations_path, f"s3_resources[{idx}].integration_id"),
+                    _format_location(
+                        integrations_path, f"s3_resources[{idx}].integration_id"
+                    ),
                     f"s3 resource references unknown integration '{s3_resource.integration_id}'",
                 )
             )
@@ -1220,16 +1310,24 @@ def _lint_integration_references(
             if op_ref not in operation_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"s3_resources[{idx}].operations[{op_index}]"),
+                        _format_location(
+                            integrations_path,
+                            f"s3_resources[{idx}].operations[{op_index}]",
+                        ),
                         f"s3 resource operation '{op_ref}' not found in operations.id",
                     )
                 )
 
     for idx, webhook in enumerate(integrations.webhooks):
-        if webhook.signature and webhook.signature.alg not in WEBHOOK_SIGNATURE_ALG_CATALOG:
+        if (
+            webhook.signature
+            and webhook.signature.alg not in WEBHOOK_SIGNATURE_ALG_CATALOG
+        ):
             issues.append(
                 ContractIssue(
-                    _format_location(integrations_path, f"webhooks[{idx}].signature.alg"),
+                    _format_location(
+                        integrations_path, f"webhooks[{idx}].signature.alg"
+                    ),
                     f"signature algorithm '{webhook.signature.alg}' is not supported",
                 )
             )
@@ -1238,14 +1336,18 @@ def _lint_integration_references(
             if secret_id not in secret_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"webhooks[{idx}].signature.secret_ref"),
+                        _format_location(
+                            integrations_path, f"webhooks[{idx}].signature.secret_ref"
+                        ),
                         f"signature.secret_ref references unknown secret '{secret_raw}'",
                     )
                 )
             if not secret_raw.startswith("Secret:"):
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"webhooks[{idx}].signature.secret_ref"),
+                        _format_location(
+                            integrations_path, f"webhooks[{idx}].signature.secret_ref"
+                        ),
                         "signature.secret_ref should use typed format 'Secret:<id>'",
                     )
                 )
@@ -1253,7 +1355,9 @@ def _lint_integration_references(
             if event_id not in event_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"webhooks[{idx}].events[{event_index}]"),
+                        _format_location(
+                            integrations_path, f"webhooks[{idx}].events[{event_index}]"
+                        ),
                         f"webhook event references unknown event '{event_id}'",
                     )
                 )
@@ -1262,7 +1366,9 @@ def _lint_integration_references(
         if email_provider.transport not in EMAIL_TRANSPORT_CATALOG:
             issues.append(
                 ContractIssue(
-                    _format_location(integrations_path, f"email_providers[{idx}].transport"),
+                    _format_location(
+                        integrations_path, f"email_providers[{idx}].transport"
+                    ),
                     f"email transport '{email_provider.transport}' is not supported",
                 )
             )
@@ -1271,14 +1377,18 @@ def _lint_integration_references(
             if secret_id not in secret_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"email_providers[{idx}].username_secret"),
+                        _format_location(
+                            integrations_path, f"email_providers[{idx}].username_secret"
+                        ),
                         f"username_secret references unknown secret '{secret_raw}'",
                     )
                 )
             if not secret_raw.startswith("Secret:"):
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"email_providers[{idx}].username_secret"),
+                        _format_location(
+                            integrations_path, f"email_providers[{idx}].username_secret"
+                        ),
                         "username_secret should use typed format 'Secret:<id>'",
                     )
                 )
@@ -1287,14 +1397,18 @@ def _lint_integration_references(
             if secret_id not in secret_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"email_providers[{idx}].password_secret"),
+                        _format_location(
+                            integrations_path, f"email_providers[{idx}].password_secret"
+                        ),
                         f"password_secret references unknown secret '{secret_raw}'",
                     )
                 )
             if not secret_raw.startswith("Secret:"):
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"email_providers[{idx}].password_secret"),
+                        _format_location(
+                            integrations_path, f"email_providers[{idx}].password_secret"
+                        ),
                         "password_secret should use typed format 'Secret:<id>'",
                     )
                 )
@@ -1305,19 +1419,27 @@ def _lint_integration_references(
             if secret_id not in secret_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"oauth2_providers[{idx}].client_id_secret"),
+                        _format_location(
+                            integrations_path,
+                            f"oauth2_providers[{idx}].client_id_secret",
+                        ),
                         f"client_id_secret references unknown secret '{secret_raw}'",
                     )
                 )
             if not secret_raw.startswith("Secret:"):
                 issues.append(
                     ContractIssue(
-                        _format_location(integrations_path, f"oauth2_providers[{idx}].client_id_secret"),
+                        _format_location(
+                            integrations_path,
+                            f"oauth2_providers[{idx}].client_id_secret",
+                        ),
                         "client_id_secret should use typed format 'Secret:<id>'",
                     )
                 )
         if oauth_provider.client_secret_secret:
-            secret_raw, secret_id = _extract_simple_ref(oauth_provider.client_secret_secret)
+            secret_raw, secret_id = _extract_simple_ref(
+                oauth_provider.client_secret_secret
+            )
             if secret_id not in secret_ids:
                 issues.append(
                     ContractIssue(
@@ -1361,7 +1483,11 @@ def _lint_integration_effect_references(
                 continue
             effect_prefix = f"{prefix}.effects[{effect_idx}].params"
             params = effect.params or {}
-            target = params.get("target") or params.get("integration") or params.get("service")
+            target = (
+                params.get("target")
+                or params.get("integration")
+                or params.get("service")
+            )
             operation_id = params.get("operation_id")
             if target:
                 target_raw, target_id = _extract_simple_ref(str(target))
@@ -1381,7 +1507,9 @@ def _lint_integration_effect_references(
             if op_id and op_id not in operation_ids:
                 issues.append(
                     ContractIssue(
-                        _format_location(commands_path, f"{effect_prefix}.operation_id"),
+                        _format_location(
+                            commands_path, f"{effect_prefix}.operation_id"
+                        ),
                         f"call.integration operation_id '{op_raw}' not found",
                     )
                 )
@@ -1398,7 +1526,11 @@ def _lint_integration_effect_references(
                     continue
                 effect_prefix = f"{trans_prefix}.effects[{effect_idx}].params"
                 params = effect.params or {}
-                target = params.get("target") or params.get("integration") or params.get("service")
+                target = (
+                    params.get("target")
+                    or params.get("integration")
+                    or params.get("service")
+                )
                 operation_id = params.get("operation_id")
                 if target:
                     target_raw, target_id = _extract_simple_ref(str(target))
@@ -1418,7 +1550,9 @@ def _lint_integration_effect_references(
                 if op_id and op_id not in operation_ids:
                     issues.append(
                         ContractIssue(
-                            _format_location(workflows_path, f"{effect_prefix}.operation_id"),
+                            _format_location(
+                                workflows_path, f"{effect_prefix}.operation_id"
+                            ),
                             f"call.integration operation_id '{op_raw}' not found",
                         )
                     )
@@ -1426,7 +1560,9 @@ def _lint_integration_effect_references(
     return issues
 
 
-def _lint_profiles_contract(profiles: ProfilesFile, profiles_path: Path) -> list[ContractIssue]:
+def _lint_profiles_contract(
+    profiles: ProfilesFile, profiles_path: Path
+) -> list[ContractIssue]:
     issues: list[ContractIssue] = []
     seen: set[str] = set()
     for idx, profile in enumerate(profiles.profiles):
@@ -1443,7 +1579,9 @@ def _lint_profiles_contract(profiles: ProfilesFile, profiles_path: Path) -> list
     return issues
 
 
-def _lint_secrets_contract(secrets: SecretsContractFile, secrets_path: Path) -> list[ContractIssue]:
+def _lint_secrets_contract(
+    secrets: SecretsContractFile, secrets_path: Path
+) -> list[ContractIssue]:
     issues: list[ContractIssue] = []
     seen: set[str] = set()
     for idx, secret in enumerate(secrets.secrets):
@@ -1502,7 +1640,10 @@ def _lint_reliability_contract(
                     f"Unknown workflow target_ref '{policy.target_ref}'",
                 )
             )
-        elif policy.target_kind == "integration" and policy.target_ref not in integration_ids:
+        elif (
+            policy.target_kind == "integration"
+            and policy.target_ref not in integration_ids
+        ):
             issues.append(
                 ContractIssue(
                     _format_location(reliability_path, f"{prefix}.target_ref"),
@@ -1678,6 +1819,7 @@ def _lint_observability_contract(
                 )
     return issues
 
+
 def _lint_entity_constraints(
     entities: EntitiesFile,
     entities_path: Path,
@@ -1686,13 +1828,13 @@ def _lint_entity_constraints(
 ) -> list[ContractIssue]:
     """Validate Entity constraints and indexes."""
     issues: list[ContractIssue] = []
-    
+
     for entity_index, entity in enumerate(entities.entities):
         entity_prefix = f"entities[{entity_index}]"
-        
+
         # Collect field names for validation
         field_names = {field.name for field in entity.fields}
-        
+
         # Validate primary_key exists in fields
         if entity.primary_key and entity.primary_key not in field_names:
             issues.append(
@@ -1701,11 +1843,11 @@ def _lint_entity_constraints(
                     f"primary_key '{entity.primary_key}' not found in entity fields",
                 )
             )
-        
+
         # Validate indexes
         for index_index, index in enumerate(entity.indexes):
             index_prefix = f"{entity_prefix}.indexes[{index_index}]"
-            
+
             # Validate index.fields exist in entity.fields
             for field_index, field_name in enumerate(index.fields):
                 if field_name not in field_names:
@@ -1718,11 +1860,11 @@ def _lint_entity_constraints(
                             f"index field '{field_name}' not found in entity fields",
                         )
                     )
-        
+
         # Validate constraints
         for constraint_index, constraint in enumerate(entity.constraints):
             constraint_prefix = f"{entity_prefix}.constraints[{constraint_index}]"
-            
+
             # Validate constraint.type is in catalog
             if constraint.type not in CONSTRAINT_TYPE_CATALOG:
                 issues.append(
@@ -1731,7 +1873,7 @@ def _lint_entity_constraints(
                         f"constraint type '{constraint.type}' not in CONSTRAINT_TYPE_CATALOG",
                     )
                 )
-            
+
             # Validate constraint.fields exist in entity.fields
             for field_index, field_name in enumerate(constraint.fields):
                 if field_name not in field_names:
@@ -1744,11 +1886,13 @@ def _lint_entity_constraints(
                             f"constraint field '{field_name}' not found in entity fields",
                         )
                     )
-            
+
             # Validate foreign_key constraint.ref references valid entity
             # Support both formats: "EntityName" and "EntityName.fieldName"
             if constraint.type == "foreign_key" and constraint.ref:
-                ref_entity = constraint.ref.split(".")[0]  # Extract entity name before dot
+                ref_entity = constraint.ref.split(".")[
+                    0
+                ]  # Extract entity name before dot
                 if ref_entity not in entity_ids:
                     issues.append(
                         ContractIssue(
@@ -1762,16 +1906,20 @@ def _lint_entity_constraints(
                     # Find the referenced entity and check if field exists
                     for ref_entity_obj in entities.entities:
                         if ref_entity_obj.id == ref_entity:
-                            ref_field_names = {field.name for field in ref_entity_obj.fields}
+                            ref_field_names = {
+                                field.name for field in ref_entity_obj.fields
+                            }
                             if ref_field not in ref_field_names:
                                 issues.append(
                                     ContractIssue(
-                                        _format_location(entities_path, f"{constraint_prefix}.ref"),
+                                        _format_location(
+                                            entities_path, f"{constraint_prefix}.ref"
+                                        ),
                                         f"foreign_key constraint references unknown field '{ref_field}' in entity '{ref_entity}'",
                                     )
                                 )
                             break
-    
+
     return issues
 
 
@@ -1784,11 +1932,11 @@ def _lint_graphql_references(
 ) -> list[ContractIssue]:
     """Validate GraphQL API cross-references."""
     issues: list[ContractIssue] = []
-    
+
     # Validate GraphQL queries
     for query_index, query_field in enumerate(graphql.api.queries):
         query_prefix = f"api.queries[{query_index}]"
-        
+
         # GraphQL query resolver should reference a Query ID
         if query_field.resolver not in query_ids:
             issues.append(
@@ -1797,11 +1945,11 @@ def _lint_graphql_references(
                     f"resolver references unknown query '{query_field.resolver}'",
                 )
             )
-    
+
     # Validate GraphQL mutations
     for mutation_index, mutation_field in enumerate(graphql.api.mutations):
         mutation_prefix = f"api.mutations[{mutation_index}]"
-        
+
         # GraphQL mutation resolver should reference a Command ID
         if mutation_field.resolver not in command_ids:
             issues.append(
@@ -1810,7 +1958,7 @@ def _lint_graphql_references(
                     f"resolver references unknown command '{mutation_field.resolver}'",
                 )
             )
-    
+
     return issues
 
 
@@ -1825,35 +1973,39 @@ def _lint_access_policy_references(
 ) -> list[ContractIssue]:
     """Validate AccessPolicy cross-references."""
     issues: list[ContractIssue] = []
-    
+
     # Collect role and permission IDs for cross-validation
     role_ids = {role.id for role in access_policy.access.roles}
     permission_ids = {permission.id for permission in access_policy.access.permissions}
-    
+
     # Check for duplicate role IDs
     seen_roles: set[str] = set()
     for role_index, role in enumerate(access_policy.access.roles):
         if role.id in seen_roles:
             issues.append(
                 ContractIssue(
-                    _format_location(access_policy_path, f"access.roles[{role_index}].id"),
+                    _format_location(
+                        access_policy_path, f"access.roles[{role_index}].id"
+                    ),
                     f"Duplicate role id: {role.id}",
                 )
             )
         seen_roles.add(role.id)
-    
+
     # Check for duplicate permission IDs
     seen_permissions: set[str] = set()
     for permission_index, permission in enumerate(access_policy.access.permissions):
         if permission.id in seen_permissions:
             issues.append(
                 ContractIssue(
-                    _format_location(access_policy_path, f"access.permissions[{permission_index}].id"),
+                    _format_location(
+                        access_policy_path, f"access.permissions[{permission_index}].id"
+                    ),
                     f"Duplicate permission id: {permission.id}",
                 )
             )
         seen_permissions.add(permission.id)
-        
+
         if permission.resource and ":" in permission.resource:
             resource_kind, resource_ref = [
                 part.strip() for part in permission.resource.split(":", 1)
@@ -1892,11 +2044,11 @@ def _lint_access_policy_references(
                         f"resource '{permission.resource}' references unknown target '{resource_ref}'",
                     )
                 )
-    
+
     # Validate bindings
     for binding_index, binding in enumerate(access_policy.access.bindings):
         binding_prefix = f"access.bindings[{binding_index}]"
-        
+
         # Validate binding.role references
         if binding.role not in role_ids:
             issues.append(
@@ -1905,7 +2057,7 @@ def _lint_access_policy_references(
                     f"role references unknown role '{binding.role}'",
                 )
             )
-        
+
         # Validate binding.permissions references
         for perm_index, perm_id in enumerate(binding.permissions):
             if perm_id not in permission_ids:
@@ -1918,7 +2070,7 @@ def _lint_access_policy_references(
                         f"permissions references unknown permission '{perm_id}'",
                     )
                 )
-    
+
     return issues
 
 
@@ -1942,16 +2094,31 @@ def _lint_policy_references(
         "projection": projection_ids,
         "integration": integration_ids,
     }
-    
+
     # Common computed/runtime fields that may not be in entity schema but valid in policies
     RUNTIME_FIELDS = {
-        "file_size", "access_method", "request_ip", "request_time", "session_id",
-        "user_agent", "referrer", "content_type", "content_length", "upload_size",
-        "download_count", "access_count", "last_accessed_at", "computed_hash",
-        "checksum", "mime_type", "file_extension", "storage_size", "cache_status",
+        "file_size",
+        "access_method",
+        "request_ip",
+        "request_time",
+        "session_id",
+        "user_agent",
+        "referrer",
+        "content_type",
+        "content_length",
+        "upload_size",
+        "download_count",
+        "access_count",
+        "last_accessed_at",
+        "computed_hash",
+        "checksum",
+        "mime_type",
+        "file_extension",
+        "storage_size",
+        "cache_status",
         "is_complete",
     }
-    
+
     for policy_index, policy in enumerate(policies.policies):
         policy_prefix = f"policies[{policy_index}]"
         scope = policy.scope.strip()
@@ -1991,14 +2158,14 @@ def _lint_policy_references(
                 # Skip nested fields (with dots)
                 if "." in condition.field:
                     continue
-                
+
                 # Check if field exists in entity schema
                 if condition.field not in known_fields:
                     # Allow common runtime/computed fields without error
                     if condition.field in RUNTIME_FIELDS:
                         # This is acceptable - runtime field used in policy
                         continue
-                    
+
                     # Otherwise report as error
                     issues.append(
                         ContractIssue(
@@ -2028,7 +2195,12 @@ def _collect_named_field_records(
 
     for entity_index, entity in enumerate(entities.entities):
         for field_index, field in enumerate(entity.fields):
-            records.append((f"domain/entities.yaml:entities[{entity_index}].fields[{field_index}].type", field.type))
+            records.append(
+                (
+                    f"domain/entities.yaml:entities[{entity_index}].fields[{field_index}].type",
+                    field.type,
+                )
+            )
 
     if isinstance(value_objects, ValueObjectsFile):
         for vo_index, value_object in enumerate(value_objects.value_objects):
@@ -2043,21 +2215,44 @@ def _collect_named_field_records(
     if isinstance(events, EventsFile):
         for event_index, event in enumerate(events.events):
             for field_index, field in enumerate(event.payload):
-                records.append((f"domain/events.yaml:events[{event_index}].payload[{field_index}].type", field.type))
+                records.append(
+                    (
+                        f"domain/events.yaml:events[{event_index}].payload[{field_index}].type",
+                        field.type,
+                    )
+                )
 
     for command_index, command in enumerate(commands.commands):
         for field_index, field in enumerate(command.input):
-            records.append((f"app/commands.yaml:commands[{command_index}].input[{field_index}].type", field.type))
+            records.append(
+                (
+                    f"app/commands.yaml:commands[{command_index}].input[{field_index}].type",
+                    field.type,
+                )
+            )
         for field_index, field in enumerate(command.returns):
             records.append(
-                (f"app/commands.yaml:commands[{command_index}].returns[{field_index}].type", field.type)
+                (
+                    f"app/commands.yaml:commands[{command_index}].returns[{field_index}].type",
+                    field.type,
+                )
             )
 
     for query_index, query in enumerate(queries.queries):
         for field_index, field in enumerate(query.input):
-            records.append((f"app/queries.yaml:queries[{query_index}].input[{field_index}].type", field.type))
+            records.append(
+                (
+                    f"app/queries.yaml:queries[{query_index}].input[{field_index}].type",
+                    field.type,
+                )
+            )
         for field_index, field in enumerate(query.returns):
-            records.append((f"app/queries.yaml:queries[{query_index}].returns[{field_index}].type", field.type))
+            records.append(
+                (
+                    f"app/queries.yaml:queries[{query_index}].returns[{field_index}].type",
+                    field.type,
+                )
+            )
 
     for projection_path, projections in projections_files:
         for projection_index, projection in enumerate(projections.projections):
@@ -2075,29 +2270,58 @@ def _collect_named_field_records(
     if isinstance(http, HttpApiFile):
         for route_index, route in enumerate(http.routes):
             for field_index, field in enumerate(route.request_schema or []):
-                records.append((f"api/http.yaml:routes[{route_index}].request_schema[{field_index}].type", field.type))
+                records.append(
+                    (
+                        f"api/http.yaml:routes[{route_index}].request_schema[{field_index}].type",
+                        field.type,
+                    )
+                )
             for field_index, field in enumerate(route.response_schema or []):
-                records.append((f"api/http.yaml:routes[{route_index}].response_schema[{field_index}].type", field.type))
+                records.append(
+                    (
+                        f"api/http.yaml:routes[{route_index}].response_schema[{field_index}].type",
+                        field.type,
+                    )
+                )
 
     if isinstance(graphql, GraphQLApiFile):
         for type_index, gql_type in enumerate(graphql.api.types):
             for field_index, field in enumerate(gql_type.fields):
-                records.append((f"api/graphql.yaml:api.types[{type_index}].fields[{field_index}].type", field.type))
+                records.append(
+                    (
+                        f"api/graphql.yaml:api.types[{type_index}].fields[{field_index}].type",
+                        field.type,
+                    )
+                )
         for query_index, gql_query in enumerate(graphql.api.queries):
             for arg_index, arg in enumerate(gql_query.args):
-                records.append((f"api/graphql.yaml:api.queries[{query_index}].args[{arg_index}].type", arg.type))
+                records.append(
+                    (
+                        f"api/graphql.yaml:api.queries[{query_index}].args[{arg_index}].type",
+                        arg.type,
+                    )
+                )
             for ret_index, ret in enumerate(gql_query.returns):
                 records.append(
-                    (f"api/graphql.yaml:api.queries[{query_index}].returns[{ret_index}].type", ret.type)
+                    (
+                        f"api/graphql.yaml:api.queries[{query_index}].returns[{ret_index}].type",
+                        ret.type,
+                    )
                 )
         for mutation_index, gql_mutation in enumerate(graphql.api.mutations):
             for arg_index, arg in enumerate(gql_mutation.args):
                 records.append(
-                    (f"api/graphql.yaml:api.mutations[{mutation_index}].args[{arg_index}].type", arg.type)
+                    (
+                        f"api/graphql.yaml:api.mutations[{mutation_index}].args[{arg_index}].type",
+                        arg.type,
+                    )
                 )
             for ret_index, ret in enumerate(gql_mutation.returns):
                 records.append(
-                    (f"api/graphql.yaml:api.mutations[{mutation_index}].returns[{ret_index}].type", ret.type)
+                    (
+                        f"api/graphql.yaml:api.mutations[{mutation_index}].returns[{ret_index}].type",
+                        ret.type,
+                    )
                 )
 
     if isinstance(integrations, IntegrationsFile):
@@ -2123,7 +2347,7 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
     issues: list[ContractIssue] = []
     detail_path = detail_path.resolve()
     issues.extend(_lint_model_meta_graph())
-    
+
     # Core contract files
     info_file = detail_path / "meta" / "info.yaml"
     glossary_file = detail_path / "glossary.yaml"
@@ -2136,7 +2360,7 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
     queries_file = detail_path / "app" / "queries.yaml"
     http_file = detail_path / "api" / "http.yaml"
     rules_dir = detail_path / "rules"
-    
+
     # Extended contract files (optional)
     workflows_file = detail_path / "workflows" / "workflows.yaml"
     scenarios_file = detail_path / "scenarios" / "scenarios.yaml"
@@ -2158,13 +2382,15 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
     issues.extend(info_issues)
     glossary, glossary_issues = _validate_file(glossary_file, load_glossary)
     issues.extend(glossary_issues)
-    
+
     # Validate existing files
     entities, entity_issues = _validate_file(entities_file, load_entities)
     issues.extend(entity_issues)
     value_objects: ValueObjectsFile | None = None
     if value_objects_file.exists():
-        value_objects, value_object_issues = _validate_file(value_objects_file, load_value_objects)
+        value_objects, value_object_issues = _validate_file(
+            value_objects_file, load_value_objects
+        )
         issues.extend(value_object_issues)
     enums: EnumsFile | None = None
     if enums_file.exists():
@@ -2199,7 +2425,7 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
     if workflows_file.exists():
         workflows, workflows_issues = _validate_file(workflows_file, load_workflows)
         issues.extend(workflows_issues)
-    
+
     scenarios: ScenariosFile | None = None
     scenario_ids: set[str] = set()
     if scenarios_file.exists():
@@ -2207,15 +2433,17 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
         issues.extend(scenarios_issues)
         if isinstance(scenarios, ScenariosFile):
             scenario_ids = {scenario.id for scenario in scenarios.scenarios}
-    
+
     projections_files: list[tuple[Path, ProjectionsFile]] = []
     if projections_dir.exists():
         for projection_path in sorted(projections_dir.glob("*.yaml")):
-            projection_data, projection_issues = _validate_file(projection_path, load_projections)
+            projection_data, projection_issues = _validate_file(
+                projection_path, load_projections
+            )
             issues.extend(projection_issues)
             if isinstance(projection_data, ProjectionsFile):
                 projections_files.append((projection_path, projection_data))
-    
+
     policies_files: list[tuple[Path, PoliciesFile]] = []
     if policies_dir.exists():
         for policy_path in sorted(policies_dir.glob("*.yaml")):
@@ -2226,12 +2454,14 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
             issues.extend(policy_issues)
             if isinstance(policy_data, PoliciesFile):
                 policies_files.append((policy_path, policy_data))
-    
+
     access_policy: AccessPolicyFile | None = None
     if access_policy_file.exists():
-        access_policy, access_policy_issues = _validate_file(access_policy_file, load_access_policy)
+        access_policy, access_policy_issues = _validate_file(
+            access_policy_file, load_access_policy
+        )
         issues.extend(access_policy_issues)
-    
+
     graphql: GraphQLApiFile | None = None
     if graphql_file.exists():
         graphql, graphql_issues = _validate_file(graphql_file, load_graphql)
@@ -2239,12 +2469,16 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
 
     persistence: PersistenceModelFile | None = None
     if persistence_file.exists():
-        persistence, persistence_issues = _validate_file(persistence_file, load_persistence)
+        persistence, persistence_issues = _validate_file(
+            persistence_file, load_persistence
+        )
         issues.extend(persistence_issues)
 
     integrations: IntegrationsFile | None = None
     if integrations_file.exists():
-        integrations, integrations_issues = _validate_file(integrations_file, load_integrations)
+        integrations, integrations_issues = _validate_file(
+            integrations_file, load_integrations
+        )
         issues.extend(integrations_issues)
 
     profiles: ProfilesFile | None = None
@@ -2254,22 +2488,30 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
 
     secrets_contract: SecretsContractFile | None = None
     if secrets_file.exists():
-        secrets_contract, secrets_issues = _validate_file(secrets_file, load_secrets_contract)
+        secrets_contract, secrets_issues = _validate_file(
+            secrets_file, load_secrets_contract
+        )
         issues.extend(secrets_issues)
 
     security_baseline: SecurityBaselineFile | None = None
     if security_file.exists():
-        security_baseline, security_issues = _validate_file(security_file, load_security_baseline)
+        security_baseline, security_issues = _validate_file(
+            security_file, load_security_baseline
+        )
         issues.extend(security_issues)
 
     reliability_policies: ReliabilityPoliciesFile | None = None
     if reliability_file.exists():
-        reliability_policies, reliability_issues = _validate_file(reliability_file, load_reliability)
+        reliability_policies, reliability_issues = _validate_file(
+            reliability_file, load_reliability
+        )
         issues.extend(reliability_issues)
 
     observability: ObservabilityFile | None = None
     if observability_file.exists():
-        observability, observability_issues = _validate_file(observability_file, load_observability)
+        observability, observability_issues = _validate_file(
+            observability_file, load_observability
+        )
         issues.extend(observability_issues)
 
     testing: TestingFile | None = None
@@ -2290,7 +2532,8 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
     entity_ids, entity_id_issues = _collect_ids(entities.entities, str(entities_file))
     issues.extend(entity_id_issues)
     entity_field_map = {
-        entity.id: {field.name for field in entity.fields} for entity in entities.entities
+        entity.id: {field.name for field in entity.fields}
+        for entity in entities.entities
     }
     value_object_ids: set[str] = set()
     if isinstance(value_objects, ValueObjectsFile):
@@ -2303,7 +2546,7 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
     if isinstance(enums, EnumsFile):
         enum_ids, enum_id_issues = _collect_ids(enums.enums, str(enums_file))
         issues.extend(enum_id_issues)
-    
+
     # Validate Entity constraints and indexes
     issues.extend(
         _lint_entity_constraints(
@@ -2326,7 +2569,9 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
 
     workflow_ids: set[str] = set()
     if isinstance(workflows, WorkflowsFile):
-        workflow_ids, workflow_id_issues = _collect_ids(workflows.workflows, str(workflows_file))
+        workflow_ids, workflow_id_issues = _collect_ids(
+            workflows.workflows, str(workflows_file)
+        )
         issues.extend(workflow_id_issues)
 
     integration_ids: set[str] = set()
@@ -2347,7 +2592,9 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
     permission_ids: set[str] = set()
     if isinstance(access_policy, AccessPolicyFile):
         role_ids = {role.id for role in access_policy.access.roles}
-        permission_ids = {permission.id for permission in access_policy.access.permissions}
+        permission_ids = {
+            permission.id for permission in access_policy.access.permissions
+        }
 
     datasource_ids: set[str] = set()
     persistence_table_ids: set[str] = set()
@@ -2386,7 +2633,11 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
         issues.extend(rule_id_issues)
         for rule_id in ids:
             if rule_id in rule_ids:
-                issues.append(ContractIssue(str(path), f"Duplicate rule id across files: {rule_id}"))
+                issues.append(
+                    ContractIssue(
+                        str(path), f"Duplicate rule id across files: {rule_id}"
+                    )
+                )
             else:
                 rule_ids.add(rule_id)
         issues.extend(
@@ -2432,7 +2683,7 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
                 scenario_ids=scenario_ids,
             )
         )
-    
+
     # Validate Scenarios references
     if isinstance(scenarios, ScenariosFile):
         issues.extend(
@@ -2444,7 +2695,7 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
                 event_ids=event_ids,
             )
         )
-    
+
     # Validate Projections references
     projection_ids: set[str] = set()
     for projection_path, projections in projections_files:
@@ -2458,7 +2709,7 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
                 persistence_table_ids=persistence_table_ids,
             )
         )
-    
+
     # Validate Policies references (policies can reference rules, commands, entities - currently no strict validation needed)
     for policy_path, policies in policies_files:
         # Collect policy IDs to check for duplicates
@@ -2484,7 +2735,7 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
                 integration_ids=integration_ids,
             )
         )
-    
+
     # Validate AccessPolicy references
     used_roles: set[str] = set()
     used_permissions: set[str] = set()
@@ -2507,7 +2758,9 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
             http=http,
             http_path=http_file,
             role_ids={role.id for role in access_policy.access.roles},
-            permission_ids={permission.id for permission in access_policy.access.permissions},
+            permission_ids={
+                permission.id for permission in access_policy.access.permissions
+            },
         )
         issues.extend(guard_issues)
         scenario_role_issues, scenario_roles = _collect_role_usage_from_scenarios(
@@ -2526,7 +2779,7 @@ def check_contract(detail_path: Path) -> list[ContractIssue]:
                 used_permissions=used_permissions,
             )
         )
-    
+
     # Validate GraphQL API references
     if isinstance(graphql, GraphQLApiFile):
         issues.extend(
@@ -2662,7 +2915,7 @@ def _extract_guard_usage(
     permission_index = {
         _normalize_ref(permission_id): permission_id for permission_id in permission_ids
     }
-    
+
     # Helper to mark roles/permissions as used from required_roles/required_permissions fields
     def _mark_required_roles_used(required_roles: list[str] | None) -> None:
         if not required_roles:
@@ -2674,7 +2927,7 @@ def _extract_guard_usage(
             canonical = role_index.get(role_norm)
             if canonical:
                 used_roles.add(canonical)
-    
+
     def _mark_required_permissions_used(required_permissions: list[str] | None) -> None:
         if not required_permissions:
             return
@@ -2688,9 +2941,11 @@ def _extract_guard_usage(
 
     def _check_role_ref(raw_role: str | None, location: str) -> None:
         if not raw_role:
-            issues.append(ContractIssue(location, "auth.role guard missing 'role' parameter"))
+            issues.append(
+                ContractIssue(location, "auth.role guard missing 'role' parameter")
+            )
             return
-        
+
         # Handle list format (convert to string representation)
         if isinstance(raw_role, list):
             issues.append(
@@ -2700,11 +2955,15 @@ def _extract_guard_usage(
                 )
             )
             return
-        
+
         role_norm = _normalize_ref(str(raw_role))
         canonical = role_index.get(role_norm)
         if canonical is None:
-            issues.append(ContractIssue(location, f"auth.role references unknown role '{raw_role}'"))
+            issues.append(
+                ContractIssue(
+                    location, f"auth.role references unknown role '{raw_role}'"
+                )
+            )
             return
         if str(raw_role) != canonical:
             issues.append(
@@ -2720,7 +2979,11 @@ def _extract_guard_usage(
         if not raw_roles:
             return
         if not isinstance(raw_roles, list):
-            issues.append(ContractIssue(location, "auth.role guard 'roles' parameter must be a list"))
+            issues.append(
+                ContractIssue(
+                    location, "auth.role guard 'roles' parameter must be a list"
+                )
+            )
             return
         for idx, raw_role in enumerate(raw_roles):
             role_location = f"{location}[{idx}]"
@@ -2729,7 +2992,11 @@ def _extract_guard_usage(
             role_norm = _normalize_ref(str(raw_role))
             canonical = role_index.get(role_norm)
             if canonical is None:
-                issues.append(ContractIssue(role_location, f"auth.role references unknown role '{raw_role}'"))
+                issues.append(
+                    ContractIssue(
+                        role_location, f"auth.role references unknown role '{raw_role}'"
+                    )
+                )
                 continue
             if str(raw_role) != canonical:
                 issues.append(
@@ -2743,10 +3010,12 @@ def _extract_guard_usage(
     def _check_permission_ref(raw_permission: str | None, location: str) -> None:
         if not raw_permission:
             issues.append(
-                ContractIssue(location, "auth.permission guard missing 'permission' parameter")
+                ContractIssue(
+                    location, "auth.permission guard missing 'permission' parameter"
+                )
             )
             return
-        
+
         # Handle list format (convert to string representation)
         if isinstance(raw_permission, list):
             issues.append(
@@ -2756,7 +3025,7 @@ def _extract_guard_usage(
                 )
             )
             return
-        
+
         permission_norm = _normalize_ref(str(raw_permission))
         canonical = permission_index.get(permission_norm)
         if canonical is None:
@@ -2781,7 +3050,12 @@ def _extract_guard_usage(
         if not raw_permissions:
             return
         if not isinstance(raw_permissions, list):
-            issues.append(ContractIssue(location, "auth.permission guard 'permissions' parameter must be a list"))
+            issues.append(
+                ContractIssue(
+                    location,
+                    "auth.permission guard 'permissions' parameter must be a list",
+                )
+            )
             return
         for idx, raw_permission in enumerate(raw_permissions):
             perm_location = f"{location}[{idx}]"
@@ -2808,11 +3082,11 @@ def _extract_guard_usage(
 
     for command_index, command in enumerate(commands.commands):
         command_prefix = f"commands[{command_index}]"
-        
+
         # Mark required_roles and required_permissions as used
         _mark_required_roles_used(getattr(command, "required_roles", None))
         _mark_required_permissions_used(getattr(command, "required_permissions", None))
-        
+
         for guard_index, guard in enumerate(command.guards):
             location_base = _format_location(
                 commands_path, f"{command_prefix}.guards[{guard_index}]"
@@ -2823,12 +3097,14 @@ def _extract_guard_usage(
                 if "role" in params:
                     _check_role_ref(params.get("role"), f"{location_base}.params.role")
                 elif "roles" in params:
-                    _check_roles_ref(params.get("roles"), f"{location_base}.params.roles")
+                    _check_roles_ref(
+                        params.get("roles"), f"{location_base}.params.roles"
+                    )
                 else:
                     issues.append(
                         ContractIssue(
                             f"{location_base}.params",
-                            "auth.role guard missing 'role' or 'roles' parameter"
+                            "auth.role guard missing 'role' or 'roles' parameter",
                         )
                     )
             elif guard.id == "auth.permission":
@@ -2847,18 +3123,20 @@ def _extract_guard_usage(
                     issues.append(
                         ContractIssue(
                             f"{location_base}.params",
-                            "auth.permission guard missing 'permission' or 'permissions' parameter"
+                            "auth.permission guard missing 'permission' or 'permissions' parameter",
                         )
                     )
 
     if isinstance(workflows, WorkflowsFile):
         for workflow_index, workflow in enumerate(workflows.workflows):
             workflow_prefix = f"workflows[{workflow_index}]"
-            
+
             # Mark required_roles and required_permissions as used
             _mark_required_roles_used(getattr(workflow, "required_roles", None))
-            _mark_required_permissions_used(getattr(workflow, "required_permissions", None))
-            
+            _mark_required_permissions_used(
+                getattr(workflow, "required_permissions", None)
+            )
+
             for transition_index, transition in enumerate(workflow.transitions):
                 transition_prefix = f"{workflow_prefix}.transitions[{transition_index}]"
                 for guard_index, guard in enumerate(transition.guards):
@@ -2869,14 +3147,18 @@ def _extract_guard_usage(
                     if guard.id == "auth.role":
                         # Support both singular 'role' and plural 'roles' parameters
                         if "role" in params:
-                            _check_role_ref(params.get("role"), f"{location_base}.params.role")
+                            _check_role_ref(
+                                params.get("role"), f"{location_base}.params.role"
+                            )
                         elif "roles" in params:
-                            _check_roles_ref(params.get("roles"), f"{location_base}.params.roles")
+                            _check_roles_ref(
+                                params.get("roles"), f"{location_base}.params.roles"
+                            )
                         else:
                             issues.append(
                                 ContractIssue(
                                     f"{location_base}.params",
-                                    "auth.role guard missing 'role' or 'roles' parameter"
+                                    "auth.role guard missing 'role' or 'roles' parameter",
                                 )
                             )
                     elif guard.id == "auth.permission":
@@ -2895,7 +3177,7 @@ def _extract_guard_usage(
                             issues.append(
                                 ContractIssue(
                                     f"{location_base}.params",
-                                    "auth.permission guard missing 'permission' or 'permissions' parameter"
+                                    "auth.permission guard missing 'permission' or 'permissions' parameter",
                                 )
                             )
 
@@ -2969,7 +3251,9 @@ def _collect_role_usage_from_scenarios(
             actor_norm = _normalize_ref(actor)
             canonical = role_index.get(actor_norm)
             if canonical is None:
-                near = difflib.get_close_matches(actor_norm, known_norm_roles, n=1, cutoff=0.78)
+                near = difflib.get_close_matches(
+                    actor_norm, known_norm_roles, n=1, cutoff=0.78
+                )
                 if near:
                     suggested = role_index[near[0]]
                     issues.append(
@@ -3024,7 +3308,8 @@ def _policy_has_ownership_condition(policy: Policy) -> bool:
         if op != "eq":
             continue
         has_subject = any(
-            token in field for token in ("owner", "employee_id", "user_id", "actor", "subject")
+            token in field
+            for token in ("owner", "employee_id", "user_id", "actor", "subject")
         )
         has_actor_value = any(
             token in value
@@ -3047,8 +3332,13 @@ def _lint_access_policy_semantics(
     issues: list[ContractIssue] = []
 
     role_ids = {role.id for role in access_policy.access.roles}
-    permission_by_id = {permission.id: permission for permission in access_policy.access.permissions}
-    permissions_by_role = {binding.role: set(binding.permissions) for binding in access_policy.access.bindings}
+    permission_by_id = {
+        permission.id: permission for permission in access_policy.access.permissions
+    }
+    permissions_by_role = {
+        binding.role: set(binding.permissions)
+        for binding in access_policy.access.bindings
+    }
     roles_with_bindings = set(permissions_by_role.keys())
 
     for role_id in sorted(role_ids):
@@ -3068,7 +3358,9 @@ def _lint_access_policy_semantics(
         if permission_id not in used_permissions:
             # Permission might be used in required_permissions field or for future use
             # Only report if it's also not bound to any role (completely unused)
-            bound_somewhere = any(permission_id in bound for bound in permissions_by_role.values())
+            bound_somewhere = any(
+                permission_id in bound for bound in permissions_by_role.values()
+            )
             if not bound_somewhere:
                 # Completely unused permission - this is worth reporting
                 issues.append(
@@ -3079,7 +3371,9 @@ def _lint_access_policy_semantics(
                 )
         else:
             # Permission is used, check if it's bound
-            bound_somewhere = any(permission_id in bound for bound in permissions_by_role.values())
+            bound_somewhere = any(
+                permission_id in bound for bound in permissions_by_role.values()
+            )
             if not bound_somewhere:
                 issues.append(
                     ContractIssue(
@@ -3089,7 +3383,9 @@ def _lint_access_policy_semantics(
                 )
 
     ownership_permissions = [
-        permission for permission in access_policy.access.permissions if _is_ownership_permission(permission)
+        permission
+        for permission in access_policy.access.permissions
+        if _is_ownership_permission(permission)
     ]
     if not ownership_permissions:
         return issues
@@ -3109,7 +3405,9 @@ def _lint_access_policy_semantics(
 
     for permission in ownership_permissions:
         matched_policies = [
-            policy for policy in policies if _policy_mentions_permission(policy, permission.id)
+            policy
+            for policy in policies
+            if _policy_mentions_permission(policy, permission.id)
         ]
         if not matched_policies:
             issues.append(
@@ -3120,7 +3418,9 @@ def _lint_access_policy_semantics(
             )
             continue
 
-        if not any(_policy_has_ownership_condition(policy) for policy in matched_policies):
+        if not any(
+            _policy_has_ownership_condition(policy) for policy in matched_policies
+        ):
             issues.append(
                 ContractIssue(
                     _format_location(access_policy_path, "access.permissions"),

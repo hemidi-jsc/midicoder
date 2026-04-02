@@ -64,7 +64,11 @@ def _should_use_llm(config: dict[str, Any] | None) -> bool:
 
 def _normalize_plain_text_output(text: str) -> str:
     cleaned = _strip_markdown_fence(text)
-    cleaned_lines = [line.rstrip() for line in cleaned.splitlines() if not line.strip().startswith("```")]
+    cleaned_lines = [
+        line.rstrip()
+        for line in cleaned.splitlines()
+        if not line.strip().startswith("```")
+    ]
     normalized = "\n".join(cleaned_lines).strip()
     return normalized + ("\n" if normalized and not normalized.endswith("\n") else "")
 
@@ -122,7 +126,9 @@ def maybe_generate_with_llm(
     content = response.content.strip()
     if not content:
         mode = "retry" if retry_mode else "initial"
-        warnings.append(f"LLM returned empty content for {plan_item.ir_ref} ({mode} attempt)")
+        warnings.append(
+            f"LLM returned empty content for {plan_item.ir_ref} ({mode} attempt)"
+        )
         return None, warnings
     return _normalize_llm_output(content, plan_item.ir_ref), warnings
 

@@ -72,4 +72,3 @@ class GraphQLApiFile(BaseModel):
     api: GraphQLApi
 
     model_config = {"extra": "forbid"}
-

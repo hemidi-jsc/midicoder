@@ -71,7 +71,9 @@ def write_llm_config(root: Path) -> dict[str, str] | None:
 
     config_path = root / ".midicoder" / "config.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    config_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
     repo_secrets_path = repo_midicoder / "secrets" / "secrets.json"
     if repo_secrets_path.exists():

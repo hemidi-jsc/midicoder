@@ -15,6 +15,7 @@ KEYWORD_CACHE_VERSION = 2
 @dataclass
 class KeywordMap:
     """Structured keywords extracted from master brief."""
+
     domain_terms: list[str] = field(default_factory=list)
     entities: list[str] = field(default_factory=list)
     commands: list[str] = field(default_factory=list)
@@ -26,7 +27,7 @@ class KeywordMap:
     scenarios: list[str] = field(default_factory=list)
     synonyms: dict[str, list[str]] = field(default_factory=dict)
     contract_files: list[str] = field(default_factory=list)
-    
+
     def all_keywords(self) -> set[str]:
         """Get all keywords as a flat set."""
         keywords = set()
@@ -70,7 +71,9 @@ def _keyword_map_payload(keyword_map: KeywordMap) -> dict[str, Any]:
     }
 
 
-def _keyword_map_from_payload(payload: dict[str, Any], contract_files: list[str]) -> KeywordMap:
+def _keyword_map_from_payload(
+    payload: dict[str, Any], contract_files: list[str]
+) -> KeywordMap:
     """Deserialize KeywordMap from cache payload."""
     return KeywordMap(
         domain_terms=payload.get("domain_terms", []),
@@ -108,7 +111,9 @@ def load_keyword_cache(cache_dir: Path) -> dict[str, Any] | None:
     return payload
 
 
-def save_keyword_cache(cache_dir: Path, master_brief_hash: str, keyword_map: KeywordMap) -> None:
+def save_keyword_cache(
+    cache_dir: Path, master_brief_hash: str, keyword_map: KeywordMap
+) -> None:
     """Save keyword cache data into version cache directory."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = _keyword_cache_path(cache_dir)
@@ -184,7 +189,9 @@ def get_keyword_map_cached(
             keyword_map_payload = cached_data.get("keyword_map", {})
             contract_files = cached_data.get("contract_files", [])
             keyword_map = _keyword_map_from_payload(keyword_map_payload, contract_files)
-            print(f"[brief analysis] Using cached keyword map from {cached_data.get('created_at')}")
+            print(
+                f"[brief analysis] Using cached keyword map from {cached_data.get('created_at')}"
+            )
             return keyword_map, True
         if cached_data:
             print("[brief analysis] Master brief changed, refreshing keyword cache...")
@@ -248,20 +255,20 @@ def extract_keywords_and_contracts_with_llm(
 ) -> KeywordMap:
     """
     Extract structured keywords AND required contract files from master brief using LLM.
-    
+
     This analyzes the brief and determines:
     1. Keywords for filtering (domain terms, entities, commands, etc.)
     2. Which contract files are needed based on the brief content
-    
+
     Args:
         master_brief: Content of master brief
         llm_config: LLM configuration
         call_llm_func: Function to call LLM
         run_dir: Optional run directory to save prompts and request info
-    
+
     Returns:
         KeywordMap with keywords and contract_files list
-        
+
     Raises:
         RuntimeError: If LLM extraction fails
     """
@@ -393,57 +400,54 @@ Brief: "Simple calculator API with basic math operations"
 Analyze the brief thoroughly and make evidence-based decisions about which contract files are actually needed."""
 
     user_prompt = f"Analyze this project brief and extract keywords + required contract files:\n\n{master_brief}"
-    
+
     # Save prompts to run_dir if provided
     if run_dir:
         # Save system prompt
-        (run_dir / "prompt_system.txt").write_text(
-            system_prompt,
-            encoding="utf-8"
-        )
-        
+        (run_dir / "prompt_system.txt").write_text(system_prompt, encoding="utf-8")
+
         # Save user prompt
-        (run_dir / "prompt_user.txt").write_text(
-            user_prompt,
-            encoding="utf-8"
-        )
-        
+        (run_dir / "prompt_user.txt").write_text(user_prompt, encoding="utf-8")
+
         # Save full request info
         request_info = {
-            "model": llm_config.model if hasattr(llm_config, 'model') else 'unknown',
-            "base_url": llm_config.base_url if hasattr(llm_config, 'base_url') else 'unknown',
-            "provider": llm_config.provider if hasattr(llm_config, 'provider') else None,
+            "model": llm_config.model if hasattr(llm_config, "model") else "unknown",
+            "base_url": llm_config.base_url
+            if hasattr(llm_config, "base_url")
+            else "unknown",
+            "provider": llm_config.provider
+            if hasattr(llm_config, "provider")
+            else None,
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
+                {"role": "user", "content": user_prompt},
+            ],
         }
-        
+
         (run_dir / "llm_request.json").write_text(
-            json.dumps(request_info, indent=2, ensure_ascii=False),
-            encoding="utf-8"
+            json.dumps(request_info, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-    
+
     try:
         response = call_llm_func(
             llm_config,
             system=system_prompt,
             prompt=user_prompt,
         )
-        
+
         data = _parse_json_resilient(response.content)
-        
+
         # Validate contract_files
         contract_files = data.get("contract_files", [])
         if not contract_files:
             raise ValueError("LLM did not return contract_files list")
-        
+
         # Ensure meta/info.yaml and glossary.yaml are always included
         if "meta/info.yaml" not in contract_files:
             contract_files.insert(0, "meta/info.yaml")
         if "glossary.yaml" not in contract_files:
             contract_files.insert(1, "glossary.yaml")
-        
+
         return KeywordMap(
             domain_terms=data.get("domain_terms", []),
             entities=data.get("entities", []),
@@ -480,7 +484,7 @@ def get_contract_files_from_master_brief(
     """
     Extract required contract files and keywords from master brief using LLM analysis.
     Uses caching to avoid duplicate LLM calls across commands.
-    
+
     Args:
         paths: MidicoderPaths for file operations
         version: Current version string
@@ -489,7 +493,7 @@ def get_contract_files_from_master_brief(
         call_llm_func: Function to call LLM
         force_refresh: If True, ignore cache and call LLM again
         run_dir: Optional run directory to save prompts and request info
-    
+
     Returns:
         Tuple of (contract_files, keyword_data)
     """
@@ -534,7 +538,7 @@ def refresh_contract_analysis(
 ) -> tuple[list[str], dict[str, Any]]:
     """
     Force refresh the cached contract analysis by re-analyzing the master brief.
-    
+
     Args:
         paths: MidicoderPaths for file operations
         version: Current version string
@@ -542,12 +546,12 @@ def refresh_contract_analysis(
         llm_config: LLM configuration
         call_llm_func: Function to call LLM
         run_dir: Optional run directory to save prompts and request info
-    
+
     Returns:
         Tuple of (contract_files, keyword_data)
     """
     print("[brief analysis] Force refreshing contract analysis cache...")
-    
+
     return get_contract_files_from_master_brief(
         paths,
         version,
@@ -562,56 +566,65 @@ def refresh_contract_analysis(
 def save_keyword_extraction_result(run_dir: Path, keyword_data: dict[str, Any]) -> None:
     """
     Save keyword extraction result to run directory for reference.
-    
+
     Args:
         run_dir: Run directory path
         keyword_data: Extracted keywords and metadata
     """
     (run_dir / "keyword_extraction.json").write_text(
-        json.dumps(keyword_data, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+        json.dumps(keyword_data, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
 
-def print_analysis_summary(contract_files: list[str], keyword_data: dict[str, Any]) -> None:
+def print_analysis_summary(
+    contract_files: list[str], keyword_data: dict[str, Any]
+) -> None:
     """
     Print summary of contract analysis results.
-    
+
     Args:
         contract_files: List of determined contract files
         keyword_data: Extracted keywords
     """
-    print(f"[brief analysis] Analysis complete - {len(contract_files)} contract files determined")
+    print(
+        f"[brief analysis] Analysis complete - {len(contract_files)} contract files determined"
+    )
     print(f"[brief analysis] Files: {', '.join(contract_files)}")
-    
+
     # Show keyword summary
     entities = keyword_data.get("entities", [])
     commands = keyword_data.get("commands", [])
     apis = keyword_data.get("apis", [])
-    
+
     if entities:
-        print(f"[brief analysis] Entities: {', '.join(entities[:5])}{'...' if len(entities) > 5 else ''}")
+        print(
+            f"[brief analysis] Entities: {', '.join(entities[:5])}{'...' if len(entities) > 5 else ''}"
+        )
     if commands:
-        print(f"[brief analysis] Commands: {', '.join(commands[:5])}{'...' if len(commands) > 5 else ''}")
+        print(
+            f"[brief analysis] Commands: {', '.join(commands[:5])}{'...' if len(commands) > 5 else ''}"
+        )
     if apis:
-        print(f"[brief analysis] APIs: {', '.join(apis[:3])}{'...' if len(apis) > 3 else ''}")
+        print(
+            f"[brief analysis] APIs: {', '.join(apis[:3])}{'...' if len(apis) > 3 else ''}"
+        )
 
 
 def get_cache_info(paths: Any, version: str) -> dict[str, Any] | None:
     """
     Get information about cached analysis if it exists.
-    
+
     Args:
         paths: MidicoderPaths for file operations
         version: Current version string
-        
+
     Returns:
         Cache info dict or None if no cache exists
     """
     cache_dir = paths.versions / str(version) / "cache"
     if not cache_dir.exists():
         return None
-    
+
     cache_file = _keyword_cache_path(cache_dir)
     if not cache_file.exists():
         return None
@@ -631,28 +644,30 @@ def get_cache_info(paths: Any, version: str) -> dict[str, Any] | None:
 def clear_analysis_cache(paths: Any, version: str) -> int:
     """
     Clear all cached analysis files for a version.
-    
+
     Args:
         paths: MidicoderPaths for file operations
         version: Current version string
-        
+
     Returns:
         Number of cache files deleted
     """
     cache_dir = paths.versions / str(version) / "cache"
     if not cache_dir.exists():
         return 0
-    
+
     cache_files = list(cache_dir.glob("contract_analysis_*.json"))
     cache_files.append(_keyword_cache_path(cache_dir))
     count = 0
-    
+
     for cache_file in cache_files:
         try:
             if cache_file.exists():
                 cache_file.unlink()
                 count += 1
         except Exception as exc:
-            print(f"[brief analysis] Warning: Failed to delete {cache_file.name}: {exc}")
-    
+            print(
+                f"[brief analysis] Warning: Failed to delete {cache_file.name}: {exc}"
+            )
+
     return count

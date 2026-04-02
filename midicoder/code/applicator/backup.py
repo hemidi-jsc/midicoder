@@ -34,4 +34,3 @@ def restore_backup(target_path: Path, snapshot: BackupSnapshot) -> bool:
     if target_path.exists():
         target_path.unlink()
     return True
-

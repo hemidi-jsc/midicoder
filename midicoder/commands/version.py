@@ -44,4 +44,3 @@ def create(root: Path, version: str) -> None:
         state_before=state_before,
         state_after=state,
     )
-

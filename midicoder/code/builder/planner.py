@@ -24,7 +24,12 @@ from .resolution import (
     resolve_suggested_paths,
     traverse_graph_for_target,
 )
-from .validation import collect_ir_refs, collect_ir_symbol_ids, iter_plan_items, validate_typed_id
+from .validation import (
+    collect_ir_refs,
+    collect_ir_symbol_ids,
+    iter_plan_items,
+    validate_typed_id,
+)
 from .writer import build_index_payload, write_plan_file, write_plan_index
 
 
@@ -43,7 +48,9 @@ def build_code_plan(
     config: dict[str, Any] | None = None,
     strict_mode: bool = False,
 ) -> BuildResult:
-    ok, preflight_errors = preflight_check(context_dir.parent / "versions" / str(version) / "irs" / "ir.json", context_dir)
+    ok, preflight_errors = preflight_check(
+        context_dir.parent / "versions" / str(version) / "irs" / "ir.json", context_dir
+    )
     if not ok:
         for message in preflight_errors:
             emit_error("E300", "Preflight failed", phase="preflight", action=message)
@@ -136,7 +143,10 @@ def build_code_plan(
         required_files = build_required_files(target, suggested_paths)
         if item.type_name == "Workflow":
             transitions = item.state_contract.get("transitions", [])
-            has_state_step = any(step.get("type") == "state_transition" for step in pseudo_struct.get("steps", []))
+            has_state_step = any(
+                step.get("type") == "state_transition"
+                for step in pseudo_struct.get("steps", [])
+            )
             if transitions and not has_state_step:
                 raise BuildError(
                     "E353",
@@ -209,7 +219,9 @@ def build_code_plan(
 
     warnings.extend(validate_cross_ir_ref(plans, ir))
     warnings.extend(validate_cross_anchor(plans, seams, virtual_seams))
-    merge_errors, merge_warnings = validate_merge_conflicts(plans, strict_mode=strict_mode)
+    merge_errors, merge_warnings = validate_merge_conflicts(
+        plans, strict_mode=strict_mode
+    )
     errors.extend(merge_errors)
     warnings.extend(merge_warnings)
     errors.extend(validate_artifact_count(plans_dir, len(plan_paths)))
@@ -235,13 +247,13 @@ def validate_cross_ir_ref(plans: list[CodePlanItem], ir: dict[str, Any]) -> list
     for plan in plans:
         if plan.ir_ref not in ir_refs:
             warnings.append(
-                    emit_warning(
-                        "W341",
-                        "ir_ref not found in IR",
-                        phase="cross_validate",
-                        action="check planner input",
-                    )
+                emit_warning(
+                    "W341",
+                    "ir_ref not found in IR",
+                    phase="cross_validate",
+                    action="check planner input",
                 )
+            )
     return warnings
 
 

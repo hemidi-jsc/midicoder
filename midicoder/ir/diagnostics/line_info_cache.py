@@ -13,39 +13,51 @@ from .line_tracker import extract_line_info, get_line_range
 
 class LineInfoCache:
     """Cache for storing line information from YAML files."""
-    
+
     def __init__(self) -> None:
         """Initialize empty cache."""
         self._cache: dict[str, Any] = {}
         self._line_info: dict[str, dict[str, dict[str, int | None]]] = {}
-    
+
     def store_raw_yaml(self, file_path: str, raw_yaml: Any) -> None:
         """
         Store raw YAML data with line information.
-        
+
         Args:
             file_path: Relative path to the file
             raw_yaml: Raw YAML data from ruamel.yaml
         """
         self._cache[file_path] = raw_yaml
         self._extract_line_info(file_path, raw_yaml)
-    
+
     def _extract_line_info(self, file_path: str, raw_yaml: Any) -> None:
         """Extract line information from raw YAML."""
         if file_path not in self._line_info:
             self._line_info[file_path] = {}
-        
+
         # Extract line info for top-level collections
         if isinstance(raw_yaml, dict):
-            for key in ['entities', 'value_objects', 'enums', 'errors', 'events',
-                       'commands', 'queries', 'projections', 'workflows', 
-                       'routes', 'rules', 'scenarios', 'policies']:
+            for key in [
+                "entities",
+                "value_objects",
+                "enums",
+                "errors",
+                "events",
+                "commands",
+                "queries",
+                "projections",
+                "workflows",
+                "routes",
+                "rules",
+                "scenarios",
+                "policies",
+            ]:
                 if key in raw_yaml:
                     collection = raw_yaml[key]
                     if isinstance(collection, list):
                         for idx, item in enumerate(collection):
-                            if isinstance(item, dict) and 'id' in item:
-                                item_id = item['id']
+                            if isinstance(item, dict) and "id" in item:
+                                item_id = item["id"]
                                 line_info = extract_line_info(collection, idx)
                                 self._line_info[file_path][item_id] = line_info
                             elif key == "routes" and isinstance(item, dict):
@@ -87,17 +99,15 @@ class LineInfoCache:
                                     continue
                                 line_info = extract_line_info(gql_collection, idx)
                                 self._line_info[file_path][item_id] = line_info
-    
-    def get_line_info(
-        self, file_path: str, item_id: str
-    ) -> dict[str, int | None]:
+
+    def get_line_info(self, file_path: str, item_id: str) -> dict[str, int | None]:
         """
         Get line information for an item.
-        
+
         Args:
             file_path: Relative path to the file
             item_id: ID of the item
-        
+
         Returns:
             Dictionary with 'start', 'end', 'single' keys, or empty dict if not found
         """
@@ -112,11 +122,11 @@ class LineInfoCache:
             return None
         route_id = f"{str(method).lower()}_{str(path).replace('/', '_').replace('{', '').replace('}', '').strip('_')}"
         return route_id or None
-    
+
     def get_raw_yaml(self, file_path: str) -> Any | None:
         """Get raw YAML data for a file."""
         return self._cache.get(file_path)
-    
+
     def has_file(self, file_path: str) -> bool:
         """Check if file is in cache."""
         return file_path in self._cache

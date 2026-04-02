@@ -96,4 +96,3 @@ class AccessPolicyFile(BaseModel):
     access: AccessPolicy
 
     model_config = {"extra": "forbid"}
-

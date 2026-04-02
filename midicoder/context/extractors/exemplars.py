@@ -32,8 +32,12 @@ FRAMEWORK_MARKERS = (
 )
 ROLE_NAMES = ("Controller", "Service", "Repository", "Handler", "Module")
 PATH_MARKERS = ("src/", "app/", "modules/", "services/", "controllers/")
-STRUCTURE_RE = re.compile(r"\b(class|def|func|interface|struct|module|namespace)\b", re.IGNORECASE)
-TEST_PATH_RE = re.compile(r"(?:^|/)(test|tests|spec|__tests__|mock|mocks|fixtures)(?:/|$)", re.IGNORECASE)
+STRUCTURE_RE = re.compile(
+    r"\b(class|def|func|interface|struct|module|namespace)\b", re.IGNORECASE
+)
+TEST_PATH_RE = re.compile(
+    r"(?:^|/)(test|tests|spec|__tests__|mock|mocks|fixtures)(?:/|$)", re.IGNORECASE
+)
 
 
 DEFAULT_SCORING = {
@@ -88,7 +92,14 @@ STACK_SCORING = {
             "Guard",
             "Interceptor",
         ),
-        "paths": ("src/", "app/", "modules/", "controllers/", "services/", "providers/"),
+        "paths": (
+            "src/",
+            "app/",
+            "modules/",
+            "controllers/",
+            "services/",
+            "providers/",
+        ),
         "marker_weight": 0.20,
         "role_weight": 0.12,
         "path_weight": 0.07,
@@ -165,17 +176,23 @@ def compute_exemplar_score(
     base = 0.65 if base_source == "symbol" else 0.45
     score = base
 
-    marker_matches = sum(1 for marker in config["markers"] if re.search(marker, snippet))
+    marker_matches = sum(
+        1 for marker in config["markers"] if re.search(marker, snippet)
+    )
     if marker_matches:
         score += config["marker_weight"] * min(1.0, marker_matches / 2.0)
 
     if symbol_name:
-        role_matches = sum(1 for role in config["roles"] if role.lower() in symbol_name.lower())
+        role_matches = sum(
+            1 for role in config["roles"] if role.lower() in symbol_name.lower()
+        )
         if role_matches:
             score += config["role_weight"] * min(1.0, role_matches / 2.0)
 
     normalized_path = file_path.replace("\\", "/")
-    path_matches = sum(1 for marker in config["paths"] if marker in normalized_path.lower())
+    path_matches = sum(
+        1 for marker in config["paths"] if marker in normalized_path.lower()
+    )
     if path_matches:
         score += config["path_weight"] * min(1.0, path_matches / 2.0)
 
@@ -186,7 +203,9 @@ def compute_exemplar_score(
     # Add a small continuous signal so scores do not collapse into a few buckets.
     identifier_tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", snippet)
     if identifier_tokens:
-        unique_ratio = len({token.lower() for token in identifier_tokens}) / len(identifier_tokens)
+        unique_ratio = len({token.lower() for token in identifier_tokens}) / len(
+            identifier_tokens
+        )
         diversity_signal = max(0.0, min(1.0, (unique_ratio - 0.20) / 0.60))
         score += 0.04 * diversity_signal
 
@@ -204,7 +223,10 @@ def compute_exemplar_score(
     score -= length_penalty
 
     if score > config["softcap_threshold"]:
-        score = config["softcap_threshold"] + (score - config["softcap_threshold"]) * config["softcap_scale"]
+        score = (
+            config["softcap_threshold"]
+            + (score - config["softcap_threshold"]) * config["softcap_scale"]
+        )
 
     score = max(0.05, min(0.98, score))
     score = 0.15 + 0.85 * score
@@ -251,7 +273,9 @@ def extract_exemplars(
     )
 
     result = dedupe_exemplars(exemplars)[:MAX_EXEMPLARS]
-    logger.debug(f"Extracted {len(result)} exemplars (deduplicated from {len(exemplars)})")
+    logger.debug(
+        f"Extracted {len(result)} exemplars (deduplicated from {len(exemplars)})"
+    )
     return result
 
 
@@ -284,7 +308,14 @@ def extract_exemplars_from_file(
         )
         if snippet:
             exemplar_kind = map_symbol_to_exemplar_kind(symbol.kind)
-            score = compute_exemplar_score("symbol", snippet, file_path, symbol.name, stack=stack, language=language)
+            score = compute_exemplar_score(
+                "symbol",
+                snippet,
+                file_path,
+                symbol.name,
+                stack=stack,
+                language=language,
+            )
             exemplars.append(
                 Exemplar(
                     kind=exemplar_kind,
@@ -315,35 +346,73 @@ def extract_pattern_exemplars(
     python_pattern_kinds.update({"repository", "workflow"})
 
     if stack == "nest":
-        patterns.extend([
-            ("controller", "typescript", re.compile(r"@Controller\(", re.MULTILINE)),
-            ("provider", "typescript", re.compile(r"@Injectable\(", re.MULTILINE)),
-            ("module", "typescript", re.compile(r"@Module\(", re.MULTILINE)),
-        ])
+        patterns.extend(
+            [
+                (
+                    "controller",
+                    "typescript",
+                    re.compile(r"@Controller\(", re.MULTILINE),
+                ),
+                ("provider", "typescript", re.compile(r"@Injectable\(", re.MULTILINE)),
+                ("module", "typescript", re.compile(r"@Module\(", re.MULTILINE)),
+            ]
+        )
 
     if stack == "express":
-        patterns.extend([
-            ("route", "javascript", re.compile(r"(?:app|router)\.\w+\(['\"]", re.MULTILINE)),
-            ("middleware", "javascript", re.compile(r"function\s+\w+\(req,\s*res,\s*next\)", re.MULTILINE)),
-        ])
+        patterns.extend(
+            [
+                (
+                    "route",
+                    "javascript",
+                    re.compile(r"(?:app|router)\.\w+\(['\"]", re.MULTILINE),
+                ),
+                (
+                    "middleware",
+                    "javascript",
+                    re.compile(r"function\s+\w+\(req,\s*res,\s*next\)", re.MULTILINE),
+                ),
+            ]
+        )
 
     if stack == "angular":
-        patterns.extend([
-            ("component", "typescript", re.compile(r"@Component\(", re.MULTILINE)),
-            ("service", "typescript", re.compile(r"@Injectable\(", re.MULTILINE)),
-            ("directive", "typescript", re.compile(r"@Directive\(", re.MULTILINE)),
-        ])
+        patterns.extend(
+            [
+                ("component", "typescript", re.compile(r"@Component\(", re.MULTILINE)),
+                ("service", "typescript", re.compile(r"@Injectable\(", re.MULTILINE)),
+                ("directive", "typescript", re.compile(r"@Directive\(", re.MULTILINE)),
+            ]
+        )
 
-    patterns.extend([
-        ("repository", "typescript", re.compile(r"class\s+\w+Repository\s*{", re.MULTILINE)),
-        ("repository", "javascript", re.compile(r"class\s+\w+Repository\s*{", re.MULTILINE)),
-    ])
+    patterns.extend(
+        [
+            (
+                "repository",
+                "typescript",
+                re.compile(r"class\s+\w+Repository\s*{", re.MULTILINE),
+            ),
+            (
+                "repository",
+                "javascript",
+                re.compile(r"class\s+\w+Repository\s*{", re.MULTILINE),
+            ),
+        ]
+    )
 
     # Workflow pattern
-    patterns.extend([
-        ("workflow", "typescript", re.compile(r"class\s+\w+Workflow\s*{", re.MULTILINE)),
-        ("workflow", "javascript", re.compile(r"class\s+\w+Workflow\s*{", re.MULTILINE)),
-    ])
+    patterns.extend(
+        [
+            (
+                "workflow",
+                "typescript",
+                re.compile(r"class\s+\w+Workflow\s*{", re.MULTILINE),
+            ),
+            (
+                "workflow",
+                "javascript",
+                re.compile(r"class\s+\w+Workflow\s*{", re.MULTILINE),
+            ),
+        ]
+    )
 
     exemplars: list[Exemplar] = []
 
@@ -378,13 +447,13 @@ def extract_pattern_exemplars(
         lines = content.splitlines()
 
         # Determine language from file extension
-        if path.suffix == '.py':
+        if path.suffix == ".py":
             language = "python"
-        elif path.suffix in ('.ts', '.tsx', '.mts', '.cts'):
+        elif path.suffix in (".ts", ".tsx", ".mts", ".cts"):
             language = "typescript"
-        elif path.suffix in ('.js', '.jsx'):
+        elif path.suffix in (".js", ".jsx"):
             language = "javascript"
-        elif path.suffix == '.java':
+        elif path.suffix == ".java":
             language = "java"
         else:
             continue
@@ -420,7 +489,12 @@ def extract_pattern_exemplars(
                         # AST already produced an exemplar for this symbol; skip duplicate pattern.
                         continue
                 lines = content.splitlines()
-                snippet = extract_snippet_window(lines, line_number - 1, EXEMPLAR_PATTERN_BEFORE, EXEMPLAR_PATTERN_AFTER)
+                snippet = extract_snippet_window(
+                    lines,
+                    line_number - 1,
+                    EXEMPLAR_PATTERN_BEFORE,
+                    EXEMPLAR_PATTERN_AFTER,
+                )
 
                 if snippet and len(snippet) > SNIPPET_MIN_LENGTH:
                     score = compute_exemplar_score(
@@ -456,12 +530,12 @@ def dedupe_exemplars(exemplars: list[Exemplar]) -> list[Exemplar]:
 
     result: list[Exemplar] = []
     base_kinds = {"type", "function", "method", "export", "class", "enum"}
-    
+
     for group in grouped.values():
         if len(group) == 1:
             result.append(group[0])
             continue
-            
+
         specifics = [e for e in group if e.kind not in base_kinds]
         if specifics:
             result.append(max(specifics, key=lambda e: e.score))
@@ -484,7 +558,9 @@ def map_symbol_to_exemplar_kind(kind: str) -> str:
     return mapping.get(kind, kind)
 
 
-def extract_snippet_window(lines: list[str], line_index: int, before: int, after: int) -> str:
+def extract_snippet_window(
+    lines: list[str], line_index: int, before: int, after: int
+) -> str:
     start = max(line_index - before, 0)
     end = min(line_index + after, len(lines))
 
@@ -549,25 +625,27 @@ def extract_python_pattern_exemplars_ast(
 
 def _count_parens(line: str, in_quote: str | None = None) -> tuple[int, str | None]:
     """Returns (paren_diff, new_quote_state). Handle triple quotes crudely."""
-    line = line.split('#')[0]
+    line = line.split("#")[0]
     diff = 0
     idx = 0
     while idx < len(line):
         if in_quote:
-            if line[idx:idx+3] == in_quote:
+            if line[idx : idx + 3] == in_quote:
                 in_quote = None
                 idx += 3
             elif line[idx] == "\\" and idx + 1 < len(line):
                 idx += 2
-            elif line[idx:idx+1] == in_quote[0] and in_quote[1:] == "": # Single quote case
+            elif (
+                line[idx : idx + 1] == in_quote[0] and in_quote[1:] == ""
+            ):  # Single quote case
                 in_quote = None
                 idx += 1
             else:
                 idx += 1
             continue
 
-        if line[idx:idx+3] in ('"""', "'''"):
-            in_quote = line[idx:idx+3]
+        if line[idx : idx + 3] in ('"""', "'''"):
+            in_quote = line[idx : idx + 3]
             idx += 3
             continue
         if line[idx] in ('"', "'"):
@@ -577,8 +655,10 @@ def _count_parens(line: str, in_quote: str | None = None) -> tuple[int, str | No
             idx += 1
             continue
 
-        if line[idx] in "([{": diff += 1
-        elif line[idx] in ")]}": diff -= 1
+        if line[idx] in "([{":
+            diff += 1
+        elif line[idx] in ")]}":
+            diff -= 1
         idx += 1
     return diff, in_quote
 
@@ -623,23 +703,23 @@ def extract_symbol_snippet(
     while end < len(lines):
         line = lines[end]
         stripped = line.strip()
-        
-        had_context = (paren_depth > 0 or in_quote is not None)
+
+        had_context = paren_depth > 0 or in_quote is not None
         diff, in_quote = _count_parens(line, in_quote)
-        
+
         if not stripped:
             end += 1
             continue
-            
+
         if had_context:
             paren_depth += diff
             end += 1
             continue
-            
+
         current_indent = _leading_space_width(line)
         if current_indent <= indent_width:
             break
-            
+
         paren_depth += diff
         end += 1
 
@@ -656,12 +736,12 @@ def extract_symbol_snippet(
     while safe_start - 1 >= start:
         line_above = lines[safe_start - 1]
         stripped_above = line_above.strip()
-        
+
         # Blank lines or comments are generally safe to include as context.
         if not stripped_above or stripped_above.startswith("#"):
             safe_start -= 1
             continue
-            
+
         # Lines with strictly less indentation are enclosing scopes.
         # Include them for blocks, but skip for methods/classes to avoid redundancy.
         if _leading_space_width(line_above) < indent_width:
@@ -669,7 +749,7 @@ def extract_symbol_snippet(
                 safe_start -= 1
                 continue
             break
-            
+
         # Anything else with >= indentation is likely code from the previous block.
         break
 
@@ -679,7 +759,9 @@ def extract_symbol_snippet(
 
     snippet_lines = lines[safe_start:block_end]
     snippet = "\n".join(snippet_lines).strip()
-    return snippet or extract_snippet_window(lines, line_index, default_before, default_after)
+    return snippet or extract_snippet_window(
+        lines, line_index, default_before, default_after
+    )
 
 
 def _extract_python_block_snippet(lines: list[str], line_index: int) -> str:
@@ -714,19 +796,29 @@ def _extract_python_block_snippet(lines: list[str], line_index: int) -> str:
         if current_indent < indent_width:
             break
         lowered = stripped.lower()
-        if lowered.startswith("class ") or lowered.startswith("def ") or lowered.startswith("async def "):
+        if (
+            lowered.startswith("class ")
+            or lowered.startswith("def ")
+            or lowered.startswith("async def ")
+        ):
             break
         if stripped.startswith("@") and end + 1 < len(lines):
             next_line = lines[end + 1].lstrip()
             next_lower = next_line.lower()
-            if next_lower.startswith("class ") or next_lower.startswith("def ") or next_lower.startswith("async def "):
+            if (
+                next_lower.startswith("class ")
+                or next_lower.startswith("def ")
+                or next_lower.startswith("async def ")
+            ):
                 break
         end += 1
 
     snippet = "\n".join(lines[start:end]).strip()
     if snippet:
         return snippet
-    return extract_snippet_window(lines, line_index, SNIPPET_CONTEXT_BEFORE, SNIPPET_CONTEXT_AFTER)
+    return extract_snippet_window(
+        lines, line_index, SNIPPET_CONTEXT_BEFORE, SNIPPET_CONTEXT_AFTER
+    )
 
 
 def _leading_space_width(line: str) -> int:
@@ -769,7 +861,9 @@ class _PythonPatternExtractor(ast.NodeVisitor):
 
     def _handle_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         qualified_name = self._qualified_name(node.name)
-        if "command_handler" in self.pattern_kinds and _has_fastapi_route_decorator(node):
+        if "command_handler" in self.pattern_kinds and _has_fastapi_route_decorator(
+            node
+        ):
             self._add_match("command_handler", qualified_name, node.lineno - 1)
         if "dependency" in self.pattern_kinds and _function_contains_depends(node):
             self._add_match("dependency", qualified_name, node.lineno - 1)
@@ -780,12 +874,21 @@ class _PythonPatternExtractor(ast.NodeVisitor):
         return ".".join((*self.class_stack, name))
 
     def _add_match(self, kind: str, symbol_name: str, line_index: int) -> None:
-        self.matches.append(_PythonPatternMatch(kind=kind, symbol_name=symbol_name, line_index=line_index))
+        self.matches.append(
+            _PythonPatternMatch(
+                kind=kind, symbol_name=symbol_name, line_index=line_index
+            )
+        )
 
 
 def _is_base_model_class(node: ast.ClassDef) -> bool:
     for base in node.bases:
-        if _node_basename(base) in {"BaseModel", "BaseSettings", "SQLModel", "RootModel"}:
+        if _node_basename(base) in {
+            "BaseModel",
+            "BaseSettings",
+            "SQLModel",
+            "RootModel",
+        }:
             return True
     return False
 
@@ -903,7 +1006,9 @@ def _looks_like_import_continuation(line: str) -> bool:
     return False
 
 
-def _build_symbol_line_index(symbols: list[Symbol]) -> dict[str, tuple[list[int], list[Symbol]]]:
+def _build_symbol_line_index(
+    symbols: list[Symbol],
+) -> dict[str, tuple[list[int], list[Symbol]]]:
     grouped: dict[str, list[Symbol]] = defaultdict(list)
     for symbol in symbols:
         grouped[symbol.file].append(symbol)

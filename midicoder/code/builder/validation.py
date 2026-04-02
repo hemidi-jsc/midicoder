@@ -12,9 +12,17 @@ TYPED_ID_PATTERN = re.compile(r"^[A-Z][A-Za-z0-9]*\.[a-z0-9_]+$")
 IR_BUCKETS: dict[str, tuple[str, str, str]] = {
     "application.commands": ("Command", "modules.application.commands", "commands"),
     "application.queries": ("Query", "modules.application.queries", "queries"),
-    "application.projections": ("Projection", "modules.application.projections", "projections"),
+    "application.projections": (
+        "Projection",
+        "modules.application.projections",
+        "projections",
+    ),
     "domain.entities": ("Entity", "modules.domain.entities", "entities"),
-    "domain.value_objects": ("ValueObject", "modules.domain.value_objects", "value_objects"),
+    "domain.value_objects": (
+        "ValueObject",
+        "modules.domain.value_objects",
+        "value_objects",
+    ),
     "domain.enums": ("Enum", "modules.domain.enums", "enums"),
     "workflow.workflows": ("Workflow", "modules.workflow.workflows", "workflows"),
 }
@@ -54,7 +62,9 @@ def iter_plan_items(ir: dict[str, Any]) -> Iterator[IRPlanItem]:
                 continue
 
             ir_ref = f"{type_name}.{raw_id}"
-            source = record.get("source") if isinstance(record.get("source"), dict) else {}
+            source = (
+                record.get("source") if isinstance(record.get("source"), dict) else {}
+            )
             source_order = source.get("source_order")
             if not isinstance(source_order, int):
                 source_order = index
@@ -90,7 +100,9 @@ def iter_plan_items(ir: dict[str, Any]) -> Iterator[IRPlanItem]:
                 workflow_transitions_by_command=workflow_transitions_by_command,
             )
             rules_contract = {"rules": rules_by_item.get(_normalize_symbol(raw_id), [])}
-            policy_contract = {"permissions": permissions_by_item.get(_normalize_symbol(raw_id), [])}
+            policy_contract = {
+                "permissions": permissions_by_item.get(_normalize_symbol(raw_id), [])
+            }
             trace_contract = {
                 "source_file": source.get("file"),
                 "line_start": source.get("line_start"),
@@ -159,7 +171,9 @@ def _resolve_records(modules: dict[str, Any], bucket: str) -> list[dict[str, Any
     return []
 
 
-def _build_route_indexes(modules: dict[str, Any]) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
+def _build_route_indexes(
+    modules: dict[str, Any]
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
     routes = _resolve_records(modules, "api.http.routes")
     by_command: dict[str, list[dict[str, Any]]] = {}
     by_query: dict[str, list[dict[str, Any]]] = {}
@@ -172,7 +186,11 @@ def _build_route_indexes(modules: dict[str, Any]) -> tuple[dict[str, list[dict[s
             "path": path,
             "request_schema": route.get("request_schema"),
             "response_schema": route.get("response_schema"),
-            "source_order": ((route.get("source") or {}).get("source_order") if isinstance(route.get("source"), dict) else None),
+            "source_order": (
+                (route.get("source") or {}).get("source_order")
+                if isinstance(route.get("source"), dict)
+                else None
+            ),
         }
 
         command_ref = route.get("command")
@@ -223,7 +241,9 @@ def _build_policy_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any
             role = str(binding.get("role", "")).strip()
             permission_ids = binding.get("permissions")
             if role and isinstance(permission_ids, list):
-                role_bindings[role] = [str(pid).strip() for pid in permission_ids if isinstance(pid, str)]
+                role_bindings[role] = [
+                    str(pid).strip() for pid in permission_ids if isinstance(pid, str)
+                ]
 
     by_item: dict[str, list[dict[str, Any]]] = {}
     if isinstance(permissions, list):
@@ -235,7 +255,9 @@ def _build_policy_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any
                 continue
             key = _normalize_symbol(permission_id)
             matched_roles = [
-                role for role, permission_ids in role_bindings.items() if permission_id in permission_ids
+                role
+                for role, permission_ids in role_bindings.items()
+                if permission_id in permission_ids
             ]
             by_item.setdefault(key, []).append(
                 {
@@ -248,7 +270,9 @@ def _build_policy_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any
     return by_item
 
 
-def _build_workflow_transition_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+def _build_workflow_transition_index(
+    modules: dict[str, Any]
+) -> dict[str, list[dict[str, Any]]]:
     workflows = _resolve_records(modules, "workflow.workflows")
     by_command: dict[str, list[dict[str, Any]]] = {}
     for workflow in workflows:
@@ -292,7 +316,14 @@ def _build_api_contract(
         routes = list(routes_by_query.get(key, []))
     else:
         routes = []
-    routes = sorted(routes, key=lambda route: (route.get("source_order", 0) or 0, route.get("method", ""), route.get("path", "")))
+    routes = sorted(
+        routes,
+        key=lambda route: (
+            route.get("source_order", 0) or 0,
+            route.get("method", ""),
+            route.get("path", ""),
+        ),
+    )
     return {"routes": routes}
 
 

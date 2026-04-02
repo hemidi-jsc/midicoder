@@ -11,7 +11,9 @@ from ..core.scanner import ProjectScanner, normalize_path
 
 
 class PythonAnalyzer:
-    def analyze(self, scanner: ProjectScanner, target_files: set[str] | None = None) -> tuple[list[Symbol], list[ErrorRecord]]:
+    def analyze(
+        self, scanner: ProjectScanner, target_files: set[str] | None = None
+    ) -> tuple[list[Symbol], list[ErrorRecord]]:
         symbols: list[Symbol] = []
         errors: list[ErrorRecord] = []
 
@@ -25,7 +27,9 @@ class PythonAnalyzer:
 
         return symbols, errors
 
-    def _parse_file(self, scanner: ProjectScanner, path: Path) -> tuple[list[Symbol], list[ErrorRecord]]:
+    def _parse_file(
+        self, scanner: ProjectScanner, path: Path
+    ) -> tuple[list[Symbol], list[ErrorRecord]]:
         content = scanner.get_content(path)
         if not content:
             return [], []
@@ -35,7 +39,11 @@ class PythonAnalyzer:
             tree = ast.parse(content, filename=str(path))
         except SyntaxError as exc:
             fallback_symbols = _extract_fallback_symbols(content, relative_path)
-            return fallback_symbols, [ErrorRecord(kind="python_syntax_error", file=relative_path, detail=str(exc))]
+            return fallback_symbols, [
+                ErrorRecord(
+                    kind="python_syntax_error", file=relative_path, detail=str(exc)
+                )
+            ]
 
         visitor = _PythonSymbolVisitor(relative_path)
         visitor.visit(tree)
@@ -92,7 +100,9 @@ class _PythonSymbolVisitor(ast.NodeVisitor):
             kind = "async_function" if is_async else "function"
             scope = ".".join(enclosing) if enclosing else "module"
 
-        decorators = [d.id if isinstance(d, ast.Name) else str(d) for d in node.decorator_list[:3]]
+        decorators = [
+            d.id if isinstance(d, ast.Name) else str(d) for d in node.decorator_list[:3]
+        ]
 
         self.symbols.append(
             Symbol(
@@ -238,7 +248,9 @@ def format_python_signature(
     if node.returns:
         sig += f" -> {ast.unparse(node.returns)}"
 
-    if decorators and any(d in ("staticmethod", "classmethod", "property") for d in decorators):
+    if decorators and any(
+        d in ("staticmethod", "classmethod", "property") for d in decorators
+    ):
         sig = f"[{', '.join(d for d in decorators if d in ('staticmethod', 'classmethod', 'property'))}] {sig}"
 
     return sig
@@ -246,7 +258,9 @@ def format_python_signature(
 
 def _extract_fallback_symbols(content: str, relative_path: str) -> list[Symbol]:
     """Best-effort symbol extraction when AST parsing fails."""
-    class_re = re.compile(r"^(?P<indent>[ \t]*)class\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\b")
+    class_re = re.compile(
+        r"^(?P<indent>[ \t]*)class\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\b"
+    )
     def_re = re.compile(
         r"^(?P<indent>[ \t]*)(?P<async>async\s+)?def\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\("
     )

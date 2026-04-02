@@ -47,23 +47,27 @@ def build_context(
     changed_paths: list[str] | None = None,
 ) -> None:
     start_time = time.time()
-    
+
     if context_root is None:
         context_root = root
-    
+
     logger.info(f"Starting context indexing for: {root}")
     logger.debug(f"Workspace directory: {root}")
     logger.debug(f"Context will be saved to: {context_root}")
-    
+
     try:
         gitignore_files, ignored_patterns = load_gitignore_files(root)
         logger.debug(f"Loaded {len(ignored_patterns)} ignore patterns from .gitignore")
-        
+
         file_cache = FileCache()
         ignore_matcher = GitIgnoreMatcher(root, gitignore_files)
         scanner = ProjectScanner(root, ignore_matcher, ignored_patterns, file_cache)
-        
-        existing = load_existing_context(context_root / ".midicoder" / "context") if (refresh or reindex_only_changed) else {}
+
+        existing = (
+            load_existing_context(context_root / ".midicoder" / "context")
+            if (refresh or reindex_only_changed)
+            else {}
+        )
         previous_files = {meta.path: meta for meta in existing.get("files", [])}
         changed_files: set[str] = set()
         deleted_files: set[str] = set()
@@ -72,7 +76,9 @@ def build_context(
 
         if reindex_only_changed:
             if not existing:
-                raise RuntimeError("Reindex requires existing context. Run `midicoder index` first.")
+                raise RuntimeError(
+                    "Reindex requires existing context. Run `midicoder index` first."
+                )
 
             manual_path_inputs = normalize_changed_paths(changed_paths or [])
             if manual_path_inputs:
@@ -102,7 +108,9 @@ def build_context(
                         "Use `midicoder index reindex --path <path>` to specify files when working outside git.",
                         root,
                     )
-                    logger.info("Skipping reindex because git change detection is unavailable.")
+                    logger.info(
+                        "Skipping reindex because git change detection is unavailable."
+                    )
                     return
                 changed_files, deleted_files = git_delta
                 logger.info(
@@ -125,15 +133,15 @@ def build_context(
 
             # Preserve old indexed files, then update changed/deleted paths.
             current_files = dict(previous_files)
-            
+
             # Normalize for case-insensitive matching on Windows
             changes_to_apply = {p.lower() for p in (changed_files | deleted_files)}
-            
+
             # Remove existing entries that are being updated or were deleted
             to_remove = [p for p in current_files if p.lower() in changes_to_apply]
             for p in to_remove:
                 current_files.pop(p, None)
-                
+
             for meta in scanner.indexed_files:
                 current_files[meta.path] = meta
 
@@ -158,11 +166,11 @@ def build_context(
                 use_git=True,  # Enable git integration as per documentation
             )
             target_files = changed_files if refresh else None
-        
+
         config_stack = read_config_stack(root)
         if config_stack:
             logger.debug(f"Found config stack: {config_stack}")
-        
+
         logger.debug("Detecting tech stack...")
         detected_stack = detect_stack(scanner, config_stack)
 
@@ -171,32 +179,68 @@ def build_context(
             profile = existing["profile"]
         else:
             profile = extract_project_profile(scanner, detected_stack, config_stack)
-        
+
         logger.debug("Analyzing symbols...")
         symbols, symbol_errors = analyze_symbols(scanner, target_files=target_files)
-        
+
         logger.debug("Extracting entrypoints...")
-        entrypoints = extract_entrypoints(scanner, detected_stack, target_files=target_files)
-        
+        entrypoints = extract_entrypoints(
+            scanner, detected_stack, target_files=target_files
+        )
+
         logger.debug("Extracting seams...")
         seams, seam_errors = extract_seams(scanner, target_files=target_files)
-        
+
         logger.debug("Extracting exemplars...")
-        exemplars = extract_exemplars(scanner, symbols, detected_stack, target_files=target_files)
-        
+        exemplars = extract_exemplars(
+            scanner, symbols, detected_stack, target_files=target_files
+        )
+
         if (refresh or reindex_only_changed) and existing:
-            symbols = merge_symbols(existing.get("symbols", []), symbols, changed_files, deleted_files)
-            entrypoints = merge_entrypoints(existing.get("entrypoints", []), entrypoints, changed_files, deleted_files)
-            seams = merge_seams(existing.get("seams", []), seams, changed_files, deleted_files)
-            exemplars = merge_exemplars(existing.get("exemplars", []), exemplars, changed_files, deleted_files)
+            symbols = merge_symbols(
+                existing.get("symbols", []), symbols, changed_files, deleted_files
+            )
+            entrypoints = merge_entrypoints(
+                existing.get("entrypoints", []),
+                entrypoints,
+                changed_files,
+                deleted_files,
+            )
+            seams = merge_seams(
+                existing.get("seams", []), seams, changed_files, deleted_files
+            )
+            exemplars = merge_exemplars(
+                existing.get("exemplars", []), exemplars, changed_files, deleted_files
+            )
 
         # Final deduplication pass before building manifest and logging
         # This ensures in-memory data, manifest, and logs all show unique items.
-        symbols = _final_dedupe(symbols, lambda s: (s.file.lower().replace("\\", "/"), s.line, s.name.lower(), s.kind))
-        entrypoints = _final_dedupe(entrypoints, lambda e: (e.file.lower().replace("\\", "/"), e.line, e.kind))
-        seams = _final_dedupe(seams, lambda s: (s.file.lower().replace("\\", "/"), s.line, s.group_id.lower(), s.kind))
-        exemplars = _final_dedupe(exemplars, lambda e: (e.file.lower().replace("\\", "/"), e.line, e.kind, e.snippet))
-        
+        symbols = _final_dedupe(
+            symbols,
+            lambda s: (
+                s.file.lower().replace("\\", "/"),
+                s.line,
+                s.name.lower(),
+                s.kind,
+            ),
+        )
+        entrypoints = _final_dedupe(
+            entrypoints, lambda e: (e.file.lower().replace("\\", "/"), e.line, e.kind)
+        )
+        seams = _final_dedupe(
+            seams,
+            lambda s: (
+                s.file.lower().replace("\\", "/"),
+                s.line,
+                s.group_id.lower(),
+                s.kind,
+            ),
+        )
+        exemplars = _final_dedupe(
+            exemplars,
+            lambda e: (e.file.lower().replace("\\", "/"), e.line, e.kind, e.snippet),
+        )
+
         logger.debug("Building index manifest...")
         if reindex_only_changed:
             manifest = build_incremental_manifest(
@@ -210,11 +254,13 @@ def build_context(
                 existing_manifest=existing.get("manifest"),
             )
         else:
-            manifest = build_index_manifest(scanner, profile, symbols, entrypoints, seams, exemplars)
-        
+            manifest = build_index_manifest(
+                scanner, profile, symbols, entrypoints, seams, exemplars
+            )
+
         # Collect errors for logging only (not persisted)
         errors = symbol_errors + seam_errors
-        
+
         files_list = sorted(current_files.values(), key=lambda meta: meta.path)
         artifacts = ContextArtifacts(
             profile=profile,
@@ -227,36 +273,43 @@ def build_context(
             stats={},  # Stats now in manifest.output_stats
             errors=errors,
         )
-        
+
         logger.debug("Writing context artifacts...")
-        virtual_seams_count = write_context_artifacts(context_root, artifacts, repo_root=root)
-        
+        virtual_seams_count = write_context_artifacts(
+            context_root, artifacts, repo_root=root
+        )
+
         elapsed = time.time() - start_time
         logger.info(
             f"Context indexing complete in {elapsed:.2f}s: "
             f"{len(symbols)} symbols, {len(entrypoints)} entrypoints, "
             f"{len(seams)} seams, {virtual_seams_count} virtual seams, {len(exemplars)} exemplars"
         )
-        
+
     except Exception as e:
         logger.error(f"Failed to build context: {e}", exc_info=True)
         raise
 
 
-def write_context_artifacts(root: Path, artifacts: ContextArtifacts, repo_root: Path | None = None) -> int:
+def write_context_artifacts(
+    root: Path, artifacts: ContextArtifacts, repo_root: Path | None = None
+) -> int:
     """Write all context artifacts to .midicoder/context/. Returns virtual seam count."""
     context_dir = root / ".midicoder" / "context"
     context_dir.mkdir(parents=True, exist_ok=True)
-    
+
     files_to_write = [
         ("manifest.json", artifacts.manifest.to_dict()),
         ("profile.json", artifacts.profile.to_dict()),
         ("symbols.json", [s.to_dict() for s in sort_symbols(artifacts.symbols)]),
-        ("entrypoints.json", [e.to_dict() for e in sort_entrypoints(artifacts.entrypoints)]),
+        (
+            "entrypoints.json",
+            [e.to_dict() for e in sort_entrypoints(artifacts.entrypoints)],
+        ),
         ("seams.json", [s.to_dict() for s in sort_seams(artifacts.seams)]),
         ("exemplars.json", [e.to_dict() for e in sort_exemplars(artifacts.exemplars)]),
     ]
-    
+
     for filename, data in files_to_write:
         path = context_dir / filename
         try:
@@ -273,7 +326,7 @@ def write_context_artifacts(root: Path, artifacts: ContextArtifacts, repo_root: 
         raise
 
     return len(virtual_seams)
-    
+
 
 def write_json(path: Path, payload: object) -> None:
     path.write_text(
@@ -321,20 +374,32 @@ def load_existing_context(context_dir: Path) -> dict[str, object]:
 
     symbols_payload = read_json_data(context_dir / "symbols.json")
     if isinstance(symbols_payload, list):
-        existing["symbols"] = [symbol_from_dict(item) for item in symbols_payload if isinstance(item, dict)]
+        existing["symbols"] = [
+            symbol_from_dict(item) for item in symbols_payload if isinstance(item, dict)
+        ]
 
     entrypoints_payload = read_json_data(context_dir / "entrypoints.json")
     if isinstance(entrypoints_payload, list):
-        existing["entrypoints"] = [entrypoint_from_dict(item) for item in entrypoints_payload if isinstance(item, dict)]
+        existing["entrypoints"] = [
+            entrypoint_from_dict(item)
+            for item in entrypoints_payload
+            if isinstance(item, dict)
+        ]
 
     seams_payload = read_json_data(context_dir / "seams.json")
     if isinstance(seams_payload, list):
-        existing["seams"] = [seam_from_dict(item) for item in seams_payload if isinstance(item, dict)]
+        existing["seams"] = [
+            seam_from_dict(item) for item in seams_payload if isinstance(item, dict)
+        ]
 
     exemplars_payload = read_json_data(context_dir / "exemplars.json")
     if isinstance(exemplars_payload, list):
-        existing["exemplars"] = [exemplar_from_dict(item) for item in exemplars_payload if isinstance(item, dict)]
-    
+        existing["exemplars"] = [
+            exemplar_from_dict(item)
+            for item in exemplars_payload
+            if isinstance(item, dict)
+        ]
+
     existing["errors"] = []
     return existing
 
@@ -387,9 +452,11 @@ def expand_manual_changed_paths(
     return expanded_with_previous
 
 
-def get_git_file_deltas(root: Path, previous_hash: str | None = None) -> tuple[set[str], set[str]] | None:
+def get_git_file_deltas(
+    root: Path, previous_hash: str | None = None
+) -> tuple[set[str], set[str]] | None:
     """
-    Parse `git status --porcelain` and optionally `git diff` from previous_hash 
+    Parse `git status --porcelain` and optionally `git diff` from previous_hash
     into changed and deleted relative paths.
     Returns None when git is unavailable or root is not a git repository.
     """
@@ -406,12 +473,17 @@ def get_git_file_deltas(root: Path, previous_hash: str | None = None) -> tuple[s
         return None
 
     try:
-        prefix = subprocess.check_output(
-            ["git", "rev-parse", "--show-prefix"],
-            cwd=root,
-            stderr=subprocess.DEVNULL,
-            timeout=5,
-        ).decode("utf-8", errors="ignore").strip().replace("\\", "/")
+        prefix = (
+            subprocess.check_output(
+                ["git", "rev-parse", "--show-prefix"],
+                cwd=root,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            .decode("utf-8", errors="ignore")
+            .strip()
+            .replace("\\", "/")
+        )
         if prefix and not prefix.endswith("/"):
             prefix += "/"
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
@@ -428,26 +500,26 @@ def get_git_file_deltas(root: Path, previous_hash: str | None = None) -> tuple[s
             stderr=subprocess.DEVNULL,
             timeout=5,
         ).decode("utf-8", errors="ignore")
-        
+
         for line in status_output.splitlines():
             if len(line) < 4:
                 continue
             status = line[:2]
             path_data = line[3:].strip()
-            
+
             new_path = path_data
             old_path: str | None = None
             if " -> " in path_data:
                 old_path, new_path = path_data.split(" -> ", 1)
-            
+
             new_path = _normalize_git_status_path(new_path)
             old_path = _normalize_git_status_path(old_path) if old_path else None
 
             if prefix:
                 if new_path.startswith(prefix):
-                    new_path = new_path[len(prefix):]
+                    new_path = new_path[len(prefix) :]
                 if old_path and old_path.startswith(prefix):
-                    old_path = old_path[len(prefix):]
+                    old_path = old_path[len(prefix) :]
 
             x_status = status[0]
             y_status = status[1]
@@ -459,7 +531,7 @@ def get_git_file_deltas(root: Path, previous_hash: str | None = None) -> tuple[s
                     deleted_files.add(new_path)
             elif new_path:
                 changed_files.add(new_path)
-                
+
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         logger.debug(f"Git status failed: {e}")
 
@@ -468,7 +540,7 @@ def get_git_file_deltas(root: Path, previous_hash: str | None = None) -> tuple[s
         clean_hash = previous_hash
         if clean_hash.startswith("sha1:"):
             clean_hash = clean_hash[5:]
-            
+
         try:
             # Check if hash exists
             subprocess.check_output(
@@ -477,31 +549,31 @@ def get_git_file_deltas(root: Path, previous_hash: str | None = None) -> tuple[s
                 stderr=subprocess.DEVNULL,
                 timeout=5,
             )
-            
+
             diff_output = subprocess.check_output(
                 ["git", "diff", "--name-status", clean_hash, "HEAD"],
                 cwd=root,
                 stderr=subprocess.DEVNULL,
                 timeout=10,
             ).decode("utf-8", errors="ignore")
-            
+
             for line in diff_output.splitlines():
                 parts = line.split(None, 2)
                 if not parts:
                     continue
-                
+
                 status = parts[0]
                 new_path = parts[1].strip()
                 old_path: str | None = parts[2].strip() if len(parts) > 2 else None
-                
+
                 new_path = _normalize_git_status_path(new_path)
                 old_path = _normalize_git_status_path(old_path) if old_path else None
 
                 if prefix:
                     if new_path.startswith(prefix):
-                        new_path = new_path[len(prefix):]
+                        new_path = new_path[len(prefix) :]
                     if old_path and old_path.startswith(prefix):
-                        old_path = old_path[len(prefix):]
+                        old_path = old_path[len(prefix) :]
 
                 if status.startswith("R") and old_path:
                     deleted_files.add(old_path)
@@ -548,34 +620,34 @@ def diff_file_sets(
 ) -> tuple[set[str], set[str]]:
     """
     Detect changed and deleted files.
-    
+
     Args:
         previous: Previously indexed files
         current: Currently scanned files
         root: Repository root (for git integration)
         use_git: Whether to use git status for change detection
-    
+
     Returns:
         Tuple of (changed_files, deleted_files)
     """
     changed: set[str] = set()
-    
+
     # Try git integration first if enabled
     git_changed = None
     if use_git and root:
         git_changed = get_git_changed_files(root)
-    
+
     if git_changed is not None:
         # Use git status as primary source
         for path in git_changed:
             if path in current:
                 changed.add(path)
-        
+
         # Also check for new files not in git yet
         for path in current:
             if path not in previous:
                 changed.add(path)
-        
+
         logger.debug(f"Using git-based change detection: {len(changed)} files changed")
     else:
         # Fall back to hash comparison
@@ -586,12 +658,12 @@ def diff_file_sets(
                 continue
             if file_meta_changed(prior, meta):
                 changed.add(path)
-        
+
         logger.debug(f"Using hash-based change detection: {len(changed)} files changed")
 
     deleted = set(previous) - set(current)
     logger.debug(f"Detected {len(deleted)} deleted files")
-    
+
     return changed, deleted
 
 
@@ -608,10 +680,13 @@ def merge_symbols(
     deleted_files: set[str],
 ) -> list[Symbol]:
     # Use lowercase sets with forward slashes for robust matching
-    changes_to_retained = {p.lower().replace("\\", "/") for p in (changed_files | deleted_files)}
-    
+    changes_to_retained = {
+        p.lower().replace("\\", "/") for p in (changed_files | deleted_files)
+    }
+
     retained = [
-        symbol for symbol in existing
+        symbol
+        for symbol in existing
         if symbol.file.lower().replace("\\", "/") not in changes_to_retained
     ]
     return retained + updated
@@ -624,10 +699,13 @@ def merge_entrypoints(
     deleted_files: set[str],
 ) -> list[EntryPoint]:
     # Use lowercase sets with forward slashes for robust matching
-    changes_to_retained = {p.lower().replace("\\", "/") for p in (changed_files | deleted_files)}
-    
+    changes_to_retained = {
+        p.lower().replace("\\", "/") for p in (changed_files | deleted_files)
+    }
+
     retained = [
-        entry for entry in existing
+        entry
+        for entry in existing
         if entry.file.lower().replace("\\", "/") not in changes_to_retained
     ]
     return retained + updated
@@ -640,10 +718,13 @@ def merge_seams(
     deleted_files: set[str],
 ) -> list[Seam]:
     # Use lowercase sets with forward slashes for robust matching
-    changes_to_retained = {p.lower().replace("\\", "/") for p in (changed_files | deleted_files)}
-    
+    changes_to_retained = {
+        p.lower().replace("\\", "/") for p in (changed_files | deleted_files)
+    }
+
     retained = [
-        seam for seam in existing
+        seam
+        for seam in existing
         if seam.file.lower().replace("\\", "/") not in changes_to_retained
     ]
     return retained + updated
@@ -656,10 +737,13 @@ def merge_exemplars(
     deleted_files: set[str],
 ) -> list[Exemplar]:
     # Use lowercase sets with forward slashes for robust matching
-    changes_to_retained = {p.lower().replace("\\", "/") for p in (changed_files | deleted_files)}
-    
+    changes_to_retained = {
+        p.lower().replace("\\", "/") for p in (changed_files | deleted_files)
+    }
+
     retained = [
-        exemplar for exemplar in existing
+        exemplar
+        for exemplar in existing
         if exemplar.file.lower().replace("\\", "/") not in changes_to_retained
     ]
     return retained + updated
@@ -689,8 +773,12 @@ def profile_from_dict(payload: dict[str, Any]) -> ProjectProfile:
         language=str(payload.get("language", "unknown")),
         stack=list(stack) if isinstance(stack, list) else [],
         orm=str(payload.get("orm")) if payload.get("orm") is not None else None,
-        di_style=str(payload.get("di_style")) if payload.get("di_style") is not None else None,
-        error_handling=str(payload.get("error_handling")) if payload.get("error_handling") is not None else None,
+        di_style=str(payload.get("di_style"))
+        if payload.get("di_style") is not None
+        else None,
+        error_handling=str(payload.get("error_handling"))
+        if payload.get("error_handling") is not None
+        else None,
         conventions=conventions if isinstance(conventions, dict) else {},
     )
 

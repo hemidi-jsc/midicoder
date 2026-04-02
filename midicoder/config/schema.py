@@ -10,10 +10,10 @@ from .defaults import CONFIG_FIELDS, DEFAULT_STACK
 def get_config_template() -> dict:
     """
     Get a basic configuration template.
-    
+
     Returns:
         Dictionary with minimal required configuration structure
-    
+
     Examples:
         >>> template = get_config_template()
         >>> template["stack"]
@@ -44,13 +44,13 @@ def get_config_template() -> dict:
 def apply_defaults(config: dict) -> dict:
     """
     Apply minimal defaults to configuration if missing.
-    
+
     Args:
         config: Configuration dictionary
-    
+
     Returns:
         New configuration dictionary with defaults applied
-    
+
     Examples:
         >>> config = {"stack": ["fastapi"]}
         >>> config_with_defaults = apply_defaults(config)
@@ -58,39 +58,39 @@ def apply_defaults(config: dict) -> dict:
         []
     """
     result = config.copy()
-    
+
     # Apply only essential defaults
     if "working_dir" not in result:
         result["working_dir"] = None
-    
+
     if "stack" not in result:
         result["stack"] = DEFAULT_STACK
-    
+
     if "commands" not in result:
         result["commands"] = []
-    
+
     if "llm" not in result:
         result["llm"] = {}
-    
+
     if "cache" not in result:
         result["cache"] = {
             "enable": True,
             "type": "ephemeral",
         }
-    
+
     return result
 
 
 def check_config_fields(config: dict) -> dict[str, list[str]]:
     """
     Check configuration for common issues (non-strict validation).
-    
+
     Args:
         config: Configuration dictionary to check
-    
+
     Returns:
         Dictionary with 'warnings' and 'errors' lists
-    
+
     Examples:
         >>> issues = check_config_fields({"stack": ["fastapi"]})
         >>> issues["errors"]
@@ -100,11 +100,11 @@ def check_config_fields(config: dict) -> dict[str, list[str]]:
     """
     warnings = []
     errors = []
-    
+
     # Check for working directory
     if "working_dir" not in config or config["working_dir"] is None:
         warnings.append('Field "working_dir" is not configured')
-    
+
     # Check for required fields
     if "stack" not in config:
         errors.append('Required field "stack" is missing')
@@ -117,8 +117,8 @@ def check_config_fields(config: dict) -> dict[str, list[str]]:
         # Legacy support for single stack as string
         if config["stack"] not in ["fastapi", "nest", "angular"]:
             warnings.append(f'Stack "{config["stack"]}" may not be supported')
-        warnings.append('Stack should be an array, not a string')
-    
+        warnings.append("Stack should be an array, not a string")
+
     # Check for LLM configuration
     if "llm" not in config or not config["llm"]:
         warnings.append('Field "llm" is not configured')
@@ -129,12 +129,14 @@ def check_config_fields(config: dict) -> dict[str, list[str]]:
                 if isinstance(tier_config, dict):
                     if not tier_config.get("model"):
                         warnings.append(f'LLM tier "{tier}" has no model specified')
-    
+
     # Check for unknown top-level fields (informational only)
     for field in config:
         if field not in CONFIG_FIELDS:
-            warnings.append(f'Unknown top-level field "{field}" (may be custom extension)')
-    
+            warnings.append(
+                f'Unknown top-level field "{field}" (may be custom extension)'
+            )
+
     return {
         "warnings": warnings,
         "errors": errors,
@@ -144,13 +146,13 @@ def check_config_fields(config: dict) -> dict[str, list[str]]:
 def validate_config_dict(config: dict) -> list[str]:
     """
     Validate configuration dictionary (backward compatibility).
-    
+
     Args:
         config: Configuration dictionary to validate
-    
+
     Returns:
         List of error messages, empty if valid
-    
+
     Examples:
         >>> errors = validate_config_dict({"stack": "fastapi", "llm": {}})
         >>> if errors:
@@ -163,13 +165,13 @@ def validate_config_dict(config: dict) -> list[str]:
 def is_secret_field(field_path: str) -> bool:
     """
     Check if a field path appears to be a secret field.
-    
+
     Args:
         field_path: Dot-notation path to field (e.g., "llm.high.api_key")
-    
+
     Returns:
         True if field looks like a secret (contains 'key', 'password', 'token', 'secret')
-    
+
     Examples:
         >>> is_secret_field("llm.high.api_key")
         True
@@ -180,5 +182,5 @@ def is_secret_field(field_path: str) -> bool:
     """
     field_lower = field_path.lower()
     secret_indicators = ["key", "password", "token", "secret", "credential"]
-    
+
     return any(indicator in field_lower for indicator in secret_indicators)

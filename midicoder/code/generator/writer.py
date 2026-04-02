@@ -59,5 +59,8 @@ def write_patches_index(
         "execution_order": execution_order,
     }
     index_path = patches_root / "index.json"
-    index_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    index_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
     return str(index_path)

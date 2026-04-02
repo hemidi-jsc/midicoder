@@ -166,7 +166,11 @@ def build_schema_tree(version: str = DSL_SCHEMA_VERSION) -> dict[str, Any]:
 
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
-            if isinstance(attr, type) and issubclass(attr, BaseModel) and attr is not BaseModel:
+            if (
+                isinstance(attr, type)
+                and issubclass(attr, BaseModel)
+                and attr is not BaseModel
+            ):
                 models_section[attr.__name__] = _model_to_dict(attr)
 
         for attr_name in dir(module):
@@ -187,7 +191,9 @@ def build_schema_tree(version: str = DSL_SCHEMA_VERSION) -> dict[str, Any]:
     return tree
 
 
-def write_schema_tree(path: Path | None = None, version: str = DSL_SCHEMA_VERSION) -> Path:
+def write_schema_tree(
+    path: Path | None = None, version: str = DSL_SCHEMA_VERSION
+) -> Path:
     """Write the schema tree YAML file to disk and return its path."""
     tree = build_schema_tree(version=version)
     if path is None:

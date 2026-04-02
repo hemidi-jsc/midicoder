@@ -124,5 +124,7 @@ class IntegrationCallParams(BaseModel):
     @model_validator(mode="after")
     def validate_target_presence(self) -> "IntegrationCallParams":
         if not any((self.target, self.integration, self.service)):
-            raise ValueError("call.integration requires one of 'target', 'integration', or 'service'")
+            raise ValueError(
+                "call.integration requires one of 'target', 'integration', or 'service'"
+            )
         return self

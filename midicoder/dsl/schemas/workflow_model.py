@@ -93,4 +93,3 @@ class WorkflowsFile(BaseModel):
     workflows: list[Workflow]
 
     model_config = {"extra": "forbid"}
-

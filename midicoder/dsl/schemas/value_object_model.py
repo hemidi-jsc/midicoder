@@ -58,4 +58,3 @@ class ValueObjectsFile(BaseModel):
     value_objects: list[ValueObject]
 
     model_config = {"extra": "forbid"}
-

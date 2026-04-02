@@ -49,4 +49,3 @@ class EnumsFile(BaseModel):
     enums: list[EnumDef]
 
     model_config = {"extra": "forbid"}
-

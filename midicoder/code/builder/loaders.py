@@ -58,4 +58,3 @@ def _read_json_file(path: Path) -> Any:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
-
