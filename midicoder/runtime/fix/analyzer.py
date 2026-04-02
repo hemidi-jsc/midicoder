@@ -12,7 +12,7 @@ from typing import Any
 @dataclass
 class ErrorCategory:
     """Categorized error information."""
-    
+
     type: str
     errors: list[dict] = field(default_factory=list)
     file_context: dict = field(default_factory=dict)
@@ -21,7 +21,7 @@ class ErrorCategory:
 @dataclass
 class ErrorAnalysis:
     """Analysis result of error logs."""
-    
+
     errors: list[ErrorCategory] = field(default_factory=list)
     summary: dict = field(default_factory=dict)
     traceback_focus: list[dict[str, Any]] = field(default_factory=list)
@@ -29,39 +29,41 @@ class ErrorAnalysis:
     runtime_keywords: list[str] = field(default_factory=list)
 
 
-def analyze_error_logs(log_dir: Path, *, working_dir: Path | None = None) -> ErrorAnalysis:
+def analyze_error_logs(
+    log_dir: Path, *, working_dir: Path | None = None
+) -> ErrorAnalysis:
     """Analyze error logs and categorize errors."""
     summary_file = log_dir / "summary.json"
     error_log_file = log_dir / "error.log"
-    
+
     if not summary_file.exists():
         return ErrorAnalysis()
-    
+
     try:
         summary = json.loads(summary_file.read_text(encoding="utf-8"))
     except Exception:
         return ErrorAnalysis()
-    
+
     # Categorize errors
     categories: dict[str, ErrorCategory] = {}
     project_files: set[str] = set()
     keywords: set[str] = set()
     traceback_focus: list[dict[str, Any]] = []
-    
+
     for error in summary.get("errors", []):
         error_type = error.get("type", "unknown")
         keywords.update(_tokenize_text(str(error_type)))
         keywords.update(_tokenize_text(str(error.get("message", ""))))
-        
+
         if error_type not in categories:
             categories[error_type] = ErrorCategory(
                 type=error_type,
                 errors=[],
                 file_context={},
             )
-        
+
         categories[error_type].errors.append(error)
-        
+
         # Extract file context if available
         if error.get("file"):
             file_path = _normalize_path(str(error["file"]), working_dir)
@@ -70,13 +72,15 @@ def analyze_error_logs(log_dir: Path, *, working_dir: Path | None = None) -> Err
             categories[error_type].file_context[file_path].append(error)
             if not _should_skip_file(file_path):
                 project_files.add(file_path)
-                traceback_focus.append({
-                    "file": file_path,
-                    "line": error.get("line"),
-                    "error_type": error_type,
-                    "source": "summary",
-                })
-    
+                traceback_focus.append(
+                    {
+                        "file": file_path,
+                        "line": error.get("line"),
+                        "error_type": error_type,
+                        "source": "summary",
+                    }
+                )
+
     # Read error.log for additional context
     if error_log_file.exists():
         error_log_content = error_log_file.read_text(encoding="utf-8")
@@ -89,7 +93,7 @@ def analyze_error_logs(log_dir: Path, *, working_dir: Path | None = None) -> Err
         traceback_focus.extend(focus_from_log)
         project_files.update(files_from_log)
         keywords.update(keywords_from_log)
-    
+
     return ErrorAnalysis(
         errors=list(categories.values()),
         summary=summary,
@@ -130,11 +134,13 @@ def _enrich_error_context(
                 if isinstance(item, dict)
             )
             if not existing:
-                category.file_context[file_path].append({
-                    "line": int(line_num),
-                    "source": "traceback",
-                    "symbol": in_symbol or None,
-                })
+                category.file_context[file_path].append(
+                    {
+                        "line": int(line_num),
+                        "source": "traceback",
+                        "symbol": in_symbol or None,
+                    }
+                )
 
         focus.append(
             {
@@ -189,7 +195,7 @@ def _should_skip_file(file_path: str) -> bool:
     """Check if file should be skipped (not part of user's project)."""
     # Normalize path separators
     normalized = file_path.replace("\\", "/").lower()
-    
+
     # Skip patterns for third-party code
     skip_patterns = [
         "/venv/",
@@ -203,12 +209,12 @@ def _should_skip_file(file_path: str) -> bool:
         "\\lib\\python",
         "\\python3",
     ]
-    
+
     # Check if path contains any skip pattern
     for pattern in skip_patterns:
         if pattern.lower() in normalized:
             return True
-    
+
     # Skip obvious non-source assets
     if normalized.endswith((".pyc", ".log", ".tmp", ".cache")):
         return True

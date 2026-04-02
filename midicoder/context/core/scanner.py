@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
@@ -112,23 +112,23 @@ class GitIgnoreMatcher:
 
     def is_ignored(self, path: Path, is_dir: bool) -> bool:
         """Check if path is ignored by gitignore rules.
-        
+
         Results are cached to avoid redundant pattern matching.
         """
         # Create cache key
         cache_key = f"{path}:{is_dir}"
-        
+
         # Check cache first
         if cache_key in self._cache:
             return self._cache[cache_key]
-        
+
         # Compute result
         result = self._check_ignored_impl(path, is_dir)
-        
+
         # Cache it
         self._cache[cache_key] = result
         return result
-    
+
     def _check_ignored_impl(self, path: Path, is_dir: bool) -> bool:
         """Implementation of gitignore checking (original logic)."""
         relative = normalize_path(path.relative_to(self.root))
@@ -140,7 +140,9 @@ class GitIgnoreMatcher:
                 prefix = f"{base_rel}/"
                 if not relative.startswith(prefix) and relative != base_rel:
                     continue
-                rel_to_base = relative[len(prefix):] if relative.startswith(prefix) else ""
+                rel_to_base = (
+                    relative[len(prefix) :] if relative.startswith(prefix) else ""
+                )
             else:
                 rel_to_base = relative
 
@@ -156,37 +158,37 @@ class FileCache:
         self._content_cache: dict[str, str] = {}
         self._content_bytes_cache: dict[str, bytes] = {}  # Cache raw bytes for hashing
         self._stat_cache: dict[str, tuple[int, float]] = {}
-    
+
     def get_content(self, path: Path) -> str | None:
         key = str(path)
         if key in self._content_cache:
             return self._content_cache[key]
-        
+
         content = safe_read_text(path)
         if content is not None:
             self._content_cache[key] = content
         return content
-    
+
     def get_content_bytes(self, path: Path) -> bytes | None:
         """Get raw bytes content (useful for hashing)."""
         key = str(path)
         if key in self._content_bytes_cache:
             return self._content_bytes_cache[key]
-        
+
         try:
             with path.open("rb") as handle:
                 content_bytes = handle.read()
-            
+
             self._content_bytes_cache[key] = content_bytes
             return content_bytes
         except OSError:
             return None
-    
+
     def get_stat(self, path: Path) -> tuple[int, float] | None:
         key = str(path)
         if key in self._stat_cache:
             return self._stat_cache[key]
-        
+
         try:
             stat = path.stat()
             result = (stat.st_size, stat.st_mtime)
@@ -194,7 +196,7 @@ class FileCache:
             return result
         except OSError:
             return None
-    
+
     def clear(self) -> None:
         self._content_cache.clear()
         self._content_bytes_cache.clear()
@@ -213,21 +215,21 @@ class ProjectScanner:
         self.ignore_matcher = ignore_matcher
         self.ignored_patterns = ignored_patterns
         self.cache = file_cache or FileCache()
-        
+
         self.python_files: list[Path] = []
         self.js_ts_files: list[Path] = []
         self.config_files: list[Path] = []
         self.all_code_files: list[Path] = []
-        
+
         self.indexed_files: list[FileMeta] = []
         self.total_files_found: int = 0
         self.total_files_indexed: int = 0
         self.skipped_sensitive_files: list[str] = []
         self.skipped_unindexed_files: list[str] = []
-    
+
     def scan(self, compute_hash: bool = False) -> None:
         """Scan project files and build index.
-        
+
         Args:
             compute_hash: If True, compute SHA256 hash for each file.
                          Only needed for refresh mode to detect changes.
@@ -247,7 +249,9 @@ class ProjectScanner:
             f"Scan complete ({hash_mode}): {self.total_files_indexed}/{self.total_files_found} files indexed"
         )
 
-    def scan_selected(self, relative_paths: set[str], compute_hash: bool = False) -> None:
+    def scan_selected(
+        self, relative_paths: set[str], compute_hash: bool = False
+    ) -> None:
         """Scan only explicitly selected relative paths."""
         total_files = 0
 
@@ -291,10 +295,10 @@ class ProjectScanner:
                 selected_files.update(self._walk_selected_dir(path))
 
         return selected_files
-    
+
     def _walk_files(self) -> Iterator[Path]:
         """Walk through files with early directory filtering.
-        
+
         Optimized to skip ignored directories early, avoiding
         unnecessary traversal and gitignore checks.
         Follows symlinked directories while preventing cycles.
@@ -311,20 +315,20 @@ class ProjectScanner:
                 dirnames.clear()
                 continue
             seen_dirs.add(resolved_dir)
-            
+
             # Early exit if current directory is ignored (except root)
             if current_dir != self.root:
                 if self.ignore_matcher.is_ignored(current_dir, is_dir=True):
                     dirnames.clear()  # Stop os.walk from descending
                     continue
-            
+
             # Filter subdirectories before os.walk descends into them
             filtered_dirs = []
             for dirname in dirnames:
                 # Skip hard-ignored directories
                 if dirname in HARD_IGNORED_DIRS:
                     continue
-                
+
                 # Check gitignore for this directory
                 subdir = current_dir / dirname
                 try:
@@ -335,10 +339,10 @@ class ProjectScanner:
                     continue
                 if not self.ignore_matcher.is_ignored(subdir, is_dir=True):
                     filtered_dirs.append(dirname)
-            
+
             # Update dirnames in-place to control os.walk traversal
             dirnames[:] = filtered_dirs
-            
+
             # Yield files (still check individually for file-specific rules)
             for filename in filenames:
                 file_path = current_dir / filename
@@ -422,18 +426,18 @@ class ProjectScanner:
             return
 
         self.skipped_unindexed_files.append(relative_path)
-    
+
     def get_content(self, path: Path) -> str | None:
         return self.cache.get_content(path)
-    
+
     @property
     def has_python(self) -> bool:
         return len(self.python_files) > 0
-    
+
     @property
     def has_javascript(self) -> bool:
         return len(self.js_ts_files) > 0
-    
+
     @property
     def has_code(self) -> bool:
         return len(self.all_code_files) > 0
@@ -455,7 +459,9 @@ def normalize_path(path: Path) -> str:
     return value
 
 
-def matches_gitignore_rule(relative_path: str, rule: GitIgnoreRule, is_dir: bool) -> bool:
+def matches_gitignore_rule(
+    relative_path: str, rule: GitIgnoreRule, is_dir: bool
+) -> bool:
     pattern = rule.pattern
 
     if rule.anchored:
@@ -472,22 +478,22 @@ def matches_gitignore_rule(relative_path: str, rule: GitIgnoreRule, is_dir: bool
 
 def is_sensitive_file(path: Path) -> bool:
     name = path.name
-    
+
     if name in SENSITIVE_FILE_NAMES:
         return True
-    
+
     if name.startswith(".env"):
         return True
-    
+
     if path.suffix.lower() in SENSITIVE_FILE_EXTS:
         return True
-    
+
     return False
 
 
 def safe_read_text(path: Path) -> str | None:
     """Read text file safely with binary/encoding checks.
-    
+
     Optimized to read file only once instead of twice.
     Handles UTF-8 BOM, UTF-16/UTF-32 where possible.
     """
@@ -504,7 +510,9 @@ def _decode_text_bytes(content_bytes: bytes) -> str | None:
         return ""
 
     # BOM-aware decoding first
-    if content_bytes.startswith(b"\xff\xfe\x00\x00") or content_bytes.startswith(b"\x00\x00\xfe\xff"):
+    if content_bytes.startswith(b"\xff\xfe\x00\x00") or content_bytes.startswith(
+        b"\x00\x00\xfe\xff"
+    ):
         return content_bytes.decode("utf-32", errors="ignore")
     if content_bytes.startswith(b"\xff\xfe") or content_bytes.startswith(b"\xfe\xff"):
         return content_bytes.decode("utf-16", errors="ignore")
@@ -535,8 +543,7 @@ def _guess_utf_encoding(sample: bytes) -> str | None:
         if value == 0:
             mod_nulls[slot] += 1
     null_ratios = [
-        (mod_nulls[i] / mod_counts[i]) if mod_counts[i] else 0.0
-        for i in range(4)
+        (mod_nulls[i] / mod_counts[i]) if mod_counts[i] else 0.0 for i in range(4)
     ]
     low_idx = min(range(4), key=lambda i: null_ratios[i])
     if all(null_ratios[i] > 0.7 for i in range(4) if i != low_idx):
@@ -572,7 +579,7 @@ def build_file_meta(
     file_cache: FileCache | None = None,
 ) -> FileMeta | None:
     """Build file metadata, optionally computing hash.
-    
+
     Args:
         root: Project root path
         path: File path
@@ -582,7 +589,7 @@ def build_file_meta(
         kind: File kind (code/config)
         compute_hash: If True, compute SHA256 hash (default: False)
         file_cache: Optional file cache to avoid re-reading files
-    
+
     Returns:
         FileMeta object or None on error
     """
@@ -594,7 +601,7 @@ def build_file_meta(
             if file_cache:
                 content_bytes = file_cache.get_content_bytes(path)
             sha256 = hash_file(path, content_bytes=content_bytes)
-        
+
         return FileMeta(
             path=normalize_path(path.relative_to(root)),
             size=size,
@@ -609,17 +616,17 @@ def build_file_meta(
 
 def hash_file(path: Path, content_bytes: bytes | None = None) -> str | None:
     """Compute SHA256 hash of file.
-    
+
     Args:
         path: Path to file
         content_bytes: Optional pre-read file content (optimization)
-    
+
     Returns:
         SHA256 hex digest or None on error
     """
     try:
         hasher = hashlib.sha256()
-        
+
         # If we already have content in memory, use it
         if content_bytes is not None:
             hasher.update(content_bytes)
@@ -631,7 +638,7 @@ def hash_file(path: Path, content_bytes: bytes | None = None) -> str | None:
                     if not chunk:
                         break
                     hasher.update(chunk)
-        
+
         return hasher.hexdigest()
     except OSError:
         return None
@@ -648,7 +655,11 @@ def load_gitignore_files(root: Path) -> tuple[list[GitIgnoreFile], list[str]]:
             default_rules.append(rule)
             raw_patterns.append(pattern)
 
-    gitignore_files.append(GitIgnoreFile(base_path=root, rules=default_rules, raw_patterns=list(raw_patterns)))
+    gitignore_files.append(
+        GitIgnoreFile(
+            base_path=root, rules=default_rules, raw_patterns=list(raw_patterns)
+        )
+    )
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(name for name in dirnames if name not in HARD_IGNORED_DIRS)
@@ -660,7 +671,9 @@ def load_gitignore_files(root: Path) -> tuple[list[GitIgnoreFile], list[str]]:
         rules: list[GitIgnoreRule] = []
 
         try:
-            lines = gitignore_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+            lines = gitignore_path.read_text(
+                encoding="utf-8", errors="ignore"
+            ).splitlines()
         except OSError:
             continue
 
@@ -671,10 +684,19 @@ def load_gitignore_files(root: Path) -> tuple[list[GitIgnoreFile], list[str]]:
                 rules.append(rule)
 
         if rules:
-            gitignore_files.append(GitIgnoreFile(base_path=Path(dirpath), rules=rules, raw_patterns=patterns))
+            gitignore_files.append(
+                GitIgnoreFile(
+                    base_path=Path(dirpath), rules=rules, raw_patterns=patterns
+                )
+            )
             raw_patterns.extend(patterns)
 
-    gitignore_files.sort(key=lambda gf: (len(gf.base_path.relative_to(root).parts), normalize_path(gf.base_path.relative_to(root))))
+    gitignore_files.sort(
+        key=lambda gf: (
+            len(gf.base_path.relative_to(root).parts),
+            normalize_path(gf.base_path.relative_to(root)),
+        )
+    )
     return gitignore_files, raw_patterns
 
 
@@ -704,4 +726,6 @@ def parse_gitignore_line(line: str, source: str) -> GitIgnoreRule | None:
     if not stripped:
         return None
 
-    return GitIgnoreRule(pattern=stripped, negated=negated, anchored=anchored, source=source)
+    return GitIgnoreRule(
+        pattern=stripped, negated=negated, anchored=anchored, source=source
+    )

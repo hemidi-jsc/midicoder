@@ -192,9 +192,9 @@ def _collect_symbol_snippets(
         begin_line, end_line = resolve_block_bounds_for_symbol(repo_root, symbol)
         if begin_line is None:
             begin_line = line
-        snippet = _extract_block_snippet(repo_root, file_path, begin_line, end_line) or _extract_line_snippet(
-            repo_root, file_path, line
-        )
+        snippet = _extract_block_snippet(
+            repo_root, file_path, begin_line, end_line
+        ) or _extract_line_snippet(repo_root, file_path, line)
         if not snippet:
             continue
         blocks.append(
@@ -229,7 +229,9 @@ def _collect_exemplar_snippets(
         end_line = None
         if not snippet:
             line = _coerce_line(exemplar.get("line"))
-            begin_line, end_line = resolve_block_bounds_for_exemplar(repo_root, exemplar)
+            begin_line, end_line = resolve_block_bounds_for_exemplar(
+                repo_root, exemplar
+            )
             if begin_line is None:
                 begin_line = line
             snippet = (
@@ -280,7 +282,9 @@ def _collect_real_seam_snippets(
         end_line = bounds.get("end")
         if begin_line is None:
             continue
-        range_start = begin_line + 1 if end_line and end_line > begin_line else begin_line
+        range_start = (
+            begin_line + 1 if end_line and end_line > begin_line else begin_line
+        )
         range_end = (end_line - 1) if end_line and end_line > begin_line else None
         snippet = _extract_block_snippet(repo_root, file_path, range_start, range_end)
         if not snippet:
@@ -339,19 +343,23 @@ def _parse_llm_json(text: str, pass_name: str) -> Any:
                 continue
             if not content[idx + end :].strip():
                 return parsed
-        raise RuntimeError(f"{pass_name} JSON parse failed: unable to recover valid JSON")
+        raise RuntimeError(
+            f"{pass_name} JSON parse failed: unable to recover valid JSON"
+        )
 
 
 def _build_rewrite_system_prompt() -> str:
     """Build system prompt for master brief rewriting."""
 
-    git_marker_block = "\n".join([
-        "<<<<<<< ORIGINAL",
-        "[exact text from original file]",
-        "=======",
-        "[corrected text]",
-        ">>>>>>> UPDATED"
-    ])
+    git_marker_block = "\n".join(
+        [
+            "<<<<<<< ORIGINAL",
+            "[exact text from original file]",
+            "=======",
+            "[corrected text]",
+            ">>>>>>> UPDATED",
+        ]
+    )
 
     return f"""You are an expert technical documentation analyst, specializing in Master Briefs for software projects following the Midicoder DSL standard.
 
@@ -408,7 +416,9 @@ Return your response in this EXACT format:
 - Use the same language as the original content"""
 
 
-def _build_rewrite_prompt(original_content: str, module_narratives: list[dict[str, Any]]) -> str:
+def _build_rewrite_prompt(
+    original_content: str, module_narratives: list[dict[str, Any]]
+) -> str:
     """Build the prompt for master brief rewriting."""
     return f"""# Master Brief Review Request
 
@@ -506,22 +516,22 @@ def _build_module_narratives_prompt(context_summaries: list[dict[str, Any]]) -> 
 def _parse_search_replace_blocks(llm_response: str) -> list[tuple[str, str]]:
     """
     Parse SEARCH/REPLACE blocks from LLM response.
-    
+
     Returns:
         List of (original_text, updated_text) tuples
     """
     blocks = []
-    
+
     # Pattern to match SEARCH/REPLACE blocks
-    pattern = r'<<<<<<< ORIGINAL\s*\n(.*?)\n=======\s*\n(.*?)\n>>>>>>> UPDATED'
-    
+    pattern = r"<<<<<<< ORIGINAL\s*\n(.*?)\n=======\s*\n(.*?)\n>>>>>>> UPDATED"
+
     matches = re.finditer(pattern, llm_response, re.DOTALL)
-    
+
     for match in matches:
         original = match.group(1)
         updated = match.group(2)
         blocks.append((original, updated))
-    
+
     return blocks
 
 
@@ -531,14 +541,14 @@ def _apply_search_replace_blocks(
 ) -> tuple[str, list[str]]:
     """
     Apply SEARCH/REPLACE blocks to original content.
-    
+
     Returns:
         Tuple of (updated_content, list_of_errors)
     """
     content = original_content
     errors = []
     applied_count = 0
-    
+
     for i, (search_text, replace_text) in enumerate(blocks, 1):
         # Try to find the search text
         if search_text in content:
@@ -546,9 +556,9 @@ def _apply_search_replace_blocks(
             applied_count += 1
         else:
             # Try with normalized whitespace
-            normalized_search = ' '.join(search_text.split())
-            normalized_content = ' '.join(content.split())
-            
+            normalized_search = " ".join(search_text.split())
+            normalized_content = " ".join(content.split())
+
             if normalized_search in normalized_content:
                 errors.append(
                     f"Block {i}: Found with whitespace differences. "
@@ -559,13 +569,15 @@ def _apply_search_replace_blocks(
                     f"Block {i}: Search text not found in original content. "
                     f"First 50 chars: {search_text[:50]}..."
                 )
-    
+
     if applied_count > 0:
         print(f"[brief rewrite] ✓ Applied {applied_count}/{len(blocks)} change blocks")
-    
+
     if errors:
-        print(f"[brief rewrite] ⚠ {len(errors)} blocks could not be applied (see errors.txt)")
-    
+        print(
+            f"[brief rewrite] ⚠ {len(errors)} blocks could not be applied (see errors.txt)"
+        )
+
     return content, errors
 
 
@@ -633,8 +645,12 @@ def rewrite_master_brief(
 
     virtual_seams = _load_virtual_seams(context_dir)
     if not virtual_seams:
-        print("[brief rewrite] ⚠ virtual_seams.json missing or empty; falling back to seams/symbols/exemplars.")
-    filtered_virtual_seams = _filter_seams(virtual_seams, keywords, symbol_names_by_file)
+        print(
+            "[brief rewrite] ⚠ virtual_seams.json missing or empty; falling back to seams/symbols/exemplars."
+        )
+    filtered_virtual_seams = _filter_seams(
+        virtual_seams, keywords, symbol_names_by_file
+    )
     seam_snippets = _collect_virtual_seam_snippets(repo_root, filtered_virtual_seams)
 
     snippets: list[SnippetBlock] = seam_snippets
@@ -647,10 +663,12 @@ def rewrite_master_brief(
     if not snippets:
         exemplars = _load_json_list(context_dir / "exemplars.json")
         filtered_symbols = filter_symbols(symbols, keyword_map, top_k=20, min_score=2.0)
-        filtered_exemplars = filter_exemplars(exemplars, keyword_map, semantic_groups=[], top_k=15, min_score=2.0)
-        snippets = _collect_symbol_snippets(repo_root, filtered_symbols) + _collect_exemplar_snippets(
-            repo_root, filtered_exemplars
+        filtered_exemplars = filter_exemplars(
+            exemplars, keyword_map, semantic_groups=[], top_k=15, min_score=2.0
         )
+        snippets = _collect_symbol_snippets(
+            repo_root, filtered_symbols
+        ) + _collect_exemplar_snippets(repo_root, filtered_exemplars)
 
     snippets = _truncate_snippets(snippets)
     if not snippets:
@@ -662,17 +680,25 @@ def rewrite_master_brief(
         context_summaries: list[dict[str, Any]] = []
         module_narratives: list[dict[str, Any]] = []
         if run_dir:
-            (run_dir / "pass1_prompt_user.txt").write_text("No snippets available.", encoding="utf-8")
+            (run_dir / "pass1_prompt_user.txt").write_text(
+                "No snippets available.", encoding="utf-8"
+            )
             (run_dir / "pass1_llm_response.txt").write_text("[]", encoding="utf-8")
-            (run_dir / "pass2_prompt_user.txt").write_text("No context summaries available.", encoding="utf-8")
+            (run_dir / "pass2_prompt_user.txt").write_text(
+                "No context summaries available.", encoding="utf-8"
+            )
             (run_dir / "pass2_llm_response.txt").write_text("[]", encoding="utf-8")
     else:
         # Pass 1: Summarize blocks
         pass1_system = _build_context_summary_system_prompt()
         pass1_prompt = _build_context_summary_prompt(snippets)
         if run_dir:
-            (run_dir / "pass1_prompt_system.txt").write_text(pass1_system, encoding="utf-8")
-            (run_dir / "pass1_prompt_user.txt").write_text(pass1_prompt, encoding="utf-8")
+            (run_dir / "pass1_prompt_system.txt").write_text(
+                pass1_system, encoding="utf-8"
+            )
+            (run_dir / "pass1_prompt_user.txt").write_text(
+                pass1_prompt, encoding="utf-8"
+            )
         pass1_response = call_llm(
             llm_config,
             system=pass1_system,
@@ -682,7 +708,9 @@ def rewrite_master_brief(
         )
         pass1_text = _strip_code_fences(pass1_response.content)
         if run_dir:
-            (run_dir / "pass1_llm_response.txt").write_text(pass1_text, encoding="utf-8")
+            (run_dir / "pass1_llm_response.txt").write_text(
+                pass1_text, encoding="utf-8"
+            )
         try:
             context_summaries = _parse_llm_json(pass1_response.content, "Pass 1")
         except RuntimeError as exc:
@@ -692,8 +720,12 @@ def rewrite_master_brief(
         pass2_system = _build_module_narratives_system_prompt()
         pass2_prompt = _build_module_narratives_prompt(context_summaries)
         if run_dir:
-            (run_dir / "pass2_prompt_system.txt").write_text(pass2_system, encoding="utf-8")
-            (run_dir / "pass2_prompt_user.txt").write_text(pass2_prompt, encoding="utf-8")
+            (run_dir / "pass2_prompt_system.txt").write_text(
+                pass2_system, encoding="utf-8"
+            )
+            (run_dir / "pass2_prompt_user.txt").write_text(
+                pass2_prompt, encoding="utf-8"
+            )
         pass2_response = call_llm(
             llm_config,
             system=pass2_system,
@@ -703,7 +735,9 @@ def rewrite_master_brief(
         )
         pass2_text = _strip_code_fences(pass2_response.content)
         if run_dir:
-            (run_dir / "pass2_llm_response.txt").write_text(pass2_text, encoding="utf-8")
+            (run_dir / "pass2_llm_response.txt").write_text(
+                pass2_text, encoding="utf-8"
+            )
         try:
             module_narratives = _parse_llm_json(pass2_response.content, "Pass 2")
         except RuntimeError as exc:
@@ -774,26 +808,26 @@ def save_rewritten_master_brief(
 ) -> Path:
     """
     Save rewritten master brief to master-brief.updated.md.
-    
+
     Args:
         version_root: Path to version directory
         rewritten_content: Rewritten content
         llm_response: Raw LLM response with analysis
         errors: List of errors during applying changes
-        
+
     Returns:
         Path to the created file
     """
     output_path = version_root / "master-brief.updated.md"
     output_path.write_text(rewritten_content, encoding="utf-8")
-    
+
     # Save LLM analysis separately
     analysis_path = version_root / "master-brief.analysis.md"
     analysis_path.write_text(llm_response, encoding="utf-8")
-    
+
     # Save errors if any
     if errors:
         errors_path = version_root / "master-brief.errors.txt"
         errors_path.write_text("\n\n".join(errors), encoding="utf-8")
-    
+
     return output_path

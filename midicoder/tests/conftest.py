@@ -10,8 +10,8 @@ from typing import Iterable
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-TEXTURES_DIR = REPO_ROOT / "tests" / "textures" / "briefs"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+TEXTURES_DIR = Path(__file__).resolve().parent / "textures" / "briefs"
 
 
 @pytest.fixture()
@@ -19,18 +19,23 @@ def tmp_workdir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def run_cli(args: Iterable[str], cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def run_cli(
+    args: Iterable[str], cwd: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
     pythonpath = full_env.get("PYTHONPATH", "")
-    full_env["PYTHONPATH"] = os.pathsep.join([str(REPO_ROOT), pythonpath]) if pythonpath else str(REPO_ROOT)
+    full_env["PYTHONPATH"] = (
+        os.pathsep.join([str(REPO_ROOT), pythonpath]) if pythonpath else str(REPO_ROOT)
+    )
     return subprocess.run(
         [sys.executable, "-m", "midicoder", *args],
         cwd=cwd,
         env=full_env,
         capture_output=True,
         text=True,
+        input="",  # Force Non-TTY input to avoid interactive prompt issues
         check=False,
     )
 
@@ -48,7 +53,7 @@ def write_llm_config(root: Path) -> dict[str, str] | None:
     Prepare LLM config for tests by copying the repository-level
     `.midicoder/config.json` (and optional secrets) into the test workspace.
     """
-    repo_midicoder = REPO_ROOT.parent / ".midicoder"
+    repo_midicoder = REPO_ROOT / ".midicoder"
     repo_config_path = repo_midicoder / "config.json"
     if not repo_config_path.exists():
         return None
@@ -66,7 +71,9 @@ def write_llm_config(root: Path) -> dict[str, str] | None:
 
     config_path = root / ".midicoder" / "config.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    config_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
     repo_secrets_path = repo_midicoder / "secrets" / "secrets.json"
     if repo_secrets_path.exists():
@@ -140,5 +147,15 @@ rules:
 
 def assert_cli_success(result: subprocess.CompletedProcess[str]) -> None:
     assert result.returncode == 0, (
-        f"CLI failed with code {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        "CLI failed with code "
+        f"{result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     )
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        path_str = str(item.fspath)
+        if "/integration/" in path_str:
+            item.add_marker(pytest.mark.integration)
+        elif "/unit/" in path_str:
+            item.add_marker(pytest.mark.unit)

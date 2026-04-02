@@ -29,17 +29,31 @@ def validate_plan_quality(
     errors: list[str] = []
     warnings: list[str] = []
 
-    def report(code: str, message: str, phase: str, action: str, *, hard: bool = True) -> None:
+    def report(
+        code: str, message: str, phase: str, action: str, *, hard: bool = True
+    ) -> None:
         if hard and strict_target:
             errors.append(emit_error(code, message, phase=phase, action=action))
             return
-        warning_code = code if not hard else f"W{code[1:]}" if code.startswith("E") else code
+        warning_code = (
+            code if not hard else f"W{code[1:]}" if code.startswith("E") else code
+        )
         warnings.append(emit_warning(warning_code, message, phase=phase, action=action))
 
     api_payload = pseudo_struct.get("api", {})
-    routes = _as_list(api_payload.get("routes")) if isinstance(api_payload, dict) else []
-    request_mapping = _as_list(api_payload.get("request_mapping")) if isinstance(api_payload, dict) else []
-    response_mapping = _as_list(api_payload.get("response_mapping")) if isinstance(api_payload, dict) else []
+    routes = (
+        _as_list(api_payload.get("routes")) if isinstance(api_payload, dict) else []
+    )
+    request_mapping = (
+        _as_list(api_payload.get("request_mapping"))
+        if isinstance(api_payload, dict)
+        else []
+    )
+    response_mapping = (
+        _as_list(api_payload.get("response_mapping"))
+        if isinstance(api_payload, dict)
+        else []
+    )
     inputs = _as_list(pseudo_struct.get("inputs"))
     outputs = _as_list(pseudo_struct.get("outputs"))
     return_outputs = _find_return_outputs(pseudo_struct)
@@ -51,8 +65,12 @@ def validate_plan_quality(
             if not isinstance(route, dict):
                 continue
             route_id = str(route.get("id", "")).strip()
-            request_fields = _required_field_names(_as_list(route.get("request_schema")))
-            response_fields = _required_field_names(_as_list(route.get("response_schema")))
+            request_fields = _required_field_names(
+                _as_list(route.get("request_schema"))
+            )
+            response_fields = _required_field_names(
+                _as_list(route.get("response_schema"))
+            )
 
             unresolved_request = _unmapped_required_fields(
                 route_id=route_id,
@@ -128,7 +146,9 @@ def validate_plan_quality(
     _validate_cross_links(item, pseudo_struct, symbol_ids, report)
     _validate_integration_contract(item, integration_contract or {}, report)
     _validate_merge_contract(item, merge_contract or {}, report)
-    _validate_security_contract(item, security_contract or {}, io_reconciliation or {}, report)
+    _validate_security_contract(
+        item, security_contract or {}, io_reconciliation or {}, report
+    )
 
     if strict_target:
         if not required_files:
@@ -147,7 +167,9 @@ def validate_plan_quality(
                     action=f"target={target}",
                 )
 
-    if suggested_paths and all(path.resolver_source == "fallback" for path in suggested_paths):
+    if suggested_paths and all(
+        path.resolver_source == "fallback" for path in suggested_paths
+    ):
         best = max((path.confidence or 0.0) for path in suggested_paths)
         if best < LOW_CONFIDENCE_THRESHOLD:
             warnings.append(
@@ -195,7 +217,9 @@ def _validate_io_reconciliation(
             if str(value).strip()
         }
 
-    unresolved_public = public_fields - output_names - runtime_fields - command_outputs - query_outputs
+    unresolved_public = (
+        public_fields - output_names - runtime_fields - command_outputs - query_outputs
+    )
     if unresolved_public:
         report(
             "E401",
@@ -231,7 +255,9 @@ def _validate_integration_contract(
                 )
 
 
-def _validate_merge_contract(item: IRPlanItem, merge_contract: dict[str, Any], report: Any) -> None:
+def _validate_merge_contract(
+    item: IRPlanItem, merge_contract: dict[str, Any], report: Any
+) -> None:
     mode = str(merge_contract.get("mode", "")).strip()
     if not mode:
         report(
@@ -296,17 +322,29 @@ def _validate_cross_links(
                 continue
             workflow_id = str(transition.get("workflow_id", "")).strip().lower()
             if workflow_id and workflow_id not in workflow_ids:
-                report("E357", "workflow_id does not resolve", "quality", f"workflow_id={workflow_id}")
+                report(
+                    "E357",
+                    "workflow_id does not resolve",
+                    "quality",
+                    f"workflow_id={workflow_id}",
+                )
 
     dependencies = pseudo_struct.get("dependencies")
     if isinstance(dependencies, dict):
-        for dep in _as_list(dependencies.get("fetches")) + _as_list(dependencies.get("reads")):
+        for dep in _as_list(dependencies.get("fetches")) + _as_list(
+            dependencies.get("reads")
+        ):
             if not isinstance(dep, dict):
                 continue
             if str(dep.get("type", "")).strip().lower() == "entity":
                 dep_id = str(dep.get("id", "")).strip().lower()
                 if dep_id and not _entity_ref_exists(dep_id, entity_ids):
-                    report("E357", "entity dependency does not resolve", "quality", f"entity={dep_id}")
+                    report(
+                        "E357",
+                        "entity dependency does not resolve",
+                        "quality",
+                        f"entity={dep_id}",
+                    )
 
     preconditions = pseudo_struct.get("preconditions")
     if isinstance(preconditions, dict):
@@ -315,7 +353,12 @@ def _validate_cross_links(
                 continue
             resource = str(permission.get("resource", "")).strip().lower()
             if resource and not _entity_ref_exists(resource, entity_ids):
-                report("E357", "permission resource does not resolve", "quality", f"resource={resource}")
+                report(
+                    "E357",
+                    "permission resource does not resolve",
+                    "quality",
+                    f"resource={resource}",
+                )
 
     for step in _as_list(pseudo_struct.get("steps")):
         if not isinstance(step, dict):
@@ -327,24 +370,45 @@ def _validate_cross_links(
             if isinstance(params, dict):
                 entity = str(params.get("entity", "")).strip().lower()
                 if entity and not _entity_ref_exists(entity, entity_ids):
-                    report("E357", "effect entity does not resolve", "quality", f"entity={entity}")
+                    report(
+                        "E357",
+                        "effect entity does not resolve",
+                        "quality",
+                        f"entity={entity}",
+                    )
 
     if item.type_name == "Workflow" and isinstance(workflow_payload, dict):
         workflow_entity = workflow_payload.get("entity")
         if isinstance(workflow_entity, dict):
             entity_id = str(workflow_entity.get("id", "")).strip().lower()
             if entity_id and not _entity_ref_exists(entity_id, entity_ids):
-                report("E357", "workflow entity does not resolve", "quality", f"entity={entity_id}")
+                report(
+                    "E357",
+                    "workflow entity does not resolve",
+                    "quality",
+                    f"entity={entity_id}",
+                )
 
-        states = {str(state.get("id", "")).strip() for state in _as_list(workflow_payload.get("states")) if isinstance(state, dict)}
+        states = {
+            str(state.get("id", "")).strip()
+            for state in _as_list(workflow_payload.get("states"))
+            if isinstance(state, dict)
+        }
         transitions = _as_list(workflow_payload.get("transitions"))
         step_transitions = []
         for step in _as_list(pseudo_struct.get("steps")):
             if isinstance(step, dict) and step.get("type") == "state_transition":
                 step_transitions.extend(_as_list(step.get("transitions")))
 
-        if _transition_signature(transitions) != _transition_signature(step_transitions):
-            report("E357", "workflow.transitions mismatch with steps.state_transition", "quality", f"ir_ref={item.id}")
+        if _transition_signature(transitions) != _transition_signature(
+            step_transitions
+        ):
+            report(
+                "E357",
+                "workflow.transitions mismatch with steps.state_transition",
+                "quality",
+                f"ir_ref={item.id}",
+            )
 
         for transition in transitions:
             if not isinstance(transition, dict):
@@ -352,20 +416,40 @@ def _validate_cross_links(
             from_state = str(transition.get("from_state", "")).strip()
             to_state = str(transition.get("to_state", "")).strip()
             if from_state and states and from_state not in states:
-                report("E357", "transition from_state not in workflow.states", "quality", f"state={from_state}")
+                report(
+                    "E357",
+                    "transition from_state not in workflow.states",
+                    "quality",
+                    f"state={from_state}",
+                )
             if to_state and states and to_state not in states:
-                report("E357", "transition to_state not in workflow.states", "quality", f"state={to_state}")
+                report(
+                    "E357",
+                    "transition to_state not in workflow.states",
+                    "quality",
+                    f"state={to_state}",
+                )
 
             on_command = transition.get("on_command")
             if isinstance(on_command, dict):
                 command_id = str(on_command.get("id", "")).strip().lower()
                 if command_id and command_id not in command_ids:
-                    report("E357", "transition on_command does not resolve", "quality", f"command={command_id}")
+                    report(
+                        "E357",
+                        "transition on_command does not resolve",
+                        "quality",
+                        f"command={command_id}",
+                    )
             on_event = transition.get("on_event")
             if isinstance(on_event, dict):
                 event_id = str(on_event.get("id", "")).strip().lower()
                 if event_id and event_id not in event_ids:
-                    report("E357", "transition on_event does not resolve", "quality", f"event={event_id}")
+                    report(
+                        "E357",
+                        "transition on_event does not resolve",
+                        "quality",
+                        f"event={event_id}",
+                    )
 
 
 def _is_strict_target(target: str) -> bool:

@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from .model_meta import ModelMeta
 from .named_field_model import NamedField
 
-
 EVENT_KIND_CATALOG = {
     "domain",
     "integration",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import ClassVar, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from .model_meta import ModelMeta
 from .named_field_model import NamedField

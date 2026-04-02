@@ -62,11 +62,9 @@ def build(root: Path) -> None:
             counts["workflows"] += 1
         elif type_name == "HttpRoute":
             counts["api"] += 1
-    
+
     run_dir = create_run_dir(paths, "code_build")
-    current_state = {
-        "current_state": "code_build"
-    }
+    current_state = {"current_state": "code_build"}
     write_run_outputs(
         run_dir,
         "code_build",
@@ -77,7 +75,7 @@ def build(root: Path) -> None:
             "warnings": warnings,
         },
         state_before=state,
-        state_after= state | current_state,
+        state_after=state | current_state,
     )
 
 
@@ -88,7 +86,9 @@ def _print_codegen_error_summary(result: dict[str, object], *, limit: int = 10) 
     for message in errors[:limit]:
         print_error(str(message))
     if len(errors) > limit:
-        print_warning(f"... and {len(errors) - limit} more error(s). See code-gen report for full details.")
+        print_warning(
+            f"... and {len(errors) - limit} more error(s). See code-gen report for full details."
+        )
     report_path = result.get("report_path")
     if report_path:
         print_info(f"Detailed code-gen report: {report_path}")
@@ -107,7 +107,9 @@ def gen(root: Path, *, runtime: bool = False) -> None:
     plans_root = paths.versions / str(version) / "plans"
     index_path = plans_root / "index.json"
     if not index_path.exists():
-        raise RuntimeError("plans/index.json is missing. Run `code plan` before `code gen`.")
+        raise RuntimeError(
+            "plans/index.json is missing. Run `code plan` before `code gen`."
+        )
 
     patches_root = paths.versions / str(version) / "patches"
     patches_root.mkdir(parents=True, exist_ok=True)
@@ -182,7 +184,7 @@ def apply(
         raise RuntimeError("No current version set. Run `version create` first.")
 
     ensure_version_layout(paths, str(version))
-    
+
     # Determine patches directory
     if patches_subdir:
         # Custom patches directory (e.g., runtime-fix)
@@ -192,13 +194,17 @@ def apply(
     else:
         # Default patches directory
         patches_root = paths.versions / str(version) / "patches"
-    
+
     index_path = patches_root / "index.json"
     if not index_path.exists():
         if patches_subdir:
-            raise RuntimeError(f"index.json is missing in {patches_root}. Check runtime fix output.")
+            raise RuntimeError(
+                f"index.json is missing in {patches_root}. Check runtime fix output."
+            )
         else:
-            raise RuntimeError("patches/index.json is missing. Run `code gen` before `code apply`.")
+            raise RuntimeError(
+                "patches/index.json is missing. Run `code gen` before `code apply`."
+            )
 
     print_info(f"Starting code apply for version {version}", title="Code Apply")
     config = _read_config(paths)
@@ -220,7 +226,9 @@ def apply(
         for message in errors[:10]:
             print_error(str(message))
         if len(errors) > 10:
-            print_warning(f"... and {len(errors) - 10} more error(s). See apply report for full details.")
+            print_warning(
+                f"... and {len(errors) - 10} more error(s). See apply report for full details."
+            )
     if isinstance(reindex_errors, list) and reindex_errors:
         print_warning(f"Reindex completed with {len(reindex_errors)} error(s)")
         for message in reindex_errors[:10]:
@@ -246,7 +254,9 @@ def apply(
             "status": result.get("status"),
             "dry_run": bool(result.get("dry_run", False)),
             "reindex": bool(result.get("reindex", False)),
-            "reindex_each_patch_plan": bool(result.get("reindex_each_patch_plan", False)),
+            "reindex_each_patch_plan": bool(
+                result.get("reindex_each_patch_plan", False)
+            ),
             "processed_count": result.get("processed_count", 0),
             "applied_count": result.get("applied_count", 0),
             "noop_count": result.get("noop_count", 0),
@@ -254,7 +264,9 @@ def apply(
             "applied_files": result.get("applied_files", []),
             "failed_files": result.get("failed_files", []),
             "errors": errors if isinstance(errors, list) else [],
-            "reindex_errors": reindex_errors if isinstance(reindex_errors, list) else [],
+            "reindex_errors": (
+                reindex_errors if isinstance(reindex_errors, list) else []
+            ),
             "backup_paths": result.get("backup_paths", []),
             "restored_files": result.get("restored_files", []),
             "report_path": result.get("report_path"),

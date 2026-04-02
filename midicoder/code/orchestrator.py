@@ -25,11 +25,15 @@ def build_code_plans(
     _ = profile_path
     _ = strict_mode
     if not isinstance(ir_json_path, dict):
-        raise ValueError("build_code_plans expects a loaded IR object in this implementation.")
+        raise ValueError(
+            "build_code_plans expects a loaded IR object in this implementation."
+        )
 
     effective_plan_dir = Path(output_dir) if output_dir is not None else plan_dir
     if effective_plan_dir is None:
-        raise ValueError("Missing output_dir (or legacy plan_dir) for build_code_plans().")
+        raise ValueError(
+            "Missing output_dir (or legacy plan_dir) for build_code_plans()."
+        )
 
     if context_dir is None:
         context_path = effective_plan_dir.parent.parent / "context"

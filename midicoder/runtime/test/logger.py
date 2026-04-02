@@ -10,10 +10,10 @@ from .models import RuntimeTestResult
 
 class RuntimeLogger:
     """Handle log formatting and storage."""
-    
+
     def __init__(self, workspace_root: Path):
         self.workspace_root = workspace_root
-    
+
     def save_logs(self, log_dir: Path, result: RuntimeTestResult) -> None:
         """Save test results to log directory."""
         # Save error.log (errors only)
@@ -30,18 +30,18 @@ class RuntimeLogger:
             error_log.write_text("\n".join(error_lines), encoding="utf-8")
         else:
             error_log.write_text("No errors detected.\n", encoding="utf-8")
-        
+
         # Save debug.log (full output)
         debug_log = log_dir / "debug.log"
         debug_log.write_text("\n".join(result.debug_output), encoding="utf-8")
-        
+
         # Save summary.json
         summary_file = log_dir / "summary.json"
         summary_file.write_text(
             json.dumps(result.to_dict(), indent=2),
             encoding="utf-8",
         )
-        
+
         # Save manifest.json
         manifest_file = log_dir / "manifest.json"
         manifest = {

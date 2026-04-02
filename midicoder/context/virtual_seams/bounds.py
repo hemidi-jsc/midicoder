@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Tuple
 
 
 def read_source_lines(repo_root: Path | None, file_path: str) -> list[str] | None:
@@ -115,13 +114,17 @@ def _find_python_declaration(lines: list[str], start_index: int) -> int | None:
     # Validate bounds
     if start_index < 0 or start_index >= len(lines):
         return None
-    
+
     for idx in range(start_index, -1, -1):
         line = lines[idx]
         stripped = line.lstrip()
         if not stripped:
             continue
-        if stripped.startswith("class ") or stripped.startswith("def ") or stripped.startswith("async def "):
+        if (
+            stripped.startswith("class ")
+            or stripped.startswith("def ")
+            or stripped.startswith("async def ")
+        ):
             return idx + 1
     return None
 
@@ -130,7 +133,7 @@ def _find_js_declaration(lines: list[str], start_index: int) -> int | None:
     # Validate bounds
     if start_index < 0 or start_index >= len(lines):
         return None
-    
+
     for idx in range(start_index, -1, -1):
         line = lines[idx].lstrip()
         if not line:

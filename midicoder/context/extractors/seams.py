@@ -11,7 +11,9 @@ from ..core.scanner import ProjectScanner, normalize_path
 logger = logging.getLogger(__name__)
 
 
-def extract_seams(scanner: ProjectScanner, target_files: set[str] | None = None) -> tuple[list[Seam], list[ErrorRecord]]:
+def extract_seams(
+    scanner: ProjectScanner, target_files: set[str] | None = None
+) -> tuple[list[Seam], list[ErrorRecord]]:
     """Extract seams with proper schema: kind, file, line, detail, group_id, paired."""
     seams: list[Seam] = []
     errors: list[ErrorRecord] = []
@@ -45,11 +47,15 @@ def extract_seams(scanner: ProjectScanner, target_files: set[str] | None = None)
     return seams, errors
 
 
-def extract_seams_from_text(content: str, relative_path: str) -> tuple[list[Seam], list[ErrorRecord]]:
+def extract_seams_from_text(
+    content: str, relative_path: str
+) -> tuple[list[Seam], list[ErrorRecord]]:
     """Extract seams from text content, pairing begin/end markers into seam entries."""
     seams: list[Seam] = []
     errors: list[ErrorRecord] = []
-    open_markers: dict[str, list[tuple[int, str, str]]] = {}  # marker -> [(line_no, detail, group_id)]
+    open_markers: dict[str, list[tuple[int, str, str]]] = (
+        {}
+    )  # marker -> [(line_no, detail, group_id)]
 
     lines = content.splitlines()
     # Markers must start at line beginning (optionally after comment prefix).
@@ -67,7 +73,9 @@ def extract_seams_from_text(content: str, relative_path: str) -> tuple[list[Seam
         begin_match = begin_pattern.match(line)
         if begin_match:
             group_id = (begin_match.group(1) or "").strip() or "default"
-            open_markers.setdefault(group_id, []).append((line_no, line.strip(), group_id))
+            open_markers.setdefault(group_id, []).append(
+                (line_no, line.strip(), group_id)
+            )
             continue
 
         end_match = end_pattern.match(line)

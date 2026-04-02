@@ -9,7 +9,7 @@ from typing import Optional
 @dataclass
 class ErrorInfo:
     """Information about a runtime error."""
-    
+
     type: str  # import_error, syntax_error, runtime_error, etc.
     message: str
     file: Optional[str] = None
@@ -20,14 +20,14 @@ class ErrorInfo:
 @dataclass
 class RuntimeTestResult:
     """Result of runtime test."""
-    
+
     timestamp: str
     success: bool
     port: int
     errors: list[ErrorInfo] = field(default_factory=list)
     log_dir: str = ""
     debug_output: list[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {

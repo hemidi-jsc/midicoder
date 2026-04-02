@@ -35,13 +35,12 @@ def _resolve_working_dir(root: Path, config: dict) -> Path:
     return (root / wd).resolve()
 
 
-
 def run(root: Path) -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="[%(levelname)s] %(message)s",
     )
-    
+
     paths = MidicoderPaths(root=root)
     ensure_base_layout(paths)
 
@@ -57,22 +56,26 @@ def run(root: Path) -> None:
     logger.info("  root (.midi): %s", root)
     logger.info("  config.json : %s", paths.config)
     logger.info("  working_dir : %s (raw=%r)", working_dir, config.get("working_dir"))
-    logger.info("  context_dir : %s", root / '.midicoder' / 'context')
+    logger.info("  context_dir : %s", root / ".midicoder" / "context")
     logger.info("=" * 60)
-    
+
     try:
         build_context(root=working_dir, context_root=root, refresh=False)
-        
+
         write_run_outputs(
-            run_dir, 
-            "index", 
-            {"status": "ok", "context_dir": str(root / ".midicoder" / "context"), "working_dir": str(working_dir)}, 
+            run_dir,
+            "index",
+            {
+                "status": "ok",
+                "context_dir": str(root / ".midicoder" / "context"),
+                "working_dir": str(working_dir),
+            },
             state_before=state,
-            state_after=state
+            state_after=state,
         )
-        
+
         logger.info("Index command completed successfully")
-        
+
     except Exception as e:
         logger.error(f"✗ Index command failed: {e}")
         write_run_outputs(
@@ -80,7 +83,7 @@ def run(root: Path) -> None:
             "index",
             {"status": "error", "error": str(e)},
             state_before=state,
-            state_after=state
+            state_after=state,
         )
         raise
 
@@ -106,7 +109,7 @@ def reindex(root: Path, changed_paths: list[str] | None = None) -> None:
     logger.info("  root (.midi): %s", root)
     logger.info("  config.json : %s", paths.config)
     logger.info("  working_dir : %s (raw=%r)", working_dir, config.get("working_dir"))
-    logger.info("  context_dir : %s", root / '.midicoder' / 'context')
+    logger.info("  context_dir : %s", root / ".midicoder" / "context")
     logger.info("=" * 60)
     if changed_paths:
         logger.info("Manual changed paths: %d", len(changed_paths))
@@ -123,7 +126,11 @@ def reindex(root: Path, changed_paths: list[str] | None = None) -> None:
         write_run_outputs(
             run_dir,
             "index",
-            {"status": "ok", "context_dir": str(root / ".midicoder" / "context"), "working_dir": str(working_dir)},
+            {
+                "status": "ok",
+                "context_dir": str(root / ".midicoder" / "context"),
+                "working_dir": str(working_dir),
+            },
             state_before=state,
             state_after=state,
         )

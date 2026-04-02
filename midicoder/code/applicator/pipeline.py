@@ -61,7 +61,11 @@ def _should_reset_runtime_content(
     if normalized == "requirements.txt":
         return True
     if normalized.startswith("app/") and target.operations:
-        if all(str(op.get("group") or "") == "project_file" for op in target.operations if isinstance(op, dict)):
+        if all(
+            str(op.get("group") or "") == "project_file"
+            for op in target.operations
+            if isinstance(op, dict)
+        ):
             return True
     return False
 
@@ -127,7 +131,9 @@ def _detect_import_cycles(module_to_imports: dict[str, set[str]]) -> list[str]:
     return cycles
 
 
-def _validate_post_apply_import_graph(*, working_dir: Path, changed_paths: list[str]) -> list[str]:
+def _validate_post_apply_import_graph(
+    *, working_dir: Path, changed_paths: list[str]
+) -> list[str]:
     seed_modules = sorted(
         {
             _runtime_path_to_module(path)
@@ -157,7 +163,9 @@ def _validate_post_apply_import_graph(*, working_dir: Path, changed_paths: list[
         try:
             content = abs_path.read_text(encoding="utf-8")
         except OSError as exc:
-            return [_format_error(runtime_path, "post_apply", "file_read_error", str(exc))]
+            return [
+                _format_error(runtime_path, "post_apply", "file_read_error", str(exc))
+            ]
         imports = _collect_internal_imports(content)
         module_to_imports[module] = imports
         for dep in imports:
@@ -166,8 +174,7 @@ def _validate_post_apply_import_graph(*, working_dir: Path, changed_paths: list[
 
     cycles = _detect_import_cycles(module_to_imports)
     return [
-        _format_error("*", "post_apply", "circular_import", cycle)
-        for cycle in cycles
+        _format_error("*", "post_apply", "circular_import", cycle) for cycle in cycles
     ]
 
 
@@ -185,14 +192,18 @@ def _run_smoke_import_main(*, working_dir: Path) -> str | None:
     if completed.returncode == 0:
         return None
     detail = (completed.stderr or completed.stdout or "").strip()
-    missing_match = re.search(r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)['\"]", detail)
+    missing_match = re.search(
+        r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)['\"]", detail
+    )
     if missing_match:
         missing_module = str(missing_match.group(1) or "").strip()
         if missing_module and not missing_module.startswith("app"):
             return None
     if len(detail) > 500:
         detail = detail[:500] + "...<truncated>"
-    return _format_error("*", "post_apply", "smoke_import_failed", detail or "import app.main failed")
+    return _format_error(
+        "*", "post_apply", "smoke_import_failed", detail or "import app.main failed"
+    )
 
 
 def _apply_single_patch_plan(
@@ -203,9 +214,13 @@ def _apply_single_patch_plan(
 ) -> ApplyFileResult:
     runtime_path = _normalize_runtime_path(target.runtime_path)
     target_path = (options.working_dir / runtime_path).resolve()
-    current_content = target_path.read_text(encoding="utf-8") if target_path.exists() else ""
+    current_content = (
+        target_path.read_text(encoding="utf-8") if target_path.exists() else ""
+    )
     working_content = current_content
-    if _should_reset_runtime_content(runtime_path=runtime_path, target=target, options=options):
+    if _should_reset_runtime_content(
+        runtime_path=runtime_path, target=target, options=options
+    ):
         working_content = ""
     changed = False
 
@@ -338,10 +353,17 @@ def apply_patch_plans(
                     )
                 except Exception as exc:
                     reindex_errors.append(
-                        _format_error(result.runtime_path, "reindex", "reindex_error", str(exc))
+                        _format_error(
+                            result.runtime_path, "reindex", "reindex_error", str(exc)
+                        )
                     )
 
-    if options.reindex and not options.dry_run and not options.reindex_each_patch_plan and changed_paths:
+    if (
+        options.reindex
+        and not options.dry_run
+        and not options.reindex_each_patch_plan
+        and changed_paths
+    ):
         try:
             _reindex_changed_paths(
                 workspace_root=options.workspace_root,
@@ -349,9 +371,13 @@ def apply_patch_plans(
                 changed_paths=changed_paths,
             )
         except Exception as exc:
-            reindex_errors.append(_format_error("*", "reindex", "reindex_error", str(exc)))
+            reindex_errors.append(
+                _format_error("*", "reindex", "reindex_error", str(exc))
+            )
 
-    validate_import_graph = _get_config_bool(cfg, "code_apply_validate_import_graph", True)
+    validate_import_graph = _get_config_bool(
+        cfg, "code_apply_validate_import_graph", True
+    )
     validate_smoke_import = _get_config_bool(cfg, "code_apply_smoke_import_main", True)
     if not options.dry_run and changed_paths and validate_import_graph:
         post_apply_errors.extend(
@@ -365,8 +391,12 @@ def apply_patch_plans(
         if smoke_error:
             post_apply_errors.append(smoke_error)
 
-    applied_files = [item.runtime_path for item in file_results if item.status == "applied"]
-    failed_files = [item.runtime_path for item in file_results if item.status == "failed"]
+    applied_files = [
+        item.runtime_path for item in file_results if item.status == "applied"
+    ]
+    failed_files = [
+        item.runtime_path for item in file_results if item.status == "failed"
+    ]
     backup_paths = [item.backup_path for item in file_results if item.backup_path]
     restored_files = [item.runtime_path for item in file_results if item.restored]
 

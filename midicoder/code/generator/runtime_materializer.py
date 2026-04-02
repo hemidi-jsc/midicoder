@@ -59,6 +59,8 @@ def materialize_runtime_outputs(
         elif not current_content.endswith("\n"):
             current_content += "\n"
 
-        generated_runtime_files.append(write_runtime_file(patches_root, runtime_path, current_content))
+        generated_runtime_files.append(
+            write_runtime_file(patches_root, runtime_path, current_content)
+        )
 
     return generated_runtime_files, errors

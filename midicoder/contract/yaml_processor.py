@@ -13,15 +13,15 @@ def strip_yaml_code_fences(raw_text: str) -> str:
     Handles various markdown code fence formats.
     """
     text = raw_text.strip()
-    
+
     # Handle empty input
     if not text:
         return text
-    
+
     lines = text.splitlines()
     if not lines:
         return text
-    
+
     # Check if first line starts with code fence
     first_line = lines[0].strip()
     if first_line.startswith("```"):
@@ -31,7 +31,7 @@ def strip_yaml_code_fences(raw_text: str) -> str:
             if lines[i].strip().startswith("```"):  # More flexible matching
                 closing_fence_index = i
                 break
-        
+
         # If we found both opening and closing fences
         if closing_fence_index > 0:
             # Extract content between fences
@@ -42,7 +42,7 @@ def strip_yaml_code_fences(raw_text: str) -> str:
             if len(lines) > 1:
                 content = "\n".join(lines[1:]).strip()
                 return content
-    
+
     # Additional safety check: if text still starts with backticks, remove them
     if text.startswith("```"):
         # Try to find and remove any remaining code fence markers
@@ -54,47 +54,61 @@ def strip_yaml_code_fences(raw_text: str) -> str:
         if lines and lines[-1].strip() in ["```", "```yaml", "```yml"]:
             lines = lines[:-1]
         return "\n".join(lines).strip()
-    
+
     return text
 
 
 def clean_malformed_yaml(raw_content: str) -> str:
     """
     Clean malformed YAML by removing orphaned patch lines that were incorrectly appended.
-    
+
     This handles the case where previous patch operations incorrectly appended lines like:
     commands[0].errors[2]: PasswordTooWeak
     commands[0].effects[1].params.event: UserRegistered
-    
+
     These lines are invalid YAML and should be removed.
     """
     lines = raw_content.splitlines()
     cleaned_lines = []
-    
+
     for line in lines:
         stripped = line.strip()
-        
+
         # Check for common malformed patch patterns
         is_malformed_patch = (
             # Pattern: commands[0].errors[2]: PasswordTooWeak
-            re.match(r'^[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\[\d+\]:\s*\w+$', stripped) or
-            # Pattern: commands[0].effects[1].params.event: UserRegistered  
-            re.match(r'^[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\.[a-zA-Z_]+:\s*\w+$', stripped) or
+            re.match(r"^[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\[\d+\]:\s*\w+$", stripped)
+            or
+            # Pattern: commands[0].effects[1].params.event: UserRegistered
+            re.match(
+                r"^[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\.[a-zA-Z_]+:\s*\w+$",
+                stripped,
+            )
+            or
             # Pattern: commands[1].errors[2]: UserAccountInactive
-            re.match(r'^[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\[\d+\]:\s*[A-Za-z][A-Za-z0-9_]*$', stripped) or
+            re.match(
+                r"^[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\[\d+\]:\s*[A-Za-z][A-Za-z0-9_]*$",
+                stripped,
+            )
+            or
             # Pattern: commands[3].fetches[1]: ProductCatalog
-            re.match(r'^[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\[\d+\]:\s*[A-Za-z][A-Za-z0-9_]*$', stripped)
+            re.match(
+                r"^[a-zA-Z_]+\[\d+\]\.[a-zA-Z_]+\[\d+\]:\s*[A-Za-z][A-Za-z0-9_]*$",
+                stripped,
+            )
         )
-        
+
         if not is_malformed_patch:
             cleaned_lines.append(line)
         else:
             print(f"[clean yaml] Removing malformed patch line: {stripped}")
-    
+
     return "\n".join(cleaned_lines)
 
 
-def parse_contract_documents(raw_text: str, contracts_root: Path) -> list[tuple[Path, Any]]:
+def parse_contract_documents(
+    raw_text: str, contracts_root: Path
+) -> list[tuple[Path, Any]]:
     """Parse contract documents from LLM output."""
     from ruamel.yaml import YAML
 
@@ -115,19 +129,25 @@ def parse_contract_documents(raw_text: str, contracts_root: Path) -> list[tuple[
             # Legacy files array format: {files: [{file: "...", content: {...}}]}
             entries = doc["files"]
         else:
-            raise RuntimeError("Single document must have either 'file' and 'content' keys, or 'files' array.")
+            raise RuntimeError(
+                "Single document must have either 'file' and 'content' keys, or 'files' array."
+            )
     else:
         # Multi-document format (legacy support)
         entries = docs
 
     if not isinstance(entries, list):
-        raise RuntimeError("LLM output must be a single document with file/content or a list of file documents.")
+        raise RuntimeError(
+            "LLM output must be a single document with file/content or a list of file documents."
+        )
 
     files: list[tuple[Path, Any]] = []
     seen: set[Path] = set()
     for entry in entries:
         if not isinstance(entry, dict) or "file" not in entry or "content" not in entry:
-            raise RuntimeError("Each YAML document must include 'file' and 'content' keys.")
+            raise RuntimeError(
+                "Each YAML document must include 'file' and 'content' keys."
+            )
         file_path = _normalize_contract_path(contracts_root, str(entry["file"]))
         if file_path in seen:
             raise RuntimeError(f"Duplicate file entry in LLM output: {entry['file']}")

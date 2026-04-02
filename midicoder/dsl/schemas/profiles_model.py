@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from .model_meta import ModelMeta
 
-
 ENVIRONMENT_CATALOG = {
     "local",
     "dev",

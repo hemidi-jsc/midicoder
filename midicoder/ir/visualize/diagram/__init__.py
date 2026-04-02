@@ -22,10 +22,10 @@ from .api import ApiDiagramGenerator
 from .base import DiagramGenerator, DiagramOutput, MermaidRenderer
 from .command import CommandGraphGenerator
 from .entity import EntityDiagramGenerator
-from .workflow import WorkflowDiagramGenerator
 from .policy import PolicyDiagramGenerator
 from .rules import RulesDiagramGenerator
 from .scenario import ScenarioDiagramGenerator
+from .workflow import WorkflowDiagramGenerator
 
 __all__ = [
     "DiagramGenerator",

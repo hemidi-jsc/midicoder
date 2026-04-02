@@ -21,7 +21,12 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
 
 DEPENDENCY_PREVIEW_LIMIT = 60
 PYTHON_DEP_FILE_NAMES = {"pyproject.toml", "requirements.txt", "setup.py", "setup.cfg"}
-NODE_DEP_FILE_NAMES = {"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"}
+NODE_DEP_FILE_NAMES = {
+    "package.json",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+}
 ORM_CANDIDATE_ORDER = ("sqlalchemy", "typeorm", "prisma", "mongoose", "sequelize")
 ORM_DEPENDENCY_PACKAGES = {
     "sqlalchemy": {"sqlalchemy", "sqlmodel", "alembic"},
@@ -122,11 +127,17 @@ def detect_frameworks(scanner: ProjectScanner) -> list[str]:
 
     # Python frameworks
     framework_patterns = {
-        "fastapi": re.compile(r'(?:fastapi|from\s+fastapi\s+import)', re.IGNORECASE),
+        "fastapi": re.compile(r"(?:fastapi|from\s+fastapi\s+import)", re.IGNORECASE),
     }
     js_framework_patterns = {
-        "nest": re.compile(r'(?:NestFactory\.create|@Controller\(|@Injectable\(|@Module\()', re.MULTILINE),
-        "angular": re.compile(r'(?:platformBrowserDynamic|bootstrapApplication|@Component\(|@NgModule\()', re.MULTILINE),
+        "nest": re.compile(
+            r"(?:NestFactory\.create|@Controller\(|@Injectable\(|@Module\()",
+            re.MULTILINE,
+        ),
+        "angular": re.compile(
+            r"(?:platformBrowserDynamic|bootstrapApplication|@Component\(|@NgModule\()",
+            re.MULTILINE,
+        ),
         "express": re.compile(
             r"(?:\bexpress\s*\(|\brequire\(\s*['\"]express['\"]\s*\)|\bfrom\s+['\"]express['\"])",
             re.MULTILINE,
@@ -196,18 +207,25 @@ def detect_orm(scanner: ProjectScanner, stack: str) -> str | None:
                 continue
             if any(pattern.search(content) for pattern in patterns):
                 scores[orm_name] += 3
-                evidence[orm_name].append(f"code:{normalize_path(path.relative_to(scanner.root))}")
+                evidence[orm_name].append(
+                    f"code:{normalize_path(path.relative_to(scanner.root))}"
+                )
 
     for path in scanner.js_ts_files[:MAX_FILES_FOR_PROFILE]:
         content = scanner.get_content(path)
         if not content:
             continue
         for orm_name, patterns in ORM_CODE_PATTERNS.items():
-            if not ORM_CODE_LANGUAGES.get(orm_name, set()) & {"typescript", "javascript"}:
+            if not ORM_CODE_LANGUAGES.get(orm_name, set()) & {
+                "typescript",
+                "javascript",
+            }:
                 continue
             if any(pattern.search(content) for pattern in patterns):
                 scores[orm_name] += 3
-                evidence[orm_name].append(f"code:{normalize_path(path.relative_to(scanner.root))}")
+                evidence[orm_name].append(
+                    f"code:{normalize_path(path.relative_to(scanner.root))}"
+                )
 
     for orm_name, compatible_stacks in ORM_STACK_COMPATIBILITY.items():
         if stack in compatible_stacks and scores[orm_name] > 0:
@@ -240,14 +258,14 @@ def detect_di_style(stack: str) -> str | None:
 
 def detect_error_handling(scanner: ProjectScanner, stack: str) -> str | None:
     if stack == "fastapi":
-        pattern = re.compile(r'HTTPException')
+        pattern = re.compile(r"HTTPException")
         for path in scanner.python_files[:MAX_FILES_FOR_PROFILE]:
             content = scanner.get_content(path)
             if content and pattern.search(content):
                 return "raise-http-exception"
 
     if stack == "nest":
-        pattern = re.compile(r'HttpException')
+        pattern = re.compile(r"HttpException")
         for path in scanner.js_ts_files[:MAX_FILES_FOR_PROFILE]:
             content = scanner.get_content(path)
             if content and pattern.search(content):
@@ -288,12 +306,18 @@ def detect_dependency_conventions(scanner: ProjectScanner) -> dict[str, Any]:
         config_paths_by_name.setdefault(path.name, []).append(path)
 
     requirements_paths = discover_requirements_files(scanner.root)
-    requirement_files = [normalize_path(path.relative_to(scanner.root)) for path in requirements_paths]
+    requirement_files = [
+        normalize_path(path.relative_to(scanner.root)) for path in requirements_paths
+    ]
 
     python_dependency_files = sorted(
         set(
             [
-                *[rel for rel in config_rels if Path(rel).name in PYTHON_DEP_FILE_NAMES],
+                *[
+                    rel
+                    for rel in config_rels
+                    if Path(rel).name in PYTHON_DEP_FILE_NAMES
+                ],
                 *requirement_files,
             ]
         )
@@ -301,7 +325,9 @@ def detect_dependency_conventions(scanner: ProjectScanner) -> dict[str, Any]:
     javascript_dependency_files = sorted(
         [rel for rel in config_rels if Path(rel).name in NODE_DEP_FILE_NAMES]
     )
-    dependency_files = sorted(set([*python_dependency_files, *javascript_dependency_files]))
+    dependency_files = sorted(
+        set([*python_dependency_files, *javascript_dependency_files])
+    )
 
     should_include_aggregate_dependency_files = (
         len(python_dependency_files) > 0
@@ -316,7 +342,9 @@ def detect_dependency_conventions(scanner: ProjectScanner) -> dict[str, Any]:
     if javascript_dependency_files:
         conventions["javascript_dependency_files"] = javascript_dependency_files
 
-    python_dependency_style = detect_python_dependency_style(config_name_set, requirements_paths)
+    python_dependency_style = detect_python_dependency_style(
+        config_name_set, requirements_paths
+    )
     if python_dependency_style:
         conventions["python_dependency_style"] = python_dependency_style
 
@@ -399,7 +427,9 @@ def detect_javascript_package_manager(config_name_set: set[str]) -> str | None:
     return None
 
 
-def add_dependency_preview(conventions: dict[str, Any], prefix: str, deps: set[str]) -> None:
+def add_dependency_preview(
+    conventions: dict[str, Any], prefix: str, deps: set[str]
+) -> None:
     if not deps:
         return
     normalized = sorted(dep for dep in deps if dep)
@@ -461,7 +491,13 @@ def read_text_with_fallback(scanner: ProjectScanner, path: Path) -> str | None:
 def select_preferred_config_path(root: Path, paths: list[Path]) -> Path | None:
     if not paths:
         return None
-    return min(paths, key=lambda p: (len(p.relative_to(root).parts), normalize_path(p.relative_to(root))))
+    return min(
+        paths,
+        key=lambda p: (
+            len(p.relative_to(root).parts),
+            normalize_path(p.relative_to(root)),
+        ),
+    )
 
 
 def parse_requirements_dependencies(content: str) -> set[str]:
@@ -474,7 +510,9 @@ def parse_requirements_dependencies(content: str) -> set[str]:
             line = line.split(" #", 1)[0].strip()
         if not line:
             continue
-        if line.startswith(("-r", "--requirement", "-c", "--constraint", "-e", "--editable")):
+        if line.startswith(
+            ("-r", "--requirement", "-c", "--constraint", "-e", "--editable")
+        ):
             continue
         if line.startswith(("git+", "http://", "https://", ".", "/")):
             match = re.search(r"#egg=([A-Za-z0-9_.-]+)", line)
@@ -524,7 +562,11 @@ def parse_pyproject_dependencies_toml(content: str) -> set[str]:
             if isinstance(groups, dict):
                 for group_payload in groups.values():
                     if isinstance(group_payload, dict):
-                        deps.update(parse_poetry_dependency_table(group_payload.get("dependencies")))
+                        deps.update(
+                            parse_poetry_dependency_table(
+                                group_payload.get("dependencies")
+                            )
+                        )
 
     return deps
 
@@ -532,7 +574,9 @@ def parse_pyproject_dependencies_toml(content: str) -> set[str]:
 def parse_pyproject_dependencies_fallback(content: str) -> set[str]:
     deps: set[str] = set()
 
-    for match in re.finditer(r"dependencies\s*=\s*\[(.*?)\]", content, re.DOTALL | re.IGNORECASE):
+    for match in re.finditer(
+        r"dependencies\s*=\s*\[(.*?)\]", content, re.DOTALL | re.IGNORECASE
+    ):
         block = match.group(1)
         deps.update(parse_dependency_list(re.findall(r"['\"]([^'\"]+)['\"]", block)))
 
@@ -542,12 +586,14 @@ def parse_pyproject_dependencies_fallback(content: str) -> set[str]:
         re.MULTILINE | re.DOTALL,
     ):
         block = section.group(1)
-        for match in re.finditer(r"^\s*([A-Za-z0-9_.-]+)\s*=\s*([^\n#]+)", block, re.MULTILINE):
+        for match in re.finditer(
+            r"^\s*([A-Za-z0-9_.-]+)\s*=\s*([^\n#]+)", block, re.MULTILINE
+        ):
             dep_name = match.group(1).strip().lower()
             dep_value = match.group(2).strip()
             if dep_name == "python":
                 continue
-            if dep_value.startswith(("\"", "'")) and dep_value.endswith(("\"", "'")):
+            if dep_value.startswith(('"', "'")) and dep_value.endswith(('"', "'")):
                 dep_value = dep_value[1:-1].strip()
             if dep_value and dep_value not in {"*", "{}"}:
                 deps.add(f"{dep_name}{dep_value}")
@@ -585,7 +631,11 @@ def parse_poetry_dependency_table(value: Any) -> set[str]:
                     deps.add(normalized)
             elif isinstance(dep_value, dict):
                 version_value = dep_value.get("version")
-                if isinstance(version_value, str) and version_value.strip() and version_value.strip() != "*":
+                if (
+                    isinstance(version_value, str)
+                    and version_value.strip()
+                    and version_value.strip() != "*"
+                ):
                     deps.add(f"{normalized}{version_value.strip()}")
                 else:
                     deps.add(normalized)
@@ -612,7 +662,7 @@ def normalize_dependency_spec(spec: str) -> str | None:
     if not name:
         return None
 
-    suffix = cleaned[len(name):].strip()
+    suffix = cleaned[len(name) :].strip()
     if not suffix:
         return name
     return f"{name}{suffix}"
@@ -634,7 +684,12 @@ def read_package_deps(scanner: ProjectScanner) -> set[str]:
         except json.JSONDecodeError:
             continue
 
-        for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+        for key in (
+            "dependencies",
+            "devDependencies",
+            "peerDependencies",
+            "optionalDependencies",
+        ):
             values = payload.get(key)
             if isinstance(values, dict):
                 deps.update(values.keys())

@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .base import DiagramGenerator, DiagramOutput, MermaidRenderer, create_source_metadata
+from .base import (
+    DiagramGenerator,
+    DiagramOutput,
+    MermaidRenderer,
+    create_source_metadata,
+)
 
 if TYPE_CHECKING:
-    from ...schema.ir_schema import ScenariosIR, ScenarioIR, ScenarioStepIR
+    from ...schema.ir_schema import ScenarioIR, ScenariosIR, ScenarioStepIR
 
 
 class ScenarioDiagramGenerator(DiagramGenerator):
@@ -70,7 +75,9 @@ class ScenarioDiagramGenerator(DiagramGenerator):
             assets=assets,
         )
 
-    def _resolve_participants(self, step: ScenarioStepIR, primary: str, system: str) -> tuple[str, str]:
+    def _resolve_participants(
+        self, step: ScenarioStepIR, primary: str, system: str
+    ) -> tuple[str, str]:
         if step.type in {"command", "query"}:
             return primary, system
         if step.type == "event":

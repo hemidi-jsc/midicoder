@@ -58,6 +58,7 @@ FALLBACK_DIR_NAMES = {
     "api",
 }
 
+
 def extract_entrypoints(
     scanner: ProjectScanner,
     stack: str,
@@ -76,10 +77,16 @@ def extract_entrypoints(
         if not content:
             continue
         code_mask = _compute_python_code_mask(content)
-        path_boost = 1 if _is_common_entrypoint_path(relative_path, PY_ENTRYPOINT_NAMES, set()) else 0
+        path_boost = (
+            1
+            if _is_common_entrypoint_path(relative_path, PY_ENTRYPOINT_NAMES, set())
+            else 0
+        )
 
         # Check for __main__ block
-        main_pattern = re.compile(r'^\s*if\s+__name__\s*==\s*["\']__main__["\']\s*:', re.MULTILINE)
+        main_pattern = re.compile(
+            r'^\s*if\s+__name__\s*==\s*["\']__main__["\']\s*:', re.MULTILINE
+        )
         main_match = _first_code_match(main_pattern, content, code_mask)
         if main_match:
             line = _line_number_at(content, main_match.start())
@@ -93,16 +100,29 @@ def extract_entrypoints(
             )
 
         # Check for FastAPI app (multi-signal)
-        fastapi_import_pattern = re.compile(r'^\s*(?:from\s+fastapi\s+import|import\s+fastapi)\b', re.MULTILINE)
-        fastapi_init_pattern = re.compile(r'(?P<var>\w+)\s*=\s*FastAPI\(')
-        fastapi_decorator_pattern = re.compile(r'^\s*@(?:app|router)\.(?:get|post|put|delete|patch)\b', re.MULTILINE)
+        fastapi_import_pattern = re.compile(
+            r"^\s*(?:from\s+fastapi\s+import|import\s+fastapi)\b", re.MULTILINE
+        )
+        fastapi_init_pattern = re.compile(r"(?P<var>\w+)\s*=\s*FastAPI\(")
+        fastapi_decorator_pattern = re.compile(
+            r"^\s*@(?:app|router)\.(?:get|post|put|delete|patch)\b", re.MULTILINE
+        )
 
-        fastapi_import = _first_code_match(fastapi_import_pattern, content, code_mask) is not None
+        fastapi_import = (
+            _first_code_match(fastapi_import_pattern, content, code_mask) is not None
+        )
         fastapi_init = _first_code_match(fastapi_init_pattern, content, code_mask)
-        fastapi_decorator = _first_code_match(fastapi_decorator_pattern, content, code_mask) is not None
+        fastapi_decorator = (
+            _first_code_match(fastapi_decorator_pattern, content, code_mask) is not None
+        )
 
         if fastapi_init:
-            score = 2 + (1 if fastapi_import else 0) + (1 if fastapi_decorator else 0) + path_boost
+            score = (
+                2
+                + (1 if fastapi_import else 0)
+                + (1 if fastapi_decorator else 0)
+                + path_boost
+            )
             if score >= 3:
                 line = _line_number_at(content, fastapi_init.start())
                 app_var = fastapi_init.group("var")
@@ -126,7 +146,13 @@ def extract_entrypoints(
         if not content:
             continue
         code_mask = _compute_js_code_mask(content)
-        path_boost = 1 if _is_common_entrypoint_path(relative_path, JS_ENTRYPOINT_NAMES, JS_ENTRYPOINT_PATHS) else 0
+        path_boost = (
+            1
+            if _is_common_entrypoint_path(
+                relative_path, JS_ENTRYPOINT_NAMES, JS_ENTRYPOINT_PATHS
+            )
+            else 0
+        )
         entrypoints.extend(
             _extract_js_entrypoints_for_file(
                 relative_path,
@@ -139,7 +165,9 @@ def extract_entrypoints(
 
     if js_entry_targets:
         entrypoints.extend(
-            _extract_js_entrypoints_fallback(scanner, entrypoints, target_files, js_entry_targets)
+            _extract_js_entrypoints_fallback(
+                scanner, entrypoints, target_files, js_entry_targets
+            )
         )
 
     logger.debug(f"Extracted {len(entrypoints)} entrypoints")
@@ -167,21 +195,27 @@ def _extract_js_entrypoints_for_file(
 ) -> list[EntryPoint]:
     entrypoints: list[EntryPoint] = []
 
-    listen_pattern = re.compile(r'(?P<var>\w+)\.listen\(\s*(?P<arg>[^,\n\)]+)')
-    express_init_pattern = re.compile(r'\bexpress\s*\(')
-    nest_pattern = re.compile(r'NestFactory\.create')
-    angular_pattern = re.compile(r'platformBrowserDynamic|bootstrapApplication')
-    angular_import_pattern = re.compile(r'@angular/core')
+    listen_pattern = re.compile(r"(?P<var>\w+)\.listen\(\s*(?P<arg>[^,\n\)]+)")
+    express_init_pattern = re.compile(r"\bexpress\s*\(")
+    nest_pattern = re.compile(r"NestFactory\.create")
+    angular_pattern = re.compile(r"platformBrowserDynamic|bootstrapApplication")
+    angular_import_pattern = re.compile(r"@angular/core")
 
     listen_match = _first_code_match(listen_pattern, content, code_mask)
-    express_init = _first_code_match(express_init_pattern, content, code_mask) is not None
+    express_init = (
+        _first_code_match(express_init_pattern, content, code_mask) is not None
+    )
     if listen_match:
         score = 2 + (1 if express_init else 0) + path_boost
         if score >= min_score:
             line = _line_number_at(content, listen_match.start())
             arg = listen_match.group("arg").strip()
             port = _parse_port(arg)
-            detail = f"Express app listen on {port}" if port is not None else f"Express app listen ({arg})"
+            detail = (
+                f"Express app listen on {port}"
+                if port is not None
+                else f"Express app listen ({arg})"
+            )
             entrypoints.append(
                 EntryPoint(
                     kind="express",
@@ -193,7 +227,7 @@ def _extract_js_entrypoints_for_file(
 
     nest_match = _first_code_match(nest_pattern, content, code_mask)
     if nest_match:
-        port_pattern = re.compile(r'\.listen\(\s*(?P<arg>[^,\n\)]+)')
+        port_pattern = re.compile(r"\.listen\(\s*(?P<arg>[^,\n\)]+)")
         port_match = _first_code_match(port_pattern, content, code_mask)
         if port_match:
             score = 2 + 1 + path_boost
@@ -214,7 +248,9 @@ def _extract_js_entrypoints_for_file(
                 )
 
     angular_match = _first_code_match(angular_pattern, content, code_mask)
-    angular_import = _first_code_match(angular_import_pattern, content, code_mask) is not None
+    angular_import = (
+        _first_code_match(angular_import_pattern, content, code_mask) is not None
+    )
     if angular_match and (angular_import or path_boost):
         line = _line_number_at(content, angular_match.start())
         entrypoints.append(
@@ -256,7 +292,13 @@ def _extract_js_entrypoints_fallback(
         if not _has_js_strong_signal(content, code_mask):
             continue
 
-        path_boost = 1 if _is_common_entrypoint_path(relative_path, JS_ENTRYPOINT_NAMES, JS_ENTRYPOINT_PATHS) else 0
+        path_boost = (
+            1
+            if _is_common_entrypoint_path(
+                relative_path, JS_ENTRYPOINT_NAMES, JS_ENTRYPOINT_PATHS
+            )
+            else 0
+        )
         fallback_entries.extend(
             _extract_js_entrypoints_for_file(
                 relative_path,
@@ -274,7 +316,9 @@ def _line_number_at(content: str, index: int) -> int:
     return content[:index].count("\n") + 1
 
 
-def _first_code_match(pattern: re.Pattern[str], content: str, code_mask: list[bool]) -> re.Match[str] | None:
+def _first_code_match(
+    pattern: re.Pattern[str], content: str, code_mask: list[bool]
+) -> re.Match[str] | None:
     for match in pattern.finditer(content):
         if _is_code_index(code_mask, match.start()):
             return match
@@ -328,7 +372,9 @@ def _compute_js_code_mask(content: str) -> list[bool]:
         if ch == "/" and nxt == "*":
             start = idx
             idx += 2
-            while idx + 1 < length and not (content[idx] == "*" and content[idx + 1] == "/"):
+            while idx + 1 < length and not (
+                content[idx] == "*" and content[idx + 1] == "/"
+            ):
                 idx += 1
             idx = min(idx + 2, length)
             _mark_mask_false(mask, start, idx)
@@ -357,10 +403,10 @@ def _compute_js_code_mask(content: str) -> list[bool]:
 
 def _has_js_strong_signal(content: str, code_mask: list[bool]) -> bool:
     signal_patterns = [
-        re.compile(r'\bexpress\s*\('),
-        re.compile(r'\.listen\('),
-        re.compile(r'NestFactory\.create'),
-        re.compile(r'platformBrowserDynamic|bootstrapApplication'),
+        re.compile(r"\bexpress\s*\("),
+        re.compile(r"\.listen\("),
+        re.compile(r"NestFactory\.create"),
+        re.compile(r"platformBrowserDynamic|bootstrapApplication"),
     ]
     for pattern in signal_patterns:
         if _first_code_match(pattern, content, code_mask):
@@ -393,7 +439,9 @@ def _mark_mask_false(mask: list[bool], start: int, end: int) -> None:
         mask[idx] = False
 
 
-def _is_common_entrypoint_path(relative_path: str, names: set[str], paths: set[str]) -> bool:
+def _is_common_entrypoint_path(
+    relative_path: str, names: set[str], paths: set[str]
+) -> bool:
     if relative_path in paths:
         return True
     if Path(relative_path).name in names:
@@ -402,7 +450,9 @@ def _is_common_entrypoint_path(relative_path: str, names: set[str], paths: set[s
 
 
 def _is_fallback_js_candidate(relative_path: str) -> bool:
-    if _is_common_entrypoint_path(relative_path, JS_ENTRYPOINT_NAMES, JS_ENTRYPOINT_PATHS):
+    if _is_common_entrypoint_path(
+        relative_path, JS_ENTRYPOINT_NAMES, JS_ENTRYPOINT_PATHS
+    ):
         return True
     parts = Path(relative_path).parts
     return any(part in FALLBACK_DIR_NAMES for part in parts)
@@ -410,7 +460,9 @@ def _is_fallback_js_candidate(relative_path: str) -> bool:
 
 def _resolve_js_entry_targets(scanner: ProjectScanner) -> set[str]:
     targets: set[str] = set()
-    pattern = re.compile(r'([\w./-]+\.(?:js|ts|mjs|cjs|jsx|tsx|mts|cts))', re.IGNORECASE)
+    pattern = re.compile(
+        r"([\w./-]+\.(?:js|ts|mjs|cjs|jsx|tsx|mts|cts))", re.IGNORECASE
+    )
 
     for path in scanner.config_files:
         if path.name != "package.json":

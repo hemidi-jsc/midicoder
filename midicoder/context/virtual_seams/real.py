@@ -21,7 +21,9 @@ class _MarkerPoint:
     detail: str
 
 
-def build_real_seams_from_records(records: Iterable[dict]) -> tuple[dict[str, dict], list[dict]]:
+def build_real_seams_from_records(
+    records: Iterable[dict],
+) -> tuple[dict[str, dict], list[dict]]:
     begins: dict[str, list[_MarkerPoint]] = {}
     ends: dict[str, list[_MarkerPoint]] = {}
     paired_candidates: dict[str, list[_SeamCandidate]] = {}
@@ -41,7 +43,12 @@ def build_real_seams_from_records(records: Iterable[dict]) -> tuple[dict[str, di
         end_line = _coerce_line(record.get("end_line"))
         if begin_line and end_line and end_line >= begin_line:
             paired_candidates.setdefault(group_id, []).append(
-                _SeamCandidate(file=file_path, begin_line=begin_line, end_line=end_line, detail=detail)
+                _SeamCandidate(
+                    file=file_path,
+                    begin_line=begin_line,
+                    end_line=end_line,
+                    detail=detail,
+                )
             )
             continue
 
@@ -51,9 +58,13 @@ def build_real_seams_from_records(records: Iterable[dict]) -> tuple[dict[str, di
             continue
 
         if kind == "end":
-            ends.setdefault(group_id, []).append(_MarkerPoint(file=file_path, line=line, detail=detail))
+            ends.setdefault(group_id, []).append(
+                _MarkerPoint(file=file_path, line=line, detail=detail)
+            )
         else:
-            begins.setdefault(group_id, []).append(_MarkerPoint(file=file_path, line=line, detail=detail))
+            begins.setdefault(group_id, []).append(
+                _MarkerPoint(file=file_path, line=line, detail=detail)
+            )
 
     real_seams_map: dict[str, dict] = {}
 
@@ -80,7 +91,11 @@ def build_real_seams_from_records(records: Iterable[dict]) -> tuple[dict[str, di
         if candidates:
             best = min(
                 candidates,
-                key=lambda c: ((c.end_line or c.begin_line) - c.begin_line, c.begin_line, c.file),
+                key=lambda c: (
+                    (c.end_line or c.begin_line) - c.begin_line,
+                    c.begin_line,
+                    c.file,
+                ),
             )
             real_seams_map[group_id] = _to_real_seam(group_id, best)
             continue
@@ -98,7 +113,11 @@ def build_real_seams_from_records(records: Iterable[dict]) -> tuple[dict[str, di
 
     real_seams_list = sorted(
         real_seams_map.values(),
-        key=lambda s: (s.get("file", ""), int(s.get("begin_line", 0)), s.get("group_id", "")),
+        key=lambda s: (
+            s.get("file", ""),
+            int(s.get("begin_line", 0)),
+            s.get("group_id", ""),
+        ),
     )
 
     return real_seams_map, real_seams_list

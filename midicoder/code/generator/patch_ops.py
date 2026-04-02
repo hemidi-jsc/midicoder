@@ -29,7 +29,9 @@ def _extract_region_from_legacy_content(content: str, *, ir_ref: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _find_region_bounds(content: str, *, region_start: str, region_end: str) -> tuple[int, int] | None:
+def _find_region_bounds(
+    content: str, *, region_start: str, region_end: str
+) -> tuple[int, int] | None:
     start = content.find(region_start)
     if start < 0:
         return None
@@ -129,7 +131,9 @@ def _consolidate_import_lines(import_lines: list[str]) -> list[str]:
     out: list[str] = []
     out.extend(future_imports)
     if plain_imports:
-        out.append("import " + ", ".join(plain_imports[name] for name in sorted(plain_imports)))
+        out.append(
+            "import " + ", ".join(plain_imports[name] for name in sorted(plain_imports))
+        )
     for module in sorted(from_imports):
         aliases = [from_imports[module][name] for name in sorted(from_imports[module])]
         out.append(f"from {module} import " + ", ".join(aliases))
@@ -145,9 +149,13 @@ def _upsert_imports(content: str, imports: list[str]) -> str:
     existing_top_level_imports = [
         _normalize_import_line(line)
         for line in lines
-        if line == line.lstrip() and _IMPORT_PATTERN.match(line.strip()) and not _should_drop_existing_import(line)
+        if line == line.lstrip()
+        and _IMPORT_PATTERN.match(line.strip())
+        and not _should_drop_existing_import(line)
     ]
-    consolidated_imports = _consolidate_import_lines(existing_top_level_imports + imports)
+    consolidated_imports = _consolidate_import_lines(
+        existing_top_level_imports + imports
+    )
 
     non_import_lines = [
         line
@@ -176,7 +184,10 @@ def _upsert_imports(content: str, imports: list[str]) -> str:
     merged_lines = non_import_lines[:insert_at]
     if consolidated_imports:
         merged_lines.extend(consolidated_imports)
-        if insert_at < len(non_import_lines) and non_import_lines[insert_at].strip() != "":
+        if (
+            insert_at < len(non_import_lines)
+            and non_import_lines[insert_at].strip() != ""
+        ):
             merged_lines.append("")
     merged_lines.extend(non_import_lines[insert_at:])
 
@@ -202,7 +213,11 @@ def apply_upsert_region(
 
     imports_raw = operation.get("imports")
     imports = (
-        [str(item).strip() for item in imports_raw if isinstance(item, str) and str(item).strip()]
+        [
+            str(item).strip()
+            for item in imports_raw
+            if isinstance(item, str) and str(item).strip()
+        ]
         if isinstance(imports_raw, list)
         else []
     )
@@ -216,8 +231,12 @@ def apply_upsert_region(
             region_content = "pass"
 
     merged = _upsert_imports(current_content, imports)
-    new_region = _render_region(region_start=region_start, region_content=region_content, region_end=region_end)
-    bounds = _find_region_bounds(merged, region_start=region_start, region_end=region_end)
+    new_region = _render_region(
+        region_start=region_start, region_content=region_content, region_end=region_end
+    )
+    bounds = _find_region_bounds(
+        merged, region_start=region_start, region_end=region_end
+    )
 
     if merge_mode not in {"create", "append", "patch"}:
         raise ApplyBlockedError(f"Unknown merge_mode: {merge_mode}")
@@ -235,4 +254,3 @@ def apply_upsert_region(
     start, end = bounds
     replaced = merged[:start] + new_region + merged[end:]
     return replaced, replaced != merged
-

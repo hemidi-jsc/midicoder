@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from .model_meta import ModelMeta
 
-
 PERSISTENCE_ENGINE_CATALOG = {
     "postgres",
     "mysql",

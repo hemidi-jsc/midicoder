@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from .model_meta import ModelMeta
 
-
 TEST_KIND_CATALOG = {
     "unit",
     "integration",

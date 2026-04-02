@@ -12,13 +12,17 @@ from .python_analyzer import PythonAnalyzer
 logger = logging.getLogger(__name__)
 
 
-def analyze_symbols(scanner: ProjectScanner, target_files: set[str] | None = None) -> tuple[list[Symbol], list[ErrorRecord]]:
+def analyze_symbols(
+    scanner: ProjectScanner, target_files: set[str] | None = None
+) -> tuple[list[Symbol], list[ErrorRecord]]:
     symbols: list[Symbol] = []
     errors: list[ErrorRecord] = []
 
     if scanner.has_python:
         python_analyzer = PythonAnalyzer()
-        python_symbols, python_errors = python_analyzer.analyze(scanner, target_files=target_files)
+        python_symbols, python_errors = python_analyzer.analyze(
+            scanner, target_files=target_files
+        )
         symbols.extend(python_symbols)
         errors.extend(python_errors)
         logger.debug(f"Analyzed {len(python_symbols)} Python symbols")

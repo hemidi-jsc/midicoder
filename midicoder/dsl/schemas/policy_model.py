@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from .model_meta import ModelMeta
 
-
 POLICY_OPERATOR_CATALOG = {
     "eq",
     "neq",
@@ -81,4 +80,3 @@ class PoliciesFile(BaseModel):
     policies: list[Policy]
 
     model_config = {"extra": "forbid"}
-

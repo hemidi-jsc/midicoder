@@ -73,7 +73,9 @@ class RuntimeFixGenerator:
             )
 
         self._files_with_errors = {
-            path for path in analysis.normalized_project_files if self._is_project_file(path)
+            path
+            for path in analysis.normalized_project_files
+            if self._is_project_file(path)
         }
         if not self._files_with_errors:
             for category in analysis.errors:
@@ -105,7 +107,10 @@ class RuntimeFixGenerator:
             project_context=project_context,
             business_context=business_context,
         )
-        self._detected_stack = str(runtime_context.get("profile_summary", {}).get("stack") or self._detected_stack)
+        self._detected_stack = str(
+            runtime_context.get("profile_summary", {}).get("stack")
+            or self._detected_stack
+        )
 
         prompt = build_fix_prompt(
             analysis=analysis,
@@ -161,7 +166,10 @@ class RuntimeFixGenerator:
             working_dir=self.config.working_dir,
             relevant_files=set(runtime_context.get("relevant_files", [])),
         )
-        guarded_operations, canonicalize_warnings = self._canonicalize_runtime_operations(
+        (
+            guarded_operations,
+            canonicalize_warnings,
+        ) = self._canonicalize_runtime_operations(
             guarded_operations,
         )
         all_warnings = [*parse_errors, *guard_issues]
@@ -172,7 +180,10 @@ class RuntimeFixGenerator:
                 success=False,
                 patch_plans=[],
                 patches_dir="",
-                errors=["All generated operations were rejected by runtime fix guardrails.", *all_warnings],
+                errors=[
+                    "All generated operations were rejected by runtime fix guardrails.",
+                    *all_warnings,
+                ],
             )
 
         fix_timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -305,7 +316,9 @@ class RuntimeFixGenerator:
             return False
 
         # Relative paths are considered project files.
-        if not (file_path.startswith("/") or (len(file_path) > 2 and file_path[1] == ":")):
+        if not (
+            file_path.startswith("/") or (len(file_path) > 2 and file_path[1] == ":")
+        ):
             return True
 
         try:
@@ -345,9 +358,14 @@ class RuntimeFixGenerator:
 
     def _load_business_context(self, runtime_keywords: list[str]) -> dict[str, Any]:
         """Load business artifacts and extract contract/IR focus snippets."""
-        version_root = self.config.workspace_root / ".midicoder" / "versions" / self.config.version
+        version_root = (
+            self.config.workspace_root / ".midicoder" / "versions" / self.config.version
+        )
         contracts_dir = version_root / "contracts"
-        ir_path_candidates = [version_root / "irs" / "ir.json", version_root / "ir" / "ir.json"]
+        ir_path_candidates = [
+            version_root / "irs" / "ir.json",
+            version_root / "ir" / "ir.json",
+        ]
 
         contracts_focus = self._extract_contract_focus(contracts_dir, runtime_keywords)
 
@@ -368,7 +386,9 @@ class RuntimeFixGenerator:
             "ir_focus": ir_focus,
         }
 
-    def _extract_contract_focus(self, contracts_dir: Path, runtime_keywords: list[str]) -> list[str]:
+    def _extract_contract_focus(
+        self, contracts_dir: Path, runtime_keywords: list[str]
+    ) -> list[str]:
         if not contracts_dir.exists():
             return []
         keywords = {k.lower() for k in runtime_keywords if k}
@@ -392,7 +412,9 @@ class RuntimeFixGenerator:
         scored.sort(key=lambda item: item[0], reverse=True)
         return [item for _, item in scored[:20]]
 
-    def _extract_ir_focus(self, ir_payload: Any, runtime_keywords: list[str]) -> list[str]:
+    def _extract_ir_focus(
+        self, ir_payload: Any, runtime_keywords: list[str]
+    ) -> list[str]:
         keywords = {k.lower() for k in runtime_keywords if k}
         if not keywords:
             return []
@@ -445,7 +467,9 @@ class RuntimeFixGenerator:
         business_context: dict[str, Any],
     ) -> dict[str, Any]:
         """Build normalized runtime context schema for prompter."""
-        profile_summary = self._build_profile_summary(project_context.get("profile", {}))
+        profile_summary = self._build_profile_summary(
+            project_context.get("profile", {})
+        )
         symbols_by_file = self._map_symbols_by_file(
             project_context.get("symbols", []),
             runtime_keywords=analysis.runtime_keywords,
@@ -591,7 +615,9 @@ class RuntimeFixGenerator:
                 break
         return lines
 
-    def _parse_llm_response(self, content: str) -> tuple[list[dict[str, Any]], list[str]]:
+    def _parse_llm_response(
+        self, content: str
+    ) -> tuple[list[dict[str, Any]], list[str]]:
         """Parse LLM response into operations."""
         errors: list[str] = []
         try:
@@ -613,7 +639,9 @@ class RuntimeFixGenerator:
             elif isinstance(data, list):
                 operations = data
             else:
-                errors.append("Unexpected JSON structure. Expected {'operations': [...]}.")
+                errors.append(
+                    "Unexpected JSON structure. Expected {'operations': [...]}."
+                )
                 return [], errors
 
             if not isinstance(operations, list):
@@ -637,7 +665,9 @@ class RuntimeFixGenerator:
                     errors.append(f"Operation {i}: missing region_start or region_end")
                     continue
                 if not op.get("file_path"):
-                    errors.append(f"Operation {i} (ir_ref={op.get('ir_ref')}): missing required field 'file_path'")
+                    errors.append(
+                        f"Operation {i} (ir_ref={op.get('ir_ref')}): missing required field 'file_path'"
+                    )
                     continue
                 merge_mode = op.get("merge_mode", "patch")
                 if merge_mode not in {"patch", "create", "append"}:
@@ -667,9 +697,13 @@ class RuntimeFixGenerator:
         warnings: list[str] = []
         by_file: dict[str, list[dict[str, Any]]] = {}
         for op in operations:
-            file_path = str(op.get("file_path") or "").replace("\\", "/").lstrip("/").strip()
+            file_path = (
+                str(op.get("file_path") or "").replace("\\", "/").lstrip("/").strip()
+            )
             if not file_path:
-                warnings.append(f"Skipping operation without file_path (ir_ref={op.get('ir_ref', '?')})")
+                warnings.append(
+                    f"Skipping operation without file_path (ir_ref={op.get('ir_ref', '?')})"
+                )
                 continue
             by_file.setdefault(file_path, []).append(op)
 
@@ -685,13 +719,25 @@ class RuntimeFixGenerator:
                 )
 
                 imports_field = op.get("imports")
-                imports_from_field = [
-                    str(x).strip() for x in imports_field if isinstance(x, str) and str(x).strip()
-                ] if isinstance(imports_field, list) else []
+                imports_from_field = (
+                    [
+                        str(x).strip()
+                        for x in imports_field
+                        if isinstance(x, str) and str(x).strip()
+                    ]
+                    if isinstance(imports_field, list)
+                    else []
+                )
 
-                region_content = str(op.get("region_content") or "").replace("\r\n", "\n").strip()
-                extracted_imports, cleaned_region = self._split_imports_from_region(region_content)
-                all_imports = self._dedupe_preserve_order(imports_from_field + extracted_imports)
+                region_content = (
+                    str(op.get("region_content") or "").replace("\r\n", "\n").strip()
+                )
+                extracted_imports, cleaned_region = self._split_imports_from_region(
+                    region_content
+                )
+                all_imports = self._dedupe_preserve_order(
+                    imports_from_field + extracted_imports
+                )
 
                 canonical = dict(op)
                 canonical["file_path"] = file_path
@@ -709,11 +755,17 @@ class RuntimeFixGenerator:
                 # Merge behavior mirrors code-gen upsert-by-ir_ref: combine imports + append region if distinct.
                 merged = dict(previous)
                 merged["imports"] = self._dedupe_preserve_order(
-                    list(previous.get("imports") or []) + list(canonical.get("imports") or [])
+                    list(previous.get("imports") or [])
+                    + list(canonical.get("imports") or [])
                 )
                 old_region = str(previous.get("region_content") or "").strip()
                 new_region = str(canonical.get("region_content") or "").strip()
-                if old_region and new_region and old_region != new_region and old_region not in new_region:
+                if (
+                    old_region
+                    and new_region
+                    and old_region != new_region
+                    and old_region not in new_region
+                ):
                     merged["region_content"] = f"{old_region}\n\n{new_region}"
                 else:
                     merged["region_content"] = new_region or old_region
@@ -769,7 +821,9 @@ class RuntimeFixGenerator:
             out.append(value)
         return out
 
-    def _save_patch_plans(self, patches_dir: Path, operations: list[dict[str, Any]]) -> None:
+    def _save_patch_plans(
+        self, patches_dir: Path, operations: list[dict[str, Any]]
+    ) -> None:
         """Save operations as patch plans (code-gen compatible format)."""
         file_operations: dict[str, list[dict[str, Any]]] = {}
 
@@ -814,16 +868,28 @@ class RuntimeFixGenerator:
             "stack": self._detected_stack,
             "patch_plan_targets": patch_plan_targets,
             "runtime_enabled": False,
-            "generated_patch_plans": [target["patch_plan_file"] for target in patch_plan_targets],
+            "generated_patch_plans": [
+                target["patch_plan_file"] for target in patch_plan_targets
+            ],
             "generated_runtime_files": [],
         }
-        (patches_dir / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
+        (patches_dir / "index.json").write_text(
+            json.dumps(index, indent=2), encoding="utf-8"
+        )
 
     def _write_trace_artifact(self, payload: dict[str, Any], timestamp: str) -> None:
-        run_dir = self.config.workspace_root / ".midicoder" / "runs" / "runtime_fix" / timestamp
+        run_dir = (
+            self.config.workspace_root
+            / ".midicoder"
+            / "runs"
+            / "runtime_fix"
+            / timestamp
+        )
         run_dir.mkdir(parents=True, exist_ok=True)
         trace_file = run_dir / "context_trace.json"
-        trace_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        trace_file.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
 
 def generate_runtime_fixes(
