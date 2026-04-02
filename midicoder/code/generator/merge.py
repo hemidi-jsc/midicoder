@@ -13,7 +13,9 @@ class MergeResult:
 
 
 def _canonical(text: str) -> str:
-    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").strip().split("\n"))
+    return "\n".join(
+        line.rstrip() for line in text.replace("\r\n", "\n").strip().split("\n")
+    )
 
 
 def _region_bounds(content: str, ir_ref: str) -> tuple[int, int] | None:
@@ -26,7 +28,7 @@ def _region_bounds(content: str, ir_ref: str) -> tuple[int, int] | None:
     if end < 0:
         return None
     end = end + len(end_marker)
-    if end < len(content) and content[end:end + 1] == "\n":
+    if end < len(content) and content[end : end + 1] == "\n":
         end += 1
     return start, end
 
@@ -51,11 +53,15 @@ def merge_content(
         bounds = _region_bounds(current, ir_ref)
         if bounds is not None:
             start, end = bounds
-            return MergeResult(content=current[:start] + block + current[end:], status="updated")
+            return MergeResult(
+                content=current[:start] + block + current[end:], status="updated"
+            )
         if _canonical(existing) == _canonical(current + block):
             return MergeResult(content=existing, status="noop")
         # Recover from legacy/non-region output by replacing with canonical baseline + block.
-        return MergeResult(content=current + block, status="updated", detail="MERGE_CREATE_RECOVERED")
+        return MergeResult(
+            content=current + block, status="updated", detail="MERGE_CREATE_RECOVERED"
+        )
 
     bounds = _region_bounds(current, ir_ref)
     if mode in {"append", "patch"}:
@@ -67,4 +73,6 @@ def merge_content(
         merged = current[:start] + block + current[end:]
         return MergeResult(content=merged, status="updated")
 
-    return MergeResult(content=current, status="error", detail=f"Unknown merge mode: {mode}")
+    return MergeResult(
+        content=current, status="error", detail=f"Unknown merge mode: {mode}"
+    )

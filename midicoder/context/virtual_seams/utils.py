@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-
 GROUP_ID_PATTERN = re.compile(r"midicoder:(?:begin|end)\s*(.*)$", re.IGNORECASE)
 REAL_SEAM_CONFIDENCE = 0.98
 EXEMPLAR_GROUP_PENALTY = 0.95
@@ -109,6 +108,7 @@ def _has_parent_symbol(record: dict) -> bool:
     if isinstance(scope, str):
         return scope.strip() not in top_level_scopes
     return bool(scope)
+
 
 def _is_exemplar_source(item: dict) -> int:
     source = str(item.get("_source", "")).lower()

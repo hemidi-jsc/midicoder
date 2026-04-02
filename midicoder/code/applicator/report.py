@@ -39,6 +39,8 @@ def write_apply_report(*, patches_dir: Path, summary: ApplySummary) -> str:
             for item in summary.file_results
         ],
     }
-    report_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
     return str(report_path)
-

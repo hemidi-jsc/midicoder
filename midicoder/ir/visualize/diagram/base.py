@@ -14,54 +14,54 @@ from ruamel.yaml import YAML
 
 class DiagramGenerator(ABC):
     """Base class for diagram generators."""
-    
+
     def __init__(self, output_dir: Path):
         """Initialize diagram generator.
-        
+
         Args:
             output_dir: Directory to write diagram files
         """
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     @abstractmethod
     def generate(self, ir_data: Any) -> list[DiagramOutput]:
         """Generate diagrams from IR data.
-        
+
         Args:
             ir_data: IR data to visualize
-            
+
         Returns:
             List of generated diagram outputs
         """
         pass
-    
+
     def _sanitize_id(self, id_str: str) -> str:
         """Sanitize ID for use in diagram node names.
-        
+
         Args:
             id_str: Original ID string
-            
+
         Returns:
             Sanitized ID safe for Graphviz/Mermaid
         """
         return id_str.replace(":", "_").replace("-", "_").replace(".", "_")
-    
+
     def _escape_label(self, label: str) -> str:
         """Escape label text for diagram output.
-        
+
         Args:
             label: Original label text
-            
+
         Returns:
             Escaped label
         """
-        return label.replace('"', '\\"').replace('\n', '\\n')
+        return label.replace('"', '\\"').replace("\n", "\\n")
 
 
 class DiagramOutput:
     """Output from diagram generation."""
-    
+
     def __init__(
         self,
         diagram_id: str,
@@ -74,7 +74,7 @@ class DiagramOutput:
         assets: list[str] | None = None,
     ):
         """Initialize diagram output.
-        
+
         Args:
             diagram_id: Unique identifier for diagram
             diagram_type: Type of diagram (workflow, entity, api, command)
@@ -82,7 +82,7 @@ class DiagramOutput:
             path: Path to output file
             sources: Source IR elements used to create diagram.
                     Can be list of IDs (legacy) or list of dicts with full metadata:
-                    [{"id": "user", "type": "Entity", "file": "entities.yaml", 
+                    [{"id": "user", "type": "Entity", "file": "entities.yaml",
                       "line_start": 10, "line_end": 25}]
         """
         self.diagram_id = diagram_id
@@ -93,7 +93,7 @@ class DiagramOutput:
         self.template = template
         self.engine = engine
         self.assets = assets or [str(path.with_suffix(".mmd"))]
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for manifest."""
         return {
@@ -114,12 +114,12 @@ def create_source_metadata(
     source: Any = None,
 ) -> dict[str, Any]:
     """Create source metadata dict for diagram traceability.
-    
+
     Args:
         id: Source element ID
         type: Source element type (Entity, Command, etc.)
         source: SourceMetadata object from IR (optional)
-    
+
     Returns:
         Dictionary with full source metadata
     """
@@ -127,60 +127,62 @@ def create_source_metadata(
         "id": id,
         "type": type,
     }
-    
-    if source is not None and hasattr(source, 'file'):
+
+    if source is not None and hasattr(source, "file"):
         metadata["file"] = source.file
-        
-        if hasattr(source, 'line_start') and source.line_start is not None:
+
+        if hasattr(source, "line_start") and source.line_start is not None:
             metadata["line_start"] = source.line_start
-        
-        if hasattr(source, 'line_end') and source.line_end is not None:
+
+        if hasattr(source, "line_end") and source.line_end is not None:
             metadata["line_end"] = source.line_end
-        
-        if hasattr(source, 'source_order') and source.source_order is not None:
+
+        if hasattr(source, "source_order") and source.source_order is not None:
             metadata["source_order"] = source.source_order
-    
+
     return metadata
 
 
 class MermaidRenderer:
     """Renderer for Mermaid format."""
-    
+
     _theme_path: Path | None = None
     _theme_cache: dict[str, Any] | None = None
     _init_block: str | None = None
     _class_block: str | None = None
     _cli_path: str | None = None
     _cli_version: str | None = None
-    
+
     @classmethod
     def configure(cls, theme_path: Path | None = None) -> None:
         """Configure theme path override."""
         if theme_path is not None:
             cls._theme_path = theme_path
-    
+
     @classmethod
-    def render_to_file(cls, mermaid_source: str, output_path: Path, format: str = "mmd") -> list[str]:
+    def render_to_file(
+        cls, mermaid_source: str, output_path: Path, format: str = "mmd"
+    ) -> list[str]:
         """Write Mermaid source to a .mmd file.
-        
+
         Args:
             mermaid_source: Mermaid source
             output_path: Path to output file (will be .mmd)
             format: Output format (mmd) - reserved for compatibility
-            
+
         Returns:
             List of generated asset paths
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         formatted = cls._apply_theme(mermaid_source)
         formatted = cls._lint_source(formatted)
-        
+
         mmd_path = output_path.with_suffix(".mmd")
         with open(mmd_path, "w", encoding="utf-8") as fh:
             fh.write(formatted)
             fh.write("\n")
-        
+
         assets = [str(mmd_path)]
         svg_path = cls._render_svg_if_available(mmd_path)
         if svg_path:
@@ -253,7 +255,10 @@ class MermaidRenderer:
     def _ensure_theme_loaded(cls) -> None:
         if cls._theme_cache is not None:
             return
-        theme_path = cls._theme_path or Path(__file__).resolve().parent.parent / "mermaid_theme.yml"
+        theme_path = (
+            cls._theme_path
+            or Path(__file__).resolve().parent.parent / "mermaid_theme.yml"
+        )
         cls._theme_path = theme_path
         if not theme_path.exists():
             cls._theme_cache = {}
@@ -265,7 +270,9 @@ class MermaidRenderer:
         cls._theme_cache = data
         defaults = data.get("defaults") or {}
         if defaults:
-            cls._init_block = f"%%{{init: {json.dumps(defaults, ensure_ascii=False)}}}%%"
+            cls._init_block = (
+                f"%%{{init: {json.dumps(defaults, ensure_ascii=False)}}}%%"
+            )
         classes = data.get("classes") or {}
         class_lines = []
         for class_name, props in classes.items():
@@ -281,64 +288,64 @@ class MermaidRenderer:
             if styles:
                 class_lines.append(f"classDef {class_name} {' '.join(styles)};")
         cls._class_block = "\n".join(class_lines) if class_lines else None
-    
+
     @staticmethod
     def sanitize_mermaid_id(id_str: str) -> str:
         """Sanitize ID for use in Mermaid node names.
-        
+
         Mermaid has stricter rules than Graphviz for node IDs.
         Only alphanumeric and underscore are safe.
-        
+
         Args:
             id_str: Original ID string
-            
+
         Returns:
             Sanitized ID safe for Mermaid
         """
         import re
-        
+
         # Replace all non-alphanumeric characters with underscores
-        sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', id_str)
-        
+        sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", id_str)
+
         # Remove consecutive underscores
-        sanitized = re.sub(r'_+', '_', sanitized)
-        
+        sanitized = re.sub(r"_+", "_", sanitized)
+
         # Remove leading/trailing underscores
-        sanitized = sanitized.strip('_')
-        
+        sanitized = sanitized.strip("_")
+
         # Ensure it starts with a letter or underscore
         if sanitized and not (sanitized[0].isalpha() or sanitized[0] == "_"):
             sanitized = "n_" + sanitized
-        
+
         # Ensure not empty
         if not sanitized:
             sanitized = "node_unnamed"
-        
+
         return sanitized
-    
+
     @staticmethod
     def escape_mermaid_text(text: str) -> str:
         """Escape text for Mermaid labels.
-        
+
         For Mermaid, we should avoid HTML entities in most contexts.
         Instead, use simple character replacement or removal.
-        
+
         Args:
             text: Original text
-            
+
         Returns:
             Escaped text safe for Mermaid
         """
         # For Mermaid labels, we need to be careful with special characters
         # Replace problematic characters with safe alternatives
         text = text.replace('"', "'")  # Replace double quotes with single quotes
-        text = text.replace('\n', ' ')  # Replace newlines with spaces
-        text = text.replace('\r', '')   # Remove carriage returns
-        
+        text = text.replace("\n", " ")  # Replace newlines with spaces
+        text = text.replace("\r", "")  # Remove carriage returns
+
         # Remove or replace other problematic characters
-        text = text.replace('#', 'num')
-        text = text.replace('&', 'and')
-        text = text.replace('<', '[')
-        text = text.replace('>', ']')
-        
+        text = text.replace("#", "num")
+        text = text.replace("&", "and")
+        text = text.replace("<", "[")
+        text = text.replace(">", "]")
+
         return text

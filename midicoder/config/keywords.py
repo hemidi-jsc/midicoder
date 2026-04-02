@@ -9,35 +9,35 @@ from typing import Any
 @dataclass
 class ConfigKeyword:
     """Configuration keyword definition."""
-    
+
     flag: str
     """Command-line flag (e.g., --working-dir)"""
-    
+
     env_var: str
     """Environment variable name (e.g., MIDICODER_WORKING_DIR)"""
-    
+
     description: str
     """Human-readable description"""
-    
+
     type: str
     """Data type: text, choice, multichoice, secret"""
-    
+
     required: bool = False
     """Whether this keyword is required"""
-    
+
     default: Any = None
     """Default value if not provided"""
-    
+
     choices: list[str] | None = None
     """Valid choices for choice/multichoice types"""
-    
+
     example: str | None = None
     """Example value"""
 
 
 class InitKeywords:
     """Keywords for 'midicoder init' command."""
-    
+
     KEYWORDS = [
         ConfigKeyword(
             flag="--working-dir",
@@ -140,7 +140,7 @@ class InitKeywords:
             example="ANTHROPIC_API_KEY",
         ),
     ]
-    
+
     @classmethod
     def get_by_flag(cls, flag: str) -> ConfigKeyword | None:
         """Get keyword by flag name."""
@@ -148,7 +148,7 @@ class InitKeywords:
             if kw.flag == flag:
                 return kw
         return None
-    
+
     @classmethod
     def get_by_env_var(cls, env_var: str) -> ConfigKeyword | None:
         """Get keyword by environment variable name."""
@@ -156,15 +156,18 @@ class InitKeywords:
             if kw.env_var == env_var:
                 return kw
         return None
-    
+
     @classmethod
     def print_help(cls) -> None:
         """Print formatted help for all keywords."""
-        from midicoder.io import print_normal, print_info
-        
-        print_info("Available configuration keywords for 'midicoder init':", title="Configuration Keywords")
+        from midicoder.io import print_info, print_normal
+
+        print_info(
+            "Available configuration keywords for 'midicoder init':",
+            title="Configuration Keywords",
+        )
         print_normal("")
-        
+
         # Group by category
         categories = {
             "Working Directory": ["--working-dir"],
@@ -185,51 +188,55 @@ class InitKeywords:
             ],
             "Mode": ["--non-interactive", "--env-prefix"],
         }
-        
+
         for category, flags in categories.items():
             print_normal(f"[bold]{category}:[/bold]")
-            
+
             for flag in flags:
                 kw = cls.get_by_flag(flag)
                 if kw:
                     # Format flag with type
                     flag_display = f"  {kw.flag} TEXT"
-                    
+
                     # Add description
                     desc_parts = [kw.description]
-                    
+
                     # Add choices if applicable
                     if kw.choices:
                         desc_parts.append(f"({', '.join(kw.choices)})")
-                    
+
                     # Add required indicator
                     if kw.required:
                         desc_parts.append("[bold red]*required[/bold red]")
-                    
+
                     # Add default if available
                     if kw.default and kw.default != "<current directory>":
                         desc_parts.append(f"[dim](default: {kw.default})[/dim]")
-                    
+
                     print_normal(f"{flag_display:<30} {' '.join(desc_parts)}")
-                    
+
                     # Add environment variable info
                     if kw.env_var:
                         print_normal(f"{'':30} [dim]Env: {kw.env_var}[/dim]")
-                    
+
                     # Add example
                     if kw.example:
                         print_normal(f"{'':30} [dim]Example: {kw.example}[/dim]")
-                    
+
                     print_normal("")
                 elif flag == "--non-interactive":
-                    print_normal(f"  {flag:<28} Run without prompts, use flags/env vars/defaults")
+                    print_normal(
+                        f"  {flag:<28} Run without prompts, use flags/env vars/defaults"
+                    )
                     print_normal("")
                 elif flag == "--env-prefix":
-                    print_normal(f"  {flag} TEXT{'':15} Environment variable prefix (default: MIDICODER_)")
+                    print_normal(
+                        f"  {flag} TEXT{'':15} Environment variable prefix (default: MIDICODER_)"
+                    )
                     print_normal("")
-            
+
             print_normal("")
-        
+
         # Print examples
         print_info("Examples:", title="Usage")
         print_normal("")

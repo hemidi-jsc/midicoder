@@ -41,5 +41,8 @@ def write_codegen_report(
             for action in merge_actions
         ],
     }
-    report_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
     return str(report_path)

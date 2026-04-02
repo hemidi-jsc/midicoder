@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 _IMPORT_RE = re.compile(r"^(from\s+[A-Za-z0-9_\.]+\s+import\s+.+|import\s+.+)$")
 _FROM_RE = re.compile(r"^from\s+([A-Za-z0-9_\.]+)\s+import\s+(.+)$")
 _PLAIN_IMPORT_RE = re.compile(r"^import\s+(.+)$")
@@ -13,7 +12,9 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def _normalize_imports(import_lines: list[str]) -> tuple[list[str], set[str], dict[str, set[str]], set[str]]:
+def _normalize_imports(
+    import_lines: list[str],
+) -> tuple[list[str], set[str], dict[str, set[str]], set[str]]:
     from_map: dict[str, set[str]] = {}
     plain_map: set[str] = set()
     passthrough: list[str] = []
@@ -44,11 +45,6 @@ def _normalize_imports(import_lines: list[str]) -> tuple[list[str], set[str], di
     if plain_map:
         normalized.append(f"import {', '.join(sorted(plain_map))}")
     normalized.extend(sorted(set(passthrough)))
-    semantic_imports = {
-        f"from {module} import {name}"
-        for module, names in from_map.items()
-        for name in names
-    } | {f"import {name}" for name in plain_map}
     return normalized, raw_seen, from_map, plain_map
 
 
@@ -56,7 +52,9 @@ def _line_semantics(raw: str) -> set[str]:
     from_match = _FROM_RE.match(raw)
     if from_match:
         module = from_match.group(1)
-        return {f"from {module} import {name}" for name in _split_csv(from_match.group(2))}
+        return {
+            f"from {module} import {name}" for name in _split_csv(from_match.group(2))
+        }
     plain_match = _PLAIN_IMPORT_RE.match(raw)
     if plain_match:
         return {f"import {name}" for name in _split_csv(plain_match.group(1))}
@@ -115,9 +113,15 @@ def harmonize_python_file(content: str) -> str:
         # Remove local imports duplicated (exact or subset) by hoisted imports.
         if line.startswith((" ", "\t")) and _IMPORT_RE.match(stripped):
             semantics = _line_semantics(stripped)
-            if stripped in raw_seen or (semantics and semantics.issubset(hoisted_semantics)):
+            if stripped in raw_seen or (
+                semantics and semantics.issubset(hoisted_semantics)
+            ):
                 continue
-        if line.startswith((" ", "\t")) and stripped in raw_seen and _IMPORT_RE.match(stripped):
+        if (
+            line.startswith((" ", "\t"))
+            and stripped in raw_seen
+            and _IMPORT_RE.match(stripped)
+        ):
             continue
         deduped.append(line)
 

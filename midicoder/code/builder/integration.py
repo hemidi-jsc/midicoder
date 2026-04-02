@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import IRPlanItem, IntegrationContext, RequiredFile, SuggestedPath
+from .models import IntegrationContext, IRPlanItem, RequiredFile, SuggestedPath
 
 
 def build_integration_context(
@@ -43,12 +43,18 @@ def build_plan_contracts(
     suggested_paths: list[SuggestedPath],
     required_files: list[RequiredFile],
     context: IntegrationContext,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    integration_contract = _build_integration_contract(item, target, pseudo_struct, context)
+) -> tuple[
+    dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]
+]:
+    integration_contract = _build_integration_contract(
+        item, target, pseudo_struct, context
+    )
     io_reconciliation = _build_io_reconciliation(item, pseudo_struct, context)
     security_contract = _build_security_contract(item, context)
     error_contract = _build_error_contract(item, context)
-    merge_contract = _build_merge_contract(item, target, suggested_paths, required_files)
+    merge_contract = _build_merge_contract(
+        item, target, suggested_paths, required_files
+    )
     return (
         integration_contract,
         io_reconciliation,
@@ -80,7 +86,11 @@ def _build_integration_contract(
 
     repo_methods = _infer_repo_methods(item)
     workflow_bindings = context.workflow_transitions_by_command.get(raw_key, [])
-    routes = pseudo_struct.get("api", {}).get("routes", []) if isinstance(pseudo_struct.get("api"), dict) else []
+    routes = (
+        pseudo_struct.get("api", {}).get("routes", [])
+        if isinstance(pseudo_struct.get("api"), dict)
+        else []
+    )
     return {
         "public_symbols": {
             "ir_ref": item.id,
@@ -112,9 +122,17 @@ def _build_io_reconciliation(
     pseudo_struct: dict[str, Any],
     context: IntegrationContext,
 ) -> dict[str, Any]:
-    routes = pseudo_struct.get("api", {}).get("routes", []) if isinstance(pseudo_struct.get("api"), dict) else []
+    routes = (
+        pseudo_struct.get("api", {}).get("routes", [])
+        if isinstance(pseudo_struct.get("api"), dict)
+        else []
+    )
     outputs = _field_names(item.io_contract.get("outputs", []))
-    response_mapping = pseudo_struct.get("api", {}).get("response_mapping", []) if isinstance(pseudo_struct.get("api"), dict) else []
+    response_mapping = (
+        pseudo_struct.get("api", {}).get("response_mapping", [])
+        if isinstance(pseudo_struct.get("api"), dict)
+        else []
+    )
     public_fields: set[str] = set()
     runtime_fields: set[str] = set()
     for route in routes:
@@ -141,29 +159,40 @@ def _build_io_reconciliation(
     query_fields = _field_names(related_query)
     return {
         "public_response_fields": sorted(public_fields),
-        "internal_fields": sorted(name for name in outputs if name not in public_fields),
+        "internal_fields": sorted(
+            name for name in outputs if name not in public_fields
+        ),
         "runtime_bridge_fields": sorted(runtime_fields),
         "cross_source": {
             "command_outputs": sorted(command_fields),
             "query_outputs": sorted(query_fields),
         },
-        "status": "consistent"
-        if (not public_fields or public_fields.issubset(outputs | runtime_fields))
-        else "needs_runtime_bridge",
+        "status": (
+            "consistent"
+            if (not public_fields or public_fields.issubset(outputs | runtime_fields))
+            else "needs_runtime_bridge"
+        ),
     }
 
 
-def _build_security_contract(item: IRPlanItem, context: IntegrationContext) -> dict[str, Any]:
+def _build_security_contract(
+    item: IRPlanItem, context: IntegrationContext
+) -> dict[str, Any]:
     raw_key = _normalize_symbol(item.raw_id)
     rules = item.rules_contract.get("rules", [])
     hash_rule_ids = [
         str(rule.get("id", "")).strip()
         for rule in rules
-        if isinstance(rule, dict) and "hash" in str(rule.get("id", "")).lower() and "password" in str(rule.get("id", "")).lower()
+        if isinstance(rule, dict)
+        and "hash" in str(rule.get("id", "")).lower()
+        and "password" in str(rule.get("id", "")).lower()
     ]
     outputs = _field_names(item.io_contract.get("outputs", []))
     token_policy: dict[str, Any] | None = None
-    if {"access_token", "refresh_token"} & outputs or {"refresh_token_hash", "expired_at"} & outputs:
+    if {"access_token", "refresh_token"} & outputs or {
+        "refresh_token_hash",
+        "expired_at",
+    } & outputs:
         token_policy = {
             "access_token_output": "access_token" in outputs,
             "refresh_token_output": "refresh_token" in outputs,
@@ -180,7 +209,9 @@ def _build_security_contract(item: IRPlanItem, context: IntegrationContext) -> d
     }
 
 
-def _build_error_contract(item: IRPlanItem, context: IntegrationContext) -> dict[str, Any]:
+def _build_error_contract(
+    item: IRPlanItem, context: IntegrationContext
+) -> dict[str, Any]:
     raw_key = _normalize_symbol(item.raw_id)
     behavior_errors = [
         str(err).strip()
@@ -238,12 +269,16 @@ def _build_merge_contract(
     return {
         "mode": mode,
         "ownership": sorted(set(ownership)),
-        "required_path_patterns": [entry.path_pattern for entry in required_files if entry.path_pattern],
+        "required_path_patterns": [
+            entry.path_pattern for entry in required_files if entry.path_pattern
+        ],
         "write_scope": write_scope,
     }
 
 
-def _build_route_indexes(modules: dict[str, Any]) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
+def _build_route_indexes(
+    modules: dict[str, Any],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
     routes = _resolve_records(modules, "api.http.routes")
     by_command: dict[str, list[dict[str, Any]]] = {}
     by_query: dict[str, list[dict[str, Any]]] = {}
@@ -284,7 +319,9 @@ def _build_policy_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any
             role = str(binding.get("role", "")).strip()
             permission_ids = binding.get("permissions")
             if role and isinstance(permission_ids, list):
-                role_bindings[role] = [str(pid).strip() for pid in permission_ids if isinstance(pid, str)]
+                role_bindings[role] = [
+                    str(pid).strip() for pid in permission_ids if isinstance(pid, str)
+                ]
 
     by_item: dict[str, list[dict[str, Any]]] = {}
     if isinstance(permissions, list):
@@ -295,7 +332,9 @@ def _build_policy_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any
             if not permission_id:
                 continue
             key = _normalize_symbol(permission_id)
-            roles = [role for role, ids in role_bindings.items() if permission_id in ids]
+            roles = [
+                role for role, ids in role_bindings.items() if permission_id in ids
+            ]
             by_item.setdefault(key, []).append(
                 {
                     "id": permission_id,
@@ -330,7 +369,9 @@ def _build_error_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any]
     return by_key
 
 
-def _build_workflow_transition_index(modules: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+def _build_workflow_transition_index(
+    modules: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
     workflows = _resolve_records(modules, "workflow.workflows")
     by_command: dict[str, list[dict[str, Any]]] = {}
     for workflow in workflows:
@@ -363,10 +404,16 @@ def _build_workflow_transition_index(modules: dict[str, Any]) -> dict[str, list[
     return by_command
 
 
-def _build_io_index(modules: dict[str, Any]) -> tuple[dict[str, dict[str, list[dict[str, Any]]]], dict[str, dict[str, dict[str, list[dict[str, Any]]]]]]:
+def _build_io_index(modules: dict[str, Any]) -> tuple[
+    dict[str, dict[str, list[dict[str, Any]]]],
+    dict[str, dict[str, dict[str, list[dict[str, Any]]]]],
+]:
     io_by_ref: dict[str, dict[str, list[dict[str, Any]]]] = {}
     io_by_symbol: dict[str, dict[str, dict[str, list[dict[str, Any]]]]] = {}
-    for type_name, bucket in (("Command", "application.commands"), ("Query", "application.queries")):
+    for type_name, bucket in (
+        ("Command", "application.commands"),
+        ("Query", "application.queries"),
+    ):
         records = _resolve_records(modules, bucket)
         for record in records:
             if not isinstance(record, dict):
@@ -405,7 +452,9 @@ def _build_canonical_symbols(ir: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def _infer_repo_methods(item: IRPlanItem) -> set[str]:
     methods: set[str] = set()
-    for dep in item.behavior_contract.get("fetches", []) + item.behavior_contract.get("reads", []):
+    for dep in item.behavior_contract.get("fetches", []) + item.behavior_contract.get(
+        "reads", []
+    ):
         if not isinstance(dep, dict):
             continue
         dep_id = _normalize_symbol(str(dep.get("id", "")))

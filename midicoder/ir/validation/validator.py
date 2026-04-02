@@ -7,23 +7,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import midicoder.dsl.models as dsl_models
 from pydantic import BaseModel, ValidationError
 
+import midicoder.dsl.models as dsl_models
 from midicoder.dsl import loader
-from ..diagnostics.line_tracker import get_nested_line_number
 from midicoder.dsl.catalogs import (
     AUTH_TYPE_CATALOG,
     AWS_SERVICE_CATALOG,
     AZURE_SERVICE_CATALOG,
-    COMMAND_CATEGORY_CATALOG,
     CLOUD_PROVIDER_CATALOG,
+    COMMAND_CATEGORY_CATALOG,
     CONSTRAINT_TYPE_CATALOG,
-    EMAIL_TRANSPORT_CATALOG,
     EFFECT_CATALOG,
+    EMAIL_TRANSPORT_CATALOG,
     ENVIRONMENT_CATALOG,
     ERROR_CATEGORY_CATALOG,
     EVENT_KIND_CATALOG,
+    GCP_SERVICE_CATALOG,
     GUARD_CATALOG,
     HTTP_METHOD_CATALOG,
     INTEGRATION_TYPE_CATALOG,
@@ -31,11 +31,10 @@ from midicoder.dsl.catalogs import (
     QUERY_CATEGORY_CATALOG,
     RELIABILITY_TARGET_KIND_CATALOG,
     TENANT_SCOPE_CATALOG,
-    TEST_KIND_CATALOG,
     TEST_FRAMEWORK_CATALOG,
+    TEST_KIND_CATALOG,
     VALUE_OBJECT_CATEGORY_CATALOG,
     WEBHOOK_SIGNATURE_ALG_CATALOG,
-    GCP_SERVICE_CATALOG,
 )
 from midicoder.dsl.models import (
     CommandsFile,
@@ -50,7 +49,6 @@ from midicoder.dsl.models import (
     ProfilesFile,
     QueriesFile,
     ReliabilityPoliciesFile,
-    RulesFile,
     SecretsContractFile,
     SecurityBaselineFile,
     TestingFile,
@@ -75,6 +73,7 @@ from ..diagnostics.error_codes import (
     E212,
     ErrorReporter,
 )
+from ..diagnostics.line_tracker import get_nested_line_number
 
 
 @dataclass(frozen=True)
@@ -88,16 +87,16 @@ class FileModelSpec:
 
 class Validator:
     """Validates DSL contracts (schema + lint)."""
-    
+
     def __init__(self, reporter: ErrorReporter) -> None:
         self.reporter = reporter
         self._raw_yaml_cache: dict[str, Any] = {}
         self._file_model_specs = self._build_file_model_specs()
-    
+
     def validate_file(self, file_path: Path, contracts_root: Path) -> Any | None:
         """
         Validate a single contract file.
-        
+
         Returns:
             Parsed and validated data, or None if validation failed.
         """
@@ -107,22 +106,23 @@ class Validator:
             # Load raw YAML first (preserves line numbers from ruamel.yaml)
             raw_yaml = loader.load_yaml(file_path)
             self._raw_yaml_cache[relative_path] = raw_yaml
-            
+
             # Store in global line info cache for use in IR builder
             from ..diagnostics.line_info_cache import store_raw_yaml
+
             store_raw_yaml(relative_path, raw_yaml)
-            
+
             # Infer contract schema dynamically from file content, then validate.
             data = self._validate_with_inferred_schema(raw_yaml)
             if data is None:
                 # Unknown/unmanaged YAML file: skip instead of hard-failing.
                 return None
-            
+
             # Run lint checks
             self._lint_file(data, relative_path, file_path)
-            
+
             return data
-            
+
         except ValidationError as e:
             # Schema validation error
             self._handle_validation_error(e, relative_path, file_path)
@@ -131,7 +131,7 @@ class Validator:
             # Other errors (YAML syntax, IO, etc.)
             self.reporter.add_exception("schema", relative_path, e)
             return None
-    
+
     def _build_file_model_specs(self) -> list[FileModelSpec]:
         """Discover all DSL `*File` schemas for runtime content-based inference."""
         specs: list[FileModelSpec] = []
@@ -180,7 +180,8 @@ class Validator:
         exact_required = [
             spec
             for spec in self._file_model_specs
-            if spec.required_root_fields and spec.required_root_fields.issubset(yaml_keys)
+            if spec.required_root_fields
+            and spec.required_root_fields.issubset(yaml_keys)
         ]
         if exact_required:
             return exact_required
@@ -258,14 +259,16 @@ class Validator:
                 if isinstance(action_value, str) and action_value.strip():
                     route["command"] = action_value.strip()
         return data
-    
-    def _handle_validation_error(self, error: ValidationError, file: str, file_path: Path) -> None:
+
+    def _handle_validation_error(
+        self, error: ValidationError, file: str, file_path: Path
+    ) -> None:
         """Handle Pydantic validation errors."""
         for err in error.errors():
             loc = ".".join(str(x) for x in err["loc"])
             msg = err["msg"]
             err_type = err["type"]
-            
+
             # Map Pydantic error types to our codes
             if "missing" in err_type:
                 code = E101
@@ -275,13 +278,13 @@ class Validator:
                 code = E103
             else:
                 code = E102  # Default to invalid type
-            
+
             # Try to extract line number from raw YAML
             line_number = None
             if file in self._raw_yaml_cache:
                 raw_yaml = self._raw_yaml_cache[file]
                 line_number = get_nested_line_number(raw_yaml, loc)
-            
+
             self.reporter.add_error(
                 stage="schema",
                 code=code,
@@ -290,7 +293,7 @@ class Validator:
                 path=loc,
                 line=line_number,
             )
-    
+
     def _lint_file(self, data: Any, file: str, file_path: Path) -> None:
         """Run lint checks on validated data."""
         if isinstance(data, EntitiesFile):
@@ -327,15 +330,15 @@ class Validator:
             self._lint_testing(data, file)
         elif isinstance(data, SecurityBaselineFile):
             self._lint_security_baseline(data, file)
-    
+
     def _lint_entities(self, data: EntitiesFile, file: str) -> None:
         """Lint entity definitions."""
         seen_ids = set()
-        
+
         for idx, entity in enumerate(data.entities):
             path = f"entities[{idx}]"
             line = self._get_line_for_path(file, path)
-            
+
             # Check duplicate IDs
             if entity.id in seen_ids:
                 self.reporter.add_error(
@@ -347,10 +350,10 @@ class Validator:
                     line=line,
                 )
             seen_ids.add(entity.id)
-            
+
             # Check field names unique
             self._check_field_names_unique(entity.fields, file, f"{path}.fields")
-            
+
             # Check primary_key exists in fields
             if entity.primary_key:
                 field_names = {f.name for f in entity.fields}
@@ -364,13 +367,15 @@ class Validator:
                         path=f"{path}.primary_key",
                         line=pk_line,
                     )
-            
+
             # Check indexes reference valid fields
             field_names = {f.name for f in entity.fields}
             for idx_idx, index in enumerate(entity.indexes):
                 for field_name in index.fields:
                     if field_name not in field_names:
-                        index_line = self._get_line_for_path(file, f"{path}.indexes[{idx_idx}]")
+                        index_line = self._get_line_for_path(
+                            file, f"{path}.indexes[{idx_idx}]"
+                        )
                         self.reporter.add_error(
                             stage="lint",
                             code=E204,
@@ -379,7 +384,7 @@ class Validator:
                             path=f"{path}.indexes[{idx_idx}]",
                             line=index_line,
                         )
-            
+
             # Check constraints reference valid fields
             for const_idx, constraint in enumerate(entity.constraints):
                 # Check constraint type
@@ -391,7 +396,7 @@ class Validator:
                         message=f"Invalid constraint type: {constraint.type}. Must be one of: {CONSTRAINT_TYPE_CATALOG}",
                         path=f"{path}.constraints[{const_idx}].type",
                     )
-                
+
                 for field_name in constraint.fields:
                     if field_name not in field_names:
                         self.reporter.add_error(
@@ -401,7 +406,7 @@ class Validator:
                             message=f"Constraint field '{field_name}' not found in entity fields",
                             path=f"{path}.constraints[{const_idx}]",
                         )
-            
+
             # Check tenant_scope if present
             if entity.tenant_scope and entity.tenant_scope not in TENANT_SCOPE_CATALOG:
                 self.reporter.add_error(
@@ -411,14 +416,14 @@ class Validator:
                     message=f"Invalid tenant_scope: {entity.tenant_scope}. Must be one of: {TENANT_SCOPE_CATALOG}",
                     path=f"{path}.tenant_scope",
                 )
-    
+
     def _lint_value_objects(self, data: ValueObjectsFile, file: str) -> None:
         """Lint value object definitions."""
         seen_ids = set()
-        
+
         for idx, vo in enumerate(data.value_objects):
             path = f"value_objects[{idx}]"
-            
+
             # Check duplicate IDs
             if vo.id in seen_ids:
                 self.reporter.add_error(
@@ -429,10 +434,10 @@ class Validator:
                     path=path,
                 )
             seen_ids.add(vo.id)
-            
+
             # Check field names unique
             self._check_field_names_unique(vo.fields, file, f"{path}.fields")
-            
+
             # Check category if present
             if vo.category and vo.category not in VALUE_OBJECT_CATEGORY_CATALOG:
                 self.reporter.add_error(
@@ -442,14 +447,14 @@ class Validator:
                     message=f"Invalid category: {vo.category}. Must be one of: {VALUE_OBJECT_CATEGORY_CATALOG}",
                     path=f"{path}.category",
                 )
-    
+
     def _lint_enums(self, data: EnumsFile, file: str) -> None:
         """Lint enum definitions."""
         seen_ids = set()
-        
+
         for idx, enum in enumerate(data.enums):
             path = f"enums[{idx}]"
-            
+
             # Check duplicate IDs
             if enum.id in seen_ids:
                 self.reporter.add_error(
@@ -460,7 +465,7 @@ class Validator:
                     path=path,
                 )
             seen_ids.add(enum.id)
-            
+
             # Check values non-empty and unique
             if not enum.values:
                 self.reporter.add_error(
@@ -482,14 +487,14 @@ class Validator:
                             path=f"{path}.values",
                         )
                     seen_values.add(value)
-    
+
     def _lint_errors(self, data: ErrorsFile, file: str) -> None:
         """Lint error definitions."""
         seen_ids = set()
-        
+
         for idx, error in enumerate(data.errors):
             path = f"errors[{idx}]"
-            
+
             # Check duplicate IDs
             if error.id in seen_ids:
                 self.reporter.add_error(
@@ -500,7 +505,7 @@ class Validator:
                     path=path,
                 )
             seen_ids.add(error.id)
-            
+
             # Check category if present
             if error.category and error.category not in ERROR_CATEGORY_CATALOG:
                 self.reporter.add_error(
@@ -510,14 +515,14 @@ class Validator:
                     message=f"Invalid category: {error.category}. Must be one of: {ERROR_CATEGORY_CATALOG}",
                     path=f"{path}.category",
                 )
-    
+
     def _lint_events(self, data: EventsFile, file: str) -> None:
         """Lint event definitions."""
         seen_ids = set()
-        
+
         for idx, event in enumerate(data.events):
             path = f"events[{idx}]"
-            
+
             # Check duplicate IDs
             if event.id in seen_ids:
                 self.reporter.add_error(
@@ -528,7 +533,7 @@ class Validator:
                     path=path,
                 )
             seen_ids.add(event.id)
-            
+
             # Check kind if present
             if event.kind and event.kind not in EVENT_KIND_CATALOG:
                 self.reporter.add_error(
@@ -538,14 +543,14 @@ class Validator:
                     message=f"Invalid kind: {event.kind}. Must be one of: {EVENT_KIND_CATALOG}",
                     path=f"{path}.kind",
                 )
-    
+
     def _lint_commands(self, data: CommandsFile, file: str) -> None:
         """Lint command definitions."""
         seen_ids = set()
-        
+
         for idx, command in enumerate(data.commands):
             path = f"commands[{idx}]"
-            
+
             # Check duplicate IDs
             if command.id in seen_ids:
                 self.reporter.add_error(
@@ -556,11 +561,11 @@ class Validator:
                     path=path,
                 )
             seen_ids.add(command.id)
-            
+
             # Check field names unique in input and returns
             self._check_field_names_unique(command.input, file, f"{path}.input")
             self._check_field_names_unique(command.returns, file, f"{path}.returns")
-            
+
             # Check category if present
             if command.category and command.category not in COMMAND_CATEGORY_CATALOG:
                 self.reporter.add_error(
@@ -570,9 +575,12 @@ class Validator:
                     message=f"Invalid category: {command.category}. Must be one of: {COMMAND_CATEGORY_CATALOG}",
                     path=f"{path}.category",
                 )
-            
+
             # Check tenant_scope if present
-            if command.tenant_scope and command.tenant_scope not in TENANT_SCOPE_CATALOG:
+            if (
+                command.tenant_scope
+                and command.tenant_scope not in TENANT_SCOPE_CATALOG
+            ):
                 self.reporter.add_error(
                     stage="lint",
                     code=E211,
@@ -580,7 +588,7 @@ class Validator:
                     message=f"Invalid tenant_scope: {command.tenant_scope}. Must be one of: {TENANT_SCOPE_CATALOG}",
                     path=f"{path}.tenant_scope",
                 )
-            
+
             # Check guards have valid IDs
             for guard_idx, guard in enumerate(command.guards):
                 if guard.id not in GUARD_CATALOG:
@@ -592,7 +600,7 @@ class Validator:
                         path=f"{path}.guards[{guard_idx}]",
                         severity="warning",  # Warning, not error
                     )
-            
+
             # Check effects have valid IDs
             for effect_idx, effect in enumerate(command.effects):
                 if effect.id not in EFFECT_CATALOG:
@@ -604,14 +612,14 @@ class Validator:
                         path=f"{path}.effects[{effect_idx}]",
                         severity="warning",  # Warning, not error
                     )
-    
+
     def _lint_queries(self, data: QueriesFile, file: str) -> None:
         """Lint query definitions."""
         seen_ids = set()
-        
+
         for idx, query in enumerate(data.queries):
             path = f"queries[{idx}]"
-            
+
             # Check duplicate IDs
             if query.id in seen_ids:
                 self.reporter.add_error(
@@ -622,11 +630,11 @@ class Validator:
                     path=path,
                 )
             seen_ids.add(query.id)
-            
+
             # Check field names unique in input and returns
             self._check_field_names_unique(query.input, file, f"{path}.input")
             self._check_field_names_unique(query.returns, file, f"{path}.returns")
-            
+
             # Check category if present
             if query.category and query.category not in QUERY_CATEGORY_CATALOG:
                 self.reporter.add_error(
@@ -636,14 +644,14 @@ class Validator:
                     message=f"Invalid category: {query.category}. Must be one of: {QUERY_CATEGORY_CATALOG}",
                     path=f"{path}.category",
                 )
-    
+
     def _lint_workflows(self, data: WorkflowsFile, file: str) -> None:
         """Lint workflow definitions."""
         seen_ids = set()
-        
+
         for idx, workflow in enumerate(data.workflows):
             path = f"workflows[{idx}]"
-            
+
             # Check duplicate IDs
             if workflow.id in seen_ids:
                 self.reporter.add_error(
@@ -654,7 +662,7 @@ class Validator:
                     path=path,
                 )
             seen_ids.add(workflow.id)
-            
+
             # Check state IDs unique
             state_ids = set()
             for state_idx, state in enumerate(workflow.states):
@@ -667,7 +675,7 @@ class Validator:
                         path=f"{path}.states[{state_idx}]",
                     )
                 state_ids.add(state.id)
-            
+
             # Check initial_state exists
             if workflow.initial_state not in state_ids:
                 self.reporter.add_error(
@@ -677,7 +685,7 @@ class Validator:
                     message=f"Initial state '{workflow.initial_state}' not found in states",
                     path=f"{path}.initial_state",
                 )
-            
+
             # Check transitions reference valid states
             for trans_idx, transition in enumerate(workflow.transitions):
                 if transition.from_state not in state_ids:
@@ -688,7 +696,7 @@ class Validator:
                         message=f"Transition from_state '{transition.from_state}' not found in states",
                         path=f"{path}.transitions[{trans_idx}].from_state",
                     )
-                
+
                 if transition.to_state not in state_ids:
                     self.reporter.add_error(
                         stage="lint",
@@ -697,14 +705,14 @@ class Validator:
                         message=f"Transition to_state '{transition.to_state}' not found in states",
                         path=f"{path}.transitions[{trans_idx}].to_state",
                     )
-    
+
     def _lint_http_api(self, data: HttpApiFile, file: str) -> None:
         """Lint HTTP API definitions."""
         seen_paths = set()
-        
+
         for idx, route in enumerate(data.routes):
             path = f"routes[{idx}]"
-            
+
             # Check method valid
             if route.method not in HTTP_METHOD_CATALOG:
                 self.reporter.add_error(
@@ -714,7 +722,7 @@ class Validator:
                     message=f"Invalid HTTP method: {route.method}. Must be one of: {HTTP_METHOD_CATALOG}",
                     path=f"{path}.method",
                 )
-            
+
             # Check path format
             if not route.path.startswith("/"):
                 self.reporter.add_error(
@@ -724,7 +732,7 @@ class Validator:
                     message=f"Route path must start with '/': {route.path}",
                     path=f"{path}.path",
                 )
-            
+
             # Check duplicate routes (method + path)
             route_key = f"{route.method} {route.path}"
             if route_key in seen_paths:
@@ -849,7 +857,10 @@ class Validator:
                     message=f"Invalid integration type: {integration.type}",
                     path=f"{path}.type",
                 )
-            if integration.provider and integration.provider not in CLOUD_PROVIDER_CATALOG:
+            if (
+                integration.provider
+                and integration.provider not in CLOUD_PROVIDER_CATALOG
+            ):
                 self.reporter.add_error(
                     stage="lint",
                     code=E206,
@@ -857,7 +868,11 @@ class Validator:
                     message=f"Invalid cloud provider: {integration.provider}",
                     path=f"{path}.provider",
                 )
-            if integration.provider == "aws" and integration.service and integration.service not in AWS_SERVICE_CATALOG:
+            if (
+                integration.provider == "aws"
+                and integration.service
+                and integration.service not in AWS_SERVICE_CATALOG
+            ):
                 self.reporter.add_error(
                     stage="lint",
                     code=E206,
@@ -865,7 +880,11 @@ class Validator:
                     message=f"Invalid AWS service: {integration.service}",
                     path=f"{path}.service",
                 )
-            if integration.provider == "gcp" and integration.service and integration.service not in GCP_SERVICE_CATALOG:
+            if (
+                integration.provider == "gcp"
+                and integration.service
+                and integration.service not in GCP_SERVICE_CATALOG
+            ):
                 self.reporter.add_error(
                     stage="lint",
                     code=E206,
@@ -873,7 +892,11 @@ class Validator:
                     message=f"Invalid GCP service: {integration.service}",
                     path=f"{path}.service",
                 )
-            if integration.provider == "azure" and integration.service and integration.service not in AZURE_SERVICE_CATALOG:
+            if (
+                integration.provider == "azure"
+                and integration.service
+                and integration.service not in AZURE_SERVICE_CATALOG
+            ):
                 self.reporter.add_error(
                     stage="lint",
                     code=E206,
@@ -901,7 +924,10 @@ class Validator:
                 )
 
         for idx, webhook in enumerate(data.webhooks):
-            if webhook.signature and webhook.signature.alg not in WEBHOOK_SIGNATURE_ALG_CATALOG:
+            if (
+                webhook.signature
+                and webhook.signature.alg not in WEBHOOK_SIGNATURE_ALG_CATALOG
+            ):
                 self.reporter.add_error(
                     stage="lint",
                     code=E206,
@@ -1055,7 +1081,7 @@ class Validator:
                     message="rate limit values must be positive",
                     path=f"security.rate_limits[{idx}]",
                 )
-    
+
     def _check_field_names_unique(self, fields: list, file: str, path: str) -> None:
         """Check that field names are unique."""
         seen_names = set()
@@ -1071,7 +1097,7 @@ class Validator:
                     line=line_number,
                 )
             seen_names.add(field.name)
-    
+
     def _get_line_for_path(self, file: str, path: str) -> int | None:
         """Get line number for a specific path in the file."""
         if file in self._raw_yaml_cache:

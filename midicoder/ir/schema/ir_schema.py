@@ -9,16 +9,16 @@ from typing import Any
 @dataclass
 class SourceMetadata:
     """Metadata about the source file."""
-    
-    file: str                           # Relative path to source file
-    checksum: str = ""                  # File checksum (SHA256)
-    line_start: int | None = None       # Starting line number (1-indexed)
-    line_end: int | None = None         # Ending line number (1-indexed)
-    source_order: int | None = None     # Original order in source file
-    
+
+    file: str  # Relative path to source file
+    checksum: str = ""  # File checksum (SHA256)
+    line_start: int | None = None  # Starting line number (1-indexed)
+    line_end: int | None = None  # Ending line number (1-indexed)
+    source_order: int | None = None  # Original order in source file
+
     # Deprecated: kept for backward compatibility
-    line: int | None = None             # Use line_start instead
-    
+    line: int | None = None  # Use line_start instead
+
     def __post_init__(self):
         """Ensure line_start is set from line if needed."""
         if self.line is not None and self.line_start is None:
@@ -28,15 +28,15 @@ class SourceMetadata:
 @dataclass
 class RefIR:
     """Normalized reference to another object."""
-    
-    type: str                      # Symbol type (Entity, Command, etc.)
-    id: str                        # Canonical ID
+
+    type: str  # Symbol type (Entity, Command, etc.)
+    id: str  # Canonical ID
 
 
 @dataclass
 class IntentIR:
     """Intent metadata for an IR node."""
-    
+
     kind: str
     module: str
     confidence: float
@@ -47,7 +47,7 @@ class IntentIR:
 @dataclass
 class FieldIR:
     """Field definition in IR."""
-    
+
     name: str
     type: str
     required: bool = True
@@ -65,7 +65,7 @@ class FieldIR:
 @dataclass
 class IndexIR:
     """Index definition in IR."""
-    
+
     name: str
     fields: list[str]
     unique: bool = False
@@ -74,7 +74,7 @@ class IndexIR:
 @dataclass
 class ConstraintIR:
     """Constraint definition in IR."""
-    
+
     type: str
     fields: list[str]
     ref: str | None = None
@@ -83,7 +83,7 @@ class ConstraintIR:
 @dataclass
 class GuardIR:
     """Guard definition in IR."""
-    
+
     id: str
     params: dict[str, Any] = field(default_factory=dict)
 
@@ -91,7 +91,7 @@ class GuardIR:
 @dataclass
 class EffectIR:
     """Effect definition in IR."""
-    
+
     id: str
     params: dict[str, Any] = field(default_factory=dict)
 
@@ -100,10 +100,11 @@ class EffectIR:
 # Domain IR
 # ============================================================================
 
+
 @dataclass
 class EntityIR:
     """Entity in IR."""
-    
+
     id: str
     description: str | None
     fields: list[FieldIR]
@@ -121,7 +122,7 @@ class EntityIR:
 @dataclass
 class ValueObjectIR:
     """Value object in IR."""
-    
+
     id: str
     description: str | None
     fields: list[FieldIR]
@@ -136,7 +137,7 @@ class ValueObjectIR:
 @dataclass
 class EnumIR:
     """Enum in IR."""
-    
+
     id: str
     description: str | None
     values: list[str]
@@ -151,7 +152,7 @@ class EnumIR:
 @dataclass
 class ErrorIR:
     """Error in IR."""
-    
+
     id: str
     description: str | None
     fields: list[FieldIR]
@@ -167,7 +168,7 @@ class ErrorIR:
 @dataclass
 class EventIR:
     """Event in IR."""
-    
+
     id: str
     description: str | None
     fields: list[FieldIR]
@@ -182,7 +183,7 @@ class EventIR:
 @dataclass
 class DomainIR:
     """Domain module IR."""
-    
+
     entities: list[EntityIR] = field(default_factory=list)
     value_objects: list[ValueObjectIR] = field(default_factory=list)
     enums: list[EnumIR] = field(default_factory=list)
@@ -194,10 +195,11 @@ class DomainIR:
 # Application IR
 # ============================================================================
 
+
 @dataclass
 class CommandIR:
     """Command in IR."""
-    
+
     id: str
     description: str | None
     input: list[FieldIR]
@@ -224,7 +226,7 @@ class CommandIR:
 @dataclass
 class QueryIR:
     """Query in IR."""
-    
+
     id: str
     description: str | None
     input: list[FieldIR]
@@ -247,7 +249,7 @@ class QueryIR:
 @dataclass
 class ProjectionIR:
     """Projection in IR."""
-    
+
     id: str
     description: str | None
     source_events: list[RefIR]
@@ -265,7 +267,7 @@ class ProjectionIR:
 @dataclass
 class ApplicationIR:
     """Application module IR."""
-    
+
     commands: list[CommandIR] = field(default_factory=list)
     queries: list[QueryIR] = field(default_factory=list)
     projections: list[ProjectionIR] = field(default_factory=list)
@@ -275,10 +277,11 @@ class ApplicationIR:
 # Workflow IR
 # ============================================================================
 
+
 @dataclass
 class StateIR:
     """Workflow state in IR."""
-    
+
     id: str
     description: str | None
     kind: str | None
@@ -287,7 +290,7 @@ class StateIR:
 @dataclass
 class TransitionIR:
     """Workflow transition in IR."""
-    
+
     from_state: str
     to_state: str
     on_command: RefIR | None
@@ -300,7 +303,7 @@ class TransitionIR:
 @dataclass
 class ErrorHandlerIR:
     """Workflow error handler in IR."""
-    
+
     error: RefIR
     action: str
     transition_to: str | None
@@ -309,7 +312,7 @@ class ErrorHandlerIR:
 @dataclass
 class WorkflowIR:
     """Workflow in IR."""
-    
+
     id: str
     description: str | None
     entity: RefIR
@@ -330,7 +333,7 @@ class WorkflowIR:
 @dataclass
 class WorkflowModuleIR:
     """Workflow module IR."""
-    
+
     workflows: list[WorkflowIR] = field(default_factory=list)
 
 
@@ -338,10 +341,11 @@ class WorkflowModuleIR:
 # API IR
 # ============================================================================
 
+
 @dataclass
 class HttpRouteIR:
     """HTTP route in IR."""
-    
+
     id: str  # Generated from method:path
     method: str
     path: str
@@ -361,7 +365,7 @@ class HttpRouteIR:
 @dataclass
 class GraphQLFieldIR:
     """GraphQL field in IR."""
-    
+
     name: str
     type: str
     args: list[FieldIR]
@@ -371,7 +375,7 @@ class GraphQLFieldIR:
 @dataclass
 class GraphQLTypeIR:
     """GraphQL type in IR."""
-    
+
     id: str  # Same as name, for consistency
     name: str
     kind: str
@@ -386,7 +390,7 @@ class GraphQLTypeIR:
 @dataclass
 class GraphQLOperationIR:
     """GraphQL query or mutation in IR."""
-    
+
     id: str  # Same as name, for consistency
     name: str
     type: str  # "query" or "mutation"
@@ -405,14 +409,14 @@ class GraphQLOperationIR:
 @dataclass
 class HttpApiIR:
     """HTTP API IR."""
-    
+
     routes: list[HttpRouteIR] = field(default_factory=list)
 
 
 @dataclass
 class GraphQLApiIR:
     """GraphQL API IR."""
-    
+
     types: list[GraphQLTypeIR] = field(default_factory=list)
     queries: list[GraphQLOperationIR] = field(default_factory=list)
     mutations: list[GraphQLOperationIR] = field(default_factory=list)
@@ -421,7 +425,7 @@ class GraphQLApiIR:
 @dataclass
 class ApiIR:
     """API module IR."""
-    
+
     http: HttpApiIR | None = None
     graphql: GraphQLApiIR | None = None
 
@@ -760,10 +764,11 @@ class TestingIR:
 # Policy IR
 # ============================================================================
 
+
 @dataclass
 class RoleIR:
     """Role in IR."""
-    
+
     id: str
     description: str | None
     tags: list[str]
@@ -775,7 +780,7 @@ class RoleIR:
 @dataclass
 class PermissionIR:
     """Permission in IR."""
-    
+
     id: str
     description: str | None
     resource: str
@@ -789,7 +794,7 @@ class PermissionIR:
 @dataclass
 class BindingIR:
     """RBAC binding in IR."""
-    
+
     role: str
     permissions: list[str]
     scope: str | None
@@ -798,7 +803,7 @@ class BindingIR:
 @dataclass
 class AccessPolicyIR:
     """Access control policy IR."""
-    
+
     roles: list[RoleIR] = field(default_factory=list)
     permissions: list[PermissionIR] = field(default_factory=list)
     bindings: list[BindingIR] = field(default_factory=list)
@@ -807,7 +812,7 @@ class AccessPolicyIR:
 @dataclass
 class PolicyConditionIR:
     """Business policy condition in IR."""
-    
+
     field: str
     operator: str
     value: Any
@@ -816,7 +821,7 @@ class PolicyConditionIR:
 @dataclass
 class PolicyEffectIR:
     """Business policy effect in IR."""
-    
+
     type: str
     target: str | None
     params: dict[str, Any]
@@ -825,7 +830,7 @@ class PolicyEffectIR:
 @dataclass
 class BusinessPolicyIR:
     """Business policy in IR."""
-    
+
     id: str
     description: str | None
     conditions: list[PolicyConditionIR]
@@ -840,7 +845,7 @@ class BusinessPolicyIR:
 @dataclass
 class PolicyIR:
     """Policy module IR."""
-    
+
     access: AccessPolicyIR | None = None
     business: list[BusinessPolicyIR] = field(default_factory=list)
 
@@ -849,10 +854,11 @@ class PolicyIR:
 # Rules IR
 # ============================================================================
 
+
 @dataclass
 class RuleRowIR:
     """Rule decision table row in IR."""
-    
+
     conditions: dict[str, Any]
     result: Any
 
@@ -860,7 +866,7 @@ class RuleRowIR:
 @dataclass
 class RuleIR:
     """Rule in IR."""
-    
+
     id: str
     description: str | None
     table: list[RuleRowIR]
@@ -879,7 +885,7 @@ class RuleIR:
 @dataclass
 class RulesIR:
     """Rules module IR."""
-    
+
     rules: list[RuleIR] = field(default_factory=list)
 
 
@@ -887,10 +893,11 @@ class RulesIR:
 # Scenarios IR
 # ============================================================================
 
+
 @dataclass
 class ScenarioStepIR:
     """Scenario step in IR."""
-    
+
     type: str  # "command", "query", "event", "assertion"
     ref: RefIR | None
     input: dict[str, Any]
@@ -901,7 +908,7 @@ class ScenarioStepIR:
 @dataclass
 class ScenarioIR:
     """Scenario in IR."""
-    
+
     id: str
     description: str | None
     actors: list[str]
@@ -918,7 +925,7 @@ class ScenarioIR:
 @dataclass
 class ScenariosIR:
     """Scenarios module IR."""
-    
+
     scenarios: list[ScenarioIR] = field(default_factory=list)
 
 
@@ -926,10 +933,11 @@ class ScenariosIR:
 # Indexes and Metadata
 # ============================================================================
 
+
 @dataclass
 class SymbolIndex:
     """Index entry for a symbol."""
-    
+
     id: str
     type: str
     source_file: str
@@ -939,7 +947,7 @@ class SymbolIndex:
 @dataclass
 class RefIndex:
     """Index entry for a cross-reference."""
-    
+
     source_type: str
     source_id: str
     source_field: str
@@ -950,7 +958,7 @@ class RefIndex:
 @dataclass
 class IRIndexes:
     """Global indexes for the IR."""
-    
+
     symbols: dict[str, dict[str, SymbolIndex]] = field(default_factory=dict)
     refs: list[RefIndex] = field(default_factory=list)
 
@@ -958,7 +966,7 @@ class IRIndexes:
 @dataclass
 class SourceFileMeta:
     """Metadata about a source file."""
-    
+
     path: str
     checksum: str
     line_count: int
@@ -967,7 +975,7 @@ class SourceFileMeta:
 @dataclass
 class Warning:
     """Warning from compilation."""
-    
+
     stage: str
     code: str
     file: str
@@ -988,7 +996,7 @@ class IntentStats:
 @dataclass
 class Stats:
     """Statistics about the compiled IR."""
-    
+
     entities: int = 0
     value_objects: int = 0
     enums: int = 0
@@ -1022,7 +1030,7 @@ class Stats:
 @dataclass
 class IRMeta:
     """Metadata for the IR."""
-    
+
     warnings: list[Warning] = field(default_factory=list)
     sources: list[SourceFileMeta] = field(default_factory=list)
     stats: Stats = field(default_factory=Stats)
@@ -1035,10 +1043,11 @@ class IRMeta:
 # Top-level IR
 # ============================================================================
 
+
 @dataclass
 class IRModules:
     """All IR modules."""
-    
+
     domain: DomainIR = field(default_factory=DomainIR)
     application: ApplicationIR = field(default_factory=ApplicationIR)
     workflow: WorkflowModuleIR = field(default_factory=WorkflowModuleIR)
@@ -1055,14 +1064,14 @@ class IRModules:
 @dataclass
 class IR:
     """Top-level IR structure."""
-    
+
     version: str
     generated_at: str
     modules: IRModules
     indexes: IRIndexes
     meta: IRMeta
     schema_version: str | None = None
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert IR to dictionary for JSON serialization."""
         return asdict(self)

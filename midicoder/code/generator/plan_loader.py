@@ -17,7 +17,11 @@ def _normalize_fastapi_path(path_value: str) -> str:
 
 
 def _fallback_path(payload: dict[str, Any]) -> str:
-    pseudo = payload.get("pseudo_struct", {}) if isinstance(payload.get("pseudo_struct"), dict) else {}
+    pseudo = (
+        payload.get("pseudo_struct", {})
+        if isinstance(payload.get("pseudo_struct"), dict)
+        else {}
+    )
     intent = pseudo.get("intent", {}) if isinstance(pseudo.get("intent"), dict) else {}
     module = str(intent.get("module", "misc"))
     kind = str(intent.get("kind", "generated"))
@@ -79,7 +83,9 @@ def _resolve_runtime_paths(
     return sorted(unique_paths)
 
 
-def load_plan_item(plans_dir: Path, ref: PlanRef, manifest: IndexManifest) -> PlanItemRuntime:
+def load_plan_item(
+    plans_dir: Path, ref: PlanRef, manifest: IndexManifest
+) -> PlanItemRuntime:
     source_path = plans_dir / ref.rel_path
     if not source_path.exists():
         raise FileNotFoundError(f"Missing plan file: {source_path}")
@@ -87,7 +93,9 @@ def load_plan_item(plans_dir: Path, ref: PlanRef, manifest: IndexManifest) -> Pl
     payload = json.loads(source_path.read_text(encoding="utf-8"))
     ir_ref = str(payload.get("ir_ref", "unknown.unknown"))
     merge_mode = manifest.merge_mode.get(ir_ref, "patch")
-    runtime_paths = _resolve_runtime_paths(manifest=manifest, payload=payload, ir_ref=ir_ref)
+    runtime_paths = _resolve_runtime_paths(
+        manifest=manifest, payload=payload, ir_ref=ir_ref
+    )
 
     return PlanItemRuntime(
         source_path=source_path,

@@ -1,0 +1,11 @@
+pytest
+pytest-cov
+pytest-mock
+pytest-asyncio
+ruamel.yaml
+rich
+pydantic
+typer
+questionary
+tree_sitter
+tree_sitter_languages

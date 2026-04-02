@@ -55,4 +55,3 @@ class SecurityBaselineFile(BaseModel):
             "rate limiting and PII masking requirements."
         ),
     )
-

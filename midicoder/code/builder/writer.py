@@ -25,7 +25,10 @@ def write_plan_file(plans_dir: Path, plan: CodePlanItem) -> str:
     relative_path = f"{group}/{slug}.code-plan.json"
     output_path = plans_dir / relative_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(plan.to_dict(), indent=2, sort_keys=True, ensure_ascii=False), encoding="utf-8")
+    output_path.write_text(
+        json.dumps(plan.to_dict(), indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
     return relative_path
 
 
@@ -63,7 +66,9 @@ def build_index_payload(
         "schema_version": CODE_PLAN_SCHEMA_VERSION,
         "plans": sorted(plan_paths),
         "generation_order": generation_order,
-        "file_ownership": {key: sorted(set(value)) for key, value in sorted(file_ownership.items())},
+        "file_ownership": {
+            key: sorted(set(value)) for key, value in sorted(file_ownership.items())
+        },
         "merge_mode": dict(sorted(merge_mode.items())),
         "bootstrap_contract": {
             "stack": stack,
@@ -81,4 +86,7 @@ def build_index_payload(
 def write_plan_index(plans_dir: Path, index_payload: dict[str, Any]) -> None:
     index_path = plans_dir / "index.json"
     index_path.parent.mkdir(parents=True, exist_ok=True)
-    index_path.write_text(json.dumps(index_payload, indent=2, sort_keys=True, ensure_ascii=False), encoding="utf-8")
+    index_path.write_text(
+        json.dumps(index_payload, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )

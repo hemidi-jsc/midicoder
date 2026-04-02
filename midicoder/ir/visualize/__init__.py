@@ -1,4 +1,4 @@
 ﻿# visualize
 """Visualization and diagram generation for IR."""
 
-from .visualizer import *
+from .visualizer import *  # noqa: F403

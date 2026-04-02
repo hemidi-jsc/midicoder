@@ -147,10 +147,20 @@ def score_candidate(node: GraphNode, item: IRPlanItem) -> float:
     module_match = 3.0 if node.module == item.module else 0.0
     path_match = 1.0 if item.module.lower() in node.file.lower() else 0.0
     route_affinity = 1.5 if _route_affinity_match(node.file, item) else 0.0
-    reference_affinity = 0.5 if item.raw_id.lower() in "/".join(node.symbols).lower() else 0.0
+    reference_affinity = (
+        0.5 if item.raw_id.lower() in "/".join(node.symbols).lower() else 0.0
+    )
     seam_bonus = node.score_base
     distance_penalty = 0.0
-    return kind_match + module_match + path_match + route_affinity + reference_affinity + seam_bonus - distance_penalty
+    return (
+        kind_match
+        + module_match
+        + path_match
+        + route_affinity
+        + reference_affinity
+        + seam_bonus
+        - distance_penalty
+    )
 
 
 def sort_candidates(candidates: list[GraphCandidate]) -> list[GraphCandidate]:
@@ -231,14 +241,20 @@ def resolve_suggested_paths(
     ], "fallback"
 
 
-def fallback_convention_path(*, item: IRPlanItem, profile: dict[str, Any] | None, stack: str) -> str:
+def fallback_convention_path(
+    *, item: IRPlanItem, profile: dict[str, Any] | None, stack: str
+) -> str:
     module_layout = {}
     if isinstance(profile, dict):
         maybe_layout = profile.get("module_layout")
         if isinstance(maybe_layout, dict):
             module_layout = maybe_layout
 
-    kind_layout = module_layout.get(item.kind) if isinstance(module_layout.get(item.kind), str) else None
+    kind_layout = (
+        module_layout.get(item.kind)
+        if isinstance(module_layout.get(item.kind), str)
+        else None
+    )
     if kind_layout:
         base_dir = kind_layout.strip("/").strip()
     elif stack == "nest":
@@ -268,7 +284,9 @@ def fallback_convention_path(*, item: IRPlanItem, profile: dict[str, Any] | None
     return f"{base_dir}/{name}.py"
 
 
-def _find_matching_seam(items: list[dict[str, Any]], kind: str, module: str) -> dict[str, str] | None:
+def _find_matching_seam(
+    items: list[dict[str, Any]], kind: str, module: str
+) -> dict[str, str] | None:
     target_group = f"{kind}:{module}"
     for seam in items:
         group_id = str(seam.get("group_id", ""))
@@ -279,7 +297,9 @@ def _find_matching_seam(items: list[dict[str, Any]], kind: str, module: str) -> 
 
         anchor = ""
         if group_id:
-            anchor = f"{'virtual' if seam.get('kind') == 'virtual' else 'seam'}:{group_id}"
+            anchor = (
+                f"{'virtual' if seam.get('kind') == 'virtual' else 'seam'}:{group_id}"
+            )
         elif detail:
             anchor = detail
 
@@ -291,12 +311,20 @@ def _find_matching_seam(items: list[dict[str, Any]], kind: str, module: str) -> 
 
 
 def _resolve_route_paths(item: IRPlanItem, stack: str) -> list[SuggestedPath]:
-    routes = item.api_contract.get("routes", []) if isinstance(item.api_contract, dict) else []
+    routes = (
+        item.api_contract.get("routes", [])
+        if isinstance(item.api_contract, dict)
+        else []
+    )
     if not isinstance(routes, list) or not routes:
         return []
     route = sorted(
         [route for route in routes if isinstance(route, dict)],
-        key=lambda candidate: (candidate.get("source_order", 0) or 0, str(candidate.get("method", "")), str(candidate.get("path", ""))),
+        key=lambda candidate: (
+            candidate.get("source_order", 0) or 0,
+            str(candidate.get("method", "")),
+            str(candidate.get("path", "")),
+        ),
     )[0]
     method = str(route.get("method", "")).upper()
     path = str(route.get("path", ""))
@@ -437,7 +465,17 @@ def _is_runtime_candidate(file_path: str) -> bool:
     )
     if any(segment in f"/{lowered}" for segment in blocked_segments):
         return False
-    allowed_roots = ("app/", "src/", "domain/", "modules/", "api/", "services/", "controllers/", "repositories/", "workflows/")
+    allowed_roots = (
+        "app/",
+        "src/",
+        "domain/",
+        "modules/",
+        "api/",
+        "services/",
+        "controllers/",
+        "repositories/",
+        "workflows/",
+    )
     if not lowered.startswith(allowed_roots):
         return False
     if "." in lowered.split("/")[-1]:
@@ -448,10 +486,16 @@ def _is_runtime_candidate(file_path: str) -> bool:
 
 
 def _route_affinity_match(file_path: str, item: IRPlanItem) -> bool:
-    routes = item.api_contract.get("routes", []) if isinstance(item.api_contract, dict) else []
+    routes = (
+        item.api_contract.get("routes", [])
+        if isinstance(item.api_contract, dict)
+        else []
+    )
     if not isinstance(routes, list) or not routes:
         return False
-    return item.module.lower() in file_path.lower() and ("controller" in file_path.lower() or "route" in file_path.lower())
+    return item.module.lower() in file_path.lower() and (
+        "controller" in file_path.lower() or "route" in file_path.lower()
+    )
 
 
 def _kind_from_symbol_type(symbol_type: str) -> str:

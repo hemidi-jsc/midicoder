@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .base import DiagramGenerator, DiagramOutput, MermaidRenderer, create_source_metadata
+from .base import (
+    DiagramGenerator,
+    DiagramOutput,
+    MermaidRenderer,
+    create_source_metadata,
+)
 
 if TYPE_CHECKING:
-    from ...schema.ir_schema import RulesIR, RuleIR
+    from ...schema.ir_schema import RuleIR, RulesIR
 
 
 class RulesDiagramGenerator(DiagramGenerator):
@@ -31,18 +36,26 @@ class RulesDiagramGenerator(DiagramGenerator):
         limited_rules = rules[:8]
         for rule in limited_rules:
             rule_node = MermaidRenderer.sanitize_mermaid_id(f"rule_{rule.id}")
-            label = MermaidRenderer.escape_mermaid_text(f"{rule.id}\\nseverity: {rule.severity or 'n/a'}")
-            lines.append(f"    {rule_node}[\"{label}\"]")
+            label = MermaidRenderer.escape_mermaid_text(
+                f"{rule.id}\\nseverity: {rule.severity or 'n/a'}"
+            )
+            lines.append(f'    {rule_node}["{label}"]')
 
             for idx, row in enumerate(rule.table[:4]):
                 row_node = MermaidRenderer.sanitize_mermaid_id(f"{rule.id}_row_{idx}")
-                conditions = ", ".join(f"{k}={v}" for k, v in list(row.conditions.items())[:2])
-                cond_label = MermaidRenderer.escape_mermaid_text(conditions[:50] or "any")
-                result_node = MermaidRenderer.sanitize_mermaid_id(f"{rule.id}_result_{idx}")
+                conditions = ", ".join(
+                    f"{k}={v}" for k, v in list(row.conditions.items())[:2]
+                )
+                cond_label = MermaidRenderer.escape_mermaid_text(
+                    conditions[:50] or "any"
+                )
+                result_node = MermaidRenderer.sanitize_mermaid_id(
+                    f"{rule.id}_result_{idx}"
+                )
                 result_label = MermaidRenderer.escape_mermaid_text(str(row.result))[:40]
 
-                lines.append(f"    {row_node}{{\"{cond_label}\"}}")
-                lines.append(f"    {result_node}((\"{result_label}\"))")
+                lines.append(f'    {row_node}{{"{cond_label}"}}')
+                lines.append(f'    {result_node}(("{result_label}"))')
                 lines.append(f"    {rule_node} -->|row {idx + 1}| {row_node}")
                 lines.append(f"    {row_node} --> {result_node}")
 

@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, model_validator
 from .model_meta import ModelMeta
 from .named_field_model import NamedField
 
-
 HTTP_METHOD_CATALOG = {
     "GET",
     "POST",

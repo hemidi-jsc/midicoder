@@ -64,10 +64,16 @@ def build_codegen_prompt(
         "pseudo_struct": pseudo_struct,
         "integration_contract": integration_contract,
         "security_contract": security_contract,
-        "destination_snapshot": context.get("destination_snapshots", {}).get(runtime_path),
+        "destination_snapshot": context.get("destination_snapshots", {}).get(
+            runtime_path
+        ),
         "project_context": _compact_context_payload(context),
-        "allowed_internal_modules": _truncate_list(context.get("allowed_internal_modules"), limit=300),
-        "existing_internal_modules": _truncate_list(context.get("existing_internal_modules"), limit=300),
+        "allowed_internal_modules": _truncate_list(
+            context.get("allowed_internal_modules"), limit=300
+        ),
+        "existing_internal_modules": _truncate_list(
+            context.get("existing_internal_modules"), limit=300
+        ),
         "generated_symbol_index": _truncate_map(
             context.get("generated_symbol_index"),
             item_limit=120,
@@ -89,11 +95,20 @@ def build_codegen_prompt(
             for step in steps:
                 if not isinstance(step, dict):
                     continue
-                for effect in step.get("effects", []) if isinstance(step.get("effects"), list) else []:
+                for effect in (
+                    step.get("effects", [])
+                    if isinstance(step.get("effects"), list)
+                    else []
+                ):
                     if not isinstance(effect, dict):
                         continue
                     effect_id = str(effect.get("id", "")).strip().lower()
-                    if effect_id in {"db.insert", "db.update", "db.delete", "db.upsert"}:
+                    if effect_id in {
+                        "db.insert",
+                        "db.update",
+                        "db.delete",
+                        "db.upsert",
+                    }:
                         db_required = True
                         break
                 if db_required:
@@ -199,9 +214,7 @@ def build_project_file_prompt(
         "- If destination_snapshot is provided, preserve working content and only apply required adjustments.\n"
         f"- project_kind: {project_kind}\n"
         f"- runtime_path: {runtime_path}\n\n"
-        f"Generation attempt: {attempt}/{max_attempts}\n"
-        + validation_section
-        + "\n"
+        f"Generation attempt: {attempt}/{max_attempts}\n" + validation_section + "\n"
         "Context JSON:\n"
         f"{json.dumps(context_payload, ensure_ascii=False)}\n"
     )

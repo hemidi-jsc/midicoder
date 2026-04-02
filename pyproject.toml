@@ -28,3 +28,6 @@ midicoder = "midicoder.__main__:main"
 
 [tool.setuptools]
 packages = ["midicoder"]
+
+[tool.black]
+target-version = ["py311"]

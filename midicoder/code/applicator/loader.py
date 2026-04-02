@@ -22,14 +22,14 @@ def _load_json(path: Path) -> dict[str, Any]:
 def load_apply_queue(patches_dir: Path) -> list[LoadedPatchPlan]:
     index_path = patches_dir / "index.json"
     index_payload = _load_json(index_path)
-    
+
     # Support both formats:
     # 1. Code gen format: patch_plan_targets (array of objects)
     # 2. Runtime-fix format: patch_files (array of filenames)
-    
+
     patch_plan_targets = index_payload.get("patch_plan_targets")
     patch_files = index_payload.get("patch_files")
-    
+
     if isinstance(patch_plan_targets, list) and patch_plan_targets:
         # Code gen format
         return _load_from_patch_plan_targets(patches_dir, patch_plan_targets)
@@ -53,20 +53,33 @@ def _load_from_patch_plan_targets(
         if not isinstance(item, dict):
             raise RuntimeError(f"Invalid patch_plan_targets entry: {item}")
 
-        runtime_path = str(item.get("runtime_path") or "").strip().replace("\\", "/").lstrip("./")
+        runtime_path = (
+            str(item.get("runtime_path") or "").strip().replace("\\", "/").lstrip("./")
+        )
         patch_plan_file = str(item.get("patch_plan_file") or "").strip()
         if not runtime_path:
-            raise RuntimeError(f"Missing runtime_path in patch_plan_targets entry: {item}")
+            raise RuntimeError(
+                f"Missing runtime_path in patch_plan_targets entry: {item}"
+            )
         if not patch_plan_file:
-            raise RuntimeError(f"Missing patch_plan_file for runtime_path={runtime_path}")
+            raise RuntimeError(
+                f"Missing patch_plan_file for runtime_path={runtime_path}"
+            )
 
         patch_plan_path = patches_dir / patch_plan_file
         plan_payload = _load_json(patch_plan_path)
         operations = plan_payload.get("operations")
         if not isinstance(operations, list):
-            raise RuntimeError(f"Invalid operations[] in patch-plan file: {patch_plan_path}")
+            raise RuntimeError(
+                f"Invalid operations[] in patch-plan file: {patch_plan_path}"
+            )
 
-        plan_runtime_path = str(plan_payload.get("runtime_path") or "").strip().replace("\\", "/").lstrip("./")
+        plan_runtime_path = (
+            str(plan_payload.get("runtime_path") or "")
+            .strip()
+            .replace("\\", "/")
+            .lstrip("./")
+        )
         effective_runtime_path = plan_runtime_path or runtime_path
 
         queue.append(
@@ -92,19 +105,23 @@ def _load_from_patch_files(
 
         patch_plan_path = patches_dir / patch_plan_file
         plan_payload = _load_json(patch_plan_path)
-        
+
         # Runtime-fix format uses 'patches' array instead of 'operations'
         patches = plan_payload.get("patches", [])
         if not isinstance(patches, list):
-            raise RuntimeError(f"Invalid patches[] in patch-plan file: {patch_plan_path}")
-        
+            raise RuntimeError(
+                f"Invalid patches[] in patch-plan file: {patch_plan_path}"
+            )
+
         # Extract runtime_path from first patch operation
         runtime_path = None
         for patch in patches:
             if isinstance(patch, dict) and patch.get("path"):
-                runtime_path = str(patch["path"]).strip().replace("\\", "/").lstrip("./")
+                runtime_path = (
+                    str(patch["path"]).strip().replace("\\", "/").lstrip("./")
+                )
                 break
-        
+
         if not runtime_path:
             # Fallback: extract from filename
             # e.g., "000_app_main.py.patch-plan.json" -> "app/main.py"
@@ -115,7 +132,7 @@ def _load_from_patch_files(
                 if parts[0].isdigit():
                     filename = parts[1]
             runtime_path = filename.replace("_", "/")
-        
+
         # Convert patches to operations format for compatibility
         operations = []
         for patch in patches:
@@ -140,4 +157,3 @@ def _load_from_patch_files(
             )
         )
     return queue
-

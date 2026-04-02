@@ -67,4 +67,3 @@ def build(root: Path, skip_diagrams: bool = False) -> None:
         state_before=state,
         state_after=state,
     )
-
