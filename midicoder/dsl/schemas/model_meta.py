@@ -28,4 +28,3 @@ class ModelMeta:
 
 
 __all__ = ["ModelMeta"]
-

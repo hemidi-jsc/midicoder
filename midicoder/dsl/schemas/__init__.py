@@ -14,4 +14,3 @@ from __future__ import annotations
 DSL_SCHEMA_VERSION = "v0"
 
 __all__ = ["DSL_SCHEMA_VERSION"]
-

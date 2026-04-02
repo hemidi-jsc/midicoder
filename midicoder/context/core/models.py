@@ -24,7 +24,7 @@ class Symbol:
     line: int
     scope: str | None = None
     signature: str | None = None
-    
+
     def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
@@ -43,7 +43,7 @@ class EntryPoint:
     file: str
     line: int
     detail: str
-    
+
     def to_dict(self) -> dict[str, object]:
         return {
             "kind": self.kind,
@@ -61,7 +61,7 @@ class Seam:
     detail: str
     group_id: str
     paired: bool
-    
+
     def to_dict(self) -> dict[str, object]:
         return {
             "kind": self.kind,
@@ -82,7 +82,7 @@ class Exemplar:
     snippet: str
     score: float
     source_symbol: str | None = None
-    
+
     def to_dict(self) -> dict[str, object]:
         return {
             "kind": self.kind,
@@ -104,7 +104,7 @@ class ProjectProfile:
     di_style: str | None = None
     error_handling: str | None = None
     conventions: dict[str, object] = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict[str, object]:
         result: dict[str, object] = {
             "language": self.language,
@@ -130,7 +130,7 @@ class IndexManifest:
     file_hashes: dict[str, str]
     output_stats: dict[str, object] | None = None
     project_summary: dict[str, object] | None = None
-    
+
     def to_dict(self) -> dict[str, object]:
         result: dict[str, object] = {
             "indexed_at": self.indexed_at,
@@ -152,7 +152,7 @@ class ErrorRecord:
     kind: str
     file: str | None
     detail: str
-    
+
     def to_dict(self) -> dict[str, object]:
         return {
             "kind": self.kind,
@@ -164,6 +164,7 @@ class ErrorRecord:
 @dataclass
 class ContextArtifacts:
     """Container for all context artifacts (in-memory only)."""
+
     profile: ProjectProfile
     files: list[FileMeta]
     symbols: list[Symbol]

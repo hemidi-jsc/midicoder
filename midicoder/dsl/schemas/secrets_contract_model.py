@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from .model_meta import ModelMeta
 
-
 SECRET_PROVIDER_CATALOG = {
     "env",
     "vault",

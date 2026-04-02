@@ -127,7 +127,11 @@ def _requirement_base_name(line: str) -> str:
 def _stdlib_modules() -> set[str]:
     stdlib_names = getattr(sys, "stdlib_module_names", None)
     if isinstance(stdlib_names, set):
-        return {str(name).strip() for name in stdlib_names if isinstance(name, str) and name.strip()}
+        return {
+            str(name).strip()
+            for name in stdlib_names
+            if isinstance(name, str) and name.strip()
+        }
     return set(_FALLBACK_STDLIB_MODULES)
 
 
@@ -149,7 +153,9 @@ def _collect_external_modules_from_operations(
             snippets: list[str] = []
             imports = op.get("imports")
             if isinstance(imports, list):
-                snippets.extend(line for line in imports if isinstance(line, str) and line.strip())
+                snippets.extend(
+                    line for line in imports if isinstance(line, str) and line.strip()
+                )
             region_content = op.get("region_content")
             if isinstance(region_content, str) and region_content.strip():
                 snippets.append(region_content)
@@ -163,19 +169,29 @@ def _collect_external_modules_from_operations(
                     if isinstance(node, ast.Import):
                         for alias in node.names:
                             root = alias.name.split(".", 1)[0]
-                            if root and root not in {"app", "__future__"} and not _is_stdlib_module(root):
+                            if (
+                                root
+                                and root not in {"app", "__future__"}
+                                and not _is_stdlib_module(root)
+                            ):
                                 modules.add(root)
                     elif isinstance(node, ast.ImportFrom):
                         if node.level and node.level > 0:
                             continue
                         if node.module:
                             root = node.module.split(".", 1)[0]
-                            if root and root not in {"app", "__future__"} and not _is_stdlib_module(root):
+                            if (
+                                root
+                                and root not in {"app", "__future__"}
+                                and not _is_stdlib_module(root)
+                            ):
                                 modules.add(root)
     return sorted(modules)
 
 
-def _collect_python_runtime_files(patch_plan_operations: dict[str, list[dict[str, Any]]]) -> list[str]:
+def _collect_python_runtime_files(
+    patch_plan_operations: dict[str, list[dict[str, Any]]],
+) -> list[str]:
     files = [
         _normalize_path(path)
         for path in patch_plan_operations
@@ -196,7 +212,11 @@ def _collect_exports_from_region(region_content: str) -> list[str]:
                 exports.add(node.name)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id and not target.id.startswith("_"):
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id
+                    and not target.id.startswith("_")
+                ):
                     exports.add(target.id)
         elif isinstance(node, ast.AnnAssign):
             if isinstance(node.target, ast.Name):
@@ -212,7 +232,9 @@ def _collect_runtime_exports(
     exports_by_runtime: dict[str, set[str]] = {}
     for runtime_path, operations in patch_plan_operations.items():
         normalized_path = _normalize_path(runtime_path)
-        if not normalized_path.endswith(".py") or normalized_path.endswith("__init__.py"):
+        if not normalized_path.endswith(".py") or normalized_path.endswith(
+            "__init__.py"
+        ):
             continue
         for op in operations:
             if not isinstance(op, dict):
@@ -243,7 +265,9 @@ def _build_project_file_context(
     runtime_exports = _collect_runtime_exports(patch_plan_operations)
     base["runtime_exports_by_path"] = runtime_exports
     if kind == "requirements":
-        required_modules = _collect_external_modules_from_operations(patch_plan_operations)
+        required_modules = _collect_external_modules_from_operations(
+            patch_plan_operations
+        )
         context_requirements = _collect_context_requirements(context_profile)
         base["required_external_modules"] = required_modules
         base["context_requirements"] = context_requirements
@@ -255,13 +279,17 @@ def _build_project_file_context(
         required_packages: list[str] = []
         required_packages_with_versions: list[str] = []
         for module_name in required_modules:
-            distribution = _EXTERNAL_IMPORT_TO_DISTRIBUTION.get(module_name, module_name)
+            distribution = _EXTERNAL_IMPORT_TO_DISTRIBUTION.get(
+                module_name, module_name
+            )
             normalized = _normalize_package_name(distribution)
             required_packages.append(normalized)
             if normalized in requirements_map:
                 required_packages_with_versions.append(requirements_map[normalized])
         base["required_packages"] = sorted(set(required_packages))
-        base["required_packages_with_versions"] = sorted(set(required_packages_with_versions))
+        base["required_packages_with_versions"] = sorted(
+            set(required_packages_with_versions)
+        )
     elif kind == "main":
         controller_modules: list[str] = []
         for runtime in _collect_python_runtime_files(patch_plan_operations):
@@ -271,14 +299,18 @@ def _build_project_file_context(
     elif kind == "package_init":
         package_dir = runtime_path[: -len("/__init__.py")]
         prefix = package_dir + "/"
-        members = [p for p in _collect_python_runtime_files(patch_plan_operations) if p.startswith(prefix)]
+        members = [
+            p
+            for p in _collect_python_runtime_files(patch_plan_operations)
+            if p.startswith(prefix)
+        ]
         export_candidates: set[str] = set()
         module_exports: dict[str, list[str]] = {}
         child_packages: set[str] = set()
         for member in members:
             if not member.endswith(".py") or member.endswith("__init__.py"):
                 continue
-            module_name = member[len(prefix):]
+            module_name = member[len(prefix) :]
             if "/" in module_name:
                 child_packages.add(module_name.split("/", 1)[0])
                 continue
@@ -339,7 +371,11 @@ def _extract_json_payload(text: str) -> dict[str, Any] | None:
 
 
 def _validate_requirements_region(region_content: str) -> str | None:
-    lines = [line.strip() for line in region_content.splitlines() if line.strip() and not line.strip().startswith("#")]
+    lines = [
+        line.strip()
+        for line in region_content.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
     if not lines:
         return "requirements region_content is empty"
     for line in lines:
@@ -348,7 +384,9 @@ def _validate_requirements_region(region_content: str) -> str | None:
     return None
 
 
-def _validate_requirements_coverage(region_content: str, context_payload: dict[str, Any]) -> str | None:
+def _validate_requirements_coverage(
+    region_content: str, context_payload: dict[str, Any]
+) -> str | None:
     required_packages = {
         _normalize_package_name(x)
         for x in (context_payload.get("required_packages") or [])
@@ -406,8 +444,11 @@ def _validate_project_file_payload(
         except SyntaxError as exc:
             return None, None, f"invalid python region_content: {exc.msg}"
         if kind == "package_init":
-            package_dir = runtime_path[: -len("/__init__.py")] if runtime_path.endswith("/__init__.py") else ""
-            module_name_exceptions = {"main"} if package_dir == "app" else set()
+            package_dir = (
+                runtime_path[: -len("/__init__.py")]
+                if runtime_path.endswith("/__init__.py")
+                else ""
+            )
             package_module_name = package_dir.replace("/", ".")
             if package_dir == "app":
                 for node in tree.body:
@@ -416,7 +457,11 @@ def _validate_project_file_payload(
                     if node.level != 1:
                         continue
                     if node.module == "main":
-                        return None, None, "app/__init__.py must not import from .main to avoid circular imports"
+                        return (
+                            None,
+                            None,
+                            "app/__init__.py must not import from .main to avoid circular imports",
+                        )
             for node in tree.body:
                 if not isinstance(node, ast.ImportFrom):
                     continue
@@ -425,17 +470,25 @@ def _validate_project_file_payload(
                 module_name = str(node.module or "").strip()
                 if not module_name:
                     continue
-                if module_name == package_module_name or module_name.startswith(package_module_name + "."):
+                if module_name == package_module_name or module_name.startswith(
+                    package_module_name + "."
+                ):
                     return (
                         None,
                         None,
                         "package_init must use relative imports for modules inside the same package",
                     )
             for node in tree.body:
-                if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
-                    return None, None, "__all__ must use plain assignment (__all__ = [...]), not type annotation"
-            module_exports_raw = context_payload.get("package_module_exports")
-            module_exports = module_exports_raw if isinstance(module_exports_raw, dict) else {}
+                if (
+                    isinstance(node, ast.AnnAssign)
+                    and isinstance(node.target, ast.Name)
+                    and node.target.id == "__all__"
+                ):
+                    return (
+                        None,
+                        None,
+                        "__all__ must use plain assignment (__all__ = [...]), not type annotation",
+                    )
             available = {
                 name
                 for name in (context_payload.get("package_export_candidates") or [])
@@ -447,7 +500,9 @@ def _validate_project_file_payload(
                 if isinstance(path, str) and path.strip()
             }
             runtime_exports_by_path: dict[str, set[str]] = {}
-            for runtime_file, exports in (context_payload.get("runtime_exports_by_path") or {}).items():
+            for runtime_file, exports in (
+                context_payload.get("runtime_exports_by_path") or {}
+            ).items():
                 if not isinstance(runtime_file, str) or not isinstance(exports, list):
                     continue
                 runtime_exports_by_path[runtime_file] = {
@@ -466,10 +521,17 @@ def _validate_project_file_payload(
                     continue
                 candidate_runtime = f"{package_prefix}{rel_module}.py"
                 candidate_init = f"{package_prefix}{rel_module}/__init__.py"
-                if candidate_runtime not in python_runtime_files and candidate_init not in python_runtime_files:
+                if (
+                    candidate_runtime not in python_runtime_files
+                    and candidate_init not in python_runtime_files
+                ):
                     # The module may already exist on disk but be outside the current patch-plan scope.
                     continue
-                target_runtime = candidate_runtime if candidate_runtime in python_runtime_files else candidate_init
+                target_runtime = (
+                    candidate_runtime
+                    if candidate_runtime in python_runtime_files
+                    else candidate_init
+                )
                 exported_symbols = runtime_exports_by_path.get(target_runtime, set())
                 for alias in node.names:
                     if alias.name == "*":
@@ -491,10 +553,20 @@ def _validate_project_file_payload(
                         if "__all__" not in target_names:
                             continue
                         if not isinstance(node.value, (ast.List, ast.Tuple)):
-                            return None, None, "__all__ must be a list/tuple of string exports"
+                            return (
+                                None,
+                                None,
+                                "__all__ must be a list/tuple of string exports",
+                            )
                         for elt in node.value.elts:
-                            if not isinstance(elt, ast.Constant) or not isinstance(elt.value, str):
-                                return None, None, "__all__ items must be string literals"
+                            if not isinstance(elt, ast.Constant) or not isinstance(
+                                elt.value, str
+                            ):
+                                return (
+                                    None,
+                                    None,
+                                    "__all__ items must be string literals",
+                                )
                             if elt.value not in available:
                                 return (
                                     None,
@@ -579,7 +651,11 @@ def generate_project_file_patch_operations(
         runtime_path = target["runtime_path"]
         kind = target["kind"]
         max_attempts = 3
-        raw_max_attempts = config.get("code_gen_project_file_validation_max_attempts", 3) if isinstance(config, dict) else 3
+        raw_max_attempts = (
+            config.get("code_gen_project_file_validation_max_attempts", 3)
+            if isinstance(config, dict)
+            else 3
+        )
         try:
             max_attempts = max(1, min(6, int(raw_max_attempts)))
         except (TypeError, ValueError):
@@ -614,7 +690,9 @@ def generate_project_file_patch_operations(
             )
             warnings.extend(llm_warnings)
             if not llm_text:
-                detail = "; ".join(llm_warnings[-2:]) if llm_warnings else "empty_response"
+                detail = (
+                    "; ".join(llm_warnings[-2:]) if llm_warnings else "empty_response"
+                )
                 last_errors = [f"project_file_llm_failed:{detail}"]
                 last_output_excerpt = ""
                 continue

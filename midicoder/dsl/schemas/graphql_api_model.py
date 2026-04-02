@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from .model_meta import ModelMeta
 from .named_field_model import NamedField
 
-
 GRAPHQL_TYPE_KIND_CATALOG = {
     "object",
     "interface",
@@ -72,4 +71,3 @@ class GraphQLApiFile(BaseModel):
     api: GraphQLApi
 
     model_config = {"extra": "forbid"}
-

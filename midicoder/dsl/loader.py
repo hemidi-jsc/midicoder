@@ -18,6 +18,7 @@ from midicoder.dsl.models import (
     InfoFile,
     IntegrationsFile,
     ObservabilityFile,
+    PersistenceModelFile,
     PoliciesFile,
     ProfilesFile,
     ProjectionsFile,
@@ -27,12 +28,10 @@ from midicoder.dsl.models import (
     ScenariosFile,
     SecretsContractFile,
     SecurityBaselineFile,
-    PersistenceModelFile,
     TestingFile,
     ValueObjectsFile,
     WorkflowsFile,
 )
-
 
 yaml = YAML(typ="rt")
 

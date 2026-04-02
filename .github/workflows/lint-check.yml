@@ -1,0 +1,93 @@
+name: "CI Pipeline: Static Analysis"
+
+on:
+  push:
+    branches: [ "main", "development" ]
+  pull_request:
+    branches: [ "main", "development" ]
+
+jobs:
+  static-analysis:
+    name: "Execute Static Code Analysis"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Checkout Codebase"
+        uses: actions/checkout@v6
+
+      - name: "Setup Python Environment"
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: "Install Linter Dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: "Execute Ruff Check"
+        id: lint
+        if: always()
+        run: |
+          set +e
+          ruff check . --output-format=concise 2>&1 | tee ruff_output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          ISSUES=$(grep -cP '^.+:\d+:\d+:' ruff_output.txt || true)
+          FILES=$(grep -oP '^.+(?=:\d+:\d+:)' ruff_output.txt | sort -u | wc -l | tr -d ' ' || echo "0")
+
+          # Save violation lines for the summary (limit to 100 lines)
+          grep -P '^.+:\d+:\d+:' ruff_output.txt | head -100 > /tmp/ruff_violations.txt || true
+
+          echo "ISSUES=$ISSUES" >> $GITHUB_ENV
+          echo "FILES=$FILES" >> $GITHUB_ENV
+          echo "LINT_EXIT=$EXIT_CODE" >> $GITHUB_ENV
+
+          exit $EXIT_CODE
+
+      - name: "Generate Static Analysis Summary"
+        if: always()
+        run: |
+          if [[ "${{ env.LINT_EXIT }}" == "0" ]]; then
+            FINAL_STATUS="Passed"
+          else
+            FINAL_STATUS="Failed"
+          fi
+
+          VIOLATIONS=$(cat /tmp/ruff_violations.txt 2>/dev/null || true)
+
+          {
+            echo "# CI Workflow Summary"
+            echo ""
+            echo "## General"
+            echo "- **Repo:** ${{ github.repository }}"
+            echo "- **Branch:** ${{ github.ref_name }}"
+            echo "- **Commit:** \`${{ github.sha }}\`"
+            echo "- **Author:** ${{ github.actor }}"
+            echo "- **Workflow:** ${{ github.workflow }}"
+            echo "- **Run:** ${{ github.run_number }}"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Static Analysis Results (Ruff)"
+            echo "| Metric           | Value |"
+            echo "|------------------:|-------|"
+            echo "| Violations Found | ${{ env.ISSUES }} |"
+            echo "| Files Affected   | ${{ env.FILES }} |"
+            echo ""
+            echo "---"
+
+            if [[ "${{ env.LINT_EXIT }}" != "0" ]] && [[ -n "$VIOLATIONS" ]]; then
+              echo ""
+              echo "## Violations"
+              echo "\`\`\`"
+              echo "$VIOLATIONS"
+              echo "\`\`\`"
+              echo ""
+              echo "---"
+            fi
+
+            echo ""
+            echo "## Final Status"
+            echo "> ${FINAL_STATUS}"
+          } >> $GITHUB_STEP_SUMMARY

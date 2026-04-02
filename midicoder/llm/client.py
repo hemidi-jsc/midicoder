@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -55,7 +54,9 @@ def _read_secret_api_key(paths: MidicoderPaths, tier: str) -> str | None:
     secrets = _read_json(secrets_path)
     if isinstance(secrets, dict):
         llm_section = secrets.get("llm", {})
-        tier_section = llm_section.get(tier, {}) if isinstance(llm_section, dict) else {}
+        tier_section = (
+            llm_section.get(tier, {}) if isinstance(llm_section, dict) else {}
+        )
         if isinstance(tier_section, dict) and tier_section.get("api_key"):
             return str(tier_section["api_key"])
         if secrets.get("api_key"):
@@ -65,7 +66,9 @@ def _read_secret_api_key(paths: MidicoderPaths, tier: str) -> str | None:
 
 def load_llm_config(paths: MidicoderPaths, *, tier: str) -> LlmConfig:
     if not paths.config.exists():
-        raise RuntimeError("Missing .midicoder/config.json. Run `midicoder init` first.")
+        raise RuntimeError(
+            "Missing .midicoder/config.json. Run `midicoder init` first."
+        )
     config = _read_json(paths.config)
     llm = config.get("llm", {})
     tier_config = llm.get(tier) if isinstance(llm, dict) else None
@@ -78,7 +81,11 @@ def load_llm_config(paths: MidicoderPaths, *, tier: str) -> LlmConfig:
     if not base_url or not model:
         raise RuntimeError(f"LLM {tier} config must include base_url and model.")
     cache_config = llm.get("cache", {}) if isinstance(llm, dict) else {}
-    cache_enabled = bool(cache_config.get("enabled", False)) if isinstance(cache_config, dict) else False
+    cache_enabled = (
+        bool(cache_config.get("enabled", False))
+        if isinstance(cache_config, dict)
+        else False
+    )
     cache_type = None
     if cache_enabled and isinstance(cache_config, dict):
         cache_type = str(cache_config.get("type", "ephemeral"))
@@ -129,7 +136,7 @@ def call_llm(
         "messages": messages,
         "temperature": temperature,
     }
-    
+
     # Add max_tokens if specified, otherwise use a reasonable default for contract generation
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens

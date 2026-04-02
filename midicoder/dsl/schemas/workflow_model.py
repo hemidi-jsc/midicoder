@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from .guard_effect_model import EffectRef, GuardRef
 from .model_meta import ModelMeta
 
-
 WORKFLOW_STATE_KIND_CATALOG = {
     "initial",
     "normal",
@@ -93,4 +92,3 @@ class WorkflowsFile(BaseModel):
     workflows: list[Workflow]
 
     model_config = {"extra": "forbid"}
-

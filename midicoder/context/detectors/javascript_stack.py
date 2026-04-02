@@ -12,12 +12,11 @@ from .package_json import read_package_dependencies
 logger = logging.getLogger(__name__)
 
 NEST_PATTERN = re.compile(
-    r'(?:NestFactory\.create|@Controller\(|@Injectable\(|@Module\()',
-    re.MULTILINE
+    r"(?:NestFactory\.create|@Controller\(|@Injectable\(|@Module\()", re.MULTILINE
 )
 ANGULAR_PATTERN = re.compile(
-    r'(?:platformBrowserDynamic|bootstrapApplication|@Component\(|@NgModule\()',
-    re.MULTILINE
+    r"(?:platformBrowserDynamic|bootstrapApplication|@Component\(|@NgModule\()",
+    re.MULTILINE,
 )
 EXPRESS_PATTERN = re.compile(
     r"(?:\bexpress\s*\(|\brequire\(\s*['\"]express['\"]\s*\)|\bfrom\s+['\"]express['\"])",

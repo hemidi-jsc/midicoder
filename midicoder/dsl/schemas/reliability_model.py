@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from .model_meta import ModelMeta
 
-
 RELIABILITY_TARGET_KIND_CATALOG = {
     "command",
     "workflow",

@@ -43,11 +43,19 @@ def _extract_python_exports(content: str) -> list[str]:
                 exports.add(node.name)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id and not target.id.startswith("_"):
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id
+                    and not target.id.startswith("_")
+                ):
                     exports.add(target.id)
         elif isinstance(node, ast.AnnAssign):
             target = node.target
-            if isinstance(target, ast.Name) and target.id and not target.id.startswith("_"):
+            if (
+                isinstance(target, ast.Name)
+                and target.id
+                and not target.id.startswith("_")
+            ):
                 exports.add(target.id)
     return sorted(exports)
 
@@ -103,7 +111,9 @@ def build_item_context(
         normalized_path = runtime_path.replace("\\", "/").lstrip("./")
         generated_runtime_snapshots[normalized_path] = content
         if normalized_path.endswith(".py"):
-            generated_symbol_index[_runtime_path_to_module(normalized_path)] = _extract_python_exports(content)
+            generated_symbol_index[_runtime_path_to_module(normalized_path)] = (
+                _extract_python_exports(content)
+            )
 
     return {
         "ir_ref": plan_item.ir_ref,

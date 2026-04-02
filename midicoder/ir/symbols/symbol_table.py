@@ -2,36 +2,36 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
 
 @dataclass
 class Symbol:
     """Represents a symbol in the contract system."""
-    
-    type: str                      # "Entity", "Command", "Workflow", etc.
-    id: str                        # Canonical ID (normalized)
-    source_file: str               # Relative path to source file
-    source_line: int | None        # Line number if available
-    data: Any                      # Full object data
-    
+
+    type: str  # "Entity", "Command", "Workflow", etc.
+    id: str  # Canonical ID (normalized)
+    source_file: str  # Relative path to source file
+    source_line: int | None  # Line number if available
+    data: Any  # Full object data
+
     def __repr__(self) -> str:
         return f"Symbol({self.type}:{self.id} @ {self.source_file})"
 
 
 class SymbolTable:
     """Global symbol table for contract resolution."""
-    
+
     def __init__(self) -> None:
         # (type, id) → Symbol
         self._symbols: dict[tuple[str, str], Symbol] = {}
-        
+
         # Track duplicates for error reporting
         self._duplicates: list[tuple[str, str, Symbol, Symbol]] = []
-    
+
     def register(
         self,
         type: str,
@@ -42,12 +42,12 @@ class SymbolTable:
     ) -> bool:
         """
         Register a symbol in the table.
-        
+
         Returns:
             True if registered successfully, False if duplicate found.
         """
         key = (type, id)
-        
+
         if key in self._symbols:
             existing = self._symbols[key]
             new_symbol = Symbol(type, id, source_file, source_line, data)
@@ -71,7 +71,7 @@ class SymbolTable:
             # Conflicting duplicate with equal priority.
             self._duplicates.append((type, id, existing, new_symbol))
             return False
-        
+
         symbol = Symbol(type, id, source_file, source_line, data)
         self._symbols[key] = symbol
         return True
@@ -136,15 +136,17 @@ class SymbolTable:
         if hasattr(payload, "model_dump"):
             payload = payload.model_dump()
         try:
-            return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+            return json.dumps(
+                payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+            )
         except TypeError:
             return repr(payload)
-    
+
     def resolve(self, type: str, id: str) -> Symbol | None:
         """Resolve a reference to a symbol."""
         key = (type, id)
         return self._symbols.get(key)
-    
+
     def get_all_by_type(self, type: str) -> list[Symbol]:
         """Get all symbols of a specific type."""
         return [
@@ -152,19 +154,19 @@ class SymbolTable:
             for (sym_type, _), symbol in self._symbols.items()
             if sym_type == type
         ]
-    
+
     def has_duplicates(self) -> bool:
         """Check if there are any duplicate symbols."""
         return len(self._duplicates) > 0
-    
+
     def get_duplicates(self) -> list[tuple[str, str, Symbol, Symbol]]:
         """Get list of duplicate symbols."""
         return self._duplicates
-    
+
     def get_all_symbols(self) -> dict[tuple[str, str], Symbol]:
         """Get all symbols."""
         return self._symbols.copy()
-    
+
     def get_stats(self) -> dict[str, int]:
         """Get statistics about symbols."""
         stats: dict[str, int] = {}

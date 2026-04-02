@@ -10,7 +10,6 @@ from typing import Any
 
 from ruamel.yaml import YAML
 
-
 _yaml_writer = YAML()
 _yaml_writer.default_flow_style = False
 _yaml_writer.indent(mapping=2, sequence=4, offset=2)
@@ -68,7 +67,7 @@ def ensure_base_layout(paths: MidicoderPaths) -> None:
     ensure_dir(paths.secrets)
     ensure_dir(paths.context)
     ensure_dir(paths.versions)
-    
+
     _create_gitignore(paths)
     _ensure_secrets_file(paths)
 
@@ -76,10 +75,10 @@ def ensure_base_layout(paths: MidicoderPaths) -> None:
 def _create_gitignore(paths: MidicoderPaths) -> None:
     """Create .gitignore file in .midicoder directory."""
     gitignore_path = paths.dot_midicoder / ".gitignore"
-    
+
     if gitignore_path.exists():
         return
-    
+
     gitignore_content = """# Ignore secrets file
 secrets/secrets.json
 
@@ -89,16 +88,16 @@ secrets/*.bak
 # Ignore log files
 logs/
 """
-    
+
     gitignore_path.write_text(gitignore_content, encoding="utf-8")
 
 
 def _ensure_secrets_file(paths: MidicoderPaths) -> None:
     """Ensure secrets file is initialized."""
     from midicoder.config import SecretsManager
-    
+
     secrets_manager = SecretsManager(paths.secrets)
-    
+
     if not secrets_manager.secrets_file.exists():
         secrets_manager.initialize_empty()
 
@@ -109,16 +108,17 @@ def read_state(paths: MidicoderPaths) -> dict[str, Any]:
     return json.loads(paths.state.read_text(encoding="utf-8"))
 
 
-
-
 def read_config(paths: MidicoderPaths) -> dict[str, Any]:
     """Read config.json, return default config if not exists."""
     if not paths.config.exists():
         return {"stack": "fastapi", "working_dir": ".", "commands": [], "llm": {}}
     return json.loads(paths.config.read_text(encoding="utf-8"))
 
+
 def write_state(paths: MidicoderPaths, state: dict[str, Any]) -> None:
-    paths.state.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    paths.state.write_text(
+        json.dumps(state, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -150,7 +150,12 @@ def write_run_outputs(
     write_json(run_dir / "summary.json", summary_payload)
     write_json(
         run_dir / "state_transitions.json",
-        {"stage": stage, "run_id": run_dir.name, "from": state_before, "to": state_after},
+        {
+            "stage": stage,
+            "run_id": run_dir.name,
+            "from": state_before,
+            "to": state_after,
+        },
     )
     report_metadata = {
         "stage": stage,

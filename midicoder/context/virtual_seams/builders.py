@@ -50,7 +50,9 @@ def build_virtual_seams_from_entrypoints(
         line = _coerce_line(record.get("line"))
         if not line:
             continue
-        computed_begin, computed_end = resolve_block_bounds_for_entrypoint(repo_root, record)
+        computed_begin, computed_end = resolve_block_bounds_for_entrypoint(
+            repo_root, record
+        )
         begin_line = _coerce_line(record.get("begin_line")) or computed_begin or line
         end_line = _coerce_line(record.get("end_line")) or computed_end
         module_penalty = 0.85 if module_fallback else 1.0
@@ -93,10 +95,15 @@ def build_virtual_seams_from_exemplars(
 
     virtual_seams: list[dict] = []
 
-    for (kind, module), items in sorted(groups.items(), key=lambda entry: (entry[0][0], entry[0][1])):
+    for (kind, module), items in sorted(
+        groups.items(), key=lambda entry: (entry[0][0], entry[0][1])
+    ):
         sorted_items = sorted(
             items,
-            key=lambda item: (-_coerce_float(item.get("score"), 0.0), _coerce_line(item.get("line")) or 0),
+            key=lambda item: (
+                -_coerce_float(item.get("score"), 0.0),
+                _coerce_line(item.get("line")) or 0,
+            ),
         )
         if not sorted_items:
             continue
@@ -110,8 +117,12 @@ def build_virtual_seams_from_exemplars(
         line = _coerce_line(representative.get("line"))
         if not line:
             continue
-        computed_begin, computed_end = resolve_block_bounds_for_exemplar(repo_root, representative)
-        begin_line = _coerce_line(representative.get("begin_line")) or computed_begin or line
+        computed_begin, computed_end = resolve_block_bounds_for_exemplar(
+            repo_root, representative
+        )
+        begin_line = (
+            _coerce_line(representative.get("begin_line")) or computed_begin or line
+        )
         end_line = _coerce_line(representative.get("end_line")) or computed_end
 
         group_id = f"{kind}:{module}"
@@ -168,7 +179,10 @@ def build_virtual_seams_from_symbols(
 
         symbols_sorted = sorted(
             symbols,
-            key=lambda item: (_coerce_line(item.get("line")) or 0, str(item.get("name", ""))),
+            key=lambda item: (
+                _coerce_line(item.get("line")) or 0,
+                str(item.get("name", "")),
+            ),
         )
         if not symbols_sorted:
             continue
@@ -177,18 +191,28 @@ def build_virtual_seams_from_symbols(
         line = _coerce_line(representative.get("line"))
         if not line:
             continue
-        computed_begin, computed_end = resolve_block_bounds_for_symbol(repo_root, representative)
-        begin_line = _coerce_line(representative.get("begin_line")) or computed_begin or line
+        computed_begin, computed_end = resolve_block_bounds_for_symbol(
+            repo_root, representative
+        )
+        begin_line = (
+            _coerce_line(representative.get("begin_line")) or computed_begin or line
+        )
         end_line = _coerce_line(representative.get("end_line")) or computed_end
 
         representative_kind = str(representative.get("kind", "")).strip().lower()
-        kind_bonus = 0.10 if representative_kind == "class" else 0.06 if representative_kind == "function" else 0.0
+        kind_bonus = (
+            0.10
+            if representative_kind == "class"
+            else 0.06 if representative_kind == "function" else 0.0
+        )
         symbol_count_bonus = min(0.12, max(len(symbols_sorted) - 1, 0) * 0.02)
         span_bonus = 0.0
         if end_line and end_line > begin_line:
             span_bonus = min(0.08, (end_line - begin_line) / 200.0)
 
-        source_strength = SYMBOL_BASE_CONFIDENCE + kind_bonus + symbol_count_bonus + span_bonus
+        source_strength = (
+            SYMBOL_BASE_CONFIDENCE + kind_bonus + symbol_count_bonus + span_bonus
+        )
         module_penalty = 0.85 if module_fallback else 1.0
         confidence = _clamp(source_strength * SYMBOL_SOURCE_PENALTY * module_penalty)
 

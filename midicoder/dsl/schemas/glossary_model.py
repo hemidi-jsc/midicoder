@@ -18,13 +18,13 @@ class GlossaryTerm(BaseModel):
     examples: list[str] = Field(default_factory=list)
     source: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
-    
+
     model_config = {"extra": "forbid"}
 
 
 GLOSSARY_CATEGORY_CATALOG = {
     "business",
-    "technical", 
+    "technical",
     "domain",
     "process",
     "integration",
@@ -36,7 +36,7 @@ GLOSSARY_CATEGORY_CATALOG = {
 
 class Glossary(BaseModel):
     terms: list[GlossaryTerm]
-    
+
     model_config = {"extra": "forbid"}
 
     model_meta: ClassVar[ModelMeta] = ModelMeta(
@@ -47,7 +47,7 @@ class Glossary(BaseModel):
         ),
         included_by=[
             "domain.entity",
-            "app.command", 
+            "app.command",
             "app.query",
             "api.http_route",
             "workflow.definition",
@@ -56,7 +56,7 @@ class Glossary(BaseModel):
         real_world_examples=[
             "Business domain glossary for e-commerce platform",
             "Technical terminology for API documentation",
-            "Industry-specific terms for healthcare software", 
+            "Industry-specific terms for healthcare software",
             "Financial services glossary for fintech apps",
             "Multi-language terminology for global applications",
         ],
@@ -70,5 +70,5 @@ class Glossary(BaseModel):
 
 class GlossaryFile(BaseModel):
     glossary: Glossary
-    
+
     model_config = {"extra": "forbid"}

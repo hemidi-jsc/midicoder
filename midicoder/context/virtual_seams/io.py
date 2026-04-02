@@ -12,7 +12,9 @@ from .builders import (
 from .real import build_real_seams_from_records
 
 
-def load_real_seams(context_dir: str | Path = ".midicoder/context") -> tuple[dict[str, dict], list[dict]]:
+def load_real_seams(
+    context_dir: str | Path = ".midicoder/context",
+) -> tuple[dict[str, dict], list[dict]]:
     """
     Phase 0: load real seams from seams.json.
 
@@ -83,7 +85,9 @@ def load_symbol_virtual_seams(
 
     if repo_root is None:
         repo_root = _derive_repo_root(context_dir)
-    return build_virtual_seams_from_symbols(payload, covered_group_ids, repo_root=repo_root)
+    return build_virtual_seams_from_symbols(
+        payload, covered_group_ids, repo_root=repo_root
+    )
 
 
 def load_entrypoint_virtual_seams(
@@ -106,4 +110,6 @@ def load_entrypoint_virtual_seams(
 
     if repo_root is None:
         repo_root = _derive_repo_root(context_dir)
-    return build_virtual_seams_from_entrypoints(payload, covered_group_ids, repo_root=repo_root)
+    return build_virtual_seams_from_entrypoints(
+        payload, covered_group_ids, repo_root=repo_root
+    )

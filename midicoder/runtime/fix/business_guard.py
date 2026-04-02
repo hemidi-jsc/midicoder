@@ -30,8 +30,14 @@ def validate_runtime_fix_operations(
             issues.append(f"{op_label}: rejected - missing file_path")
             continue
 
-        if file_path.startswith(".midicoder/") or file_path.startswith("contracts/") or file_path.startswith("irs/"):
-            issues.append(f"{op_label}: rejected - file_path points to Midicoder artifacts: {file_path}")
+        if (
+            file_path.startswith(".midicoder/")
+            or file_path.startswith("contracts/")
+            or file_path.startswith("irs/")
+        ):
+            issues.append(
+                f"{op_label}: rejected - file_path points to Midicoder artifacts: {file_path}"
+            )
             continue
 
         if _is_absolute_path(file_path):
@@ -40,7 +46,9 @@ def validate_runtime_fix_operations(
                 abs_root = working_dir.resolve()
                 abs_target.relative_to(abs_root)
             except Exception:
-                issues.append(f"{op_label}: rejected - absolute file_path is outside working_dir: {file_path}")
+                issues.append(
+                    f"{op_label}: rejected - absolute file_path is outside working_dir: {file_path}"
+                )
                 continue
 
         region_content = str(op.get("region_content") or "")
@@ -72,4 +80,3 @@ def _is_effectively_empty_region(region_content: str) -> bool:
     if text in {"pass", "..."}:
         return True
     return False
-

@@ -1,0 +1,153 @@
+name: "CI Pipeline: Test & Coverage Analysis"
+
+on:
+  push:
+    branches: [ "main", "development" ]
+  pull_request:
+    branches: [ "main", "development" ]
+
+jobs:
+  test-and-coverage:
+    name: "Execute Tests & Coverage Analysis"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Checkout Codebase"
+        uses: actions/checkout@v6
+
+      - name: "Setup Python Environment"
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "requirements-test.txt"
+
+      - name: "Install Project Dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+
+      - name: "Execute Tests & Calculate Coverage"
+        id: execution
+        if: always()
+        run: |
+          set +e
+          pytest --cov --cov-config=.coveragerc --cov-fail-under=100 \
+            --cov-report=term --cov-report=xml --cov-report=html \
+            --tb=short 2>&1 | tee pytest_output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          PASSED=$(grep -oP '\d+(?= passed)' pytest_output.txt | tail -1 || echo "0")
+          FAILED=$(grep -oP '\d+(?= failed)' pytest_output.txt | tail -1 || echo "0")
+          SKIPPED=$(grep -oP '\d+(?= skipped)' pytest_output.txt | tail -1 || echo "0")
+          ERRORS=$(grep -oP '\d+(?= error)' pytest_output.txt | tail -1 || echo "0")
+          COVERAGE=$(grep "TOTAL" pytest_output.txt | awk '{print $NF}' | tr -d '%' || echo "?")
+
+          # Extract FAILED test names (lines starting with FAILED)
+          FAILED_TESTS=$(grep '^FAILED ' pytest_output.txt | sed 's/^FAILED /- /' || true)
+
+          # Extract ERROR test names
+          ERROR_TESTS=$(grep '^ERROR ' pytest_output.txt | sed 's/^ERROR /- /' || true)
+
+          # Extract short failure/error block (between === FAILURES === and === short test summary ===)
+          FAILURE_DETAIL=$(awk '/^=+ (FAILURES|ERRORS) =+/{found=1; next} /^=+ short test summary info =+/{found=0} found' pytest_output.txt \
+            | head -80 || true)
+
+          echo "PASSED=$PASSED" >> $GITHUB_ENV
+          echo "FAILED=$FAILED" >> $GITHUB_ENV
+          echo "SKIPPED=$SKIPPED" >> $GITHUB_ENV
+          echo "ERRORS=$ERRORS" >> $GITHUB_ENV
+          echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+          echo "TEST_EXIT=$EXIT_CODE" >> $GITHUB_ENV
+
+          # Write multiline values to files (avoids GITHUB_ENV multiline issues)
+          echo "$FAILED_TESTS"  > /tmp/failed_tests.txt
+          echo "$ERROR_TESTS"   > /tmp/error_tests.txt
+          printf '%s' "$FAILURE_DETAIL" > /tmp/failure_detail.txt
+
+          exit $EXIT_CODE
+
+      - name: "Generate Test & Coverage Summary"
+        if: always()
+        run: |
+          if [[ "${{ env.TEST_EXIT }}" == "0" ]]; then
+            FINAL_STATUS="Passed"
+          else
+            FINAL_STATUS="Failed"
+          fi
+
+          FAILED_TESTS=$(cat /tmp/failed_tests.txt 2>/dev/null || true)
+          ERROR_TESTS=$(cat /tmp/error_tests.txt 2>/dev/null || true)
+          FAILURE_DETAIL=$(cat /tmp/failure_detail.txt 2>/dev/null || true)
+
+          {
+            echo "# CI Workflow Summary"
+            echo ""
+            echo "## General"
+            echo "- **Repo:** ${{ github.repository }}"
+            echo "- **Branch:** ${{ github.ref_name }}"
+            echo "- **Commit:** \`${{ github.sha }}\`"
+            echo "- **Author:** ${{ github.actor }}"
+            echo "- **Workflow:** ${{ github.workflow }}"
+            echo "- **Run:** ${{ github.run_number }}"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Test Results"
+            echo "| Metric     | Value |"
+            echo "|------------|-------|"
+            echo "| Passed  | ${{ env.PASSED }} |"
+            echo "| Failed  | ${{ env.FAILED }} |"
+            echo "| Skipped  | ${{ env.SKIPPED }} |"
+            echo "| Errors  | ${{ env.ERRORS }} |"
+            echo "| Coverage | ${{ env.COVERAGE }}% |"
+            echo ""
+            echo "---"
+
+            if [[ "${{ env.TEST_EXIT }}" != "0" ]]; then
+              echo ""
+              echo "## Failures & Errors"
+
+              if [[ -n "$FAILED_TESTS" ]]; then
+                echo ""
+                echo "### Failed Tests"
+                echo "$FAILED_TESTS"
+              fi
+
+              if [[ -n "$ERROR_TESTS" ]]; then
+                echo ""
+                echo "### Errored Tests"
+                echo "$ERROR_TESTS"
+              fi
+
+              if [[ -n "$FAILURE_DETAIL" ]]; then
+                echo ""
+                echo "### Detail"
+                echo "\`\`\`"
+                echo "$FAILURE_DETAIL"
+                echo "\`\`\`"
+              fi
+
+              echo ""
+              echo "---"
+            fi
+
+            echo ""
+            echo "## Artifacts"
+            echo "- \`htmlcov/\` — HTML coverage report (downloadable below)"
+            echo "- \`coverage.xml\` — XML coverage report"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Final Status"
+            echo "> ${FINAL_STATUS}"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: "Publish Coverage Artifacts"
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: "coverage-reports"
+          path: |
+            htmlcov/
+            coverage.xml

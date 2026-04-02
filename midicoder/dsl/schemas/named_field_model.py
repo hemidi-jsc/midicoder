@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from .model_meta import ModelMeta
 
-
 SCALAR_TYPE_CATALOG = {
     "string",
     "text",

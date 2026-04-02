@@ -55,4 +55,3 @@ class ApplySummary:
     report_path: str = ""
     reindex_errors: list[str] = field(default_factory=list)
     file_results: list[ApplyFileResult] = field(default_factory=list)
-

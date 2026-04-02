@@ -53,7 +53,11 @@ def _is_absolute_path(path_value: str) -> bool:
 
 def _safe_read_file(working_dir: Path, file_path: str) -> str | None:
     try:
-        target = working_dir / file_path if not _is_absolute_path(file_path) else Path(file_path)
+        target = (
+            working_dir / file_path
+            if not _is_absolute_path(file_path)
+            else Path(file_path)
+        )
         if not target.exists() or not target.is_file():
             return None
         if target.suffix.lower() not in {".py", ".ts", ".tsx", ".js", ".jsx"}:
@@ -63,7 +67,9 @@ def _safe_read_file(working_dir: Path, file_path: str) -> str | None:
         return None
 
 
-def _extract_source_window(source_code: str, error_lines: list[int], *, max_lines: int) -> str:
+def _extract_source_window(
+    source_code: str, error_lines: list[int], *, max_lines: int
+) -> str:
     """Extract focused source windows near error lines plus import header."""
     lines = source_code.splitlines()
     if not lines:
@@ -189,7 +195,9 @@ def build_fix_prompt(
             for item in traceback_focus
             if item.get("file") == file_path and str(item.get("line") or "").isdigit()
         ]
-        display_code = _extract_source_window(source_code, file_error_lines, max_lines=220)
+        display_code = _extract_source_window(
+            source_code, file_error_lines, max_lines=220
+        )
         file_tokens = _estimate_tokens(display_code)
         if used_tokens + file_tokens > max_total_tokens:
             continue
@@ -239,7 +247,11 @@ def build_fix_prompt(
             message = str(error.get("message", "Unknown error")).strip()
             file_path = str(error.get("file") or "")
             line = error.get("line")
-            marker = "PROJECT" if file_path and _is_project_file(file_path, working_dir) else "EXTERNAL"
+            marker = (
+                "PROJECT"
+                if file_path and _is_project_file(file_path, working_dir)
+                else "EXTERNAL"
+            )
             if file_path:
                 context_parts.append(f"- {message}")
                 context_parts.append(f"  at {file_path}:{line or '?'} [{marker}]")

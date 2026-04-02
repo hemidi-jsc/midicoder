@@ -18,76 +18,76 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..validation.cross_ref import CrossRefChecker
 from ..diagnostics.error_codes import ErrorReporter
+from ..diagnostics.logging import header, log, safe_print
+from ..normalize.normalizer import Normalizer
 from ..schema.ir_schema import (
     IR,
     ApiIR,
     ApplicationIR,
+    CircuitBreakerPolicyIR,
     CommandIR,
+    ConstraintIR,
+    ContractTestCaseIR,
+    ContractTestStepIR,
+    CorsPolicyIR,
     DomainIR,
+    EffectIR,
+    EmailProviderIR,
     EntityIR,
     EnumIR,
+    EnvironmentProfileIR,
+    ErrorHandlerIR,
     ErrorIR,
+    ErrorMapIR,
     EventIR,
     FieldIR,
+    GuardIR,
     HttpApiIR,
     HttpRouteIR,
     IndexIR,
-    ConstraintIR,
-    GuardIR,
-    EffectIR,
+    IntegrationAuthIR,
+    IntegrationsIR,
+    IntegrationTargetIR,
     IRIndexes,
     IRMeta,
     IRModules,
+    OAuth2ProviderIR,
+    ObservabilityTargetIR,
+    OpsIR,
+    PersistenceColumnIR,
+    PersistenceDatasourceIR,
+    PersistenceIndexIR,
+    PersistenceIR,
+    PersistenceTableIR,
+    PiiMaskingRuleIR,
     PolicyIR,
     ProjectionIR,
     QueryIR,
+    RateLimitPolicyIR,
+    RateLimitRuleIR,
     RefIR,
+    ReliabilityPolicyIR,
+    RestApiOperationIR,
+    RetryPolicyIR,
     RulesIR,
+    S3ResourceIR,
     ScenariosIR,
+    SecretRefIR,
+    SecurityBaselineIR,
+    SignaturePolicyIR,
     SourceMetadata,
+    StateIR,
     Stats,
-    Warning,
+    TestingIR,
+    TimeoutPolicyIR,
+    TransitionIR,
     ValueObjectIR,
+    Warning,
+    WebhookEndpointIR,
     WorkflowIR,
     WorkflowModuleIR,
-    StateIR,
-    TransitionIR,
-    ErrorHandlerIR,
-    PersistenceIR,
-    PersistenceDatasourceIR,
-    PersistenceTableIR,
-    PersistenceColumnIR,
-    PersistenceIndexIR,
-    IntegrationsIR,
-    IntegrationTargetIR,
-    RestApiOperationIR,
-    ErrorMapIR,
-    S3ResourceIR,
-    EmailProviderIR,
-    OAuth2ProviderIR,
-    SignaturePolicyIR,
-    WebhookEndpointIR,
-    IntegrationAuthIR,
-    TimeoutPolicyIR,
-    RetryPolicyIR,
-    RateLimitPolicyIR,
-    CircuitBreakerPolicyIR,
-    OpsIR,
-    EnvironmentProfileIR,
-    SecretRefIR,
-    CorsPolicyIR,
-    RateLimitRuleIR,
-    PiiMaskingRuleIR,
-    SecurityBaselineIR,
-    ReliabilityPolicyIR,
-    ObservabilityTargetIR,
-    TestingIR,
-    ContractTestCaseIR,
-    ContractTestStepIR,
 )
-from ..normalize.normalizer import Normalizer
 from ..symbols.symbol_table import (
     SYMBOL_TYPE_COMMAND,
     SYMBOL_TYPE_ENTITY,
@@ -111,29 +111,37 @@ from ..symbols.symbol_table import (
     SYMBOL_TYPE_WORKFLOW,
     SymbolTable,
 )
+from ..validation.cross_ref import CrossRefChecker
 from ..validation.validator import Validator
-from ..diagnostics.logging import header, log, safe_print
 
 
 def _load_schema_tree(root: Path) -> dict[str, Any]:
     """Load schema tree from package resources."""
     try:
         from importlib.resources import files
+
         schema_tree_path = Path(str(files("midicoder.dsl.schemas")) + "/tree_v0.yml")
     except Exception:
         # Fallback to relative path
         schema_tree_path = root / "midicoder" / "dsl" / "schemas" / "tree_v0.yml"
-    
+
     if not schema_tree_path.exists():
         # Try another fallback
-        schema_tree_path = Path(__file__).parent.parent.parent / "dsl" / "schemas" / "tree_v0.yml"
-    
+        schema_tree_path = (
+            Path(__file__).parent.parent.parent / "dsl" / "schemas" / "tree_v0.yml"
+        )
+
     if not schema_tree_path.exists():
-        log("schema", "warn", f"Schema tree not found at {schema_tree_path}, using empty schema")
+        log(
+            "schema",
+            "warn",
+            f"Schema tree not found at {schema_tree_path}, using empty schema",
+        )
         return {}
-    
+
     try:
         from ruamel.yaml import YAML
+
         yaml_loader = YAML(typ="safe")
         content = schema_tree_path.read_text(encoding="utf-8")
         data = yaml_loader.load(content)
@@ -148,29 +156,29 @@ def _load_schema_tree(root: Path) -> dict[str, Any]:
 
 
 def build_ir(
-    version: str, 
-    repo_root: str | None = None, 
+    version: str,
+    repo_root: str | None = None,
     skip_diagrams: bool = False,
     sort_collections: bool = True,
 ) -> None:
     """
     Build IR from contracts.
-    
+
     Args:
         version: Version to build
         repo_root: Repository root (default: cwd)
         skip_diagrams: If True, skip diagram generation
         sort_collections: If True (default), sort collections by ID for deterministic output.
                          If False, preserve source order.
-    
+
     Raises:
         FileNotFoundError: If contracts directory doesn't exist
         RuntimeError: If compilation fails
     """
     header(f"IR BUILD v{version}")
-    
+
     root = Path(repo_root or os.getcwd())
-    
+
     # Load schema tree for dynamic intent inference
     log("schema", "start", "Loading schema tree")
     schema_tree = _load_schema_tree(root)
@@ -178,16 +186,16 @@ def build_ir(
     ir_root = root / ".midicoder" / "versions" / version / "irs"
     manifest_path = ir_root / "manifest.json"
     ir_path = ir_root / "ir.json"
-    
+
     if not contracts_root.is_dir():
         raise FileNotFoundError(
             f"Contracts directory not found at {contracts_root}. "
             "Run 'midicoder contract gen' first."
         )
-    
+
     # Initialize error reporter
     reporter = ErrorReporter()
-    
+
     # Phase 1: Load contracts
     log("load", "start", "Loading contracts")
     validated_data = {}
@@ -195,7 +203,7 @@ def build_ir(
         validated_data = _load_and_validate_contracts(contracts_root, reporter)
     except Exception as e:
         reporter.add_exception("load", str(contracts_root), e)
-    
+
     if reporter.has_errors():
         _write_manifest_with_errors(
             manifest_path, version, contracts_root, root, reporter
@@ -203,13 +211,13 @@ def build_ir(
         _write_error_report(ir_root, reporter, contracts_root)
         _print_build_report(reporter, contracts_root)
         raise RuntimeError("IR build failed due to validation errors.")
-    
+
     log("load", "ok", "Loaded and validated contracts", files=len(validated_data))
-    
+
     # Phase 2: Build symbol table
     log("symbols", "start", "Building symbol table")
     symbol_table = _build_symbol_table(validated_data, reporter, contracts_root)
-    
+
     if reporter.has_errors():
         _write_manifest_with_errors(
             manifest_path, version, contracts_root, root, reporter
@@ -217,15 +225,15 @@ def build_ir(
         _write_error_report(ir_root, reporter, contracts_root)
         _print_build_report(reporter, contracts_root)
         raise RuntimeError("IR build failed due to duplicate symbols.")
-    
+
     stats = symbol_table.get_stats()
     total_symbols = sum(stats.values())
     log("symbols", "ok", "Built symbol table", total=total_symbols)
-    
+
     # Phase 3: Cross-reference checking
     log("xref", "start", "Checking cross-references")
     _check_cross_references(validated_data, symbol_table, reporter)
-    
+
     if reporter.has_errors():
         _write_manifest_with_errors(
             manifest_path, version, contracts_root, root, reporter
@@ -233,33 +241,42 @@ def build_ir(
         _write_error_report(ir_root, reporter, contracts_root)
         _print_build_report(reporter, contracts_root)
         raise RuntimeError("IR build failed due to unresolved references.")
-    
+
     log("xref", "ok", "All cross-references resolved")
-    
+
     # Phase 4: Normalize
     log("normalize", "start", "Normalizing contracts")
     normalizer = Normalizer(symbol_table)
-    
+
     # Phase 5: Build IR
     log("ir", "start", "Building IR")
     ir = _build_ir_structure(
-        validated_data, symbol_table, normalizer, version, contracts_root, sort_collections, schema_tree
+        validated_data,
+        symbol_table,
+        normalizer,
+        version,
+        contracts_root,
+        sort_collections,
+        schema_tree,
     )
 
     # Phase 5.5: Intent.module inference
     from ..analysis.intent import apply_intent_module
+
     apply_intent_module(ir, validated_data, normalizer, reporter, schema_tree)
 
     # Phase 5.6: Intent validation
     from ..analysis.intent import validate_intents
+
     validate_intents(ir, validated_data, normalizer, reporter)
 
     # Optional: intent statistics
     from ..analysis.intent import (
+        compute_confidence_distribution,
         compute_intent_stats,
         compute_intent_summary,
-        compute_confidence_distribution,
     )
+
     ir.meta.intent = compute_intent_stats(ir)
     ir.meta.intent_summary = compute_intent_summary(ir)
     ir.meta.confidence_distribution = compute_confidence_distribution(ir)
@@ -274,33 +291,36 @@ def build_ir(
         _write_error_report(ir_root, reporter, contracts_root)
         _print_build_report(reporter, contracts_root)
         raise RuntimeError("IR build failed due to intent errors.")
-    
+
     # Phase 6: Write outputs
     log("output", "start", "Writing IR")
     ir_root.mkdir(parents=True, exist_ok=True)
     _write_ir(ir, ir_path, symbol_table)
-    
+
     log("output", "start", "Writing manifest")
-    manifest = _build_manifest(
-        version, contracts_root, ir_root, root, ir, reporter
-    )
+    manifest = _build_manifest(version, contracts_root, ir_root, root, ir, reporter)
     _write_manifest(manifest, manifest_path)
-    
+
     # Phase 7: Generate diagrams
     log("diagrams", "start", "Generating diagrams")
     diagram_manifest = None
     if not skip_diagrams:
         from ..visualize.visualizer import generate_diagrams
-        
+
         diagrams_dir = ir_root / "diagrams_mermaid"
         diagram_manifest = generate_diagrams(ir, diagrams_dir, skip_diagrams)
-        
+
         diagram_manifest_path = diagrams_dir / "manifest.json"
         diagram_manifest.write(diagram_manifest_path)
-        log("diagrams", "ok", "Generated diagrams", total=diagram_manifest.to_dict()["total"])
+        log(
+            "diagrams",
+            "ok",
+            "Generated diagrams",
+            total=diagram_manifest.to_dict()["total"],
+        )
     else:
         log("diagrams", "skip", "Skipping diagram generation")
-    
+
     # Write lock file
     locks_root = root / ".midicoder" / "versions" / version / "locks"
     locks_root.mkdir(parents=True, exist_ok=True)
@@ -312,12 +332,12 @@ def build_ir(
             "ir": str(ir_path.relative_to(root)),
         },
     )
-    
+
     # Write error/warning log (even on success, to capture warnings)
     if reporter.has_errors() or len(reporter.warnings) > 0 or len(reporter.infos) > 0:
         _write_error_report(ir_root, reporter, contracts_root)
         _print_build_report(reporter, contracts_root)
-    
+
     # Print summary
     safe_print("")
     header("SUMMARY")
@@ -364,20 +384,22 @@ def _load_and_validate_contracts(
     """Load and validate all contract files."""
     validator = Validator(reporter)
     validated_data = {}
-    
+
     # Walk through all contract files
-    for file_path in sorted(contracts_root.rglob("*.yaml")) + sorted(contracts_root.rglob("*.yml")):
+    for file_path in sorted(contracts_root.rglob("*.yaml")) + sorted(
+        contracts_root.rglob("*.yml")
+    ):
         relative_path = file_path.relative_to(contracts_root)
-        
+
         # Skip hidden files and directories
         if any(part.startswith(".") for part in relative_path.parts):
             continue
-        
+
         # Validate file
         data = validator.validate_file(file_path, contracts_root)
         if data is not None:
             validated_data[str(relative_path)] = data
-    
+
     return validated_data
 
 
@@ -397,8 +419,8 @@ def _build_symbol_table(
         IntegrationsFile,
         PersistenceModelFile,
         ProjectionsFile,
-        ReliabilityPoliciesFile,
         QueriesFile,
+        ReliabilityPoliciesFile,
         RulesFile,
         ScenariosFile,
         SecretsContractFile,
@@ -406,10 +428,10 @@ def _build_symbol_table(
         ValueObjectsFile,
         WorkflowsFile,
     )
-    
+
     symbol_table = SymbolTable()
     normalizer = Normalizer(symbol_table)
-    
+
     for file_path, data in validated_data.items():
         # Register symbols based on file type
         if isinstance(data, EntitiesFile):
@@ -423,13 +445,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate entity ID: {entity.id}",
                     )
-        
+
         elif isinstance(data, ValueObjectsFile):
             for vo in data.value_objects:
                 canonical_id = normalizer.normalize_id(vo.id)
@@ -441,13 +464,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate value object ID: {vo.id}",
                     )
-        
+
         elif isinstance(data, EnumsFile):
             for enum in data.enums:
                 canonical_id = normalizer.normalize_id(enum.id)
@@ -459,13 +483,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate enum ID: {enum.id}",
                     )
-        
+
         elif isinstance(data, ErrorsFile):
             for error in data.errors:
                 canonical_id = normalizer.normalize_id(error.id)
@@ -477,13 +502,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate error ID: {error.id}",
                     )
-        
+
         elif isinstance(data, EventsFile):
             for event in data.events:
                 canonical_id = normalizer.normalize_id(event.id)
@@ -495,13 +521,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate event ID: {event.id}",
                     )
-        
+
         elif isinstance(data, CommandsFile):
             for command in data.commands:
                 canonical_id = normalizer.normalize_id(command.id)
@@ -513,13 +540,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate command ID: {command.id}",
                     )
-        
+
         elif isinstance(data, QueriesFile):
             for query in data.queries:
                 canonical_id = normalizer.normalize_id(query.id)
@@ -531,13 +559,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate query ID: {query.id}",
                     )
-        
+
         elif isinstance(data, WorkflowsFile):
             for workflow in data.workflows:
                 canonical_id = normalizer.normalize_id(workflow.id)
@@ -549,13 +578,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate workflow ID: {workflow.id}",
                     )
-        
+
         elif isinstance(data, ProjectionsFile):
             for projection in data.projections:
                 canonical_id = normalizer.normalize_id(projection.id)
@@ -567,13 +597,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate projection ID: {projection.id}",
                     )
-        
+
         elif isinstance(data, RulesFile):
             for rule in data.rules:
                 canonical_id = normalizer.normalize_id(rule.id)
@@ -585,6 +616,7 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
@@ -603,6 +635,7 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
@@ -619,13 +652,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate permission ID: {permission.id}",
                     )
-        
+
         elif isinstance(data, ScenariosFile):
             for scenario in data.scenarios:
                 canonical_id = normalizer.normalize_id(scenario.id)
@@ -637,6 +671,7 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
@@ -655,6 +690,7 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
@@ -671,6 +707,7 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
@@ -689,6 +726,7 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
@@ -705,6 +743,7 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
@@ -723,6 +762,7 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
@@ -741,6 +781,7 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
@@ -759,13 +800,14 @@ def _build_symbol_table(
                 )
                 if not success:
                     from ..diagnostics.error_codes import E201
+
                     reporter.add_error(
                         stage="symbol_table",
                         code=E201,
                         file=file_path,
                         message=f"Duplicate secret ID: {secret.id}",
                     )
-    
+
     return symbol_table
 
 
@@ -776,7 +818,7 @@ def _check_cross_references(
 ) -> None:
     """Check cross-references between contracts."""
     checker = CrossRefChecker(symbol_table, reporter)
-    
+
     for file_path, data in validated_data.items():
         checker.check_file(data, file_path)
 
@@ -796,11 +838,11 @@ def _sort_ir_collections(
 ) -> None:
     """
     Sort all IR collections by ID for deterministic output.
-    
+
     Sorts all collections in-place using case-insensitive sorting.
     This ensures that IR output is deterministic regardless of file order
     or declaration order within files.
-    
+
     Args:
         domain_ir: Domain IR module
         application_ir: Application IR module
@@ -816,30 +858,30 @@ def _sort_ir_collections(
     domain_ir.enums.sort(key=lambda x: x.id.lower())
     domain_ir.errors.sort(key=lambda x: x.id.lower())
     domain_ir.events.sort(key=lambda x: x.id.lower())
-    
+
     # Sort application collections
     application_ir.commands.sort(key=lambda x: x.id.lower())
     application_ir.queries.sort(key=lambda x: x.id.lower())
     application_ir.projections.sort(key=lambda x: x.id.lower())
-    
+
     # Sort workflow collections
     workflow_ir.workflows.sort(key=lambda x: x.id.lower())
-    
+
     # Sort API collections
     if api_ir.http:
         api_ir.http.routes.sort(key=lambda x: x.id.lower())
-    
+
     if api_ir.graphql:
         api_ir.graphql.types.sort(key=lambda x: x.id.lower())
         api_ir.graphql.queries.sort(key=lambda x: x.id.lower())
         api_ir.graphql.mutations.sort(key=lambda x: x.id.lower())
-    
+
     # Sort policy collections
     policy_ir.business.sort(key=lambda x: x.id.lower())
     if policy_ir.access:
         policy_ir.access.roles.sort(key=lambda x: x.id.lower())
         policy_ir.access.permissions.sort(key=lambda x: x.id.lower())
-    
+
     # Sort rules and scenarios
     rules_ir.rules.sort(key=lambda x: x.id.lower())
     scenarios_ir.scenarios.sort(key=lambda x: x.id.lower())
@@ -870,7 +912,7 @@ def _build_ir_structure(
 ) -> IR:
     """
     Build the IR structure from validated and normalized contracts.
-    
+
     Args:
         validated_data: Validated contract data
         symbol_table: Symbol table
@@ -879,7 +921,7 @@ def _build_ir_structure(
         contracts_root: Root path for contracts
         sort_collections: If True, sort all collections by ID for deterministic output
         schema_tree: Schema tree for dynamic intent inference
-    
+
     Returns:
         Complete IR structure
     """
@@ -908,7 +950,7 @@ def _build_ir_structure(
         ValueObjectsFile,
         WorkflowsFile,
     )
-    
+
     # Initialize IR modules
     domain_ir = DomainIR()
     application_ir = ApplicationIR()
@@ -918,140 +960,175 @@ def _build_ir_structure(
     integrations_ir = IntegrationsIR()
     ops_ir = OpsIR()
     testing_ir = TestingIR()
-    
+
     # Initialize IR types
     policy_ir = PolicyIR()
     rules_ir = RulesIR()
     scenarios_ir = ScenariosIR()
-    
+
     # Build IR from each file
     for file_path, data in validated_data.items():
         file_checksum = _compute_file_checksum(contracts_root / file_path)
-        
+
         if isinstance(data, EntitiesFile):
             for idx, entity in enumerate(data.entities):
                 if not _is_canonical_symbol_owner(
                     symbol_table, SYMBOL_TYPE_ENTITY, entity.id, file_path, normalizer
                 ):
                     continue
-                entity_ir = _build_entity_ir(entity, file_path, file_checksum, normalizer, idx)
+                entity_ir = _build_entity_ir(
+                    entity, file_path, file_checksum, normalizer, idx
+                )
                 domain_ir.entities.append(entity_ir)
-        
+
         elif isinstance(data, ValueObjectsFile):
             for idx, vo in enumerate(data.value_objects):
                 if not _is_canonical_symbol_owner(
                     symbol_table, SYMBOL_TYPE_VALUE_OBJECT, vo.id, file_path, normalizer
                 ):
                     continue
-                vo_ir = _build_value_object_ir(vo, file_path, file_checksum, normalizer, idx)
+                vo_ir = _build_value_object_ir(
+                    vo, file_path, file_checksum, normalizer, idx
+                )
                 domain_ir.value_objects.append(vo_ir)
-        
+
         elif isinstance(data, EnumsFile):
             for idx, enum in enumerate(data.enums):
                 if not _is_canonical_symbol_owner(
                     symbol_table, SYMBOL_TYPE_ENUM, enum.id, file_path, normalizer
                 ):
                     continue
-                enum_ir = _build_enum_ir(enum, file_path, file_checksum, normalizer, idx)
+                enum_ir = _build_enum_ir(
+                    enum, file_path, file_checksum, normalizer, idx
+                )
                 domain_ir.enums.append(enum_ir)
-        
+
         elif isinstance(data, ErrorsFile):
             for idx, error in enumerate(data.errors):
                 if not _is_canonical_symbol_owner(
                     symbol_table, SYMBOL_TYPE_ERROR, error.id, file_path, normalizer
                 ):
                     continue
-                error_ir = _build_error_ir(error, file_path, file_checksum, normalizer, idx)
+                error_ir = _build_error_ir(
+                    error, file_path, file_checksum, normalizer, idx
+                )
                 domain_ir.errors.append(error_ir)
-        
+
         elif isinstance(data, EventsFile):
             for idx, event in enumerate(data.events):
                 if not _is_canonical_symbol_owner(
                     symbol_table, SYMBOL_TYPE_EVENT, event.id, file_path, normalizer
                 ):
                     continue
-                event_ir = _build_event_ir(event, file_path, file_checksum, normalizer, idx)
+                event_ir = _build_event_ir(
+                    event, file_path, file_checksum, normalizer, idx
+                )
                 domain_ir.events.append(event_ir)
-        
+
         elif isinstance(data, CommandsFile):
             for idx, command in enumerate(data.commands):
                 if not _is_canonical_symbol_owner(
                     symbol_table, SYMBOL_TYPE_COMMAND, command.id, file_path, normalizer
                 ):
                     continue
-                command_ir = _build_command_ir(command, file_path, file_checksum, normalizer, idx)
+                command_ir = _build_command_ir(
+                    command, file_path, file_checksum, normalizer, idx
+                )
                 application_ir.commands.append(command_ir)
-        
+
         elif isinstance(data, QueriesFile):
             for idx, query in enumerate(data.queries):
                 if not _is_canonical_symbol_owner(
                     symbol_table, SYMBOL_TYPE_QUERY, query.id, file_path, normalizer
                 ):
                     continue
-                query_ir = _build_query_ir(query, file_path, file_checksum, normalizer, idx)
+                query_ir = _build_query_ir(
+                    query, file_path, file_checksum, normalizer, idx
+                )
                 application_ir.queries.append(query_ir)
-        
+
         elif isinstance(data, WorkflowsFile):
             for idx, workflow in enumerate(data.workflows):
                 if not _is_canonical_symbol_owner(
-                    symbol_table, SYMBOL_TYPE_WORKFLOW, workflow.id, file_path, normalizer
+                    symbol_table,
+                    SYMBOL_TYPE_WORKFLOW,
+                    workflow.id,
+                    file_path,
+                    normalizer,
                 ):
                     continue
-                workflow_ir_item = _build_workflow_ir(workflow, file_path, file_checksum, normalizer, idx)
+                workflow_ir_item = _build_workflow_ir(
+                    workflow, file_path, file_checksum, normalizer, idx
+                )
                 workflow_ir.workflows.append(workflow_ir_item)
-        
+
         elif isinstance(data, ProjectionsFile):
             for idx, projection in enumerate(data.projections):
                 if not _is_canonical_symbol_owner(
-                    symbol_table, SYMBOL_TYPE_PROJECTION, projection.id, file_path, normalizer
+                    symbol_table,
+                    SYMBOL_TYPE_PROJECTION,
+                    projection.id,
+                    file_path,
+                    normalizer,
                 ):
                     continue
-                projection_ir = _build_projection_ir(projection, file_path, file_checksum, normalizer, idx)
+                projection_ir = _build_projection_ir(
+                    projection, file_path, file_checksum, normalizer, idx
+                )
                 application_ir.projections.append(projection_ir)
-        
+
         elif isinstance(data, HttpApiFile):
             for idx, route in enumerate(data.routes):
-                route_ir = _build_http_route_ir(route, file_path, file_checksum, normalizer, idx)
+                route_ir = _build_http_route_ir(
+                    route, file_path, file_checksum, normalizer, idx
+                )
                 if api_ir.http is None:
                     api_ir.http = HttpApiIR()
                 api_ir.http.routes.append(route_ir)
-        
+
         elif isinstance(data, GraphQLApiFile):
             # Build GraphQL API
             if api_ir.graphql is None:
                 from ..schema.ir_schema import GraphQLApiIR
+
                 api_ir.graphql = GraphQLApiIR()
-            
+
             # Build GraphQL types
             for idx, gql_type in enumerate(data.api.types):
-                type_ir = _build_graphql_type_ir(gql_type, file_path, file_checksum, normalizer, idx)
+                type_ir = _build_graphql_type_ir(
+                    gql_type, file_path, file_checksum, normalizer, idx
+                )
                 api_ir.graphql.types.append(type_ir)
-            
+
             # Build GraphQL queries
             for idx, gql_query in enumerate(data.api.queries):
                 query_ir = _build_graphql_operation_ir(
                     gql_query, "query", file_path, file_checksum, normalizer, idx
                 )
                 api_ir.graphql.queries.append(query_ir)
-            
+
             # Build GraphQL mutations
             for idx, gql_mutation in enumerate(data.api.mutations):
                 mutation_ir = _build_graphql_operation_ir(
                     gql_mutation, "mutation", file_path, file_checksum, normalizer, idx
                 )
                 api_ir.graphql.mutations.append(mutation_ir)
-        
+
         elif isinstance(data, AccessPolicyFile):
             # Build Access Policy
             if policy_ir.access is None:
-                policy_ir.access = _build_access_policy_ir(data, file_path, file_checksum, normalizer)
-        
+                policy_ir.access = _build_access_policy_ir(
+                    data, file_path, file_checksum, normalizer
+                )
+
         elif isinstance(data, PoliciesFile):
             # Build Business Policies
             for idx, policy in enumerate(data.policies):
-                business_policy_ir = _build_business_policy_ir(policy, file_path, file_checksum, normalizer, idx)
+                business_policy_ir = _build_business_policy_ir(
+                    policy, file_path, file_checksum, normalizer, idx
+                )
                 policy_ir.business.append(business_policy_ir)
-        
+
         elif isinstance(data, RulesFile):
             # Build Rules
             for idx, rule in enumerate(data.rules):
@@ -1059,81 +1136,125 @@ def _build_ir_structure(
                     symbol_table, SYMBOL_TYPE_RULE, rule.id, file_path, normalizer
                 ):
                     continue
-                rule_ir = _build_rule_ir(rule, file_path, file_checksum, normalizer, idx)
+                rule_ir = _build_rule_ir(
+                    rule, file_path, file_checksum, normalizer, idx
+                )
                 rules_ir.rules.append(rule_ir)
-        
+
         elif isinstance(data, ScenariosFile):
             # Build Scenarios
             for idx, scenario in enumerate(data.scenarios):
                 if not _is_canonical_symbol_owner(
-                    symbol_table, SYMBOL_TYPE_SCENARIO, scenario.id, file_path, normalizer
+                    symbol_table,
+                    SYMBOL_TYPE_SCENARIO,
+                    scenario.id,
+                    file_path,
+                    normalizer,
                 ):
                     continue
-                scenario_ir = _build_scenario_ir(scenario, file_path, file_checksum, normalizer, idx)
+                scenario_ir = _build_scenario_ir(
+                    scenario, file_path, file_checksum, normalizer, idx
+                )
                 scenarios_ir.scenarios.append(scenario_ir)
 
         elif isinstance(data, PersistenceModelFile):
             for idx, datasource in enumerate(data.datasources):
                 if not _is_canonical_symbol_owner(
-                    symbol_table, SYMBOL_TYPE_PERSISTENCE_DATASOURCE, datasource.id, file_path, normalizer
+                    symbol_table,
+                    SYMBOL_TYPE_PERSISTENCE_DATASOURCE,
+                    datasource.id,
+                    file_path,
+                    normalizer,
                 ):
                     continue
                 persistence_ir.datasources.append(
-                    _build_persistence_datasource_ir(datasource, file_path, file_checksum, normalizer, idx)
+                    _build_persistence_datasource_ir(
+                        datasource, file_path, file_checksum, normalizer, idx
+                    )
                 )
             for idx, table in enumerate(data.tables):
                 if not _is_canonical_symbol_owner(
-                    symbol_table, SYMBOL_TYPE_PERSISTENCE_TABLE, table.id, file_path, normalizer
+                    symbol_table,
+                    SYMBOL_TYPE_PERSISTENCE_TABLE,
+                    table.id,
+                    file_path,
+                    normalizer,
                 ):
                     continue
                 persistence_ir.tables.append(
-                    _build_persistence_table_ir(table, file_path, file_checksum, normalizer, idx)
+                    _build_persistence_table_ir(
+                        table, file_path, file_checksum, normalizer, idx
+                    )
                 )
 
         elif isinstance(data, IntegrationsFile):
             for idx, integration in enumerate(data.integrations):
                 if not _is_canonical_symbol_owner(
-                    symbol_table, SYMBOL_TYPE_INTEGRATION, integration.id, file_path, normalizer
+                    symbol_table,
+                    SYMBOL_TYPE_INTEGRATION,
+                    integration.id,
+                    file_path,
+                    normalizer,
                 ):
                     continue
                 integrations_ir.integrations.append(
-                    _build_integration_target_ir(integration, file_path, file_checksum, normalizer, idx)
+                    _build_integration_target_ir(
+                        integration, file_path, file_checksum, normalizer, idx
+                    )
                 )
             for idx, operation in enumerate(data.operations):
                 if not _is_canonical_symbol_owner(
-                    symbol_table, SYMBOL_TYPE_INTEGRATION_OPERATION, operation.id, file_path, normalizer
+                    symbol_table,
+                    SYMBOL_TYPE_INTEGRATION_OPERATION,
+                    operation.id,
+                    file_path,
+                    normalizer,
                 ):
                     continue
                 integrations_ir.operations.append(
-                    _build_rest_api_operation_ir(operation, file_path, file_checksum, normalizer, idx)
+                    _build_rest_api_operation_ir(
+                        operation, file_path, file_checksum, normalizer, idx
+                    )
                 )
             for idx, s3_resource in enumerate(data.s3_resources):
                 integrations_ir.s3_resources.append(
-                    _build_s3_resource_ir(s3_resource, file_path, file_checksum, normalizer, idx)
+                    _build_s3_resource_ir(
+                        s3_resource, file_path, file_checksum, normalizer, idx
+                    )
                 )
             for idx, oauth2 in enumerate(data.oauth2_providers):
                 integrations_ir.oauth2_providers.append(
-                    _build_oauth2_provider_ir(oauth2, file_path, file_checksum, normalizer, idx)
+                    _build_oauth2_provider_ir(
+                        oauth2, file_path, file_checksum, normalizer, idx
+                    )
                 )
             for idx, webhook in enumerate(data.webhooks):
                 integrations_ir.webhooks.append(
-                    _build_webhook_endpoint_ir(webhook, file_path, file_checksum, normalizer, idx)
+                    _build_webhook_endpoint_ir(
+                        webhook, file_path, file_checksum, normalizer, idx
+                    )
                 )
             for idx, email_provider in enumerate(data.email_providers):
                 integrations_ir.email_providers.append(
-                    _build_email_provider_ir(email_provider, file_path, file_checksum, normalizer, idx)
+                    _build_email_provider_ir(
+                        email_provider, file_path, file_checksum, normalizer, idx
+                    )
                 )
 
         elif isinstance(data, ProfilesFile):
             for idx, profile in enumerate(data.profiles):
                 ops_ir.profiles.append(
-                    _build_profile_ir(profile, file_path, file_checksum, normalizer, idx)
+                    _build_profile_ir(
+                        profile, file_path, file_checksum, normalizer, idx
+                    )
                 )
 
         elif isinstance(data, SecretsContractFile):
             for idx, secret in enumerate(data.secrets):
                 ops_ir.secrets.append(
-                    _build_secret_ref_ir(secret, file_path, file_checksum, normalizer, idx)
+                    _build_secret_ref_ir(
+                        secret, file_path, file_checksum, normalizer, idx
+                    )
                 )
 
         elif isinstance(data, SecurityBaselineFile):
@@ -1147,29 +1268,43 @@ def _build_ir_structure(
         elif isinstance(data, ReliabilityPoliciesFile):
             for idx, policy in enumerate(data.reliability_policies):
                 if not _is_canonical_symbol_owner(
-                    symbol_table, SYMBOL_TYPE_RELIABILITY_POLICY, policy.id, file_path, normalizer
+                    symbol_table,
+                    SYMBOL_TYPE_RELIABILITY_POLICY,
+                    policy.id,
+                    file_path,
+                    normalizer,
                 ):
                     continue
                 ops_ir.reliability_policies.append(
-                    _build_reliability_policy_ir(policy, file_path, file_checksum, normalizer, idx)
+                    _build_reliability_policy_ir(
+                        policy, file_path, file_checksum, normalizer, idx
+                    )
                 )
 
         elif isinstance(data, ObservabilityFile):
             for idx, target in enumerate(data.observability):
                 ops_ir.observability.append(
-                    _build_observability_target_ir(target, file_path, file_checksum, normalizer, idx)
+                    _build_observability_target_ir(
+                        target, file_path, file_checksum, normalizer, idx
+                    )
                 )
 
         elif isinstance(data, TestingFile):
             for idx, test_case in enumerate(data.tests):
                 if not _is_canonical_symbol_owner(
-                    symbol_table, SYMBOL_TYPE_TEST_CASE, test_case.id, file_path, normalizer
+                    symbol_table,
+                    SYMBOL_TYPE_TEST_CASE,
+                    test_case.id,
+                    file_path,
+                    normalizer,
                 ):
                     continue
                 testing_ir.tests.append(
-                    _build_contract_test_case_ir(test_case, file_path, file_checksum, normalizer, idx)
+                    _build_contract_test_case_ir(
+                        test_case, file_path, file_checksum, normalizer, idx
+                    )
                 )
-    
+
     # Sort all collections by ID for deterministic output (if enabled)
     if sort_collections:
         _sort_ir_collections(
@@ -1185,10 +1320,10 @@ def _build_ir_structure(
             scenarios_ir,
             testing_ir,
         )
-    
+
     # Build indexes
     indexes = _build_indexes(symbol_table, normalizer)
-    
+
     # Build stats
     stats = Stats(
         entities=len(domain_ir.entities),
@@ -1220,10 +1355,10 @@ def _build_ir_structure(
         observability_targets=len(ops_ir.observability),
         tests=len(testing_ir.tests),
     )
-    
+
     # Build metadata
     meta = IRMeta(stats=stats)
-    
+
     # Build modules
     modules = IRModules(
         domain=domain_ir,
@@ -1238,7 +1373,7 @@ def _build_ir_structure(
         scenarios=scenarios_ir,
         testing=testing_ir,
     )
-    
+
     # Build top-level IR
     ir = IR(
         version=version,
@@ -1251,8 +1386,9 @@ def _build_ir_structure(
 
     # Phase: Intent.kind inference
     from ..analysis.intent import apply_intent_kind
+
     apply_intent_kind(ir, validated_data, normalizer, schema_tree)
-    
+
     return ir
 
 
@@ -1283,18 +1419,18 @@ def _is_canonical_symbol_owner(
 
 
 def _build_entity_ir(
-    entity: Any, 
-    file: str, 
-    checksum: str, 
+    entity: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> EntityIR:
     """Build EntityIR from Entity model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     # Get line information
     line_info = get_line_info(file, entity.id)
-    
+
     return EntityIR(
         id=normalizer.normalize_id(entity.id),
         description=entity.description,
@@ -1308,8 +1444,8 @@ def _build_entity_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(entity.model_dump()),
@@ -1318,18 +1454,18 @@ def _build_entity_ir(
 
 
 def _build_value_object_ir(
-    vo: Any, 
-    file: str, 
-    checksum: str, 
+    vo: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> ValueObjectIR:
     """Build ValueObjectIR from ValueObject model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     # Get line information
     line_info = get_line_info(file, vo.id)
-    
+
     return ValueObjectIR(
         id=normalizer.normalize_id(vo.id),
         description=vo.description,
@@ -1340,8 +1476,8 @@ def _build_value_object_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(vo.model_dump()),
@@ -1350,17 +1486,17 @@ def _build_value_object_ir(
 
 
 def _build_enum_ir(
-    enum: Any, 
-    file: str, 
-    checksum: str, 
+    enum: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> EnumIR:
     """Build EnumIR from EnumDef model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, enum.id)
-    
+
     return EnumIR(
         id=normalizer.normalize_id(enum.id),
         description=enum.description,
@@ -1371,8 +1507,8 @@ def _build_enum_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(enum.model_dump()),
@@ -1381,17 +1517,17 @@ def _build_enum_ir(
 
 
 def _build_error_ir(
-    error: Any, 
-    file: str, 
-    checksum: str, 
+    error: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> ErrorIR:
     """Build ErrorIR from ErrorDef model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, error.id)
-    
+
     return ErrorIR(
         id=normalizer.normalize_id(error.id),
         description=error.description,
@@ -1404,8 +1540,8 @@ def _build_error_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(error.model_dump()),
@@ -1413,17 +1549,17 @@ def _build_error_ir(
 
 
 def _build_event_ir(
-    event: Any, 
-    file: str, 
-    checksum: str, 
+    event: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> EventIR:
     """Build EventIR from EventDef model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, event.id)
-    
+
     return EventIR(
         id=normalizer.normalize_id(event.id),
         description=event.description,
@@ -1434,8 +1570,8 @@ def _build_event_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(event.model_dump()),
@@ -1444,23 +1580,25 @@ def _build_event_ir(
 
 
 def _build_command_ir(
-    command: Any, 
-    file: str, 
-    checksum: str, 
+    command: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> CommandIR:
     """Build CommandIR from Command model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, command.id)
-    
+
     return CommandIR(
         id=normalizer.normalize_id(command.id),
         description=command.description,
         input=[_build_field_ir(f) for f in command.input],
         returns=[_build_field_ir(f) for f in command.returns],
-        fetches=[_build_typed_ref(ref, normalizer, "Entity") for ref in command.fetches],
+        fetches=[
+            _build_typed_ref(ref, normalizer, "Entity") for ref in command.fetches
+        ],
         guards=[_build_guard_ir(g) for g in command.guards],
         effects=[_build_effect_ir(e) for e in command.effects],
         errors=[_build_typed_ref(ref, normalizer, "Error") for ref in command.errors],
@@ -1477,8 +1615,8 @@ def _build_command_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(command.model_dump()),
@@ -1487,17 +1625,17 @@ def _build_command_ir(
 
 
 def _build_query_ir(
-    query: Any, 
-    file: str, 
-    checksum: str, 
+    query: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> QueryIR:
     """Build QueryIR from Query model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, query.id)
-    
+
     return QueryIR(
         id=normalizer.normalize_id(query.id),
         description=query.description,
@@ -1516,8 +1654,8 @@ def _build_query_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(query.model_dump()),
@@ -1526,17 +1664,17 @@ def _build_query_ir(
 
 
 def _build_workflow_ir(
-    workflow: Any, 
-    file: str, 
-    checksum: str, 
+    workflow: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> WorkflowIR:
     """Build WorkflowIR from Workflow model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, workflow.id)
-    
+
     return WorkflowIR(
         id=normalizer.normalize_id(workflow.id),
         description=workflow.description,
@@ -1544,7 +1682,9 @@ def _build_workflow_ir(
         states=[_build_state_ir(s) for s in workflow.states],
         transitions=[_build_transition_ir(t, normalizer) for t in workflow.transitions],
         initial_state=workflow.initial_state,
-        error_handlers=[_build_error_handler_ir(h, normalizer) for h in workflow.error_handlers],
+        error_handlers=[
+            _build_error_handler_ir(h, normalizer) for h in workflow.error_handlers
+        ],
         required_roles=list(getattr(workflow, "required_roles", []) or []),
         required_permissions=list(getattr(workflow, "required_permissions", []) or []),
         scenarios=list(getattr(workflow, "scenarios", []) or []),
@@ -1553,8 +1693,8 @@ def _build_workflow_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(workflow.model_dump()),
@@ -1563,23 +1703,22 @@ def _build_workflow_ir(
 
 
 def _build_http_route_ir(
-    route: Any, 
-    file: str, 
-    checksum: str, 
+    route: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> HttpRouteIR:
     """Build HttpRouteIR from HttpRoute model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     route_id = f"{route.method.lower()}_{route.path.replace('/', '_').replace('{', '').replace('}', '').strip('_')}"
     line_info = get_line_info(file, route_id)
-    
+
     # If not found by generated ID, try to get from path
-    if not line_info.get('start'):
+    if not line_info.get("start"):
         line_info = get_line_info(file, route.path)
-    
-    
+
     command_ref: RefIR | None = None
     query_ref: RefIR | None = None
 
@@ -1606,16 +1745,24 @@ def _build_http_route_ir(
         query=query_ref,
         description=route.description,
         auth=route.auth,
-        request_schema=[_build_field_ir(f) for f in route.request_schema] if route.request_schema else [],
-        response_schema=[_build_field_ir(f) for f in route.response_schema] if route.response_schema else None,
+        request_schema=(
+            [_build_field_ir(f) for f in route.request_schema]
+            if route.request_schema
+            else []
+        ),
+        response_schema=(
+            [_build_field_ir(f) for f in route.response_schema]
+            if route.response_schema
+            else None
+        ),
         deprecated=route.deprecated,
         tags=route.tags,
         source_ref=route.source,
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(route.model_dump()),
@@ -1667,28 +1814,30 @@ def _resolve_http_route_ref(
 
 
 def _build_graphql_type_ir(
-    gql_type: Any, 
-    file: str, 
-    checksum: str, 
+    gql_type: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> Any:
     """Build GraphQLTypeIR from GraphQLType model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, gql_type.name)
-    
-    from ..schema.ir_schema import GraphQLTypeIR, GraphQLFieldIR
-    
+
+    from ..schema.ir_schema import GraphQLFieldIR, GraphQLTypeIR
+
     fields = []
     for field in gql_type.fields:
-        fields.append(GraphQLFieldIR(
-            name=field.name,
-            type=field.type,
-            args=[_build_field_ir(arg) for arg in getattr(field, 'args', [])],
-            description=field.description,
-        ))
-    
+        fields.append(
+            GraphQLFieldIR(
+                name=field.name,
+                type=field.type,
+                args=[_build_field_ir(arg) for arg in getattr(field, "args", [])],
+                description=field.description,
+            )
+        )
+
     return GraphQLTypeIR(
         id=normalizer.normalize_id(gql_type.name),
         name=gql_type.name,
@@ -1700,8 +1849,8 @@ def _build_graphql_type_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(gql_type.model_dump()),
@@ -1709,43 +1858,43 @@ def _build_graphql_type_ir(
 
 
 def _build_graphql_operation_ir(
-    operation: Any, 
-    operation_type: str, 
-    file: str, 
-    checksum: str, 
+    operation: Any,
+    operation_type: str,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> Any:
     """Build GraphQLOperationIR from GraphQLField model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, operation.name)
-    
+
     from ..schema.ir_schema import GraphQLOperationIR
-    
+
     command_ref = None
     query_ref = None
-    
-    resolver = getattr(operation, 'resolver', '')
+
+    resolver = getattr(operation, "resolver", "")
     if resolver:
         resolver = resolver.strip()
-        if resolver.startswith('Command:'):
+        if resolver.startswith("Command:"):
             command_ref = _build_typed_ref(resolver, normalizer, "Command")
-        elif resolver.startswith('Query:'):
+        elif resolver.startswith("Query:"):
             query_ref = _build_typed_ref(resolver, normalizer, "Query")
         else:
             if operation_type == "mutation":
                 command_ref = _build_typed_ref(resolver, normalizer, "Command")
             elif operation_type == "query":
                 query_ref = _build_typed_ref(resolver, normalizer, "Query")
-    
+
     returns_type = None
     if operation.returns:
         if len(operation.returns) == 1:
             returns_type = operation.returns[0].type
         else:
             returns_type = "Multiple"
-    
+
     return GraphQLOperationIR(
         id=normalizer.normalize_id(operation.name),
         name=operation.name,
@@ -1761,8 +1910,8 @@ def _build_graphql_operation_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(operation.model_dump()),
@@ -1770,21 +1919,24 @@ def _build_graphql_operation_ir(
 
 
 def _build_projection_ir(
-    projection: Any, 
-    file: str, 
-    checksum: str, 
+    projection: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> ProjectionIR:
     """Build ProjectionIR from Projection model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, projection.id)
-    
+
     return ProjectionIR(
         id=normalizer.normalize_id(projection.id),
         description=projection.description,
-        source_events=[_build_typed_ref(ref, normalizer, "Event") for ref in projection.source_events],
+        source_events=[
+            _build_typed_ref(ref, normalizer, "Event")
+            for ref in projection.source_events
+        ],
         fields=[_build_field_ir(f) for f in projection.fields],
         storage=projection.storage,
         storage_kind=getattr(projection, "storage_kind", None),
@@ -1794,8 +1946,8 @@ def _build_projection_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(projection.model_dump()),
@@ -1803,57 +1955,65 @@ def _build_projection_ir(
     )
 
 
-def _build_access_policy_ir(data: Any, file: str, checksum: str, normalizer: Normalizer) -> Any:
+def _build_access_policy_ir(
+    data: Any, file: str, checksum: str, normalizer: Normalizer
+) -> Any:
     """Build AccessPolicyIR from AccessPolicyFile."""
-    from ..schema.ir_schema import AccessPolicyIR, RoleIR, PermissionIR, BindingIR
     from ..diagnostics.line_info_cache import get_line_info
-    
+    from ..schema.ir_schema import AccessPolicyIR, BindingIR, PermissionIR, RoleIR
+
     access = data.access
-    
+
     roles = []
     for role in access.roles:
         line_info = get_line_info(file, role.id)
-        roles.append(RoleIR(
-            id=normalizer.normalize_id(role.id),
-            description=role.description,
-            tags=[],
-            source_ref=None,
-            source=SourceMetadata(
-                file=file,
-                checksum=checksum,
-                line_start=line_info.get('start'),
-                line_end=line_info.get('end'),
-            ),
-            hash=normalizer.compute_hash(role.model_dump()),
-        ))
-    
+        roles.append(
+            RoleIR(
+                id=normalizer.normalize_id(role.id),
+                description=role.description,
+                tags=[],
+                source_ref=None,
+                source=SourceMetadata(
+                    file=file,
+                    checksum=checksum,
+                    line_start=line_info.get("start"),
+                    line_end=line_info.get("end"),
+                ),
+                hash=normalizer.compute_hash(role.model_dump()),
+            )
+        )
+
     permissions = []
     for perm in access.permissions:
         line_info = get_line_info(file, perm.id)
-        permissions.append(PermissionIR(
-            id=normalizer.normalize_id(perm.id),
-            description=perm.description,
-            resource=perm.resource,
-            actions=[perm.action],
-            tags=[],
-            source_ref=None,
-            source=SourceMetadata(
-                file=file,
-                checksum=checksum,
-                line_start=line_info.get('start'),
-                line_end=line_info.get('end'),
-            ),
-            hash=normalizer.compute_hash(perm.model_dump()),
-        ))
-    
+        permissions.append(
+            PermissionIR(
+                id=normalizer.normalize_id(perm.id),
+                description=perm.description,
+                resource=perm.resource,
+                actions=[perm.action],
+                tags=[],
+                source_ref=None,
+                source=SourceMetadata(
+                    file=file,
+                    checksum=checksum,
+                    line_start=line_info.get("start"),
+                    line_end=line_info.get("end"),
+                ),
+                hash=normalizer.compute_hash(perm.model_dump()),
+            )
+        )
+
     bindings = []
     for binding in access.bindings:
-        bindings.append(BindingIR(
-            role=binding.role,
-            permissions=binding.permissions,
-            scope=None,
-        ))
-    
+        bindings.append(
+            BindingIR(
+                role=binding.role,
+                permissions=binding.permissions,
+                scope=None,
+            )
+        )
+
     return AccessPolicyIR(
         roles=roles,
         permissions=permissions,
@@ -1862,47 +2022,51 @@ def _build_access_policy_ir(data: Any, file: str, checksum: str, normalizer: Nor
 
 
 def _build_business_policy_ir(
-    policy: Any, 
-    file: str, 
-    checksum: str, 
+    policy: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> Any:
     """Build BusinessPolicyIR from Policy model."""
-    from ..schema.ir_schema import BusinessPolicyIR, PolicyConditionIR, PolicyEffectIR
     from ..diagnostics.line_info_cache import get_line_info
-    
+    from ..schema.ir_schema import BusinessPolicyIR, PolicyConditionIR, PolicyEffectIR
+
     line_info = get_line_info(file, policy.id)
-    
+
     conditions = []
     for cond in policy.conditions:
-        conditions.append(PolicyConditionIR(
-            field=cond.field,
-            operator=cond.op,
-            value=cond.value,
-        ))
-    
+        conditions.append(
+            PolicyConditionIR(
+                field=cond.field,
+                operator=cond.op,
+                value=cond.value,
+            )
+        )
+
     effects = []
     for effect in policy.effects:
-        effects.append(PolicyEffectIR(
-            type=effect.type,
-            target=effect.target if hasattr(effect, 'target') else None,
-            params=effect.params if hasattr(effect, 'params') else {},
-        ))
-    
+        effects.append(
+            PolicyEffectIR(
+                type=effect.type,
+                target=effect.target if hasattr(effect, "target") else None,
+                params=effect.params if hasattr(effect, "params") else {},
+            )
+        )
+
     return BusinessPolicyIR(
         id=normalizer.normalize_id(policy.id),
         description=policy.description,
         conditions=conditions,
         effects=effects,
-        tags=policy.tags if hasattr(policy, 'tags') else [],
-        scope=policy.scope if hasattr(policy, 'scope') else None,
-        source_ref=policy.source if hasattr(policy, 'source') else None,
+        tags=policy.tags if hasattr(policy, "tags") else [],
+        scope=policy.scope if hasattr(policy, "scope") else None,
+        source_ref=policy.source if hasattr(policy, "source") else None,
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(policy.model_dump()),
@@ -1910,25 +2074,27 @@ def _build_business_policy_ir(
 
 
 def _build_rule_ir(
-    rule: Any, 
-    file: str, 
-    checksum: str, 
+    rule: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> Any:
     """Build RuleIR from Rule model."""
-    from ..schema.ir_schema import RuleIR, RuleRowIR
     from ..diagnostics.line_info_cache import get_line_info
-    
+    from ..schema.ir_schema import RuleIR, RuleRowIR
+
     line_info = get_line_info(file, rule.id)
-    
+
     table = []
     for row in rule.rows:  # 'rows' not 'table' in schema
-        table.append(RuleRowIR(
-            conditions=row.when,  # 'when' not 'conditions'
-            result=row.then,  # 'then' not 'result'
-        ))
-    
+        table.append(
+            RuleRowIR(
+                conditions=row.when,  # 'when' not 'conditions'
+                result=row.then,  # 'then' not 'result'
+            )
+        )
+
     return RuleIR(
         id=normalizer.normalize_id(rule.id),
         description=rule.description,
@@ -1944,8 +2110,8 @@ def _build_rule_ir(
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(rule.model_dump()),
@@ -1953,23 +2119,23 @@ def _build_rule_ir(
 
 
 def _build_scenario_ir(
-    scenario: Any, 
-    file: str, 
-    checksum: str, 
+    scenario: Any,
+    file: str,
+    checksum: str,
     normalizer: Normalizer,
     source_order: int = 0,
 ) -> Any:
     """Build ScenarioIR from Scenario model."""
     from ..diagnostics.line_info_cache import get_line_info
-    
+
     line_info = get_line_info(file, scenario.id)
-    
+
     from ..schema.ir_schema import ScenarioIR, ScenarioStepIR
-    
+
     steps = []
     for step in scenario.steps:
         step_ref = None
-        if hasattr(step, 'ref') and step.ref:
+        if hasattr(step, "ref") and step.ref:
             default_type = None
             if step.type == "command":
                 default_type = "Command"
@@ -1981,15 +2147,17 @@ def _build_scenario_ir(
                 step_ref = _build_typed_ref(step.ref, normalizer, default_type)
             else:
                 step_ref = _build_ref_ir(normalizer.normalize_ref(step.ref))
-        
-        steps.append(ScenarioStepIR(
-            type=step.type,
-            ref=step_ref,
-            input=step.input if hasattr(step, 'input') else {},
-            expect=step.expect if hasattr(step, 'expect') else {},
-            description=step.description if hasattr(step, 'description') else None,
-        ))
-    
+
+        steps.append(
+            ScenarioStepIR(
+                type=step.type,
+                ref=step_ref,
+                input=step.input if hasattr(step, "input") else {},
+                expect=step.expect if hasattr(step, "expect") else {},
+                description=step.description if hasattr(step, "description") else None,
+            )
+        )
+
     raw_actor_roles = list(getattr(scenario, "actor_roles", []) or [])
     if not raw_actor_roles:
         # Backward compatibility: older contracts stored role IDs in actors.
@@ -1998,17 +2166,21 @@ def _build_scenario_ir(
     return ScenarioIR(
         id=normalizer.normalize_id(scenario.id),
         description=scenario.description,
-        actors=scenario.actors if hasattr(scenario, 'actors') else [],
-        preconditions=scenario.preconditions if hasattr(scenario, 'preconditions') else [],
+        actors=scenario.actors if hasattr(scenario, "actors") else [],
+        preconditions=(
+            scenario.preconditions if hasattr(scenario, "preconditions") else []
+        ),
         steps=steps,
-        postconditions=scenario.postconditions if hasattr(scenario, 'postconditions') else [],
-        tags=scenario.tags if hasattr(scenario, 'tags') else [],
-        source_ref=scenario.source if hasattr(scenario, 'source') else None,
+        postconditions=(
+            scenario.postconditions if hasattr(scenario, "postconditions") else []
+        ),
+        tags=scenario.tags if hasattr(scenario, "tags") else [],
+        source_ref=scenario.source if hasattr(scenario, "source") else None,
         source=SourceMetadata(
             file=file,
             checksum=checksum,
-            line_start=line_info.get('start'),
-            line_end=line_info.get('end'),
+            line_start=line_info.get("start"),
+            line_end=line_info.get("end"),
             source_order=source_order,
         ),
         hash=normalizer.compute_hash(scenario.model_dump()),
@@ -2050,7 +2222,9 @@ def _build_rate_limit_policy_ir(value: Any | None) -> RateLimitPolicyIR | None:
     )
 
 
-def _build_circuit_breaker_policy_ir(value: Any | None) -> CircuitBreakerPolicyIR | None:
+def _build_circuit_breaker_policy_ir(
+    value: Any | None,
+) -> CircuitBreakerPolicyIR | None:
     if value is None:
         return None
     return CircuitBreakerPolicyIR(
@@ -2080,7 +2254,11 @@ def _build_persistence_datasource_ir(
         db_schema=getattr(datasource, "db_schema", None),
         default=datasource.default,
         options=datasource.options,
-        integration=_build_typed_ref(integration_ref, normalizer, "Integration") if integration_ref else None,
+        integration=(
+            _build_typed_ref(integration_ref, normalizer, "Integration")
+            if integration_ref
+            else None
+        ),
         source=SourceMetadata(
             file=file,
             checksum=checksum,
@@ -2106,7 +2284,11 @@ def _build_persistence_table_ir(
         id=normalizer.normalize_id(table.id),
         description=table.description,
         datasource=table.datasource,
-        operation=_build_typed_ref(table.operation_id, normalizer, "IntegrationOperation") if getattr(table, "operation_id", None) else None,
+        operation=(
+            _build_typed_ref(table.operation_id, normalizer, "IntegrationOperation")
+            if getattr(table, "operation_id", None)
+            else None
+        ),
         columns=[
             PersistenceColumnIR(
                 name=c.name,
@@ -2192,7 +2374,9 @@ def _build_rest_api_operation_ir(
     line_info = get_line_info(file, operation.id)
     return RestApiOperationIR(
         id=normalizer.normalize_id(operation.id),
-        integration_id=_build_typed_ref(operation.integration_id, normalizer, "Integration"),
+        integration_id=_build_typed_ref(
+            operation.integration_id, normalizer, "Integration"
+        ),
         method=operation.method,
         path=operation.path,
         request_schema=[_build_field_ir(f) for f in operation.request_schema],
@@ -2223,7 +2407,9 @@ def _build_s3_resource_ir(
     source_order: int = 0,
 ) -> S3ResourceIR:
     return S3ResourceIR(
-        integration_id=_build_typed_ref(resource.integration_id, normalizer, "Integration"),
+        integration_id=_build_typed_ref(
+            resource.integration_id, normalizer, "Integration"
+        ),
         bucket=resource.bucket,
         region=resource.region,
         operations=resource.operations,
@@ -2391,7 +2577,11 @@ def _build_reliability_policy_ir(
     return ReliabilityPolicyIR(
         id=normalizer.normalize_id(policy.id),
         target_kind=policy.target_kind,
-        target_ref=_build_typed_ref(policy.target_ref, normalizer, target_type_map.get(policy.target_kind, "Unknown")),
+        target_ref=_build_typed_ref(
+            policy.target_ref,
+            normalizer,
+            target_type_map.get(policy.target_kind, "Unknown"),
+        ),
         timeout=_build_timeout_policy_ir(policy.timeout),
         retry=_build_retry_policy_ir(policy.retry),
         circuit_breaker=_build_circuit_breaker_policy_ir(policy.circuit_breaker),
@@ -2419,7 +2609,9 @@ def _build_observability_target_ir(
     }
     return ObservabilityTargetIR(
         kind=target.kind,
-        ref=_build_typed_ref(target.ref, normalizer, target_type_map.get(target.kind, "Unknown")),
+        ref=_build_typed_ref(
+            target.ref, normalizer, target_type_map.get(target.kind, "Unknown")
+        ),
         log_fields=target.log_fields,
         metrics=target.metrics,
         trace_enabled=target.trace_enabled,
@@ -2445,7 +2637,9 @@ def _build_contract_test_case_ir(
     for step in test_case.steps:
         ref = None
         if getattr(step, "ref", None):
-            ref = _build_typed_ref(step.ref, normalizer, step_type_map.get(step.type, "Unknown"))
+            ref = _build_typed_ref(
+                step.ref, normalizer, step_type_map.get(step.type, "Unknown")
+            )
         steps.append(
             ContractTestStepIR(
                 type=step.type,
@@ -2454,7 +2648,9 @@ def _build_contract_test_case_ir(
                 expect=step.expect,
             )
         )
-    scenario_ref_raw = getattr(test_case, "scenario", None) or getattr(test_case, "scenario_id", None)
+    scenario_ref_raw = getattr(test_case, "scenario", None) or getattr(
+        test_case, "scenario_id", None
+    )
     scenario_ref = (
         _build_typed_ref(scenario_ref_raw, normalizer, "Scenario")
         if scenario_ref_raw
@@ -2482,13 +2678,13 @@ def _build_field_ir(field: Any) -> FieldIR:
         required=field.required,
         description=field.description,
         default=field.default,
-        metadata=field.metadata if hasattr(field, 'metadata') else {},
-        constraints=field.constraints if hasattr(field, 'constraints') else {},
-        source_ref=field.source if hasattr(field, 'source') else None,
-        introduced_in=field.introduced_in if hasattr(field, 'introduced_in') else None,
-        deprecated_in=field.deprecated_in if hasattr(field, 'deprecated_in') else None,
-        replaced_by=field.replaced_by if hasattr(field, 'replaced_by') else None,
-        status=field.status if hasattr(field, 'status') else None,
+        metadata=field.metadata if hasattr(field, "metadata") else {},
+        constraints=field.constraints if hasattr(field, "constraints") else {},
+        source_ref=field.source if hasattr(field, "source") else None,
+        introduced_in=field.introduced_in if hasattr(field, "introduced_in") else None,
+        deprecated_in=field.deprecated_in if hasattr(field, "deprecated_in") else None,
+        replaced_by=field.replaced_by if hasattr(field, "replaced_by") else None,
+        status=field.status if hasattr(field, "status") else None,
     )
 
 
@@ -2514,7 +2710,7 @@ def _build_guard_ir(guard: Any) -> GuardIR:
     """Build GuardIR from GuardRef model."""
     return GuardIR(
         id=guard.id,
-        params=guard.params if hasattr(guard, 'params') else {},
+        params=guard.params if hasattr(guard, "params") else {},
     )
 
 
@@ -2522,7 +2718,7 @@ def _build_effect_ir(effect: Any) -> EffectIR:
     """Build EffectIR from EffectRef model."""
     return EffectIR(
         id=effect.id,
-        params=effect.params if hasattr(effect, 'params') else {},
+        params=effect.params if hasattr(effect, "params") else {},
     )
 
 
@@ -2556,11 +2752,19 @@ def _build_transition_ir(transition: Any, normalizer: Normalizer) -> TransitionI
     return TransitionIR(
         from_state=transition.from_state,
         to_state=transition.to_state,
-        on_command=_build_typed_ref(transition.on_command, normalizer, "Command") if transition.on_command else None,
-        on_event=_build_typed_ref(transition.on_event, normalizer, "Event") if transition.on_event else None,
+        on_command=(
+            _build_typed_ref(transition.on_command, normalizer, "Command")
+            if transition.on_command
+            else None
+        ),
+        on_event=(
+            _build_typed_ref(transition.on_event, normalizer, "Event")
+            if transition.on_event
+            else None
+        ),
         guards=[_build_guard_ir(g) for g in transition.guards],
         effects=[_build_effect_ir(e) for e in transition.effects],
-        description=getattr(transition, 'description', None),
+        description=getattr(transition, "description", None),
     )
 
 
@@ -2576,19 +2780,19 @@ def _build_error_handler_ir(handler: Any, normalizer: Normalizer) -> ErrorHandle
 def _build_indexes(symbol_table: SymbolTable, normalizer: Normalizer) -> IRIndexes:
     """Build IR indexes from symbol table."""
     from ..schema.ir_schema import SymbolIndex
-    
+
     symbols_index = {}
     for (sym_type, sym_id), symbol in symbol_table.get_all_symbols().items():
         if sym_type not in symbols_index:
             symbols_index[sym_type] = {}
-        
+
         symbols_index[sym_type][sym_id] = SymbolIndex(
             id=sym_id,
             type=sym_type,
             source_file=symbol.source_file,
             hash=_compute_symbol_hash(symbol, normalizer),
         )
-    
+
     return IRIndexes(symbols=symbols_index, refs=[])
 
 
@@ -2678,13 +2882,15 @@ def _convert_intent_confidence_labels(node: Any) -> None:
 def _build_meta_warnings(reporter: ErrorReporter) -> list[Warning]:
     warnings: list[Warning] = []
     for item in reporter.warnings:
-        warnings.append(Warning(
-            stage=item.stage,
-            code=item.code,
-            file=item.file,
-            message=item.message,
-            line=item.line,
-        ))
+        warnings.append(
+            Warning(
+                stage=item.stage,
+                code=item.code,
+                file=item.file,
+                message=item.message,
+                line=item.line,
+            )
+        )
     return warnings
 
 
@@ -2702,7 +2908,7 @@ def _write_manifest_with_errors(
 ) -> None:
     """Write manifest with error information."""
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     manifest = {
         "version": version,
         "generated_at": _utc_now(),
@@ -2712,7 +2918,7 @@ def _write_manifest_with_errors(
         "warnings": reporter.to_dict()["warnings"],
         "infos": reporter.to_dict().get("infos", []),
     }
-    
+
     _write_json(manifest_path, manifest)
 
 
@@ -2723,23 +2929,23 @@ def _write_error_report(
 ) -> None:
     """
     Write error report to log file.
-    
+
     Errors, warnings, and info are written to errors.log in the IR output directory.
     File is appended with timestamp separator to preserve history.
-    
+
     Args:
         ir_root: IR output directory
         reporter: Error reporter with collected errors/warnings
         contracts_root: Contract root path for context
     """
     error_log = ir_root / "errors.log"
-    
+
     # Create directory if needed
     ir_root.mkdir(parents=True, exist_ok=True)
-    
+
     # Prepare report content
     report_content = _format_build_report(reporter, contracts_root)
-    
+
     # Append to file (or create if doesn't exist)
     mode = "a" if error_log.exists() else "w"
     with open(error_log, mode, encoding="utf-8") as f:
@@ -2788,28 +2994,32 @@ def _build_manifest(
 ) -> dict[str, Any]:
     """
     Build manifest data.
-    
+
     Manifest includes metadata about the build, including input files,
     output files, statistics, and checksums for incremental rebuild detection.
     """
     # Collect input files with checksums (sorted for determinism)
     input_files = []
-    for file_path in sorted(contracts_root.rglob("*.yaml")) + sorted(contracts_root.rglob("*.yml")):
+    for file_path in sorted(contracts_root.rglob("*.yaml")) + sorted(
+        contracts_root.rglob("*.yml")
+    ):
         # Skip hidden files and directories
         if any(part.startswith(".") for part in file_path.parts):
             continue
-        
-        input_files.append({
-            "path": str(file_path.relative_to(contracts_root)),
-            "checksum": _compute_file_checksum(file_path),
-        })
-    
+
+        input_files.append(
+            {
+                "path": str(file_path.relative_to(contracts_root)),
+                "checksum": _compute_file_checksum(file_path),
+            }
+        )
+
     # Compute IR checksum (will be computed after IR is written)
     ir_path = ir_root / "ir.json"
     ir_checksum = None
     if ir_path.exists():
         ir_checksum = _compute_file_checksum(ir_path)
-    
+
     return {
         "version": version,
         "generated_at": _utc_now(),

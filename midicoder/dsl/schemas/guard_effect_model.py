@@ -5,7 +5,6 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, model_validator
 
 from .integration_model import IntegrationOperationRefStr, IntegrationRefStr
-
 from .model_meta import ModelMeta
 
 
@@ -124,5 +123,7 @@ class IntegrationCallParams(BaseModel):
     @model_validator(mode="after")
     def validate_target_presence(self) -> "IntegrationCallParams":
         if not any((self.target, self.integration, self.service)):
-            raise ValueError("call.integration requires one of 'target', 'integration', or 'service'")
+            raise ValueError(
+                "call.integration requires one of 'target', 'integration', or 'service'"
+            )
         return self
