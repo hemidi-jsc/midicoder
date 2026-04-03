@@ -41,11 +41,13 @@ def build_direct_repair_prompt(
 
         location_format = explain_location_format(item.location)
 
-        items_summary.append(f"""
+        items_summary.append(
+            f"""
 **Item {i}: {item.id}**
 - **Issue**: {item.issue}
 - **Location**: `{item.location}` → patch as `{patch_location}`
-- **Format**: {location_format}""")
+- **Format**: {location_format}"""
+        )
 
     schema_cheatsheet = extract_schema_cheatsheet_for_debugging(context, file_path)
 

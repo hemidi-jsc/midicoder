@@ -404,7 +404,9 @@ def _build_workflow_transition_index(
     return by_command
 
 
-def _build_io_index(modules: dict[str, Any]) -> tuple[
+def _build_io_index(
+    modules: dict[str, Any]
+) -> tuple[
     dict[str, dict[str, list[dict[str, Any]]]],
     dict[str, dict[str, dict[str, list[dict[str, Any]]]]],
 ]:

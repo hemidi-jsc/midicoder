@@ -692,9 +692,9 @@ def _detect_internal_import_cycle(
         normalized = _normalize_path(path)
         if not normalized.endswith(".py"):
             continue
-        module_to_imports[_runtime_path_to_module(normalized)] = (
-            _collect_module_imports(content)
-        )
+        module_to_imports[
+            _runtime_path_to_module(normalized)
+        ] = _collect_module_imports(content)
 
     candidate_module = _runtime_path_to_module(runtime_path)
     module_to_imports[candidate_module] = _collect_module_imports(candidate_block)

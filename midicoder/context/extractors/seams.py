@@ -53,9 +53,9 @@ def extract_seams_from_text(
     """Extract seams from text content, pairing begin/end markers into seam entries."""
     seams: list[Seam] = []
     errors: list[ErrorRecord] = []
-    open_markers: dict[str, list[tuple[int, str, str]]] = (
-        {}
-    )  # marker -> [(line_no, detail, group_id)]
+    open_markers: dict[
+        str, list[tuple[int, str, str]]
+    ] = {}  # marker -> [(line_no, detail, group_id)]
 
     lines = content.splitlines()
     # Markers must start at line beginning (optionally after comment prefix).

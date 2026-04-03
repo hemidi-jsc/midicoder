@@ -39,4 +39,3 @@ def test_slice_schema_for_targets_returns_full_schema_when_unknown_targets() -> 
     sliced = slice_schema_for_targets(schema_tree, ["unknown/file.yaml"])
 
     assert sliced == schema_tree
-
