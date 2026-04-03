@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
+from midicoder.contract.registry import get_schema_modules
+
 
 # Import KeywordMap - avoid circular import by importing only when needed
 def _get_keyword_map_class():
@@ -1167,71 +1169,10 @@ def slice_schema_for_targets(
     For example, if targets include only entities.yaml and commands.yaml,
     return only those schema sections.
     """
-    # Map target files to schema module names
-    file_to_schema_modules = {
-        "meta/info.yaml": ["midicoder.dsl.schemas.info_model"],
-        "meta/profiles.yaml": ["midicoder.dsl.schemas.profiles_model"],
-        "meta/secrets.yaml": ["midicoder.dsl.schemas.secrets_contract_model"],
-        "glossary.yaml": ["midicoder.dsl.schemas.glossary_model"],
-        "domain/entities.yaml": [
-            "midicoder.dsl.schemas.entity_model",
-            "midicoder.dsl.schemas.named_field_model",
-        ],
-        "domain/value_objects.yaml": [
-            "midicoder.dsl.schemas.value_object_model",
-            "midicoder.dsl.schemas.named_field_model",
-        ],
-        "domain/enums.yaml": ["midicoder.dsl.schemas.enum_model"],
-        "domain/errors.yaml": ["midicoder.dsl.schemas.error_model"],
-        "domain/events.yaml": [
-            "midicoder.dsl.schemas.event_model",
-            "midicoder.dsl.schemas.named_field_model",
-        ],
-        "app/commands.yaml": [
-            "midicoder.dsl.schemas.command_model",
-            "midicoder.dsl.schemas.named_field_model",
-            "midicoder.dsl.schemas.guard_effect_model",
-        ],
-        "app/queries.yaml": [
-            "midicoder.dsl.schemas.query_model",
-            "midicoder.dsl.schemas.named_field_model",
-        ],
-        "app/projections.yaml": [
-            "midicoder.dsl.schemas.projection_model",
-            "midicoder.dsl.schemas.named_field_model",
-        ],
-        "persistence/model.yaml": ["midicoder.dsl.schemas.persistence_model"],
-        "api/http.yaml": [
-            "midicoder.dsl.schemas.http_api_model",
-            "midicoder.dsl.schemas.named_field_model",
-        ],
-        "api/graphql.yaml": [
-            "midicoder.dsl.schemas.graphql_api_model",
-            "midicoder.dsl.schemas.named_field_model",
-        ],
-        "rules/rules.yaml": ["midicoder.dsl.schemas.rule_model"],
-        "workflows/workflows.yaml": [
-            "midicoder.dsl.schemas.workflow_model",
-            "midicoder.dsl.schemas.guard_effect_model",
-        ],
-        "policy/policies.yaml": ["midicoder.dsl.schemas.policy_model"],
-        "policy/rbac.yaml": ["midicoder.dsl.schemas.access_policy_model"],
-        "policy/permissions_map.yaml": ["midicoder.dsl.schemas.access_policy_model"],
-        "policy/security.yaml": ["midicoder.dsl.schemas.security_baseline_model"],
-        "policy/reliability.yaml": ["midicoder.dsl.schemas.reliability_model"],
-        "integrations/integrations.yaml": [
-            "midicoder.dsl.schemas.integration_model",
-            "midicoder.dsl.schemas.named_field_model",
-        ],
-        "ops/observability.yaml": ["midicoder.dsl.schemas.observability_model"],
-        "scenarios/scenarios.yaml": ["midicoder.dsl.schemas.scenario_model"],
-        "testing/tests.yaml": ["midicoder.dsl.schemas.testing_model"],
-    }
-
     # Collect all needed module names
     needed_modules = set()
     for target in target_files:
-        modules = file_to_schema_modules.get(target, [])
+        modules = get_schema_modules(target)
         needed_modules.update(modules)
 
     # If no specific mapping found, return full tree
