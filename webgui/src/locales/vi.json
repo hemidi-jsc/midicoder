@@ -1,0 +1,153 @@
+{
+  "common": {
+    "save": "Lưu",
+    "cancel": "Hủy",
+    "delete": "Xóa",
+    "confirm": "Xác nhận",
+    "loading": "Đang tải...",
+    "error": "Lỗi",
+    "success": "Thành công",
+    "back": "Quay lại",
+    "next": "Tiếp theo",
+    "close": "Đóng",
+    "submit": "Gửi",
+    "edit": "Chỉnh sửa",
+    "view": "Xem",
+    "create": "Tạo mới",
+    "update": "Cập nhật",
+    "remove": "Xóa bỏ",
+    "note": "Lưu ý"
+  },
+  "nav": {
+    "dashboard": "Bảng điều khiển",
+    "brief": "Brief",
+    "contract": "Hợp đồng",
+    "code": "Mã nguồn",
+    "preview": "Xem trước",
+    "feedback": "Phản hồi",
+    "settings": "Cài đặt",
+    "logout": "Đăng xuất"
+  },
+  "auth": {
+    "login": "Đăng nhập",
+    "logout": "Đăng xuất",
+    "email": "Email",
+    "password": "Mật khẩu",
+    "signup": "Đăng ký tài khoản",
+    "signupLink": "Bạn chưa có tài khoản? Đăng ký tại midicoder.com",
+    "invalidCredentials": "Email hoặc mật khẩu không đúng",
+    "deviceLimitReached": "Đã đạt giới hạn 2 thiết bị",
+    "loginSuccess": "Đăng nhập thành công",
+    "welcome": "Chào mừng trở lại"
+  },
+  "pipeline": {
+    "init": "Khởi tạo",
+    "brief": "Brief",
+    "contract": "Hợp đồng",
+    "ir": "IR",
+    "code": "Mã nguồn",
+    "preview": "Xem trước",
+    "status": {
+      "pending": "Chờ xử lý",
+      "in_progress": "Đang xử lý",
+      "complete": "Hoàn thành",
+      "error": "Lỗi"
+    }
+  },
+  "news": {
+    "announcement": "Thông báo",
+    "blog": "Bài viết",
+    "ads": "Quảng cáo",
+    "release": "Phiên bản mới",
+    "newVersion": "Có phiên bản mới!"
+  },
+  "screen": {
+    "minWidth": "Yêu cầu màn hình tối thiểu 1366px",
+    "resizeMessage": "Vui lòng tăng kích thước cửa sổ hoặc sử dụng màn hình lớn hơn"
+  },
+  "dashboard": {
+    "title": "Bảng điều khiển",
+    "pipelineProgress": "Tiến độ Pipeline",
+    "quickActions": "Thao tác nhanh",
+    "recentActivity": "Hoạt động gần đây",
+    "viewGeneratedCode": "Xem mã đã tạo",
+    "applyCode": "Áp dụng mã",
+    "startPreview": "Bắt đầu xem trước",
+    "createBrief": "Tạo brief mới",
+    "generateContract": "Tạo hợp đồng"
+  },
+  "brief": {
+    "editor": "Editor Brief",
+    "analyze": "Phân tích",
+    "save": "Lưu brief",
+    "load": "Tải brief",
+    "library": "Thư viện brief",
+    "analyzeSuccess": "Phân tích thành công",
+    "saveSuccess": "Lưu brief thành công",
+    "placeholder": "Viết brief của bạn ở đây..."
+  },
+  "clarification": {
+    "title": "Làm rõ yêu cầu",
+    "round": "Vòng",
+    "progress": "Tiến độ",
+    "question": "Câu hỏi",
+    "source": "Nguồn",
+    "submit": "Gửi câu trả lời",
+    "complete": "Hoàn thành"
+  },
+  "contract": {
+    "viewer": "Xem Hợp đồng",
+    "entities": "Thực thể",
+    "commands": "Lệnh",
+    "queries": "Truy vấn",
+    "events": "Sự kiện",
+    "workflows": "Quy trình",
+    "generate": "Tạo hợp đồng",
+    "validate": "Xác thực",
+    "generateSuccess": "Tạo hợp đồng thành công"
+  },
+  "ir": {
+    "explorer": "Khám phá IR",
+    "mir": "MIR",
+    "symbolTable": "Bảng ký hiệu",
+    "build": "Build IR",
+    "buildSuccess": "Build IR thành công"
+  },
+  "code": {
+    "generator": "Trình tạo mã",
+    "plan": "Kế hoạch",
+    "generate": "Tạo mã",
+    "apply": "Áp dụng",
+    "target": "Mục tiêu",
+    "backend": "Backend",
+    "frontend": "Frontend",
+    "files": "Tệp tin",
+    "lines": "Dòng",
+    "planSuccess": "Tạo kế hoạch thành công",
+    "generateSuccess": "Tạo mã thành công",
+    "applySuccess": "Áp dụng mã thành công"
+  },
+  "preview": {
+    "title": "Xem trước",
+    "start": "Bắt đầu",
+    "stop": "Dừng",
+    "restart": "Khởi động lại",
+    "status": "Trạng thái",
+    "running": "Đang chạy",
+    "stopped": "Đã dừng",
+    "logs": "Nhật ký",
+    "frontendUrl": "URL Frontend",
+    "backendUrl": "URL Backend"
+  },
+  "feedback": {
+    "title": "Phản hồi",
+    "type": "Loại",
+    "bug": "Lỗi",
+    "enhancement": "Cải tiến",
+    "clarification": "Làm rõ",
+    "feedbackText": "Nội dung phản hồi",
+    "submit": "Gửi phản hồi",
+    "submitSuccess": "Gửi phản hồi thành công",
+    "pipelineTriggered": "Pipeline đã được kích hoạt"
+  }
+}
