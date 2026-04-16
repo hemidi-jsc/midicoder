@@ -1,0 +1,113 @@
+# =============================================================================
+# Midicoder Build Docker Image
+# =============================================================================
+# This Dockerfile creates a build environment for compiling Midicoder 
+# executables for different platforms using PyInstaller.
+#
+# Usage:
+#   # Build for Linux
+#   docker build -f scripts/Dockerfile.build -t midicoder-builder:linux --build-arg TARGET=linux .
+#   
+#   # Build for Windows (requires Docker Desktop on Windows)
+#   docker build -f scripts/Dockerfile.build -t midicoder-builder:windows --build-arg TARGET=windows .
+# =============================================================================
+
+# =============================================================================
+# Build Arguments
+# =============================================================================
+
+ARG TARGET=linux
+ARG PYTHON_VERSION=3.11
+
+# =============================================================================
+# Base Image Selection
+# =============================================================================
+
+# Use appropriate base image based on target
+# Note: For cross-compiling Windows/macOS, we need multi-stage builds
+# For now, focus on Linux x86_64
+
+FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
+
+# =============================================================================
+# Labels
+# =============================================================================
+
+LABEL maintainer="Midicoder Team"
+LABEL description="Midicoder Build Environment"
+LABEL version="1.0.0"
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# =============================================================================
+# Install Build Dependencies
+# =============================================================================
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build tools
+    build-essential \
+    cmake \
+    pkg-config \
+    # Git for cloning dependencies if needed
+    git \
+    # Additional tools
+    wget \
+    curl \
+    # Clean up
+    && rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# Install Python Dependencies
+# =============================================================================
+
+# Upgrade pip
+RUN pip install --upgrade pip
+
+# Copy requirements first for better caching
+COPY scripts/requirements.txt /build/requirements.txt
+
+# Install build dependencies
+WORKDIR /build
+
+# Note: tree_sitter_languages may need to be built from source
+# This is why we use Python 3.11 which has pre-built wheels
+RUN pip install --no-cache-dir -r requirements.txt
+
+# =============================================================================
+# Copy Source Code
+# =============================================================================
+
+COPY midicoder/ /build/midicoder/
+COPY pyproject.toml /build/pyproject.toml
+
+# =============================================================================
+# Build Output Directory
+# =============================================================================
+
+RUN mkdir -p /output
+
+# =============================================================================
+# PyInstaller Hook
+# =============================================================================
+
+COPY scripts/hooks/hook-midicoder.py /build/hook-midicoder.py
+
+# =============================================================================
+# Build Command (runs when container starts)
+# =============================================================================
+
+# Default command - build midicoder executable
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["/build/build-linux.sh"]
+
+# =============================================================================
+# Alternative: Manual Build Command
+# =============================================================================
+# docker run --rm -v $(pwd):/build -v $(pwd)/dist:/output midicoder-builder:linux
+# python -m PyInstaller ...
