@@ -60,6 +60,28 @@ Contract trở thành **source of truth** cho toàn bộ pipeline.
 
 ---
 
+# Cài đặt
+
+### Windows (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://midicoder.com/releases/{version}/install.ps1 | iex"
+```
+
+### macOS / Linux
+
+```bash
+curl -o- https://midicoder.com/releases/{version}/install.sh | bash
+```
+
+Sau khi cài đặt, kiểm tra:
+
+```bash
+midicoder --version
+```
+
+---
+
 # Midicoder pipeline
 
 Midicoder hoạt động như một **AI coding pipeline** gồm nhiều stage rõ ràng:
@@ -212,4 +234,3 @@ Midicoder được tạo ra bởi một nhóm kỹ sư Việt Nam với mong mu�
 > Việt Nam có thể tạo ra **những ý tưởng engineering mới cho thế giới**.
 
 Nếu bạn thấy ý tưởng này thú vị, hãy ⭐ repository.
-
