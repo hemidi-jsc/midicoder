@@ -1,0 +1,152 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "back": "Back",
+    "next": "Next",
+    "close": "Close",
+    "submit": "Submit",
+    "edit": "Edit",
+    "view": "View",
+    "create": "Create",
+    "update": "Update",
+    "remove": "Remove"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "brief": "Brief",
+    "contract": "Contract",
+    "code": "Code",
+    "preview": "Preview",
+    "feedback": "Feedback",
+    "settings": "Settings",
+    "logout": "Logout"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "signup": "Sign up",
+    "signupLink": "Don't have an account? Sign up at midicoder.com",
+    "invalidCredentials": "Invalid email or password",
+    "deviceLimitReached": "Device limit (2) reached",
+    "loginSuccess": "Login successful",
+    "welcome": "Welcome back"
+  },
+  "pipeline": {
+    "init": "Init",
+    "brief": "Brief",
+    "contract": "Contract",
+    "ir": "IR",
+    "code": "Code",
+    "preview": "Preview",
+    "status": {
+      "pending": "Pending",
+      "in_progress": "In Progress",
+      "complete": "Complete",
+      "error": "Error"
+    }
+  },
+  "news": {
+    "announcement": "Announcement",
+    "blog": "Blog",
+    "ads": "Advertisement",
+    "release": "Release",
+    "newVersion": "New version available!"
+  },
+  "screen": {
+    "minWidth": "Minimum screen width required: 1366px",
+    "resizeMessage": "Please resize window or use a larger screen"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "pipelineProgress": "Pipeline Progress",
+    "quickActions": "Quick Actions",
+    "recentActivity": "Recent Activity",
+    "viewGeneratedCode": "View Generated Code",
+    "applyCode": "Apply Code",
+    "startPreview": "Start Preview",
+    "createBrief": "Create Brief",
+    "generateContract": "Generate Contract"
+  },
+  "brief": {
+    "editor": "Brief Editor",
+    "analyze": "Analyze",
+    "save": "Save brief",
+    "load": "Load brief",
+    "library": "Brief Library",
+    "analyzeSuccess": "Analysis successful",
+    "saveSuccess": "Brief saved successfully",
+    "placeholder": "Write your brief here..."
+  },
+  "clarification": {
+    "title": "Clarification",
+    "round": "Round",
+    "progress": "Progress",
+    "question": "Question",
+    "source": "Source",
+    "submit": "Submit Answers",
+    "complete": "Complete"
+  },
+  "contract": {
+    "viewer": "Contract Viewer",
+    "entities": "Entities",
+    "commands": "Commands",
+    "queries": "Queries",
+    "events": "Events",
+    "workflows": "Workflows",
+    "generate": "Generate Contract",
+    "validate": "Validate",
+    "generateSuccess": "Contract generated successfully"
+  },
+  "ir": {
+    "explorer": "IR Explorer",
+    "mir": "MIR",
+    "symbolTable": "Symbol Table",
+    "build": "Build IR",
+    "buildSuccess": "IR built successfully"
+  },
+  "code": {
+    "generator": "Code Generator",
+    "plan": "Plan",
+    "generate": "Generate",
+    "apply": "Apply",
+    "target": "Target",
+    "backend": "Backend",
+    "frontend": "Frontend",
+    "files": "Files",
+    "lines": "Lines",
+    "planSuccess": "Plan created successfully",
+    "generateSuccess": "Code generated successfully",
+    "applySuccess": "Code applied successfully"
+  },
+  "preview": {
+    "title": "Preview",
+    "start": "Start",
+    "stop": "Stop",
+    "restart": "Restart",
+    "status": "Status",
+    "running": "Running",
+    "stopped": "Stopped",
+    "logs": "Logs",
+    "frontendUrl": "Frontend URL",
+    "backendUrl": "Backend URL"
+  },
+  "feedback": {
+    "title": "Feedback",
+    "type": "Type",
+    "bug": "Bug",
+    "enhancement": "Enhancement",
+    "clarification": "Clarification",
+    "feedbackText": "Feedback Text",
+    "submit": "Submit Feedback",
+    "submitSuccess": "Feedback submitted successfully",
+    "pipelineTriggered": "Pipeline has been triggered"
+  }
+}
