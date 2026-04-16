@@ -20,7 +20,40 @@ Your Requirements → DSL Contracts → IR → Code Plans → Patches → Workin
 
 ---
 
-## System Requirements
+## Installation
+
+### Option 1: Standalone Installer (Recommended)
+
+The easiest way to get started with Midicoder is using the standalone installer. This method requires no Python installation and works on all platforms.
+
+#### Windows (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://midicoder.com/releases/{version}/install.ps1 | iex"
+```
+
+#### macOS / Linux
+
+```bash
+curl -o- https://midicoder.com/releases/{version}/install.sh | bash
+```
+
+#### Verify Installation
+
+```bash
+midicoder --version
+midicoder --help
+```
+
+**Note:** The installer places Midicoder in `~/.midicoder/bin/` and adds it to your PATH.
+
+---
+
+### Option 2: Development Installation
+
+If you want to use the latest development version or contribute to the project, follow these steps.
+
+#### System Requirements
 
 - **Python** 3.9 or newer
 - **pip** (Python package manager)
@@ -33,18 +66,14 @@ Your Requirements → DSL Contracts → IR → Code Plans → Patches → Workin
 - macOS (tested on 11.0+)
 - Windows (tested on Windows 10+)
 
----
-
-## Installation
-
-### Step 1: Clone Repository
+#### Step 1: Clone Repository
 
 ```bash
 git clone https://github.com/hemidi-jsc/midicoder.git
 cd midicoder
 ```
 
-### Step 2: Create Virtual Environment
+#### Step 2: Create Virtual Environment
 
 ```bash
 # Create virtual environment
@@ -57,17 +86,17 @@ source .venv/bin/activate
 .venv\Scripts\activate
 ```
 
-### Step 3: Install Midi Coder
+#### Step 3: Install Midicoder
 
 ```bash
 # Upgrade pip
 pip install -U pip
 
-# Install Midi Coder in development mode
+# Install Midicoder in development mode
 pip install -e .
 ```
 
-### Step 4: Verify Installation
+#### Step 4: Verify Installation
 
 ```bash
 # Check version
@@ -92,13 +121,13 @@ The interactive wizard will ask:
 - **Working directory**: Path to your project (default: current directory)
 - **Tech stack**: Choose one or more (FastAPI, NestJS, Angular)
 - **High-tier LLM**: For complex tasks (contract generation, patch planning)
-  - Provider: Anthropic or OpenAI
-  - Model: e.g., `claude-sonnet-4-5` or `gpt-4`
-  - API Key: Your API key
+    - Provider: Anthropic or OpenAI
+    - Model: e.g., `claude-sonnet-4-5` or `gpt-4`
+    - API Key: Your API key
 - **Cheap-tier LLM**: For simple tasks (stack translation)
-  - Provider: Anthropic or OpenAI
-  - Model: e.g., `claude-3-5-haiku` or `gpt-3.5-turbo`
-  - API Key: Your API key
+    - Provider: Anthropic or OpenAI
+    - Model: e.g., `claude-3-5-haiku` or `gpt-3.5-turbo`
+    - API Key: Your API key
 
 **Result:** Creates `.midicoder/` with `config.json` and `secrets.json`
 
@@ -163,38 +192,44 @@ Simple user CRUD with authentication.
 ## 2. Domain & Data
 
 **Entities:**
+
 - User: id, email, name, role, created_at
 
 **Errors:**
+
 - UserNotFound: When user ID doesn't exist
 - EmailAlreadyExists: When email is duplicate
 
 ## 4. Commands & Queries
 
 **Commands:**
+
 - CreateUser: email, name, role → User
-  - Validates email format
-  - Checks for duplicates
-  - Creates user with hashed password
-  - Emits UserCreated event
+    - Validates email format
+    - Checks for duplicates
+    - Creates user with hashed password
+    - Emits UserCreated event
 
 **Queries:**
+
 - GetUser: user_id → User
 - ListUsers: filters → User[]
 
 ## 5. Rules & Policy
 
 **RBAC:**
+
 - Roles: admin, user
 - Permissions:
-  - create_user (admin only)
-  - read_user (all authenticated)
-  - update_user (admin or self)
-  - delete_user (admin only)
+    - create_user (admin only)
+    - read_user (all authenticated)
+    - update_user (admin or self)
+    - delete_user (admin only)
 
 ## 7. API
 
 **Routes:**
+
 - POST /users (CreateUser) - admin
 - GET /users/:id (GetUser) - authenticated
 - GET /users (ListUsers) - authenticated
@@ -518,7 +553,8 @@ midicoder code apply --force
 
 ### Contract generation fails
 
-**Solution:** 
+**Solution:**
+
 1. Check LLM API key is valid
 2. Review `master-brief.md` for clarity
 3. Use `midicoder contract gen resume` to retry
@@ -526,6 +562,7 @@ midicoder code apply --force
 ### IR build fails
 
 **Solution:**
+
 1. Run `midicoder contract check` to see issues
 2. Fix contracts or use `midicoder contract feedback` + `repair`
 3. Retry `midicoder ir build`
@@ -533,6 +570,7 @@ midicoder code apply --force
 ### Code apply conflicts
 
 **Solution:**
+
 1. Review with `--dry-run`
 2. Manually resolve conflicts
 3. Use `--force` only if you're sure (may cause merge issues)

@@ -1,43 +1,72 @@
-# Bắt đầu với Midi Coder
+# Bắt Đầu với Midicoder
 
-Chào mừng đến với Midi Coder! Hướng dẫn này giúp bạn bắt đầu với sinh code quyết định, dựa trên contract.
+Chào mừng bạn đến với Midicoder! Hướng dẫn này sẽ giúp bạn bắt đầu với phương pháp code generation dựa trên contract, deterministic và có cấu trúc.
 
-## Midi Coder là gì?
+## Midicoder là gì?
 
-Midi Coder là một **pipeline quyết định** biến đổi yêu cầu thành code thông qua các contracts có cấu trúc:
+Midicoder là một **pipeline deterministic** chuyển đổi yêu cầu thành code thông qua contracts có cấu trúc:
 
 ```
-Yêu cầu của bạn → DSL Contracts → IR → Code Plans → Patches → Working Code
+Yêu Cầu → DSL Contracts → IR → Code Plans → Patches → Code HoẠT ĐỘNG
 ```
 
 **Lợi ích chính:**
 
-- **Contract-first**: Yêu cầu dưới dạng YAML có cấu trúc (single source of truth)
-- **Quyết định**: Kết quả lặp lại được, không có hành vi LLM ngẫu nhiên
-- **Dựa trên patch**: Thay đổi nhỏ, dễ review (không ghi đè toàn bộ file)
-- **Có thể kiểm tra**: Mọi bước tạo artifacts truy vết được
-- **Đa stack**: Hỗ trợ FastAPI, NestJS, Angular từ cùng contract
+- **Contract-first**: Yêu cầu dạng YAML có cấu trúc (single source of truth)
+- **Deterministic**: Kết quả lặp lại được, không có hành vi ngẫu nhiên của LLM
+- **Patch-based**: Thay đổi nhỏ, có thể review (không rewrite file)
+- **Auditable**: Mỗi bước tạo artifacts có thể theo dõi
+- **Multi-stack**: Hỗ trợ FastAPI, NestJS, Angular từ một contract
 
 ---
 
-## Yêu cầu Hệ thống
+## Cài Đặt
 
-- **Python** 3.9 hoặc mới hơn
+### Option 1: Standalone Installer (Khuyến Nghị)
+
+Cách dễ nhất để bắt đầu với Midicoder là sử dụng standalone installer. Phương pháp này không yêu cầu cài đặt Python và hoạt động trên mọi platform.
+
+#### Windows (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://midicoder.com/releases/{version}/install.ps1 | iex"
+```
+
+#### macOS / Linux
+
+```bash
+curl -o- https://midicoder.com/releases/{version}/install.sh | bash
+```
+
+#### Kiểm Tra Cài Đặt
+
+```bash
+midicoder --version
+midicoder --help
+```
+
+**Lưu ý:** Installer đặt Midicoder vào `~/.midicoder/bin/` và thêm vào PATH của bạn.
+
+---
+
+### Option 2: Cài Đặt Development
+
+Nếu bạn muốn sử dụng phiên bản development mới nhất hoặc đóng góp cho dự án, làm theo các bước dưới đây.
+
+#### Yêu Cầu Hệ Thống
+
+- **Python** 3.9 trở lên
 - **pip** (Python package manager)
 - **virtualenv** hoặc `venv` (khuyến nghị)
-- **Git** (cho version control)
+- **Git** (để version control)
 
 **Hệ điều hành:**
 
-- Linux (tested trên Ubuntu 20.04+)
-- macOS (tested trên 11.0+)
-- Windows (tested trên Windows 10+)
+- Linux (đã test trên Ubuntu 20.04+)
+- macOS (đã test trên 11.0+)
+- Windows (đã test trên Windows 10+)
 
----
-
-## Cài đặt
-
-### Bước 1: Clone repository
+#### Bước 1: Clone Repository
 
 ```bash
 git clone https://github.com/hemidi-jsc/midicoder.git
@@ -92,13 +121,13 @@ Interactive wizard sẽ hỏi:
 - **Working directory**: Đường dẫn đến project của bạn (mặc định: thư mục hiện tại)
 - **Tech stack**: Chọn một hoặc nhiều (FastAPI, NestJS, Angular)
 - **High-tier LLM**: Cho complex tasks (contract generation, patch planning)
-  - Provider: Anthropic hoặc OpenAI
-  - Model: vd, `claude-sonnet-4-5` hoặc `gpt-4`
-  - API Key: API key của bạn
+    - Provider: Anthropic hoặc OpenAI
+    - Model: vd, `claude-sonnet-4-5` hoặc `gpt-4`
+    - API Key: API key của bạn
 - **Cheap-tier LLM**: Cho simple tasks (stack translation)
-  - Provider: Anthropic hoặc OpenAI
-  - Model: vd, `claude-3-5-haiku` hoặc `gpt-3.5-turbo`
-  - API Key: API key của bạn
+    - Provider: Anthropic hoặc OpenAI
+    - Model: vd, `claude-3-5-haiku` hoặc `gpt-3.5-turbo`
+    - API Key: API key của bạn
 
 **Kết quả:** Tạo `.midicoder/` với `config.json` và `secrets.json`
 
@@ -163,38 +192,44 @@ CRUD user đơn giản với authentication.
 ## 2. Domain & Data
 
 **Entities:**
+
 - User: id, email, name, role, created_at
 
 **Errors:**
+
 - UserNotFound: Khi user ID không tồn tại
 - EmailAlreadyExists: Khi email trùng
 
 ## 4. Commands & Queries
 
 **Commands:**
+
 - CreateUser: email, name, role → User
-  - Validates email format
-  - Kiểm tra trùng lặp
-  - Tạo user với hashed password
-  - Phát UserCreated event
+    - Validates email format
+    - Kiểm tra trùng lặp
+    - Tạo user với hashed password
+    - Phát UserCreated event
 
 **Queries:**
+
 - GetUser: user_id → User
 - ListUsers: filters → User[]
 
 ## 5. Rules & Policy
 
 **RBAC:**
+
 - Roles: admin, user
 - Permissions:
-  - create_user (chỉ admin)
-  - read_user (tất cả authenticated)
-  - update_user (admin hoặc chính user)
-  - delete_user (chỉ admin)
+    - create_user (chỉ admin)
+    - read_user (tất cả authenticated)
+    - update_user (admin hoặc chính user)
+    - delete_user (chỉ admin)
 
 ## 7. API
 
 **Routes:**
+
 - POST /users (CreateUser) - admin
 - GET /users/:id (GetUser) - authenticated
 - GET /users (ListUsers) - authenticated
@@ -518,7 +553,8 @@ midicoder code apply --force
 
 ### Contract generation thất bại
 
-**Giải pháp:** 
+**Giải pháp:**
+
 1. Kiểm tra LLM API key hợp lệ
 2. Review `master-brief.md` cho rõ ràng
 3. Dùng `midicoder contract gen resume` để retry
@@ -526,6 +562,7 @@ midicoder code apply --force
 ### IR build thất bại
 
 **Giải pháp:**
+
 1. Chạy `midicoder contract check` để xem issues
 2. Sửa contracts hoặc dùng `midicoder contract feedback` + `repair`
 3. Retry `midicoder ir build`
@@ -533,6 +570,7 @@ midicoder code apply --force
 ### Code apply conflicts
 
 **Giải pháp:**
+
 1. Review với `--dry-run`
 2. Manually resolve conflicts
 3. Dùng `--force` chỉ khi chắc chắn (có thể gây merge issues)
