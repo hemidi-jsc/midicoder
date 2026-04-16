@@ -1,0 +1,99 @@
+"""
+Cấu hình cho API Server
+Tất cả comment đều bằng tiếng Việt
+"""
+
+import json
+from pathlib import Path
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """Cấu hình ứng dụng FastAPI"""
+    
+    # Tên ứng dụng
+    app_name: str = "Midicoder WebGUI API"
+    
+    # Phiên bản API
+    api_version: str = "v1"
+    
+    # Cấu hình server
+    host: str = "localhost"
+    port: int = 6868
+    
+    # Cấu hình CORS (cho phép frontend Angular trên cùng máy)
+    cors_origins: list[str] = [
+        "http://localhost:7272",
+        "http://127.0.0.1:7272",
+    ]
+    
+    # Ngôn ngữ mặc định
+    default_language: str = "vi"
+    supported_languages: list[str] = ["vi", "en"]
+    
+    # Timeout cho CLI commands (giây)
+    cli_timeout: int = 1800  # 30 phút
+    
+    # Cấu hình WebSocket
+    ws_ping_interval: float = 30.0
+    ws_ping_timeout: float = 10.0
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+
+# Instance toàn cục
+settings = Settings()
+
+
+def get_global_config_path() -> Path:
+    """
+    Lấy đường dẫn đến file cấu hình global ~/.midicoder/midicoder.json
+    
+    Returns:
+        Path: Đường dẫn đến file config
+    """
+    home_dir = Path.home()
+    return home_dir / ".midicoder" / "midicoder.json"
+
+
+def load_global_config() -> dict:
+    """
+    Load cấu hình global từ ~/.midicoder/midicoder.json
+    
+    Returns:
+        dict: Cấu hình global, hoặc dict rỗng nếu file không tồn tại
+    """
+    config_path = get_global_config_path()
+    
+    if not config_path.exists():
+        return {}
+    
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def get_project_cwd() -> str:
+    """
+    Lấy đường dẫn working directory từ global config
+    
+    Returns:
+        str: Working directory, hoặc đường dẫn hiện tại nếu không có config
+    """
+    config = load_global_config()
+    
+    # Lấy CWD từ config
+    if "project" in config and "cwd" in config["project"]:
+        return config["project"]["cwd"]
+    
+    # Mặc định: thư mục hiện tại
+    return str(Path.cwd())
+
+
+# Load global config khi khởi động
+_global_config = load_global_config()
+_project_cwd = get_project_cwd()
