@@ -3290,6 +3290,159 @@ switching_cost: "very_high"
 
 ---
 
+## 10. Data Model Expectations
+
+### Core Entities
+
+**Customer**
+
+| Field         | Type        | Required | Description              |
+| ------------- | ----------- | -------- | ------------------------ |
+| customer_id   | UUID        | Yes      | Unique customer id       |
+| first_name    | String(100) | Yes      | First name               |
+| last_name     | String(100) | Yes      | Last name                |
+| email         | String(255) | Yes      | Email address            |
+| phone         | String(50)  | No       | Phone number             |
+| date_of_birth | Date        | Yes      | Date of birth            |
+| ssn           | String(11)  | No       | Social security number   |
+| status        | Enum        | Yes      | active, inactive, closed |
+
+**Account**
+
+| Field             | Type          | Required | Description            |
+| ----------------- | ------------- | -------- | ---------------------- |
+| account_id        | UUID          | Yes      | Unique account id      |
+| customer_id       | UUID          | Yes      | Customer reference     |
+| account_number    | String(50)    | Yes      | Account number         |
+| account_type      | Enum          | Yes      | checking, savings, cd  |
+| currency          | String(3)     | Yes      | Currency code          |
+| balance           | Decimal(18,2) | Yes      | Current balance        |
+| available_balance | Decimal(18,2) | Yes      | Available balance      |
+| status            | Enum          | Yes      | active, closed, frozen |
+| opened_at         | DateTime      | Yes      | Account open date      |
+
+**Transaction**
+
+| Field       | Type          | Required | Description               |
+| ----------- | ------------- | -------- | ------------------------- |
+| txn_id      | UUID          | Yes      | Unique transaction id     |
+| account_id  | UUID          | Yes      | Account reference         |
+| type        | Enum          | Yes      | debit, credit, fee        |
+| amount      | Decimal(18,2) | Yes      | Transaction amount        |
+| currency    | String(3)     | Yes      | Currency code             |
+| description | String(255)   | Yes      | Transaction description   |
+| status      | Enum          | Yes      | pending, posted, reversed |
+| created_at  | DateTime      | Yes      | Transaction timestamp     |
+
+**Loan**
+
+| Field            | Type          | Required | Description              |
+| ---------------- | ------------- | -------- | ------------------------ |
+| loan_id          | UUID          | Yes      | Unique loan id           |
+| customer_id      | UUID          | Yes      | Customer reference       |
+| loan_number      | String(50)    | Yes      | Loan number              |
+| loan_type        | Enum          | Yes      | personal, auto, mortgage |
+| amount           | Decimal(18,2) | Yes      | Loan amount              |
+| interest_rate    | Decimal(5,4)  | Yes      | Annual interest rate     |
+| term_months      | Integer       | Yes      | Loan term in months      |
+| origination_date | Date          | Yes      | Loan origination date    |
+| maturity_date    | Date          | Yes      | Loan maturity date       |
+| status           | Enum          | Yes      | active, paid, defaulted  |
+
+**Payment**
+
+| Field           | Type          | Required | Description                |
+| --------------- | ------------- | -------- | -------------------------- |
+| payment_id      | UUID          | Yes      | Unique payment id          |
+| from_account_id | UUID          | Yes      | Source account             |
+| to_account_id   | UUID          | No       | Destination account        |
+| amount          | Decimal(18,2) | Yes      | Payment amount             |
+| currency        | String(3)     | Yes      | Currency code              |
+| payment_type    | Enum          | Yes      | ach, wire, card, p2p       |
+| status          | Enum          | Yes      | pending, completed, failed |
+| created_at      | DateTime      | Yes      | Payment timestamp          |
+
+---
+
+## 11. Security and Access Control
+
+### Authentication
+
+- Multi-Factor Authentication (MFA) for all users
+- FIDO2 security key support
+- Biometric authentication for mobile
+- SSO integration with corporate IAM
+- Session timeout after 15 minutes
+
+### Authorization
+
+| Permission ID | Permission Name       | Description               |
+| ------------- | --------------------- | ------------------------- |
+| P01           | `customer:view`       | View customer information |
+| P02           | `customer:edit`       | Edit customer information |
+| P03           | `account:view`        | View accounts             |
+| P04           | `account:create`      | Open new accounts         |
+| P05           | `account:close`       | Close accounts            |
+| P06           | `transaction:view`    | View transactions         |
+| P07           | `transaction:reverse` | Reverse transactions      |
+| P08           | `payment:process`     | Process payments          |
+| P09           | `loan:view`           | View loans                |
+| P10           | `loan:originate`      | Originate new loans       |
+| P11           | `fraud:view`          | View fraud alerts         |
+| P12           | `fraud:block`         | Block suspicious activity |
+| P13           | `compliance:report`   | View compliance reports   |
+| P14           | `admin:users`         | Manage users              |
+| P15           | `admin:config`        | System configuration      |
+| P16           | `report:view`         | View reports              |
+| P17           | `report:export`       | Export reports            |
+| P18           | `audit:view`          | View audit logs           |
+| P19           | `card:issue`          | Issue new cards           |
+| P20           | `card:block`          | Block lost/stolen cards   |
+
+### Data Protection
+
+- Encryption at rest (AES-256)
+- Encryption in transit (TLS 1.3)
+- Tokenization for PII and card data
+- PCI DSS Level 1 compliance
+- FFIEC guidance compliance
+
+---
+
+## 12. Observability and Operations
+
+### Key Metrics
+
+**System Metrics:**
+
+- Transaction throughput (TPS)
+- API latency (p50, p95, p99)
+- System uptime
+- Error rates
+
+**Business Metrics:**
+
+- Daily active users
+- Transaction volume by type
+- Fraud detection rate
+- Customer acquisition
+
+### Monitoring
+
+- Real-time dashboards
+- Alerting for critical events
+- Capacity planning
+- Backup verification
+
+### Incident Management
+
+- P1-P4 severity levels
+- Escalation procedures
+- Post-incident reviews
+- Root cause analysis
+
+---
+
 ## 10. Failure Scenarios and Resilience (10+)
 
 ### FSC01: Database Failover
@@ -3723,24 +3876,40 @@ FraudAlert 1:1 Account (optional)
 - Customer consent for data sharing
 - Granular permissions for internal roles
 
-### Roles and Permissions
+### Role-Permission Matrix
 
-**Customer Roles:**
+| Role                 | Access Level  | Description                                 |
+| -------------------- | ------------- | ------------------------------------------- |
+| Account Owner        | Full          | Full access to owned accounts               |
+| Joint Owner          | Full          | Full access to joint accounts               |
+| Authorized User      | Limited       | Limited access (view, transfer)             |
+| Teller               | Transaction   | Transaction processing, limited access      |
+| Customer Service     | Inquiry       | Account inquiries, basic changes            |
+| Relationship Manager | Full Customer | Full customer access for assigned portfolio |
+| Loan Officer         | Lending       | Loan application and origination            |
+| Compliance Officer   | Compliance    | Full access for compliance purposes         |
+| Fraud Analyst        | Investigation | Fraud investigation access                  |
+| System Administrator | System Only   | System configuration (no customer data)     |
 
-- Account Owner: Full access to owned accounts
-- Joint Owner: Full access to joint accounts
-- Authorized User: Limited access (view, transfer, no close)
-- Beneficiary: Post-death access only
+### Role Hierarchy
 
-**Employee Roles:**
+1. System Administrator
+2. Compliance Officer
+3. Relationship Manager
+4. Loan Officer
+5. Customer Service
+6. Fraud Analyst
+7. Teller
 
-- Teller: Transaction processing, limited account access
-- Customer Service: Account inquiries, basic changes
-- Relationship Manager: Full customer access for assigned portfolio
-- Loan Officer: Loan application and origination
-- Compliance Officer: Full access for compliance purposes
-- Fraud Analyst: Fraud investigation access
-- System Administrator: System configuration (no customer data)
+```
+System Administrator
+  └── Compliance Officer
+        ├── Relationship Manager
+        │     ├── Loan Officer
+        │     └── Customer Service
+        └── Fraud Analyst
+              └── Teller
+```
 
 ### Encryption
 
@@ -3841,7 +4010,7 @@ FraudAlert 1:1 Account (optional)
 
 ---
 
-## 14. Acceptance Criteria
+## 13. Acceptance Criteria
 
 ### MVP Scope (Phase 1 - 6 months)
 
@@ -3909,7 +4078,7 @@ FraudAlert 1:1 Account (optional)
 
 ---
 
-## 15. Out-of-Scope
+## 14. Out-of-Scope
 
 ### Excluded Products (Phase 4+)
 
@@ -3935,7 +4104,7 @@ FraudAlert 1:1 Account (optional)
 
 ---
 
-## 16. Open Questions
+## 15. Open Questions
 
 ### OQ01: Core Banking Strategy
 

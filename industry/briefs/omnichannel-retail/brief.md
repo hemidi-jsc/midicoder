@@ -3000,15 +3000,31 @@ OmniRetail Pro provides:
 - Customer Service Rep
 - Viewer
 
-**Permission Categories:**
+### Permission Definitions
 
-- Products (view, create, edit, delete)
-- Inventory (view, edit, transfer)
-- Orders (view, edit, cancel, refund)
-- Customers (view, edit, delete)
-- Employees (view, edit, schedule)
-- Reports (view, export)
-- Settings (view, edit)
+| Permission           | Description            |
+| -------------------- | ---------------------- |
+| `products:view`      | View product catalog   |
+| `products:create`    | Create new products    |
+| `products:edit`      | Edit existing products |
+| `products:delete`    | Delete products        |
+| `inventory:view`     | View inventory         |
+| `inventory:edit`     | Edit inventory levels  |
+| `inventory:transfer` | Transfer inventory     |
+| `orders:view`        | View orders            |
+| `orders:create`      | Create orders          |
+| `orders:edit`        | Edit orders            |
+| `orders:cancel`      | Cancel orders          |
+| `orders:refund`      | Process refunds        |
+| `customers:view`     | View customer data     |
+| `customers:edit`     | Edit customer data     |
+| `employees:view`     | View employee data     |
+| `employees:edit`     | Edit employee data     |
+| `employees:schedule` | Schedule employees     |
+| `reports:view`       | View reports           |
+| `reports:export`     | Export reports         |
+| `settings:view`      | View settings          |
+| `settings:edit`      | Edit settings          |
 
 ### Data Protection
 
@@ -3275,7 +3291,7 @@ OmniRetail Pro provides:
 | credit memo            | Credit issued without immediate refund              |
 | layaway                | Deferred payment purchase arrangement               |
 | financing              | Third-party payment installment option              |
-| BNPL                   | Buy Now, Pay Later financing                        |
+| BNPL                   | Buy Now, Pay in subsequent phase financing          |
 | installment            | Payment divided into parts over time                |
 | promotional financing  | Interest-free payment period offer                  |
 | price matching         | Matching competitor prices                          |
@@ -3480,6 +3496,7 @@ OmniRetail Pro provides:
 | Application Insights   | Azure monitoring                                    |
 | Datadog                | Cloud monitoring                                    |
 | New Relic              | Application performance                             |
+
 ---
 
 _End of Brief_

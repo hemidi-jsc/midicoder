@@ -1,4 +1,4 @@
-# University Management System - Universal-Fully Brief
+﻿# University Management System - Universal-Fully Brief
 
 **Industry ID:** university  
 **Priority:** P14  
@@ -684,7 +684,7 @@ System configuration, policy setting, and oversight.
     - Student submits standardized test scores (if required)
     - Student writes personal statement/essay
     - Student requests recommendation letters
-    - Student uploads additional documents (portfolio, etc.)
+    - Student uploads additional documents (portfolio, and other examples)
 
 3. **Application Review**
     - System validates application completeness
@@ -702,14 +702,14 @@ System configuration, policy setting, and oversight.
     - Student logs into portal
     - Student views admission offer
     - Student accepts or declines enrollment
-    - Student completes enrollment checklist (deposit, housing, etc.)
+    - Student completes enrollment checklist (deposit, housing, and other examples)
     - Student assigned to orientation
 
 **Alternative Paths:**
 
 - Application incomplete: Student notified of missing items
 - Additional review needed: Application flagged for committee
-- Waitlist: Student notified and may be admitted later
+- Waitlist: Student notified and may be admitted subsequently
 - Denied: Student receives denial letter with appeal option
 
 **Success Criteria:**
@@ -973,7 +973,7 @@ System configuration, policy setting, and oversight.
 **Alternative Paths:**
 
 - Grade change request: Student/faculty submits change form
-- Incomplete grade: Contract required, later conversion
+- Incomplete grade: Contract required, subsequently conversion
 - Grade appeal: Student initiates appeal process
 - Audit required: Registrar reviews grade distribution
 
@@ -1348,7 +1348,7 @@ System configuration, policy setting, and oversight.
 
 1. **Hold Placement**
     - System or staff identifies condition
-    - Hold type selected (registration, transcript, graduation, etc.)
+    - Hold type selected (registration, transcript, graduation, and other examples)
     - Hold placed on student record
     - Student notified
 
@@ -1439,7 +1439,7 @@ System configuration, policy setting, and oversight.
 
 - Status violation: Recovery or departure
 - Transfer: SEVIS transfer to new school
-- Change of status: F-1 to OPT, etc.
+- Change of status: F-1 to OPT, and other examples
 - CPT/OPT: Employment authorization
 
 **Success Criteria:**
@@ -1476,7 +1476,7 @@ System configuration, policy setting, and oversight.
 
 **FR02: Single Sign-On Integration**
 
-- **Description:** System shall integrate with institutional SSO (Azure AD, OneLogin, etc.)
+- **Description:** System shall integrate with institutional SSO (Azure AD, OneLogin, and other examples)
 - **Priority:** Must
 - **Acceptance Criteria:**
     - Given SSO configured, when user clicks login, then redirected to IdP
@@ -2172,7 +2172,7 @@ System configuration, policy setting, and oversight.
 
 ### Data Integrity Rules
 
-**INV01: Student ID Uniqueness**
+### INV01: Student ID Uniqueness
 
 - **Name:** Unique Student Identifier
 - **Description:** Each student must have a unique identifier across the institution
@@ -2183,7 +2183,7 @@ System configuration, policy setting, and oversight.
     - Attempt to create student with existing ID → Rejected
     - Create student with new ID → Accepted
 
-**INV02: Enrollment Existence**
+### INV02: Enrollment Existence
 
 - **Description:** A student must exist before enrollment can be created
 - **Formal Statement:** ∀e ∈ Enrollments: ∃s ∈ Students: s.id = e.student_id
@@ -2193,7 +2193,7 @@ System configuration, policy setting, and oversight.
     - Create enrollment for non-existent student → Rejected
     - Create enrollment for valid student → Accepted
 
-**INV03: Grade Validity**
+### INV03: Grade Validity
 
 - **Description:** Grades must be valid grade codes for the course type
 - **Formal Statement:** ∀g ∈ Grades: g.code ∈ ValidGradeCodes(g.course_type)
@@ -2203,9 +2203,9 @@ System configuration, policy setting, and oversight.
     - Enter invalid grade code → Rejected
     - Enter valid grade code → Accepted
 
-### Business Logic Constraints
+### Business Logic Rules
 
-**INV04: Registration Standing**
+### INV04: Registration Standing
 
 - **Name:** Good Standing Required for Registration
 - **Description:** Students must be in good academic and financial standing to register
@@ -2217,7 +2217,7 @@ System configuration, policy setting, and oversight.
     - Student with financial hold attempts registration → Rejected
     - Student in good standing registers → Accepted
 
-**INV05: Prerequisite Satisfaction**
+### INV05: Prerequisite Satisfaction
 
 - **Name:** Prerequisites Must Be Met
 - **Description:** Students must complete prerequisites before enrolling in course
@@ -2229,7 +2229,7 @@ System configuration, policy setting, and oversight.
     - Student with prerequisite registers → Accepted
     - Student with prerequisite in progress registers → Conditional acceptance
 
-**INV06: Credit Hour Limits**
+### INV06: Credit Hour Limits
 
 - **Name:** Credit Hour Limits Enforced
 - **Description:** Students cannot exceed maximum credit hours per term without approval
@@ -2241,9 +2241,9 @@ System configuration, policy setting, and oversight.
     - Student within limits registers → Accepted
     - Student with overload approval exceeds limits → Accepted
 
-### State Transition Rules
+### State Transition Invariants
 
-**INV07: Application State Transitions**
+### INV07: Application State Transitions
 
 - **Name:** Application State Machine
 - **Description:** Applications must follow valid state transitions
@@ -2256,7 +2256,7 @@ System configuration, policy setting, and oversight.
     - Submitted application decision made → Accepted
     - Decision application modified → Rejected (unless appeal)
 
-**INV08: Enrollment State Transitions**
+### INV08: Enrollment State Transitions
 
 - **Name:** Enrollment State Machine
 - **Description:** Enrollments must follow valid state transitions
@@ -2269,7 +2269,7 @@ System configuration, policy setting, and oversight.
     - Registered student drops → Accepted
     - Completed enrollment dropped → Rejected
 
-**INV09: Grade Period Integrity**
+### INV09: Grade Period Integrity
 
 - **Name:** Grade Period Closure
 - **Description:** Grades cannot be modified after grade period closes
@@ -2281,9 +2281,9 @@ System configuration, policy setting, and oversight.
     - Grade change after period close → Rejected
     - Grade change with Dean's override after close → Accepted
 
-### Temporal Constraints
+### Temporal Invariants
 
-**INV10: Registration Period Validity**
+### INV10: Registration Period Validity
 
 - **Name:** Registration Within Period
 - **Description:** Registrations can only occur during open registration periods
@@ -2295,7 +2295,7 @@ System configuration, policy setting, and oversight.
     - Registration before period opens → Rejected
     - Registration after period closes → Rejected
 
-**INV11: Term Chronology**
+### INV11: Term Chronology
 
 - **Name:** Term Sequence Integrity
 - **Description:** Terms must follow chronological order
@@ -2306,9 +2306,9 @@ System configuration, policy setting, and oversight.
     - Term added after previous term → Accepted
     - Term overlaps incorrectly → Rejected
 
-### Quantity/Threshold Rules
+### Threshold Invariants
 
-**INV12: Minimum Credit Hours for Full-Time**
+### INV12: Minimum Credit Hours for Full-Time
 
 - **Name:** Full-Time Status Threshold
 - **Description:** Students must meet minimum credits for full-time status
@@ -2319,7 +2319,7 @@ System configuration, policy setting, and oversight.
     - Student enrolls in 12+ credits → Full-time status
     - Student drops below 12 credits → Part-time status
 
-**INV13: Financial Aid SAP**
+### INV13: Financial Aid SAP
 
 - **Name:** Satisfactory Academic Progress
 - **Description:** Students must maintain SAP for financial aid eligibility
@@ -2330,9 +2330,9 @@ System configuration, policy setting, and oversight.
     - Student meets SAP → Aid eligible
     - Student fails SAP → Aid ineligible
 
-### Relationship Constraints
+### Relationship Invariants
 
-**INV14: Faculty-Course Assignment**
+### INV14: Faculty-Course Assignment
 
 - **Name:** Faculty Course Assignment
 - **Description:** Each course section must have at least one instructor
@@ -2343,7 +2343,7 @@ System configuration, policy setting, and oversight.
     - Section created without instructor → Rejected
     - Section created with instructor → Accepted
 
-**INV15: Degree-Program Relationship**
+### INV15: Degree-Program Relationship
 
 - **Name:** Degree-Program Consistency
 - **Description:** Degrees must be offered by valid programs
@@ -2514,7 +2514,7 @@ System configuration, policy setting, and oversight.
 
 ### CC06: Data Privacy (RX01)
 
-**Regulatory Framework:** State Data Privacy Laws (CCPA, VCDPA, etc.)
+**Regulatory Framework:** State Data Privacy Laws (CCPA, VCDPA, and other examples)
 
 **Reference:** Applicable state privacy laws
 
@@ -3016,7 +3016,283 @@ System configuration, policy setting, and oversight.
     - type: Enum (semester, quarter, trimester, summer), required
     - is_active: Boolean, required
     - registration_start: Date, nullable
-- registration_end: Date
+    - registration_end: Date, nullable
+
+**AdmissionApplication**
+
+- **Description:** Prospective student admission application
+- **Primary Key:** application_id (UUID)
+- **Fields:**
+    - application_id: UUID, required
+    - student_id: UUID, nullable
+    - program_id: UUID, required
+    - applicant_type: Enum (freshman, transfer, graduate, international), required
+    - application_date: Timestamp, required
+    - status: Enum (draft, submitted, under_review, accepted, rejected, waitlisted), required
+    - decision_date: Date, nullable
+    - enrollment_accepted: Boolean, nullable
+    - enrollment_date: Date, nullable
+    - application_fee_paid: Boolean, required
+- **Relationships:** applicant, program, decisions[]
+- **Indexes:** program_id, status, decision_date
+- **Retention:** 7 years
+
+**FinancialAidAward**
+
+- **Description:** Financial aid award package
+- **Primary Key:** award_id (UUID)
+- **Fields:**
+    - award_id: UUID, required
+    - student_id: UUID, required
+    - award_year: String(9), required
+    - fafsa_id: String(12), nullable
+    - ef_c: Decimal(12,2), nullable
+    - total_aid_offered: Decimal(12,2), required
+    - total_aid_accepted: Decimal(12,2), nullable
+    - status: Enum (offered, accepted, disbursed, cancelled), required
+    - created_at: Timestamp, required
+- **Relationships:** student, aid_components[]
+- **Indexes:** student_id, award_year, status
+- **Retention:** 7 years
+
+**DegreeAudit**
+
+- **Description:** Student degree progress tracking
+- **Primary Key:** audit_id (UUID)
+- **Fields:**
+    - audit_id: UUID, required
+    - student_id: UUID, required
+    - program_id: UUID, required
+    - audit_date: Date, required
+    - credits_completed: Decimal(5,1), required
+    - credits_required: Decimal(5,1), required
+    - gpa_cumulative: Decimal(3,2), required
+    - graduation_projected: Date, nullable
+    - status: Enum (on_track, at_risk, off_track), required
+- **Relationships:** student, program, requirements[]
+- **Indexes:** student_id, program_id, audit_date
+- **Retention:** Permanent
+
+**ResearchGrant**
+
+- **Description:** Research grant administration
+- **Primary Key:** grant_id (UUID)
+- **Fields:**
+    - grant_id: UUID, required
+    - faculty_id: UUID, required
+    - sponsor_name: String(255), required
+    - grant_number: String(100), required
+    - award_amount: Decimal(15,2), required
+    - start_date: Date, required
+    - end_date: Date, required
+    - status: Enum (proposal, active, completed, closed), required
+    - irb_approved: Boolean, nullable
+- **Relationships:** faculty, expenditures[], reports[]
+- **Indexes:** faculty_id, status, sponsor_name
+- **Retention:** 7 years after close
+
+**HousingAssignment**
+
+- **Description:** Student housing assignment
+- **Primary Key:** assignment_id (UUID)
+- **Fields:**
+    - assignment_id: UUID, required
+    - student_id: UUID, required
+    - building_id: UUID, required
+    - room_number: String(20), required
+    - term_id: UUID, required
+    - move_in_date: Date, required
+    - move_out_date: Date, nullable
+    - room_type: Enum (single, double, suite, apartment), required
+    - status: Enum (assigned, occupied, vacant, terminated), required
+- **Relationships:** student, building, room, term
+- **Indexes:** student_id, building_id, status
+- **Retention:** 7 years
+
+**Alumni**
+
+- **Description:** Alumni record for graduated students
+- **Primary Key:** alumni_id (UUID)
+- **Fields:**
+    - alumni_id: UUID, required
+    - student_id: UUID, required
+    - graduation_date: Date, required
+    - degree_conferred: String(255), required
+    - honor_society: String[], nullable
+    - current_employer: String(255), nullable
+    - current_position: String(255), nullable
+    - email: String(255), required
+    - engagement_level: Enum (none, occasional, active, donor), required
+    - donation_total: Decimal(15,2), default 0
+- **Relationships:** student, donations[], events[]
+- **Indexes:** student_id, graduation_date, email
+- **Retention:** Permanent
+
+---
+
+## 11. Security and Access Control
+
+### Authentication
+
+**Methods:**
+
+- Username/Password with complexity requirements
+- Multi-Factor Authentication (MFA)
+- Single Sign-On (SSO) via SAML/OIDC
+- Federated identity with institutional SSO
+- Biometric authentication (mobile)
+
+**Password Policy:**
+
+- Minimum 12 characters
+- Require uppercase, lowercase, number, special character
+- Password history (cannot reuse last 10 passwords)
+- Maximum age 90 days for faculty/staff
+- Account lockout after 5 failed attempts
+
+### Role-Permission Matrix
+
+| Role          | View Data | Edit Own | Edit Others  | Admin | Billing | Reports |
+| ------------- | --------- | -------- | ------------ | ----- | ------- | ------- |
+| Student       | Y         | Y        | N            | N     | N       | N       |
+| Faculty       | Y         | Y        | Y (students) | N     | N       | Y       |
+| Advisor       | Y         | Y        | Y (advisee)  | N     | N       | Y       |
+| Registrar     | Y         | Y        | Y            | N     | N       | Y       |
+| Financial Aid | Y         | Y        | Y (FA)       | N     | Y       | Y       |
+| Bursar        | Y         | Y        | Y (billing)  | N     | Y       | Y       |
+| Administrator | Y         | Y        | Y            | Y     | Y       | Y       |
+
+### Permissions
+
+| Permission ID | Permission Name        | Description                   |
+| ------------- | ---------------------- | ----------------------------- |
+| P01           | `students:view`        | View student records          |
+| P02           | `students:edit`        | Edit student records          |
+| P03           | `courses:view`         | View course catalog           |
+| P04           | `courses:edit`         | Edit course information       |
+| P05           | `enrollments:view`     | View enrollments              |
+| P06           | `enrollments:manage`   | Manage course enrollments     |
+| P07           | `grades:view`          | View grades                   |
+| P08           | `grades:enter`         | Enter grades                  |
+| P09           | `grades:edit`          | Edit grades                   |
+| P10           | `billing:view`         | View billing information      |
+| P11           | `billing:manage`       | Manage billing and payments   |
+| P12           | `financial_aid:view`   | View financial aid records    |
+| P13           | `financial_aid:manage` | Manage financial aid          |
+| P14           | `transcripts:view`     | View transcripts              |
+| P15           | `transcripts:issue`    | Issue official transcripts    |
+| P16           | `admin:users`          | Manage user accounts          |
+| P17           | `admin:config`         | System configuration          |
+| P18           | `admin:reports`        | View all reports              |
+| P19           | `hold:manage`          | Manage student holds          |
+| P20           | `graduation:certify`   | Certify degrees for conferral |
+
+---
+
+## 12. Observability and Operations
+
+### Key Metrics
+
+**System Health:**
+
+- Platform uptime (target: 99.9%)
+- API response time (target: <500ms)
+- Database connection pool usage
+- Cache hit rate
+
+**Business Metrics:**
+
+- Active users (daily, weekly, monthly)
+- Enrollment completion rate
+- Registration success rate
+- Payment success rate
+- Transcript request volume
+- Course enrollment numbers
+
+**Academic Metrics:**
+
+- Grade submission completion rate
+- Registration conflict rate
+- Financial aid disbursement rate
+- Advising appointment completion
+
+### Alerts
+
+**Critical:**
+
+- System outage
+- Payment processing failure
+- Data backup failure
+- Security incident
+
+**Warning:**
+
+- High error rates
+- Slow response times
+- Low disk space
+- Integration failures
+
+### Monitoring
+
+- Platform uptime monitoring
+- API performance monitoring
+- Database performance
+- Integration status
+- User activity patterns
+
+---
+
+## 13. Acceptance Criteria
+
+### MVP Scope
+
+- Student information management
+- Course catalog and enrollment
+- Gradebook and transcript generation
+- Basic financial aid tracking
+- Tuition billing and payments
+- Academic calendar management
+- Student and faculty portals
+
+### Technical Acceptance
+
+- Support 10,000 concurrent users
+- 99.9% uptime during business hours
+- Sub-second page load times
+- Secure data encryption (in transit and at rest)
+- Complete audit logging
+- Automated daily backups
+
+### Business Acceptance
+
+- Successful pilot with 500 students
+- Integration with 1 external payment processor
+- Migration of existing student records
+- Training completed for 50 staff members
+- User satisfaction score >4.0/5
+
+---
+
+## 14. Out-of-Scope
+
+### Current Release
+
+- AI-powered course recommendations
+- Blockchain-based credentialing
+- Mobile app development
+- Advanced analytics dashboard
+- Alumni network integration
+- Real-time chat support
+
+### Future Phases
+
+- Predictive analytics for student success
+- Mobile apps (iOS/Android)
+- Integration with learning analytics platforms
+- Automated advising tools
+- Alumni donation management
+- Advanced financial aid modeling
+- Career services integration
 
 ---
 
@@ -3163,3 +3439,4 @@ System configuration, policy setting, and oversight.
 ---
 
 _End of Brief_
+

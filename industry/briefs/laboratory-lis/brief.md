@@ -171,7 +171,7 @@ LabCore LIS provides comprehensive laboratory management:
 
 ---
 
-## 3. User Personas (Detailed)
+## 3. User Personas and Roles
 
 ### P01: Laboratory Director (Pathologist)
 
@@ -591,7 +591,7 @@ LabCore LIS provides comprehensive laboratory management:
 
 ---
 
-## 4. Core User Journeys (15+)
+## 4. Core User Journeys
 
 ### J01: Electronic Test Order Entry (Provider)
 
@@ -1339,7 +1339,7 @@ LabCore LIS provides comprehensive laboratory management:
 
 ---
 
-## 5. Functional Requirements (40+)
+## 5. Functional Requirements
 
 ### FR01: Test Catalog Management
 
@@ -2236,7 +2236,7 @@ LabCore LIS provides comprehensive laboratory management:
 
 ---
 
-## 6. Non-Functional Requirements (20+)
+## 6. Non-Functional Requirements
 
 ### NFR01: System Availability
 
@@ -2639,7 +2639,7 @@ LabCore LIS provides comprehensive laboratory management:
 
 ---
 
-## 7. Domain Rules and Invariants (15+)
+## 7. Domain Rules and Invariants
 
 ### INV01: Specimen Must Be Valid Before Testing
 
@@ -2863,7 +2863,7 @@ LabCore LIS provides comprehensive laboratory management:
 
 ---
 
-## 8. Compliance and Regulatory Constraints (12+)
+## 8. Compliance and Regulatory Constraints
 
 ### CC01: CLIA '88 (Clinical Laboratory Improvement Amendments)
 
@@ -3117,7 +3117,582 @@ LabCore LIS provides comprehensive laboratory management:
 
 ---
 
-## 10. Security and Access Control
+## 10. Data Model Expectations
+
+### Core Entities
+
+**LabOrder**
+
+| Field      | Type     | Required | Description                   |
+| ---------- | -------- | -------- | ----------------------------- |
+| order_id   | UUID     | Yes      | Unique order identifier       |
+| patient_id | UUID     | Yes      | Patient reference             |
+| order_date | DateTime | Yes      | Order submission time         |
+| status     | Enum     | Yes      | pending, processing, complete |
+| priority   | Enum     | Yes      | routine, stat, urgent         |
+| test_codes | String[] | Yes      | LOINC codes                   |
+
+**LabResult**
+
+| Field          | Type        | Required | Description                        |
+| -------------- | ----------- | -------- | ---------------------------------- |
+| result_id      | UUID        | Yes      | Unique result identifier           |
+| order_id       | UUID        | Yes      | Parent order reference             |
+| test_code      | String(50)  | Yes      | LOINC test code                    |
+| result_value   | String(500) | Yes      | Numeric or text result             |
+| units          | String(50)  | No       | Units of measure                   |
+| reference_low  | String(50)  | No       | Lower reference limit              |
+| reference_high | String(50)  | No       | Upper reference limit              |
+| flag           | Enum        | No       | normal, abnormal, critical         |
+| verified_by    | UUID        | No       | Verifying pathologist/phlebotomist |
+| verified_at    | DateTime    | No       | Verification timestamp             |
+
+**Patient**
+
+| Field         | Type        | Required | Description               |
+| ------------- | ----------- | -------- | ------------------------- |
+| patient_id    | UUID        | Yes      | Unique patient identifier |
+| mrn           | String(50)  | Yes      | Medical Record Number     |
+| first_name    | String(100) | Yes      | First name                |
+| last_name     | String(100) | Yes      | Last name                 |
+| date_of_birth | Date        | Yes      | Date of birth             |
+| gender        | Enum        | No       | male, female, other       |
+| contact       | JSON        | No       | Contact information       |
+
+**Specimen**
+
+| Field           | Type        | Required | Description            |
+| --------------- | ----------- | -------- | ---------------------- |
+| specimen_id     | UUID        | Yes      | Unique specimen id     |
+| patient_id      | UUID        | Yes      | Patient reference      |
+| order_id        | UUID        | Yes      | Parent order reference |
+| specimen_type   | String(100) | Yes      | blood, urine, tissue   |
+| collection_date | DateTime    | Yes      | Collection timestamp   |
+| collector_id    | UUID        | Yes      | Phlebotomist/collector |
+| status          | Enum        | Yes      | collected, processed   |
+| location        | String(100) | No       | Storage location       |
+
+**Equipment**
+
+| Field            | Type        | Required | Description              |
+| ---------------- | ----------- | -------- | ------------------------ |
+| equipment_id     | UUID        | Yes      | Unique equipment id      |
+| name             | String(255) | Yes      | Equipment name           |
+| type             | String(100) | Yes      | analyzer, centrifuge     |
+| manufacturer     | String(255) | Yes      | Manufacturer name        |
+| model            | String(100) | Yes      | Model number             |
+| serial_number    | String(100) | Yes      | Serial number            |
+| status           | Enum        | Yes      | operational, maintenance |
+| last_maintenance | DateTime    | No       | Last maintenance date    |
+
+**TestDefinition**
+
+| Field            | Type        | Required | Description            |
+| ---------------- | ----------- | -------- | ---------------------- |
+| test_id          | UUID        | Yes      | Unique test identifier |
+| test_code        | String(50)  | Yes      | Test code (internal)   |
+| test_name        | String(255) | Yes      | Test name              |
+| loinc_code       | String(50)  | No       | LOINC code             |
+| cpt_code         | String(50)  | No       | CPT billing code       |
+| department       | String(100) | Yes      | Performing department  |
+| methodology      | String(255) | No       | Testing methodology    |
+| reportable_range | String(100) | No       | Valid reportable range |
+| units            | String(50)  | No       | Units of measure       |
+
+**ReflexRule**
+
+| Field        | Type        | Required | Description                 |
+| ------------ | ----------- | -------- | --------------------------- |
+| rule_id      | UUID        | Yes      | Unique rule identifier      |
+| trigger_test | UUID        | Yes      | Test that triggers reflex   |
+| condition    | String(255) | Yes      | Condition for reflex        |
+| reflex_test  | UUID        | Yes      | Test to order automatically |
+| priority     | Integer     | No       | Rule priority               |
+| active       | Boolean     | Yes      | Rule active status          |
+
+**QCSample**
+
+| Field           | Type        | Required | Description             |
+| --------------- | ----------- | -------- | ----------------------- |
+| qc_id           | UUID        | Yes      | Unique QC identifier    |
+| test_id         | UUID        | Yes      | Associated test         |
+| qc_level        | Integer     | Yes      | Control level (1, 2, 3) |
+| mean_value      | Decimal     | Yes      | Expected mean           |
+| sd_value        | Decimal     | Yes      | Standard deviation      |
+| lot_number      | String(100) | Yes      | QC material lot         |
+| expiration_date | Date        | Yes      | QC expiration           |
+
+**QCHistory**
+
+| Field          | Type        | Required | Description               |
+| -------------- | ----------- | -------- | ------------------------- |
+| history_id     | UUID        | Yes      | Unique history identifier |
+| qc_id          | UUID        | Yes      | Associated QC sample      |
+| run_time       | DateTime    | Yes      | QC run timestamp          |
+| result_value   | Decimal     | Yes      | Measured QC value         |
+| sigma_value    | Decimal     | Yes      | Deviation in sigma units  |
+| rule_violation | String(100) | No       | Westgard rule violated    |
+| run_status     | Enum        | Yes      | pass, fail, warning       |
+
+**Worklist**
+
+| Field       | Type        | Required | Description                    |
+| ----------- | ----------- | -------- | ------------------------------ |
+| worklist_id | UUID        | Yes      | Unique worklist identifier     |
+| department  | String(100) | Yes      | Target department              |
+| specimen_id | UUID        | Yes      | Specimen to process            |
+| priority    | Enum        | Yes      | routine, stat, urgent          |
+| status      | Enum        | Yes      | pending, in_progress, complete |
+| assigned_to | UUID        | No       | Assigned technologist          |
+
+**User**
+
+| Field      | Type        | Required | Description            |
+| ---------- | ----------- | -------- | ---------------------- |
+| user_id    | UUID        | Yes      | Unique user identifier |
+| username   | String(100) | Yes      | Login username         |
+| role_id    | UUID        | Yes      | User role              |
+| department | String(100) | Yes      | User department        |
+| active     | Boolean     | Yes      | Account active status  |
+| last_login | DateTime    | No       | Last login timestamp   |
+
+**Role**
+
+| Field       | Type        | Required | Description            |
+| ----------- | ----------- | -------- | ---------------------- |
+| role_id     | UUID        | Yes      | Unique role identifier |
+| role_name   | String(100) | Yes      | Role name              |
+| permissions | JSON        | Yes      | Permission list        |
+| created_at  | DateTime    | Yes      | Creation timestamp     |
+
+**AuditLog**
+
+| Field       | Type        | Required | Description               |
+| ----------- | ----------- | -------- | ------------------------- |
+| log_id      | UUID        | Yes      | Unique log identifier     |
+| timestamp   | DateTime    | Yes      | Event timestamp           |
+| user_id     | UUID        | No       | User who performed action |
+| action      | String(100) | Yes      | Action performed          |
+| entity_type | String(100) | Yes      | Entity type affected      |
+| entity_id   | UUID        | No       | Entity identifier         |
+| old_value   | JSON        | No       | Previous value            |
+| new_value   | JSON        | No       | New value                 |
+
+**BillingClaim**
+
+| Field       | Type        | Required | Description             |
+| ----------- | ----------- | -------- | ----------------------- |
+| claim_id    | UUID        | Yes      | Unique claim identifier |
+| order_id    | UUID        | Yes      | Associated order        |
+| payer_id    | UUID        | Yes      | Insurance payer         |
+| claim_date  | Date        | Yes      | Claim submission date   |
+| amount      | Decimal     | Yes      | Claim amount            |
+| status      | Enum        | Yes      | pending, paid, denied   |
+| edid_number | String(100) | No       | EDI control number      |
+
+**ReferenceRange**
+
+| Field      | Type        | Required | Description           |
+| ---------- | ----------- | -------- | --------------------- |
+| range_id   | UUID        | Yes      | Unique range id       |
+| test_id    | UUID        | Yes      | Associated test       |
+| age_low    | Decimal     | No       | Lower age bound       |
+| age_high   | Decimal     | No       | Upper age bound       |
+| gender     | Enum        | No       | male, female, all     |
+| value_low  | String(50)  | Yes      | Lower reference limit |
+| value_high | String(50)  | Yes      | Upper reference limit |
+| units      | String(50)  | Yes      | Units of measure      |
+| source     | String(255) | No       | Reference source      |
+
+---
+
+## 9. Integration Requirements
+
+### INT01: Electronic Health Record (EHR) Integration
+
+**Purpose:** Bidirectional data exchange with EHR systems
+**Systems:** Epic, Cerner, Meditech, Allscripts, eClinicalWorks
+**Data Flows:**
+
+- Inbound: Orders, patient demographics, referrals
+- Outbound: Results, status updates, specimen tracking
+  **Technical Requirements:** HL7 FHIR, HL7 v2, Direct Messaging
+  **Error Handling:** Retry logic, manual queue for exceptions
+
+### INT02: LIS Vendor Systems
+
+**Purpose:** Integration with external laboratory systems
+**Systems:** Sunquest, Orchard, Cerner PowerLabs
+**Data Flows:** Test requisitions, results sharing, specimen tracking
+**Technical Requirements:** HL7 v2 messaging
+
+### INT03: Billing Systems
+
+**Purpose:** Billing and claims processing
+**Systems:** Epic Billing, Kareo, AdvancedMD
+**Data Flows:** CPT codes, billing amounts, insurance information
+**Technical Requirements:** EDI 837, HL7
+
+### INT04: Insurance Payers
+
+**Purpose:** Claims submission and eligibility verification
+**Systems:** Blue Cross, Aetna, UnitedHealthcare, Medicare
+**Data Flays:** EDI 270/271 (eligibility), EDI 837 (claims), EDI 835 (payments)
+**Technical Requirements:** HIPAA 5010 compliance
+
+### INT05: Reference Laboratories
+
+**Purpose:** Outsource complex testing
+**Systems:** Quest Diagnostics, LabCorp, Mayo Clinic Labs
+**Data Flows:** Referred orders, returned results
+**Technical Requirements:** Secure file transfer, API
+
+### INT06: Pharmacy Systems
+
+**Purpose:** Therapeutic drug monitoring
+**Systems:** Epic Pyramid, Meditech Medication Management
+**Data Flows:** Drug levels, medication lists
+**Technical Requirements:** HL7 FHIR Medication resources
+
+### INT07: Radiology Systems (PACS/RIS)
+
+**Purpose:** Correlated imaging and lab results
+**Systems:** AGFA, GE Healthcare, Siemens
+**Data Flows:** Patient demographics, correlated orders
+**Technical Requirements:** HL7, DICOM
+
+### INT08: Quality Management Systems
+
+**Purpose:** Quality control and proficiency testing
+**Systems:** Beckman Coulter QC, Bio-Rad QC
+**Data Flows:** QC data, proficiency test results
+**Technical Requirements:** ASTM E51515, CLIA compliance
+
+### INT09: Inventory Management
+
+**Purpose:** Supply chain and reagent tracking
+**Systems:** McKesson, Cardinal Health, BD
+**Data Flows:** Reagent levels, order placement, expiration tracking
+**Technical Requirements:** API, barcode scanning
+
+### INT10: Patient Portal
+
+**Purpose:** Patient access to results and scheduling
+**Systems:** Epic MyChart, Cerner PowerChart, Healow
+**Data Flows:** Result viewing, appointment scheduling, consent forms
+**Technical Requirements:** HIPAA-compliant messaging, FHIR API
+
+---
+
+## 11. Security and Access Control
+
+### Authentication
+
+- Multi-Factor Authentication (MFA) for all users
+- SSO integration with hospital IAM
+- Role-Based Access Control (RBAC)
+- Session timeout after 15 minutes
+- Password complexity requirements (12+ characters)
+
+### Authorization
+
+| Permission ID | Permission Name    | Description               |
+| ------------- | ------------------ | ------------------------- |
+| P01           | `order:create`     | Create new lab orders     |
+| P02           | `order:edit`       | Modify lab orders         |
+| P03           | `order:cancel`     | Cancel lab orders         |
+| P04           | `order:view`       | View lab orders           |
+| P05           | `result:enter`     | Enter test results        |
+| P06           | `result:verify`    | Verify/authorize results  |
+| P07           | `result:amend`     | Amend verified results    |
+| P08           | `result:view`      | View test results         |
+| P09           | `patient:view`     | View patient information  |
+| P10           | `patient:edit`     | Edit patient information  |
+| P11           | `specimen:track`   | Track specimens           |
+| P12           | `qc:view`          | View quality control data |
+| P13           | `qc:manage`        | Manage quality control    |
+| P14           | `report:view`      | View reports              |
+| P15           | `report:export`    | Export reports            |
+| P16           | `inventory:view`   | View inventory            |
+| P17           | `inventory:manage` | Manage inventory          |
+| P18           | `admin:users`      | Manage users              |
+| P19           | `admin:config`     | System configuration      |
+| P20           | `audit:view`       | View audit logs           |
+
+### Data Protection
+
+- Encryption at rest (AES-256)
+- Encryption in transit (TLS 1.3)
+- Audit logging for all data access
+- Data retention per HIPAA (6 years minimum)
+
+### Network Security
+
+- VLAN segmentation
+- Firewall rules
+- DDoS protection
+- Intrusion detection system (IDS)
+
+---
+
+## 12. Observability and Operations
+
+### Key Metrics
+
+**System Metrics:**
+
+- Order processing time
+- Result turnaround time (TAT)
+- System uptime
+- Error rates
+
+**Business Metrics:**
+
+- Daily order volume
+- Test utilization
+- Revenue per test
+- Patient wait times
+
+### Monitoring
+
+- System health dashboard
+- Alerting for critical events
+- Capacity planning
+- Backup verification
+
+### Incident Management
+
+- Severity classification
+- Escalation procedures
+- Post-incident reviews
+- Root cause analysis
+
+---
+
+## 13. Acceptance Criteria
+
+### MVP Scope
+
+- Lab order entry and management
+- Test result entry and verification
+- Patient demographic management
+- Specimen tracking
+- Basic reporting
+- HL7 FHIR integration
+
+### Technical Acceptance
+
+- 99.9% uptime during business hours
+- Sub-second page load times
+- HIPAA-compliant encryption
+- Complete audit trail
+- Automated daily backups
+
+### Business Acceptance
+
+- Successful pilot with 100 test orders/day
+- Integration with 1 EHR system
+- Training completed for 20 lab staff
+- User satisfaction > 4.0/5
+
+---
+
+## 14. Out-of-Scope
+
+### Current Release
+
+- AI-powered result interpretation
+- Mobile app for phlebotomy
+- Genomic sequencing support
+- Telepathology integration
+- Blockchain-based audit trail
+
+### Future Phases
+
+- Predictive analytics for test utilization
+- Advanced mobile applications
+- Integration with wearable devices
+- Automated sample processing
+- Point-of-care testing integration
+
+---
+
+## 15. Open Questions
+
+### OQ01: EHR Integration Priority
+
+**Question:** Which EHR system should be the primary integration target?
+**Impact:** High (affects implementation timeline and resources)
+**Decision Deadline:** 2026-05-15
+
+### OQ02: Cloud vs On-Premises
+
+**Question:** Should the system be deployed on-premises or in the cloud?
+**Impact:** High (affects security compliance and infrastructure)
+**Decision Deadline:** 2026-04-30
+
+### OQ03: Mobile App Strategy
+
+**Question:** Native mobile apps or responsive web application?
+**Impact:** Medium (development effort and user experience)
+**Decision Deadline:** 2026-05-10
+
+---
+
+## 16. Glossary
+
+| Term       | Definition                                                            |
+| ---------- | --------------------------------------------------------------------- |
+| ALT        | Alanine Transaminase - liver enzyme                                   |
+| AST        | Aspartate Transaminase - liver enzyme                                 |
+| BUN        | Blood Urea Nitrogen                                                   |
+| CBC        | Complete Blood Count                                                  |
+| CLIA       | Clinical Laboratory Improvement Amendments                            |
+| CMP        | Comprehensive Metabolic Panel                                         |
+| CRP        | C-Reactive Protein                                                    |
+| ESR        | Erythrocyte Sedimentation Rate                                        |
+| GLU        | Glucose                                                               |
+| HbA1c      | Hemoglobin A1c - diabetes marker                                      |
+| Hct        | Hematocrit                                                            |
+| Hgb        | Hemoglobin                                                            |
+| INR        | International Normalized Ratio                                        |
+| KFT        | Kidney Function Test                                                  |
+| LIS        | Laboratory Information System                                         |
+| LFT        | Liver Function Test                                                   |
+| LYMPH      | Lymphocytes                                                           |
+| NEUT       | Neutrophils                                                           |
+| PT         | Prothrombin Time                                                      |
+| PTT        | Partial Thromboplastin Time                                           |
+| QC         | Quality Control                                                       |
+| PT         | Proficiency Testing                                                   |
+| RBC        | Red Blood Count                                                       |
+| TSH        | Thyroid Stimulating Hormone                                           |
+| WBC        | White Blood Count                                                     |
+| TAT        | Turnaround Time                                                       |
+| LOINC      | Logical Observation Identifiers Names and Codes                       |
+| CPT        | Current Procedural Terminology                                        |
+| ICD-10     | International Classification of Diseases                              |
+| HL7        | Health Level Seven                                                    |
+| CAP        | College of American Pathologists                                      |
+| AST        | Antimicrobial Susceptibility Testing                                  |
+| ID         | Identification (microbiology)                                         |
+| QC         | Quality Control                                                       |
+| PT         | Proficiency Testing                                                   |
+| LDT        | Laboratory Developed Test                                             |
+| POCT       | Point-of-Care Testing                                                 |
+| QMS        | Quality Management System                                             |
+| CAPA       | Corrective and Preventive Action                                      |
+| SOP        | Standard Operating Procedure                                          |
+| QA         | Quality Assurance                                                     |
+| EHR        | Electronic Health Record                                              |
+| EMR        | Electronic Medical Record                                             |
+| HIE        | Health Information Exchange                                           |
+| FHIR       | Fast Healthcare Interoperability Resources                            |
+| EDI        | Electronic Data Interchange                                           |
+| ERA        | Electronic Remittance Advice                                          |
+| EFT        | Electronic Funds Transfer                                             |
+| CPOE       | Computerized Physician Order Entry                                    |
+| CDS        | Clinical Decision Support                                             |
+| PHI        | Protected Health Information                                          |
+| HIPAA      | Health Insurance Portability and Accountability Act                   |
+| OCR        | Office for Civil Rights (HHS)                                         |
+| CMS        | Centers for Medicare & Medicaid Services                              |
+| ASCP       | American Society for Clinical Pathology                               |
+| AMT        | American Medical Technologists                                        |
+| ASM        | American Society for Microbiology                                     |
+| AACC       | Association for Advancement of Clinical Chemistry                     |
+| NAACLS     | National Accrediting Agency for Clinical Laboratory Sciences          |
+| NABL       | National Accreditation Board for Testing and Calibration Laboratories |
+| ISO        | International Organization for Standardization                        |
+| FDA        | Food and Drug Administration                                          |
+| OSHA       | Occupational Safety and Health Administration                         |
+| CDC        | Centers for Disease Control and Prevention                            |
+| WHO        | World Health Organization                                             |
+| AABB       | Association for the Advancement of Blood & Biotherapies               |
+| ASHI       | American Society for Histocompatibility and Immunogenetics            |
+| CLSI       | Clinical and Laboratory Standards Institute                           |
+| NIST       | National Institute of Standards and Technology                        |
+| NCCLS      | National Committee for Clinical Laboratory Standards                  |
+| EP         | Evaluation Protocol (CLSI)                                            |
+| CV         | Coefficient of Variation                                              |
+| SD         | Standard Deviation                                                    |
+| Mean       | Arithmetic average                                                    |
+| Bias       | Systematic error                                                      |
+| Sigma      | Six Sigma quality metric                                              |
+| LEJ        | Levey-Jennings chart                                                  |
+| WR         | Westgard Rules                                                        |
+| RCV        | Reference Change Value                                                |
+| MDL        | Method Detection Limit                                                |
+| LOD        | Limit of Detection                                                    |
+| LOQ        | Limit of Quantitation                                                 |
+| LLOQ       | Lower Limit of Quantitation                                           |
+| ULOQ       | Upper Limit of Quantitation                                           |
+| TRL        | Total Reportable Range                                                |
+| NIST       | National Institute of Standards and Technology                        |
+| RM         | Reference Material                                                    |
+| CRM        | Certified Reference Material                                          |
+| QC         | Quality Control                                                       |
+| IQC        | Internal Quality Control                                              |
+| EQA        | External Quality Assessment                                           |
+| PT         | Proficiency Testing                                                   |
+| BO         | Blind Sample                                                          |
+| SS         | Split Sample                                                          |
+| CS         | Control Sample                                                        |
+| NBS        | Normal Blind Sample                                                   |
+| ABS        | Abnormal Blind Sample                                                 |
+| T&S        | Type and Screen                                                       |
+| XM         | Crossmatch                                                            |
+| Coombs     | Antiglobulin test                                                     |
+| AHG        | Anti-Human Globulin                                                   |
+| DAT        | Direct Antiglobulin Test                                              |
+| IAT        | Indirect Antiglobulin Test                                            |
+| FFP        | Fresh Frozen Plasma                                                   |
+| PRBC       | Packed Red Blood Cells                                                |
+| PLT        | Platelets                                                             |
+| Cryo       | Cryoprecipitate                                                       |
+| ABG        | Arterial Blood Gas                                                    |
+| VBG        | Venous Blood Gas                                                      |
+| pH         | Potential of Hydrogen (acidity)                                       |
+| pCO2       | Partial pressure of Carbon Dioxide                                    |
+| pO2        | Partial pressure of Oxygen                                            |
+| HCO3       | Bicarbonate                                                           |
+| BE         | Base Excess                                                           |
+| SaO2       | Oxygen Saturation                                                     |
+| Lactate    | Lactic Acid                                                           |
+| BNP        | B-Type Natriuretic Peptide                                            |
+| Troponin   | Cardiac Troponin                                                      |
+| CK-MB      | Creatine Kinase MB                                                    |
+| D-Dimer    | Fibrin Degradation Product                                            |
+| Fibrinogen | Clotting Factor I                                                     |
+| aPTT       | Activated Partial Thromboplastin Time                                 |
+| TT         | Thrombin Time                                                         |
+| RPR        | Rapid Plasma Reagin                                                   |
+| VDRL       | Venereal Disease Research Laboratory                                  |
+| HIV        | Human Immunodeficiency Virus                                          |
+| HCV        | Hepatitis C Virus                                                     |
+| HBsAg      | Hepatitis B Surface Antigen                                           |
+| Anti-HBs   | Hepatitis B Surface Antibody                                          |
+| HBeAg      | Hepatitis B e Antigen                                                 |
+| Anti-HBe   | Hepatitis B e Antibody                                                |
+| Anti-HBc   | Hepatitis B Core Antibody                                             |
+| IgM        | Immunoglobulin M                                                      |
+| IgG        | Immunoglobulin G                                                      |
+| IgA        | Immunoglobulin A                                                      |
+| IgE        | Immunoglobulin E                                                      |
+| IgD        | Immunoglobulin D                                                      |
+| ANA        | Antinuclear Antibody                                                  |
+| RF         | Rheumatoid Factor                                                     |
+| ESR        | Erythrocyte Sedimentation Rate                                        |
+| CRP        | C-Reactive Protein                                                    |
+| ECP        | Eosinophil Cationic Protein                                           |
+| Tryptase   | Mast cell tryptase                                                    |
+| Troponin   | Cardiac biomarker                                                     |
+| BNP        | B-type natriuretic peptide                                            |
+| D-Dimer    | Fibrin degradation product                                            |
+
+---
+
+_End of Brief_
 
 ### Authentication
 

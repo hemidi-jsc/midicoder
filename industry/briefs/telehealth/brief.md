@@ -203,7 +203,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
 - Closed captioning for hearing impaired
 - Large text options for low vision
 - Simplified navigation for cognitive limitations
-- Multi-language support (Spanish, Mandarin, Vietnamese, etc.)
+- Multi-language support (Spanish, Mandarin, Vietnamese, and other examples)
 
 ---
 
@@ -647,7 +647,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
 2. **Pre-Visit Data Collection**
     - RPM devices automatically transmit data (glucose, BP, weight)
     - Patient completes symptom checklist
-    - Patient uploads photos if relevant (wound, rash, etc.)
+    - Patient uploads photos if relevant (wound, rash, and other examples)
     - Data available to provider 24 hours before visit
 
 3. **Check-In**
@@ -756,7 +756,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
 
 4. **Urgent Care Visit**
     - Provider conducts focused examination
-    - Provider may guide patient self-exam (throat, ears, etc.)
+    - Provider may guide patient self-exam (throat, ears, and other examples)
     - Provider makes diagnosis and treatment plan
     - Prescriptions sent immediately if appropriate
 
@@ -843,7 +843,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
 
 **Preconditions:**
 
-- Patient diagnosed with condition eligible for DTx (insomnia, depression, diabetes, etc.)
+- Patient diagnosed with condition eligible for DTx (insomnia, depression, diabetes, and other examples)
 - DTx product available and covered by patient's insurance
 - Provider trained on DTx indication and monitoring
 
@@ -1089,7 +1089,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
 **Preconditions:**
 
 - Patient identified as RPM candidate
-- Patient has condition suitable for monitoring (BP, glucose, weight, etc.)
+- Patient has condition suitable for monitoring (BP, glucose, weight, and other examples)
 - RPM devices available and ordered
 
 **Journey Steps:**
@@ -1100,7 +1100,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
     - Provider explains device and data collection requirements
 
 2. **Device Ordering and Delivery**
-    - RPM device ordered (BP cuff, glucose monitor, scale, etc.)
+    - RPM device ordered (BP cuff, glucose monitor, scale, and other examples)
     - Device shipped to patient with instructions
     - Patient receives device within 3-5 business days
 
@@ -1120,7 +1120,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
     - Care team notified of successful enrollment
 
 6. **Ongoing Monitoring**
-    - Patient takes readings per protocol (daily, weekly, etc.)
+    - Patient takes readings per protocol (daily, weekly, and other examples)
     - Data transmitted automatically
     - Care team reviews data and intervenes as needed
     - Provider receives trends and alerts
@@ -2006,7 +2006,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
 - [ ] APIs documented and accessible
 - [ ] Interfaces monitored and alertable
 - [ ] Integration errors logged and reportable
-- [ ] Security standards met (OAuth 2.0, etc.)
+- [ ] Security standards met (OAuth 2.0, and other examples)
 
 ---
 
@@ -3088,7 +3088,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
 
 ---
 
-### CC09: State Privacy Laws (CCPA, VCDPA, etc.)
+### CC09: State Privacy Laws (CCPA, VCDPA, and other examples)
 
 **Requirement:** Compliance with state consumer privacy laws
 
@@ -3207,7 +3207,7 @@ TeleCare Connect provides a comprehensive, integrated telehealth platform that e
 - FHIR R4 API (preferred)
 - HL7 v2 interfaces (legacy systems)
 - Direct integration per vendor specifications
-- Interface engine (Mirth, Rhapsody, etc.)
+- Interface engine (Mirth, Rhapsody, and other examples)
 
 **Acceptance Criteria:**
 
@@ -3657,7 +3657,7 @@ Provider {
   first_name: String
   middle_name: String
   last_name: String
-  credentials: String (MD, DO, NP, etc.)
+  credentials: String (MD, DO, NP, and other examples)
   specialty: String
   taxonomy_code: String
   dea_number: String
@@ -4056,7 +4056,7 @@ User {
 
 ---
 
-## 11. Roles and Permissions
+## 11. Security and Access Control
 
 ### Roles
 
@@ -4145,18 +4145,286 @@ User {
 **Description:** Manager overseeing quality improvement
 **Capabilities:** Quality metrics, reporting, improvement initiatives
 
+### Role Hierarchy
+
+1. Patient (Primary user - receives care)
+2. Family Member / Guardian (Proxy for patients)
+3. Primary Care Provider (MD/DO/NP/PA)
+4. Specialty Provider (Specialist physicians)
+5. Behavioral Health Provider (Therapist/Counselor)
+6. Nurse Practitioner (Independent practice)
+7. Physician Assistant (Supervised practice)
+8. Registered Nurse (Clinical support)
+9. Medical Assistant (Administrative support)
+10. Care Coordinator (Care management)
+11. Scheduling Coordinator (Appointment management)
+12. Billing Specialist (Revenue cycle)
+13. Customer Service (Patient support)
+14. Clinical Administrator (Operations)
+15. System Administrator (IT operations)
+16. Compliance Officer (Regulatory compliance)
+17. Quality Manager (Quality improvement)
+
 ### Permissions
 
-#### Patient Access Permissions
+| Permission ID | Permission Name         | Description                    | Roles                               |
+| ------------- | ----------------------- | ------------------------------ | ----------------------------------- |
+| P01           | `patients:view`         | View patient records           | Provider, Admin, Care Coordinator   |
+| P02           | `patients:create`       | Create new patient records     | Admin, Care Coordinator             |
+| P03           | `patients:edit`         | Edit patient records           | Provider, Admin, Care Coordinator   |
+| P04           | `patients:delete`       | Delete patient records         | Admin                               |
+| P05           | `appointments:view`     | View appointments              | All                                 |
+| P06           | `appointments:schedule` | Schedule appointments          | Provider, Scheduling Coordinator    |
+| P07           | `appointments:cancel`   | Cancel appointments            | Provider, Scheduling Coordinator    |
+| P08           | `encounters:view`       | View clinical encounters       | Provider, Admin                     |
+| P09           | `encounters:create`     | Create encounter documentation | Provider                            |
+| P10           | `encounters:edit`       | Edit encounter documentation   | Provider, Admin                     |
+| P11           | `prescriptions:view`    | View prescriptions             | Provider, Admin                     |
+| P12           | `prescriptions:create`  | Create prescriptions           | Provider                            |
+| P13           | `prescriptions:edit`    | Edit prescriptions             | Provider, Admin                     |
+| P14           | `labs:view`             | View lab orders and results    | Provider, Admin                     |
+| P15           | `labs:order`            | Order laboratory tests         | Provider                            |
+| P16           | `messages:view`         | View secure messages           | Provider, Patient, Care Coordinator |
+| P17           | `messages:send`         | Send secure messages           | Provider, Patient, Care Coordinator |
+| P18           | `reports:view`          | View reports and analytics     | Provider, Admin, Quality Manager    |
+| P19           | `reports:export`        | Export reports                 | Admin, Quality Manager              |
+| P20           | `billing:view`          | View billing information       | Billing Specialist, Admin           |
+| P21           | `billing:process`       | Process payments and claims    | Billing Specialist                  |
+| P22           | `admin:users`           | Manage user accounts           | Admin                               |
+| P23           | `admin:config`          | System configuration           | Admin                               |
+| P24           | `admin:audit`           | View audit logs                | Admin, Compliance Officer           |
 
-| Permission ID | Permission Name      | Description                       | Roles                  |
-| ------------- | -------------------- | --------------------------------- | ---------------------- |
-| P01           | View Own Profile     | View and edit own patient profile | Patient, Family Member |
-| P02           | View Own Records     | View own health records           | Patient, Family Member |
-| P03           | Schedule Appointment | Schedule telehealth appointments  | Patient, Family Member |
-| P04           | Cancel Appointment   | Cancel scheduled appointments     | Patient, Family Member |
-| P05           | Join Video Visit     | Join virtual exam room            | Patient                |
+### Role-Permission Matrix
+
+| Role                 | P01-P04 | P05-P07 | P08-P10 | P11-P13 | P14-P15 | P16-P17 | P18-P19 | P20-P21 | P22-P24 |
+| -------------------- | ------- | ------- | ------- | ------- | ------- | ------- | ------- | ------- | ------- |
+| Patient              | Y       | Y       | N       | N       | N       | Y       | N       | N       | N       |
+| Provider             | Y       | Y       | Y       | Y       | Y       | Y       | Y       | N       | N       |
+| Care Coordinator     | Y       | Y       | N       | N       | N       | Y       | Y       | N       | N       |
+| Billing Specialist   | Y       | Y       | N       | N       | N       | N       | Y       | Y       | N       |
+| System Administrator | Y       | Y       | Y       | Y       | Y       | Y       | Y       | Y       | Y       |
+
+## 12. Observability and Operations
+
+### Key Metrics
+
+- Appointment volume
+- Video call success rate
+- Patient satisfaction (CSAT)
+- No-show rate
+- Prescriptions filled
+- Reimbursement rate
+- Average wait time
+- Provider utilization
+
+### Alerts
+
+- System failures
+- Video quality issues
+- Appointment reminders
+- Prescription alerts
+- HIPAA compliance alerts
+
+### Monitoring
+
+- Video call quality (latency, packet loss)
+- Platform uptime
+- Patient wait times
+- Provider availability
+- EHR sync status
+
+---
+
+## 13. Acceptance Criteria
+
+### MVP Scope
+
+- Video consultations (1:1)
+- E-prescriptions
+- Appointment scheduling
+- Patient portal
+- Provider portal
+- Basic EHR integration
+
+### Technical Acceptance
+
+- Video call latency < 300ms
+- 99.9% uptime during business hours
+- HIPAA compliance certified
+- End-to-end encryption for all communications
+- Support 1,000 concurrent video calls
+
+### Business Acceptance
+
+- 10 healthcare providers onboarded
+- 100 consultations per month
+- CSAT > 4.0/5
+- Zero security breaches
+- Successful pilot with healthcare partners
+
+## 14. Out-of-Scope
+
+### Current Release
+
+- AI-powered diagnosis support
+- Remote patient monitoring device integration
+- Group therapy sessions
+- Family/couples therapy mode
+- Multilingual provider matching
+- Automated prior authorization
+
+### Planned Enhancements
+
+- AI clinical documentation assistance
+- Predictive analytics for patient outcomes
+- Blockchain for credential verification
+- VR/AR examination tools
+- Integration with wearable devices
+- Advanced care coordination workflows
+
+---
+
+## 15. Open Questions
+
+### OQ01: Cross-State Licensure Strategy
+
+### OQ02: EHR Integration Priority
+
+### OQ03: Pricing Model
+
+### OQ04: Video Infrastructure
+
+### OQ05: Mobile-First or Web-First
+
+---
+
+## 16. Glossary
+
+| Term         | Definition                                                        |
+| ------------ | ----------------------------------------------------------------- |
+| Telehealth   | Delivery of healthcare services via telecommunications technology |
+| Telemedicine | Clinical services delivered remotely via telehealth               |
+| HIPAA        | Health Insurance Portability and Accountability Act               |
+| EHR          | Electronic Health Record                                          |
+| EMR          | Electronic Medical Record                                         |
+| EPCS         | Electronic Prescribing of Controlled Substances                   |
+| RPM          | Remote Patient Monitoring                                         |
+| CCM          | Chronic Care Management                                           |
+| CPT          | Current Procedural Terminology                                    |
+| ICD-10       | International Classification of Diseases, 10th Revision           |
+| NPI          | National Provider Identifier                                      |
+| DEA          | Drug Enforcement Administration                                   |
+| PDMP         | Prescription Drug Monitoring Program                              |
+| FHIR         | Fast Healthcare Interoperability Resources                        |
+| HEDIS        | Healthcare Effectiveness Data and Information Set                 |
+| MIPS         | Merit-based Incentive Payment System                              |
+| MACRA        | Medicare Access and CHIP Reauthorization Act                      |
+| BAA          | Business Associate Agreement                                      |
+| PHI          | Protected Health Information                                      |
+| ePHI         | Electronic Protected Health Information                           |
+| RPM          | Remote Patient Monitoring                                         |
 
 ---
 
 _End of Brief_
+
+**Question:** How to handle provider cross-state practice requirements?
+
+**Impact:** High (affects provider network size, market expansion)
+
+**Decision Deadline:** 2026-05-15
+
+**Dependencies:** State medical board regulations, Interstate Medical Licensure Compact
+
+**Proposed Options:**
+
+- Option A: Require individual state licenses
+- Option B: Leverage Interstate Medical Licensure Compact
+- Option C: Partner with locum tenens networks
+
+**Decision Owner:** Chief Medical Officer / Legal
+
+---
+
+### OQ02: EHR Integration Priority
+
+**Question:** Which EHR systems to integrate with first?
+
+**Impact:** High (affects customer adoption, implementation time)
+
+**Decision Deadline:** 2026-04-20
+
+**Dependencies:** Customer EHR preferences, integration complexity
+
+**Proposed Options:**
+
+- Option A: Epic and Cerner first (enterprise focus)
+- Option B: athenahealth and eClinicalWorks (SMB focus)
+- Option C: Build FHIR-first, integrate broadly subsequently
+
+**Decision Owner:** CTO / Product
+
+---
+
+### OQ03: Pricing Model
+
+**Question:** Per-visit pricing vs. per-provider subscription?
+
+**Impact:** Medium (affects revenue model, customer adoption)
+
+**Decision Deadline:** 2026-05-01
+
+**Dependencies:** Market research, competitive analysis
+
+**Proposed Options:**
+
+- Option A: Per-provider monthly subscription
+- Option B: Per-visit pricing
+- Option C: Hybrid model (base + per-visit)
+
+**Decision Owner:** CFO / Sales
+
+---
+
+### OQ04: Video Infrastructure
+
+**Question:** Build custom or use third-party video?
+
+**Impact:** High (affects cost, control, differentiation)
+
+**Decision Deadline:** 2026-04-15
+
+**Dependencies:** Technical assessment, budget
+
+**Proposed Options:**
+
+- Option A: Third-party (Twilio, Vonage)
+- Option B: Build custom WebRTC infrastructure
+- Option C: Hybrid approach
+
+**Decision Owner:** CTO
+
+---
+
+### OQ05: Mobile-First or Web-First
+
+**Question:** Priority platform for development?
+
+**Impact:** Medium (affects development resources, user experience)
+
+**Decision Deadline:** 2026-04-10
+
+**Dependencies:** User research, technical assessment
+
+**Proposed Options:**
+
+- Option A: Mobile-first (native apps)
+- Option B: Web-first (responsive web app)
+- Option C: Parallel development
+
+**Decision Owner:** CTO / Product
+
+---
+
+_End of Brief_
+

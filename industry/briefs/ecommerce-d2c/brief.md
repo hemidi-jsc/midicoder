@@ -421,7 +421,7 @@ ShopDirect Pro is a comprehensive D2C e-commerce platform that provides:
 
 **Alternative Paths:**
 
-- **Draft mode:** Product saved as draft for later publishing
+- **Draft mode:** Product saved as draft for subsequent publishing
 - **Bulk import:** Products imported via CSV instead of individual creation
 - **Scheduled publish:** Product scheduled to go live at specific date/time
 
@@ -657,7 +657,7 @@ ShopDirect Pro is a comprehensive D2C e-commerce platform that provides:
 **Alternative Paths:**
 
 - **Instant refund:** High-value customer or low-risk return
-- **No-label return:** Customer uses own shipping, reimbursed later
+- **No-label return:** Customer uses own shipping, reimbursed in subsequent phase
 - **In-store return:** Customer returns at physical location
 - **Exchange:** Direct exchange without refund/reorder
 
@@ -958,7 +958,7 @@ ShopDirect Pro is a comprehensive D2C e-commerce platform that provides:
 - **Description:** System shall maintain persistent shopping carts for guest and authenticated users
 - **Priority:** Must
 - **Acceptance Criteria:**
-    - Given a guest user, when they add items to cart and return later, then cart items are preserved (localStorage)
+    - Given a guest user, when they add items to cart and return at a subsequent time, then cart items are preserved (localStorage)
     - Given a logged-in user, when they add items on mobile and checkout on desktop, then cart items are synced
     - Given a cart with 100 items, when system calculates total, then calculation completes within 100ms
 - **Dependencies:** FR01

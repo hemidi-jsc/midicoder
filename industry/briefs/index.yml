@@ -1,0 +1,167 @@
+# Brief Template Library Index
+# Midicoder CE v1.0.0
+# 
+# Official registry of universal-fully brief templates for industry domains.
+# Industry IDs follow the naming convention from INDUSTRY_100_SYSTEM_MAP.md
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-16"
+  updated: "2026-04-17"
+
+# Priority Top 20 Industries (E10)
+priority_top20:
+  - priority: 1
+    industry_id: ecommerce-d2c
+    folder: ecommerce-d2c
+    description: "Enterprise D2C e-commerce platform for brands selling directly to consumers. Multi-channel sales, catalog management, cart/checkout, payments, inventory, promotions, order fulfillment, customer accounts, and analytics."
+    domain_packs: ["DP01", "DP12"]
+    regulatory_overlays: ["RX01", "RX06", "RX10", "RX11"]
+
+  - priority: 2
+    industry_id: marketplace-b2c
+    folder: marketplace-b2c
+    description: "B2C multi-vendor marketplace enabling buyers to purchase from multiple sellers. Seller onboarding, product listings, marketplace search, escrow payments, commission management, buyer protection, dispute resolution, and ratings/reviews."
+    domain_packs: ["DP02", "DP01", "DP12"]
+    regulatory_overlays: ["RX01", "RX10", "RX11"]
+
+  - priority: 3
+    industry_id: marketplace-b2b
+    folder: marketplace-b2b
+    description: "B2B marketplace for wholesale and bulk trading. Buyer verification, bulk pricing, volume discounts, credit terms, PO integration, RFP/tender support, contract negotiation, and enterprise procurement workflows."
+    domain_packs: ["DP02", "DP22"]
+    regulatory_overlays: ["RX01", "RX06", "RX11"]
+
+  - priority: 4
+    industry_id: omnichannel-retail
+    folder: omnichannel-retail
+    description: "Unified retail platform spanning physical stores, e-commerce, mobile, and social channels. POS integration, inventory synchronization, buy-online-pickup-in-store, unified customer profiles, price/promotion consistency across channels."
+    domain_packs: ["DP01", "DP05"]
+    regulatory_overlays: ["RX01", "RX06", "RX10"]
+
+  - priority: 5
+    industry_id: food-delivery
+    folder: food-delivery
+    description: "On-demand food delivery platform connecting restaurants, customers, and drivers. Restaurant management, menu management, real-time order tracking, driver dispatch and routing, dynamic pricing, tips, and delivery optimization."
+    domain_packs: ["DP01", "DP04"]
+    regulatory_overlays: ["RX01", "RX09", "RX10"]
+
+  - priority: 6
+    industry_id: warehouse-management
+    folder: warehouse-management
+    description: "Warehouse management system (WMS) for inbound, storage, and outbound operations. Receiving, putaway, picking strategies, packing, shipping, cycle counting, bin management, labor tracking, and integration with inventory systems."
+    domain_packs: ["DP04", "DP05"]
+    regulatory_overlays: ["RX09", "RX11"]
+
+  - priority: 7
+    industry_id: last-mile-delivery
+    folder: last-mile-delivery
+    description: "Last-mile delivery and logistics platform. Route optimization, driver mobile app, real-time tracking, proof of delivery, delivery windows, returns management, fleet management, and customer notifications."
+    domain_packs: ["DP04"]
+    regulatory_overlays: ["RX01", "RX09", "RX10"]
+
+  - priority: 8
+    industry_id: procurement-srm
+    folder: procurement-srm
+    description: "Enterprise procurement and supplier relationship management platform. Strategic sourcing (RFP/RFQ), purchase-to-pay workflow, supplier onboarding and qualification, contract management, spend analysis, supplier performance tracking, and risk monitoring."
+    domain_packs: ["DP22"]
+    regulatory_overlays: ["RX01", "RX05", "RX11"]
+
+  - priority: 9
+    industry_id: crm-platform
+    folder: crm-platform
+    description: "B2B CRM platform for sales, marketing, and customer service. Lead and opportunity management, account/contact management, sales pipeline, email integration, marketing automation, case/ticket management, and sales analytics."
+    domain_packs: ["DP18", "DP22"]
+    regulatory_overlays: ["RX01", "RX11"]
+
+  - priority: 10
+    industry_id: erp-finance
+    folder: erp-finance
+    description: "Enterprise ERP finance and operations module. General ledger, accounts payable/receivable, fixed assets, budgeting, financial reporting, multi-currency, tax management, cost accounting, and financial consolidation."
+    domain_packs: ["DP22", "DP11"]
+    regulatory_overlays: ["RX01", "RX02", "RX06", "RX11"]
+
+  - priority: 11
+    industry_id: itsm-helpdesk
+    folder: itsm-helpdesk
+    description: "IT service management and helpdesk platform. Incident, problem, and change management, service catalog, SLA tracking, asset management, knowledge base, self-service portal, and ITIL process support."
+    domain_packs: ["DP22", "DP24"]
+    regulatory_overlays: ["RX01", "RX11"]
+
+  - priority: 12
+    industry_id: payroll-benefits
+    folder: payroll-benefits
+    description: "Payroll and employee benefits management system. Employee data, timesheet integration, pay runs, tax calculation and filing, benefits enrollment, garnishment, direct deposit, payslip generation, and compliance reporting."
+    domain_packs: ["DP21", "DP12"]
+    regulatory_overlays: ["RX01", "RX06", "RX07", "RX11"]
+
+  - priority: 13
+    industry_id: k12-school
+    folder: k12-school
+    description: "K-12 school management system. Student information system (SIS), class scheduling, gradebook, attendance tracking, parent portal, teacher tools, report cards, discipline tracking, and communication tools."
+    domain_packs: ["DP19"]
+    regulatory_overlays: ["RX01", "RX08", "RX11"]
+
+  - priority: 14
+    industry_id: university-management
+    folder: university-management
+    description: "University and higher education management platform. Student enrollment, course catalog, registration, gradebook, transcripts, financial aid, alumni tracking, research grant management, and campus resources."
+    domain_packs: ["DP19", "DP12"]
+    regulatory_overlays: ["RX01", "RX08", "RX11"]
+
+  - priority: 15
+    industry_id: vocational-training
+    folder: vocational-training
+    description: "Vocational training and skills development platform. Program catalog, student enrollment, curriculum management, skills tracking, certification management, instructor tools, employer partnerships, and job placement tracking."
+    domain_packs: ["DP19"]
+    regulatory_overlays: ["RX01", "RX08", "RX11"]
+
+  - priority: 16
+    industry_id: hospital-is
+    folder: hospital-is
+    description: "Hospital information system for healthcare facilities. Patient registration, electronic health records (EHR), physician order entry, nursing workflows, bed management, billing integration, lab integration, and clinical documentation."
+    domain_packs: ["DP09", "DP12"]
+    regulatory_overlays: ["RX01", "RX04", "RX11"]
+
+  - priority: 17
+    industry_id: telehealth
+    folder: telehealth
+    description: "Telehealth and remote patient care platform. Video consultations, appointment scheduling, e-prescribing, telemedicine compliance, remote monitoring integration, patient portal, and billing for virtual visits."
+    domain_packs: ["DP09"]
+    regulatory_overlays: ["RX01", "RX04", "RX11", "RX12"]
+
+  - priority: 18
+    industry_id: laboratory-lis
+    folder: laboratory-lis
+    description: "Laboratory information system for medical and diagnostic labs. Test ordering, specimen tracking, results entry and validation, QC workflows, billing and claims, interface with instruments, and physician result delivery."
+    domain_packs: ["DP10", "DP09"]
+    regulatory_overlays: ["RX01", "RX04", "RX11"]
+
+  - priority: 19
+    industry_id: retail-banking
+    folder: retail-banking
+    description: "Retail banking platform for consumer banking services. Account management, deposits, loans and mortgages, payments and transfers, card services, digital banking, fraud detection, and regulatory compliance."
+    domain_packs: ["DP11", "DP12"]
+    regulatory_overlays: ["RX01", "RX02", "RX03", "RX11"]
+
+  - priority: 20
+    industry_id: exchange-trading
+    folder: exchange-trading
+    description: "Financial exchange and trading platform. Market matching engine, order management, trading algorithms, risk management, settlement and clearing, market data feeds, compliance reporting, and regulatory surveillance."
+    domain_packs: ["DP16", "DP15"]
+    regulatory_overlays: ["RX01", "RX02", "RX03", "RX11"]
+
+# Depth Gate Requirements
+depth_gate:
+  min_personas: 3
+  min_journeys: 10
+  min_functional_requirements: 30
+  min_non_functional_requirements: 15
+  min_domain_invariants: 10
+  min_compliance_constraints: 8
+  min_integration_contracts: 10
+  min_failure_scenarios: 10
+  min_core_entities: 15
+  min_roles: 5
+  min_permissions: 20
+  min_word_count: 5000
