@@ -455,7 +455,7 @@ SalesHub Enterprise provides a comprehensive, enterprise-grade CRM platform:
 **Failure Scenarios:**
 
 - Lead routing fails: Lead goes to queue, admin must manually assign
-- Duplicate account not detected: Manual merge required later
+- Duplicate account not detected: Manual merge required subsequently
 - Conversion fails: Lead remains in system, opportunity created separately
 
 ---
@@ -3333,6 +3333,39 @@ Task {
 
 ---
 
+### Permission Definitions
+
+| Permission             | Description                |
+| ---------------------- | -------------------------- |
+| `accounts:view`        | View account records       |
+| `accounts:create`      | Create new accounts        |
+| `accounts:edit`        | Edit account records       |
+| `accounts:delete`      | Delete account records     |
+| `contacts:view`        | View contact records       |
+| `contacts:create`      | Create new contacts        |
+| `contacts:edit`        | Edit contact records       |
+| `contacts:delete`      | Delete contact records     |
+| `opportunities:view`   | View opportunity records   |
+| `opportunities:create` | Create new opportunities   |
+| `opportunities:edit`   | Edit opportunity records   |
+| `opportunities:delete` | Delete opportunity records |
+| `leads:view`           | View lead records          |
+| `leads:create`         | Create new leads           |
+| `leads:edit`           | Edit lead records          |
+| `leads:convert`        | Convert leads to accounts  |
+| `activities:view`      | View activity records      |
+| `activities:create`    | Create new activities      |
+| `activities:edit`      | Edit activity records      |
+| `cases:view`           | View support cases         |
+| `cases:create`         | Create new cases           |
+| `cases:edit`           | Edit case records          |
+| `campaigns:view`       | View marketing campaigns   |
+| `campaigns:create`     | Create new campaigns       |
+| `campaigns:edit`       | Edit campaign records      |
+| `reports:view`         | View reports               |
+| `reports:export`       | Export report data         |
+| `admin:config`         | System configuration       |
+
 ### Authorization
 
 **Role-Based Access Control (RBAC):**
@@ -3821,7 +3854,7 @@ The minimum viable product includes:
 
 **Impact:** Infrastructure requirements, pricing model, support complexity
 
-**Recommendation:** Start with SaaS-only, evaluate hybrid for enterprise later
+**Recommendation:** Start with SaaS-only, evaluate hybrid for enterprise subsequently
 
 ---
 
@@ -3894,7 +3927,7 @@ The minimum viable product includes:
 **Considerations:**
 
 - API-first: Better integrations, more developer-friendly, design complexity
-- UI-first: Faster time-to-market, integration limitations later
+- UI-first: Faster time-to-market, integration limitations subsequently
 
 **Impact:** Integration capabilities, developer ecosystem, long-term flexibility
 

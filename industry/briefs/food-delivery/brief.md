@@ -610,7 +610,7 @@ FoodSwift Pro provides a comprehensive food delivery platform:
 **Alternative Paths:**
 
 - **Pickup Order:** Skip driver assignment, pickup notification
-- **Scheduled Delivery:** Order placed in advance for later delivery
+- **Scheduled Delivery:** Order placed in advance for future delivery
 - **Group Order:** Multiple customers contribute to single order
 - **Phone Order:** Support agent places order on behalf of customer
 
@@ -2603,6 +2603,62 @@ FoodSwift Pro provides a comprehensive food delivery platform:
 | findings       | JSON    | No       | Audit findings and notes          |
 | status         | Enum    | Yes      | scheduled, in_progress, completed |
 
+**Tip**
+
+| Field          | Type          | Required | Description             |
+| -------------- | ------------- | -------- | ----------------------- |
+| tip_id         | UUID          | Yes      | Unique tip identifier   |
+| order_id       | UUID          | Yes      | Foreign key to Order    |
+| amount         | Decimal(10,2) | Yes      | Tip amount              |
+| currency       | String(3)     | Yes      | Currency code           |
+| tipper_role    | Enum          | Yes      | customer, platform      |
+| recipient_role | Enum          | Yes      | driver, restaurant      |
+| status         | Enum          | Yes      | pending, paid, refunded |
+| created_at     | DateTime      | Yes      | Creation timestamp      |
+
+**Notification**
+
+| Field      | Type        | Required | Description                    |
+| ---------- | ----------- | -------- | ------------------------------ |
+| notif_id   | UUID        | Yes      | Unique notification identifier |
+| user_id    | UUID        | Yes      | Target user                    |
+| type       | Enum        | Yes      | order, delivery, promo, system |
+| channel    | Enum        | Yes      | push, sms, email               |
+| title      | String(255) | Yes      | Notification title             |
+| body       | Text        | No       | Notification body              |
+| is_read    | Boolean     | Yes      | Read status                    |
+| created_at | DateTime    | Yes      | Creation timestamp             |
+
+**Rating**
+
+| Field      | Type         | Required | Description              |
+| ---------- | ------------ | -------- | ------------------------ |
+| rating_id  | UUID         | Yes      | Unique rating identifier |
+| order_id   | UUID         | Yes      | Foreign key to Order     |
+| rater_id   | UUID         | Yes      | User who gave rating     |
+| rated_type | Enum         | Yes      | driver, restaurant       |
+| rated_id   | UUID         | Yes      | Entity being rated       |
+| score      | Decimal(3,2) | Yes      | Rating score (1-5)       |
+| comment    | Text         | No       | Optional comment         |
+| created_at | DateTime     | Yes      | Creation timestamp       |
+
+**Address**
+
+| Field       | Type         | Required | Description                |
+| ----------- | ------------ | -------- | -------------------------- |
+| address_id  | UUID         | Yes      | Unique address identifier  |
+| user_id     | UUID         | Yes      | Owner user                 |
+| label       | String(100)  | Yes      | Address label (Home, Work) |
+| line1       | String(255)  | Yes      | Street address             |
+| line2       | String(255)  | No       | Apartment, suite           |
+| city        | String(100)  | Yes      | City name                  |
+| state       | String(100)  | Yes      | State/province             |
+| postal_code | String(20)   | Yes      | ZIP/postal code            |
+| country     | String(2)    | Yes      | Country code               |
+| latitude    | Decimal(9,6) | Yes      | GPS latitude               |
+| longitude   | Decimal(9,6) | Yes      | GPS longitude              |
+| is_default  | Boolean      | Yes      | Default address flag       |
+
 ---
 
 ## 11. Security and Access Control
@@ -2614,6 +2670,31 @@ FoodSwift Pro provides a comprehensive food delivery platform:
 - **MFA:** Optional for customers, required for support/admin
 - **Password Policy:** Minimum 12 characters, complexity requirements
 - **Session Timeout:** 30 minutes for customers, 8 hours for staff
+
+### Permission Definitions
+
+| Permission           | Description                  |
+| -------------------- | ---------------------------- |
+| `orders:view`        | View orders                  |
+| `orders:create`      | Create new orders            |
+| `orders:cancel`      | Cancel orders                |
+| `orders:refund`      | Process refunds              |
+| `menus:view`         | View restaurant menus        |
+| `menus:edit`         | Edit restaurant menus        |
+| `menus:publish`      | Publish menu changes         |
+| `drivers:view`       | View driver information      |
+| `dispatch:manage`    | Manage order dispatch        |
+| `payments:view`      | View payment records         |
+| `payments:process`   | Process payments             |
+| `payments:refund`    | Process payment refunds      |
+| `customers:view`     | View customer data           |
+| `customers:edit`     | Edit customer data           |
+| `support:view`       | View support tickets         |
+| `support:manage`     | Manage support tickets       |
+| `reports:view`       | View analytics reports       |
+| `settings:edit`      | Edit platform settings       |
+| `restaurants:view`   | View restaurant data         |
+| `restaurants:manage` | Manage restaurant onboarding |
 
 ### Authorization
 
