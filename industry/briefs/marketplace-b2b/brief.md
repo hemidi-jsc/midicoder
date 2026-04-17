@@ -1494,7 +1494,7 @@ TradeHub Enterprise provides:
 - **Automatic increase:** Based on payment history and utilization
 - **Seasonal increase:** Temporary increase for peak season
 - **Order-specific credit:** Single order exceeds limit, one-time approval
-- **Collateral-based:** Credit backed by letter of credit or security
+- **Colin subsequent phaseal-based:** Credit backed by letter of credit or security
 
 **Success Criteria:**
 
@@ -1588,7 +1588,7 @@ TradeHub Enterprise provides:
 **Alternative Paths:**
 
 - **Implementation partner:** Third party handles integration
-- **Phased integration:** Start with orders, add invoices later
+- **Phased integration:** Start with orders, add invoices in subsequent phase
 - **Hybrid:** Some data synced, some manual
 - **Read-only sync:** Marketplace data pushed to ERP for reporting only
 
@@ -3258,6 +3258,20 @@ TradeHub Enterprise provides:
 | actual_delivery    | Date        | No       | Actual delivery date                               |
 | created_at         | Timestamp   | Yes      | Creation time                                      |
 
+**Payment**
+
+| Field          | Type          | Required | Description                          |
+| -------------- | ------------- | -------- | ------------------------------------ |
+| payment_id     | UUID          | Yes      | Unique payment identifier            |
+| invoice_id     | UUID          | Yes      | Foreign key to Invoice               |
+| amount         | Decimal(15,2) | Yes      | Payment amount                       |
+| currency       | String(3)     | Yes      | Currency code                        |
+| payment_method | String(50)    | Yes      | wire, check, ach, credit_card        |
+| status         | Enum          | Yes      | pending, processed, failed, refunded |
+| payment_date   | Date          | No       | Actual payment date                  |
+| reference      | String(100)   | No       | Payment reference number             |
+| created_at     | Timestamp     | Yes      | Payment record creation time         |
+
 ### Entity Relationships
 
 - BuyerOrganization 1:N BuyerUser
@@ -3299,6 +3313,35 @@ TradeHub Enterprise provides:
     - Refresh tokens with 30-day expiration
     - Concurrent session limit: 5 per user
     - Automatic logout on password change
+
+### Permission Definitions
+
+| Permission           | Description                      |
+| -------------------- | -------------------------------- |
+| `products:view`      | View product catalog             |
+| `products:create`    | Create new products              |
+| `products:edit`      | Edit existing products           |
+| `products:delete`    | Delete products                  |
+| `products:approve`   | Approve pending product listings |
+| `orders:create`      | Create new orders                |
+| `orders:view`        | View orders                      |
+| `orders:edit`        | Edit orders                      |
+| `orders:approve`     | Approve orders                   |
+| `orders:cancel`      | Cancel orders                    |
+| `invoices:view`      | View invoices                    |
+| `invoices:submit`    | Submit invoices                  |
+| `invoices:approve`   | Approve invoices                 |
+| `invoices:pay`       | Process payments                 |
+| `contracts:create`   | Create contracts                 |
+| `contracts:view`     | View contracts                   |
+| `contracts:approve`  | Approve contracts                |
+| `users:manage`       | Manage user accounts             |
+| `users:invite`       | Invite new users                 |
+| `analytics:view`     | View analytics and reports       |
+| `settings:configure` | Configure system settings        |
+| `rfq:create`         | Create RFQs                      |
+| `quotes:submit`      | Submit quotes                    |
+| `approvals:delegate` | Delegate approvals               |
 
 ### Authorization
 
@@ -3653,6 +3696,7 @@ TradeHub Enterprise provides:
 | WORM         | Write Once Read Many - storage that prevents modification after writing                     |
 | W-9          | IRS form for US taxpayer identification                                                     |
 | W-8          | IRS form for foreign taxpayer identification                                                |
+
 ---
 
 _End of Brief_

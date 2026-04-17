@@ -2280,6 +2280,32 @@ ServiceDesk Pro provides comprehensive ITSM and helpdesk capabilities:
 - **Session Management:** JWT tokens, configurable timeout
 - **MFA:** Optional for users, recommended for admins
 
+### Permission Definitions
+
+| Permission       | Description              |
+| ---------------- | ------------------------ |
+| `tickets:view`   | View tickets             |
+| `tickets:create` | Create tickets           |
+| `tickets:edit`   | Edit tickets             |
+| `tickets:delete` | Delete tickets           |
+| `tickets:assign` | Assign tickets to agents |
+| `tickets:close`  | Close tickets            |
+| `kb:view`        | View knowledge base      |
+| `kb:create`      | Create articles          |
+| `kb:edit`        | Edit articles            |
+| `kb:publish`     | Publish articles         |
+| `agents:view`    | View agent information   |
+| `agents:manage`  | Manage agent accounts    |
+| `users:view`     | View user information    |
+| `users:manage`   | Manage user accounts     |
+| `sla:view`       | View SLA configuration   |
+| `sla:edit`       | Edit SLA configuration   |
+| `reports:view`   | View reports             |
+| `reports:export` | Export reports           |
+| `catalog:view`   | View service catalog     |
+| `catalog:edit`   | Edit service catalog     |
+| `admin:config`   | System configuration     |
+
 ### Authorization
 
 - **RBAC:** 10+ predefined roles, custom role support
@@ -2362,7 +2388,7 @@ ServiceDesk Pro provides comprehensive ITSM and helpdesk capabilities:
 
 ---
 
-## 15. API Reference
+## 15. Open Questions
 
 ### REST API Overview
 
@@ -2913,14 +2939,14 @@ GET /reports/agent-performance?agent_id=uuid&from=2024-01-01&to=2024-01-31
 {
     "error": {
         "code": "INTERNAL_ERROR",
-        "message": "An unexpected error occurred. Please try again later."
+        "message": "An unexpected error occurred. Please try again subsequently."
     }
 }
 ```
 
 ---
 
-## 16. Testing Requirements
+## 16. Glossary
 
 ### Unit Testing
 
@@ -3136,7 +3162,7 @@ class RateLimitError(BaseError):
 
 ---
 
-## 18. Open Questions
+## 18. API Reference
 
 ### OQ01: Pricing Model
 
@@ -3160,7 +3186,7 @@ class RateLimitError(BaseError):
 
 ---
 
-## 19. Glossary
+## 19. Testing Requirements
 
 | Term             | Definition                                    |
 | ---------------- | --------------------------------------------- |
@@ -3184,3 +3210,4 @@ class RateLimitError(BaseError):
 ---
 
 _End of Brief_
+

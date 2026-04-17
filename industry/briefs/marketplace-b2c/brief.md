@@ -558,7 +558,7 @@ MarketPlace Pro is a comprehensive multi-vendor marketplace platform that provid
 - **Catalog match:** Seller finds existing catalog item and lists at their price
 - **Bulk upload:** Seller uploads CSV with multiple products
 - **API listing:** Enterprise seller creates listings via API integration
-- **Draft mode:** Seller saves draft to complete later
+- **Draft mode:** Seller saves draft to complete in subsequent phase
 
 **Success Criteria:**
 
@@ -626,7 +626,7 @@ MarketPlace Pro is a comprehensive multi-vendor marketplace platform that provid
 9. Buyer decides to:
     - Add to cart and continue shopping
     - Add to cart and proceed to checkout
-    - Add to wishlist for later
+    - Add to wishlist for in subsequent phase
     - Continue browsing
 
 **Alternative Paths:**
@@ -771,7 +771,7 @@ MarketPlace Pro is a comprehensive multi-vendor marketplace platform that provid
 
 - **Dropshipping:** Seller forwards order to supplier who ships directly
 - **Marketplace fulfillment:** Seller sends inventory to marketplace warehouse
-- **Partial shipment:** Available items ship, backordered items later
+- **Partial shipment:** Available items ship, backordered items in subsequent phase
 - **Local pickup:** Buyer picks up order at seller location
 
 **Success Criteria:**
@@ -2725,20 +2725,28 @@ MarketPlace Pro is a comprehensive multi-vendor marketplace platform that provid
 
 ### Permission Definitions
 
-| Permission        | Description                 |
-| ----------------- | --------------------------- |
-| `listings:create` | Create new product listings |
-| `listings:edit`   | Edit existing listings      |
-| `listings:delete` | Delete listings             |
-| `orders:view`     | View orders                 |
-| `orders:edit`     | Edit orders (fulfillment)   |
-| `orders:refund`   | Process refunds             |
-| `sellers:verify`  | Verify seller accounts      |
-| `sellers:suspend` | Suspend seller accounts     |
-| `disputes:manage` | Manage dispute resolution   |
-| `analytics:view`  | View analytics              |
-| `payouts:process` | Process payouts             |
-| `config:edit`     | Edit platform configuration |
+| Permission          | Description                      |
+| ------------------- | -------------------------------- |
+| `listings:create`   | Create new product listings      |
+| `listings:edit`     | Edit existing listings           |
+| `listings:delete`   | Delete listings                  |
+| `listings:view_all` | View all listings (cross-seller) |
+| `listings:approve`  | Approve pending listings         |
+| `orders:view`       | View orders                      |
+| `orders:edit`       | Edit orders (fulfillment)        |
+| `orders:refund`     | Process refunds                  |
+| `orders:cancel`     | Cancel orders                    |
+| `sellers:verify`    | Verify seller accounts           |
+| `sellers:suspend`   | Suspend seller accounts          |
+| `sellers:view_all`  | View all seller accounts         |
+| `disputes:manage`   | Manage dispute resolution        |
+| `disputes:escalate` | Escalate disputes to review      |
+| `analytics:view`    | View analytics                   |
+| `payouts:process`   | Process payouts                  |
+| `payouts:hold`      | Hold payouts for investigation   |
+| `config:edit`       | Edit platform configuration      |
+| `users:ban`         | Ban users from platform          |
+| `fraud:review`      | Review flagged transactions      |
 
 ### Session Management
 
@@ -3153,6 +3161,7 @@ MarketPlace Pro is a comprehensive multi-vendor marketplace platform that provid
 | FIDO                              | Fast Identity Online - passwordless standard                           |
 | WebAuthn                          | Web Authentication API for passwordless authentication                 |
 | passkey                           | Password replacement using public key cryptography                     |
+
 ---
 
 _End of Brief_

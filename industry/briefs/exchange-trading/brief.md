@@ -1,4 +1,4 @@
-# Exchange Trading Platform - Universal-Fully Brief
+﻿# Exchange Trading Platform - Universal-Fully Brief
 
 ## 1. Product Context
 
@@ -105,7 +105,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ---
 
-## 3. User Personas (10+)
+## 3. User Personas and Roles
 
 ### P01: Institutional Equity Trader
 
@@ -1218,11 +1218,11 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ---
 
-## 7. Domain Rules and Invariants (15+)
+## 7. Domain Rules and Invariants
 
 ### Trading Mechanics
 
-**INV01: Price/Time Priority**
+### INV01: Price/Time Priority
 
 - Orders at best price are matched first
 - Among same price, earlier orders matched first
@@ -1230,7 +1230,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Timestamp precision: microseconds minimum
 - Queue position visible to order owner
 
-**INV02: No Over-Execution**
+### INV02: No Over-Execution
 
 - Order quantity cannot be exceeded
 - Partial fills tracked and remaining quantity queued
@@ -1238,7 +1238,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Fractional shares supported where applicable
 - Fill quantity always ≤ order quantity
 
-**INV03: Best Price Protection**
+### INV03: Best Price Protection
 
 - Market orders fill at best available price
 - Limit orders only fill at limit or better
@@ -1246,7 +1246,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - No trade-throughs of protected quotes (Reg NMS)
 - Inter-venue price protection
 
-**INV04: Self-Trade Prevention**
+### INV04: Self-Trade Prevention
 
 - Same-account buy/sell matched only if configured
 - Self-match prevention options (cancel, cancel smallest, cancel largest)
@@ -1254,7 +1254,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Affiliated account detection
 - Pre-trade self-match checks
 
-**INV05: Order State Machine**
+### INV05: Order State Machine
 
 - Orders follow defined state transitions
 - New → Active → Partially Filled → Filled/Cancelled
@@ -1264,7 +1264,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Risk and Limits
 
-**INV06: Pre-Trade Risk Enforcement**
+### INV06: Pre-Trade Risk Enforcement
 
 - Orders rejected if risk limits exceeded
 - No trading without credit line
@@ -1272,7 +1272,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Price collars prevent erroneous orders
 - Concentration limits prevent excessive exposure
 
-**INV07: Position Integrity**
+### INV07: Position Integrity
 
 - Position = Sum of all net trades
 - Short selling rules enforced per security
@@ -1280,7 +1280,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Intraday vs. maintenance position distinction
 - Position reconciliation daily
 
-**INV08: Margin Maintenance**
+### INV08: Margin Maintenance
 
 - Initial margin collected before trading
 - Variation margin for intraday P&L
@@ -1290,7 +1290,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Market Integrity
 
-**INV09: Trading Halt Enforcement**
+### INV09: Trading Halt Enforcement
 
 - Orders rejected during security halt
 - Existing orders cancelled or held per rules
@@ -1298,7 +1298,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Circuit breaker thresholds respected
 - Halt/resume logged immutably
 
-**INV10: Anti-Manipulation Rules**
+### INV10: Anti-Manipulation Rules
 
 - Spoofing patterns detected and rejected
 - Layering behavior flagged
@@ -1308,7 +1308,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Settlement
 
-**INV11: Settlement Cycle**
+### INV11: Settlement Cycle
 
 - Equities settle T+1 (standard)
 - Options settle T+1
@@ -1316,7 +1316,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Corporate actions per record date
 - Settlement fails flagged and managed
 
-**INV12: Delivery versus Payment**
+### INV12: Delivery versus Payment
 
 - Securities and cash exchanged atomically
 - No delivery without payment
@@ -1326,7 +1326,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Data and Audit
 
-**INV13: Trade Immutability**
+### INV13: Trade Immutability
 
 - Executed trades cannot be modified
 - Trade corrections via reversal and re-entry
@@ -1334,7 +1334,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Regulatory report alignment
 - Trade reconstruction capability
 
-**INV14: Audit Trail Completeness**
+### INV14: Audit Trail Completeness
 
 - All order events logged (new, amend, cancel, fill)
 - All trade events logged
@@ -1342,7 +1342,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - All system events logged
 - Log tampering prevention
 
-**INV15: Reference Data Integrity**
+### INV15: Reference Data Integrity
 
 - Security master data validated
 - Price sources authoritative
@@ -1442,11 +1442,11 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ---
 
-## 8. Compliance and Regulatory Constraints (12+)
+## 8. Compliance and Regulatory Constraints
 
 ### US Regulations
 
-**CC01: Regulation NMS (SEC)**
+### CC01: Regulation NMS (SEC)
 
 - National Best Bid and Offer (NBBO) requirement
 - Order protection rule (no trade-throughs)
@@ -1461,7 +1461,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Quote rule (accurate, up-to-date quotes)
 - Market data rules (Plan participants)
 
-**CC02: Consolidated Audit Trail (CAT)**
+### CC02: Consolidated Audit Trail (CAT)
 
 - Report all order lifecycle events
 - Report all trade events
@@ -1470,7 +1470,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Maintain 5+ years of history
 - Support regulatory queries
 
-**CC03: Regulation SCI (Systems Compliance and Integrity)**
+### CC03: Regulation SCI (Systems Compliance and Integrity)
 
 - System change notification
 - Incident reporting
@@ -1479,7 +1479,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Governance documentation
 - Record retention requirements
 
-**CC04: FINRA Rules**
+### CC04: FINRA Rules
 
 - Market surveillance requirements
 - Trade practice monitoring
@@ -1490,7 +1490,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### European Regulations
 
-**CC05: MiFID II (Markets in Financial Instruments Directive)**
+### CC05: MiFID II (Markets in Financial Instruments Directive)
 
 - Pre-trade transparency (quote publication)
 - Post-trade transparency (trade publication)
@@ -1538,7 +1538,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - EMIR Refit alignment
 - DLT pilot regime exceptions
 
-**CC06: MiFIR (Markets in Financial Instruments Regulation)**
+### CC06: MiFIR (Markets in Financial Instruments Regulation)
 
 - Trading venue definitions (RFI, MTF, OTF)
 - Systematic internalizer rules
@@ -1585,7 +1585,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Market data licensing rules
 - Benchmark regulation alignment
 
-**CC07: EMIR (European Market Infrastructure Regulation)**
+### CC07: EMIR (European Market Infrastructure Regulation)
 
 - OTC derivative reporting
 - Central clearing obligation
@@ -1596,7 +1596,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Derivatives Regulations
 
-**CC08: Dodd-Frank Act (CFTC)**
+### CC08: Dodd-Frank Act (CFTC)
 
 - Swap execution facility (SEF) rules
 - Central clearing requirements
@@ -1605,7 +1605,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Record keeping and reporting
 - Position limits
 
-**CC09: CFTC Regulations**
+### CC09: CFTC Regulations
 
 - Position limits for commodities
 - Real-time publicly disseminated information
@@ -1616,7 +1616,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Market Surveillance
 
-**CC10: Market Abuse Regulation (MAR)**
+### CC10: Market Abuse Regulation (MAR)
 
 - Insider dealing prohibition
 - Unlawful disclosure inside information
@@ -1625,7 +1625,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Suspected abuse reporting
 - Record keeping requirements
 
-**CC11: TRACE (Trade Reporting and Compliance Engine)**
+### CC11: TRACE (Trade Reporting and Compliance Engine)
 
 - Fixed income trade reporting
 - Real-time dissemination (most securities)
@@ -1636,7 +1636,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### AML and KYC
 
-**CC12: AML/KYC Requirements**
+### CC12: AML/KYC Requirements
 
 - Customer identification program (CIP)
 - Beneficial ownership identification
@@ -1647,11 +1647,11 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ---
 
-## 9. Integration Requirements (15+)
+## 9. Integration Requirements
 
 ### Clearing and Settlement
 
-**INT01: Central Counterparty (CCP)**
+### INT01: Central Counterparty (CCP)
 
 - OCC (Options Clearing Corporation) - US options
 - CME Clearing - futures
@@ -1662,7 +1662,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Settlement instruction exchange
 - Failure notification handling
 
-**INT02: Depository**
+### INT02: Depository
 
 - DTC (Depository Trust Company) - US securities
 - Euroclear - European securities
@@ -1675,7 +1675,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Market Data
 
-**INT03: Market Data Vendors**
+### INT03: Market Data Vendors
 
 - Bloomberg - data feeds
 - Refinitiv (LSEG) - data feeds
@@ -1686,7 +1686,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Redundancy and failover
 - Usage tracking for billing
 
-**INT04: News Wires**
+### INT04: News Wires
 
 - Dow Jones Newswires
 - Reuters News
@@ -1697,7 +1697,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Integration with trading halts
 - News-based trading restrictions
 
-**INT05: Reference Data**
+### INT05: Reference Data
 
 - SEC EDGAR filings
 - ISIN, CUSIP, SEDOL identifiers
@@ -1710,7 +1710,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Surveillance and Compliance
 
-**INT06: Surveillance Systems**
+### INT06: Surveillance Systems
 
 - Mantas (NICE Actimize)
 - Surpass (State Street)
@@ -1721,7 +1721,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Regulatory filing support
 - Cross-venue data correlation
 
-**INT07: Regulatory Filing Systems**
+### INT07: Regulatory Filing Systems
 
 - SEC EDGAR electronic filings
 - FINRA filing systems
@@ -1734,7 +1734,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Trading Connectivity
 
-**INT08: Broker OMS/EMS**
+### INT08: Broker OMS/EMS
 
 - FlexTRADE integration
 - Bloomberg TOMS
@@ -1745,7 +1745,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Execution report handling
 - Position reconciliation
 
-**INT09: Trading Platforms**
+### INT09: Trading Platforms
 
 - Interactive Brokers integration
 - Schwab API
@@ -1758,7 +1758,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Infrastructure
 
-**INT10: Time Synchronization**
+### INT10: Time Synchronization
 
 - NTP server integration
 - PTP (Precision Time Protocol)
@@ -1769,7 +1769,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Time zone management
 - Historical time correction
 
-**INT11: Cloud Services**
+### INT11: Cloud Services
 
 - AWS cloud integration
 - Azure cloud integration
@@ -1782,7 +1782,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Financial Systems
 
-**INT12: Banking Integration**
+### INT12: Banking Integration
 
 - Settlement bank connections
 - Real-time payment systems (Fedwire, CHIPS)
@@ -1793,7 +1793,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Rebate distribution
 - Reconciliation systems
 
-**INT13: Accounting Systems**
+### INT13: Accounting Systems
 
 - Trade accounting
 - Corporate accounting integration
@@ -1806,7 +1806,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ### Participant Systems
 
-**INT14: Participant Portals**
+### INT14: Participant Portals
 
 - Member self-service portal
 - Account management
@@ -1817,7 +1817,7 @@ TradeCore provides comprehensive exchange infrastructure:
 - Document repository
 - Training resources
 
-**INT15: FIX Protocol Engines**
+### INT15: FIX Protocol Engines
 
 - FIX 4.4 protocol support
 - FIX 5.0 protocol support
@@ -1830,7 +1830,7 @@ TradeCore provides comprehensive exchange infrastructure:
 
 ---
 
-## 10. Data Model
+## 10. Data Model Expectations
 
 ### Participant Entities
 
@@ -1870,7 +1870,7 @@ created_at: TIMESTAMP
 counterparty_id: UUID (PK)
 participant_id: FK
 bic_swift: VARCHAR(11)
-clearing_ids: JSONB (OCC, CME, etc.)
+clearing_ids: JSONB (OCC, CME, and other examples)
 credit_limit: DECIMAL(18,2)
 credit_used: DECIMAL(18,2)
 settlement_instructions: JSONB
@@ -2223,24 +2223,31 @@ resolved_at: TIMESTAMP
 
 ### Authorization
 
-- **Role-Based Access Control (RBAC):**
-    - Trading roles: trader, portfolio_manager, desk_manager
-    - Operations roles: operations, settlement, support
-    - Compliance roles: compliance, surveillance, audit
-    - Administrative roles: admin, system_admin
-- **Permission Matrix:**
-  | Permission | Description | Roles |
-  |------------|-------------|-------|
-  | ORDER_PLACE | Place new orders | trader, portfolio_manager |
-  | ORDER_CANCEL | Cancel orders | trader, portfolio_manager, desk_manager |
-  | ORDER_VIEW | View orders | all_trading |
-  | TRADE_VIEW | View trades | all_trading, operations |
-  | POSITION_VIEW | View positions | trader, risk, compliance |
-  | RISK_OVERRIDE | Override risk limits | desk_manager, risk_manager |
-  | LIMIT_CHANGE | Modify risk limits | risk_manager, admin |
-  | REPORT_EXPORT | Export reports | all_authenticated |
-  | USER_MANAGE | Manage users | admin |
-  | SYSTEM_CONFIG | System configuration | system_admin |
+- **Role-Based Access Control (RBAC):** - Trading roles: trader, portfolio_manager, desk_manager - Operations roles: operations, settlement, support - Compliance roles: compliance, surveillance, audit - Administrative roles: admin, system_admin
+  **Permissions Table**
+
+| Permission ID | Permission Name         | Description                    |
+| ------------- | ----------------------- | ------------------------------ |
+| P01           | `trading:order_place`   | Place new orders               |
+| P02           | `trading:order_cancel`  | Cancel orders                  |
+| P03           | `trading:order_view`    | View orders                    |
+| P04           | `trading:order_modify`  | Modify order parameters        |
+| P05           | `trading:algo_trade`    | Use algorithmic trading        |
+| P06           | `trade:view`            | View executed trades           |
+| P07           | `trade:export`          | Export trade reports           |
+| P08           | `position:view`         | View positions                 |
+| P09           | `position:risk`         | View position risk metrics     |
+| P10           | `market_data:view`      | View market data               |
+| P11           | `market_data:subscribe` | Subscribe to market data feeds |
+| P12           | `risk:view`             | View risk metrics              |
+| P13           | `risk:override`         | Override risk limits           |
+| P14           | `risk:limit_change`     | Modify risk limits             |
+| P15           | `compliance:report`     | View compliance reports        |
+| P16           | `compliance:audit`      | Access audit trail             |
+| P17           | `report:export`         | Export reports                 |
+| P18           | `admin:user_manage`     | Manage users and roles         |
+| P19           | `admin:config`          | System configuration           |
+| P20           | `admin:system_manage`   | System administration          |
 
 ### Network Security
 
@@ -2657,14 +2664,14 @@ resolved_at: TIMESTAMP
 
 | Decision ID | Topic                | Decision Date | Decision Maker       | Rationale |
 | ----------- | -------------------- | ------------- | -------------------- | --------- |
-| D001        | Primary Technology   | TBD           | CTO                  | TBD       |
-| D002        | Launch Jurisdiction  | TBD           | CEO, General Counsel | TBD       |
-| D003        | Clearing Approach    | TBD           | COO, CFO             | TBD       |
-| D004        | Fee Model            | TBD           | CFO, CEO             | TBD       |
-| D005        | Data Center Location | TBD           | CTO, COO             | TBD       |
-| D006        | Market Data Vendor   | TBD           | CTO, CFO             | TBD       |
-| D007        | Surveillance System  | TBD           | CCO, CTO             | TBD       |
-| D008        | Regulatory Capital   | TBD           | CFO, General Counsel | TBD       |
+| D001        | Primary Technology   | pending definition soon           | CTO                  | pending definition soon       |
+| D002        | Launch Jurisdiction  | pending definition soon           | CEO, General Counsel | pending definition soon       |
+| D003        | Clearing Approach    | pending definition soon           | COO, CFO             | pending definition soon       |
+| D004        | Fee Model            | pending definition soon           | CFO, CEO             | pending definition soon       |
+| D005        | Data Center Location | pending definition soon           | CTO, COO             | pending definition soon       |
+| D006        | Market Data Vendor   | pending definition soon           | CTO, CFO             | pending definition soon       |
+| D007        | Surveillance System  | pending definition soon           | CCO, CTO             | pending definition soon       |
+| D008        | Regulatory Capital   | pending definition soon           | CFO, General Counsel | pending definition soon       |
 
 ---
 
@@ -3151,3 +3158,5 @@ We apologize for any inconvenience.
 ---
 
 _End of Brief_
+
+

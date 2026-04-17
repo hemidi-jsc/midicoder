@@ -3110,6 +3110,54 @@ EduCore K-12 provides a comprehensive, integrated platform for K-12 school manag
 | receipt_number | String(50)    | No       | Receipt number            |
 | created_at     | Timestamp     | Yes      | Record creation timestamp |
 
+#### Department
+
+| Field           | Type        | Required | Description                  |
+| --------------- | ----------- | -------- | ---------------------------- |
+| department_id   | UUID        | Yes      | Unique department identifier |
+| name            | String(100) | Yes      | Department name              |
+| code            | String(20)  | Yes      | Department code              |
+| description     | Text        | No       | Department description       |
+| head_teacher_id | UUID        | No       | Department head              |
+| is_active       | Boolean     | Yes      | Active status                |
+| created_at      | Timestamp   | Yes      | Record creation timestamp    |
+
+#### Room
+
+| Field       | Type        | Required | Description                   |
+| ----------- | ----------- | -------- | ----------------------------- |
+| room_id     | UUID        | Yes      | Unique room identifier        |
+| room_number | String(20)  | Yes      | Room number/identifier        |
+| name        | String(100) | Yes      | Room name                     |
+| capacity    | Integer     | Yes      | Maximum occupancy             |
+| building_id | UUID        | No       | Building reference            |
+| room_type   | String(50)  | No       | Classroom, lab, library, etc. |
+| is_active   | Boolean     | Yes      | Active status                 |
+| created_at  | Timestamp   | Yes      | Record creation timestamp     |
+
+#### SchoolYear
+
+| Field      | Type       | Required | Description                        |
+| ---------- | ---------- | -------- | ---------------------------------- |
+| year_id    | UUID       | Yes      | Unique school year identifier      |
+| year_name  | String(50) | Yes      | School year name (e.g., 2024-2025) |
+| start_date | Date       | Yes      | Year start date                    |
+| end_date   | Date       | Yes      | Year end date                      |
+| is_active  | Boolean    | Yes      | Active status                      |
+| created_at | Timestamp  | Yes      | Record creation timestamp          |
+
+#### Term
+
+| Field          | Type       | Required | Description                      |
+| -------------- | ---------- | -------- | -------------------------------- |
+| term_id        | UUID       | Yes      | Unique term identifier           |
+| name           | String(50) | Yes      | Term name (Fall, Spring, Summer) |
+| school_year_id | UUID       | Yes      | School year reference            |
+| start_date     | Date       | Yes      | Term start date                  |
+| end_date       | Date       | Yes      | Term end date                    |
+| is_active      | Boolean    | Yes      | Active status                    |
+| created_at     | Timestamp  | Yes      | Record creation timestamp        |
+
 ---
 
 ### Entity Relationships
@@ -3202,6 +3250,35 @@ Payment
 - Secure session tokens
 
 ---
+
+### Permission Definitions
+
+| Permission           | Description               |
+| -------------------- | ------------------------- |
+| `students:view`      | View student records      |
+| `students:create`    | Create new students       |
+| `students:edit`      | Edit student records      |
+| `students:delete`    | Delete student records    |
+| `students:export`    | Export student data       |
+| `courses:view`       | View course records       |
+| `courses:create`     | Create new courses        |
+| `courses:edit`       | Edit course records       |
+| `courses:delete`     | Delete course records     |
+| `enrollments:view`   | View enrollments          |
+| `enrollments:create` | Create enrollments        |
+| `enrollments:edit`   | Edit enrollments          |
+| `enrollments:delete` | Delete enrollments        |
+| `grades:view`        | View grades               |
+| `grades:create`      | Create grades             |
+| `grades:edit`        | Edit grades               |
+| `grades:export`      | Export grade reports      |
+| `attendance:view`    | View attendance           |
+| `attendance:create`  | Record attendance         |
+| `attendance:edit`    | Edit attendance           |
+| `attendance:export`  | Export attendance reports |
+| `reports:view`       | View reports              |
+| `reports:export`     | Export reports            |
+| `admin:config`       | System configuration      |
 
 ### Authorization (RBAC)
 
@@ -3376,7 +3453,7 @@ Payment
 
 ---
 
-## 13. Technology Architecture
+## 13. Acceptance Criteria
 
 ### Frontend
 
@@ -3450,7 +3527,29 @@ Payment
 
 ---
 
-## 16. Open Questions
+## 14. Out-of-Scope
+
+### Current Release
+
+- Advanced AI-powered tutoring
+- Blockchain-based credentialing
+- Virtual reality classrooms
+- Real-time translation services
+- Advanced predictive analytics
+- Automated lesson planning AI
+
+### Future Phases
+
+- AI-powered personalized learning paths
+- Advanced student behavior analytics
+- Global school network integration
+- AR/VR learning experiences
+- Automated IEP generation support
+- Advanced fraud detection for financial
+
+---
+
+## 15. Open Questions
 
 ### OQ01: State vs. District Implementation
 
@@ -3552,7 +3651,7 @@ Payment
 
 ---
 
-## 17. Glossary
+## 16. Glossary
 
 | Term           | Definition                                           | Context/Usage Notes                               | Related Terms               | Source        |
 | -------------- | ---------------------------------------------------- | ------------------------------------------------- | --------------------------- | ------------- |
