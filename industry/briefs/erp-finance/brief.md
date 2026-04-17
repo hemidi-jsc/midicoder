@@ -691,7 +691,7 @@ FinCore Enterprise provides a comprehensive financial and operations platform:
 
 **Failure Scenarios:**
 
-- Subledger not ready: Delay close or post adjustments later
+- Subledger not ready: Delay close or post adjustments subsequently
 - Major variance identified: Investigation required
 - Reconciliation exception: Resolve before period lock
 - Tax provision error: Adjust in subsequent period with disclosure
@@ -893,8 +893,8 @@ FinCore Enterprise provides a comprehensive financial and operations platform:
 
 **Failure Scenarios:**
 
-- Cost not fully accumulated: Partial capitalization, complete later
-- Useful life unclear: Estimate and revise later
+- Cost not fully accumulated: Partial capitalization, complete subsequently
+- Useful life unclear: Estimate and revise subsequently
 - Depreciation method wrong: Adjustment in subsequent period
 - Tax vs book difference: Track separately
 
@@ -3162,6 +3162,62 @@ InventoryTransaction {
 }
 ```
 
+#### Location
+
+```
+Location {
+  location_id: UUID (PK)
+  location_code: String(50) NOT NULL
+  name: String(255) NOT NULL
+  description: Text
+  location_type: String(50)  -- Warehouse, Store, Depot
+  address: Address
+  parent_location_id: UUID (FK -> Location)
+  is_active: Boolean DEFAULT TRUE
+  created_at: DateTime
+  updated_at: DateTime
+}
+```
+
+#### AssetCategory
+
+```
+AssetCategory {
+  category_id: UUID (PK)
+  category_code: String(50) NOT NULL
+  name: String(255) NOT NULL
+  description: Text
+  default_depreciation_method: String(50)
+  default_useful_life_months: Integer
+  is_active: Boolean DEFAULT TRUE
+  created_at: DateTime
+  updated_at: DateTime
+}
+```
+
+#### Budget
+
+```
+Budget {
+  budget_id: UUID (PK)
+  budget_code: String(50) NOT NULL
+  name: String(255) NOT NULL
+  entity_id: UUID (FK -> Entity)
+  fiscal_year: Integer
+  period_number: Integer
+  account_id: UUID (FK -> GLAccount)
+  cost_center_id: UUID (FK -> CostCenter)
+  budget_amount: Decimal(19,4)
+  currency: String(3)
+  version: Integer
+  status: String(50)  -- Draft, Approved, Final
+  created_by: UUID (FK -> User)
+  approved_by: UUID (FK -> User)
+  created_at: DateTime
+  updated_at: DateTime
+}
+```
+
 ---
 
 ### Entity Relationships
@@ -3194,6 +3250,35 @@ InventoryTransaction {
 - Complexity requirements
 - 90-day expiration
 - Account lockout
+
+### Permission Definitions
+
+| Permission         | Description              |
+| ------------------ | ------------------------ |
+| `gl:view`          | View general ledger      |
+| `gl:post`          | Post journal entries     |
+| `gl:close`         | Close accounting periods |
+| `ap:view`          | View accounts payable    |
+| `ap:approve`       | Approve payments         |
+| `ap:pay`           | Process payments         |
+| `ar:view`          | View accounts receivable |
+| `ar:receive`       | Receive payments         |
+| `ar:writeoff`      | Write off bad debt       |
+| `po:create`        | Create purchase orders   |
+| `po:approve`       | Approve purchase orders  |
+| `po:receive`       | Receive goods            |
+| `vendor:view`      | View vendor records      |
+| `vendor:edit`      | Edit vendor records      |
+| `customer:view`    | View customer records    |
+| `customer:edit`    | Edit customer records    |
+| `asset:view`       | View fixed assets        |
+| `asset:add`        | Add new assets           |
+| `asset:depreciate` | Run depreciation         |
+| `report:view`      | View financial reports   |
+| `report:export`    | Export reports           |
+| `budget:view`      | View budgets             |
+| `budget:edit`      | Edit budgets             |
+| `admin:config`     | System configuration     |
 
 ### Authorization
 

@@ -847,12 +847,12 @@ SwiftMile Pro provides comprehensive last mile delivery management:
 
 **Failure Scenarios and Handling:**
 
-| Failure Scenario     | Expected Handling                |
-| -------------------- | -------------------------------- |
-| Customer unreachable | Multiple attempts, leave message |
-| No resolution found  | Escalate to supervisor           |
-| Driver unavailable   | Assign to different driver       |
-| System error         | Manual entry, investigate later  |
+| Failure Scenario     | Expected Handling                      |
+| -------------------- | -------------------------------------- |
+| Customer unreachable | Multiple attempts, leave message       |
+| No resolution found  | Escalate to supervisor                 |
+| Driver unavailable   | Assign to different driver             |
+| System error         | Manual entry, investigate subsequently |
 
 ---
 
@@ -1822,6 +1822,107 @@ SwiftMile Pro provides comprehensive last mile delivery management:
 - **Acceptance Criteria:**
     - Given customer, when analyzed, then insights provided
 
+**FR25: Proof of Delivery Management**
+
+- **Description:** System shall manage digital proof of delivery documentation
+- **Priority:** Must
+- **Detailed Requirements:**
+    - Digital signature storage
+    - Photo evidence storage
+    - POD document generation
+    - POD retrieval and export
+    - Customer POD access portal
+- **Acceptance Criteria:**
+    - Given delivery, when POD accessed, then documentation displayed
+
+**FR26: Temperature Monitoring**
+
+- **Description:** System shall support temperature-controlled deliveries
+- **Priority:** Should
+- **Detailed Requirements:**
+    - IoT device integration
+    - Temperature logging
+    - Threshold alerts
+    - Temperature report generation
+    - Compliance documentation
+- **Acceptance Criteria:**
+    - Given cold chain delivery, when temperature logged, then alerts triggered on threshold breach
+
+**FR27: Multi-Stop Delivery**
+
+- **Description:** System shall support multi-stop deliveries with split packages
+- **Priority:** Should
+- **Detailed Requirements:**
+    - Split package tracking
+    - Partial delivery confirmation
+    - Multi-stop manifests
+    - Final delivery notification
+- **Acceptance Criteria:**
+    - Given multi-stop delivery, when all stops complete, then order marked delivered
+
+**FR28: Access Control Management**
+
+- **Description:** System shall manage delivery access codes and building access
+- **Priority:** Could
+- **Detailed Requirements:**
+    - One-time access code generation
+    - Building access integration
+    - Gate code management
+    - Access expiry handling
+- **Acceptance Criteria:**
+    - Given building delivery, when code generated, then driver can access
+
+**FR29: Carbon Footprint Tracking**
+
+- **Description:** System shall track and report carbon emissions for deliveries
+- **Priority:** Could
+- **Detailed Requirements:**
+    - Emissions calculation per delivery
+    - Route optimization for emissions
+    - Carbon offset reporting
+    - Sustainability dashboards
+- **Acceptance Criteria:**
+    - Given deliveries, when reported, then carbon footprint calculated
+
+**FR30: White-Glove Delivery Management**
+
+- **Description:** System shall manage premium white-glove delivery services
+- **Priority:** Could
+- **Detailed Requirements:**
+    - Appointment scheduling
+    - Room-of-choice delivery
+    - Assembly services tracking
+    - Signature requirements
+    - Premium SLA monitoring
+- **Acceptance Criteria:**
+    - Given white-glove delivery, when completed, then all services documented
+
+**FR31: Returns Management**
+
+- **Description:** System shall manage reverse logistics and pickups
+- **Priority:** Should
+- **Detailed Requirements:**
+    - Return authorization processing
+    - Pickup scheduling
+    - Return scanning and tracking
+    - Return analytics
+    - Customer return portal
+- **Acceptance Criteria:**
+    - Given return request, when pickup scheduled, then driver notified
+
+**FR32: Proof of Attempt**
+
+- **Description:** System shall capture proof of delivery attempt for failed deliveries
+- **Priority:** Should
+- **Detailed Requirements:**
+    - Attempt documentation
+    - Photo evidence at address
+    - Customer notification
+    - Re-delivery scheduling
+    - Attempt analytics
+- **Acceptance Criteria:**
+    - Given failed delivery, when attempt recorded, then customer notified
+
 ---
 
 ## 6. Non-Functional Requirements
@@ -1919,6 +2020,12 @@ SwiftMile Pro provides comprehensive last mile delivery management:
 - **Requirement:** Configurable retention policies
 - **Details:** Industry-specific requirements
 - **Measurement:** Retention verification
+
+**NFR15: Geographic Scale**
+
+- **Requirement:** Support international operations with multi-region deployment
+- **Details:** Different countries may have different compliance and operational requirements
+- **Measurement:** Deployment in multiple regions
 
 ---
 
@@ -2039,6 +2146,20 @@ SwiftMile Pro provides comprehensive last mile delivery management:
 - **Details:** Commercial insurance requirements
 - **Implementation:** Insurance verification, coverage tracking
 - **Evidence:** Insurance certificates
+
+### CC07: Temperature Compliance (RX17)
+
+- **Requirement:** Cold chain compliance for temperature-sensitive deliveries
+- **Details:** Food, pharmaceutical regulations
+- **Implementation:** Temperature monitoring, documentation
+- **Evidence:** Temperature logs, compliance reports
+
+### CC08: Accessibility Compliance (RX05)
+
+- **Requirement:** Accessibility compliance for delivery services
+- **Details:** ADA compliance for disabled customers
+- **Implementation:** Service accommodations, training
+- **Evidence:** Accessibility policy, training records
 
 ---
 
@@ -2211,6 +2332,105 @@ SwiftMile Pro provides comprehensive last mile delivery management:
 | created_at   | Timestamp   | Yes      | Creation time               |
 | resolved_at  | Timestamp   | No       | Resolution time             |
 
+**TimeWindow**
+
+| Field          | Type      | Required | Description                   |
+| -------------- | --------- | -------- | ----------------------------- |
+| time_window_id | UUID      | Yes      | Unique time window identifier |
+| delivery_id    | UUID      | Yes      | Foreign key to Delivery       |
+| start_time     | DateTime  | Yes      | Window start                  |
+| end_time       | DateTime  | Yes      | Window end                    |
+| type           | Enum      | Yes      | requested, offered, confirmed |
+| status         | Enum      | Yes      | active, expired, completed    |
+| created_at     | Timestamp | Yes      | Creation time                 |
+
+**Notification**
+
+| Field          | Type        | Required | Description                          |
+| -------------- | ----------- | -------- | ------------------------------------ |
+| notif_id       | UUID        | Yes      | Unique notification identifier       |
+| recipient_id   | UUID        | Yes      | User receiving notification          |
+| recipient_type | String(50)  | Yes      | customer, driver, operator           |
+| type           | String(100) | Yes      | order_status, delivery_update, alert |
+| channel        | Enum        | Yes      | email, sms, push, in_app             |
+| status         | Enum        | Yes      | pending, sent, delivered, read       |
+| payload        | JSON        | No       | Notification content                 |
+| sent_at        | Timestamp   | No       | Send time                            |
+| read_at        | Timestamp   | No       | Read time                            |
+| created_at     | Timestamp   | Yes      | Creation time                        |
+
+**Stop**
+
+| Field            | Type     | Required | Description                              |
+| ---------------- | -------- | -------- | ---------------------------------------- |
+| stop_id          | UUID     | Yes      | Unique stop identifier                   |
+| route_id         | UUID     | Yes      | Foreign key to Route                     |
+| delivery_id      | UUID     | Yes      | Foreign key to Delivery                  |
+| sequence         | Integer  | Yes      | Stop sequence number                     |
+| address          | JSON     | Yes      | Stop address                             |
+| geo_coords       | JSON     | Yes      | GPS coordinates                          |
+| eta              | DateTime | No       | Estimated arrival time                   |
+| actual_arrival   | DateTime | No       | Actual arrival time                      |
+| actual_departure | DateTime | No       | Actual departure time                    |
+| status           | Enum     | Yes      | planned, in_progress, completed, skipped |
+| notes            | Text     | No       | Stop notes                               |
+
+**FulfillmentCenter**
+
+| Field           | Type        | Required | Description                   |
+| --------------- | ----------- | -------- | ----------------------------- |
+| fc_id           | UUID        | Yes      | Unique fulfillment center ID  |
+| name            | String(255) | Yes      | Center name                   |
+| address         | JSON        | Yes      | Center address                |
+| timezone        | String(50)  | Yes      | Timezone                      |
+| operating_hours | JSON        | No       | Operating schedule            |
+| capacity        | Integer     | No       | Daily delivery capacity       |
+| status          | Enum        | Yes      | active, inactive, maintenance |
+| created_at      | Timestamp   | Yes      | Creation time                 |
+
+**Dispatch**
+
+| Field         | Type      | Required | Description                      |
+| ------------- | --------- | -------- | -------------------------------- |
+| dispatch_id   | UUID      | Yes      | Unique dispatch identifier       |
+| route_id      | UUID      | Yes      | Foreign key to Route             |
+| driver_id     | UUID      | Yes      | Foreign key to Driver            |
+| fc_id         | UUID      | Yes      | Foreign key to FulfillmentCenter |
+| status        | Enum      | Yes      | pending, dispatched, completed   |
+| dispatch_time | DateTime  | No       | Dispatch time                    |
+| return_time   | DateTime  | No       | Driver return time               |
+| notes         | Text      | No       | Dispatch notes                   |
+| created_at    | Timestamp | Yes      | Creation time                    |
+
+**Rating**
+
+| Field       | Type         | Required | Description                |
+| ----------- | ------------ | -------- | -------------------------- |
+| rating_id   | UUID         | Yes      | Unique rating identifier   |
+| delivery_id | UUID         | Yes      | Foreign key to Delivery    |
+| rater_id    | UUID         | Yes      | Customer or driver ID      |
+| rater_type  | Enum         | Yes      | customer, driver           |
+| rated_id    | UUID         | Yes      | Entity being rated         |
+| rated_type  | Enum         | Yes      | driver, customer, delivery |
+| score       | Decimal(3,2) | Yes      | Rating score (1-5)         |
+| comment     | Text         | No       | Rating comment             |
+| created_at  | Timestamp    | Yes      | Creation time              |
+
+**FuelLog**
+
+| Field         | Type        | Required | Description                |
+| ------------- | ----------- | -------- | -------------------------- |
+| fuel_id       | UUID        | Yes      | Unique fuel log identifier |
+| vehicle_id    | UUID        | Yes      | Foreign key to Vehicle     |
+| driver_id     | UUID        | No       | Driver who added fuel      |
+| date          | Date        | Yes      | Fuel date                  |
+| gallons       | Decimal     | Yes      | Gallons added              |
+| cost          | Decimal     | Yes      | Fuel cost                  |
+| odometer      | Integer     | Yes      | Odometer reading           |
+| location      | JSON        | No       | Fuel station location      |
+| receipt_image | String(500) | No       | Receipt image URL          |
+| created_at    | Timestamp   | Yes      | Creation time              |
+
 ---
 
 ## 11. Security and Access Control
@@ -2220,6 +2440,33 @@ SwiftMile Pro provides comprehensive last mile delivery management:
 - **Methods:** Email/password, SSO, API keys
 - **Session Management:** JWT tokens
 - **MFA:** Optional for users, required for admin
+
+### Permission Definitions
+
+| Permission          | Description                  |
+| ------------------- | ---------------------------- |
+| `routes:view`       | View delivery routes         |
+| `routes:create`     | Create new routes            |
+| `routes:edit`       | Edit existing routes         |
+| `routes:delete`     | Delete routes                |
+| `deliveries:view`   | View deliveries              |
+| `deliveries:assign` | Assign deliveries to drivers |
+| `deliveries:update` | Update delivery status       |
+| `deliveries:cancel` | Cancel deliveries            |
+| `drivers:view`      | View driver information      |
+| `drivers:manage`    | Manage driver accounts       |
+| `drivers:dispatch`  | Dispatch drivers to routes   |
+| `vehicles:view`     | View vehicle information     |
+| `vehicles:manage`   | Manage vehicle records       |
+| `customers:view`    | View customer data           |
+| `customers:edit`    | Edit customer preferences    |
+| `packages:scan`     | Scan packages for delivery   |
+| `packages:view`     | View package information     |
+| `pod:capture`       | Capture proof of delivery    |
+| `pod:view`          | View proof of delivery       |
+| `reports:view`      | View delivery reports        |
+| `reports:export`    | Export reports               |
+| `admin:config`      | Configure system settings    |
 
 ### Authorization
 
@@ -3194,6 +3441,7 @@ SwiftMile Pro provides comprehensive last mile delivery management:
 | HWO                    | Stuart Airport                                               |
 | LNA                    | Lantana Airport                                              |
 | TIV                    | Tivoli Airport                                               |
+
 ---
 
 _End of Brief_

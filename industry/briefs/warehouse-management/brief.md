@@ -557,7 +557,7 @@ WareHouse Pro provides a comprehensive cloud-based WMS:
 
 | Failure Scenario               | Expected Handling                                    |
 | ------------------------------ | ---------------------------------------------------- |
-| PO not found in system         | Create provisional receipt, match PO later           |
+| PO not found in system         | Create provisional receipt, match PO subsequently    |
 | Quantity exceeds PO            | Flag for approval, may reject excess                 |
 | Damaged goods received         | Segregate, document, notify supplier                 |
 | No available dock doors        | Queue appointment, notify supplier of delay          |
@@ -734,8 +734,8 @@ WareHouse Pro provides a comprehensive cloud-based WMS:
 **Alternative Paths:**
 
 - **Discrete Picking:** Single order picked at a time (for urgent or large orders)
-- **Zone Picking:** Each picker covers specific zone, items merged later
-- **Batch Picking:** Multiple orders picked simultaneously, sorted later
+- **Zone Picking:** Each picker covers specific zone, items merged subsequently
+- **Batch Picking:** Multiple orders picked simultaneously, sorted subsequently
 - **Pick to Light:** Light-directed picking instead of RF
 
 **Success Criteria:**
@@ -1487,7 +1487,7 @@ WareHouse Pro provides a comprehensive cloud-based WMS:
     - Support directed putaway (system recommends location)
     - Support rule-based putaway (by product, velocity, affinity)
     - Support split putaway (across multiple locations)
-    - Support staged putaway (receive first, putaway later)
+    - Support staged putaway (receive first, putaway subsequently)
     - Support putaway confirmation
 - **Acceptance Criteria:**
     - Given received inventory, when putaway executed, then inventory status changes to available
@@ -2396,6 +2396,83 @@ WareHouse Pro provides a comprehensive cloud-based WMS:
 | units         | Decimal   | No       | Units processed               |
 | standard_time | Decimal   | No       | Expected time                 |
 
+**WorkOrder**
+
+| Field         | Type        | Required | Description                              |
+| ------------- | ----------- | -------- | ---------------------------------------- |
+| work_order_id | UUID        | Yes      | Unique work order identifier             |
+| warehouse_id  | UUID        | Yes      | Foreign key to Warehouse                 |
+| wo_number     | String(100) | Yes      | Work order number                        |
+| type          | Enum        | Yes      | Pick, pack, move, count, adjust, receive |
+| priority      | Integer     | Yes      | Priority level (1-10)                    |
+| status        | Enum        | Yes      | Draft, active, paused, completed, closed |
+| wave_id       | UUID        | No       | Parent wave                              |
+| due_date      | DateTime    | No       | Due date/time                            |
+| assigned_to   | UUID        | No       | Assigned worker                          |
+| instructions  | Text        | No       | Special instructions                     |
+| created_by    | String(100) | Yes      | Creator identifier                       |
+| created_at    | Timestamp   | Yes      | Creation timestamp                       |
+| completed_at  | Timestamp   | No       | Completion timestamp                     |
+
+**Asset**
+
+| Field         | Type        | Required | Description                          |
+| ------------- | ----------- | -------- | ------------------------------------ |
+| asset_id      | UUID        | Yes      | Unique asset identifier              |
+| warehouse_id  | UUID        | Yes      | Foreign key to Warehouse             |
+| asset_code    | String(100) | Yes      | Asset code/barcode                   |
+| type          | Enum        | Yes      | Forklift, pallet_jack, scanner, etc. |
+| name          | String(255) | Yes      | Asset name                           |
+| serial_number | String(100) | No       | Serial number                        |
+| manufacturer  | String(255) | No       | Manufacturer name                    |
+| model         | String(100) | No       | Model number                         |
+| purchase_date | Date        | No       | Purchase date                        |
+| warranty_end  | Date        | No       | Warranty expiration                  |
+| location_id   | UUID        | No       | Current location                     |
+| status        | Enum        | Yes      | Active, maintenance, retired, lost   |
+| attributes    | JSON        | No       | Additional attributes                |
+| created_at    | Timestamp   | Yes      | Creation timestamp                   |
+| updated_at    | Timestamp   | Yes      | Last update timestamp                |
+
+**MaintenanceLog**
+
+| Field          | Type        | Required | Description                       |
+| -------------- | ----------- | -------- | --------------------------------- |
+| log_id         | UUID        | Yes      | Unique log identifier             |
+| asset_id       | UUID        | Yes      | Foreign key to Asset              |
+| warehouse_id   | UUID        | Yes      | Foreign key to Warehouse          |
+| type           | Enum        | Yes      | Scheduled, preventive, corrective |
+| description    | Text        | Yes      | Maintenance description           |
+| technician     | String(255) | No       | Technician name                   |
+| started_at     | DateTime    | Yes      | Maintenance start                 |
+| completed_at   | DateTime    | No       | Maintenance completion            |
+| duration_hours | Decimal     | No       | Duration in hours                 |
+| parts_used     | JSON        | No       | Parts replaced                    |
+| cost           | Decimal     | No       | Maintenance cost                  |
+| notes          | Text        | No       | Additional notes                  |
+| next_due_date  | Date        | No       | Next maintenance due              |
+| created_at     | Timestamp   | Yes      | Log creation timestamp            |
+
+**Labor**
+
+| Field          | Type      | Required | Description              |
+| -------------- | --------- | -------- | ------------------------ |
+| labor_id       | UUID      | Yes      | Unique labor record      |
+| worker_id      | UUID      | Yes      | Foreign key to Worker    |
+| warehouse_id   | UUID      | Yes      | Foreign key to Warehouse |
+| date           | Date      | Yes      | Labor date               |
+| hours_regular  | Decimal   | Yes      | Regular hours            |
+| hours_overtime | Decimal   | Yes      | Overtime hours           |
+| hours_idle     | Decimal   | Yes      | Idle time                |
+| units_picked   | Integer   | Yes      | Units picked             |
+| units_putaway  | Integer   | Yes      | Units put away           |
+| units_packed   | Integer   | Yes      | Units packed             |
+| efficiency     | Decimal   | No       | Efficiency percentage    |
+| standard_hours | Decimal   | No       | Standard hours expected  |
+| pay_rate       | Decimal   | No       | Hourly pay rate          |
+| notes          | Text      | No       | Additional notes         |
+| created_at     | Timestamp | Yes      | Creation timestamp       |
+
 ---
 
 ## 11. Security and Access Control
@@ -2405,6 +2482,33 @@ WareHouse Pro provides a comprehensive cloud-based WMS:
 - **Methods:** Email/password, SAML 2.0 SSO, API keys, RF device authentication
 - **Session Management:** JWT tokens, configurable timeout, concurrent session limits
 - **MFA:** TOTP support for web users
+
+### Permission Definitions
+
+| Permission          | Description                   |
+| ------------------- | ----------------------------- |
+| `receiving:view`    | View receiving operations     |
+| `receiving:create`  | Create receiving transactions |
+| `receiving:approve` | Approve receiving variances   |
+| `putaway:view`      | View putaway tasks            |
+| `putaway:execute`   | Execute putaway operations    |
+| `picking:view`      | View picking operations       |
+| `picking:create`    | Create pick tasks             |
+| `picking:confirm`   | Confirm picked quantities     |
+| `packing:view`      | View packing operations       |
+| `packing:execute`   | Execute packing operations    |
+| `shipping:view`     | View shipping operations      |
+| `shipping:create`   | Create shipments              |
+| `shipping:label`    | Print shipping labels         |
+| `inventory:view`    | View inventory levels         |
+| `inventory:adjust`  | Adjust inventory              |
+| `inventory:count`   | Execute cycle counts          |
+| `orders:view`       | View orders                   |
+| `orders:create`     | Create orders                 |
+| `orders:cancel`     | Cancel orders                 |
+| `reports:view`      | View reports                  |
+| `reports:export`    | Export reports                |
+| `admin:config`      | Configure system settings     |
 
 ### Authorization
 
@@ -3292,6 +3396,7 @@ WareHouse Pro provides a comprehensive cloud-based WMS:
 | PZT           | Pick Zone Type                                    |
 | PZV           | Pick Zone Value                                   |
 | PZW           | Pick Zone Weight                                  |
+
 ---
 
 _End of Brief_
