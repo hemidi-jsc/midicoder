@@ -1,177 +1,334 @@
-"""Aggregated DSL models.
+"""DSL v1 Models - Re-exports from projection.py.
 
-This module re-exports the individual schema models defined in
-`midicoder.dsl.schemas.*_model` for backwards compatibility.
+This module provides v1-compatible model exports from the projection module.
+All models now use ProjectionNode with NodeKind enum for type safety.
+
+REPLACES: v0 Pydantic models from schemas/*_model
 """
 
 from __future__ import annotations
 
-from .schemas.access_policy_model import (
-    AccessPolicy,
-    AccessPolicyFile,
-    Binding,
-    Permission,
-    Role,
+# ============================================================================
+# Core Projection Models
+# ============================================================================
+
+from midicoder.dsl.projection import (
+    NodeBuilder,
+    NodeKind,
+    NodeParams,
+    ProjectionNode,
+    ProjectionTree,
 )
-from .schemas.command_model import Command, CommandsFile
-from .schemas.entity_model import EntitiesFile, Entity
-from .schemas.enum_model import EnumDef, EnumsFile
-from .schemas.error_model import ErrorDef, ErrorsFile
-from .schemas.event_model import EventDef, EventsFile
-from .schemas.glossary_model import Glossary, GlossaryFile, GlossaryTerm
-from .schemas.graphql_api_model import (
-    GraphQLApi,
-    GraphQLApiFile,
-    GraphQLField,
-    GraphQLType,
-)
-from .schemas.guard_effect_model import EffectRef, GuardRef, IntegrationCallParams
-from .schemas.http_api_model import HttpApiFile, HttpRoute
-from .schemas.info_model import InfoFile, ProjectInfo
-from .schemas.integration_model import (
-    CircuitBreakerPolicy,
-    EmailProvider,
-    ErrorMap,
-    IntegrationAuth,
-    IntegrationsFile,
-    IntegrationTarget,
-    OAuth2Provider,
-    RateLimitPolicy,
-    RestApiOperation,
-    RetryPolicy,
-    S3Resource,
-    SignaturePolicy,
-    TimeoutPolicy,
-    WebhookEndpoint,
-)
-from .schemas.named_field_model import NamedField
-from .schemas.observability_model import ObservabilityFile, ObservabilityTarget
-from .schemas.persistence_model import (
-    PersistenceColumn,
-    PersistenceDatasource,
-    PersistenceIndex,
-    PersistenceModelFile,
-    PersistenceTable,
-)
-from .schemas.policy_model import PoliciesFile, Policy, PolicyCondition, PolicyEffect
-from .schemas.profiles_model import EnvironmentProfile, ProfilesFile
-from .schemas.projection_model import Projection, ProjectionsFile
-from .schemas.query_model import QueriesFile, Query
-from .schemas.reliability_model import (
-    CircuitBreakerConfig,
-    ReliabilityPoliciesFile,
-    ReliabilityPolicy,
-    RetryConfig,
-    TimeoutConfig,
-)
-from .schemas.rule_model import Rule, RuleRow, RulesFile
-from .schemas.scenario_model import Scenario, ScenariosFile, ScenarioStep
-from .schemas.secrets_contract_model import SecretRef, SecretsContractFile
-from .schemas.security_baseline_model import (
-    CorsPolicy,
-    PiiMaskingRule,
-    RateLimitRule,
-    SecurityBaseline,
-    SecurityBaselineFile,
-)
-from .schemas.testing_model import ContractTestCase, ContractTestStep, TestingFile
-from .schemas.value_object_model import ValueObject, ValueObjectsFile
-from .schemas.workflow_model import (
-    Workflow,
-    WorkflowErrorHandler,
-    WorkflowsFile,
-    WorkflowState,
-    WorkflowTransition,
+
+# ============================================================================
+# Typed Parameter Models (for type hints)
+# ============================================================================
+
+from midicoder.dsl.projection import (
+    # Domain Layer
+    AggregateParams,
+    EntityParams,
+    EnumParams,
+    ErrorParams,
+    EventParams,
+    ValueObjectParams,
+    
+    # Application Layer
+    CommandParams,
+    EffectParams,
+    GuardParams,
+    QueryParams,
+    RuleParams,
+    WorkflowParams,
+    
+    # API Layer
+    GraphQLResolverParams,
+    HTTPRouteParams,
+    WebhookParams,
+    
+    # Access Control
+    PermissionParams,
+    PolicyParams,
+    RoleParams,
+    
+    # Infrastructure
+    AuthProviderParams,
+    CacheParams,
+    DataSourceParams,
+    IndexParams,
+    IntegrationParams,
+    QueueParams,
+    TableParams,
+    
+    # Observability
+    AlertParams,
+    LogParams,
+    MetricParams,
+    TraceParams,
+    
+    # P0: Reporting
+    DashboardParams,
+    ExportParams,
+    ReportParams,
+    ScheduledReportParams,
+    
+    # P0: Notifications
+    MessageQueueParams,
+    NotificationChannelParams,
+    NotificationRuleParams,
+    NotificationTemplateParams,
+    
+    # P0: Compliance
+    AuditEventParams,
+    ComplianceRuleParams,
+    CorrelationStrategyParams,
+    DataRetentionParams,
+    PIIClassificationParams,
+    RegulatoryOverlayParams,
+    
+    # P0: Integration Contracts
+    APIContractParams,
+    DataMapperParams,
+    EventSchemaParams,
+    
+    # P1: Workflow Enhancement
+    HumanTaskParams,
+    WorkflowCompensationParams,
+    WorkflowGatewayParams,
+    WorkflowSubprocessParams,
+    WorkflowTimerParams,
+    
+    # P1: Event-Driven
+    CQRSProjectionParams,
+    EventBusParams,
+    EventPublisherParams,
+    EventSourcingStreamParams,
+    EventSubscriberParams,
+    
+    # P1: Search
+    FullTextFieldParams,
+    SearchIndexParams,
+    SearchQueryParams,
+    
+    # P2: Pagination & Versioning
+    APIVersionParams,
+    DeprecationNoticeParams,
+    PaginationSpecParams,
+    
+    # P2: E-commerce
+    OrderFulfillmentParams,
+    PaymentGatewayParams,
+    ProductCatalogParams,
+    ShoppingCartParams,
+    
+    # P2: Finance
+    CurrencyExchangeParams,
+    FinancialInstrumentParams,
+    GeneralLedgerParams,
+    TaxRuleParams,
+    
+    # P2: Healthcare
+    ClinicalWorkflowParams,
+    MedicationParams,
+    PatientRecordParams,
+    
+    # P2: Education
+    CourseParams,
+    GradebookParams,
+    
+    # P2: Trading
+    FIXProtocolParams,
+    OrderBookParams,
+    TradingSessionParams,
+    
+    # P2: Logistics
+    RouteOptimizationParams,
+    WarehouseZoneParams,
+    
+    # P2: Advanced
+    BatchJobParams,
+    CacheStrategyParams,
+    DataMigrationParams,
+    DeadLetterQueueParams,
+    EncryptionKeyParams,
+    MessageSchemaParams,
+    QualityGateParams,
+    RateLimiterParams,
+    SecurityPolicyParams,
+    TestSuiteParams,
+    
+    # P1/P3: Enhanced Rule & Scoring
+    RuleMatcherParams,
+    RuleScoringParams,
+    
+    # P2/P3: Enhanced Integration
+    DeviceIntegrationParams,
+    FIXMessageTypesParams,
+    HL7FHIRSchemaParams,
+    VideoConferencingIntegrationParams,
+    
+    # P3: Advanced
+    CalendarScheduleParams,
+    CircuitBreakerParams,
+    ExternalServiceParams,
+    LocalizationParams,
+    SubledgerParams,
 )
 
 __all__ = [
-    "NamedField",
-    "Entity",
-    "EntitiesFile",
-    "ValueObject",
-    "ValueObjectsFile",
-    "EnumDef",
-    "EnumsFile",
-    "ErrorDef",
-    "ErrorsFile",
-    "EventDef",
-    "EventsFile",
-    "GuardRef",
-    "EffectRef",
-    "IntegrationCallParams",
-    "Command",
-    "CommandsFile",
-    "Query",
-    "QueriesFile",
-    "Projection",
-    "ProjectionsFile",
-    "HttpRoute",
-    "HttpApiFile",
-    "GraphQLType",
-    "GraphQLField",
-    "GraphQLApi",
-    "GraphQLApiFile",
-    "RuleRow",
-    "Rule",
-    "RulesFile",
-    "WorkflowState",
-    "WorkflowTransition",
-    "WorkflowErrorHandler",
-    "Workflow",
-    "WorkflowsFile",
-    "PolicyCondition",
-    "PolicyEffect",
-    "Policy",
-    "PoliciesFile",
-    "Role",
-    "Permission",
-    "Binding",
-    "AccessPolicy",
-    "AccessPolicyFile",
-    "ScenarioStep",
-    "Scenario",
-    "ScenariosFile",
-    "Glossary",
-    "GlossaryFile",
-    "GlossaryTerm",
-    "InfoFile",
-    "ProjectInfo",
-    "PersistenceDatasource",
-    "PersistenceColumn",
-    "PersistenceIndex",
-    "PersistenceTable",
-    "PersistenceModelFile",
-    "IntegrationAuth",
-    "TimeoutPolicy",
-    "RetryPolicy",
-    "RateLimitPolicy",
-    "CircuitBreakerPolicy",
-    "IntegrationTarget",
-    "ErrorMap",
-    "RestApiOperation",
-    "S3Resource",
-    "EmailProvider",
-    "OAuth2Provider",
-    "SignaturePolicy",
-    "WebhookEndpoint",
-    "IntegrationsFile",
-    "EnvironmentProfile",
-    "ProfilesFile",
-    "SecretRef",
-    "SecretsContractFile",
-    "CorsPolicy",
-    "RateLimitRule",
-    "PiiMaskingRule",
-    "SecurityBaseline",
-    "SecurityBaselineFile",
-    "TimeoutConfig",
-    "RetryConfig",
-    "CircuitBreakerConfig",
-    "ReliabilityPolicy",
-    "ReliabilityPoliciesFile",
-    "ObservabilityTarget",
-    "ObservabilityFile",
-    "ContractTestStep",
-    "ContractTestCase",
-    "TestingFile",
+    # Core
+    "ProjectionNode",
+    "ProjectionTree",
+    "NodeKind",
+    "NodeParams",
+    "NodeBuilder",
+    
+    # Domain Layer Params
+    "EntityParams",
+    "ValueObjectParams",
+    "AggregateParams",
+    "EnumParams",
+    "ErrorParams",
+    "EventParams",
+    
+    # Application Layer Params
+    "CommandParams",
+    "QueryParams",
+    "WorkflowParams",
+    "RuleParams",
+    "GuardParams",
+    "EffectParams",
+    
+    # API Layer Params
+    "HTTPRouteParams",
+    "GraphQLResolverParams",
+    "WebhookParams",
+    
+    # Access Control Params
+    "RoleParams",
+    "PermissionParams",
+    "PolicyParams",
+    
+    # Infrastructure Params
+    "DataSourceParams",
+    "TableParams",
+    "IndexParams",
+    "CacheParams",
+    "QueueParams",
+    "IntegrationParams",
+    "AuthProviderParams",
+    
+    # Observability Params
+    "MetricParams",
+    "LogParams",
+    "AlertParams",
+    "TraceParams",
+    
+    # P0: Reporting Params
+    "ReportParams",
+    "DashboardParams",
+    "ExportParams",
+    "ScheduledReportParams",
+    
+    # P0: Notification Params
+    "NotificationChannelParams",
+    "NotificationTemplateParams",
+    "NotificationRuleParams",
+    "MessageQueueParams",
+    
+    # P0: Compliance Params
+    "ComplianceRuleParams",
+    "RegulatoryOverlayParams",
+    "DataRetentionParams",
+    "PIIClassificationParams",
+    "AuditEventParams",
+    "CorrelationStrategyParams",
+    
+    # P0: Integration Contract Params
+    "APIContractParams",
+    "EventSchemaParams",
+    "DataMapperParams",
+    
+    # P1: Workflow Enhancement Params
+    "WorkflowGatewayParams",
+    "WorkflowTimerParams",
+    "WorkflowSubprocessParams",
+    "WorkflowCompensationParams",
+    "HumanTaskParams",
+    
+    # P1: Event-Driven Params
+    "EventPublisherParams",
+    "EventSubscriberParams",
+    "EventBusParams",
+    "CQRSProjectionParams",
+    "EventSourcingStreamParams",
+    
+    # P1: Search Params
+    "SearchIndexParams",
+    "SearchQueryParams",
+    "FullTextFieldParams",
+    
+    # P2: Pagination & Versioning Params
+    "PaginationSpecParams",
+    "APIVersionParams",
+    "DeprecationNoticeParams",
+    
+    # P2: E-commerce Params
+    "ShoppingCartParams",
+    "ProductCatalogParams",
+    "PaymentGatewayParams",
+    "OrderFulfillmentParams",
+    
+    # P2: Finance Params
+    "GeneralLedgerParams",
+    "FinancialInstrumentParams",
+    "CurrencyExchangeParams",
+    "TaxRuleParams",
+    
+    # P2: Healthcare Params
+    "PatientRecordParams",
+    "ClinicalWorkflowParams",
+    "MedicationParams",
+    
+    # P2: Education Params
+    "CourseParams",
+    "GradebookParams",
+    
+    # P2: Trading Params
+    "OrderBookParams",
+    "TradingSessionParams",
+    "FIXProtocolParams",
+    
+    # P2: Logistics Params
+    "WarehouseZoneParams",
+    "RouteOptimizationParams",
+    
+    # P2: Advanced Params
+    "CacheStrategyParams",
+    "RateLimiterParams",
+    "TestSuiteParams",
+    "QualityGateParams",
+    "DataMigrationParams",
+    "BatchJobParams",
+    "MessageSchemaParams",
+    "DeadLetterQueueParams",
+    "EncryptionKeyParams",
+    "SecurityPolicyParams",
+    
+    # P1/P3: Enhanced Rule & Scoring Params
+    "RuleScoringParams",
+    "RuleMatcherParams",
+    
+    # P2/P3: Enhanced Integration Params
+    "DeviceIntegrationParams",
+    "HL7FHIRSchemaParams",
+    "FIXMessageTypesParams",
+    "VideoConferencingIntegrationParams",
+    
+    # P3: Advanced Params
+    "ExternalServiceParams",
+    "LocalizationParams",
+    "CircuitBreakerParams",
+    "CalendarScheduleParams",
+    "SubledgerParams",
 ]
