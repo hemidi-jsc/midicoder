@@ -1,0 +1,633 @@
+# Midicoder CE v1.0.0 - Technical KPI Definitions
+#
+# This file defines measurable technical KPIs for validating Midicoder CE
+# implementation quality across all 100 industry blueprints.
+#
+# Version: 1.0.0
+# Created: 2026-04-17
+#
+---
+
+metadata:
+  version: "1.0.0"
+  created_date: "2026-04-17"
+  updated_date: "2026-04-17"
+  measurement_tool: "scripts/check-depth.py"
+
+# ============================================================================
+# KPI CATEGORIES
+# ============================================================================
+
+kpi_categories:
+  - id: "PACK_DEPTH"
+    name: "Core Pack Depth"
+    description: "Definitions and obligations per pack"
+    priority: "P0"
+
+  - id: "BLUEPRINT_COMPILE"
+    name: "Blueprint Compilation"
+    description: "Successful blueprint compile rates"
+    priority: "P0"
+
+  - id: "BRIEF_QUALITY"
+    name: "Brief Template Quality"
+    description: "Brief template completeness and depth"
+    priority: "P1"
+
+  - id: "DETERMINISM"
+    name: "Determinism Guarantees"
+    description: "Hash stability across compilation artifacts"
+    priority: "P0"
+
+  - id: "INVARIANT_COVERAGE"
+    name: "Invariant Gate Coverage"
+    description: "Invariant enforcement effectiveness"
+    priority: "P1"
+
+  - id: "ERROR_NORMALIZATION"
+    name: "Error Code Normalization"
+    description: "Standard error code coverage"
+    priority: "P1"
+
+# ============================================================================
+# DETAILED KPI DEFINITIONS
+# ============================================================================
+
+kpis:
+  # --------------------------------------------------------------------------
+  # PACK_DEPTH KPIs
+  # --------------------------------------------------------------------------
+
+  - id: "KPI-001"
+    name: "P0/P1 Pack Definition Count"
+    category: "PACK_DEPTH"
+    description: "Each P0/P1 pack must have 8-12 definitions"
+    target_min: 8
+    target_max: 12
+    measurement:
+      script: "scripts/check-depth.py --packs P0,P1 --metric definitions"
+      output_format: "json"
+      field: "definitions_per_pack"
+    validation:
+      type: "range"
+      message: "P0/P1 packs must have 8-12 definitions each"
+
+  - id: "KPI-002"
+    name: "P0/P1 Pack Obligation Count"
+    category: "PACK_DEPTH"
+    description: "Each P0/P1 pack must have 6-10 obligations"
+    target_min: 6
+    target_max: 10
+    measurement:
+      script: "scripts/check-depth.py --packs P0,P1 --metric obligations"
+      output_format: "json"
+      field: "obligations_per_pack"
+    validation:
+      type: "range"
+      message: "P0/P1 packs must have 6-10 obligations each"
+
+  - id: "KPI-003"
+    name: "P2/P3/P4 Pack Definition Count"
+    category: "PACK_DEPTH"
+    description: "Each P2/P3/P4 pack must have 6-8 definitions"
+    target_min: 6
+    target_max: 8
+    measurement:
+      script: "scripts/check-depth.py --packs P2,P3,P4 --metric definitions"
+      output_format: "json"
+      field: "definitions_per_pack"
+    validation:
+      type: "range"
+      message: "P2/P3/P4 packs must have 6-8 definitions each"
+
+  - id: "KPI-004"
+    name: "P2/P3/P4 Pack Obligation Count"
+    category: "PACK_DEPTH"
+    description: "Each P2/P3/P4 pack must have 4-6 obligations"
+    target_min: 4
+    target_max: 6
+    measurement:
+      script: "scripts/check-depth.py --packs P2,P3,P4 --metric obligations"
+      output_format: "json"
+      field: "obligations_per_pack"
+    validation:
+      type: "range"
+      message: "P2/P3/P4 packs must have 4-6 obligations each"
+
+  - id: "KPI-005"
+    name: "Total Core Definitions"
+    category: "PACK_DEPTH"
+    description: "Total definitions across all core packs must be >= 220"
+    target_min: 220
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --packs ALL --metric total-definitions"
+      output_format: "json"
+      field: "total_definitions"
+    validation:
+      type: "minimum"
+      message: "Total core definitions must be >= 220"
+
+  - id: "KPI-006"
+    name: "Total Core Obligations"
+    category: "PACK_DEPTH"
+    description: "Total obligations across all core packs must be >= 150"
+    target_min: 150
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --packs ALL --metric total-obligations"
+      output_format: "json"
+      field: "total_obligations"
+    validation:
+      type: "minimum"
+      message: "Total core obligations must be >= 150"
+
+  - id: "KPI-007"
+    name: "Macro Expansion Rules"
+    category: "PACK_DEPTH"
+    description: "Total macro expansion rules must be >= 35"
+    target_min: 35
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --packs ALL --metric macro-rules"
+      output_format: "json"
+      field: "total_macro_rules"
+    validation:
+      type: "minimum"
+      message: "Total macro expansion rules must be >= 35"
+
+  # --------------------------------------------------------------------------
+  # BLUEPRINT_COMPILE KPIs
+  # --------------------------------------------------------------------------
+
+  - id: "KPI-008"
+    name: "Blueprint Compile Success Rate"
+    category: "BLUEPRINT_COMPILE"
+    description: "Percentage of 100 blueprints that compile successfully"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/validate-blueprints.py --all"
+      output_format: "json"
+      field: "success_rate_percent"
+    validation:
+      type: "exact"
+      message: "All 100 blueprints must compile successfully"
+
+  - id: "KPI-009"
+    name: "Blueprint Validation Error Rate"
+    category: "BLUEPRINT_COMPILE"
+    description: "Blueprints with normalized validation errors (acceptable)"
+    target_min: 0
+    target_max: 0
+    measurement:
+      script: "scripts/validate-blueprints.py --all --errors"
+      output_format: "json"
+      field: "unnormalized_error_count"
+    validation:
+      type: "maximum"
+      message: "No blueprints should have unnormalized errors"
+
+  - id: "KPI-010"
+    name: "Top 20 Blueprint Compile Rate"
+    category: "BLUEPRINT_COMPILE"
+    description: "All 20 priority industries must compile"
+    target_min: 20
+    target_max: 20
+    measurement:
+      script: "scripts/validate-blueprints.py --priority-top20"
+      output_format: "json"
+      field: "compiled_count"
+    validation:
+      type: "exact"
+      message: "All 20 priority blueprints must compile"
+
+  # --------------------------------------------------------------------------
+  # BRIEF_QUALITY KPIs
+  # --------------------------------------------------------------------------
+
+  - id: "KPI-011"
+    name: "Brief Template Count"
+    category: "BRIEF_QUALITY"
+    description: "Total number of brief templates created"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-briefs.py --count"
+      output_format: "json"
+      field: "total_briefs"
+    validation:
+      type: "exact"
+      message: "Must have exactly 100 brief templates"
+
+  - id: "KPI-012"
+    name: "Brief Quality Gate Pass Rate"
+    category: "BRIEF_QUALITY"
+    description: "Percentage of briefs passing quality gate"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-briefs.py --quality-gate"
+      output_format: "json"
+      field: "pass_rate_percent"
+    validation:
+      type: "exact"
+      message: "All briefs must pass quality gate"
+
+  - id: "KPI-013"
+    name: "Brief Universal-Full Depth Gate Pass Rate"
+    category: "BRIEF_QUALITY"
+    description: "Percentage of briefs passing universal-full depth gate"
+    target_min: 20
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --briefs --depth universal-full"
+      output_format: "json"
+      field: "pass_count"
+    validation:
+      type: "minimum"
+      message: "At least 20/100 briefs must pass universal-full depth gate"
+
+  - id: "KPI-014"
+    name: "Top 20 Brief Depth Gate Pass Rate"
+    category: "BRIEF_QUALITY"
+    description: "All 20 priority briefs must pass depth gate"
+    target_min: 20
+    target_max: 20
+    measurement:
+      script: "scripts/check-depth.py --briefs --priority-top20"
+      output_format: "json"
+      field: "pass_count"
+    validation:
+      type: "exact"
+      message: "All 20 priority briefs must pass depth gate"
+
+  # Brief Depth Metrics (measured per brief)
+  - id: "KPI-015"
+    name: "Brief Minimum Personas"
+    category: "BRIEF_QUALITY"
+    description: "Each brief must have at least 3 personas"
+    target_min: 3
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --briefs --metric personas"
+      output_format: "json"
+      field: "min_personas"
+    validation:
+      type: "minimum"
+      message: "Each brief must have >= 3 personas"
+
+  - id: "KPI-016"
+    name: "Brief Minimum Journeys"
+    category: "BRIEF_QUALITY"
+    description: "Each brief must have at least 10 user journeys"
+    target_min: 10
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --briefs --metric journeys"
+      output_format: "json"
+      field: "min_journeys"
+    validation:
+      type: "minimum"
+      message: "Each brief must have >= 10 journeys"
+
+  - id: "KPI-017"
+    name: "Brief Minimum Functional Requirements"
+    category: "BRIEF_QUALITY"
+    description: "Each brief must have at least 30 functional requirements"
+    target_min: 30
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --briefs --metric functional-requirements"
+      output_format: "json"
+      field: "min_fr_count"
+    validation:
+      type: "minimum"
+      message: "Each brief must have >= 30 functional requirements"
+
+  - id: "KPI-018"
+    name: "Brief Minimum Non-Functional Requirements"
+    category: "BRIEF_QUALITY"
+    description: "Each brief must have at least 15 non-functional requirements"
+    target_min: 15
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --briefs --metric non-functional-requirements"
+      output_format: "json"
+      field: "min_nfr_count"
+    validation:
+      type: "minimum"
+      message: "Each brief must have >= 15 non-functional requirements"
+
+  - id: "KPI-019"
+    name: "Brief Minimum Domain Invariants"
+    category: "BRIEF_QUALITY"
+    description: "Each brief must have at least 10 domain invariants"
+    target_min: 10
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --briefs --metric invariants"
+      output_format: "json"
+      field: "min_invariants"
+    validation:
+      type: "minimum"
+      message: "Each brief must have >= 10 domain invariants"
+
+  - id: "KPI-020"
+    name: "Brief Minimum Compliance Constraints"
+    category: "BRIEF_QUALITY"
+    description: "Each brief must have at least 8 compliance constraints"
+    target_min: 8
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --briefs --metric compliance-constraints"
+      output_format: "json"
+      field: "min_compliance"
+    validation:
+      type: "minimum"
+      message: "Each brief must have >= 8 compliance constraints"
+
+  - id: "KPI-021"
+    name: "Brief Minimum Integration Contracts"
+    category: "BRIEF_QUALITY"
+    description: "Each brief must have at least 10 integration contracts"
+    target_min: 10
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --briefs --metric integration-contracts"
+      output_format: "json"
+      field: "min_integrations"
+    validation:
+      type: "minimum"
+      message: "Each brief must have >= 10 integration contracts"
+
+  - id: "KPI-022"
+    name: "Brief Minimum Word Count"
+    category: "BRIEF_QUALITY"
+    description: "Each brief must have at least 5000 words"
+    target_min: 5000
+    target_max: null
+    measurement:
+      script: "scripts/check-depth.py --briefs --metric word-count"
+      output_format: "json"
+      field: "min_word_count"
+    validation:
+      type: "minimum"
+      message: "Each brief must have >= 5000 words"
+
+  # --------------------------------------------------------------------------
+  # DETERMINISM KPIs
+  # --------------------------------------------------------------------------
+
+  - id: "KPI-023"
+    name: "Contract Graph Hash Stability"
+    category: "DETERMINISM"
+    description: "Same input must produce same graph hash 100% of runs"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-determinism.py --artifact graph --runs 10"
+      output_format: "json"
+      field: "stability_percent"
+    validation:
+      type: "exact"
+      message: "Graph hash must be 100% stable across runs"
+
+  - id: "KPI-024"
+    name: "MIR Hash Stability"
+    category: "DETERMINISM"
+    description: "Same input must produce same MIR hash 100% of runs"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-determinism.py --artifact mir --runs 10"
+      output_format: "json"
+      field: "stability_percent"
+    validation:
+      type: "exact"
+      message: "MIR hash must be 100% stable across runs"
+
+  - id: "KPI-025"
+    name: "Plan Hash Stability"
+    category: "DETERMINISM"
+    description: "Same input must produce same plan hash 100% of runs"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-determinism.py --artifact plan --runs 10"
+      output_format: "json"
+      field: "stability_percent"
+    validation:
+      type: "exact"
+      message: "Plan hash must be 100% stable across runs"
+
+  - id: "KPI-026"
+    name: "Patch Plan Hash Stability"
+    category: "DETERMINISM"
+    description: "Same input must produce same patch-plan hash 100% of runs"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-determinism.py --artifact patch-plan --runs 10"
+      output_format: "json"
+      field: "stability_percent"
+    validation:
+      type: "exact"
+      message: "Patch-plan hash must be 100% stable across runs"
+
+  # --------------------------------------------------------------------------
+  # INVARIANT_COVERAGE KPIs
+  # --------------------------------------------------------------------------
+
+  - id: "KPI-027"
+    name: "Unresolved Reference Detection Rate"
+    category: "INVARIANT_COVERAGE"
+    description: "All unresolved refs must be caught at compile time"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-invariants.py --invariant unresolved-refs"
+      output_format: "json"
+      field: "detection_rate"
+    validation:
+      type: "exact"
+      message: "All unresolved references must be detected"
+
+  - id: "KPI-028"
+    name: "Missing Permission Detection Rate"
+    category: "INVARIANT_COVERAGE"
+    description: "All missing permission bindings must be caught"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-invariants.py --invariant missing-permission"
+      output_format: "json"
+      field: "detection_rate"
+    validation:
+      type: "exact"
+      message: "All missing permissions must be detected"
+
+  - id: "KPI-029"
+    name: "Missing Tenant Filter Detection Rate"
+    category: "INVARIANT_COVERAGE"
+    description: "All missing tenant filters must be caught"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-invariants.py --invariant tenant-filter"
+      output_format: "json"
+      field: "detection_rate"
+    validation:
+      type: "exact"
+      message: "All missing tenant filters must be detected"
+
+  - id: "KPI-030"
+    name: "Invalid Role Binding Detection Rate"
+    category: "INVARIANT_COVERAGE"
+    description: "All invalid role bindings must be caught"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-invariants.py --invariant role-binding"
+      output_format: "json"
+      field: "detection_rate"
+    validation:
+      type: "exact"
+      message: "All invalid role bindings must be detected"
+
+  - id: "KPI-031"
+    name: "Invalid Policy Detection Rate"
+    category: "INVARIANT_COVERAGE"
+    description: "All invalid policies must be caught"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-invariants.py --invariant policy"
+      output_format: "json"
+      field: "detection_rate"
+    validation:
+      type: "exact"
+      message: "All invalid policies must be detected"
+
+  # --------------------------------------------------------------------------
+  # ERROR_NORMALIZATION KPIs
+  # --------------------------------------------------------------------------
+
+  - id: "KPI-032"
+    name: "Error Code Coverage"
+    category: "ERROR_NORMALIZATION"
+    description: "Percentage of errors with standardized codes"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-errors.py --coverage"
+      output_format: "json"
+      field: "coverage_percent"
+    validation:
+      type: "exact"
+      message: "All errors must have standardized codes"
+
+  - id: "KPI-033"
+    name: "Critical Error Code Coverage"
+    category: "ERROR_NORMALIZATION"
+    description: "All critical errors must have codes"
+    target_min: 100
+    target_max: 100
+    measurement:
+      script: "scripts/check-errors.py --severity critical"
+      output_format: "json"
+      field: "coverage_percent"
+    validation:
+      type: "exact"
+      message: "All critical errors must have codes"
+
+# ============================================================================
+# MEASUREMENT SCHEDULE
+# ============================================================================
+
+measurement_schedule:
+  continuous:
+    description: "Run on every compilation"
+    kpis:
+      - "KPI-023"  # Graph hash stability
+      - "KPI-024"  # MIR hash stability
+      - "KPI-027"  # Unresolved ref detection
+      - "KPI-028"  # Missing permission detection
+      - "KPI-032"  # Error code coverage
+
+  weekly:
+    description: "Run weekly for progress tracking"
+    kpis:
+      - "KPI-008"  # Blueprint compile rate
+      - "KPI-011"  # Brief template count
+      - "KPI-012"  # Brief quality gate rate
+      - "KPI-023"  # Graph hash stability
+      - "KPI-027"  # Unresolved ref detection
+
+  milestone:
+    description: "Run at each milestone (E10 complete, v1.0.0)"
+    kpis:
+      - "ALL"  # All KPIs
+
+# ============================================================================
+# REPORTING FORMAT
+# ============================================================================
+
+reporting:
+  json_schema:
+    type: object
+    properties:
+      timestamp:
+        type: string
+        format: date-time
+      kpi_id:
+        type: string
+      kpi_name:
+        type: string
+      category:
+        type: string
+      measured_value:
+        type: number
+      target_min:
+        type: number
+      target_max:
+        type: number
+      status:
+        type: string
+        enum: ["pass", "fail", "warning"]
+      details:
+        type: object
+
+  output_files:
+    weekly_report: "reports/kpi-weekly-YYYY-MM-DD.json"
+    milestone_report: "reports/kpi-milestone-VERSION.json"
+    trend_report: "reports/kpi-trend-last-30d.json"
+
+# ============================================================================
+# SUCCESS CRITERIA v1.0.0
+# ============================================================================
+
+success_criteria_v1_0_0:
+  required_pass:
+    - "KPI-005"  # Total definitions >= 220
+    - "KPI-006"  # Total obligations >= 150
+    - "KPI-007"  # Macro rules >= 35
+    - "KPI-008"  # 100/100 blueprint compile
+    - "KPI-010"  # 20/20 top priority compile
+    - "KPI-011"  # 100 brief templates
+    - "KPI-013"  # 20/100 brief pass universal-full depth
+    - "KPI-014"  # 20/20 top brief pass depth
+    - "KPI-023"  # Graph hash 100% stable
+    - "KPI-024"  # MIR hash 100% stable
+    - "KPI-025"  # Plan hash 100% stable
+    - "KPI-026"  # Patch-plan hash 100% stable
+    - "KPI-027"  # Unresolved ref detection 100%
+    - "KPI-028"  # Missing permission detection 100%
+    - "KPI-029"  # Tenant filter detection 100%
+    - "KPI-030"  # Role binding detection 100%
+    - "KPI-031"  # Policy detection 100%
+    - "KPI-032"  # Error code coverage 100%
+
+  summary:
+    total_required_kpis: 18
+    description: "All 18 KPIs must pass for v1.0.0 release"
