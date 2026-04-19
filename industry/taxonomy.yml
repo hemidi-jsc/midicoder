@@ -1,0 +1,1031 @@
+# Midicoder CE v1.0.0 - Taxonomy Definition
+#
+# This file defines the canonical taxonomy for Core Packs (CP), Domain Packs (DP),
+# and Regulatory Overlays (RX) used across the entire Midicoder CE pipeline.
+#
+# Version: 1.0.0
+# Created: 2026-04-17
+# Status: APPROVED
+#
+# Usage:
+#   - All blueprints MUST reference packs/overlays from this taxonomy
+#   - IDs are immutable after v1.0.0 release
+#   - New additions require architectural review
+#
+---
+
+metadata:
+  version: "1.0.0"
+  created_date: "2026-04-17"
+  updated_date: "2026-04-17"
+  schema_version: "taxonomy-v1"
+  status: "approved"
+
+# ============================================================================
+# CORE PACKS (CP)
+# ============================================================================
+# Core Packs are the compiler substrate - universal capabilities required for
+# all web applications regardless of domain. These are first-party curated,
+# not plugin-based, to maintain determinism and avoid lock-in.
+#
+# Phase definitions:
+#   - P0: Critical path, required for all blueprints
+#   - P1: High priority, required for most production apps
+#   - P2: Standard features, commonly needed
+#   - P3: Advanced features, specialized use cases
+#   - P4: Experimental/future, opt-in only
+# ============================================================================
+
+core_packs:
+  # --------------------------------------------------------------------------
+  # P0 - Critical Path (Required for All Blueprints)
+  # --------------------------------------------------------------------------
+
+  - id: "CP01"
+    name: "Domain Model DSL & IR Builder"
+    internal_id: "cp1-domain-model"
+    phase: "P0"
+    description: "Core domain primitives: entities, value objects, commands, queries, workflows"
+    definitions_count: 6
+    obligations_count: 2
+    dependencies: []
+    category: "domain-modeling"
+    status: "stable"
+
+  - id: "CP02"
+    name: "Multi-Tenant Architecture Generator"
+    internal_id: "cp2-multi-tenant"
+    phase: "P0"
+    description: "Tenant isolation strategies and provisioning workflows"
+    definitions_count: 2
+    obligations_count: 1
+    dependencies: ["CP01"]
+    category: "architecture"
+    status: "stable"
+
+  - id: "CP03"
+    name: "Authentication & Authorization Framework"
+    internal_id: "cp3-auth"
+    phase: "P0"
+    description: "JWT/OAuth2 baseline, session management, rate limiting"
+    definitions_count: 2
+    obligations_count: 2
+    dependencies: ["CP01", "CP02"]
+    category: "security"
+    status: "stable"
+
+  - id: "CP04"
+    name: "RBAC & Policy Engine"
+    internal_id: "cp4-rbac"
+    phase: "P0"
+    description: "Role-based access control, permissions, policy rules"
+    definitions_count: 4
+    obligations_count: 1
+    dependencies: ["CP02", "CP03"]
+    category: "security"
+    status: "stable"
+
+  - id: "CP07"
+    name: "Infrastructure as Code Generator"
+    internal_id: "cp7-iac"
+    phase: "P0"
+    description: "Local runtime (docker-compose) and AWS baseline profiles"
+    definitions_count: 2
+    obligations_count: 1
+    dependencies: []
+    category: "infrastructure"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # P1 - High Priority (Most Production Apps)
+  # --------------------------------------------------------------------------
+
+  - id: "CP05"
+    name: "Event-Driven Architecture Generator"
+    internal_id: "cp5-event-driven"
+    phase: "P1"
+    description: "Event topics, publishing, subscriptions, outbox pattern"
+    definitions_count: 4
+    obligations_count: 1
+    dependencies: ["CP01"]
+    category: "architecture"
+    status: "stable"
+
+  - id: "CP06"
+    name: "API Gateway & Service Mesh Generator"
+    internal_id: "cp6-api-gateway"
+    phase: "P1"
+    description: "Gateway profiles, routing, upstream binding"
+    definitions_count: 2
+    obligations_count: 0
+    dependencies: ["CP01", "CP05"]
+    category: "integration"
+    status: "stable"
+
+  - id: "CP08"
+    name: "Database & Data Access Layer Generator"
+    internal_id: "cp8-database"
+    phase: "P1"
+    description: "Datasource declarations, table mappings, column definitions"
+    definitions_count: 2
+    obligations_count: 1
+    dependencies: ["CP01"]
+    category: "persistence"
+    status: "stable"
+
+  - id: "CP09"
+    name: "Caching & Performance Layer Generator"
+    internal_id: "cp9-cache"
+    phase: "P1"
+    description: "Cache profiles, bindings, invalidation strategies"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP08"]
+    category: "performance"
+    status: "stable"
+
+  - id: "CP10"
+    name: "Search & Indexing Generator"
+    internal_id: "cp10-search"
+    phase: "P1"
+    description: "Search index declarations, query bindings, sync strategies"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP08"]
+    category: "performance"
+    status: "stable"
+
+  - id: "CP11"
+    name: "File Storage & Media Processing Generator"
+    internal_id: "cp11-file-media"
+    phase: "P1"
+    description: "File storage profiles, upload policies, media transforms"
+    definitions_count: 3
+    obligations_count: 1
+    dependencies: ["CP07"]
+    category: "storage"
+    status: "stable"
+
+  - id: "CP12"
+    name: "Notification & Communication Generator"
+    internal_id: "cp12-notification"
+    phase: "P1"
+    description: "Notification channels, templates, dispatch workflows"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP05"]
+    category: "communication"
+    status: "stable"
+
+  - id: "CP13"
+    name: "Background Job & Workflow Generator"
+    internal_id: "cp13-workflow-runtime"
+    phase: "P1"
+    description: "Job queues, background workers, workflow orchestration"
+    definitions_count: 3
+    obligations_count: 1
+    dependencies: ["CP05"]
+    category: "runtime"
+    status: "stable"
+
+  - id: "CP14"
+    name: "Audit Trail & Compliance Generator"
+    internal_id: "cp14-audit-compliance"
+    phase: "P1"
+    description: "Audit trails, audit rules, compliance controls"
+    definitions_count: 3
+    obligations_count: 1
+    dependencies: ["CP01"]
+    category: "compliance"
+    status: "stable"
+
+  - id: "CP15"
+    name: "Observability Stack Generator"
+    internal_id: "cp15-observability"
+    phase: "P1"
+    description: "Logging, metrics, tracing baseline profiles"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP07"]
+    category: "observability"
+    status: "stable"
+
+  - id: "CP23"
+    name: "Testing Framework Generator"
+    internal_id: "cp23-testing-framework"
+    phase: "P1"
+    description: "Test suites, test cases, test policies"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP01"]
+    category: "quality"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # P2 - Standard Features (Commonly Needed)
+  # --------------------------------------------------------------------------
+
+  - id: "CP16"
+    name: "API & System Monitoring Generator"
+    internal_id: "cp16-monitoring"
+    phase: "P2"
+    description: "Dashboards, SLI definitions, alert policies"
+    definitions_count: 3
+    obligations_count: 1
+    dependencies: ["CP15"]
+    category: "observability"
+    status: "stable"
+
+  - id: "CP17"
+    name: "Business Intelligence & Analytics Generator"
+    internal_id: "cp17-bi-analytics"
+    phase: "P2"
+    description: "Analytics models, dashboards, scheduled jobs"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP08", "CP15"]
+    category: "analytics"
+    status: "stable"
+
+  - id: "CP18"
+    name: "Frontend Framework Generator"
+    internal_id: "cp18-frontend-framework"
+    phase: "P2"
+    description: "Frontend app shells, routing, state stores"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP01"]
+    category: "frontend"
+    status: "stable"
+
+  - id: "CP19"
+    name: "UI Component Generator"
+    internal_id: "cp19-ui-components"
+    phase: "P2"
+    description: "Reusable components, forms, tables"
+    definitions_count: 3
+    obligations_count: 1
+    dependencies: ["CP18"]
+    category: "frontend"
+    status: "stable"
+
+  - id: "CP20"
+    name: "API Client & Integration Generator"
+    internal_id: "cp20-api-client"
+    phase: "P2"
+    description: "API clients, bindings, realtime bridges"
+    definitions_count: 3
+    obligations_count: 3
+    dependencies: ["CP06", "CP18"]
+    category: "frontend"
+    status: "stable"
+
+  - id: "CP21"
+    name: "Authentication UI Generator"
+    internal_id: "cp21-auth-ui"
+    phase: "P2"
+    description: "Auth UI shells, route guards, session handling"
+    definitions_count: 3
+    obligations_count: 0
+    dependencies: ["CP03", "CP18"]
+    category: "frontend"
+    status: "stable"
+
+  - id: "CP22"
+    name: "Real-time UI Generator"
+    internal_id: "cp22-realtime-ui"
+    phase: "P2"
+    description: "Realtime channels, widgets, presence indicators"
+    definitions_count: 3
+    obligations_count: 1
+    dependencies: ["CP05", "CP18"]
+    category: "frontend"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # P3 - Advanced Features (Specialized Use Cases)
+  # --------------------------------------------------------------------------
+
+  - id: "CP24"
+    name: "Code Quality & Security Scanner Generator"
+    internal_id: "cp24-quality-security"
+    phase: "P3"
+    description: "Quality profiles, security scan rules, quality gates"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP23"]
+    category: "quality"
+    status: "stable"
+
+  - id: "CP25"
+    name: "Performance Testing Generator"
+    internal_id: "cp25-performance-testing"
+    phase: "P3"
+    description: "Performance suites, scenarios, baselines"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP23"]
+    category: "quality"
+    status: "stable"
+
+  - id: "CP26"
+    name: "Documentation Generator"
+    internal_id: "cp26-documentation"
+    phase: "P3"
+    description: "Documentation portals, sections, endpoint docs"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP01"]
+    category: "documentation"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # P4 - Experimental/Future (Opt-in Only)
+  # --------------------------------------------------------------------------
+
+  - id: "CP27"
+    name: "Plugin System Generator"
+    internal_id: "cp27-plugin-system"
+    phase: "P4"
+    description: "Extension slots, contracts, policies"
+    definitions_count: 3
+    obligations_count: 1
+    dependencies: ["CP01"]
+    category: "extensibility"
+    status: "experimental"
+
+  - id: "CP28"
+    name: "Custom Code Injection Generator"
+    internal_id: "cp28-custom-code"
+    phase: "P4"
+    description: "Custom code blocks, hooks, patch rules"
+    definitions_count: 3
+    obligations_count: 1
+    dependencies: ["CP01"]
+    category: "extensibility"
+    status: "experimental"
+
+  - id: "CP29"
+    name: "Multi-Language Support Generator"
+    internal_id: "cp29-multi-language"
+    phase: "P4"
+    description: "Language profiles, i18n bundles, keysets"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP02"
+      - "CP03"
+      - "CP04"
+      - "CP05"
+      - "CP06"
+      - "CP07"
+      - "CP08"
+      - "CP09"
+      - "CP10"
+      - "CP11"
+      - "CP12"
+      - "CP13"
+      - "CP14"
+      - "CP15"
+      - "CP16"
+      - "CP17"
+      - "CP18"
+      - "CP19"
+      - "CP20"
+      - "CP21"
+      - "CP22"
+      - "CP23"
+      - "CP24"
+      - "CP25"
+      - "CP26"
+      - "CP27"
+      - "CP28"
+    category: "internationalization"
+    status: "experimental"
+
+  - id: "CP30"
+    name: "AI-Assisted Development Generator"
+    internal_id: "cp30-ai-assisted"
+    phase: "P4"
+    description: "AI assistant profiles, review policies, prompt templates"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies: ["CP01"]
+    category: "ai-assisted"
+    status: "experimental"
+
+# ============================================================================
+# DOMAIN PACKS (DP)
+# ============================================================================
+# Domain Packs provide industry-specific semantic primitives. Each pack
+# encapsulates the business logic, entities, and workflows specific to a
+# domain area. These compose with Core Packs to form complete blueprints.
+# ============================================================================
+
+domain_packs:
+  # --------------------------------------------------------------------------
+  # Commerce & Transactions
+  # --------------------------------------------------------------------------
+
+  - id: "DP01"
+    name: "Commerce Core"
+    description: "Core e-commerce capabilities: products, carts, orders, payments"
+    category: "commerce"
+    industries_using:
+      - "ecommerce-d2c"
+      - "marketplace-b2c"
+      - "marketplace-b2b"
+      - "omnichannel-retail"
+      - "food-delivery"
+    status: "stable"
+
+  - id: "DP02"
+    name: "Marketplace Core"
+    description: "Multi-vendor marketplace: seller management, commission, split payments"
+    category: "commerce"
+    industries_using:
+      - "marketplace-b2c"
+      - "marketplace-b2b"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Travel & Hospitality
+  # --------------------------------------------------------------------------
+
+  - id: "DP03"
+    name: "Travel & Hospitality"
+    description: "Booking, reservations, availability, room management"
+    category: "travel"
+    industries_using:
+      - "hotel-booking"
+      - "vacation-rental"
+      - "flight-booking"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Logistics & Supply Chain
+  # --------------------------------------------------------------------------
+
+  - id: "DP04"
+    name: "Logistics & Fleet"
+    description: "Fleet management, routing, tracking, delivery optimization"
+    category: "logistics"
+    industries_using:
+      - "food-delivery"
+      - "last-mile-delivery"
+      - "warehouse-management"
+    status: "stable"
+
+  - id: "DP05"
+    name: "Manufacturing & Supply Chain"
+    description: "Production planning, BOM, inventory, supplier management"
+    category: "manufacturing"
+    industries_using:
+      - "omnichannel-retail"
+      - "warehouse-management"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Real Estate & Facilities
+  # --------------------------------------------------------------------------
+
+  - id: "DP06"
+    name: "Real Estate & Facility"
+    description: "Property management, lease management, maintenance"
+    category: "real-estate"
+    industries_using:
+      - "real-estate-brokerage"
+      - "property-management"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Utilities & Energy
+  # --------------------------------------------------------------------------
+
+  - id: "DP07"
+    name: "Utilities & Energy"
+    description: "Metering, billing, grid management, consumption tracking"
+    category: "utilities"
+    industries_using:
+      - "electricity-utility"
+      - "water-utility"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Agriculture & Food Systems
+  # --------------------------------------------------------------------------
+
+  - id: "DP08"
+    name: "Agriculture & Food Systems"
+    description: "Crop management, livestock tracking, harvest planning"
+    category: "agriculture"
+    industries_using:
+      - "crop-farming"
+      - "livestock-management"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Healthcare
+  # --------------------------------------------------------------------------
+
+  - id: "DP09"
+    name: "Healthcare Provider"
+    description: "Patient management, clinical workflows, appointments, EHR"
+    category: "healthcare"
+    industries_using:
+      - "hospital-is"
+      - "telehealth"
+      - "dental-clinic"
+    status: "stable"
+
+  - id: "DP10"
+    name: "Healthcare Payer, Lab & Pharma"
+    description: "Claims processing, lab workflows, pharmaceutical management"
+    category: "healthcare"
+    industries_using:
+      - "laboratory-lis"
+      - "health-insurance"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Financial Services
+  # --------------------------------------------------------------------------
+
+  - id: "DP11"
+    name: "Banking Core"
+    description: "Account management, ledgers, transfers, reconciliations"
+    category: "banking"
+    industries_using:
+      - "retail-banking"
+      - "corporate-banking"
+      - "neobank"
+    status: "stable"
+
+  - id: "DP12"
+    name: "Payments & Cards"
+    description: "Payment processing, card lifecycle, transactions, settlements"
+    category: "payments"
+    industries_using:
+      - "ecommerce-d2c"
+      - "marketplace-b2c"
+      - "retail-banking"
+    status: "stable"
+
+  - id: "DP13"
+    name: "Lending & Credit"
+    description: "Loan origination, credit scoring, amortization, collections"
+    category: "lending"
+    industries_using:
+      - "consumer-lending"
+      - "mortgage-lending"
+    status: "stable"
+
+  - id: "DP14"
+    name: "Insurance"
+    description: "Policy management, claims processing, underwriting"
+    category: "insurance"
+    industries_using:
+      - "life-insurance"
+      - "non-life-insurance"
+    status: "stable"
+
+  - id: "DP15"
+    name: "Capital Markets & Wealth"
+    description: "Portfolio management, trading, custody, performance reporting"
+    category: "capital-markets"
+    industries_using:
+      - "wealth-management"
+      - "brokerage-platform"
+    status: "stable"
+
+  - id: "DP16"
+    name: "Exchange Trading & Market Infra"
+    description: "Order matching, market data, clearing, settlement"
+    category: "exchange"
+    industries_using:
+      - "exchange-trading"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Public Sector & Legal
+  # --------------------------------------------------------------------------
+
+  - id: "DP17"
+    name: "Public Sector & Justice"
+    description: "Case management, citizen services, licensing, permits"
+    category: "public-sector"
+    industries_using:
+      - "citizen-portal"
+      - "court-administration"
+    status: "stable"
+
+  - id: "DP18"
+    name: "Legal Ops & Contracting"
+    description: "Contract lifecycle, case management, e-discovery"
+    category: "legal"
+    industries_using:
+      - "legal-case-management"
+      - "contract-lifecycle"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Education & Research
+  # --------------------------------------------------------------------------
+
+  - id: "DP19"
+    name: "Education & Research"
+    description: "Student management, course catalog, grading, research grants"
+    category: "education"
+    industries_using:
+      - "k12-school"
+      - "university-management"
+      - "vocational-training"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Media & Entertainment
+  # --------------------------------------------------------------------------
+
+  - id: "DP20"
+    name: "Media, Creator & Entertainment"
+    description: "Content management, streaming, creator tools, ticketing"
+    category: "media"
+    industries_using:
+      - "digital-newsroom"
+      - "ott-subscription"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # HR & Workforce
+  # --------------------------------------------------------------------------
+
+  - id: "DP21"
+    name: "HR, Payroll & Workforce"
+    description: "Employee management, payroll processing, benefits, scheduling"
+    category: "hr"
+    industries_using:
+      - "payroll-benefits"
+      - "ats-recruiting"
+      - "workforce-scheduling"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Enterprise Operations
+  # --------------------------------------------------------------------------
+
+  - id: "DP22"
+    name: "Procurement, ITSM & Enterprise Ops"
+    description: "Procurement workflows, IT service management, asset tracking"
+    category: "enterprise"
+    industries_using:
+      - "procurement-srm"
+      - "itsm-helpdesk"
+      - "erp-finance"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Specialized Domains
+  # --------------------------------------------------------------------------
+
+  - id: "DP23"
+    name: "Nonprofit & Community"
+    description: "Donor management, fundraising, volunteer coordination"
+    category: "nonprofit"
+    industries_using:
+      - "nonprofit-fundraising"
+    status: "stable"
+
+  - id: "DP24"
+    name: "Cybersecurity & SOC"
+    description: "Security operations, incident response, threat monitoring"
+    category: "security"
+    industries_using:
+      - "soc-operations"
+      - "itsm-helpdesk"
+    status: "stable"
+
+  - id: "DP25"
+    name: "ESG & Sustainability"
+    description: "Carbon tracking, sustainability reporting, ESG metrics"
+    category: "esg"
+    industries_using:
+      - "esg-reporting"
+    status: "stable"
+
+  - id: "DP26"
+    name: "Data Governance & MDM"
+    description: "Master data management, data quality, lineage tracking"
+    category: "data-governance"
+    industries_using:
+      - "data-governance-platform"
+    status: "stable"
+
+# ============================================================================
+# REGULATORY OVERLAYS (RX)
+# ============================================================================
+# Regulatory Overlays enforce compliance requirements at compile-time.
+# Each overlay represents a specific regulatory framework or compliance
+# domain with enforceable obligations and guard rails.
+# ============================================================================
+
+regulatory_overlays:
+  # --------------------------------------------------------------------------
+  # Privacy & Data Protection
+  # --------------------------------------------------------------------------
+
+  - id: "RX01"
+    name: "Privacy & PII Protection"
+    description: "GDPR, CCPA, PII handling, data subject rights"
+    category: "privacy"
+    obligations:
+      - "pii_encryption_required"
+      - "data_retention_policy_required"
+      - "consent_management_required"
+      - "right_to_erasure_support"
+    industries_requiring:
+      - "all"  # Universal requirement
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Financial Integrity
+  # --------------------------------------------------------------------------
+
+  - id: "RX02"
+    name: "Financial Integrity (double-entry, reconciliation)"
+    description: "Double-entry bookkeeping, audit trails, reconciliation"
+    category: "financial"
+    obligations:
+      - "double_entry_required"
+      - "transaction_immutability"
+      - "reconciliation_mandatory"
+    industries_requiring:
+      - "retail-banking"
+      - "erp-finance"
+      - "exchange-trading"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Financial Crime Prevention
+  # --------------------------------------------------------------------------
+
+  - id: "RX03"
+    name: "AML, KYC, Sanctions"
+    description: "Anti-money laundering, know your customer, sanctions screening"
+    category: "financial"
+    obligations:
+      - "kyc_verification_required"
+      - "aml_screening_required"
+      - "suspicious_activity_reporting"
+    industries_requiring:
+      - "retail-banking"
+      - "exchange-trading"
+      - "payment-services"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Healthcare Compliance
+  # --------------------------------------------------------------------------
+
+  - id: "RX04"
+    name: "Clinical Safety & Health Privacy"
+    description: "HIPAA, clinical safety protocols, protected health information"
+    category: "healthcare"
+    obligations:
+      - "hipaa_compliance_required"
+      - "clinical_audit_trail"
+      - "phii_encryption_required"
+      - "minimum_necessary_access"
+    industries_requiring:
+      - "hospital-is"
+      - "telehealth"
+      - "laboratory-lis"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Public Records & Procurement
+  # --------------------------------------------------------------------------
+
+  - id: "RX05"
+    name: "Public Records & Procurement"
+    description: "Public records management, procurement transparency"
+    category: "public-sector"
+    obligations:
+      - "public_access_compliance"
+      - "procurement_audit_required"
+      - "bid_transparency"
+    industries_requiring:
+      - "procurement-srm"
+      - "citizen-portal"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Tax & E-Invoice
+  # --------------------------------------------------------------------------
+
+  - id: "RX06"
+    name: "Tax & E-Invoice"
+    description: "Tax calculation, e-invoicing, fiscal compliance"
+    category: "tax"
+    obligations:
+      - "tax_calculation_accuracy"
+      - "e_invoice_format_compliance"
+      - "tax_reporting_enabled"
+    industries_requiring:
+      - "ecommerce-d2c"
+      - "erp-finance"
+      - "payroll-benefits"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Labor & Payroll
+  # --------------------------------------------------------------------------
+
+  - id: "RX07"
+    name: "Labor & Payroll Compliance"
+    description: "Labor laws, payroll regulations, benefits compliance"
+    category: "labor"
+    obligations:
+      - "payroll_accuracy_required"
+      - "labor_law_compliance"
+      - "benefits_admin_compliance"
+    industries_requiring:
+      - "payroll-benefits"
+      - "hr-systems"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Education Accreditation
+  # --------------------------------------------------------------------------
+
+  - id: "RX08"
+    name: "Education Accreditation & Student Record"
+    description: "FERPA, accreditation standards, student data protection"
+    category: "education"
+    obligations:
+      - "ferpa_compliance_required"
+      - "student_record_integrity"
+      - "grade_immutability"
+    industries_requiring:
+      - "k12-school"
+      - "university-management"
+      - "vocational-training"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Safety & Traceability
+  # --------------------------------------------------------------------------
+
+  - id: "RX09"
+    name: "Safety, Incident & Traceability"
+    description: "Safety protocols, incident reporting, traceability chains"
+    category: "safety"
+    obligations:
+      - "incident_reporting_required"
+      - "traceability_chain_complete"
+      - "safety_audit_enabled"
+    industries_requiring:
+      - "food-delivery"
+      - "warehouse-management"
+      - "manufacturing"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Consumer Protection
+  # --------------------------------------------------------------------------
+
+  - id: "RX10"
+    name: "Consumer Protection, Refund & Dispute"
+    description: "Consumer rights, refund policies, dispute resolution"
+    category: "consumer-protection"
+    obligations:
+      - "refund_policy_enforced"
+      - "dispute_resolution_process"
+      - "consumer_rights_display"
+    industries_requiring:
+      - "ecommerce-d2c"
+      - "marketplace-b2c"
+      - "food-delivery"
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Audit Evidence
+  # --------------------------------------------------------------------------
+
+  - id: "RX11"
+    name: "Immutable Audit Evidence"
+    description: "Audit trail immutability, evidence preservation"
+    category: "audit"
+    obligations:
+      - "audit_trail_immutable"
+      - "evidence_preservation"
+      - "tamper_evident_logging"
+    industries_requiring:
+      - "all"  # Universal requirement for compliance
+    status: "stable"
+
+  # --------------------------------------------------------------------------
+  # Data Residency
+  # --------------------------------------------------------------------------
+
+  - id: "RX12"
+    name: "Data Residency & Cross-border Transfer"
+    description: "Data sovereignty, cross-border transfer rules"
+    category: "data-governance"
+    obligations:
+      - "data_residency_enforced"
+      - "cross_border_approval_required"
+      - "transfer_mechanism_valid"
+    industries_requiring:
+      - "telehealth"
+      - "international-ecommerce"
+      - "multinational-banking"
+    status: "stable"
+
+# ============================================================================
+# TAXONOMY STATISTICS
+# ============================================================================
+
+statistics:
+  core_packs:
+    total: 30
+    by_phase:
+      P0: 5
+      P1: 12
+      P2: 7
+      P3: 3
+      P4: 4
+    by_status:
+      stable: 26
+      experimental: 4
+
+  domain_packs:
+    total: 26
+    by_category:
+      commerce: 2
+      travel: 1
+      logistics: 1
+      manufacturing: 1
+      real-estate: 1
+      utilities: 1
+      agriculture: 1
+      healthcare: 2
+      banking: 1
+      payments: 1
+      lending: 1
+      insurance: 1
+      capital-markets: 1
+      exchange: 1
+      public-sector: 1
+      legal: 1
+      education: 1
+      media: 1
+      hr: 1
+      enterprise: 1
+      nonprofit: 1
+      security: 1
+      esg: 1
+      data-governance: 1
+
+  regulatory_overlays:
+    total: 12
+    by_category:
+      privacy: 1
+      financial: 2
+      healthcare: 1
+      public-sector: 1
+      tax: 1
+      labor: 1
+      education: 1
+      safety: 1
+      consumer-protection: 1
+      audit: 1
+      data-governance: 1
+    universal_requirements:
+      - "RX01"  # Privacy & PII Protection
+      - "RX11"  # Immutable Audit Evidence
+
+# ============================================================================
+# VALIDATION RULES
+# ============================================================================
+
+validation_rules:
+  - rule: "blueprint_must_include_p0_core_packs"
+    description: "All blueprints must include all P0 core packs (CP01-CP04, CP07)"
+    severity: "error"
+
+  - rule: "dependency_order_preserved"
+    description: "Pack dependencies must follow phase ordering (P0 -> P1 -> P2 -> P3 -> P4)"
+    severity: "error"
+
+  - rule: "regulatory_overlay_matches_industry"
+    description: "Industry must include all RX overlays specified in INDUSTRY_100_SYSTEM_MAP.md"
+    severity: "error"
+
+  - rule: "domain_pack_compatible_with_core_packs"
+    description: "Domain packs must be compatible with selected core packs"
+    severity: "warning"
+
+  - rule: "universal_regulatory_overlays_included"
+    description: "All blueprints must include RX01 and RX11"
+    severity: "error"
