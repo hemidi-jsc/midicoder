@@ -86,6 +86,30 @@ from .capability_validator import (
     validate_capability_params,
     get_known_capability_types,
 )
+from .core_capabilities import (
+    CoreCapabilitiesRegistry,
+    AuthorizationCoreCapabilities,
+    DataOperationsCoreCapabilities,
+    TransactionCoreCapabilities,
+    EventIntegrationCoreCapabilities,
+    AuditObservabilityCoreCapabilities,
+)
+from .blueprint_compiler import (
+    BlueprintCompiler,
+    BlueprintCompilerError,
+    CompiledBlueprint,
+    BlueprintMetadata,
+    IndustryInfo,
+    CorePacksConfig,
+    DomainPackRef,
+    RegulatoryOverlayRef,
+    BusinessInvariant,
+    ComplianceInvariant,
+    FailureModeInvariant,
+    InvariantsConfig,
+    BlueprintConfig,
+    BlueprintReferences,
+)
 
 __all__ = [
     # Artifact base
@@ -150,4 +174,28 @@ __all__ = [
     "CAPABILITY_VALIDATORS",
     "validate_capability_params",
     "get_known_capability_types",
+    
+    # Core Capabilities Registry
+    "CoreCapabilitiesRegistry",
+    "AuthorizationCoreCapabilities",
+    "DataOperationsCoreCapabilities",
+    "TransactionCoreCapabilities",
+    "EventIntegrationCoreCapabilities",
+    "AuditObservabilityCoreCapabilities",
+    
+    # Blueprint Compiler
+    "BlueprintCompiler",
+    "BlueprintCompilerError",
+    "CompiledBlueprint",
+    "BlueprintMetadata",
+    "IndustryInfo",
+    "CorePacksConfig",
+    "DomainPackRef",
+    "RegulatoryOverlayRef",
+    "BusinessInvariant",
+    "ComplianceInvariant",
+    "FailureModeInvariant",
+    "InvariantsConfig",
+    "BlueprintConfig",
+    "BlueprintReferences",
 ]
