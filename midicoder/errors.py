@@ -69,6 +69,19 @@ class ErrorCode(str, Enum):
     CAPABILITY_TYPE_UNKNOWN = "MDC-COMP-009"
     CAPABILITY_OBLIGATION_UNSATISFIED = "MDC-COMP-010"
     CAPABILITY_EXPAND_FAILED = "MDC-COMP-011"
+    
+    # =========================================================================
+    # Blueprint Errors
+    # =========================================================================
+    BLUEPRINT_FILE_NOT_FOUND = "MDC-BLUEPRINT-001"
+    BLUEPRINT_YAML_PARSE_ERROR = "MDC-BLUEPRINT-002"
+    BLUEPRINT_MISSING_P0_PACKS = "MDC-BLUEPRINT-003"
+    BLUEPRINT_MISSING_RX_OVERLAY = "MDC-BLUEPRINT-004"
+    BLUEPRINT_INVALID_PROFILE = "MDC-BLUEPRINT-005"
+    BLUEPRINT_INVARIANT_VIOLATION = "MDC-BLUEPRINT-006"
+    BLUEPRINT_SCHEMA_INVALID = "MDC-BLUEPRINT-007"
+    BLUEPRINT_DEPENDENCY_RESOLUTION_FAILED = "MDC-BLUEPRINT-008"
+    BLUEPRINT_COMPILE_FAILED = "MDC-BLUEPRINT-009"
 
     # =========================================================================
     # DSL v1 Errors
