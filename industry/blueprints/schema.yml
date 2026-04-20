@@ -1,613 +1,537 @@
-# Industry Blueprint Schema v1.0.0
+# Schema cho Blueprint YAML files
+# Theo requirement.md section "Blueprint System"
+# 
+# Blueprint định nghĩa composition của:
+# - Core Packs (CP01-CP30)
+# - Domain Packs (DP01-DP26)
+# - Regulatory Overlays (RX01-RX12)
+# - Invariants (business, compliance, failure_modes)
 #
-# This schema defines the structure and validation rules for all industry
-# blueprint files in Midicoder CE. Each blueprint specifies how Core Packs,
-# Domain Packs, and Regulatory Overlays compose for a specific industry.
-#
+# Tác giả: Midicoder Team
 # Version: 1.0.0
-# Created: 2026-04-17
-# Schema Format: YAML with JSON Schema validation
-#
----
 
-metadata:
-  schema_version: "blueprint-v1"
-  midicoder_version: "1.0.0"
-  created_date: "2026-04-17"
-  updated_date: "2026-04-17"
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "https://midicoder.dev/schemas/industry-blueprint-v1.json"
+title: "Industry Blueprint Schema"
+description: "Schema cho Industry Blueprint YAML files"
+type: "object"
 
-# ============================================================================
-# SCHEMA DEFINITION
-# ============================================================================
+required:
+  - $schema
+  - metadata
+  - industry
+  - core_packs
+  - regulatory_overlays
 
-schema:
-  type: object
-  required:
-    - "$schema"
-    - "metadata"
-    - "industry"
-    - "core_packs"
-    - "domain_packs"
-    - "regulatory_overlays"
-  properties:
-    # Schema reference for validation
-    "$schema":
-      type: string
-      const: "industry-blueprint-v1"
-      description: "Schema version identifier"
-
-    # Blueprint metadata
-    metadata:
-      type: object
-      required:
-        - "version"
-        - "created_at"
-        - "updated_at"
-      properties:
-        version:
-          type: string
-          pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
-          description: "Blueprint version (semver)"
-        created_at:
-          type: string
-          format: date-time
-          description: "ISO 8601 timestamp"
-        updated_at:
-          type: string
-          format: date-time
-          description: "ISO 8601 timestamp"
-        author:
-          type: string
-          description: "Blueprint author/team"
-        status:
-          type: string
-          enum: ["draft", "review", "approved", "deprecated"]
-          default: "draft"
-          description: "Blueprint lifecycle status"
-        tags:
-          type: array
-          items:
-            type: string
-          description: "Categorization tags"
-
-    # Industry identification
-    industry:
-      type: object
-      required:
-        - "id"
-        - "name"
-        - "group"
-      properties:
-        id:
-          type: string
-          pattern: "^[a-z][a-z0-9-]+$"
-          description: "Unique industry identifier (lowercase, hyphenated)"
-          examples: ["ecommerce-d2c", "marketplace-b2c", "hospital-is"]
-        name:
-          type: string
-          description: "Human-readable industry name"
-          examples: ["E-commerce D2C", "Marketplace B2C", "Hospital Information System"]
-        group:
-          type: string
-          description: "Industry group for organization"
-          enum:
-            - "Commerce/Logistics/Ops"
-            - "CRM/ERP/HR/Education"
-            - "Healthcare/Banking/Exchange"
-            - "Travel & Hospitality"
-            - "Public Sector & Legal"
-            - "Finance & Capital Markets"
-            - "Education & Research"
-            - "Media & Entertainment"
-            - "Utilities & Infrastructure"
-            - "Other"
-        priority:
-          type: integer
-          minimum: 1
-          maximum: 100
-          description: "Priority rank (1-100, lower is higher priority)"
-        complexity:
-          type: string
-          enum: ["low", "medium", "high", "very_high", "extreme"]
-          description: "Implementation complexity level"
-        regulatory_risk:
-          type: string
-          enum: ["low", "medium", "high", "very_high"]
-          description: "Regulatory compliance risk level"
-        commercial_priority:
-          type: string
-          enum: ["low", "medium", "high", "critical"]
-          description: "Commercial value priority"
-
-    # Core Packs selection
-    core_packs:
-      type: object
-      required:
-        - "mandatory"
-      properties:
-        mandatory:
-          type: array
-          items:
-            type: string
-            pattern: "^CP[0-9]{2}$"
-          description: "P0 core packs (always required: CP01, CP02, CP03, CP04, CP07)"
-          minItems: 5
-        included:
-          type: array
-          items:
-            type: string
-            pattern: "^CP[0-9]{2}$"
-          description: "Additional core packs from P1-P3"
-        excluded:
-          type: array
-          items:
-            type: string
-            pattern: "^CP[0-9]{2}$"
-          description: "Core packs explicitly excluded (P2-P4 only)"
-        experimental:
-          type: array
-          items:
-            type: string
-            pattern: "^CP[0-9]{2}$"
-          description: "Experimental core packs (P4 only)"
-
-    # Domain Packs selection
-    domain_packs:
-      type: array
-      items:
-        type: object
-        required:
-          - "id"
-        properties:
-          id:
-            type: string
-            pattern: "^DP[0-9]{2}$"
-            description: "Domain pack identifier"
-          required:
-            type: boolean
-            default: true
-            description: "Whether this pack is required for the industry"
-          config:
-            type: object
-            additionalProperties: true
-            description: "Domain pack specific configuration"
-
-    # Regulatory Overlays selection
-    regulatory_overlays:
-      type: array
-      items:
-        type: object
-        required:
-          - "id"
-        properties:
-          id:
-            type: string
-            pattern: "^RX[0-9]{2}$"
-            description: "Regulatory overlay identifier"
-          strict_mode:
-            type: boolean
-            default: true
-            description: "Whether to enforce strict compliance"
-          config:
-            type: object
-            additionalProperties: true
-            description: "Overlay specific configuration"
-
-    # Target deployment profiles
-    target_profiles:
-      type: array
-      items:
-        type: string
-        enum: ["local", "aws", "gcp", "azure", "on-premise"]
-      description: "Supported deployment targets"
-      minItems: 1
-
-    # Business invariants
-    invariants:
-      type: object
-      properties:
-        business:
-          type: array
-          items:
-            type: object
-            required:
-              - "id"
-              - "name"
-              - "description"
-              - "enforcement"
-            properties:
-              id:
-                type: string
-                pattern: "^INV[0-9]{3}$"
-              name:
-                type: string
-              description:
-                type: string
-              enforcement:
-                type: string
-                enum: ["compile-time", "runtime", "both"]
-              violation_code:
-                type: string
-              severity:
-                type: string
-                enum: ["error", "warning"]
-        compliance:
-          type: array
-          items:
-            type: object
-            required:
-              - "id"
-              - "overlay"
-              - "description"
-            properties:
-              id:
-                type: string
-              overlay:
-                type: string
-                pattern: "^RX[0-9]{2}$"
-              description:
-                type: string
-              controls:
-                type: array
-                items:
-                  type: string
-        failure_modes:
-          type: array
-          items:
-            type: object
-            required:
-              - "id"
-              - "scenario"
-              - "handling"
-            properties:
-              id:
-                type: string
-              scenario:
-                type: string
-              handling:
-                type: string
-              recovery:
-                type: string
-
-    # Configuration overrides
-    config:
-      type: object
-      properties:
-        default_tenant_mode:
-          type: string
-          enum: ["database", "schema", "row", "hybrid"]
-          default: "schema"
-        default_auth_strategy:
-          type: string
-          enum: ["jwt", "oauth2", "saml", "hybrid"]
-          default: "jwt"
-        default_db_engine:
-          type: string
-          enum: ["postgres", "mysql", "sqlserver", "oracle"]
-          default: "postgres"
-        observability:
-          type: object
-          properties:
-            logs_enabled:
-              type: boolean
-              default: true
-            metrics_enabled:
-              type: boolean
-              default: true
-            traces_enabled:
-              type: boolean
-              default: true
-        security:
-          type: object
-          properties:
-            cors_strict:
-              type: boolean
-              default: true
-            rate_limiting_enabled:
-              type: boolean
-              default: true
-            pii_masking_enabled:
-              type: boolean
-              default: true
-
-    # Dependencies and references
-    references:
-      type: object
-      properties:
-        brief_path:
-          type: string
-          description: "Path to associated brief.md file"
-        documentation_url:
-          type: string
-          format: uri
-        related_blueprints:
-          type: array
-          items:
-            type: string
-
-    # Validation and testing
-    validation:
-      type: object
-      properties:
-        compile_tested:
-          type: boolean
-          default: false
-        last_tested_at:
-          type: string
-          format: date-time
-        test_results_path:
-          type: string
-        known_issues:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-              description:
-                type: string
-              severity:
-                type: string
-                enum: ["low", "medium", "high", "critical"]
-
-# ============================================================================
-# VALIDATION RULES
-# ============================================================================
-
-validation_rules:
-  # Rule V001: Mandatory P0 Core Packs
-  - id: "V001"
-    name: "mandatory_p0_core_packs"
-    description: "All blueprints must include CP01, CP02, CP03, CP04, CP07 in mandatory core_packs"
-    severity: "error"
-    check: |
-      required = ["CP01", "CP02", "CP03", "CP04", "CP07"]
-      assert all(p in blueprint.core_packs.mandatory for p in required)
-
-  # Rule V002: Universal Regulatory Overlays
-  - id: "V002"
-    name: "universal_regulatory_overlays"
-    description: "All blueprints must include RX01 and RX11"
-    severity: "error"
-    check: |
-      required = ["RX01", "RX11"]
-      overlay_ids = [o.id for o in blueprint.regulatory_overlays]
-      assert all(r in overlay_ids for r in required)
-
-  # Rule V003: Domain Pack Consistency
-  - id: "V003"
-    name: "domain_pack_consistency"
-    description: "Domain packs must be from the approved taxonomy"
-    severity: "error"
-    check: |
-      valid_dp_ids = set([dp.id for dp in TAXONOMY.domain_packs])
-      for dp in blueprint.domain_packs:
-        assert dp.id in valid_dp_ids, f"Unknown domain pack: {dp.id}"
-
-  # Rule V004: Regulatory Overlay Consistency
-  - id: "V004"
-    name: "regulatory_overlay_consistency"
-    description: "Regulatory overlays must match industry requirements"
-    severity: "error"
-    check: |
-      industry_map = INDUSTRY_100_MAP.get(blueprint.industry.id)
-      required_rx = set(industry_map.regulatory_overlays)
-      overlay_ids = set([o.id for o in blueprint.regulatory_overlays])
-      assert required_rx.issubset(overlay_ids), "Missing required regulatory overlays"
-
-  # Rule V005: Target Profile Consistency
-  - id: "V005"
-    name: "target_profile_consistency"
-    description: "Target profiles must be supported"
-    severity: "error"
-    check: |
-      valid_profiles = ["local", "aws", "gcp", "azure", "on-premise"]
-      for profile in blueprint.target_profiles:
-        assert profile in valid_profiles, f"Unsupported profile: {profile}"
-
-  # Rule V006: Core Pack Dependency Order
-  - id: "V006"
-    name: "core_pack_dependency_order"
-    description: "Core packs must respect dependency ordering"
-    severity: "error"
-    check: |
-      all_cp = set(blueprint.core_packs.mandatory + blueprint.core_packs.included)
-      for cp_id in all_cp:
-        cp = TAXONOMY.get_core_pack(cp_id)
-        for dep in cp.dependencies:
-          assert dep in all_cp, f"Missing dependency {dep} for {cp_id}"
-
-  # Rule V007: Complexity and Pack Alignment
-  - id: "V007"
-    name: "complexity_pack_alignment"
-    description: "Complexity level should align with pack selection"
-    severity: "warning"
-    check: |
-      if blueprint.industry.complexity in ["very_high", "extreme"]:
-        p1_packs = len([p for p in blueprint.core_packs.included if p.startswith("CP") and p in P1_PACKS])
-        assert p1_packs >= 8, "Very high/extreme complexity should include most P1 packs"
-
-  # Rule V008: Brief Reference Required
-  - id: "V008"
-    name: "brief_reference_required"
-    description: "Blueprint should reference an associated brief"
-    severity: "warning"
-    check: |
-      assert blueprint.references.brief_path is not None, "Brief path not specified"
-
-  # Rule V009: Invariant Minimum for High Risk
-  - id: "V009"
-    name: "invariant_minimum_high_risk"
-    description: "High regulatory risk industries require minimum invariants"
-    severity: "error"
-    check: |
-      if blueprint.industry.regulatory_risk in ["high", "very_high"]:
-        total_invariants = len(blueprint.invariants.business) + len(blueprint.invariants.compliance)
-        assert total_invariants >= 10, "High risk industries require at least 10 invariants"
-
-  # Rule V010: No P4 in Production Blueprints
-  - id: "V010"
-    name: "no_p4_in_production"
-    description: "Production blueprints should not include experimental (P4) packs unless explicitly marked"
-    severity: "warning"
-    check: |
-      if blueprint.metadata.status == "approved":
-        p4_packs = [p for p in blueprint.core_packs.experimental if p in P4_PACKS]
-        if p4_packs:
-          assert blueprint.metadata.tags includes "experimental-feature", "Experimental packs in approved blueprint"
-
-# ============================================================================
-# EXAMPLE BLUEPRINT
-# ============================================================================
-
-example:
-  "$schema": "industry-blueprint-v1"
+properties:
+  # ============================================================================
+  # Schema Declaration
+  # ============================================================================
+  
+  $schema:
+    type: "string"
+    enum:
+      - "industry-blueprint-v1"
+    description: "Version của schema này"
+  
+  # ============================================================================
+  # Metadata
+  # ============================================================================
+  
   metadata:
-    version: "1.0.0"
-    created_at: "2026-04-17T10:00:00Z"
-    updated_at: "2026-04-17T10:00:00Z"
-    author: "Midicoder CE Team"
-    status: "approved"
-    tags:
-      - "priority-1"
-      - "commerce"
-      - "top20"
+    type: "object"
+    description: "Metadata của Blueprint"
+    required:
+      - version
+      - industry_id
+      - name
+      - group
+    properties:
+      version:
+        type: "string"
+        pattern: "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+        description: "Version theo semver"
+        example: "1.0.0"
+      
+      industry_id:
+        type: "string"
+        pattern: "^[a-z][a-z0-9-]*$"
+        description: "Industry identifier (lowercase, hyphenated)"
+        example: "ecommerce-d2c"
+      
+      name:
+        type: "string"
+        minLength: 1
+        maxLength: 100
+        description: "Tên hiển thị của industry"
+        example: "E-commerce D2C"
+      
+      group:
+        type: "string"
+        enum:
+          - "Commerce/Logistics/Ops"
+          - "CRM/ERP/HR/Education"
+          - "Healthcare/Banking/Exchange"
+          - "SaaS/Platform"
+          - "Media/Content"
+          - "Other"
+        description: "Industry group"
+      
+      priority:
+        type: "integer"
+        minimum: 1
+        maximum: 100
+        description: "Priority rank trong 100 industries"
+      
+      complexity:
+        type: "string"
+        enum:
+          - "low"
+          - "medium"
+          - "high"
+          - "very_high"
+          - "extreme"
+        description: "Implementation complexity level"
+      
+      regulatory_risk:
+        type: "string"
+        enum:
+          - "low"
+          - "medium"
+          - "high"
+          - "very_high"
+        description: "Regulatory compliance risk level"
+      
+      commercial_priority:
+        type: "string"
+        enum:
+          - "critical"
+          - "high"
+          - "medium"
+          - "low"
+        description: "Commercial value priority"
+      
+      status:
+        type: "string"
+        enum:
+          - "draft"
+          - "review"
+          - "approved"
+          - "deprecated"
+        default: "draft"
+        description: "Lifecycle status"
+      
+      tags:
+        type: "array"
+        items:
+          type: "string"
+        default: []
+        description: "Tags để phân loại"
+  
+  # ============================================================================
+  # Industry Information (alternative to metadata.industry_id)
+  # ============================================================================
+  
   industry:
-    id: "ecommerce-d2c"
-    name: "E-commerce D2C"
-    group: "Commerce/Logistics/Ops"
-    priority: 1
-    complexity: "high"
-    regulatory_risk: "medium"
-    commercial_priority: "critical"
+    type: "object"
+    description: "Thông tin chi tiết về Industry"
+    required:
+      - id
+      - name
+      - group
+    properties:
+      id:
+        type: "string"
+        pattern: "^[a-z][a-z0-9-]*$"
+        description: "Industry identifier"
+      
+      name:
+        type: "string"
+        minLength: 1
+        maxLength: 100
+        description: "Tên hiển thị"
+      
+      group:
+        type: "string"
+        enum:
+          - "Commerce/Logistics/Ops"
+          - "CRM/ERP/HR/Education"
+          - "Healthcare/Banking/Exchange"
+          - "SaaS/Platform"
+          - "Media/Content"
+          - "Other"
+        description: "Industry group"
+      
+      priority:
+        type: "integer"
+        minimum: 1
+        maximum: 100
+        description: "Priority rank"
+      
+      complexity:
+        type: "string"
+        enum:
+          - "low"
+          - "medium"
+          - "high"
+          - "very_high"
+          - "extreme"
+        description: "Complexity level"
+      
+      regulatory_risk:
+        type: "string"
+        enum:
+          - "low"
+          - "medium"
+          - "high"
+          - "very_high"
+        description: "Regulatory risk level"
+      
+      commercial_priority:
+        type: "string"
+        enum:
+          - "critical"
+          - "high"
+          - "medium"
+          - "low"
+        description: "Commercial priority"
+  
+  # ============================================================================
+  # Core Packs Configuration
+  # ============================================================================
+  
   core_packs:
-    mandatory:
-      - "CP01"
-      - "CP02"
-      - "CP03"
-      - "CP04"
-      - "CP07"
-    included:
-      - "CP05"
-      - "CP06"
-      - "CP08"
-      - "CP09"
-      - "CP10"
-      - "CP11"
-      - "CP12"
-      - "CP13"
-      - "CP14"
-      - "CP15"
-      - "CP18"
-      - "CP19"
-      - "CP20"
-      - "CP23"
+    type: "object"
+    description: "Cấu hình Core Packs (CP01-CP30)"
+    properties:
+      mandatory:
+        type: "array"
+        description: "P0 core packs bắt buộc (CP01, CP02, CP03, CP04, CP07)"
+        items:
+          type: "string"
+          pattern: "^CP(0[1-9]|[12]\\d|30)$"
+          description: "Core Pack ID (CP01-CP30)"
+        uniqueItems: true
+      
+      included:
+        type: "array"
+        description: "Additional core packs từ P1-P3"
+        items:
+          type: "string"
+          pattern: "^CP(0[1-9]|[12]\\d|30)$"
+          description: "Core Pack ID"
+        uniqueItems: true
+      
+      excluded:
+        type: "array"
+        description: "Core packs bị loại trừ (P2-P4 only)"
+        items:
+          type: "string"
+          pattern: "^CP(0[1-9]|[12]\\d|30)$"
+          description: "Core Pack ID"
+        uniqueItems: true
+      
+      experimental:
+        type: "array"
+        description: "Experimental core packs (P4 only)"
+        items:
+          type: "string"
+          pattern: "^CP(2[7-9]|30)$"
+          description: "Experimental Core Pack ID (P4 only)"
+        uniqueItems: true
+  
+  # ============================================================================
+  # Domain Packs Configuration
+  # ============================================================================
+  
   domain_packs:
-    - id: "DP01"
-      required: true
-    - id: "DP12"
-      required: true
+    type: "array"
+    description: "Domain Packs references (DP01-DP26)"
+    items:
+      type: "object"
+      oneOf:
+        # Simple form: just ID
+        - properties:
+            id:
+              type: "string"
+              pattern: "^DP(0[1-9]|1[0-9]|2[0-6])$"
+              description: "Domain Pack ID (DP01-DP26)"
+          required:
+            - id
+          additionalProperties: false
+        
+        # Full form: ID with config
+        - properties:
+            id:
+              type: "string"
+              pattern: "^DP(0[1-9]|1[0-9]|2[0-6])$"
+              description: "Domain Pack ID"
+            
+            required:
+              type: "boolean"
+              default: true
+              description: "Có bắt buộc không"
+            
+            config:
+              type: "object"
+              description: "Configuration cho domain pack"
+              additionalProperties: true
+      
+  
+  # ============================================================================
+  # Regulatory Overlays Configuration
+  # ============================================================================
+  
   regulatory_overlays:
-    - id: "RX01"
-      strict_mode: true
-    - id: "RX06"
-      strict_mode: true
-    - id: "RX10"
-      strict_mode: true
-    - id: "RX11"
-      strict_mode: true
+    type: "array"
+    description: "Regulatory Overlays references (RX01-RX12)"
+    items:
+      type: "object"
+      oneOf:
+        # Simple form: just ID
+        - properties:
+            id:
+              type: "string"
+              pattern: "^RX(0[1-9]|1[0-2])$"
+              description: "Regulatory Overlay ID (RX01-RX12)"
+          required:
+            - id
+          additionalProperties: false
+        
+        # Full form: ID with config
+        - properties:
+            id:
+              type: "string"
+              pattern: "^RX(0[1-9]|1[0-2])$"
+              description: "Regulatory Overlay ID"
+            
+            strict_mode:
+              type: "boolean"
+              default: true
+              description: "Có enforce strict compliance không"
+            
+            config:
+              type: "object"
+              description: "Configuration cho overlay"
+              additionalProperties: true
+  
+  # ============================================================================
+  # Target Profiles
+  # ============================================================================
+  
   target_profiles:
-    - "local"
-    - "aws"
+    type: "array"
+    description: "Supported deployment targets"
+    items:
+      type: "string"
+      enum:
+        - "local"
+        - "aws"
+        - "gcp"
+        - "azure"
+        - "on-premise"
+    uniqueItems: true
+    default:
+      - "local"
+      - "aws"
+  
+  # ============================================================================
+  # Invariants Configuration
+  # ============================================================================
+  
   invariants:
-    business:
-      - id: "INV001"
-        name: "inventory_consistency"
-        description: "Inventory must be reserved before checkout completes"
-        enforcement: "runtime"
-        violation_code: "INV_CONSISTENCY_VIOLATION"
-        severity: "error"
-      - id: "INV002"
-        name: "order_idempotency"
-        description: "Duplicate order submissions must be rejected"
-        enforcement: "both"
-        violation_code: "ORDER_DUPLICATE"
-        severity: "error"
-    compliance:
-      - id: "CC001"
-        overlay: "RX01"
-        description: "PII data must be encrypted at rest"
-        controls:
-          - "encryption_aes_256"
-          - "key_rotation_90d"
-      - id: "CC002"
-        overlay: "RX11"
-        description: "All financial transactions must be audit logged"
-        controls:
-          - "immutable_logs"
-          - "retention_7y"
+    type: "object"
+    description: "Configuration cho tất cả Invariants"
+    properties:
+      business:
+        type: "array"
+        description: "Business invariants"
+        items:
+          oneOf:
+            # Simple form: just ID
+            - type: "string"
+              description: "Business invariant ID"
+            
+            # Full form
+            - type: "object"
+              required:
+                - id
+                - name
+                - description
+                - enforcement
+              properties:
+                id:
+                  type: "string"
+                  description: "Invariant identifier (INVxxx)"
+                
+                name:
+                  type: "string"
+                  description: "Tên invariant"
+                
+                description:
+                  type: "string"
+                  description: "Mô tả invariant"
+                
+                enforcement:
+                  type: "string"
+                  enum:
+                    - "compile-time"
+                    - "runtime"
+                    - "both"
+                  description: "Enforcement mode"
+                
+                violation_code:
+                  type: "string"
+                  description: "Error code khi vi phạm"
+                
+                severity:
+                  type: "string"
+                  enum:
+                    - "error"
+                    - "warning"
+                  default: "error"
+                  description: "Severity level"
+      
+      compliance:
+        type: "array"
+        description: "Compliance invariants"
+        items:
+          oneOf:
+            # Simple form: just ID
+            - type: "string"
+              description: "Compliance invariant ID"
+            
+            # Full form
+            - type: "object"
+              required:
+                - id
+                - overlay
+                - description
+              properties:
+                id:
+                  type: "string"
+                  description: "Invariant identifier"
+                
+                overlay:
+                  type: "string"
+                  pattern: "^RX(0[1-9]|1[0-2])$"
+                  description: "Regulatory overlay reference"
+                
+                description:
+                  type: "string"
+                  description: "Mô tả invariant"
+                
+                controls:
+                  type: "array"
+                  items:
+                    type: "string"
+                  description: "Danh sách controls cần enforce"
+                  default: []
+      
+      failure_modes:
+        type: "array"
+        description: "Failure mode invariants"
+        items:
+          oneOf:
+            # Simple form: just ID
+            - type: "string"
+              description: "Failure mode invariant ID"
+            
+            # Full form
+            - type: "object"
+              required:
+                - id
+                - scenario
+                - handling
+              properties:
+                id:
+                  type: "string"
+                  description: "Invariant identifier"
+                
+                scenario:
+                  type: "string"
+                  description: "Failure scenario description"
+                
+                handling:
+                  type: "string"
+                  description: "Handling strategy"
+                
+                recovery:
+                  type: "string"
+                  description: "Recovery procedure"
+  
+  # ============================================================================
+  # Configuration Overrides
+  # ============================================================================
+  
   config:
-    default_tenant_mode: "schema"
-    default_auth_strategy: "jwt"
-    default_db_engine: "postgres"
-    observability:
-      logs_enabled: true
-      metrics_enabled: true
-      traces_enabled: true
-    security:
-      cors_strict: true
-      rate_limiting_enabled: true
-      pii_masking_enabled: true
+    type: "object"
+    description: "Configuration overrides cho Blueprint"
+    properties:
+      default_tenant_mode:
+        type: "string"
+        enum:
+          - "database"
+          - "schema"
+          - "row"
+          - "hybrid"
+        default: "schema"
+        description: "Default tenant mode"
+      
+      default_auth_strategy:
+        type: "string"
+        enum:
+          - "jwt"
+          - "oauth2"
+          - "saml"
+          - "hybrid"
+        default: "jwt"
+        description: "Default auth strategy"
+      
+      default_db_engine:
+        type: "string"
+        enum:
+          - "postgres"
+          - "mysql"
+          - "sqlserver"
+          - "oracle"
+        default: "postgres"
+        description: "Default database engine"
+      
+      observability:
+        type: "object"
+        description: "Observability configuration"
+        additionalProperties: true
+      
+      security:
+        type: "object"
+        description: "Security configuration"
+        additionalProperties: true
+  
+  # ============================================================================
+  # References
+  # ============================================================================
+  
   references:
-    brief_path: "industry/briefs/ecommerce-d2c/brief.md"
-    related_blueprints:
-      - "marketplace-b2c"
-      - "omnichannel-retail"
-  validation:
-    compile_tested: true
-    last_tested_at: "2026-04-17T10:00:00Z"
-    test_results_path: "industry/validation/ecommerce-d2c-report.json"
+    type: "object"
+    description: "References cho Blueprint"
+    properties:
+      brief_path:
+        type: "string"
+        format: "uri-reference"
+        description: "Path đến brief.md"
+      
+      documentation_url:
+        type: "string"
+        format: "uri"
+        description: "URL documentation"
+      
+      related_blueprints:
+        type: "array"
+        items:
+          type: "string"
+          pattern: "^[a-z][a-z0-9-]*$"
+        description: "Danh sách related blueprints"
+        default: []
 
-# ============================================================================
-# COMPILATION OUTPUT
-# ============================================================================
-
-compilation_output:
-  # Expected artifacts after blueprint compilation
-  artifacts:
-    - name: "contract_graph"
-      path: "contracts/graph.json"
-      format: "json"
-      description: "Contract graph representation"
-    - name: "validation_report"
-      path: "contracts/validation-report.json"
-      format: "json"
-      description: "Blueprint validation results"
-    - name: "expansion_report"
-      path: "contracts/expansion-report.json"
-      format: "json"
-      description: "Macro expansion results"
-    - name: "intermediate_representation"
-      path: "irs/ir.json"
-      format: "json"
-      description: "Midicoder Intermediate Representation"
-    - name: "execution_plan"
-      path: "plans/plan.json"
-      format: "json"
-      description: "Code generation execution plan"
-    - name: "patch_plan"
-      path: "plans/patch-plan.json"
-      format: "json"
-      description: "Incremental update plan"
-
-# ============================================================================
-# CHANGE LOG
-# ============================================================================
-
-changelog:
-  - version: "1.0.0"
-    date: "2026-04-17"
-    changes:
-      - "Initial blueprint schema release"
-      - "Defined 10 validation rules"
-      - "Added example blueprint for ecommerce-d2c"
+additionalProperties: false
