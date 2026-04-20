@@ -196,12 +196,15 @@ class SurfacePlan(ArtifactBase):
         """Create from dictionary."""
         metadata = ArtifactMetadata.from_dict(data.get("metadata", {}))
         
-        return cls(
-            metadata=metadata,
+        # Create instance without metadata (init=False)
+        instance = cls(
             mir_ref=data["mir_ref"],
             surfaces=[Surface.from_dict(s) for s in data.get("surfaces", [])],
             module_graph=data.get("module_graph", {}),
         )
+        # Set metadata after initialization
+        object.__setattr__(instance, "metadata", metadata)
+        return instance
     
     # =========================================================================
     # Surface Management
@@ -310,13 +313,16 @@ class TargetPlan(ArtifactBase):
         """Create from dictionary."""
         metadata = ArtifactMetadata.from_dict(data.get("metadata", {}))
         
-        return cls(
-            metadata=metadata,
+        # Create instance without metadata (init=False)
+        instance = cls(
             target_runtime=data["target_runtime"],
             base_path=data["base_path"],
             surfaces=data.get("surfaces", []),
             package_structure=data.get("package_structure", {}),
         )
+        # Set metadata after initialization
+        object.__setattr__(instance, "metadata", metadata)
+        return instance
     
     def validate(self) -> list[str]:
         """Validate target plan."""
@@ -471,8 +477,8 @@ class PatchPlan(ArtifactBase):
         """Create from dictionary."""
         metadata = ArtifactMetadata.from_dict(data.get("metadata", {}))
         
-        return cls(
-            metadata=metadata,
+        # Create instance without metadata (init=False)
+        instance = cls(
             mir_ref=data["mir_ref"],
             surface_plan_ref=data["surface_plan_ref"],
             operations=[
@@ -483,6 +489,9 @@ class PatchPlan(ArtifactBase):
             conditions=data.get("conditions", []),
             rollback_plan=data.get("rollback_plan", []),
         )
+        # Set metadata after initialization
+        object.__setattr__(instance, "metadata", metadata)
+        return instance
     
     # =========================================================================
     # Operation Management
