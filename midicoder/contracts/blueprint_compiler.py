@@ -52,10 +52,25 @@ class BlueprintMetadata:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BlueprintMetadata":
         """Tạo BlueprintMetadata từ dictionary."""
+        from datetime import datetime
+        
+        # Handle empty data case
+        if not data:
+            now = datetime.utcnow().isoformat() + "Z"
+            return cls(
+                version="0.0.0",
+                created_at=now,
+                updated_at=now,
+                author=None,
+                status="draft",
+                tags=[]
+            )
+        
+        now = datetime.utcnow().isoformat() + "Z"
         return cls(
-            version=data["version"],
-            created_at=data["created_at"],
-            updated_at=data["updated_at"],
+            version=data.get("version", "0.0.0"),
+            created_at=data.get("created_at", now),
+            updated_at=data.get("updated_at", now),
             author=data.get("author"),
             status=data.get("status", "draft"),
             tags=data.get("tags", [])
@@ -393,7 +408,7 @@ class BlueprintReferences:
 
 
 @dataclass
-class CompiledBlueprint(ArtifactBase):
+class CompiledBlueprint:
     """
     Compiled Blueprint Artifact.
     
@@ -407,7 +422,7 @@ class CompiledBlueprint(ArtifactBase):
     
     Attributes:
         schema_version: Schema version
-        metadata: Blueprint metadata
+        _blueprint_metadata: Blueprint metadata (BlueprintMetadata)
         industry: Industry information
         core_packs: Core packs configuration
         domain_packs: Domain packs references
@@ -419,7 +434,6 @@ class CompiledBlueprint(ArtifactBase):
     """
     
     schema_version: str = "industry-blueprint-v1"
-    metadata: BlueprintMetadata = field(default_factory=BlueprintMetadata)
     industry: IndustryInfo = field(default_factory=IndustryInfo)
     core_packs: CorePacksConfig = field(default_factory=CorePacksConfig)
     domain_packs: list[DomainPackRef] = field(default_factory=list)
@@ -433,23 +447,25 @@ class CompiledBlueprint(ArtifactBase):
     validation_errors: list[str] = field(default_factory=list, repr=False)
     validation_warnings: list[str] = field(default_factory=list, repr=False)
     
-    # Artifact metadata
-    _artifact_metadata: ArtifactMetadata = field(default_factory=ArtifactMetadata, repr=False)
+    # Blueprint metadata - private field, accessed via property
+    _blueprint_metadata: BlueprintMetadata | None = field(default=None, repr=False)
+    
+    @property
+    def metadata(self) -> BlueprintMetadata:
+        """Get BlueprintMetadata. Creates default if not set."""
+        if self._blueprint_metadata is None:
+            self._blueprint_metadata = BlueprintMetadata.from_dict({})
+        return self._blueprint_metadata
+    
+    @metadata.setter
+    def metadata(self, value: BlueprintMetadata) -> None:
+        """Set BlueprintMetadata."""
+        self._blueprint_metadata = value
     
     @property
     def artifact_type(self) -> str:
         """Trả về artifact type."""
         return "compiled_blueprint"
-    
-    @property
-    def metadata(self) -> ArtifactMetadata:
-        """Get artifact metadata."""
-        return self._artifact_metadata
-    
-    @metadata.setter
-    def metadata(self, value: ArtifactMetadata) -> None:
-        """Set artifact metadata."""
-        self._artifact_metadata = value
     
     def to_dict(self) -> dict[str, Any]:
         """Convert thành dictionary."""
@@ -474,9 +490,8 @@ class CompiledBlueprint(ArtifactBase):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CompiledBlueprint":
         """Tạo CompiledBlueprint từ dictionary."""
-        return cls(
+        blueprint = cls(
             schema_version=data.get("schema_version", "industry-blueprint-v1"),
-            metadata=BlueprintMetadata.from_dict(data.get("metadata", {})),
             industry=IndustryInfo.from_dict(data.get("industry", {})),
             core_packs=CorePacksConfig.from_dict(data.get("core_packs", {})),
             domain_packs=[
@@ -494,6 +509,8 @@ class CompiledBlueprint(ArtifactBase):
             validation_errors=data.get("validation", {}).get("errors", []),
             validation_warnings=data.get("validation", {}).get("warnings", [])
         )
+        blueprint.metadata = BlueprintMetadata.from_dict(data.get("metadata", {}))
+        return blueprint
     
     def validate(self) -> list[str]:
         """
@@ -502,7 +519,7 @@ class CompiledBlueprint(ArtifactBase):
         Returns:
             Danh sách error messages (rỗng nếu valid)
         """
-        errors = super().validate() if hasattr(super(), 'validate') else []
+        errors = []
         
         # Rule V001: Bắt buộc P0 Core Packs
         required_p0 = ["CP01", "CP02", "CP03", "CP04", "CP07"]
@@ -587,10 +604,11 @@ class CompiledBlueprint(ArtifactBase):
         
         # Rule V010: No P4 in Production - Warn nếu P4 packs trong approved blueprint
         p4_packs = {"CP27", "CP28", "CP29", "CP30"}
-        if self.metadata.status == "approved":
+        blueprint_metadata = self.metadata  # BlueprintMetadata instance
+        if blueprint_metadata.status == "approved":
             experimental_p4 = set(self.core_packs.experimental).intersection(p4_packs)
             if experimental_p4:
-                has_experimental_tag = "experimental-feature" in self.metadata.tags
+                has_experimental_tag = "experimental-feature" in blueprint_metadata.tags
                 if not has_experimental_tag:
                     errors.append(f"V010: P4 packs trong approved blueprint cần tag 'experimental-feature': {experimental_p4}")
         
@@ -670,10 +688,394 @@ class BlueprintCompiler:
         self.taxonomy: dict[str, Any] = {}
         self.industry_map: dict[str, Any] = {}
         
-        # Load taxonomy
+        # CP dependency maps
+        self._cp_dependency_map: dict[str, list[str]] = {}
+        self._cp_phase_map: dict[str, str] = {}
+        
+        # DP info maps
+        self._dp_info_map: dict[str, dict[str, Any]] = {}
+        self._industry_to_dps_map: dict[str, list[str]] = {}
+        
+        # RX info maps
+        self._rx_info_map: dict[str, dict[str, Any]] = {}
+        self._industry_to_rxs_map: dict[str, list[str]] = {}
+        self._universal_rx_ids: set[str] = set()
+        
+        # Load taxonomy và build dependency maps
         if self.taxonomy_path.exists():
             with open(self.taxonomy_path, 'r', encoding='utf-8') as f:
                 self.taxonomy = yaml.safe_load(f)
+            self._build_cp_dependency_maps()
+            self._build_dp_info_maps()
+            self._build_rx_info_maps()
+    
+    def _build_cp_dependency_maps(self) -> None:
+        """
+        Build CP dependency maps từ taxonomy.
+        
+        Tạo 2 maps:
+        - _cp_dependency_map: CP ID → dependencies list
+        - _cp_phase_map: CP ID → phase (P0, P1, P2, P3, P4)
+        """
+        for cp in self.taxonomy.get("core_packs", []):
+            cp_id = cp["id"]
+            self._cp_dependency_map[cp_id] = cp.get("dependencies", [])
+            self._cp_phase_map[cp_id] = cp.get("phase", "P0")
+    
+    def _build_dp_info_maps(self) -> None:
+        """
+        Build DP info maps từ taxonomy.
+        
+        Tạo 2 maps:
+        - _dp_info_map: DP ID → info dict (name, category, industries_using, ...)
+        - _industry_to_dps_map: industry ID → list of DP IDs
+        """
+        # Build DP info map
+        for dp in self.taxonomy.get("domain_packs", []):
+            dp_id = dp["id"]
+            self._dp_info_map[dp_id] = {
+                "name": dp.get("name", ""),
+                "category": dp.get("category", ""),
+                "industries_using": dp.get("industries_using", []),
+                "description": dp.get("description", ""),
+                "status": dp.get("status", "stable")
+            }
+        
+        # Build industry to DPs map
+        industry_to_dps: dict[str, list[str]] = {}
+        for dp_id, info in self._dp_info_map.items():
+            for industry in info.get("industries_using", []):
+                if industry not in industry_to_dps:
+                    industry_to_dps[industry] = []
+                industry_to_dps[industry].append(dp_id)
+        
+        # Sort DP IDs cho mỗi industry để deterministic
+        for industry in industry_to_dps:
+            industry_to_dps[industry].sort()
+        
+        self._industry_to_dps_map = industry_to_dps
+    
+    def resolve_dp_dependencies(self, industry_id: str) -> list[str]:
+        """
+        Resolve DPs cho một industry cụ thể.
+        
+        Khác với CP, DP không có transitive dependencies.
+        DP resolution dựa vào industry mapping trong taxonomy.
+        
+        Args:
+            industry_id: Industry identifier (ví dụ: "ecommerce-d2c")
+            
+        Returns:
+            Danh sách DP IDs phù hợp cho industry
+            
+        Example:
+            compiler.resolve_dp_dependencies("ecommerce-d2c")
+            # Returns: ["DP01", "DP12"]
+        """
+        return self._industry_to_dps_map.get(industry_id, [])
+    
+    def validate_dp_id(self, dp_id: str) -> list[str]:
+        """
+        Validate DP ID tồn tại trong taxonomy.
+        
+        Args:
+            dp_id: DP ID cần validate
+            
+        Returns:
+            Danh sách error messages (rỗng nếu valid)
+        """
+        errors: list[str] = []
+        if dp_id not in self._dp_info_map:
+            errors.append(f"Invalid DP ID: {dp_id}")
+        return errors
+    
+    def validate_dp_for_industry(
+        self, dp_id: str, industry_id: str
+    ) -> list[str]:
+        """
+        Validate DP phù hợp với industry.
+        
+        Args:
+            dp_id: DP ID cần validate
+            industry_id: Industry identifier
+            
+        Returns:
+            Danh sách error messages (rỗng nếu DP phù hợp với industry)
+        """
+        errors: list[str] = []
+        
+        # Validate DP ID tồn tại
+        if dp_id not in self._dp_info_map:
+            errors.append(f"Invalid DP ID: {dp_id}")
+            return errors
+        
+        # Kiểm tra industry có trong industries_using của DP
+        industries_using = self._dp_info_map[dp_id].get("industries_using", [])
+        if industry_id not in industries_using:
+            errors.append(
+                f"DP {dp_id} not typically used for industry '{industry_id}'. "
+                f"Common industries: {', '.join(industries_using[:5])}"
+            )
+        
+        return errors
+    
+    def get_dp_info(self, dp_id: str) -> dict[str, Any] | None:
+        """
+        Lấy thông tin chi tiết của một DP.
+        
+        Args:
+            dp_id: DP ID
+            
+        Returns:
+            Info dict hoặc None nếu không tìm thấy
+        """
+        return self._dp_info_map.get(dp_id)
+    
+    def _build_rx_info_maps(self) -> None:
+        """
+        Build RX info maps từ taxonomy.
+        
+        Tạo 3 maps:
+        - _rx_info_map: RX ID → info dict (name, category, obligations, industries_requiring)
+        - _industry_to_rxs_map: industry ID → list of RX IDs (không tính universal)
+        - _universal_rx_ids: Set của universal RX IDs (RX01, RX11)
+        """
+        # Build RX info map
+        for rx in self.taxonomy.get("regulatory_overlays", []):
+            rx_id = rx["id"]
+            self._rx_info_map[rx_id] = {
+                "name": rx.get("name", ""),
+                "category": rx.get("category", ""),
+                "obligations": rx.get("obligations", []),
+                "industries_requiring": rx.get("industries_requiring", []),
+                "description": rx.get("description", ""),
+                "status": rx.get("status", "stable")
+            }
+        
+        # Build industry to RXs map (không tính universal RXs)
+        industry_to_rxs: dict[str, list[str]] = {}
+        for rx_id, info in self._rx_info_map.items():
+            industries_requiring = info.get("industries_requiring", [])
+            
+            # Universal RXs (industries_requiring: ["all"])
+            if "all" in industries_requiring:
+                self._universal_rx_ids.add(rx_id)
+                continue
+            
+            # Non-universal RXs: map industry → RX
+            for industry in industries_requiring:
+                if industry not in industry_to_rxs:
+                    industry_to_rxs[industry] = []
+                industry_to_rxs[industry].append(rx_id)
+        
+        # Sort RX IDs cho mỗi industry để deterministic
+        for industry in industry_to_rxs:
+            industry_to_rxs[industry].sort()
+        
+        self._industry_to_rxs_map = industry_to_rxs
+    
+    def resolve_rx_dependencies(self, industry_id: str) -> list[str]:
+        """
+        Resolve RXs cho một industry cụ thể.
+        
+        Bao gồm:
+        - Universal RXs (RX01, RX11) cho tất cả industries
+        - Industry-specific RXs từ taxonomy
+        
+        Args:
+            industry_id: Industry identifier (ví dụ: "ecommerce-d2c")
+            
+        Returns:
+            Danh sách RX IDs phù hợp cho industry
+            
+        Example:
+            compiler.resolve_rx_dependencies("ecommerce-d2c")
+            # Returns: ["RX01", "RX06", "RX10", "RX11"]
+        """
+        industry_rxs = self._industry_to_rxs_map.get(industry_id, [])
+        # Kết hợp universal RXs và industry-specific RXs
+        all_rxs = list(self._universal_rx_ids) + industry_rxs
+        all_rxs.sort()
+        return all_rxs
+    
+    def validate_rx_id(self, rx_id: str) -> list[str]:
+        """
+        Validate RX ID tồn tại trong taxonomy.
+        
+        Args:
+            rx_id: RX ID cần validate
+            
+        Returns:
+            Danh sách error messages (rỗng nếu valid)
+        """
+        errors: list[str] = []
+        if rx_id not in self._rx_info_map:
+            errors.append(f"Invalid RX ID: {rx_id}")
+        return errors
+    
+    def validate_universal_rxs(
+        self, blueprint_rx_ids: set[str]
+    ) -> list[str]:
+        """
+        Validate universal RXs được include trong blueprint.
+        
+        Tất cả blueprints phải include RX01 và RX11.
+        
+        Args:
+            blueprint_rx_ids: Set của RX IDs trong blueprint
+            
+        Returns:
+            Danh sách error messages (rỗng nếu tất cả universal RXs đều có mặt)
+        """
+        errors: list[str] = []
+        
+        for rx_id in self._universal_rx_ids:
+            if rx_id not in blueprint_rx_ids:
+                errors.append(
+                    f"Universal RX {rx_id} phải được include trong tất cả blueprints"
+                )
+        
+        return errors
+    
+    def get_required_rxs_for_industry(self, industry_id: str) -> set[str]:
+        """
+        Lấy required RXs cho một industry.
+        
+        Args:
+            industry_id: Industry identifier
+            
+        Returns:
+            Set của RX IDs cần thiết cho industry
+        """
+        return set(self.resolve_rx_dependencies(industry_id))
+    
+    def get_rx_info(self, rx_id: str) -> dict[str, Any] | None:
+        """
+        Lấy thông tin chi tiết của một RX.
+        
+        Args:
+            rx_id: RX ID
+            
+        Returns:
+            Info dict hoặc None nếu không tìm thấy
+        """
+        return self._rx_info_map.get(rx_id)
+    
+    def get_universal_rx_ids(self) -> set[str]:
+        """
+        Lấy danh sách universal RX IDs.
+        
+        Returns:
+            Set của universal RX IDs (RX01, RX11)
+        """
+        return self._universal_rx_ids.copy()
+    
+    def resolve_cp_dependencies(self, cp_list: list[str]) -> list[str]:
+        """
+        Resolve transitive dependencies cho một list của CP IDs.
+        
+        Sử dụng DFS để traverse dependency graph và trả về
+        tất cả CPs cần thiết (bao gồm transitive dependencies).
+        
+        Args:
+            cp_list: Danh sách CP IDs cần resolve
+            
+        Returns:
+            Danh sách CP IDs đã resolve (bao gồm tất cả dependencies)
+            
+        Example:
+            compiler.resolve_cp_dependencies(["CP03"])
+            # Returns: ["CP01", "CP02", "CP03"]
+        """
+        resolved: set[str] = set()
+        stack = list(cp_list)
+        
+        while stack:
+            cp_id = stack.pop()
+            if cp_id in resolved:
+                continue
+            
+            resolved.add(cp_id)
+            deps = self._cp_dependency_map.get(cp_id, [])
+            for dep in deps:
+                if dep not in resolved:
+                    stack.append(dep)
+        
+        # Sort theo CP ID để deterministic
+        return sorted(resolved, key=lambda x: int(x[2:]))
+    
+    def find_missing_cp_dependencies(
+        self, blueprint_packs: set[str]
+    ) -> set[str]:
+        """
+        Tìm missing dependencies cho một set của blueprint CP packs.
+        
+        Args:
+            blueprint_packs: Set của CP IDs trong blueprint
+            
+        Returns:
+            Set của CP IDs missing (cần thêm vào blueprint)
+            
+        Example:
+            compiler.find_missing_cp_dependencies({"CP03"})
+            # Returns: {"CP01", "CP02"}
+        """
+        all_required: set[str] = set()
+        stack = list(blueprint_packs)
+        
+        while stack:
+            cp_id = stack.pop()
+            if cp_id in all_required:
+                continue
+            
+            all_required.add(cp_id)
+            deps = self._cp_dependency_map.get(cp_id, [])
+            for dep in deps:
+                if dep not in all_required:
+                    stack.append(dep)
+        
+        # Missing = all_required - blueprint_packs
+        return all_required - blueprint_packs
+    
+    def validate_cp_dependency_order(
+        self, cp_list: list[str]
+    ) -> list[str]:
+        """
+        Validate dependency order cho CP list.
+        
+        Kiểm tra rằng CPs chỉ phụ thuộc vào các CPs trong phase trước hoặc cùng phase.
+        P0 → P0
+        P1 → P0, P1
+        P2 → P0, P1, P2
+        P3 → P0, P1, P2, P3
+        P4 → P0, P1, P2, P3, P4
+        
+        Args:
+            cp_list: Danh sách CP IDs cần validate
+            
+        Returns:
+            Danh sách error messages (rỗng nếu valid)
+        """
+        errors: list[str] = []
+        phase_order = {"P0": 0, "P1": 1, "P2": 2, "P3": 3, "P4": 4}
+        
+        for cp_id in cp_list:
+            cp_phase = self._cp_phase_map.get(cp_id, "P0")
+            cp_phase_num = phase_order.get(cp_phase, 0)
+            
+            deps = self._cp_dependency_map.get(cp_id, [])
+            for dep in deps:
+                dep_phase = self._cp_phase_map.get(dep, "P0")
+                dep_phase_num = phase_order.get(dep_phase, 0)
+                
+                # Dependency phase không được cao hơn current phase
+                if dep_phase_num > cp_phase_num:
+                    errors.append(
+                        f"CP dependency order violated: {cp_id} ({cp_phase}) "
+                        f"cannot depend on {dep} ({dep_phase})"
+                    )
+        
+        return errors
     
     def compile(self, blueprint_path: Path | str) -> CompiledBlueprint:
         """
@@ -733,9 +1135,8 @@ class BlueprintCompiler:
         Returns:
             CompiledBlueprint instance
         """
-        return CompiledBlueprint(
+        blueprint = CompiledBlueprint(
             schema_version=data.get("$schema", "industry-blueprint-v1"),
-            metadata=BlueprintMetadata.from_dict(data.get("metadata", {})),
             industry=IndustryInfo.from_dict(data.get("industry", {})),
             core_packs=CorePacksConfig.from_dict(data.get("core_packs", {})),
             domain_packs=[
@@ -751,6 +1152,8 @@ class BlueprintCompiler:
             config=BlueprintConfig.from_dict(data.get("config", {})),
             references=BlueprintReferences.from_dict(data.get("references", {}))
         )
+        blueprint.metadata = BlueprintMetadata.from_dict(data.get("metadata", {}))
+        return blueprint
     
     def compile_directory(
         self,
