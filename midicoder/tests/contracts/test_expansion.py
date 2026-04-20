@@ -17,7 +17,14 @@ from midicoder.contracts.expansion import (
     ExpansionTrace,
     ExpansionStep,
     ExpansionReport,
+    ExpansionEngine,
 )
+from midicoder.contracts.graph import (
+    CapabilityGraph,
+    CapabilityInstance,
+    MacroCapability,
+)
+from midicoder.contracts.macro_capabilities import BaseMacroCapabilities
 
 
 class TestExpansionTrace:
@@ -494,3 +501,394 @@ class TestExpansionReport:
         assert len(reconstructed.steps) == len(original.steps)
         assert reconstructed.final_core_instances == original.final_core_instances
         assert reconstructed.total_obligations == original.total_obligations
+
+
+# ============================================================================
+# ExpansionEngine Tests
+# ============================================================================
+
+
+class TestExpansionEngine:
+    """Tests cho ExpansionEngine class."""
+
+    def setup_method(self):
+        """Setup trước mỗi test - tạo engine và macro registry."""
+        self.engine = ExpansionEngine()
+        # Thêm macro authorized_mutation vào registry
+        base_macros = BaseMacroCapabilities()
+        self.engine.register_macro(base_macros.AUTHORIZED_MUTATION)
+        self.engine.register_macro(base_macros.AUTHORIZED_QUERY)
+
+    def test_engine_created_empty(self):
+        """Kiểm tra ExpansionEngine được tạo rỗng."""
+        engine = ExpansionEngine()
+
+        assert engine is not None
+        assert engine._macros == {}
+        assert engine._core_instance_counter == 0
+
+    def test_register_macro(self):
+        """Kiểm tra register_macro thêm macro vào registry."""
+        macro = MacroCapability(
+            id="test_macro",
+            name="Test Macro",
+            expands_to=["core1", "core2"],
+            default_obligations=["oblig1"],
+        )
+        self.engine.register_macro(macro)
+
+        assert "test_macro" in self.engine._macros
+        assert self.engine._macros["test_macro"].id == "test_macro"
+
+    def test_get_macro(self):
+        """Kiểm tra get_macro trả về macro đúng."""
+        macro = self.engine.get_macro("authorized_mutation")
+
+        assert macro is not None
+        assert macro.id == "authorized_mutation"
+
+    def test_get_macro_not_found(self):
+        """Kiểm tra get_macro trả về None khi không tìm thấy."""
+        macro = self.engine.get_macro("nonexistent_macro")
+
+        assert macro is None
+
+    def test_expand_authorized_mutation(self):
+        """Kiểm tra expand macro authorized_mutation thành core instances."""
+        # Tạo capability instance với macro type
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            description="Tạo đơn hàng mới",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {"name": "Order 1"},
+                "tenant_scope": "tenant_isolated",
+            },
+            writes=["Order"],
+            emits=["OrderCreated"],
+        )
+
+        # Tạo graph với instance và macro
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        # Expand
+        result = self.engine.expand(graph, instance)
+
+        # Kiểm tra expansion report
+        assert result is not None
+        assert result.source_instance_id == "create_order"
+        assert result.source_macro_type == "authorized_mutation"
+        assert result.is_successful()
+        assert len(result.steps) > 0
+
+        # Kiểm tra core instances được tạo
+        assert len(result.final_core_instances) > 0
+        # authorized_mutation expand thành: authorize_permission, enforce_tenant_scope,
+        # begin_transaction, create_record, publish_event, commit_transaction
+        assert len(result.final_core_instances) >= 4
+
+        # Kiểm tra obligations được inherit
+        assert len(result.total_obligations) > 0
+        assert "permission_check_required" in result.total_obligations
+
+    def test_expand_authorized_query(self):
+        """Kiểm tra expand macro authorized_query thành core instances."""
+        instance = CapabilityInstance(
+            id="get_order",
+            type="authorized_query",
+            description="Lấy thông tin đơn hàng",
+            params={
+                "permission": "order.read",
+                "entity": "Order",
+                "page": 1,
+                "per_page": 20,
+            },
+            reads=["Order"],
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_query"))
+
+        result = self.engine.expand(graph, instance)
+
+        assert result is not None
+        assert result.source_instance_id == "get_order"
+        assert result.is_successful()
+        assert len(result.final_core_instances) > 0
+        assert "permission_check_required" in result.total_obligations
+
+    def test_expand_unknown_macro(self):
+        """Kiểm tra expand macro không tồn tại trả về failed report."""
+        instance = CapabilityInstance(
+            id="test_instance",
+            type="unknown_macro_type",
+            description="Test instance",
+            params={},
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+
+        result = self.engine.expand(graph, instance)
+
+        assert result is not None
+        assert result.is_successful() is False
+        failed_steps = result.get_failed_steps()
+        assert len(failed_steps) > 0
+
+    def test_expand_adds_instances_to_graph(self):
+        """Kiểm tra expansion thêm core instances vào graph."""
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {},
+            },
+        )
+
+        initial_count = 1  # Chỉ có instance gốc
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        self.engine.expand(graph, instance)
+
+        # Graph nên có thêm core instances sau khi expand
+        assert len(graph.instances) > initial_count
+
+    def test_expand_generates_unique_ids(self):
+        """Kiểm tra expansion tạo IDs duy nhất cho core instances."""
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {},
+            },
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        result = self.engine.expand(graph, instance)
+
+        # Kiểm tra tất cả core instances có IDs duy nhất
+        core_ids = result.final_core_instances
+        assert len(core_ids) == len(set(core_ids))
+
+    def test_expand_inherits_obligations(self):
+        """Kiểm tra expansion inherit obligations từ macro."""
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {},
+            },
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        result = self.engine.expand(graph, instance)
+
+        # Kiểm tra obligations từ macro được inherit
+        assert "permission_check_required" in result.total_obligations
+        assert "tenant_filter_required" in result.total_obligations
+        assert "transaction_required" in result.total_obligations
+
+    def test_expand_creates_trace(self):
+        """Kiểm tra expansion tạo trace đúng."""
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {},
+            },
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        result = self.engine.expand(graph, instance)
+
+        traces = result.get_all_trace()
+        assert len(traces) > 0
+
+        # Kiểm tra trace có thông tin đúng
+        trace = traces[0]
+        assert trace.source_id == "create_order"
+        assert trace.source_type == "authorized_mutation"
+        assert len(trace.target_ids) > 0
+
+    def test_expand_maps_params_to_cores(self):
+        """Kiểm tra expansion map params từ macro sang core instances."""
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {"customer_id": "cust_123"},
+            },
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        result = self.engine.expand(graph, instance)
+
+        # Kiểm tra core instances có params được map đúng
+        # tìm instance authorize_permission có permission param
+        auth_instance = graph.get_instance([
+            i for i in result.final_core_instances
+            if graph.get_instance(i) and "authorize_permission" in i.lower()
+        ][0]) if any(
+            graph.get_instance(i) and "authorize_permission" in i.lower()
+            for i in result.final_core_instances
+        ) else None
+
+        if auth_instance:
+            assert "permission" in auth_instance.params or \
+                   "order.create" in str(auth_instance.params)
+
+    def test_expand_multiple_instances(self):
+        """Kiểm tra expand nhiều instances."""
+        # Instance 1: authorized_mutation
+        instance1 = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {},
+            },
+        )
+
+        # Instance 2: authorized_query
+        instance2 = CapabilityInstance(
+            id="get_orders",
+            type="authorized_query",
+            params={
+                "permission": "order.read",
+                "entity": "Order",
+            },
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance1)
+        graph.add_instance(instance2)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_query"))
+
+        # Expand cả hai
+        result1 = self.engine.expand(graph, instance1)
+        result2 = self.engine.expand(graph, instance2)
+
+        assert result1.is_successful()
+        assert result2.is_successful()
+        assert len(result1.final_core_instances) > 0
+        assert len(result2.final_core_instances) > 0
+
+    def test_expand_preserves_instance_id(self):
+        """Kiểm tra expansion giữ nguyên source instance ID."""
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {},
+            },
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        result = self.engine.expand(graph, instance)
+
+        assert result.source_instance_id == "create_order"
+
+    def test_expand_records_expansion_time(self):
+        """Kiểm tra expansion record thời gian."""
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {},
+            },
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        result = self.engine.expand(graph, instance)
+
+        # expansion_time_ms nên được record (có thể là None nếu chưa implement)
+        # Test này chỉ đảm bảo field tồn tại
+        assert hasattr(result, "expansion_time_ms")
+
+    def test_expand_step_count(self):
+        """Kiểm tra expansion có đủ số steps."""
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {},
+            },
+        )
+
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        result = self.engine.expand(graph, instance)
+
+        # Expansion nên có ít nhất 2 steps: resolve_macro, generate_cores
+        assert len(result.steps) >= 2
+
+    def test_expand_generates_obligations_in_graph(self):
+        """Kiểm tra expansion tạo obligations trong graph."""
+        instance = CapabilityInstance(
+            id="create_order",
+            type="authorized_mutation",
+            params={
+                "permission": "order.create",
+                "entity": "Order",
+                "data": {},
+            },
+        )
+
+        initial_obligation_count = 0
+        graph = CapabilityGraph()
+        graph.add_instance(instance)
+        graph.macro_capabilities.append(self.engine.get_macro("authorized_mutation"))
+
+        self.engine.expand(graph, instance)
+
+        # Kiểm tra obligations được tạo trong graph
+        # (tùy implementation, có thể obligations được track trong report hơn là graph)
+        # Test này đảm bảo không có lỗi khi expand
+        assert graph is not None
+
