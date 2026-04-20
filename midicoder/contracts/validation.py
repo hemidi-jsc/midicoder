@@ -304,19 +304,20 @@ class ValidationReport(ArtifactBase):
     
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ValidationReport":
-        """Create from dictionary."""
-        metadata = ArtifactMetadata.from_dict(data.get("metadata", {}))
-        
-        return cls(
-            metadata=metadata,
-            status=data["status"],
-            artifact_type=data["artifact_type"],
-            artifact_ref=data["artifact_ref"],
+        """Tạo ValidationReport từ dictionary."""
+        # Tạo instance với các fields cơ bản (metadata được set sau do init=False)
+        report = cls(
+            status=data.get("status", "pass"),
+            artifact_type=data.get("artifact_type", ""),
+            artifact_ref=data.get("artifact_ref", ""),
             errors=[ValidationError.from_dict(e) for e in data.get("errors", [])],
             warnings=[ValidationWarning.from_dict(w) for w in data.get("warnings", [])],
             checks=data.get("checks", {}),
             summary=data.get("summary", {}),
         )
+        # Set metadata sau khi tạo instance (do init=False)
+        object.__setattr__(report, 'metadata', ArtifactMetadata.from_dict(data.get("metadata", {})))
+        return report
     
     # =========================================================================
     # Factory Methods

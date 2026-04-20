@@ -432,11 +432,9 @@ class CapabilityGraph(ArtifactBase):
     
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CapabilityGraph":
-        """Create from dictionary."""
-        metadata = ArtifactMetadata.from_dict(data.get("metadata", {}))
-        
-        return cls(
-            metadata=metadata,
+        """Tạo CapabilityGraph từ dictionary."""
+        # Tạo instance với các fields cơ bản (metadata được set sau do init=False)
+        graph = cls(
             core_capabilities=[
                 CoreCapability.from_dict(c)
                 for c in data.get("core_capabilities", [])
@@ -454,6 +452,9 @@ class CapabilityGraph(ArtifactBase):
                 for o in data.get("obligations", [])
             ],
         )
+        # Set metadata sau khi tạo instance (do init=False)
+        object.__setattr__(graph, 'metadata', ArtifactMetadata.from_dict(data.get("metadata", {})))
+        return graph
     
     # =========================================================================
     # Instance Management
