@@ -344,12 +344,10 @@ class MIR(ArtifactBase):
     
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MIR":
-        """Create from dictionary."""
-        metadata = ArtifactMetadata.from_dict(data.get("metadata", {}))
-        
-        return cls(
-            metadata=metadata,
-            ir_ref=data["ir_ref"],
+        """Tạo MIR từ dictionary."""
+        # Tạo instance với các fields cơ bản (metadata được set sau do init=False)
+        mir = cls(
+            ir_ref=data.get("ir_ref", ""),
             description=data.get("description"),
             ops=[MIROperation.from_dict(op) for op in data.get("ops", [])],
             data_flows=[MIRDataFlow.from_dict(df) for df in data.get("data_flows", [])],
@@ -357,6 +355,9 @@ class MIR(ArtifactBase):
             boundaries=[MIRBoundary.from_dict(b) for b in data.get("boundaries", [])],
             response_shape=data.get("response_shape"),
         )
+        # Set metadata sau khi tạo instance (do init=False)
+        object.__setattr__(mir, 'metadata', ArtifactMetadata.from_dict(data.get("metadata", {})))
+        return mir
     
     # =========================================================================
     # Operation Management

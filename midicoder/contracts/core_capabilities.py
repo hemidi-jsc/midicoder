@@ -294,8 +294,9 @@ class DataOperationsCoreCapabilities:
         default_factory=lambda: CoreCapability(
             id="update_record",
             name="Update Record",
-            description="Cập nhật một record trong database",
+            description="Cập nhật một record trong database với optimistic locking, conditional update và audit config",
             params_schema={
+                # Core params
                 "entity": {
                     "type": "string",
                     "required": True,
@@ -311,17 +312,73 @@ class DataOperationsCoreCapabilities:
                     "required": True,
                     "description": "Update data (partial)"
                 },
+                # Standard params
                 "upsert": {
                     "type": "boolean",
                     "required": False,
                     "default": False,
-                    "description": "Upsert mode"
+                    "description": "Upsert mode: tạo mới nếu không tồn tại"
                 },
                 "return_updated": {
                     "type": "boolean",
                     "required": False,
                     "default": True,
                     "description": "Trả về record đã update"
+                },
+                # Optimalistic Locking
+                "optimistic_locking": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Cấu hình optimistic locking để tránh conflicts",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "version_field": {"type": "string"},
+                        "expected_version": {"type": "integer"}
+                    },
+                    "example": {
+                        "enabled": True,
+                        "version_field": "version",
+                        "expected_version": 5
+                    }
+                },
+                # Conditional Update
+                "conditional_update": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Điều kiện để update chỉ thực hiện khi thỏa mãn",
+                    "properties": {
+                        "conditions": {"type": "array", "items": {"type": "object"}},
+                        "if_exists": {"type": "boolean"},
+                        "status_check": {"type": "object"}
+                    },
+                    "example": {
+                        "conditions": [
+                            {"field": "status", "operator": "=", "value": "draft"},
+                            {"field": "updated_at", "operator": "<", "value": "2024-01-01"}
+                        ],
+                        "if_exists": True,
+                        "status_check": {"field": "status", "not_in": ["deleted", "archived"]}
+                    }
+                },
+                # Audit Diff Config
+                "audit_diff_config": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Cấu hình audit trail cho update operation",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "track_changes": {"type": "boolean"},
+                        "include_diff": {"type": "boolean"},
+                        "sensitive_fields": {"type": "array", "items": {"type": "string"}},
+                        "retention_days": {"type": "integer"}
+                    },
+                    "example": {
+                        "enabled": True,
+                        "track_changes": True,
+                        "include_diff": True,
+                        "sensitive_fields": ["password", "ssn"],
+                        "retention_days": 2555
+                    }
                 }
             },
             default_obligations=[
@@ -338,8 +395,9 @@ class DataOperationsCoreCapabilities:
         default_factory=lambda: CoreCapability(
             id="delete_record",
             name="Delete Record",
-            description="Xóa một record trong database",
+            description="Xóa một record trong database với cascade rules, retention policy và soft delete mode",
             params_schema={
+                # Core params
                 "entity": {
                     "type": "string",
                     "required": True,
@@ -350,6 +408,7 @@ class DataOperationsCoreCapabilities:
                     "required": True,
                     "description": "Record ID cần xóa"
                 },
+                # Standard params
                 "soft_delete": {
                     "type": "boolean",
                     "required": False,
@@ -361,6 +420,50 @@ class DataOperationsCoreCapabilities:
                     "required": False,
                     "default": False,
                     "description": "Cascade delete các records liên quan"
+                },
+                # Cascade Rules
+                "cascade_rules": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Cấu hình cascade delete rules cho các relationships",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "relationships": {"type": "array", "items": {"type": "object"}},
+                        "orphan_action": {"type": "string", "enum": ["delete", "set_null", "restrict"]}
+                    },
+                    "example": {
+                        "enabled": True,
+                        "relationships": [
+                            {"entity": "OrderItem", "action": "delete"},
+                            {"entity": "OrderAudit", "action": "restrict"}
+                        ],
+                        "orphan_action": "set_null"
+                    }
+                },
+                # Retention Days
+                "retention_days": {
+                    "type": "integer",
+                    "required": False,
+                    "description": "Số ngày giữ record trước khi permanent delete (cho soft delete)",
+                    "example": 2555
+                },
+                # Soft Delete Mode
+                "soft_delete_mode": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Cấu hình chi tiết cho soft delete",
+                    "properties": {
+                        "mode": {"type": "string", "enum": ["timestamp", "flag", "archive"]},
+                        "timestamp_field": {"type": "string"},
+                        "flag_field": {"type": "string"},
+                        "archive_table": {"type": "string"},
+                        "preserve_data": {"type": "boolean"}
+                    },
+                    "example": {
+                        "mode": "timestamp",
+                        "timestamp_field": "deleted_at",
+                        "preserve_data": True
+                    }
                 }
             },
             default_obligations=[
@@ -378,8 +481,9 @@ class DataOperationsCoreCapabilities:
         default_factory=lambda: CoreCapability(
             id="query_records",
             name="Query Records",
-            description="Query records từ database với filtering và pagination",
+            description="Query records từ database với pagination strategy, cache hint và read preference",
             params_schema={
+                # Core params
                 "entity": {
                     "type": "string",
                     "required": True,
@@ -395,11 +499,12 @@ class DataOperationsCoreCapabilities:
                     "required": False,
                     "description": "Sort order: [{field, direction}]"
                 },
+                # Standard pagination params
                 "page": {
                     "type": "integer",
                     "required": False,
                     "default": 1,
-                    "description": "Page number"
+                    "description": "Page number (cho offset-based pagination)"
                 },
                 "per_page": {
                     "type": "integer",
@@ -411,6 +516,61 @@ class DataOperationsCoreCapabilities:
                     "type": "array",
                     "required": False,
                     "description": "Fields to select (projection)"
+                },
+                # Pagination Strategy
+                "pagination_strategy": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Cấu hình pagination strategy",
+                    "properties": {
+                        "type": {"type": "string", "enum": ["offset", "cursor", "keyset"]},
+                        "cursor_field": {"type": "string"},
+                        "cursor_value": {"type": "string"},
+                        "limit": {"type": "integer"},
+                        "include_total": {"type": "boolean"}
+                    },
+                    "example": {
+                        "type": "cursor",
+                        "cursor_field": "created_at",
+                        "cursor_value": "MTY5ODc2NTQzMA==",
+                        "limit": 20,
+                        "include_total": False
+                    }
+                },
+                # Cache Hint
+                "cache_hint": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Gợi ý caching cho query",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "ttl_seconds": {"type": "integer"},
+                        "cache_key_prefix": {"type": "string"},
+                        "stale_while_revalidate": {"type": "boolean"},
+                        "bypass_cache": {"type": "boolean"}
+                    },
+                    "example": {
+                        "enabled": True,
+                        "ttl_seconds": 300,
+                        "cache_key_prefix": "orders:list",
+                        "stale_while_revalidate": True
+                    }
+                },
+                # Read Preference
+                "read_preference": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Cấu hình read preference cho replica sets",
+                    "properties": {
+                        "mode": {"type": "string", "enum": ["primary", "primary_preferred", "secondary", "secondary_preferred", "nearest"]},
+                        "tag_sets": {"type": "array", "items": {"type": "object"}},
+                        "max_staleness_seconds": {"type": "integer"}
+                    },
+                    "example": {
+                        "mode": "secondary_preferred",
+                        "tag_sets": [{"dc": "us-east-1"}],
+                        "max_staleness_seconds": 60
+                    }
                 }
             },
             default_obligations=[
@@ -471,25 +631,34 @@ class TransactionCoreCapabilities:
         default_factory=lambda: CoreCapability(
             id="begin_transaction",
             name="Begin Transaction",
-            description="Bắt đầu một database transaction mới",
+            description="Bắt đầu một database transaction mới với isolation level, savepoint và timeout",
             params_schema={
+                # Core params
                 "isolation_level": {
                     "type": "string",
                     "required": False,
                     "enum": ["read_uncommitted", "read_committed", "repeatable_read", "serializable"],
                     "default": "read_committed",
-                    "description": "Transaction isolation level"
+                    "description": "Transaction isolation level theo ANSI SQL standard"
                 },
                 "read_only": {
                     "type": "boolean",
                     "required": False,
                     "default": False,
-                    "description": "Read-only transaction"
+                    "description": "Read-only transaction (tối ưu cho query-heavy workloads)"
                 },
-                "timeout": {
+                "timeout_seconds": {
                     "type": "integer",
                     "required": False,
-                    "description": "Transaction timeout in seconds"
+                    "description": "Transaction timeout theo giây (auto rollback nếu quá hạn)",
+                    "example": 30
+                },
+                # Savepoint support
+                "savepoint_id": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Savepoint ID để rollback partial transaction",
+                    "example": "sp_create_order_items"
                 }
             },
             default_obligations=[],

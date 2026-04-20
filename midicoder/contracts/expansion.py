@@ -266,18 +266,19 @@ class ExpansionReport(ArtifactBase):
     
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ExpansionReport":
-        """Create from dictionary."""
-        metadata = ArtifactMetadata.from_dict(data.get("metadata", {}))
-        
-        return cls(
-            metadata=metadata,
-            source_instance_id=data["source_instance_id"],
-            source_macro_type=data["source_macro_type"],
+        """Tạo ExpansionReport từ dictionary."""
+        # Tạo instance với các fields cơ bản (metadata được set sau do init=False)
+        report = cls(
+            source_instance_id=data.get("source_instance_id", ""),
+            source_macro_type=data.get("source_macro_type", ""),
             steps=[ExpansionStep.from_dict(s) for s in data.get("steps", [])],
             final_core_instances=data.get("final_core_instances", []),
             total_obligations=data.get("total_obligations", []),
             expansion_time_ms=data.get("expansion_time_ms"),
         )
+        # Set metadata sau khi tạo instance (do init=False)
+        object.__setattr__(report, 'metadata', ArtifactMetadata.from_dict(data.get("metadata", {})))
+        return report
     
     # =========================================================================
     # Step Management
