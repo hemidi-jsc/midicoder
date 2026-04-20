@@ -19,6 +19,7 @@ from enum import Enum
 from typing import Any
 
 from .artifact import ArtifactBase, ArtifactMetadata
+from .graph import CapabilityGraph, Obligation
 
 
 # ============================================================================
@@ -102,6 +103,23 @@ class ErrorCode(Enum):
 
 
 # ============================================================================
+# Critical Error Codes (Fail-Fast)
+# ============================================================================
+
+# Tập hợp các error codes critical - làm compilation FAIL ngay lập tức
+# Theo SoT: Critical errors stop pipeline, không cho code generation
+CRITICAL_ERROR_CODES: set[str] = {
+    ErrorCode.MISSING_PERMISSION_CHECK.value,
+    ErrorCode.MISSING_TENANT_FILTER.value,
+    ErrorCode.MISSING_TRANSACTION.value,
+    ErrorCode.OBLIGATION_NOT_COVERED.value,
+    ErrorCode.TENANT_LEAK.value,
+    ErrorCode.PII_EXPOSURE.value,
+    ErrorCode.COMPLIANCE_VIOLATION.value,
+}
+
+
+# ============================================================================
 # Validation Error
 # ============================================================================
 
@@ -146,7 +164,7 @@ class ValidationError:
     
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ValidationError":
-        """Create from dictionary."""
+        """Tạo ValidationError từ dictionary."""
         return cls(
             code=data["code"],
             message=data["message"],
@@ -158,16 +176,7 @@ class ValidationError:
     @property
     def is_critical(self) -> bool:
         """Kiểm tra error có critical không."""
-        critical_codes = {
-            ErrorCode.MISSING_PERMISSION_CHECK.value,
-            ErrorCode.MISSING_TENANT_FILTER.value,
-            ErrorCode.MISSING_TRANSACTION.value,
-            ErrorCode.OBLIGATION_NOT_COVERED.value,
-            ErrorCode.TENANT_LEAK.value,
-            ErrorCode.PII_EXPOSURE.value,
-            ErrorCode.COMPLIANCE_VIOLATION.value,
-        }
-        return self.code in critical_codes
+        return self.code in CRITICAL_ERROR_CODES
 
 
 # ============================================================================
@@ -215,7 +224,7 @@ class ValidationWarning:
     
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ValidationWarning":
-        """Create from dictionary."""
+        """Tạo ValidationWarning từ dictionary."""
         return cls(
             code=data["code"],
             message=data["message"],
@@ -223,6 +232,53 @@ class ValidationWarning:
             source=data.get("source"),
             suggestion=data.get("suggestion"),
         )
+
+
+# ============================================================================
+# Validation Exception
+# ============================================================================
+
+
+class ValidationException(Exception):
+    """
+    Exception cho validation failures với critical errors.
+    
+    Exception này được raise khi có critical errors, làm pipeline dừng ngay.
+    
+    Attributes:
+        message: Thông báo lỗi chi tiết
+        errors: Danh sách critical errors
+        error_codes: Danh sách error codes
+        
+    Example:
+        try:
+            raise_on_critical_errors(report)
+        except ValidationException as e:
+            print(f"Validation failed with {len(e.errors)} critical errors")
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        errors: list[ValidationError],
+        error_codes: list[str] | None = None,
+    ) -> None:
+        """
+        Khởi tạo ValidationException.
+        
+        Args:
+            message: Thông báo lỗi
+            errors: Danh sách errors
+            error_codes: Danh sách error codes
+        """
+        super().__init__(message)
+        self.message = message
+        self.errors = errors
+        self.error_codes = error_codes or [e.code for e in errors]
+    
+    def __str__(self) -> str:
+        """Trả về string representation của exception."""
+        return self.message
 
 
 # ============================================================================
@@ -247,29 +303,8 @@ class ValidationReport(ArtifactBase):
         checks: Kết quả của từng check
         summary: Tổng kết validation
         metadata: Artifact metadata
-        
-    Example:
-        report = ValidationReport(
-            status=ValidationStatus.FAIL,
-            artifact_type="capability_graph",
-            artifact_ref="contracts/graph.json",
-            errors=[
-                ValidationError(
-                    code=ErrorCode.MISSING_TENANT_FILTER,
-                    message="Command thiếu tenant filter",
-                    path="instances.create_order",
-                ),
-            ],
-            warnings=[],
-            checks={
-                "syntax": ValidationStatus.PASS,
-                "references": ValidationStatus.PASS,
-                "obligations": ValidationStatus.FAIL,
-            },
-            metadata=ArtifactMetadata.with_timestamp(...),
-        )
     """
-    status: str = "pass"  # Use string for flexibility
+    status: str = "pass"
     artifact_type: str = ""
     artifact_ref: str = ""
     errors: list[ValidationError] = field(default_factory=list)
@@ -305,7 +340,6 @@ class ValidationReport(ArtifactBase):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ValidationReport":
         """Tạo ValidationReport từ dictionary."""
-        # Tạo instance với các fields cơ bản (metadata được set sau do init=False)
         report = cls(
             status=data.get("status", "pass"),
             artifact_type=data.get("artifact_type", ""),
@@ -315,13 +349,8 @@ class ValidationReport(ArtifactBase):
             checks=data.get("checks", {}),
             summary=data.get("summary", {}),
         )
-        # Set metadata sau khi tạo instance (do init=False)
         object.__setattr__(report, 'metadata', ArtifactMetadata.from_dict(data.get("metadata", {})))
         return report
-    
-    # =========================================================================
-    # Factory Methods
-    # =========================================================================
     
     @classmethod
     def pass_(
@@ -330,17 +359,7 @@ class ValidationReport(ArtifactBase):
         artifact_ref: str,
         metadata: ArtifactMetadata | None = None,
     ) -> "ValidationReport":
-        """
-        Tạo validation report với status PASS.
-        
-        Args:
-            artifact_type: Loại artifact
-            artifact_ref: Reference vào artifact
-            metadata: Artifact metadata
-            
-        Returns:
-            ValidationReport với status PASS
-        """
+        """Tạo validation report với status PASS."""
         return cls(
             status=ValidationStatus.PASS.value,
             artifact_type=artifact_type,
@@ -361,18 +380,7 @@ class ValidationReport(ArtifactBase):
         errors: list[ValidationError],
         metadata: ArtifactMetadata | None = None,
     ) -> "ValidationReport":
-        """
-        Tạo validation report với status FAIL.
-        
-        Args:
-            artifact_type: Loại artifact
-            artifact_ref: Reference vào artifact
-            errors: Danh sách errors
-            metadata: Artifact metadata
-            
-        Returns:
-            ValidationReport với status FAIL
-        """
+        """Tạo validation report với status FAIL."""
         return cls(
             status=ValidationStatus.FAIL.value,
             artifact_type=artifact_type,
@@ -394,18 +402,7 @@ class ValidationReport(ArtifactBase):
         warnings: list[ValidationWarning],
         metadata: ArtifactMetadata | None = None,
     ) -> "ValidationReport":
-        """
-        Tạo validation report với status WARNING.
-        
-        Args:
-            artifact_type: Loại artifact
-            artifact_ref: Reference vào artifact
-            warnings: Danh sách warnings
-            metadata: Artifact metadata
-            
-        Returns:
-            ValidationReport với status WARNING
-        """
+        """Tạo validation report với status WARNING."""
         return cls(
             status=ValidationStatus.WARNING.value,
             artifact_type=artifact_type,
@@ -419,10 +416,6 @@ class ValidationReport(ArtifactBase):
             },
         )
     
-    # =========================================================================
-    # Error Management
-    # =========================================================================
-    
     def add_error(
         self,
         code: str,
@@ -431,16 +424,7 @@ class ValidationReport(ArtifactBase):
         source: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> None:
-        """
-        Thêm validation error.
-        
-        Args:
-            code: Error code
-            message: Error message
-            path: Path đến element lỗi
-            source: Source artifact/file
-            context: Additional context
-        """
+        """Thêm validation error."""
         error = ValidationError(
             code=code,
             message=message,
@@ -459,16 +443,7 @@ class ValidationReport(ArtifactBase):
         source: str | None = None,
         suggestion: str | None = None,
     ) -> None:
-        """
-        Thêm validation warning.
-        
-        Args:
-            code: Warning code
-            message: Warning message
-            path: Path đến element
-            source: Source artifact/file
-            suggestion: Gợi ý fix
-        """
+        """Thêm validation warning."""
         warning = ValidationWarning(
             code=code,
             message=message,
@@ -478,21 +453,12 @@ class ValidationReport(ArtifactBase):
         )
         self.warnings.append(warning)
         
-        # Only set WARNING if not already FAILED
         if self.status == ValidationStatus.PASS.value:
             self.status = ValidationStatus.WARNING.value
-    
-    # =========================================================================
-    # Query Methods
-    # =========================================================================
     
     def get_errors_by_code(self, code: str) -> list[ValidationError]:
         """Lấy errors theo code."""
         return [e for e in self.errors if e.code == code]
-    
-    def get_critical_errors(self) -> list[ValidationError]:
-        """Lấy critical errors."""
-        return [e for e in self.errors if e.is_critical]
     
     def has_errors(self) -> bool:
         """Kiểm tra có errors không."""
@@ -509,10 +475,6 @@ class ValidationReport(ArtifactBase):
             ValidationStatus.WARNING.value,
         )
     
-    # =========================================================================
-    # Summary Generation
-    # =========================================================================
-    
     def generate_summary(self) -> None:
         """Generate summary từ errors và warnings."""
         self.summary = {
@@ -523,28 +485,268 @@ class ValidationReport(ArtifactBase):
             "warning_codes": list(set(w.code for w in self.warnings)),
         }
     
-    # =========================================================================
-    # Validation
-    # =========================================================================
-    
     def validate(self) -> list[str]:
-        """
-        Validate validation report.
-        
-        Returns:
-            Danh sách error messages (rỗng nếu valid)
-        """
+        """Validate validation report."""
         errors = super().validate()
         
-        # Check required fields
         if not self.artifact_type:
             errors.append("ValidationReport.artifact_type is required")
         
         if not self.artifact_ref:
             errors.append("ValidationReport.artifact_ref is required")
         
-        # Check status consistency
         if self.errors and self.status == ValidationStatus.PASS.value:
             errors.append("Report has errors but status is PASS")
         
         return errors
+
+
+# ============================================================================
+# Obligation Coverage Check Functions
+# ============================================================================
+
+
+def get_unsatisfied_obligations(graph: CapabilityGraph) -> list[Obligation]:
+    """
+    Lấy danh sách tất cả obligations chưa được satisfy.
+    
+    Args:
+        graph: CapabilityGraph chứa obligations
+        
+    Returns:
+        Danh sách Obligations với satisfied=False
+    """
+    return [o for o in graph.obligations if not o.satisfied]
+
+
+def get_obligation_coverage_summary(graph: CapabilityGraph) -> dict[str, Any]:
+    """
+    Lấy summary về coverage của obligations.
+    
+    Args:
+        graph: CapabilityGraph chứa obligations
+        
+    Returns:
+        Dictionary với obligation coverage statistics
+    """
+    total = len(graph.obligations)
+    satisfied_count = sum(1 for o in graph.obligations if o.satisfied)
+    unsatisfied_count = total - satisfied_count
+    
+    coverage_percentage = 0.0
+    if total > 0:
+        coverage_percentage = (satisfied_count / total) * 100
+    
+    obligations_by_type: dict[str, dict[str, int]] = {}
+    for oblig in graph.obligations:
+        if oblig.type not in obligations_by_type:
+            obligations_by_type[oblig.type] = {"total": 0, "satisfied": 0, "unsatisfied": 0}
+        obligations_by_type[oblig.type]["total"] += 1
+        if oblig.satisfied:
+            obligations_by_type[oblig.type]["satisfied"] += 1
+        else:
+            obligations_by_type[oblig.type]["unsatisfied"] += 1
+    
+    unsatisfied_by_source: dict[str, list[str]] = {}
+    for oblig in get_unsatisfied_obligations(graph):
+        source = oblig.source or "unknown"
+        if source not in unsatisfied_by_source:
+            unsatisfied_by_source[source] = []
+        unsatisfied_by_source[source].append(oblig.id)
+    
+    return {
+        "total_obligations": total,
+        "satisfied_count": satisfied_count,
+        "unsatisfied_count": unsatisfied_count,
+        "coverage_percentage": round(coverage_percentage, 2),
+        "obligations_by_type": obligations_by_type,
+        "unsatisfied_by_source": unsatisfied_by_source,
+    }
+
+
+def check_obligation_coverage(
+    graph: CapabilityGraph,
+    artifact_ref: str,
+) -> ValidationReport:
+    """
+    Kiểm tra coverage của tất cả obligations trong graph.
+    
+    Theo SoT requirement.md:
+    - Verifier phải check coverage của obligations tại compile-time
+    - Fail hard nếu obligation không được phủ
+    - OBLIGATION_NOT_COVERED là critical error
+    
+    Args:
+        graph: CapabilityGraph chứa obligations cần check
+        artifact_ref: Reference vào artifact đang được validate
+        
+    Returns:
+        ValidationReport với kết quả check obligation coverage
+    """
+    unsatisfied = get_unsatisfied_obligations(graph)
+    summary = get_obligation_coverage_summary(graph)
+    
+    if not unsatisfied:
+        report = ValidationReport(
+            status=ValidationStatus.PASS.value,
+            artifact_type="capability_graph",
+            artifact_ref=artifact_ref,
+            checks={
+                "obligation_coverage": ValidationStatus.PASS.value,
+            },
+            summary={
+                "total_obligations": summary["total_obligations"],
+                "satisfied_obligations": summary["satisfied_count"],
+                "unsatisfied_obligations": summary["unsatisfied_count"],
+                "coverage_percentage": summary["coverage_percentage"],
+            },
+        )
+        return report
+    
+    errors: list[ValidationError] = []
+    
+    for oblig in unsatisfied:
+        path = oblig.source if oblig.source else "unknown"
+        
+        message = (
+            f"Obligation '{oblig.id}' (type: {oblig.type}) chưa được satisfy. "
+            f"Source: {path}. "
+            f"Description: {oblig.description or 'Không có mô tả'}"
+        )
+        
+        error = ValidationError(
+            code=ErrorCode.OBLIGATION_NOT_COVERED.value,
+            message=message,
+            path=path,
+            source=artifact_ref,
+            context={
+                "obligation_id": oblig.id,
+                "obligation_type": oblig.type,
+                "obligation_description": oblig.description,
+                "is_critical": True,
+            },
+        )
+        errors.append(error)
+    
+    report = ValidationReport(
+        status=ValidationStatus.FAIL.value,
+        artifact_type="capability_graph",
+        artifact_ref=artifact_ref,
+        errors=errors,
+        checks={
+            "obligation_coverage": ValidationStatus.FAIL.value,
+        },
+        summary={
+            "total_obligations": summary["total_obligations"],
+            "satisfied_obligations": summary["satisfied_count"],
+            "unsatisfied_obligations": summary["unsatisfied_count"],
+            "coverage_percentage": summary["coverage_percentage"],
+            "obligations_by_type": summary["obligations_by_type"],
+            "unsatisfied_by_source": summary["unsatisfied_by_source"],
+        },
+    )
+    
+    return report
+
+
+# ============================================================================
+# Fail-Fast Logic Functions
+# ============================================================================
+
+
+def is_critical_error(error_code: str) -> bool:
+    """
+    Kiểm tra error code có phải critical không.
+    
+    Critical errors làm compilation FAIL và stop pipeline.
+    
+    Args:
+        error_code: Error code để kiểm tra
+        
+    Returns:
+        True nếu là critical error, False nếu không
+    """
+    return error_code in CRITICAL_ERROR_CODES
+
+
+def has_critical_errors(report: ValidationReport) -> bool:
+    """
+    Kiểm tra report có critical errors không.
+    
+    Hàm này dùng để quyết định có nên fail-fast hay không.
+    
+    Args:
+        report: ValidationReport cần kiểm tra
+        
+    Returns:
+        True nếu có ít nhất 1 critical error, False nếu không
+    """
+    for error in report.errors:
+        if error.is_critical:
+            return True
+    return False
+
+
+def get_critical_errors(report: ValidationReport) -> list[ValidationError]:
+    """
+    Lấy danh sách critical errors từ report.
+    
+    Args:
+        report: ValidationReport
+        
+    Returns:
+        Danh sách critical errors (rỗng nếu không có)
+    """
+    return [error for error in report.errors if error.is_critical]
+
+
+def should_fail_fast(report: ValidationReport) -> bool:
+    """
+    Quyết định có nên fail-fast hay không.
+    
+    Theo SoT: Fail-fast khi có critical errors để stop pipeline.
+    
+    Args:
+        report: ValidationReport
+        
+    Returns:
+        True nếu nên dừng pipeline (có critical errors), False nếu tiếp tục
+    """
+    return has_critical_errors(report)
+
+
+def raise_on_critical_errors(report: ValidationReport) -> None:
+    """
+    Raise ValidationException nếu có critical errors.
+    
+    Hàm này dùng để enforce fail-fast logic trong pipeline.
+    Nếu có critical errors, exception được raise và pipeline dừng.
+    
+    Args:
+        report: ValidationReport
+        
+    Raises:
+        ValidationException: Nếu có critical errors
+    """
+    critical_errors = get_critical_errors(report)
+    
+    if not critical_errors:
+        return
+    
+    error_codes = list(set(e.code for e in critical_errors))
+    
+    error_details = "\n".join(
+        f"  - [{e.code}] {e.message}" for e in critical_errors
+    )
+    
+    message = (
+        f"Validation failed with {len(critical_errors)} critical error(s). "
+        f"Pipeline stopped.\n\n"
+        f"Critical errors:\n{error_details}"
+    )
+    
+    raise ValidationException(
+        message=message,
+        errors=critical_errors,
+        error_codes=error_codes,
+    )
