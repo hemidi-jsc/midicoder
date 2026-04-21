@@ -1,0 +1,168 @@
+/**
+ * Tenant Module - Multi-Tenant Architecture cho NestJS.
+ * 
+ * Module này cung cấp NestJS module để setup tenant support.
+ * 
+ * CP02: Multi-Tenant Architecture
+ */
+
+import { Module, DynamicModule, Global } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+
+import { TenantContextService } from './tenant-context.service';
+import { TenantGuard, SystemTenantGuard } from './tenant.guard';
+
+/**
+ * Tenant Module Config interface.
+ */
+export interface TenantModuleConfig {
+  /** JWT Secret cho tenant extraction từ token */
+  jwtSecret: string;
+  /** JWT Algorithm (default: HS256) */
+  jwtAlgorithm?: string;
+  /** Header name cho tenant extraction (default: x-tenant-id) */
+  headerName?: string;
+  /** Có require tenant context không (default: true) */
+  requireTenant?: boolean;
+  /** Có extract từ subdomain không (default: false) */
+  useSubdomain?: boolean;
+}
+
+/**
+ * Default config.
+ */
+const DEFAULT_CONFIG: TenantModuleConfig = {
+  jwtSecret: '',
+  jwtAlgorithm: 'HS256',
+  headerName: 'x-tenant-id',
+  requireTenant: true,
+  useSubdomain: false,
+};
+
+/**
+ * Tenant Module - Global module cho tenant support.
+ * 
+ * Usage:
+ * @Module({
+ *   imports: [TenantModule.forRoot({ jwtSecret: 'your-secret' })],
+ * })
+ * export class AppModule {}
+ */
+@Global()
+@Module({
+  providers: [TenantContextService],
+  exports: [TenantContextService],
+})
+export class TenantModule {
+  /**
+   * ForRoot - Initialize module với config.
+   * 
+   * @param config - TenantModuleConfig
+   * @returns DynamicModule
+   */
+  static forRoot(config: TenantModuleConfig): DynamicModule {
+    const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+
+    // Validate config
+    if (!mergedConfig.jwtSecret) {
+      throw new Error('JWT secret là bắt buộc cho TenantModule');
+    }
+
+    return {
+      module: TenantModule,
+      global: true,
+      imports: [
+        JwtModule.register({
+          secret: mergedConfig.jwtSecret,
+          signOptions: { algorithm: mergedConfig.jwtAlgorithm },
+        }),
+      ],
+      providers: [
+        TenantContextService,
+        {
+          provide: 'TENANT_MODULE_CONFIG',
+          useValue: mergedConfig,
+        },
+        {
+          provide: TenantGuard,
+          useFactory: (config: TenantModuleConfig, jwtService: any) => {
+            return new TenantGuard(
+              jwtService,
+              config.requireTenant,
+              config.useSubdomain,
+              config.headerName,
+            );
+          },
+          inject: ['TENANT_MODULE_CONFIG', 'JWT_SERVICE'],
+        },
+        SystemTenantGuard,
+      ],
+      exports: [
+        TenantContextService,
+        TenantGuard,
+        SystemTenantGuard,
+        JwtModule,
+      ],
+    };
+  }
+
+  /**
+   * ForRootAsync - Initialize module với async config.
+   * 
+   * @param options - DynamicModule options
+   * @returns DynamicModule
+   */
+  static forRootAsync(options: any): DynamicModule {
+    return {
+      module: TenantModule,
+      global: true,
+      imports: [
+        JwtModule.registerAsync({
+          useFactory: async (config: TenantModuleConfig) => ({
+            secret: config.jwtSecret,
+            signOptions: { algorithm: config.jwtAlgorithm },
+          }),
+          inject: ['TENANT_MODULE_CONFIG'],
+        }),
+        ...(options.imports || []),
+      ],
+      providers: [
+        TenantContextService,
+        ...(options.providers || []),
+        {
+          provide: 'TENANT_MODULE_CONFIG',
+          useFactory: async () => {
+            if (options.useFactory) {
+              return await options.useFactory(
+                ...(options.inject
+                  ? options.inject.map((i: string) => i)
+                  : []),
+              );
+            }
+            return { ...DEFAULT_CONFIG, ...(options.useExisting || {}) };
+          },
+          inject: options.inject || [],
+        },
+        {
+          provide: TenantGuard,
+          useFactory: (config: TenantModuleConfig, jwtService: any) => {
+            return new TenantGuard(
+              jwtService,
+              config.requireTenant,
+              config.useSubdomain,
+              config.headerName,
+            );
+          },
+          inject: ['TENANT_MODULE_CONFIG', 'JWT_SERVICE'],
+        },
+        SystemTenantGuard,
+      ],
+      exports: [
+        TenantContextService,
+        TenantGuard,
+        SystemTenantGuard,
+        JwtModule,
+      ],
+    };
+  }
+}

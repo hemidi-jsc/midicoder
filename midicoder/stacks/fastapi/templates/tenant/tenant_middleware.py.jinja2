@@ -1,0 +1,315 @@
+"""
+Tenant Middleware - Multi-Tenant Architecture.
+
+Module này cung cấp FastAPI middleware để extract tenant information từ:
+- JWT token claims
+- HTTP headers (X-Tenant-ID)
+- Subdomain routing
+
+CP02: Multi-Tenant Architecture
+"""
+
+import logging
+from typing import Callable, Optional
+
+import jwt
+from fastapi import HTTPException, Request, status
+from fastapi.middleware.base import BaseHTTPMiddleware
+from pydantic import ValidationError
+
+from .tenant_context import (
+    clear_tenant_context,
+    get_tenant_context,
+    set_tenant_context,
+    TenantContextManager,
+)
+from .tenant_models import TenantContext, TenantIsolationStrategy
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Tenant Extraction Strategies
+# ============================================================================
+
+
+def extract_tenant_from_jwt(token: str, secret: str, algorithm: str = "HS256") -> Optional[TenantContext]:
+    """
+    Extract tenant từ JWT token.
+
+    Args:
+        token: JWT token string
+        secret: Secret key để decode token
+        algorithm: Algorithm dùng để decode (default: HS256)
+
+    Returns:
+        TenantContext hoặc None nếu không thể extract
+
+    Raises:
+        HTTPException: Nếu token không valid
+    """
+    try:
+        payload = jwt.decode(token, secret, algorithms=[algorithm])
+        
+        # Extract tenant information từ claims
+        tenant_id = payload.get("tenant_id")
+        tenant_name = payload.get("tenant_name")
+        strategy_value = payload.get("tenant_strategy", "row")
+        
+        if not tenant_id:
+            logger.warning("JWT token không chứa tenant_id")
+            return None
+        
+        strategy = TenantIsolationStrategy.from_string(strategy_value)
+        
+        return TenantContext(
+            tenant_id=tenant_id,
+            tenant_name=tenant_name,
+            strategy=strategy,
+        )
+    
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="JWT token đã hết hạn",
+        )
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"JWT token không hợp lệ: {str(e)}",
+        )
+
+
+def extract_tenant_from_header(request: Request, header_name: str = "X-Tenant-ID") -> Optional[TenantContext]:
+    """
+    Extract tenant từ HTTP header.
+
+    Args:
+        request: FastAPI Request object
+        header_name: Tên header chứa tenant ID (default: X-Tenant-ID)
+
+    Returns:
+        TenantContext hoặc None nếu header không tồn tại
+    """
+    tenant_id = request.headers.get(header_name)
+    
+    if not tenant_id:
+        return None
+    
+    return TenantContext(tenant_id=tenant_id)
+
+
+def extract_tenant_from_subdomain(request: Request) -> Optional[TenantContext]:
+    """
+    Extract tenant từ subdomain.
+
+    Example: tenant.example.com -> tenant_id = "tenant"
+
+    Args:
+        request: FastAPI Request object
+
+    Returns:
+        TenantContext hoặc None nếu không phải subdomain
+    """
+    host = request.headers.get("host", "")
+    
+    # Parse host: domain hoặc subdomain.domain
+    parts = host.split(".")
+    
+    if len(parts) > 2:
+        # Assuming last 2 parts are domain.tld
+        subdomain = parts[0]
+        return TenantContext(tenant_id=subdomain, subdomain=subdomain)
+    
+    return None
+
+
+# ============================================================================
+# Tenant Extraction Chain
+# ============================================================================
+
+
+class TenantExtractor:
+    """
+    Chain of responsibility để extract tenant theo priority.
+
+    Priority:
+    1. JWT token (Authorization header)
+    2. HTTP header (X-Tenant-ID)
+    3. Subdomain routing
+    """
+
+    def __init__(
+        self,
+        jwt_secret: Optional[str] = None,
+        jwt_algorithm: str = "HS256",
+        header_name: str = "X-Tenant-ID",
+        use_subdomain: bool = False,
+    ):
+        """
+        Initialize TenantExtractor.
+
+        Args:
+            jwt_secret: Secret key cho JWT (optional)
+            jwt_algorithm: Algorithm cho JWT
+            header_name: Header name cho tenant extraction
+            use_subdomain: Có extract từ subdomain không
+        """
+        self.jwt_secret = jwt_secret
+        self.jwt_algorithm = jwt_algorithm
+        self.header_name = header_name
+        self.use_subdomain = use_subdomain
+
+    def extract(self, request: Request) -> Optional[TenantContext]:
+        """
+        Extract tenant theo priority chain.
+
+        Args:
+            request: FastAPI Request object
+
+        Returns:
+            TenantContext hoặc None
+        """
+        # 1. Try JWT token
+        if self.jwt_secret:
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]  # Remove "Bearer " prefix
+                try:
+                    context = extract_tenant_from_jwt(token, self.jwt_secret, self.jwt_algorithm)
+                    if context:
+                        logger.info(f"Extract tenant from JWT: {context.tenant_id}")
+                        return context
+                except HTTPException:
+                    # Re-raise JWT errors
+                    raise
+
+        # 2. Try HTTP header
+        context = extract_tenant_from_header(request, self.header_name)
+        if context:
+            logger.info(f"Extract tenant from header: {context.tenant_id}")
+            return context
+
+        # 3. Try subdomain
+        if self.use_subdomain:
+            context = extract_tenant_from_subdomain(request)
+            if context:
+                logger.info(f"Extract tenant from subdomain: {context.tenant_id}")
+                return context
+
+        return None
+
+
+# ============================================================================
+# Tenant Middleware
+# ============================================================================
+
+
+class TenantMiddleware(BaseHTTPMiddleware):
+    """
+    FastAPI middleware để inject tenant context vào mỗi request.
+
+    Middleware này:
+    1. Extract tenant information từ request (JWT, header, subdomain)
+    2. Set tenant context vào contextvar
+    3. Clear tenant context sau khi response
+    """
+
+    def __init__(
+        self,
+        app,
+        extractor: TenantExtractor,
+        require_tenant: bool = True,
+    ):
+        """
+        Initialize TenantMiddleware.
+
+        Args:
+            app: FastAPI application
+            extractor: TenantExtractor instance
+            require_tenant: Có require tenant context không
+        """
+        super().__init__(app)
+        self.extractor = extractor
+        self.require_tenant = require_tenant
+
+    async def dispatch(self, request: Request, call_next: Callable) -> None:
+        """
+        Process request với tenant context.
+
+        Args:
+            request: FastAPI Request object
+            call_next: Next middleware/handler
+
+        Returns:
+            Response object
+        """
+        # Extract tenant
+        tenant_context = self.extractor.extract(request)
+
+        if tenant_context:
+            # Set tenant context
+            set_tenant_context(tenant_context)
+            logger.debug(f"Set tenant context: {tenant_context.tenant_id}")
+        elif self.require_tenant:
+            # Require tenant but not found
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Tenant information không tìm thấy. Vui lòng cung cấp JWT token hoặc X-Tenant-ID header.",
+            )
+
+        try:
+            # Process request
+            response = await call_next(request)
+            return response
+        finally:
+            # Clear tenant context
+            clear_tenant_context()
+            logger.debug("Cleared tenant context")
+
+
+# ============================================================================
+# Tenant Dependency
+# ============================================================================
+
+
+async def get_current_tenant() -> TenantContext:
+    """
+    Dependency function để inject tenant context vào route.
+
+    Returns:
+        TenantContext hiện tại
+
+    Raises:
+        HTTPException: Nếu không có tenant context
+    """
+    context = get_tenant_context()
+    
+    if not context:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tenant context không tìm thấy",
+        )
+    
+    return context
+
+
+async def get_system_tenant_only() -> TenantContext:
+    """
+    Dependency function để chỉ allow system tenant.
+
+    Returns:
+        TenantContext (phải là system tenant)
+
+    Raises:
+        HTTPException: Nếu không phải system tenant
+    """
+    context = get_current_tenant()
+    
+    if not context.is_system_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Endpoint này chỉ dành cho system tenant",
+        )
+    
+    return context
