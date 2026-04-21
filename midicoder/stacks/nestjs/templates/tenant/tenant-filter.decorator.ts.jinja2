@@ -1,0 +1,275 @@
+/**
+ * Tenant Filter Decorator - TypeORM Multi-Tenant Support.
+ * 
+ * Module này cung cấp tenant-aware TypeORM entities và query helpers.
+ * Tự động apply tenant filter vào mọi queries.
+ * 
+ * CP02: Multi-Tenant Architecture
+ */
+
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  BaseEntity,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
+import { TenantContextService } from './tenant-context.service';
+
+/**
+ * TenantAwareEntity mixin.
+ * 
+ * Mixin này tự động thêm tenant_id column vào entity.
+ * 
+ * Usage:
+ * export class Order extends CreateDateEntity(MixinTenantAwareEntity()) {
+ *   @PrimaryGeneratedColumn()
+ *   id: number;
+ *   
+ *   @Column()
+ *   amount: number;
+ * }
+ */
+export function MixinTenantAwareEntity<T extends new (...args: any[]) => any>(base: T) {
+  @Entity()
+  class TenantAwareEntity extends base {
+    @Column({
+      type: 'varchar',
+      length: 255,
+      nullable: false,
+      comment: 'Tenant ID cho multi-tenancy',
+    })
+    tenantId: string;
+  }
+  return TenantAwareEntity as T;
+}
+
+/**
+ * Tenant Filter Helper.
+ * 
+ * Helper functions để apply tenant filter vào TypeORM queries.
+ */
+export class TenantFilter {
+  /**
+   * Apply tenant filter vào query builder.
+   * 
+   * @param queryBuilder - SelectQueryBuilder
+   * @param column - Column name để filter (default: tenantId)
+   * @param tenantContextService - TenantContextService instance
+   */
+  static applyTenantFilter<T>(
+    queryBuilder: SelectQueryBuilder<T>,
+    column: string = 'tenantId',
+    tenantContextService?: TenantContextService,
+  ): SelectQueryBuilder<T> {
+    const tenantContext = tenantContextService?.getTenantContext();
+
+    // System/Super tenant bypass filter
+    if (tenantContext) {
+      if (tenantContext.tenantId === 'system' || tenantContext.tenantId === 'super') {
+        return queryBuilder;
+      }
+    }
+
+    const tenantId = tenantContextService?.getTenantId();
+
+    if (tenantId) {
+      const alias = queryBuilder.expressionMap.mainAlias?.name ?? 'entity';
+      queryBuilder.andWhere(`${alias}.${column} = :tenantId`, { tenantId });
+    }
+
+    return queryBuilder;
+  }
+
+  /**
+   * Apply cross-tenant filter vào query builder.
+   * 
+   * @param queryBuilder - SelectQueryBuilder
+   * @param column - Column name để filter
+   * @param tenantIds - Danh sách tenant IDs
+   */
+  static applyCrossTenantFilter<T>(
+    queryBuilder: SelectQueryBuilder<T>,
+    column: string = 'tenantId',
+    tenantIds: string[],
+  ): SelectQueryBuilder<T> {
+    const alias = queryBuilder.expressionMap.mainAlias?.name ?? 'entity';
+    queryBuilder.andWhere(`${alias}.${column} IN (:...tenantIds)`, { tenantIds });
+    return queryBuilder;
+  }
+
+  /**
+   * Validate tenant ID trong input data.
+   * 
+   * @param data - Input data
+   * @param currentTenantId - Current tenant ID
+   * @throws Error nếu tenant ID mismatch
+   */
+  static validateTenantId(data: { tenantId?: string }, currentTenantId: string): void {
+    if (!data.tenantId) {
+      // Auto-set tenant ID
+      data.tenantId = currentTenantId;
+      return;
+    }
+
+    if (data.tenantId !== currentTenantId) {
+      throw new Error(
+        `Tenant ID mismatch. Expected: ${currentTenantId}, Got: ${data.tenantId}`,
+      );
+    }
+  }
+}
+
+/**
+ * TenantAwareRepository - Repository wrapper với tenant support.
+ * 
+ * Usage:
+ * @InjectRepository(Order)
+ * private readonly orderRepo: TenantAwareRepository<Order>;
+ * 
+ * findAll(): Promise<Order[]> {
+ *   return this.orderRepo.findWithTenantFilter();
+ * }
+ */
+export class TenantAwareRepository<T> extends Repository<T> {
+  constructor(
+    entity: new () => T,
+    connection: any,
+    private readonly tenantContextService: TenantContextService,
+  ) {
+    super(entity, connection.createQueryBuilder());
+  }
+
+  /**
+   * Create query builder với tenant filter tự động.
+   */
+  createQueryBuilder(alias?: string): SelectQueryBuilder<T> {
+    const qb = super.createQueryBuilder(alias);
+    return TenantFilter.applyTenantFilter(qb, 'tenantId', this.tenantContextService);
+  }
+
+  /**
+   * Find all với tenant filter.
+   */
+  async findWithTenantFilter(options?: any): Promise<T[]> {
+    const qb = this.createQueryBuilder('entity');
+    
+    if (options?.where) {
+      qb.andWhere(options.where);
+    }
+    
+    if (options?.order) {
+      qb.orderBy(options.order);
+    }
+    
+    if (options?.take) {
+      qb.limit(options.take);
+    }
+    
+    if (options?.skip) {
+      qb.offset(options.skip);
+    }
+    
+    return qb.getMany();
+  }
+
+  /**
+   * Find one với tenant filter.
+   */
+  async findOneWithTenantFilter(options?: any): Promise<T | null> {
+    const qb = this.createQueryBuilder('entity');
+    
+    if (options?.where) {
+      qb.andWhere(options.where);
+    }
+    
+    return qb.getOne();
+  }
+
+  /**
+   * Count với tenant filter.
+   */
+  async countWithTenantFilter(options?: any): Promise<number> {
+    const qb = this.createQueryBuilder('entity');
+    
+    if (options?.where) {
+      qb.andWhere(options.where);
+    }
+    
+    return qb.getCount();
+  }
+
+  /**
+   * Save với tenant validation.
+   */
+  async saveWithTenantValidation(entities: T | T[]): Promise<T | T[]> {
+    const tenantId = this.tenantContextService.getTenantId();
+    
+    if (!tenantId) {
+      throw new Error('Tenant context không tìm thấy');
+    }
+
+    const entityArray = Array.isArray(entities) ? entities : [entities];
+    
+    for (const entity of entityArray) {
+      if ('tenantId' in entity && entity.tenantId) {
+        TenantFilter.validateTenantId(entity as any, tenantId);
+      } else if ('tenantId' in entity) {
+        // Auto-set tenant ID
+        (entity as any).tenantId = tenantId;
+      }
+    }
+    
+    return super.save(entities);
+  }
+}
+
+/**
+ * Cross-Tenant Operation Context Manager.
+ * 
+ * Usage:
+ * async function processMultiTenant() {
+ *   await withCrossTenantAccess(['tenant-001', 'tenant-002'], async () => {
+ *     const orders = await this.orderRepo.findCrossTenant(['tenant-001', 'tenant-002']);
+ *   });
+ * }
+ */
+export class CrossTenantOperation {
+  constructor(
+    private readonly tenantIds: string[],
+    private readonly tenantContextService: TenantContextService,
+  ) {}
+
+  private originalContext: any = null;
+
+  begin(): void {
+    this.originalContext = this.tenantContextService.getTenantContext();
+    this.tenantContextService.setTenantContext({
+      tenantId: this.tenantIds[0],
+      strategy: 'hybrid' as any,
+    });
+  }
+
+  end(): void {
+    if (this.originalContext) {
+      this.tenantContextService.setTenantContext(this.originalContext);
+    } else {
+      this.tenantContextService.clearTenantContext();
+    }
+  }
+}
+
+/**
+ * Helper để tạo cross-tenant query.
+ */
+export function createCrossTenantQueryBuilder<T>(
+  repository: Repository<T>,
+  tenantIds: string[],
+  alias?: string,
+): SelectQueryBuilder<T> {
+  const qb = repository.createQueryBuilder(alias);
+  const column = alias ?? 'entity';
+  qb.andWhere(`${column}.tenantId IN (:...tenantIds)`, { tenantIds });
+  return qb;
+}

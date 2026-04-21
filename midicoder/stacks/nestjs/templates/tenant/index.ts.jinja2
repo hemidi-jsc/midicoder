@@ -1,0 +1,46 @@
+/**
+ * Tenant Module - Multi-Tenant Architecture cho NestJS.
+ * 
+ * Module này cung cấp đầy đủ tenant support cho NestJS application:
+ * - tenant-context.service: Request-scoped context propagation
+ * - tenant.guard: Guards để extract và validate tenant
+ * - tenant-filter.decorator: TypeORM tenant-aware entities và queries
+ * 
+ * CP02: Multi-Tenant Architecture
+ * 
+ * Usage:
+ * import { TenantModule } from '@app/tenant';
+ * 
+ * @Module({
+ *   imports: [TenantModule.forRoot({ jwtSecret: 'your-secret' })],
+ * })
+ * export class AppModule {}
+ */
+
+// Context Service
+export {
+  TenantContextService,
+  TenantContext,
+  TenantIsolationStrategy,
+  getTenantContextService,
+} from './tenant-context.service';
+
+// Guards
+export {
+  TenantGuard,
+  SystemTenantGuard,
+  CurrentTenant,
+  CurrentTenantId,
+} from './tenant.guard';
+
+// Filters & Repository
+export {
+  MixinTenantAwareEntity,
+  TenantFilter,
+  TenantAwareRepository,
+  CrossTenantOperation,
+  createCrossTenantQueryBuilder,
+} from './tenant-filter.decorator';
+
+// Module
+export { TenantModule } from './tenant.module';

@@ -1,0 +1,84 @@
+"""
+Tenant Module - Multi-Tenant Architecture cho FastAPI.
+
+Module này cung cấp đầy đủ tenant support cho FastAPI application:
+- tenant_context: Async context propagation
+- tenant_middleware: Request-level tenant extraction
+- tenant_filters: SQLAlchemy tenant-aware models
+- tenant_models: Core tenant models (import từ midicoder.contracts)
+
+CP02: Multi-Tenant Architecture
+
+Usage:
+    from app.tenant import (
+        get_tenant_context,
+        get_tenant_id,
+        TenantMiddleware,
+        TenantExtractor,
+        TenantAwareBase,
+    )
+"""
+
+from .tenant_context import (
+    clear_tenant_context,
+    get_tenant_context,
+    get_tenant_id,
+    get_tenant_strategy,
+    is_system_tenant,
+    is_super_tenant,
+    set_tenant_context,
+    TenantContextManager,
+)
+from .tenant_middleware import (
+    TenantExtractor,
+    TenantMiddleware,
+    extract_tenant_from_header,
+    extract_tenant_from_jwt,
+    extract_tenant_from_subdomain,
+    get_current_tenant,
+    get_system_tenant_only,
+)
+from .tenant_filters import (
+    CrossTenantOperation,
+    TenantAwareBase,
+    TenantAwareModel,
+    allow_cross_tenant_query,
+    get_tenant_filter_for_model,
+    tenant_aware_query,
+)
+from .tenant_models import (
+    TenantContext,
+    TenantFilter,
+    TenantIsolationStrategy,
+)
+
+__all__ = [
+    # Context
+    "TenantContext",
+    "TenantContextManager",
+    "get_tenant_context",
+    "set_tenant_context",
+    "clear_tenant_context",
+    "get_tenant_id",
+    "get_tenant_strategy",
+    "is_system_tenant",
+    "is_super_tenant",
+    # Middleware
+    "TenantMiddleware",
+    "TenantExtractor",
+    "extract_tenant_from_jwt",
+    "extract_tenant_from_header",
+    "extract_tenant_from_subdomain",
+    "get_current_tenant",
+    "get_system_tenant_only",
+    # Filters
+    "TenantAwareModel",
+    "TenantAwareBase",
+    "TenantFilter",
+    "tenant_aware_query",
+    "get_tenant_filter_for_model",
+    "CrossTenantOperation",
+    "allow_cross_tenant_query",
+    # Models
+    "TenantIsolationStrategy",
+]

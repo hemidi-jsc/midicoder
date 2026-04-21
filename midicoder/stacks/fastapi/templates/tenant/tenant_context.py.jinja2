@@ -1,0 +1,150 @@
+"""
+Tenant Context Management - Multi-Tenant Architecture.
+
+Module này cung cấp tenant context propagation cho FastAPI application.
+Sử dụng async-local storage để propagate tenant information qua request scope.
+
+CP02: Multi-Tenant Architecture
+"""
+
+from contextvars import ContextVar
+from typing import Optional
+
+from .tenant_models import TenantContext, TenantIsolationStrategy
+
+
+# ============================================================================
+# Tenant Context Storage
+# ============================================================================
+
+
+# ContextVar để lưu tenant context cho current request
+_tenant_context: ContextVar[Optional[TenantContext]] = ContextVar(
+    "tenant_context", default=None
+)
+
+
+# ============================================================================
+# Tenant Context Functions
+# ============================================================================
+
+
+def get_tenant_context() -> Optional[TenantContext]:
+    """
+    Lấy tenant context hiện tại.
+
+    Returns:
+        TenantContext hoặc None nếu không có tenant context
+    """
+    return _tenant_context.get()
+
+
+def set_tenant_context(context: TenantContext) -> None:
+    """
+    Set tenant context cho current request.
+
+    Args:
+        context: TenantContext để set
+    """
+    _tenant_context.set(context)
+
+
+def clear_tenant_context() -> None:
+    """Xóa tenant context."""
+    _tenant_context.set(None)
+
+
+def get_tenant_id() -> Optional[str]:
+    """
+    Lấy tenant ID từ current context.
+
+    Returns:
+        Tenant ID hoặc None nếu không có context
+    """
+    context = get_tenant_context()
+    return context.tenant_id if context else None
+
+
+def get_tenant_strategy() -> TenantIsolationStrategy:
+    """
+    Lấy tenant isolation strategy từ current context.
+
+    Returns:
+        TenantIsolationStrategy (default: ROW)
+    """
+    context = get_tenant_context()
+    return context.strategy if context else TenantIsolationStrategy.ROW
+
+
+def is_system_tenant() -> bool:
+    """
+    Kiểm tra nếu current tenant là system tenant.
+
+    Returns:
+        True nếu là system tenant
+    """
+    context = get_tenant_context()
+    return context.is_system_tenant if context else False
+
+
+def is_super_tenant() -> bool:
+    """
+    Kiểm tra nếu current tenant là super tenant.
+
+    Returns:
+        True nếu là super tenant
+    """
+    context = get_tenant_context()
+    return context.is_super_tenant if context else False
+
+
+# ============================================================================
+# Tenant Context Manager
+# ============================================================================
+
+
+class TenantContextManager:
+    """
+    Context manager cho tenant context.
+
+    Sử dụng để set tenant context trong một block code cụ thể.
+
+    Example:
+        with TenantContextManager(tenant_id="tenant-001"):
+            # Tenant context đã được set
+            tenant_id = get_tenant_id()  # "tenant-001"
+    """
+
+    def __init__(
+        self,
+        tenant_id: str,
+        tenant_name: Optional[str] = None,
+        strategy: TenantIsolationStrategy = TenantIsolationStrategy.ROW,
+        subdomain: Optional[str] = None,
+    ):
+        """
+        Initialize TenantContextManager.
+
+        Args:
+            tenant_id: Tenant ID
+            tenant_name: Tenant name (optional)
+            strategy: Isolation strategy (optional)
+            subdomain: Tenant subdomain (optional)
+        """
+        self.context = TenantContext(
+            tenant_id=tenant_id,
+            tenant_name=tenant_name,
+            strategy=strategy,
+            subdomain=subdomain,
+        )
+        self._token = None
+
+    def __enter__(self) -> TenantContext:
+        """Set tenant context khi vào context."""
+        self._token = _tenant_context.set(self.context)
+        return self.context
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Restore previous context khi ra context."""
+        if self._token is not None:
+            _tenant_context.reset(self._token)

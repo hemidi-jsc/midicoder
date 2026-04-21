@@ -1,0 +1,234 @@
+/**
+ * Tenant Guard - Multi-Tenant Architecture.
+ * 
+ * Module này cung cấp NestJS guards để extract và validate tenant.
+ * Supports extraction từ JWT, header, và subdomain.
+ * 
+ * CP02: Multi-Tenant Architecture
+ */
+
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { Request } from 'express';
+
+import { TenantContextService, TenantContext, TenantIsolationStrategy } from './tenant-context.service';
+
+/**
+ * Extract tenant từ JWT token.
+ * 
+ * @param token - JWT token string
+ * @param jwtService - JwtService instance
+ * @returns TenantContext hoặc null nếu không thể extract
+ */
+async function extractTenantFromJwt(
+  token: string,
+  jwtService: JwtService,
+): Promise<TenantContext | null> {
+  try {
+    const payload = jwtService.verify<any>(token);
+
+    // Extract tenant information từ claims
+    const tenantId = payload.tenant_id;
+    const tenantName = payload.tenant_name;
+    const strategy = payload.tenant_strategy ?? 'row';
+
+    if (!tenantId) {
+      console.warn('JWT token không chứa tenant_id');
+      return null;
+    }
+
+    return {
+      tenantId,
+      tenantName,
+      strategy: strategy as TenantIsolationStrategy,
+    };
+  } catch (error) {
+    throw new UnauthorizedException('JWT token không hợp lệ hoặc đã hết hạn');
+  }
+}
+
+/**
+ * Extract tenant từ HTTP header.
+ * 
+ * @param request - Express request
+ * @param headerName - Tên header chứa tenant ID
+ * @returns TenantContext hoặc null nếu header không tồn tại
+ */
+function extractTenantFromHeader(
+  request: Request,
+  headerName: string = 'x-tenant-id',
+): TenantContext | null {
+  const tenantId = request.headers[headerName] as string;
+
+  if (!tenantId) {
+    return null;
+  }
+
+  return { tenantId, strategy: TenantIsolationStrategy.ROW };
+}
+
+/**
+ * Extract tenant từ subdomain.
+ * 
+ * @param request - Express request
+ * @returns TenantContext hoặc null nếu không phải subdomain
+ */
+function extractTenantFromSubdomain(request: Request): TenantContext | null {
+  const host = request.headers.host ?? '';
+
+  // Parse host: domain hoặc subdomain.domain
+  const parts = host.split('.');
+
+  if (parts.length > 2) {
+    // Assuming last 2 parts are domain.tld
+    const subdomain = parts[0];
+    return {
+      tenantId: subdomain,
+      subdomain,
+      strategy: TenantIsolationStrategy.ROW,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Tenant Guard - Extract và inject tenant vào request.
+ * 
+ * Guard này:
+ * 1. Extract tenant information từ request (JWT, header, subdomain)
+ * 2. Set tenant context vào TenantContextService
+ * 3. Return false nếu require tenant nhưng không tìm thấy
+ */
+@Injectable()
+export class TenantGuard implements CanActivate {
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly requireTenant: boolean = true,
+    private readonly useSubdomain: boolean = false,
+    private readonly headerName: string = 'x-tenant-id',
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const tenantContextService = context
+      .switchToHttp()
+      .getHandler()
+      .tenantContextService as TenantContextService;
+
+    // 1. Try JWT token
+    let tenantContext: TenantContext | null = null;
+    const authHeader = request.headers.authorization;
+
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      tenantContext = await extractTenantFromJwt(token, this.jwtService);
+
+      if (tenantContext) {
+        console.log(`Extract tenant from JWT: ${tenantContext.tenantId}`);
+      }
+    }
+
+    // 2. Try HTTP header
+    if (!tenantContext) {
+      tenantContext = extractTenantFromHeader(request, this.headerName);
+
+      if (tenantContext) {
+        console.log(`Extract tenant from header: ${tenantContext.tenantId}`);
+      }
+    }
+
+    // 3. Try subdomain
+    if (!tenantContext && this.useSubdomain) {
+      tenantContext = extractTenantFromSubdomain(request);
+
+      if (tenantContext) {
+        console.log(`Extract tenant from subdomain: ${tenantContext.tenantId}`);
+      }
+    }
+
+    // Set tenant context
+    if (tenantContext) {
+      tenantContextService.setTenantContext(tenantContext);
+    } else if (this.requireTenant) {
+      // Require tenant but not found
+      throw new UnauthorizedException(
+        'Tenant information không tìm thấy. Vui lòng cung cấp JWT token hoặc X-Tenant-ID header.',
+      );
+    }
+
+    return true;
+  }
+}
+
+/**
+ * System Tenant Guard - Chỉ allow system tenant.
+ */
+@Injectable()
+export class SystemTenantGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<Request>();
+    const handler = context.getHandler();
+
+    // Access tenant context from request (set by TenantGuard)
+    const tenantId = (request as any).tenantContext?.tenantId;
+
+    if (tenantId !== 'system') {
+      throw new ForbiddenException('Endpoint này chỉ dành cho system tenant');
+    }
+
+    return true;
+  }
+}
+
+/**
+ * Current Tenant Decorator - Inject current tenant vào handler params.
+ * 
+ * Usage:
+ * @Get()
+ * getOrders(@CurrentTenant() tenant: TenantContext) { ... }
+ */
+export function CurrentTenant() {
+  return (
+    _target: any,
+    _propertyKey: string,
+    parameterIndex: number,
+  ) => {
+    Reflect.defineMetadata(
+      'tenant:parameter',
+      true,
+      _target,
+      _propertyKey,
+      parameterIndex,
+    );
+  };
+}
+
+/**
+ * Current Tenant ID Decorator - Inject only tenant ID vào handler params.
+ * 
+ * Usage:
+ * @Get()
+ * getOrders(@CurrentTenantId() tenantId: string) { ... }
+ */
+export function CurrentTenantId() {
+  return (
+    _target: any,
+    _propertyKey: string,
+    parameterIndex: number,
+  ) => {
+    Reflect.defineMetadata(
+      'tenantId:parameter',
+      true,
+      _target,
+      _propertyKey,
+      parameterIndex,
+    );
+  };
+}

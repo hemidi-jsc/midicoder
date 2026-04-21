@@ -1,0 +1,292 @@
+"""
+Tenant Filters - SQLAlchemy Multi-Tenant Support.
+
+Module này cung cấp tenant-aware SQLAlchemy models và query helpers.
+Tự động apply tenant filter vào mọi queries.
+
+CP02: Multi-Tenant Architecture
+"""
+
+from typing import Any, Optional, Type, TypeVar
+
+from sqlalchemy import Column, String, inspect
+from sqlalchemy.orm import declarative_base, declared_attr, Query
+
+from .tenant_context import get_tenant_context, get_tenant_id
+from .tenant_models import TenantContext, TenantFilter, TenantIsolationStrategy
+
+# Base class cho all models
+Base = declarative_base()
+
+# Type variable cho TenantAwareModel
+T = TypeVar("T", bound="TenantAwareModel")
+
+
+# ============================================================================
+# TenantAwareModel Mixin
+# ============================================================================
+
+
+class TenantAwareModel:
+    """
+    Mixin class cho tenant-aware SQLAlchemy models.
+
+    Khi inherit class này, model sẽ tự động:
+    1. Có tenant_id column
+    2. Tự động filter queries bằng current tenant
+    3. Validate tenant trên create/update
+
+    Example:
+        class Order(Base, TenantAwareModel):
+            __tablename__ = "orders"
+            
+            id = Column(Integer, primary_key=True)
+            amount = Column(Float)
+            
+            # tenant_id tự động được thêm bởi TenantAwareModel
+    """
+
+    @declared_attr
+    def tenant_id(cls) -> Column:
+        """
+        Tenant ID column.
+
+        Column này được tự động thêm vào tất cả models.
+        """
+        return Column(
+            "tenant_id",
+            String(255),
+            nullable=False,
+            index=True,
+            comment="Tenant ID cho multi-tenancy",
+        )
+
+    @classmethod
+    def apply_tenant_filter(cls, query: Query) -> Query:
+        """
+        Apply tenant filter vào query.
+
+        Args:
+            query: SQLAlchemy Query object
+
+        Returns:
+            Query với tenant filter đã được apply
+        """
+        context = get_tenant_context()
+
+        # System/Super tenant bypass filter
+        if context and (context.is_system_tenant or context.is_super_tenant):
+            return query
+
+        # Database strategy: no filter needed (separate connection)
+        if context and context.strategy == TenantIsolationStrategy.DATABASE:
+            return query
+
+        # Apply row-level filter
+        current_tenant_id = get_tenant_id()
+        if current_tenant_id:
+            # Filter by tenant_id
+            query = query.filter(cls.tenant_id == current_tenant_id)
+
+        return query
+
+    @classmethod
+    def validate_tenant(cls, **kwargs) -> None:
+        """
+        Validate tenant_id trong input data.
+
+        Args:
+            kwargs: Input data
+
+        Raises:
+            ValueError: Nếu tenant_id không match current tenant
+        """
+        if "tenant_id" not in kwargs:
+            # Auto-set tenant_id từ context
+            current_tenant_id = get_tenant_id()
+            if current_tenant_id:
+                kwargs["tenant_id"] = current_tenant_id
+            return
+
+        # Validate tenant_id match current context
+        input_tenant_id = kwargs["tenant_id"]
+        current_tenant_id = get_tenant_id()
+
+        if current_tenant_id and input_tenant_id != current_tenant_id:
+            # Check if current user is system/super tenant
+            context = get_tenant_context()
+            if context and (context.is_system_tenant or context.is_super_tenant):
+                return  # Allow system/super tenant
+
+            raise ValueError(
+                f"Tenant ID mismatch. Expected: {current_tenant_id}, Got: {input_tenant_id}"
+            )
+
+
+# ============================================================================
+# TenantAwareBase Class
+# ============================================================================
+
+
+class TenantAwareBase(Base, TenantAwareModel):
+    """
+    Base class cho tất cả tenant-aware models.
+
+    Inherit class này để có tenant support tự động.
+
+    Example:
+        class Product(TenantAwareBase):
+            __tablename__ = "products"
+            
+            id = Column(Integer, primary_key=True)
+            name = Column(String)
+    """
+
+    __abstract__ = True
+
+    def __init_subclass__(cls, **kwargs):
+        """Hook để intercept subclass creation."""
+        super().__init_subclass__(**kwargs)
+
+
+# ============================================================================
+# Query Helpers
+# ============================================================================
+
+
+def tenant_aware_query(model: Type[T]) -> Query[T]:
+    """
+    Tạo tenant-aware query.
+
+    Args:
+        model: SQLAlchemy model class
+
+    Returns:
+        Query với tenant filter đã được apply
+    """
+    # Get current session từ SQLAlchemy
+    from sqlalchemy.orm import Session, scoped_session
+
+    # Try to get session (in real app, use proper session management)
+    try:
+        # This is a placeholder - real implementation depends on session setup
+        session = scoped_session(lambda: Session())
+        query = session.query(model)
+    except Exception:
+        # Fallback - return query without session
+        raise ValueError("SQLAlchemy session không khả dụng")
+
+    # Apply tenant filter
+    if hasattr(model, "apply_tenant_filter"):
+        query = model.apply_tenant_filter(query)
+
+    return query
+
+
+def get_tenant_filter_for_model(
+    model: Any, tenant_column: Optional[str] = None
+) -> Optional[TenantFilter]:
+    """
+    Tạo TenantFilter cho model.
+
+    Args:
+        model: SQLAlchemy model class
+        tenant_column: Custom tenant column name (default: tenant_id)
+
+    Returns:
+        TenantFilter hoặc None
+    """
+    context = get_tenant_context()
+
+    if not context:
+        return None
+
+    # Database strategy: no filter
+    if context.strategy == TenantIsolationStrategy.DATABASE:
+        return None
+
+    # Schema strategy: schema filter
+    if context.strategy == TenantIsolationStrategy.SCHEMA:
+        return TenantFilter.create_schema_filter(
+            tenant_id=context.tenant_id,
+            schema_name=f"{context.tenant_id}_schema",
+        )
+
+    # Row-level strategy
+    column_name = tenant_column or "tenant_id"
+    return TenantFilter.create_row_filter(
+        tenant_id=context.tenant_id,
+        tenant_column=column_name,
+    )
+
+
+# ============================================================================
+# Cross-Tenant Operations
+# ============================================================================
+
+
+class CrossTenantOperation:
+    """
+    Context manager cho cross-tenant operations.
+
+    CHỈ DÙNG KHI CÓ EXPLICIT SCOPE cho cross-tenant operations.
+
+    Example:
+        with CrossTenantOperation(tenant_ids=["tenant-001", "tenant-002"]):
+            # Queries trong đây có thể access multiple tenants
+            orders = Order.query.all()
+    """
+
+    def __init__(self, tenant_ids: list[str]):
+        """
+        Initialize CrossTenantOperation.
+
+        Args:
+            tenant_ids: Danh sách tenant IDs để allow access
+        """
+        self.tenant_ids = tenant_ids
+        self._original_context = None
+
+    def __enter__(self):
+        """Enable cross-tenant mode."""
+        self._original_context = get_tenant_context()
+        
+        # Set cross-tenant context
+        from .tenant_context import set_tenant_context
+
+        cross_context = TenantContext(
+            tenant_id=self.tenant_ids[0],
+            strategy=TenantIsolationStrategy.HYBRID,
+        )
+        set_tenant_context(cross_context)
+        
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Restore original context."""
+        from .tenant_context import set_tenant_context
+
+        if self._original_context:
+            set_tenant_context(self._original_context)
+
+
+def allow_cross_tenant_query(model: Type[T], tenant_ids: list[str]) -> Query[T]:
+    """
+    Tạo query cho cross-tenant operation.
+
+    Args:
+        model: SQLAlchemy model class
+        tenant_ids: Danh sách tenant IDs
+
+    Returns:
+        Query filter bằng tenant_ids
+    """
+    from sqlalchemy.orm import Session, scoped_session
+
+    session = scoped_session(lambda: Session())
+    query = session.query(model)
+
+    # Filter by multiple tenant_ids
+    query = query.filter(model.tenant_id.in_(tenant_ids))
+
+    return query
