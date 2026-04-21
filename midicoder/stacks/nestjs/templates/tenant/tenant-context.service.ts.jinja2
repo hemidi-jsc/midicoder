@@ -1,0 +1,133 @@
+/**
+ * Tenant Context Service - Multi-Tenant Architecture.
+ * 
+ * Module này cung cấp tenant context propagation cho NestJS application.
+ * Sử dụng RequestScope để propagate tenant information qua request scope.
+ * 
+ * CP02: Multi-Tenant Architecture
+ */
+
+import { Injectable, RequestScoped } from '@nestjs/common';
+import { RequestContext } from '@nestjs/core';
+
+/**
+ * Tenant Isolation Strategy enum.
+ */
+export enum TenantIsolationStrategy {
+  DATABASE = 'database',
+  SCHEMA = 'schema',
+  ROW = 'row',
+  HYBRID = 'hybrid',
+}
+
+/**
+ * Tenant Context interface.
+ */
+export interface TenantContext {
+  /** Tenant ID - Định danh duy nhất của tenant */
+  tenantId: string;
+  /** Tenant Name - Tên display của tenant (optional) */
+  tenantName?: string;
+  /** Strategy - Isolation strategy đang dùng */
+  strategy: TenantIsolationStrategy;
+  /** Subdomain - Subdomain của tenant (nếu dùng subdomain routing) */
+  subdomain?: string;
+}
+
+/**
+ * Tenant Context Storage - Lưu tenant context cho current request.
+ */
+const TENANT_CONTEXT_KEY = Symbol('TENANT_CONTEXT');
+
+/**
+ * Tenant Context Service.
+ * 
+ * Service này quản lý tenant context cho current request.
+ * Được use với RequestScope để ensure isolation giữa requests.
+ */
+@Injectable()
+@RequestScoped()
+export class TenantContextService {
+  private tenantContext: TenantContext | null = null;
+
+  /**
+   * Set tenant context cho current request.
+   * 
+   * @param context - TenantContext để set
+   */
+  setTenantContext(context: TenantContext): void {
+    this.tenantContext = context;
+  }
+
+  /**
+   * Get tenant context hiện tại.
+   * 
+   * @returns TenantContext hoặc null nếu không có context
+   */
+  getTenantContext(): TenantContext | null {
+    return this.tenantContext;
+  }
+
+  /**
+   * Clear tenant context.
+   */
+  clearTenantContext(): void {
+    this.tenantContext = null;
+  }
+
+  /**
+   * Get tenant ID từ current context.
+   * 
+   * @returns Tenant ID hoặc null nếu không có context
+   */
+  getTenantId(): string | null {
+    return this.tenantContext?.tenantId ?? null;
+  }
+
+  /**
+   * Get tenant strategy từ current context.
+   * 
+   * @returns TenantIsolationStrategy (default: ROW)
+   */
+  getTenantStrategy(): TenantIsolationStrategy {
+    return this.tenantContext?.strategy ?? TenantIsolationStrategy.ROW;
+  }
+
+  /**
+   * Kiểm tra nếu current tenant là system tenant.
+   * 
+   * @returns True nếu là system tenant
+   */
+  isSystemTenant(): boolean {
+    return this.tenantContext?.tenantId === 'system' ?? false;
+  }
+
+  /**
+   * Kiểm tra nếu current tenant là super tenant.
+   * 
+   * @returns True nếu là super tenant
+   */
+  isSuperTenant(): boolean {
+    return this.tenantContext?.tenantId === 'super' ?? false;
+  }
+
+  /**
+   * Check nếu có tenant context.
+   * 
+   * @returns True nếu có tenant context
+   */
+  hasTenantContext(): boolean {
+    return this.tenantContext !== null;
+  }
+}
+
+/**
+ * Helper function để get TenantContextService từ request.
+ * 
+ * @param request - Express/HTTP request
+ * @returns TenantContextService instance
+ */
+export function getTenantContextService(request: any): TenantContextService {
+  const requestContext = new RequestContext(request);
+  return requestContext.getContext<TenantContextService>([TenantContextService])[0];
+}

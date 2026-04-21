@@ -1,0 +1,20 @@
+"""
+Tenant Models - Multi-Tenant Architecture.
+
+Module này chứa tenant models cho FastAPI stack.
+Import từ midicoder.contracts.tenant_models.
+
+CP02: Multi-Tenant Architecture
+"""
+
+from midicoder.contracts.tenant_models import (
+    TenantContext,
+    TenantFilter,
+    TenantIsolationStrategy,
+)
+
+__all__ = [
+    "TenantContext",
+    "TenantFilter",
+    "TenantIsolationStrategy",
+]
