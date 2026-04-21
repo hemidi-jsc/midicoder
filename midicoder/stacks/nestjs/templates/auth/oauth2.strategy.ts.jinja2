@@ -1,0 +1,145 @@
+/**
+ * OAuth2 Strategies - OAuth2/OIDC Integration cho NestJS.
+ * 
+ * Module này cung cấp OAuth2 strategies cho Google, GitHub, và custom providers.
+ * 
+ * CP03: Authentication & Authorization
+ */
+
+import { Injectable } from '@nestjs/common';
+import { PassportStrategy } from '@nestjs/passport';
+import { Strategy, VerifyCallback } from 'passport-google-oauth20';
+import { Strategy as GithubStrategy, Profile as GithubProfile } from 'passport-github2';
+
+/**
+ * OAuth2 User Info interface.
+ */
+export interface OAuth2UserInfo {
+  /** Provider name (google, github) */
+  provider: string;
+  /** Provider user ID */
+  providerUserId: string;
+  /** Email */
+  email?: string;
+  /** Display name */
+  name?: string;
+  /** Profile picture URL */
+  picture?: string;
+  /** Raw profile data */
+  profile: any;
+}
+
+/**
+ * Google OAuth2 Strategy.
+ * 
+ * Usage:
+ * 1. Register Google OAuth2 app tại https://console.developers.google.com
+ * 2. Set CLIENT_ID và CLIENT_SECRET trong environment
+ * 3. Configure redirect URL
+ */
+@Injectable()
+export class GoogleOAuthStrategy extends PassportStrategy(Strategy, 'google') {
+  constructor() {
+    super({
+      clientID: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+      callbackURL: '/auth/google/callback',
+      scope: ['email', 'profile'],
+    });
+  }
+
+  async validate(
+    accessToken: string,
+    refreshToken: string,
+    profile: any,
+    done: VerifyCallback,
+  ): Promise<any> {
+    try {
+      const { id, displayName, emails, photos } = profile;
+
+      const user: OAuth2UserInfo = {
+        provider: 'google',
+        providerUserId: id,
+        email: emails?.[0]?.value,
+        name: displayName,
+        picture: photos?.[0]?.value,
+        profile,
+      };
+
+      done(null, user);
+    } catch (error) {
+      done(error);
+    }
+  }
+}
+
+/**
+ * GitHub OAuth2 Strategy.
+ * 
+ * Usage:
+ * 1. Register GitHub OAuth2 app tại https://github.com/settings/developers
+ * 2. Set CLIENT_ID và CLIENT_SECRET trong environment
+ * 3. Configure redirect URL
+ */
+@Injectable()
+export class GithubOAuthStrategy extends PassportStrategy(GithubStrategy, 'github') {
+  constructor() {
+    super({
+      clientID: process.env.GITHUB_CLIENT_ID || '',
+      clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
+      callbackURL: '/auth/github/callback',
+      scope: ['user:email'],
+    });
+  }
+
+  async validate(
+    accessToken: string,
+    refreshToken: string,
+    profile: GithubProfile,
+    done: VerifyCallback,
+  ): Promise<any> {
+    try {
+      const { id, displayName, emails, photos } = profile;
+
+      const user: OAuth2UserInfo = {
+        provider: 'github',
+        providerUserId: id,
+        email: emails?.[0]?.value,
+        name: displayName,
+        picture: photos?.[0]?.value,
+        profile,
+      };
+
+      done(null, user);
+    } catch (error) {
+      done(error);
+    }
+  }
+}
+
+/**
+ * Custom OAuth2 Strategy base class.
+ * 
+ * Extend class này để implement custom OAuth2 provider.
+ */
+@Injectable()
+export abstract class CustomOAuth2Strategy extends PassportStrategy<any> {
+  constructor(
+    name: string,
+    protected readonly clientID: string,
+    protected readonly clientSecret: string,
+    protected readonly authorizationURL: string,
+    protected readonly tokenURL: string,
+  ) {
+    super(name);
+  }
+
+  abstract validate(
+    accessToken: string,
+    refreshToken: string,
+    profile: any,
+    done: VerifyCallback,
+  ): Promise<any>;
+
+  abstract getAuthorizationURL(): string;
+}
