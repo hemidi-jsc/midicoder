@@ -1,0 +1,261 @@
+"""
+JWT Authentication - Authentication cho FastAPI.
+
+Module này cung cấp JWT authentication cho FastAPI application.
+Hỗ trợ create token, verify token, và dependency injection.
+
+CP03: Authentication & Authorization
+"""
+
+import time
+from datetime import datetime, timedelta
+from typing import Any, Optional
+
+import jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel
+
+# Import tenant context
+from app.core.security.tenant_context import get_tenant_id
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+
+# JWT settings từ environment variables
+JWT_SECRET_KEY = "your-super-secret-key-change-in-production"
+JWT_ALGORITHM = "HS256"
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+
+# ============================================================================
+# JWT Token Models
+# ============================================================================
+
+
+class Token(BaseModel):
+    """JWT Token response model."""
+
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenData(BaseModel):
+    """JWT Token data (decoded)."""
+
+    user_id: Optional[str] = None
+    tenant_id: Optional[str] = None
+    roles: list[str] = []
+
+
+# ============================================================================
+# JWT Helper Functions
+# ============================================================================
+
+
+def create_access_token(
+    data: dict[str, Any],
+    expires_delta: Optional[timedelta] = None,
+) -> str:
+    """
+    Tạo JWT access token.
+
+    Args:
+        data: Data để encode vào token (user_id, tenant_id, roles, v.v.)
+        expires_delta: Thời gian hết hạn (optional, default: 30 minutes)
+
+    Returns:
+        JWT token string
+    """
+    to_encode = data.copy()
+
+    # Set expiration time
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(
+            minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+
+    # Encode token
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+    return encoded_jwt
+
+
+def verify_token(token: str) -> TokenData:
+    """
+    Verify JWT token và extract data.
+
+    Args:
+        token: JWT token string
+
+    Returns:
+        TokenData với decoded data
+
+    Raises:
+        HTTPException: Nếu token không valid
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token không hợp lệ hoặc đã hết hạn",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        user_id: Optional[str] = payload.get("sub")
+        tenant_id: Optional[str] = payload.get("tenant_id")
+        roles: list[str] = payload.get("roles", [])
+
+        if user_id is None:
+            raise credentials_exception
+
+        return TokenData(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            roles=roles,
+        )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token đã hết hạn",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise credentials_exception
+
+
+# ============================================================================
+# OAuth2 Password Bearer
+# ============================================================================
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
+
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+) -> TokenData:
+    """
+    Dependency để get current user từ JWT token.
+
+    Args:
+        token: JWT token từ Authorization header
+
+    Returns:
+        TokenData với user information
+
+    Raises:
+        HTTPException: Nếu token không valid
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token không tìm thấy",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return verify_token(token)
+
+
+async def get_current_active_user(
+    current_user: TokenData = Depends(get_current_user),
+) -> TokenData:
+    """
+    Dependency để get current active user.
+
+    Có thể extend để check user status (active, banned, v.v.).
+
+    Args:
+        current_user: Current user từ JWT token
+
+    Returns:
+        TokenData nếu user active
+
+    Raises:
+        HTTPException: Nếu user không active
+    """
+    # TODO: Check user status từ database
+    # if not current_user.active:
+    #     raise HTTPException(status_code=400, detail="User inactive")
+
+    return current_user
+
+
+# ============================================================================
+# Refresh Token
+# ============================================================================
+
+
+def create_refresh_token(user_id: str, tenant_id: Optional[str] = None) -> str:
+    """
+    Tạo refresh token.
+
+    Refresh token có expiration time dài hơn access token.
+
+    Args:
+        user_id: User ID
+        tenant_id: Tenant ID (optional)
+
+    Returns:
+        Refresh token string
+    """
+    data = {
+        "sub": user_id,
+        "tenant_id": tenant_id,
+        "type": "refresh",
+    }
+    # Refresh token expire after 7 days
+    expires_delta = timedelta(days=7)
+    return create_access_token(data=data, expires_delta=expires_delta)
+
+
+def verify_refresh_token(token: str) -> TokenData:
+    """
+    Verify refresh token.
+
+    Args:
+        token: Refresh token string
+
+    Returns:
+        TokenData với decoded data
+
+    Raises:
+        HTTPException: Nếu token không valid
+    """
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        token_type = payload.get("type")
+
+        # Ensure token is a refresh token
+        if token_type != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+            )
+
+        user_id: Optional[str] = payload.get("sub")
+        tenant_id: Optional[str] = payload.get("tenant_id")
+
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+            )
+
+        return TokenData(user_id=user_id, tenant_id=tenant_id)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token đã hết hạn",
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token không hợp lệ",
+        )

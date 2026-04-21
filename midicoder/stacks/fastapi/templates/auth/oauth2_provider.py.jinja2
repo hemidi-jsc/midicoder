@@ -1,0 +1,321 @@
+"""
+OAuth2 Provider - OAuth2/OIDC Integration cho FastAPI.
+
+Module này cung cấp OAuth2 authorization code flow cho FastAPI.
+Hỗ trợ Google, GitHub, và custom OAuth2 providers.
+
+CP03: Authentication & Authorization
+"""
+
+from typing import Any, Optional
+
+from fastapi import HTTPException, status
+from fastapi.security import OAuth2AuthorizationCodeBearer
+from pydantic import BaseModel
+
+
+# ============================================================================
+# OAuth2 Provider Configuration
+# ============================================================================
+
+
+class OAuth2ProviderConfig(BaseModel):
+    """
+    OAuth2 Provider configuration.
+
+    Attributes:
+        name: Provider name (google, github, custom)
+        client_id: OAuth2 client ID
+        client_secret: OAuth2 client secret
+        authorization_url: Authorization endpoint URL
+        token_url: Token endpoint URL
+        user_info_url: User info endpoint URL
+        scope: Required scopes
+    """
+
+    name: str
+    client_id: str
+    client_secret: str
+    authorization_url: str
+    token_url: str
+    user_info_url: str
+    scope: str = ""
+
+
+# ============================================================================
+# OAuth2 Token Models
+# ============================================================================
+
+
+class OAuth2Token(BaseModel):
+    """OAuth2 token response."""
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    refresh_token: Optional[str] = None
+    scope: Optional[str] = None
+
+
+class OAuth2UserInfo(BaseModel):
+    """OAuth2 user information."""
+
+    sub: str  # Subject (user ID)
+    name: Optional[str] = None
+    email: Optional[str] = None
+    picture: Optional[str] = None
+    # Provider-specific fields
+    provider: str
+    provider_user_id: str
+    extra: dict[str, Any] = {}
+
+
+# ============================================================================
+# OAuth2 Authorization Code Bearer
+# ============================================================================
+
+
+class OAuth2CodeBearer(OAuth2AuthorizationCodeBearer):
+    """
+    OAuth2 Authorization Code Bearer security scheme.
+
+    Sử dụng cho OAuth2 authorization code flow.
+    """
+
+    def __init__(
+        self,
+        authorization_url: str,
+        token_url: str,
+        scopes: dict[str, str],
+        scheme_name: str = "oauth2",
+        auto_error: bool = True,
+    ):
+        """
+        Initialize OAuth2CodeBearer.
+
+        Args:
+            authorization_url: Authorization endpoint URL
+            token_url: Token endpoint URL
+            scopes: OAuth2 scopes
+            scheme_name: Scheme name
+            auto_error: Auto error on missing token
+        """
+        super().__init__(
+            authorization_url=authorization_url,
+            token_url=token_url,
+            scopes=scopes,
+            scheme_name=scheme_name,
+            auto_error=auto_error,
+        )
+
+
+# ============================================================================
+# OAuth2 Provider Service
+# ============================================================================
+
+
+class OAuth2ProviderService:
+    """
+    OAuth2 Provider Service.
+
+    Service để handle OAuth2 flows (authorization, token exchange, user info).
+    """
+
+    def __init__(self, config: OAuth2ProviderConfig):
+        """
+        Initialize OAuth2ProviderService.
+
+        Args:
+            config: OAuth2ProviderConfig
+        """
+        self.config = config
+        self.name = config.name
+
+    def get_authorization_url(self, redirect_uri: str, state: str) -> str:
+        """
+        Generate OAuth2 authorization URL.
+
+        Args:
+            redirect_uri: Redirect URI sau khi authenticate
+            state: State parameter để prevent CSRF
+
+        Returns:
+            Authorization URL
+        """
+        params = {
+            "client_id": self.config.client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": self.config.scope,
+            "state": state,
+        }
+
+        # Build query string
+        query = "&".join(f"{k}={v}" for k, v in params.items())
+        return f"{self.config.authorization_url}?{query}"
+
+    async def get_access_token(self, code: str, redirect_uri: str) -> OAuth2Token:
+        """
+        Exchange authorization code for access token.
+
+        Args:
+            code: Authorization code
+            redirect_uri: Redirect URI
+
+        Returns:
+            OAuth2Token
+
+        Raises:
+            HTTPException: Nếu exchange failed
+        """
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.config.token_url,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": self.config.client_id,
+                    "client_secret": self.config.client_secret,
+                },
+            )
+
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_000_INTERNAL_SERVER_ERROR,
+                    detail=f"OAuth2 token exchange failed: {response.text}",
+                )
+
+            token_data = response.json()
+
+            return OAuth2Token(
+                access_token=token_data["access_token"],
+                token_type=token_data.get("token_type", "bearer"),
+                expires_in=token_data.get("expires_in", 3600),
+                refresh_token=token_data.get("refresh_token"),
+                scope=token_data.get("scope"),
+            )
+
+    async def get_user_info(self, access_token: str) -> OAuth2UserInfo:
+        """
+        Get user information từ OAuth2 provider.
+
+        Args:
+            access_token: OAuth2 access token
+
+        Returns:
+            OAuth2UserInfo
+
+        Raises:
+            HTTPException: Nếu fetch user info failed
+        """
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                self.config.user_info_url,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_000_INTERNAL_SERVER_ERROR,
+                    detail=f"OAuth2 user info fetch failed: {response.text}",
+                )
+
+            user_data = response.json()
+
+            return OAuth2UserInfo(
+                sub=user_data.get("sub") or user_data.get("id"),
+                name=user_data.get("name"),
+                email=user_data.get("email"),
+                picture=user_data.get("picture") or user_data.get("avatar_url"),
+                provider=self.name,
+                provider_user_id=user_data.get("sub") or user_data.get("id"),
+                extra=user_data,
+            )
+
+    async def refresh_access_token(self, refresh_token: str) -> OAuth2Token:
+        """
+        Refresh OAuth2 access token.
+
+        Args:
+            refresh_token: Refresh token
+
+        Returns:
+            OAuth2Token
+
+        Raises:
+            HTTPException: Nếu refresh failed
+        """
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.config.token_url,
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": self.config.client_id,
+                    "client_secret": self.config.client_secret,
+                },
+            )
+
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_000_INTERNAL_SERVER_ERROR,
+                    detail=f"OAuth2 token refresh failed: {response.text}",
+                )
+
+            token_data = response.json()
+
+            return OAuth2Token(
+                access_token=token_data["access_token"],
+                token_type=token_data.get("token_type", "bearer"),
+                expires_in=token_data.get("expires_in", 3600),
+                refresh_token=token_data.get("refresh_token"),
+                scope=token_data.get("scope"),
+            )
+
+
+# ============================================================================
+# Pre-configured OAuth2 Providers
+# ============================================================================
+
+
+def get_google_oauth2_config() -> OAuth2ProviderConfig:
+    """
+    Get Google OAuth2 configuration.
+
+    Returns:
+        OAuth2ProviderConfig cho Google
+    """
+    return OAuth2ProviderConfig(
+        name="google",
+        client_id="",  # Set từ environment variables
+        client_secret="",  # Set từ environment variables
+        authorization_url="https://accounts.google.com/o/oauth2/v2/auth",
+        token_url="https://oauth2.googleapis.com/token",
+        user_info_url="https://www.googleapis.com/oauth2/v3/userinfo",
+        scope="openid email profile",
+    )
+
+
+def get_github_oauth2_config() -> OAuth2ProviderConfig:
+    """
+    Get GitHub OAuth2 configuration.
+
+    Returns:
+        OAuth2ProviderConfig cho GitHub
+    """
+    return OAuth2ProviderConfig(
+        name="github",
+        client_id="",  # Set từ environment variables
+        client_secret="",  # Set từ environment variables
+        authorization_url="https://github.com/login/oauth/authorize",
+        token_url="https://github.com/login/oauth/access_token",
+        user_info_url="https://api.github.com/user",
+        scope="user:email",
+    )

@@ -1,0 +1,64 @@
+/**
+ * Authentication & Authorization Module cho NestJS.
+ * 
+ * Module này cung cấp đầy đủ auth support cho NestJS application:
+ * - jwt-auth.guard: JWT authentication guard
+ * - oauth2.strategy: OAuth2 strategies (Google, GitHub)
+ * - rbac.decorator: RBAC decorators (@Roles, @Permissions, @Policy)
+ * - permissions.module: Permission definitions
+ * 
+ * CP03 + CP04: Authentication & Authorization + RBAC & Policy Engine
+ * 
+ * Usage:
+ * import { AuthModule } from '@app/auth';
+ * 
+ * @Module({
+ *   imports: [AuthModule.forRoot()],
+ * })
+ * export class AppModule {}
+ */
+
+// JWT Auth
+export {
+  JwtAuthGuard,
+  JwtOptionalAuthGuard,
+  CurrentUser,
+  JwtPayload,
+  Public,
+  IS_PUBLIC_KEY,
+} from './jwt-auth.guard';
+
+// OAuth2 Strategies
+export {
+  GoogleOAuthStrategy,
+  GithubOAuthStrategy,
+  CustomOAuth2Strategy,
+  OAuth2UserInfo,
+} from './oauth2.strategy';
+
+// RBAC Decorators
+export {
+  Roles,
+  Permissions,
+  Policy,
+  RolesGuardFactory,
+  PermissionsGuardFactory,
+  PolicyGuardFactory,
+  ROLES_KEY,
+  PERMISSIONS_KEY,
+  POLICY_KEY,
+  Auth,
+  AuthConfig,
+} from './rbac.decorator';
+
+// Permissions
+export {
+  Permissions as PermissionsClass,
+  RESOURCE_PERMISSIONS,
+  ALL_PERMISSIONS,
+  getResourcePermissions,
+  hasPermission,
+  getPermissionById,
+  getActionFromPermission,
+  getResourceFromPermission,
+} from './permissions.module';
