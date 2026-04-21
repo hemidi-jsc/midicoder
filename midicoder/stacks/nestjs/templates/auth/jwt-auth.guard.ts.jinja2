@@ -1,0 +1,146 @@
+/**
+ * JWT Auth Guard - Authentication cho NestJS.
+ * 
+ * Guard này verify JWT token và inject user vào request.
+ * 
+ * CP03: Authentication & Authorization
+ */
+
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { Request } from 'express';
+
+/**
+ * JWT Payload interface.
+ */
+export interface JwtPayload {
+  /** User ID */
+  sub: string;
+  /** Tenant ID (optional) */
+  tenant_id?: string;
+  /** User roles */
+  roles?: string[];
+  /** Expiration time */
+  exp: number;
+  /** Issued at */
+  iat: number;
+}
+
+/**
+ * Current User interface.
+ */
+export interface CurrentUser {
+  /** User ID */
+  userId: string;
+  /** Tenant ID */
+  tenantId?: string;
+  /** User roles */
+  roles: string[];
+  /** Additional payload data */
+  payload: JwtPayload;
+}
+
+/**
+ * JWT Auth Guard.
+ * 
+ * Guard này:
+ * 1. Extract JWT token từ Authorization header
+ * 2. Verify token với JWT secret
+ * 3. Inject user vào request
+ */
+@Injectable()
+export class JwtAuthGuard implements CanActivate {
+  constructor(private readonly jwtService: JwtService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const token = this.extractTokenFromHeader(request);
+
+    if (!token) {
+      throw new UnauthorizedException('Token không tìm thấy');
+    }
+
+    try {
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+        secret: process.env.JWT_SECRET || 'your-secret-key',
+      });
+
+      // Inject user vào request
+      request['user'] = {
+        userId: payload.sub,
+        tenantId: payload.tenant_id,
+        roles: payload.roles || [],
+        payload,
+      } as CurrentUser;
+    } catch (error) {
+      throw new UnauthorizedException('Token không hợp lệ hoặc đã hết hạn');
+    }
+
+    return true;
+  }
+
+  private extractTokenFromHeader(request: Request): string | undefined {
+    const [type, token] = request.headers.authorization?.split(' ') ?? [];
+    return type === 'Bearer' ? token : undefined;
+  }
+}
+
+/**
+ * Public decorator - bypass auth guard.
+ * 
+ * Usage:
+ * @Public()
+ * @Get('public')
+ * publicEndpoint() { ... }
+ */
+export const Public = () => SetMetadata('public', true);
+
+/**
+ * Custom decorator key.
+ */
+export const IS_PUBLIC_KEY = 'isPublic';
+
+/**
+ * Public Guard - cho phép public routes bypass auth.
+ */
+@Injectable()
+export class JwtOptionalAuthGuard implements CanActivate {
+  constructor(private readonly jwtService: JwtService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const token = this.extractTokenFromHeader(request);
+
+    if (token) {
+      try {
+        const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+          secret: process.env.JWT_SECRET || 'your-secret-key',
+        });
+
+        request['user'] = {
+          userId: payload.sub,
+          tenantId: payload.tenant_id,
+          roles: payload.roles || [],
+          payload,
+        } as CurrentUser;
+      } catch (error) {
+        // Token không valid - user vẫn được access như guest
+        request['user'] = undefined;
+      }
+    } else {
+      request['user'] = undefined;
+    }
+
+    return true;
+  }
+
+  private extractTokenFromHeader(request: Request): string | undefined {
+    const [type, token] = request.headers.authorization?.split(' ') ?? [];
+    return type === 'Bearer' ? token : undefined;
+  }
+}

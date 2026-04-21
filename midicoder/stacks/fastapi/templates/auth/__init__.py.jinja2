@@ -1,0 +1,124 @@
+"""
+Authentication & Authorization Module cho FastAPI.
+
+Module này cung cấp đầy đủ auth support cho FastAPI application:
+- jwt_auth: JWT authentication
+- oauth2_provider: OAuth2/OIDC integration
+- rbac_decorators: RBAC decorators và dependencies
+- rbac_service: RBAC service cho authorization checks
+- permissions: Permission definitions
+
+CP03 + CP04: Authentication & Authorization + RBAC & Policy Engine
+
+Usage:
+    from app.core.security import (
+        get_current_user,
+        require_permission,
+        require_role,
+        Permissions,
+    )
+"""
+
+# JWT Auth
+from .jwt_auth import (
+    Token,
+    TokenData,
+    create_access_token,
+    create_refresh_token,
+    get_current_active_user,
+    get_current_user,
+    oauth2_scheme,
+    verify_refresh_token,
+    verify_token,
+)
+
+# OAuth2 Provider
+from .oauth2_provider import (
+    OAuth2CodeBearer,
+    OAuth2ProviderConfig,
+    OAuth2ProviderService,
+    OAuth2Token,
+    OAuth2UserInfo,
+    get_github_oauth2_config,
+    get_google_oauth2_config,
+)
+
+# RBAC Decorators
+from .rbac_decorators import (
+    require_all_roles,
+    require_any_role,
+    require_permission,
+    require_policy,
+    require_role,
+    get_required_permissions,
+    get_required_roles,
+)
+
+# RBAC Service
+from .rbac_service import (
+    PolicyService,
+    RBACService,
+    get_policy_service,
+    get_rbac_service,
+    init_policy_service,
+    init_rbac_service,
+)
+
+# Permissions
+from .permissions import (
+    ALL_PERMISSIONS,
+    CRUD_PERMISSIONS,
+    Permissions,
+    RESOURCE_PERMISSIONS,
+    get_action_from_permission,
+    get_permission_by_action,
+    get_resource_from_permission,
+    get_resource_permissions,
+    has_permission,
+)
+
+__all__ = [
+    # JWT Auth
+    "Token",
+    "TokenData",
+    "create_access_token",
+    "create_refresh_token",
+    "get_current_active_user",
+    "get_current_user",
+    "oauth2_scheme",
+    "verify_refresh_token",
+    "verify_token",
+    # OAuth2 Provider
+    "OAuth2CodeBearer",
+    "OAuth2ProviderConfig",
+    "OAuth2ProviderService",
+    "OAuth2Token",
+    "OAuth2UserInfo",
+    "get_github_oauth2_config",
+    "get_google_oauth2_config",
+    # RBAC Decorators
+    "require_all_roles",
+    "require_any_role",
+    "require_permission",
+    "require_policy",
+    "require_role",
+    "get_required_permissions",
+    "get_required_roles",
+    # RBAC Service
+    "PolicyService",
+    "RBACService",
+    "get_policy_service",
+    "get_rbac_service",
+    "init_policy_service",
+    "init_rbac_service",
+    # Permissions
+    "ALL_PERMISSIONS",
+    "CRUD_PERMISSIONS",
+    "Permissions",
+    "RESOURCE_PERMISSIONS",
+    "get_action_from_permission",
+    "get_permission_by_action",
+    "get_resource_from_permission",
+    "get_resource_permissions",
+    "has_permission",
+]

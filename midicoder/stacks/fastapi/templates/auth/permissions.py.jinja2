@@ -1,0 +1,235 @@
+"""
+Permissions - Permission Definitions cho FastAPI.
+
+Module này định nghĩa tất cả permissions cho application.
+Permissions được group theo resource.
+
+CP03: Authentication & Authorization
+"""
+
+from typing import Set
+
+
+# ============================================================================
+# Permission Constants
+# ============================================================================
+
+
+class Permissions:
+    """
+    Permission constants cho tất cả resources.
+
+    Format: resource.action (ví dụ: order.create)
+    """
+
+    # User permissions
+    USER_READ = "user.read"
+    USER_CREATE = "user.create"
+    USER_UPDATE = "user.update"
+    USER_DELETE = "user.delete"
+    USER_LIST = "user.list"
+
+    # Order permissions
+    ORDER_READ = "order.read"
+    ORDER_CREATE = "order.create"
+    ORDER_UPDATE = "order.update"
+    ORDER_DELETE = "order.delete"
+    ORDER_LIST = "order.list"
+
+    # Product permissions
+    PRODUCT_READ = "product.read"
+    PRODUCT_CREATE = "product.create"
+    PRODUCT_UPDATE = "product.update"
+    PRODUCT_DELETE = "product.delete"
+    PRODUCT_LIST = "product.list"
+
+    # Customer permissions
+    CUSTOMER_READ = "customer.read"
+    CUSTOMER_CREATE = "customer.create"
+    CUSTOMER_UPDATE = "customer.update"
+    CUSTOMER_DELETE = "customer.delete"
+    CUSTOMER_LIST = "customer.list"
+
+    # Payment permissions
+    PAYMENT_READ = "payment.read"
+    PAYMENT_CREATE = "payment.create"
+    PAYMENT_REFUND = "payment.refund"
+    PAYMENT_LIST = "payment.list"
+
+    # Inventory permissions
+    INVENTORY_READ = "inventory.read"
+    INVENTORY_UPDATE = "inventory.update"
+    INVENTORY_LIST = "inventory.list"
+
+    # Report permissions
+    REPORT_READ = "report.read"
+    REPORT_GENERATE = "report.generate"
+    REPORT_EXPORT = "report.export"
+
+    # Admin permissions
+    ADMIN_DASHBOARD = "admin.dashboard"
+    ADMIN_SETTINGS = "admin.settings"
+    ADMIN_USERS = "admin.users"
+    ADMIN_ROLES = "admin.roles"
+    ADMIN_PERMISSIONS = "admin.permissions"
+
+    # System permissions
+    SYSTEM_CONFIG = "system.config"
+    SYSTEM_LOGS = "system.logs"
+    SYSTEM_CACHE = "system.cache"
+
+
+# ============================================================================
+# Permission Groups
+# ============================================================================
+
+
+# Permission groups theo resource
+RESOURCE_PERMISSIONS: dict[str, Set[str]] = {
+    "user": {
+        Permissions.USER_READ,
+        Permissions.USER_CREATE,
+        Permissions.USER_UPDATE,
+        Permissions.USER_DELETE,
+        Permissions.USER_LIST,
+    },
+    "order": {
+        Permissions.ORDER_READ,
+        Permissions.ORDER_CREATE,
+        Permissions.ORDER_UPDATE,
+        Permissions.ORDER_DELETE,
+        Permissions.ORDER_LIST,
+    },
+    "product": {
+        Permissions.PRODUCT_READ,
+        Permissions.PRODUCT_CREATE,
+        Permissions.PRODUCT_UPDATE,
+        Permissions.PRODUCT_DELETE,
+        Permissions.PRODUCT_LIST,
+    },
+    "customer": {
+        Permissions.CUSTOMER_READ,
+        Permissions.CUSTOMER_CREATE,
+        Permissions.CUSTOMER_UPDATE,
+        Permissions.CUSTOMER_DELETE,
+        Permissions.CUSTOMER_LIST,
+    },
+    "payment": {
+        Permissions.PAYMENT_READ,
+        Permissions.PAYMENT_CREATE,
+        Permissions.PAYMENT_REFUND,
+        Permissions.PAYMENT_LIST,
+    },
+    "inventory": {
+        Permissions.INVENTORY_READ,
+        Permissions.INVENTORY_UPDATE,
+        Permissions.INVENTORY_LIST,
+    },
+    "report": {
+        Permissions.REPORT_READ,
+        Permissions.REPORT_GENERATE,
+        Permissions.REPORT_EXPORT,
+    },
+    "admin": {
+        Permissions.ADMIN_DASHBOARD,
+        Permissions.ADMIN_SETTINGS,
+        Permissions.ADMIN_USERS,
+        Permissions.ADMIN_ROLES,
+        Permissions.ADMIN_PERMISSIONS,
+    },
+    "system": {
+        Permissions.SYSTEM_CONFIG,
+        Permissions.SYSTEM_LOGS,
+        Permissions.SYSTEM_CACHE,
+    },
+}
+
+
+# CRUD permissions
+CRUD_PERMISSIONS = {
+    "read": {"user.read", "order.read", "product.read", "customer.read"},
+    "create": {"user.create", "order.create", "product.create", "customer.create"},
+    "update": {"user.update", "order.update", "product.update", "customer.update"},
+    "delete": {"user.delete", "order.delete", "product.delete", "customer.delete"},
+}
+
+
+# All permissions
+ALL_PERMISSIONS: Set[str] = set()
+for resource_permissions in RESOURCE_PERMISSIONS.values():
+    ALL_PERMISSIONS.update(resource_permissions)
+
+
+# ============================================================================
+# Permission Helper Functions
+# ============================================================================
+
+
+def get_resource_permissions(resource: str) -> Set[str]:
+    """
+    Lấy tất cả permissions cho resource.
+
+    Args:
+        resource: Resource name (user, order, product, v.v.)
+
+    Returns:
+        Set của permissions cho resource
+    """
+    return RESOURCE_PERMISSIONS.get(resource, set())
+
+
+def has_permission(permission: str) -> bool:
+    """
+    Check nếu permission tồn tại.
+
+    Args:
+        permission: Permission ID
+
+    Returns:
+        True nếu permission tồn tại
+    """
+    return permission in ALL_PERMISSIONS
+
+
+def get_permission_by_action(
+    resource: str, action: str
+) -> str:
+    """
+    Format permission ID từ resource và action.
+
+    Args:
+        resource: Resource name
+        action: Action (read, create, update, delete, list)
+
+    Returns:
+        Permission ID
+    """
+    return f"{resource}.{action}"
+
+
+def get_action_from_permission(permission: str) -> str:
+    """
+    Extract action từ permission ID.
+
+    Args:
+        permission: Permission ID
+
+    Returns:
+        Action (read, create, update, delete, v.v.)
+    """
+    parts = permission.split(".")
+    return parts[-1] if len(parts) > 1 else permission
+
+
+def get_resource_from_permission(permission: str) -> str:
+    """
+    Extract resource từ permission ID.
+
+    Args:
+        permission: Permission ID
+
+    Returns:
+        Resource name
+    """
+    parts = permission.split(".")
+    return parts[0] if len(parts) > 0 else permission

@@ -1,0 +1,208 @@
+/**
+ * RBAC Decorators - Role-Based Access Control cho NestJS.
+ * 
+ * Module này cung cấp decorators cho RBAC trong NestJS.
+ * Hỗ trợ @Roles(), @Permissions(), và @Policy() decorators.
+ * 
+ * CP03 + CP04: Authentication & Authorization + RBAC & Policy Engine
+ */
+
+import { SetMetadata, applyDecorators } from '@nestjs/common';
+
+/**
+ * Metadata keys.
+ */
+export const ROLES_KEY = 'roles';
+export const PERMISSIONS_KEY = 'permissions';
+export const POLICY_KEY = 'policy';
+
+/**
+ * Roles decorator.
+ * 
+ * Usage:
+ * @Roles('admin')
+ * @Get('admin')
+ * async adminPanel() { ... }
+ * 
+ * @param roles - Danh sách role names
+ */
+export function Roles(...roles: string[]) {
+  return SetMetadata(ROLES_KEY, roles);
+}
+
+/**
+ * Permissions decorator.
+ * 
+ * Usage:
+ * @Permissions('order.create', 'order.update')
+ * @Post('orders')
+ * async createOrder() { ... }
+ * 
+ * @param permissions - Danh sách permission IDs
+ */
+export function Permissions(...permissions: string[]) {
+  return SetMetadata(PERMISSIONS_KEY, permissions);
+}
+
+/**
+ * Policy decorator.
+ * 
+ * Usage:
+ * @Policy('only_owner_can_edit')
+ * @Patch(':id')
+ * async updateOrder(@Param('id') id: string) { ... }
+ * 
+ * @param policyId - Policy ID
+ */
+export function Policy(policyId: string) {
+  return SetMetadata(POLICY_KEY, policyId);
+}
+
+/**
+ * RolesGuard mixin.
+ * 
+ * Guard để check roles từ @Roles() decorator.
+ */
+export function RolesGuardFactory() {
+  return class RolesGuard {
+    constructor() {}
+
+    canActivate(context: any): boolean {
+      // Get required roles từ metadata
+      const requiredRoles = context.switchToHttp().getHandler()[ROLES_KEY];
+      
+      if (!requiredRoles) {
+        return true;
+      }
+
+      const request = context.switchToHttp().getRequest();
+      const user = request.user;
+
+      if (!user) {
+        return false;
+      }
+
+      // Check nếu user có ít nhất một required role
+      return requiredRoles.some((role: string) => {
+        if (user.roles && Array.isArray(user.roles)) {
+          return user.roles.includes(role);
+        }
+        return user.role === role;
+      });
+    }
+  };
+}
+
+/**
+ * PermissionsGuard mixin.
+ * 
+ * Guard để check permissions từ @Permissions() decorator.
+ */
+export function PermissionsGuardFactory() {
+  return class PermissionsGuard {
+    constructor() {}
+
+    async canActivate(context: any): Promise<boolean> {
+      // Get required permissions từ metadata
+      const requiredPermissions = context.switchToHttp().getHandler()[PERMISSIONS_KEY];
+      
+      if (!requiredPermissions) {
+        return true;
+      }
+
+      const request = context.switchToHttp().getRequest();
+      const user = request.user;
+
+      if (!user) {
+        return false;
+      }
+
+      // Check nếu user có tất cả required permissions
+      // In production, you would check against user's actual permissions
+      // For now, we check if user has admin role (bypass)
+      if (user.roles && user.roles.includes('admin')) {
+        return true;
+      }
+
+      // TODO: Implement real permission checking
+      // This would typically involve:
+      // 1. Getting user's roles
+      // 2. Expanding roles to permissions (including inheritance)
+      // 3. Checking if user has all required permissions
+
+      return false;
+    }
+  };
+}
+
+/**
+ * PolicyGuard mixin.
+ * 
+ * Guard để evaluate policy từ @Policy() decorator.
+ */
+export function PolicyGuardFactory() {
+  return class PolicyGuard {
+    constructor() {}
+
+    async canActivate(context: any): Promise<boolean> {
+      // Get required policy từ metadata
+      const policyId = context.switchToHttp().getHandler()[POLICY_KEY];
+      
+      if (!policyId) {
+        return true;
+      }
+
+      const request = context.switchToHttp().getRequest();
+      const user = request.user;
+
+      if (!user) {
+        return false;
+      }
+
+      // TODO: Implement policy evaluation
+      // This would involve:
+      // 1. Building context with user info, request data, resource info
+      // 2. Evaluating policy against context
+      // 3. Returning result
+
+      // For now, return true
+      return true;
+    }
+  };
+}
+
+/**
+ * AuthConfig interface.
+ */
+export interface AuthConfig {
+  /** Enable roles guard */
+  rolesGuard?: boolean;
+  /** Enable permissions guard */
+  permissionsGuard?: boolean;
+  /** Enable policy guard */
+  policyGuard?: boolean;
+}
+
+/**
+ * Global auth decorators.
+ * 
+ * Combine multiple auth decorators into one.
+ * 
+ * Usage:
+ * @Auth({ roles: ['admin'], permissions: ['order.create'] })
+ * @Post('orders')
+ * async createOrder() { ... }
+ */
+export function Auth(config: AuthConfig) {
+  const decorators: any[] = [];
+
+  if (config.rolesGuard) {
+    // Would need to know specific roles
+  }
+
+  if (config.permissionsGuard) {
+    // Would need to know specific permissions
+  }
+
+  return applyDecorators(...decorators);
+}

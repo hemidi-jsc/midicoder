@@ -1,0 +1,194 @@
+/**
+ * Permissions Module - Permission Definitions cho NestJS.
+ * 
+ * Module này định nghĩa tất cả permissions cho application.
+ * Permissions được group theo resource.
+ * 
+ * CP03: Authentication & Authorization
+ */
+
+/**
+ * Permission constants.
+ * 
+ * Format: resource.action (ví dụ: order.create)
+ */
+export class Permissions {
+  // User permissions
+  static readonly USER_READ = 'user.read';
+  static readonly USER_CREATE = 'user.create';
+  static readonly USER_UPDATE = 'user.update';
+  static readonly USER_DELETE = 'user.delete';
+  static readonly USER_LIST = 'user.list';
+
+  // Order permissions
+  static readonly ORDER_READ = 'order.read';
+  static readonly ORDER_CREATE = 'order.create';
+  static readonly ORDER_UPDATE = 'order.update';
+  static readonly ORDER_DELETE = 'order.delete';
+  static readonly ORDER_LIST = 'order.list';
+
+  // Product permissions
+  static readonly PRODUCT_READ = 'product.read';
+  static readonly PRODUCT_CREATE = 'product.create';
+  static readonly PRODUCT_UPDATE = 'product.update';
+  static readonly PRODUCT_DELETE = 'product.delete';
+  static readonly PRODUCT_LIST = 'product.list';
+
+  // Customer permissions
+  static readonly CUSTOMER_READ = 'customer.read';
+  static readonly CUSTOMER_CREATE = 'customer.create';
+  static readonly CUSTOMER_UPDATE = 'customer.update';
+  static readonly CUSTOMER_DELETE = 'customer.delete';
+  static readonly CUSTOMER_LIST = 'customer.list';
+
+  // Payment permissions
+  static readonly PAYMENT_READ = 'payment.read';
+  static readonly PAYMENT_CREATE = 'payment.create';
+  static readonly PAYMENT_REFUND = 'payment.refund';
+  static readonly PAYMENT_LIST = 'payment.list';
+
+  // Inventory permissions
+  static readonly INVENTORY_READ = 'inventory.read';
+  static readonly INVENTORY_UPDATE = 'inventory.update';
+  static readonly INVENTORY_LIST = 'inventory.list';
+
+  // Report permissions
+  static readonly REPORT_READ = 'report.read';
+  static readonly REPORT_GENERATE = 'report.generate';
+  static readonly REPORT_EXPORT = 'report.export';
+
+  // Admin permissions
+  static readonly ADMIN_DASHBOARD = 'admin.dashboard';
+  static readonly ADMIN_SETTINGS = 'admin.settings';
+  static readonly ADMIN_USERS = 'admin.users';
+  static readonly ADMIN_ROLES = 'admin.roles';
+  static readonly ADMIN_PERMISSIONS = 'admin.permissions';
+
+  // System permissions
+  static readonly SYSTEM_CONFIG = 'system.config';
+  static readonly SYSTEM_LOGS = 'system.logs';
+  static readonly SYSTEM_CACHE = 'system.cache';
+}
+
+/**
+ * Resource permissions map.
+ */
+export const RESOURCE_PERMISSIONS: Record<string, string[]> = {
+  user: [
+    Permissions.USER_READ,
+    Permissions.USER_CREATE,
+    Permissions.USER_UPDATE,
+    Permissions.USER_DELETE,
+    Permissions.USER_LIST,
+  ],
+  order: [
+    Permissions.ORDER_READ,
+    Permissions.ORDER_CREATE,
+    Permissions.ORDER_UPDATE,
+    Permissions.ORDER_DELETE,
+    Permissions.ORDER_LIST,
+  ],
+  product: [
+    Permissions.PRODUCT_READ,
+    Permissions.PRODUCT_CREATE,
+    Permissions.PRODUCT_UPDATE,
+    Permissions.PRODUCT_DELETE,
+    Permissions.PRODUCT_LIST,
+  ],
+  customer: [
+    Permissions.CUSTOMER_READ,
+    Permissions.CUSTOMER_CREATE,
+    Permissions.CUSTOMER_UPDATE,
+    Permissions.CUSTOMER_DELETE,
+    Permissions.CUSTOMER_LIST,
+  ],
+  payment: [
+    Permissions.PAYMENT_READ,
+    Permissions.PAYMENT_CREATE,
+    Permissions.PAYMENT_REFUND,
+    Permissions.PAYMENT_LIST,
+  ],
+  inventory: [
+    Permissions.INVENTORY_READ,
+    Permissions.INVENTORY_UPDATE,
+    Permissions.INVENTORY_LIST,
+  ],
+  report: [
+    Permissions.REPORT_READ,
+    Permissions.REPORT_GENERATE,
+    Permissions.REPORT_EXPORT,
+  ],
+  admin: [
+    Permissions.ADMIN_DASHBOARD,
+    Permissions.ADMIN_SETTINGS,
+    Permissions.ADMIN_USERS,
+    Permissions.ADMIN_ROLES,
+    Permissions.ADMIN_PERMISSIONS,
+  ],
+  system: [
+    Permissions.SYSTEM_CONFIG,
+    Permissions.SYSTEM_LOGS,
+    Permissions.SYSTEM_CACHE,
+  ],
+};
+
+/**
+ * All permissions set.
+ */
+export const ALL_PERMISSIONS = new Set<string>();
+Object.values(RESOURCE_PERMISSIONS).forEach((permissions) => {
+  permissions.forEach((p) => ALL_PERMISSIONS.add(p));
+});
+
+/**
+ * Get permissions for a resource.
+ * 
+ * @param resource - Resource name
+ * @returns Permissions array
+ */
+export function getResourcePermissions(resource: string): string[] {
+  return RESOURCE_PERMISSIONS[resource] || [];
+}
+
+/**
+ * Check if permission exists.
+ * 
+ * @param permission - Permission ID
+ * @returns True if permission exists
+ */
+export function hasPermission(permission: string): boolean {
+  return ALL_PERMISSIONS.has(permission);
+}
+
+/**
+ * Format permission ID from resource and action.
+ * 
+ * @param resource - Resource name
+ * @param action - Action (read, create, update, delete, list)
+ * @returns Permission ID
+ */
+export function getPermissionById(resource: string, action: string): string {
+  return `${resource}.${action}`;
+}
+
+/**
+ * Extract action from permission ID.
+ * 
+ * @param permission - Permission ID
+ * @returns Action
+ */
+export function getActionFromPermission(permission: string): string {
+  const parts = permission.split('.');
+  return parts[parts.length - 1];
+}
+
+/**
+ * Extract resource from permission ID.
+ * 
+ * @param permission - Permission ID
+ * @returns Resource name
+ */
+export function getResourceFromPermission(permission: string): string {
+  const parts = permission.split('.');
+  return parts[0];
+}
