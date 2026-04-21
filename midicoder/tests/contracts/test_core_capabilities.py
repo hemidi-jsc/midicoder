@@ -403,11 +403,11 @@ class TestCoreCapabilitiesRegistry:
         assert registry.event is not None
         assert registry.audit is not None
 
-    def test_get_all_capabilities_returns_16(self):
-        """Kiểm tra registry trả về đúng 16 capabilities."""
+    def test_get_all_capabilities_returns_17(self):
+        """Kiểm tra registry trả về đúng 17 capabilities (16 + 1 streaming)."""
         capabilities = CoreCapabilitiesRegistry.get_all_capabilities()
 
-        assert len(capabilities) == 16
+        assert len(capabilities) == 17
 
     def test_get_capability_by_id_finds_capability(self):
         """Kiểm tra get_capability_by_id tìm thấy capability."""
@@ -423,10 +423,10 @@ class TestCoreCapabilitiesRegistry:
         assert cap is None
 
     def test_get_capability_ids_returns_all_ids(self):
-        """Kiểm tra get_capability_ids trả về danh sách 16 IDs."""
+        """Kiểm tra get_capability_ids trả về danh sách 17 IDs."""
         ids = CoreCapabilitiesRegistry.get_capability_ids()
 
-        assert len(ids) == 16
+        assert len(ids) == 17
         assert "authorize_permission" in ids
         assert "create_record" in ids
         assert "write_audit_log" in ids
@@ -437,12 +437,13 @@ class TestCoreCapabilitiesRegistry:
 
         assert "total" in stats
         assert "by_category" in stats
-        assert stats["total"] == 16
+        assert stats["total"] == 17
         assert stats["by_category"]["authorization"] == 3
         assert stats["by_category"]["data_operations"] == 5
         assert stats["by_category"]["transaction"] == 3
         assert stats["by_category"]["event_integration"] == 3
         assert stats["by_category"]["audit_observability"] == 2
+        assert stats["by_category"]["streaming"] == 1
 
     def test_all_16_capabilities_present(self):
         """Kiểm tra tất cả 16 core capabilities đều có mặt."""

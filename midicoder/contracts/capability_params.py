@@ -200,24 +200,62 @@ class WorkflowDefinitionParams(BaseCapabilityParams):
     Params cho workflow_definition capability (CP05).
     
     Workflow định nghĩa business process với states và transitions.
+    Enhanced với guard conditions, action hooks, parallel states, sub-workflows, và versioning.
     
     Fields:
-        states: Danh sách states trong workflow
+        states: Danh sách states trong workflow (list[str] hoặc list[dict] cho rich definitions)
         transitions: Danh sách transitions giữa states
         start_state: State bắt đầu
         end_states: Danh sách end states
         compensation: Compensation actions cho rollback
         human_tasks: Human tasks/approvals
         timers: Timers và delays
+        # E11-002 Enhancements:
+        guard_conditions: Dict mapping transition IDs đến guard conditions (expressions, messages, on_fail)
+        action_hooks: Dict với on_entry, on_exit, on_transition hooks cho states/transitions
+        parallel_states: Danh sách states chạy song song (cho parallel workflows)
+        sub_workflows: Danh sách sub-workflow references (reusable templates)
+        versioning: Version info (semantic versioning, backward_compatible, migration_guide)
     
     Example:
         {
-            "states": ["draft", "approved", "rejected", "completed"],
-            "transitions": [...],
+            "states": ["draft", "submitted", "approved", "completed"],
+            "transitions": [
+                {"from": "draft", "to": "submitted"},
+                {"from": "submitted", "to": "approved", "guard": "total > 1000"}
+            ],
             "start_state": "draft",
             "end_states": ["completed", "rejected"],
+            "guard_conditions": {
+                "submitted_to_approved": {
+                    "expression": "total > 1000",
+                    "message": "Đơn hàng trên 1000 cần phê duyệt",
+                    "on_fail": "reject_order"
+                }
+            },
+            "action_hooks": {
+                "on_entry": {
+                    "approved": ["create_invoice", "notify_customer"]
+                },
+                "on_exit": {
+                    "draft": ["cleanup_temp_files"]
+                },
+                "on_transition": {
+                    "submitted_to_approved": ["audit_log", "send_confirmation"]
+                }
+            },
+            "parallel_states": ["payment_verification", "inventory_check"],
+            "sub_workflows": [
+                {"ref": "manager_approval", "on": "total > 1000000"}
+            ],
+            "versioning": {
+                "type": "semantic",
+                "version": "1.0.0",
+                "backward_compatible": True
+            },
             "compensation": [...],
-            "human_tasks": [...]
+            "human_tasks": [...],
+            "timers": [...]
         }
     """
 
@@ -228,6 +266,12 @@ class WorkflowDefinitionParams(BaseCapabilityParams):
     compensation: NotRequired[list[dict[str, Any]]]
     human_tasks: NotRequired[list[dict[str, Any]]]
     timers: NotRequired[list[dict[str, Any]]]
+    # E11-002: Enhanced fields for advanced workflows
+    guard_conditions: NotRequired[dict[str, dict[str, Any]]]  # Transition ID -> {expression, message, on_fail}
+    action_hooks: NotRequired[dict[str, dict[str, list[str]]]]  # {on_entry, on_exit, on_transition} -> state/transition -> actions
+    parallel_states: NotRequired[list[str]]  # States that run in parallel
+    sub_workflows: NotRequired[list[dict[str, Any] | str]]  # Sub-workflow references with optional conditions
+    versioning: NotRequired[dict[str, Any]]  # {type: "semantic", version, backward_compatible, migration_guide}
 
 
 class RuleEngineParams(BaseCapabilityParams):
@@ -394,24 +438,51 @@ class OutboundIntegrationParams(BaseCapabilityParams):
     Params cho outbound_integration capability (CP11).
     
     Outbound integration là outgoing calls đến external systems.
+    Enhanced với payment-specific config cho payment gateways.
     
     Fields:
         target_system: Target system ID/name
         endpoint: Endpoint URL
-        auth_type: Authentication type ("bearer" | "basic" | "api_key")
+        auth_type: Authentication type ("bearer" | "basic" | "api_key" | "oauth2" | "sig_v4" | "mutual_tls")
         request_template: Request template
         retry_policy: Retry policy
         timeout_ms: Timeout cho request
         transforms: Data transformations
+        # E11-003: Payment-specific configuration
+        payment_config: Optional payment-specific settings (idempotency, PCI, 3DS, fraud, etc.)
+    
+    Payment Config Fields:
+        idempotency_key: Unique key để prevent duplicate charges
+        idempotency_ttl_seconds: TTL cho idempotency key
+        pci_compliance: Enable PCI-DSS compliance mode
+        pci_mode: "passthrough" | "tokenized"
+        3ds_enabled: Enable 3D Secure (3DS) for card payments
+        3ds_version: 3DS version (e.g., "2.2.0")
+        fraud_check: Enable fraud detection
+        fraud_service: Fraud service (e.g., "stripe_radar")
+        capture_mode: "auto" | "manual" | "auth_only"
+        split_enabled: Enable split payments
+        refund_enabled: Enable refunds
     
     Example:
         {
             "target_system": "stripe",
-            "endpoint": "https://api.stripe.com/v1/charges",
+            "endpoint": "https://api.stripe.com/v1/payment_intents",
             "auth_type": "bearer",
-            "request_template": {...},
-            "retry_policy": {"max_retries": 3},
-            "timeout_ms": 30000
+            "timeout_ms": 30000,
+            "retry_policy": {"max_retries": 3, "backoff_multiplier": 2},
+            "payment_config": {
+                "idempotency_key": "order_{id}_payment",
+                "pci_compliance": True,
+                "pci_mode": "tokenized",
+                "3ds_enabled": True,
+                "3ds_version": "2.2.0",
+                "fraud_check": True,
+                "fraud_service": "stripe_radar",
+                "capture_mode": "manual",
+                "split_enabled": True,
+                "refund_enabled": True
+            }
         }
     """
 
@@ -422,6 +493,8 @@ class OutboundIntegrationParams(BaseCapabilityParams):
     retry_policy: NotRequired[dict[str, Any]]
     timeout_ms: NotRequired[int]
     transforms: NotRequired[list[dict[str, Any]]]
+    # E11-003: Payment-specific configuration
+    payment_config: NotRequired[dict[str, Any]]  # idempotency, PCI, 3DS, fraud, capture, split, refunds
 
 
 class InboundIntegrationParams(BaseCapabilityParams):

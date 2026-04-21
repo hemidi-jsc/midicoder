@@ -481,7 +481,7 @@ class DataOperationsCoreCapabilities:
         default_factory=lambda: CoreCapability(
             id="query_records",
             name="Query Records",
-            description="Query records từ database với pagination strategy, cache hint và read preference",
+            description="Query records từ database với pagination strategy, cache hint, read preference và geospatial filters",
             params_schema={
                 # Core params
                 "entity": {
@@ -492,7 +492,14 @@ class DataOperationsCoreCapabilities:
                 "filter": {
                     "type": "object",
                     "required": False,
-                    "description": "Filter conditions"
+                    "description": "Filter conditions (supports geospatial: geo_within_radius, geo_nearest, geo_bounding_box)",
+                    "example": {
+                        "geo_within_radius": {
+                            "field": "location",
+                            "center": {"lat": 10.8231, "lng": 106.6297},
+                            "radius_km": 5
+                        }
+                    }
                 },
                 "sort": {
                     "type": "array",
@@ -938,6 +945,129 @@ class AuditObservabilityCoreCapabilities:
 
 
 # ============================================================================
+# Streaming Core Capabilities (1 capability - NEW E11-001)
+# ============================================================================
+
+@dataclass
+class StreamingCoreCapabilities:
+    """
+    Streaming Core Capabilities (1 capability).
+    
+    Task: E11-001 - Add stream_connection core capability
+    Priority: P0 - Required by Food Delivery, Exchange Trading, Telehealth
+    
+    Các capabilities này quản lý real-time streaming connections:
+    - WebSocket cho bi-directional communication
+    - SSE (Server-Sent Events) cho one-way streaming
+    - gRPC streaming cho high-performance scenarios
+    """
+    STREAM_CONNECTION: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="stream_connection",
+            name="Stream Connection",
+            description="Quản lý kết nối streaming real-time (WebSocket/SSE/gRPC)",
+            params_schema={
+                # Core params
+                "protocol": {
+                    "type": "string",
+                    "required": True,
+                    "enum": ["websocket", "sse", "grpc_stream"],
+                    "description": "Streaming protocol: websocket (bi-directional), sse (server-to-client), grpc_stream (high-performance)"
+                },
+                "endpoint": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Streaming endpoint URL (vd: 'wss://api.example.com/stream')"
+                },
+                "subscription": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Subscription/channel name để subscribe (vd: 'order_updates:123')"
+                },
+                # Heartbeat config
+                "heartbeat_interval": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 30,
+                    "description": "Heartbeat interval theo giây để giữ kết nối sống"
+                },
+                # Reconnect policy
+                "reconnect_policy": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Cấu hình reconnect policy cho unstable networks",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "max_retries": {"type": "integer"},
+                        "initial_delay_ms": {"type": "integer"},
+                        "max_delay_ms": {"type": "integer"},
+                        "backoff_multiplier": {"type": "number"},
+                        "jitter": {"type": "boolean"}
+                    },
+                    "example": {
+                        "enabled": True,
+                        "max_retries": 10,
+                        "initial_delay_ms": 1000,
+                        "max_delay_ms": 30000,
+                        "backoff_multiplier": 2.0,
+                        "jitter": True
+                    }
+                },
+                # Auth mode
+                "auth_mode": {
+                    "type": "string",
+                    "required": False,
+                    "enum": ["none", "token", "sig_v4"],
+                    "default": "token",
+                    "description": "Authentication mode: none (no auth), token (JWT/Bearer), sig_v4 (AWS SigV4)"
+                },
+                "auth_token": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Auth token (cho auth_mode=token)"
+                },
+                "auth_headers": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Custom auth headers"
+                },
+                # Connection config
+                "compression": {
+                    "type": "boolean",
+                    "required": False,
+                    "default": False,
+                    "description": "Enable message compression (cho WebSocket)"
+                },
+                "subprotocols": {
+                    "type": "array",
+                    "required": False,
+                    "description": "Supported subprotocols (cho WebSocket)",
+                    "items": {"type": "string"}
+                },
+                "message_handler": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Reference đến message handler function"
+                },
+                "on_disconnect": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Reference đến disconnect handler"
+                }
+            },
+            default_obligations=[
+                "connection_auth_required",
+                "heartbeat_required",
+                "reconnect_policy_required"
+            ],
+            read_access=["connection_state"],
+            write_access=["network"],
+            effects=["stream_connected", "stream_data_received", "stream_disconnected"]
+        )
+    )
+
+
+# ============================================================================
 # Core Capabilities Registry (17 capabilities theo SoT)
 # ============================================================================
 
@@ -955,6 +1085,7 @@ class CoreCapabilitiesRegistry:
     - Transaction Management: 3
     - Event & Integration: 3
     - Audit & Observability: 2
+    - Streaming: 1 (NEW - E11-001)
     """
     
     auth: AuthorizationCoreCapabilities = field(default_factory=AuthorizationCoreCapabilities)
@@ -962,6 +1093,7 @@ class CoreCapabilitiesRegistry:
     transaction: TransactionCoreCapabilities = field(default_factory=TransactionCoreCapabilities)
     event: EventIntegrationCoreCapabilities = field(default_factory=EventIntegrationCoreCapabilities)
     audit: AuditObservabilityCoreCapabilities = field(default_factory=AuditObservabilityCoreCapabilities)
+    streaming: StreamingCoreCapabilities = field(default_factory=StreamingCoreCapabilities)
     
     @classmethod
     def get_all_capabilities(cls) -> list[CoreCapability]:
@@ -999,6 +1131,9 @@ class CoreCapabilitiesRegistry:
         # Audit capabilities (2)
         capabilities.append(registry.audit.WRITE_AUDIT_LOG)
         capabilities.append(registry.audit.RECORD_METRIC)
+        
+        # Streaming capabilities (1)
+        capabilities.append(registry.streaming.STREAM_CONNECTION)
         
         return capabilities
     
@@ -1045,7 +1180,8 @@ class CoreCapabilitiesRegistry:
                 "data_operations": 5,
                 "transaction": 3,
                 "event_integration": 3,
-                "audit_observability": 2
+                "audit_observability": 2,
+                "streaming": 1
             },
             "capability_ids": cls.get_capability_ids()
         }
@@ -1059,6 +1195,7 @@ __all__ = [
     "TransactionCoreCapabilities",
     "EventIntegrationCoreCapabilities",
     "AuditObservabilityCoreCapabilities",
+    "StreamingCoreCapabilities",
     # Registry
     "CoreCapabilitiesRegistry",
 ]

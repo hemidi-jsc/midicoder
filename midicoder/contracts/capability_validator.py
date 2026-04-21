@@ -13,6 +13,7 @@ Version: 1.0.0
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from ..errors import ErrorCode, MidicoderErrorManager as EM
@@ -669,6 +670,203 @@ def validate_monitoring(params: dict[str, Any]) -> list[str]:
 
 
 # ============================================================================
+# E11-005: Audit Enforcement Validator (Compliance Audit Validation)
+# ============================================================================
+
+
+@dataclass
+class ValidationResult:
+    """
+    Kết quả validation.
+    
+    Fields:
+        is_valid: Validation pass hay fail
+        error_messages: Danh sách error messages (rỗng nếu valid)
+    """
+    is_valid: bool
+    error_messages: list[str] = None
+    
+    def __post_init__(self):
+        if self.error_messages is None:
+            self.error_messages = []
+    
+    @classmethod
+    def pass_(cls) -> "ValidationResult":
+        """Tạo validation result pass."""
+        return cls(is_valid=True)
+    
+    @classmethod
+    def fail(cls, *messages: str) -> "ValidationResult":
+        """Tạo validation result fail với messages."""
+        return cls(is_valid=False, error_messages=list(messages))
+
+
+class AuditEnforcementValidator:
+    """
+    Validate audit trail enforcement cho compliance-critical operations.
+    
+    Task: E11-005 - Add AuditEnforcementValidator
+    Priority: P1 - Required by Banking, Healthcare, ERP
+    
+    Validator này kiểm tra:
+    - Compliance entities yêu cầu audit trail enabled
+    - Audit level phải là "detailed" cho financial/healthcare
+    - Retention period phải đáp ứng compliance requirements (SOX: 7 years, HIPAA: 6 years)
+    
+    Compliance Entities:
+        Financial: LedgerEntry, FinancialTransaction, Payment, JournalEntry
+        Healthcare: PatientRecord, MedicalPrescription, LabResult, PHIRecord
+        ERP: InventoryAdjustment, PurchaseOrder
+    
+    Example:
+        validator = AuditEnforcementValidator()
+        result = validator.validate({"entity": "LedgerEntry", "audit_config": {...}})
+        if not result.is_valid:
+            print(result.error_messages)
+    """
+    
+    # Compliance entity patterns (financial, healthcare, ERP)
+    FINANCIAL_ENTITIES = {
+        "LedgerEntry", "FinancialTransaction", "Payment", "JournalEntry",
+        "Account", "BalanceSheet", "IncomeStatement", "CashFlow"
+    }
+    
+    HEALTHCARE_ENTITIES = {
+        "PatientRecord", "MedicalPrescription", "LabResult", "PHIRecord",
+        "ClinicalNote", "Diagnosis", "Treatment", "Medication"
+    }
+    
+    ERP_ENTITIES = {
+        "InventoryAdjustment", "PurchaseOrder", "SalesOrder", "GoodsReceipt",
+        "Invoice", "Supplier", "Asset"
+    }
+    
+    # Minimum retention days by compliance standard
+    MIN_RETENTION_DAYS = {
+        "sox": 2555,  # 7 years for financial
+        "hipaa": 2190,  # 6 years for healthcare
+        "gdpr": 1825,  # 5 years minimum
+    }
+    
+    def validate(self, params: dict[str, Any]) -> ValidationResult:
+        """
+        Validate audit enforcement cho compliance entities.
+        
+        Args:
+            params: Params với entity và audit_config
+            
+        Returns:
+            ValidationResult với is_valid và error_messages
+        """
+        errors: list[str] = []
+        
+        # Get entity from params
+        entity = params.get("entity", "")
+        
+        # Check if this is a compliance entity
+        if not self._is_compliance_entity(entity):
+            # Non-compliance entities don't require audit enforcement
+            return ValidationResult.pass_()
+        
+        # Check audit_config exists
+        audit_config = params.get("audit_config") or params.get("audit_diff_config", {})
+        
+        if not audit_config:
+            errors.append(
+                f"Audit trail is required for compliance entity: {entity}"
+            )
+            return ValidationResult.fail(*errors)
+        
+        if not isinstance(audit_config, dict):
+            errors.append(
+                f"audit_config must be a dictionary for entity: {entity}"
+            )
+            return ValidationResult.fail(*errors)
+        
+        # Check audit enabled
+        if not audit_config.get("enabled"):
+            errors.append(
+                f"Audit trail must be enabled for compliance entity: {entity}"
+            )
+        
+        # Check audit level is "detailed"
+        audit_level = audit_config.get("level", "")
+        if audit_level != "detailed":
+            errors.append(
+                f"Audit level must be 'detailed' for compliance entity: {entity} "
+                f"(got: '{audit_level}')"
+            )
+        
+        # Check retention period
+        retention_days = audit_config.get("retention_days", 0)
+        min_retention = self._get_min_retention_days(entity)
+        
+        if retention_days < min_retention:
+            errors.append(
+                f"Audit retention must be at least {min_retention} days "
+                f"({min_retention // 365} years) for compliance entity: {entity} "
+                f"(got: {retention_days} days)"
+            )
+        
+        if errors:
+            return ValidationResult.fail(*errors)
+        
+        return ValidationResult.pass_()
+    
+    def _is_compliance_entity(self, entity: str) -> bool:
+        """
+        Kiểm tra entity có phải là compliance entity không.
+        
+        Args:
+            entity: Entity name
+            
+        Returns:
+            True nếu là compliance entity
+        """
+        all_compliance_entities = (
+            self.FINANCIAL_ENTITIES |
+            self.HEALTHCARE_ENTITIES |
+            self.ERP_ENTITIES
+        )
+        
+        # Check exact match
+        if entity in all_compliance_entities:
+            return True
+        
+        # Check partial match (e.g., "LedgerEntryV2" matches "LedgerEntry")
+        for compliance_entity in all_compliance_entities:
+            if entity.startswith(compliance_entity):
+                return True
+        
+        return False
+    
+    def _get_min_retention_days(self, entity: str) -> int:
+        """
+        Lấy minimum retention days cho entity.
+        
+        Args:
+            entity: Entity name
+            
+        Returns:
+            Minimum retention days theo compliance standard
+        """
+        # Financial entities: SOX (7 years = 2555 days)
+        if entity in self.FINANCIAL_ENTITIES or any(
+            entity.startswith(e) for e in self.FINANCIAL_ENTITIES
+        ):
+            return self.MIN_RETENTION_DAYS["sox"]
+        
+        # Healthcare entities: HIPAA (6 years = 2190 days)
+        if entity in self.HEALTHCARE_ENTITIES or any(
+            entity.startswith(e) for e in self.HEALTHCARE_ENTITIES
+        ):
+            return self.MIN_RETENTION_DAYS["hipaa"]
+        
+        # ERP entities: default to 5 years (GDPR minimum)
+        return self.MIN_RETENTION_DAYS["gdpr"]
+
+
+# ============================================================================
 # Validator Registry
 # ============================================================================
 
@@ -766,4 +964,7 @@ __all__ = [
     "CAPABILITY_VALIDATORS",
     "validate_capability_params",
     "get_known_capability_types",
+    # E11-005: Audit enforcement
+    "ValidationResult",
+    "AuditEnforcementValidator",
 ]
