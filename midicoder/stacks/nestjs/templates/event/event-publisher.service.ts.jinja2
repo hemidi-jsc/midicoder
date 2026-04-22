@@ -1,0 +1,113 @@
+/**
+ * Event Publisher - Publish events đến event bus.
+ * 
+ * Module này cung cấp EventPublisher để publish events.
+ * Có thể mở rộng để publish sang Kafka, RabbitMQ, SQS, v.v.
+ * 
+ * CP05: Event-Driven Architecture
+ */
+
+import { Injectable, Logger } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
+import { EventBusService, EventMessage } from './event-bus.service';
+
+/**
+ * EventPublisherService - Publish events đến event bus.
+ * 
+ * EventPublisher cung cấp interface để publish events.
+ */
+@Injectable()
+export class EventPublisherService {
+  private readonly logger = new Logger(EventPublisherService.name);
+
+  constructor(private readonly eventBus: EventBusService) {}
+
+  /**
+   * Publish event message đến event bus.
+   * 
+   * @param message - EventMessage cần publish
+   * @returns EventMessage đã được publish
+   */
+  publish(message: EventMessage): EventMessage {
+    // Set topic nếu chưa có
+    if (!message.topic) {
+      message.topic = 'events';
+    }
+
+    // Publish đến event bus
+    this.eventBus.publish(message);
+
+    this.logger.info(
+      `Event '${message.event_id}' đã publish đến topic '${message.topic}'`,
+    );
+
+    return message;
+  }
+
+  /**
+   * Publish event với event_id và payload.
+   * 
+   * @param event_id - ID của event type (ví dụ: "order.created")
+   * @param payload - Dữ liệu event
+   * @param topic - Topic để publish (default: "events")
+   * @param correlation_id - ID để trace event (optional, auto-generate nếu không có)
+   * @param metadata - Metadata bổ sung (optional)
+   * @returns EventMessage đã được publish
+   */
+  publishEvent(
+    event_id: string,
+    payload: Record<string, any>,
+    topic: string = 'events',
+    correlation_id?: string,
+    metadata?: Record<string, any>,
+  ): EventMessage {
+    // Auto-generate correlation ID nếu không có
+    const correlationId = correlation_id || uuidv4();
+
+    const message: EventMessage = {
+      event_id,
+      payload,
+      correlation_id: correlationId,
+      metadata,
+      topic,
+      version: '1.0',
+      timestamp: new Date(),
+    };
+
+    return this.publish(message);
+  }
+
+  /**
+   * Publish domain event.
+   * 
+   * Helper method để publish domain events với standard metadata.
+   * 
+   * @param aggregate_type - Loại aggregate (ví dụ: "Order")
+   * @param event_name - Tên event (ví dụ: "Created")
+   * @param aggregate_id - ID của aggregate
+   * @param payload - Dữ liệu event
+   * @param topic - Topic để publish (optional)
+   */
+  publishDomainEvent(
+    aggregate_type: string,
+    event_name: string,
+    aggregate_id: string,
+    payload: Record<string, any>,
+    topic?: string,
+  ): EventMessage {
+    const event_id = `${aggregate_type.toLowerCase()}.${event_name.toLowerCase()}`;
+    
+    const metadata: Record<string, any> = {
+      aggregate_type,
+      aggregate_id,
+    };
+
+    return this.publishEvent(
+      event_id,
+      { aggregate_id, ...payload },
+      topic || `${aggregate_type.toLowerCase()}s`,
+      undefined,
+      metadata,
+    );
+  }
+}

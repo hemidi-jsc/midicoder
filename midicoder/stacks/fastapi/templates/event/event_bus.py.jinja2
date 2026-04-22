@@ -1,0 +1,213 @@
+"""
+Event Bus - In-memory event bus cho FastAPI.
+
+Module này cung cấp event bus cho publish/subscribe pattern.
+Có thể mở rộng để tích hợp với Kafka, RabbitMQ, SQS, v.v.
+
+CP05: Event-Driven Architecture
+"""
+
+from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Event Message
+# ============================================================================
+
+
+@dataclass
+class EventMessage:
+    """
+    Đại diện cho một event message trong hệ thống.
+
+    EventMessage là đơn vị cơ bản được truyền qua event bus.
+    Mỗi message có event_id, payload, và metadata.
+
+    Attributes:
+        event_id: Định danh duy nhất của event type (ví dụ: "order.created")
+        payload: Dữ liệu chính của event
+        version: Version của event schema
+        timestamp: Thời điểm event được tạo
+        correlation_id: ID để trace event qua nhiều services
+        metadata: Metadata bổ sung (tenant_id, source, v.v.)
+        topic: Topic để route event
+    """
+
+    event_id: str
+    payload: dict[str, Any]
+    version: str = "1.0"
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    correlation_id: Optional[str] = None
+    metadata: Optional[dict[str, Any]] = None
+    topic: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Chuyển EventMessage thành dict.
+
+        Returns:
+            Dict representation của EventMessage
+        """
+        return {
+            "event_id": self.event_id,
+            "payload": self.payload,
+            "version": self.version,
+            "timestamp": self.timestamp.isoformat(),
+            "correlation_id": self.correlation_id,
+            "metadata": self.metadata,
+            "topic": self.topic,
+        }
+
+    def __str__(self) -> str:
+        """Trả về string representation của EventMessage."""
+        return f"EventMessage(event_id={self.event_id}, version={self.version})"
+
+
+# ============================================================================
+# Event Bus
+# ============================================================================
+
+
+class EventBus:
+    """
+    In-memory event bus cho publish/subscribe pattern.
+
+    EventBus quản lý subscribers và route events đến handlers.
+    Trong production, có thể tích hợp với Kafka, RabbitMQ, SQS, v.v.
+
+    Attributes:
+        name: Tên của event bus
+        _subscribers: Danh sách subscribers theo topic
+    """
+
+    def __init__(self, name: str = "default"):
+        """
+        Tạo EventBus mới.
+
+        Args:
+            name: Tên của event bus
+        """
+        self.name = name
+        self._subscribers: dict[str, list[Callable[[EventMessage], Any]]] = {}
+        logger.info(f"EventBus '{name}' đã được khởi tạo")
+
+    @property
+    def subscriber_count(self) -> int:
+        """
+        Lấy tổng số subscribers.
+
+        Returns:
+            Tổng số handlers đã đăng ký
+        """
+        return sum(len(handlers) for handlers in self._subscribers.values())
+
+    def subscribe(
+        self,
+        topic: str,
+        handler: Callable[[EventMessage], Any],
+    ) -> None:
+        """
+        Subscribe handler đến topic.
+
+        Args:
+            topic: Topic để subscribe (ví dụ: "orders", "payments")
+            handler: Function để handle events (async hoặc sync)
+        """
+        if topic not in self._subscribers:
+            self._subscribers[topic] = []
+        self._subscribers[topic].append(handler)
+        logger.debug(f"Handler đã subscribe đến topic '{topic}'")
+
+    def unsubscribe(
+        self,
+        topic: str,
+        handler: Callable[[EventMessage], Any],
+    ) -> None:
+        """
+        Unsubscribe handler từ topic.
+
+        Args:
+            topic: Topic để unsubscribe
+            handler: Handler cần remove
+        """
+        if topic in self._subscribers:
+            try:
+                self._subscribers[topic].remove(handler)
+                logger.debug(f"Handler đã unsubscribe khỏi topic '{topic}'")
+            except ValueError:
+                logger.warning(f"Handler không tìm thấy trong topic '{topic}'")
+
+    def publish(self, message: EventMessage) -> None:
+        """
+        Publish event message đến tất cả subscribers.
+
+        Args:
+            message: EventMessage cần publish
+        """
+        topic = message.topic or "default"
+
+        if topic not in self._subscribers:
+            logger.debug(f"Không có subscriber cho topic '{topic}'")
+            return
+
+        logger.info(f"Publishing event '{message.event_id}' đến topic '{topic}'")
+
+        # Call all handlers cho topic này
+        for handler in self._subscribers[topic]:
+            try:
+                # Support cả async và sync handlers
+                import asyncio
+
+                if asyncio.iscoroutinefunction(handler):
+                    asyncio.run(handler(message))
+                else:
+                    handler(message)
+            except Exception as e:
+                logger.error(
+                    f"Error xử lý event '{message.event_id}': {str(e)}",
+                    exc_info=True,
+                )
+                # Trong production, cần có error handling và retry logic
+
+    def publish_to_topic(
+        self,
+        topic: str,
+        event_id: str,
+        payload: dict[str, Any],
+        correlation_id: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """
+        Publish event đến specific topic.
+
+        Đây là helper method để tạo và publish event nhanh chóng.
+
+        Args:
+            topic: Topic để publish
+            event_id: ID của event type (ví dụ: "order.created")
+            payload: Dữ liệu event
+            correlation_id: ID để trace event (optional)
+            metadata: Metadata bổ sung (optional)
+        """
+        message = EventMessage(
+            event_id=event_id,
+            payload=payload,
+            correlation_id=correlation_id,
+            metadata=metadata,
+            topic=topic,
+        )
+        self.publish(message)
+
+    def clear(self) -> None:
+        """
+        Clear tất cả subscribers.
+
+        Dùng cho testing hoặc reset event bus.
+        """
+        self._subscribers.clear()
+        logger.info("Tất cả subscribers đã được clear")

@@ -1,0 +1,164 @@
+/**
+ * Event Bus - In-memory event bus cho NestJS.
+ * 
+ * Module này cung cấp event bus cho publish/subscribe pattern.
+ * Có thể mở rộng để tích hợp với Kafka, RabbitMQ, SQS, v.v.
+ * 
+ * CP05: Event-Driven Architecture
+ */
+
+import { Injectable, Logger } from '@nestjs/common';
+
+/**
+ * Event Message interface.
+ * 
+ * Đại diện cho một event message trong hệ thống.
+ */
+export interface EventMessage {
+  event_id: string;
+  payload: Record<string, any>;
+  version?: string;
+  timestamp?: Date;
+  correlation_id?: string;
+  metadata?: Record<string, any>;
+  topic?: string;
+}
+
+/**
+ * Event Handler type.
+ * 
+ * Function để handle events.
+ */
+export type EventHandler = (message: EventMessage) => void | Promise<void>;
+
+/**
+ * EventBusService - In-memory event bus.
+ * 
+ * EventBus quản lý subscribers và route events đến handlers.
+ */
+@Injectable()
+export class EventBusService {
+  private readonly logger = new Logger(EventBusService.name);
+  private subscribers: Map<string, EventHandler[]> = new Map();
+
+  constructor() {
+    this.logger.log('EventBusService đã được khởi tạo');
+  }
+
+  /**
+   * Lấy tổng số subscribers.
+   * 
+   * Returns:
+   *     Tổng số handlers đã đăng ký
+   */
+  get subscriberCount(): number {
+    let count = 0;
+    for (const handlers of this.subscribers.values()) {
+      count += handlers.length;
+    }
+    return count;
+  }
+
+  /**
+   * Subscribe handler đến topic.
+   * 
+   * @param topic - Topic để subscribe (ví dụ: "orders", "payments")
+   * @param handler - Function để handle events
+   */
+  subscribe(topic: string, handler: EventHandler): void {
+    if (!this.subscribers.has(topic)) {
+      this.subscribers.set(topic, []);
+    }
+
+    this.subscribers.get(topic)?.push(handler);
+    this.logger.debug(`Handler đã subscribe đến topic '${topic}'`);
+  }
+
+  /**
+   * Unsubscribe handler từ topic.
+   * 
+   * @param topic - Topic để unsubscribe
+   * @param handler - Handler cần remove
+   */
+  unsubscribe(topic: string, handler: EventHandler): void {
+    const handlers = this.subscribers.get(topic);
+    if (handlers) {
+      const index = handlers.indexOf(handler);
+      if (index > -1) {
+        handlers.splice(index, 1);
+        this.logger.debug(`Handler đã unsubscribe khỏi topic '${topic}'`);
+      } else {
+        this.logger.warning(`Handler không tìm thấy trong topic '${topic}'`);
+      }
+    }
+  }
+
+  /**
+   * Publish event message đến tất cả subscribers.
+   * 
+   * @param message - EventMessage cần publish
+   */
+  async publish(message: EventMessage): Promise<void> {
+    const topic = message.topic || 'default';
+
+    if (!this.subscribers.has(topic)) {
+      this.logger.debug(`Không có subscriber cho topic '${topic}'`);
+      return;
+    }
+
+    this.logger.info(`Publishing event '${message.event_id}' đến topic '${topic}'`);
+
+    const handlers = this.subscribers.get(topic)!;
+    for (const handler of handlers) {
+      try {
+        await handler(message);
+      } catch (error) {
+        this.logger.error(
+          `Error xử lý event '${message.event_id}': ${error.message}`,
+          error.stack,
+        );
+        // Trong production, cần có error handling và retry logic
+      }
+    }
+  }
+
+  /**
+   * Publish event đến specific topic.
+   * 
+   * Đây là helper method để tạo và publish event nhanh chóng.
+   * 
+   * @param topic - Topic để publish
+   * @param event_id - ID của event type (ví dụ: "order.created")
+   * @param payload - Dữ liệu event
+   * @param correlation_id - ID để trace event (optional)
+   * @param metadata - Metadata bổ sung (optional)
+   */
+  publishToTopic(
+    topic: string,
+    event_id: string,
+    payload: Record<string, any>,
+    correlation_id?: string,
+    metadata?: Record<string, any>,
+  ): void {
+    const message: EventMessage = {
+      event_id,
+      payload,
+      correlation_id,
+      metadata,
+      topic,
+      version: '1.0',
+      timestamp: new Date(),
+    };
+    this.publish(message);
+  }
+
+  /**
+   * Clear tất cả subscribers.
+   * 
+   * Dùng cho testing hoặc reset event bus.
+   */
+  clear(): void {
+    this.subscribers.clear();
+    this.logger.info('Tất cả subscribers đã được clear');
+  }
+}
