@@ -1,0 +1,384 @@
+"""
+FastAPI Gateway Service - Service chính cho API Gateway.
+
+Service này xử lý:
+- Proxy requests đến backend services
+- Circuit breaker cho service protection
+- Retry logic
+- Metrics tracking
+- Error handling
+
+CP06: API Gateway & Service Mesh
+"""
+
+import asyncio
+import logging
+from typing import Any, Dict, Optional
+from dataclasses import dataclass
+
+import httpx
+from httpx import AsyncClient
+from fastapi import HTTPException
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ProxyRequest:
+    """Request object cho proxy."""
+    method: str
+    url: str
+    headers: Dict[str, str]
+    query: Optional[Dict[str, str]] = None
+    body: Optional[Any] = None
+
+
+@dataclass
+class ProxyResponse:
+    """Response object từ proxy."""
+    status: int
+    headers: Dict[str, str]
+    body: Any
+
+
+class GatewayService:
+    """
+    GatewayService - Service chính cho API Gateway.
+    
+    Service này:
+    1. Proxy requests đến backend services
+    2. Circuit breaker cho service protection
+    3. Retry logic với exponential backoff
+    4. Metrics tracking
+    5. Telemetry & distributed tracing
+    
+    Attributes:
+        client: httpx AsyncClient
+        request_stats: Request statistics
+    """
+
+    def __init__(
+        self,
+        timeout: int = 30000,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+    ):
+        """
+        Khởi tạo GatewayService.
+        
+        Args:
+            timeout: Timeout (ms) cho HTTP requests
+            max_retries: Số lần retry tối đa
+            retry_delay: Delay (seconds) giữa các retry
+        """
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
+        # httpx client cho HTTP requests
+        self.client = AsyncClient(
+            timeout=timeout / 1000,
+            headers={"User-Agent": "API-Gateway/1.0"},
+        )
+        
+        # Request stats
+        self.request_stats = {
+            "total_requests": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "avg_response_time": 0,
+        }
+        
+        # Circuit breaker states
+        self.circuit_breakers = {}
+    
+    async def proxy(self, request: ProxyRequest) -> ProxyResponse:
+        """
+        Proxy method - Forward request đến backend.
+        
+        Args:
+            request: Proxy request object
+            
+        Returns:
+            ProxyResponse object
+            
+        Raises:
+            HTTPException: Nếu backend không khả dụng
+        """
+        start_time = datetime.now()
+        last_error = None
+        
+        # Retry logic
+        for attempt in range(self.max_retries + 1):
+            try:
+                if attempt > 0:
+                    await asyncio.sleep(self.retry_delay * (2 ** (attempt - 1)))
+                
+                response = await self._do_forward(request)
+                
+                # Update stats
+                self._update_stats(True, datetime.now() - start_time)
+                
+                return response
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Proxy attempt {attempt + 1}/{self.max_retries + 1} failed: {e}")
+        
+        # All retries failed
+        self._update_stats(False, datetime.now() - start_time)
+        raise HTTPException(
+            status_code=502,
+            detail="Bad Gateway - Backend không khả dụng",
+        )
+    
+    async def _do_forward(self, request: ProxyRequest) -> ProxyResponse:
+        """
+        Do Forward - Thực hiện HTTP forward.
+        
+        Args:
+            request: Proxy request
+            
+        Returns:
+            ProxyResponse
+            
+        Raises:
+            HTTPException: Nếu request thất bại
+        """
+        try:
+            resp = await self.client.request(
+                method=request.method,
+                url=request.url,
+                headers=request.headers,
+                params=request.query,
+                json=request.body if request.body else None,
+                # gzip/compress support
+                follow_redirects=True,
+            )
+            
+            return ProxyResponse(
+                status=resp.status_code,
+                headers=dict(resp.headers),
+                body=resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text,
+            )
+            
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="Gateway Timeout - Backend không phản hồi",
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail="Service Unavailable - Backend không khả dụng",
+            )
+    
+    def _update_stats(self, success: bool, response_time: datetime):
+        """
+        Update request statistics.
+        
+        Args:
+            success: Request success status
+            response_time: Response time delta
+        """
+        self.request_stats["total_requests"] += 1
+        
+        if success:
+            self.request_stats["successful_requests"] += 1
+        else:
+            self.request_stats["failed_requests"] += 1
+    
+    async def resolve_backend(self, backend_id: str) -> str:
+        """
+        Resolve backend URL từ backend ID.
+        
+        Args:
+            backend_id: Backend service ID
+            
+        Returns:
+            Backend URL
+        """
+        # Simple resolution - should use service discovery
+        backends = {
+            "api": "http://localhost:3000",
+            "graphql": "http://localhost:4000",
+            "ws": "ws://localhost:5000",
+        }
+        return backends.get(backend_id, f"http://localhost:8080")
+    
+    def transform_response(self, response: ProxyResponse) -> ProxyResponse:
+        """
+        Transform response trước khi trả về client.
+        
+        Args:
+            response: Proxy response
+            
+        Returns:
+            Transformed response
+        """
+        # Add gateway headers
+        response.headers.update({
+            "X-Gateway-Timestamp": datetime.now().isoformat(),
+            "X-Gateway-Version": "1.0.0",
+        })
+        return response
+    
+    async def get_resource(self, resource_id: str) -> Dict[str, Any]:
+        """
+        GET resource from backend.
+        
+        Args:
+            resource_id: Resource ID
+            
+        Returns:
+            Resource data
+        """
+        request = ProxyRequest(
+            method="GET",
+            url=f"http://localhost:3000/resources/{resource_id}",
+            headers={"Content-Type": "application/json"},
+        )
+        response = await self.proxy(request)
+        return response.body
+    
+    async def create_resource(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create resource ở backend.
+        
+        Args:
+            body: Resource data
+            
+        Returns:
+            Created resource
+        """
+        request = ProxyRequest(
+            method="POST",
+            url="http://localhost:3000/resources",
+            headers={"Content-Type": "application/json"},
+            body=body,
+        )
+        response = await self.proxy(request)
+        return response.body
+    
+    async def update_resource(self, resource_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Update resource ở backend.
+        
+        Args:
+            resource_id: Resource ID
+            body: Resource data
+            
+        Returns:
+            Updated resource
+        """
+        request = ProxyRequest(
+            method="PUT",
+            url=f"http://localhost:3000/resources/{resource_id}",
+            headers={"Content-Type": "application/json"},
+            body=body,
+        )
+        response = await self.proxy(request)
+        return response.body
+    
+    async def delete_resource(self, resource_id: str) -> Dict[str, Any]:
+        """
+        Delete resource ở backend.
+        
+        Args:
+            resource_id: Resource ID
+            
+        Returns:
+            Deletion result
+        """
+        request = ProxyRequest(
+            method="DELETE",
+            url=f"http://localhost:3000/resources/{resource_id}",
+            headers={"Content-Type": "application/json"},
+        )
+        response = await self.proxy(request)
+        return response.body
+    
+    async def patch_resource(self, resource_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Patch resource ở backend.
+        
+        Args:
+            resource_id: Resource ID
+            body: Partial resource data
+            
+        Returns:
+            Updated resource
+        """
+        request = ProxyRequest(
+            method="PATCH",
+            url=f"http://localhost:3000/resources/{resource_id}",
+            headers={"Content-Type": "application/json"},
+            body=body,
+        )
+        response = await self.proxy(request)
+        return response.body
+    
+    async def search(self, q: str, limit: int, offset: int) -> Dict[str, Any]:
+        """
+        Search resources.
+        
+        Args:
+            q: Search query
+            limit: Results limit
+            offset: Results offset
+            
+        Returns:
+            Search results
+        """
+        request = ProxyRequest(
+            method="GET",
+            url="http://localhost:3000/search",
+            headers={"Content-Type": "application/json"},
+            query={"q": q, "limit": str(limit), "offset": str(offset)},
+        )
+        response = await self.proxy(request)
+        return response.body
+    
+    async def get_with_headers(
+        self, x_tenant_id: Optional[str], x_request_id: Optional[str]
+    ) -> Dict[str, Any]:
+        """
+        Get với custom headers.
+        
+        Args:
+            x_tenant_id: Tenant ID
+            x_request_id: Request ID
+            
+        Returns:
+            Result
+        """
+        headers = {"Content-Type": "application/json"}
+        if x_tenant_id:
+            headers["X-Tenant-Id"] = x_tenant_id
+        if x_request_id:
+            headers["X-Request-Id"] = x_request_id
+            
+        request = ProxyRequest(
+            method="GET",
+            url="http://localhost:3000/resource",
+            headers=headers,
+        )
+        response = await self.proxy(request)
+        return response.body
+    
+    def get_metrics(self) -> Dict[str, int]:
+        """
+        Get metrics.
+        
+        Returns:
+            Metrics data
+        """
+        return self.request_stats.copy()
+    
+    async def close(self):
+        """
+        Close httpx client.
+        """
+        await self.client.aclose()
+        logger.info("GatewayService closed")

@@ -1,0 +1,296 @@
+"""
+FastAPI Gateway Router - Router cho API Gateway endpoints.
+
+Router này xử lý:
+- Proxy routes cho backend services
+- Health check endpoints
+- Route discovery
+- Error handling
+
+CP06: API Gateway & Service Mesh
+"""
+
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Body, Depends, Header, Path, Query, Request, Response, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+# Import gateway service
+from gateway_service import GatewayService
+from rate_limiter import RateLimiter, check_rate_limit
+from circuit_breaker import CircuitBreaker
+
+# Router instance
+router = APIRouter(
+    prefix="/proxy",
+    tags=["proxy"],
+    responses={
+        429: {"description": "Rate limit exceeded"},
+        503: {"description": "Service unavailable"},
+    },
+    # HTTPStatus codes
+)
+
+
+# Request/Response models
+class ProxyResponse(BaseModel):
+    """Response model cho proxy requests."""
+    status: int
+    data: Optional[Any] = None
+    message: Optional[str] = None
+
+
+# Dependency injection cho services
+def get_gateway_service() -> GatewayService:
+    """
+    Dependency cho GatewayService.
+    
+    Returns:
+        GatewayService instance
+    """
+    return GatewayService()
+
+
+def get_rate_limiter() -> RateLimiter:
+    """
+    Dependency cho RateLimiter.
+    
+    Returns:
+        RateLimiter instance
+    """
+    return RateLimiter()
+
+
+def get_circuit_breaker() -> CircuitBreaker:
+    """
+    Dependency cho CircuitBreaker.
+    
+    Returns:
+        CircuitBreaker instance
+    """
+    return CircuitBreaker()
+
+
+# GET endpoint
+@router.get("/resource/{resource_id}", response_model=ProxyResponse, status_code=status.HTTP_200_OK)
+async def get_resource(
+    resource_id: str = Path(..., description="Resource ID"),
+    request: Request = None,
+    gateway_service: GatewayService = Depends(get_gateway_service),
+):
+    """
+    GET endpoint cho resource.
+    
+    Args:
+        resource_id: Resource ID từ path
+        request: HTTP request
+        gateway_service: Gateway service
+        
+    Returns:
+        ProxyResponse
+    """
+    try:
+        result = await gateway_service.get_resource(resource_id)
+        return ProxyResponse(status=200, data=result)
+    except Exception as e:
+        return ProxyResponse(status=500, message=str(e))
+
+
+# POST endpoint
+@router.post("/resource", response_model=ProxyResponse, status_code=status.HTTP_201_CREATED)
+async def create_resource(
+    body: Dict[str, Any] = Body(..., description="Resource data"),
+    request: Request = None,
+    gateway_service: GatewayService = Depends(get_gateway_service),
+):
+    """
+    POST endpoint để tạo resource mới.
+    
+    Args:
+        body: Resource data
+        request: HTTP request
+        gateway_service: Gateway service
+        
+    Returns:
+        ProxyResponse
+    """
+    try:
+        result = await gateway_service.create_resource(body)
+        return ProxyResponse(status=201, data=result)
+    except Exception as e:
+        return ProxyResponse(status=500, message=str(e))
+
+
+# PUT endpoint
+@router.put("/resource/{resource_id}", response_model=ProxyResponse, status_code=status.HTTP_200_OK)
+async def update_resource(
+    resource_id: str = Path(..., description="Resource ID"),
+    body: Dict[str, Any] = Body(..., description="Resource data"),
+    request: Request = None,
+    gateway_service: GatewayService = Depends(get_gateway_service),
+):
+    """
+    PUT endpoint để cập nhật resource.
+    
+    Args:
+        resource_id: Resource ID
+        body: Resource data
+        request: HTTP request
+        gateway_service: Gateway service
+        
+    Returns:
+        ProxyResponse
+    """
+    try:
+        result = await gateway_service.update_resource(resource_id, body)
+        return ProxyResponse(status=200, data=result)
+    except Exception as e:
+        return ProxyResponse(status=500, message=str(e))
+
+
+# DELETE endpoint
+@router.delete("/resource/{resource_id}", response_model=ProxyResponse, status_code=status.HTTP_200_OK)
+async def delete_resource(
+    resource_id: str = Path(..., description="Resource ID"),
+    request: Request = None,
+    gateway_service: GatewayService = Depends(get_gateway_service),
+):
+    """
+    DELETE endpoint để xóa resource.
+    
+    Args:
+        resource_id: Resource ID
+        request: HTTP request
+        gateway_service: Gateway service
+        
+    Returns:
+        ProxyResponse
+    """
+    try:
+        result = await gateway_service.delete_resource(resource_id)
+        return ProxyResponse(status=200, data=result)
+    except Exception as e:
+        return ProxyResponse(status=500, message=str(e))
+
+
+# PATCH endpoint
+@router.patch("/resource/{resource_id}", response_model=ProxyResponse, status_code=status.HTTP_200_OK)
+async def patch_resource(
+    resource_id: str = Path(..., description="Resource ID"),
+    body: Dict[str, Any] = Body(..., description="Partial resource data"),
+    request: Request = None,
+    gateway_service: GatewayService = Depends(get_gateway_service),
+):
+    """
+    PATCH endpoint để cập nhật một phần resource.
+    
+    Args:
+        resource_id: Resource ID
+        body: Partial resource data
+        request: HTTP request
+        gateway_service: Gateway service
+        
+    Returns:
+        ProxyResponse
+    """
+    try:
+        result = await gateway_service.patch_resource(resource_id, body)
+        return ProxyResponse(status=200, data=result)
+    except Exception as e:
+        return ProxyResponse(status=500, message=str(e))
+
+
+# Proxy endpoint với query params
+@router.get("/search", response_model=ProxyResponse, status_code=status.HTTP_200_OK)
+async def search_resources(
+    q: Optional[str] = Query(None, description="Search query"),
+    limit: int = Query(10, ge=1, le=100, description="Results limit"),
+    offset: int = Query(0, ge=0, description="Results offset"),
+    gateway_service: GatewayService = Depends(get_gateway_service),
+):
+    """
+    Search endpoint với query params.
+    
+    Args:
+        q: Search query
+        limit: Results limit
+        offset: Results offset
+        gateway_service: Gateway service
+        
+    Returns:
+        ProxyResponse
+    """
+    try:
+        result = await gateway_service.search(q, limit, offset)
+        return ProxyResponse(status=200, data=result)
+    except Exception as e:
+        return ProxyResponse(status=500, message=str(e))
+
+
+# Header params endpoint
+@router.get("/headers", response_model=ProxyResponse, status_code=status.HTTP_200_OK)
+async def get_with_headers(
+    x_tenant_id: Optional[str] = Header(None, description="Tenant ID"),
+    x_request_id: Optional[str] = Header(None, description="Request ID"),
+    gateway_service: GatewayService = Depends(get_gateway_service),
+):
+    """
+    Endpoint với header params.
+    
+    Args:
+        x_tenant_id: Tenant ID
+        x_request_id: Request ID
+        gateway_service: Gateway service
+        
+    Returns:
+        ProxyResponse
+    """
+    try:
+        result = await gateway_service.get_with_headers(x_tenant_id, x_request_id)
+        return ProxyResponse(status=200, data=result)
+    except Exception as e:
+        return ProxyResponse(status=500, message=str(e))
+
+
+# Proxy catch-all route
+@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_route(
+    path: str = Path(..., description="Proxy path"),
+    request: Request = None,
+    response: Response = None,
+    gateway_service: GatewayService = Depends(get_gateway_service),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
+):
+    """
+    Proxy catch-all route.
+    
+    Proxy tất cả requests đến backend services.
+    
+    Args:
+        path: Proxy path
+        request: HTTP request
+        response: HTTP response
+        gateway_service: Gateway service
+        rate_limiter: Rate limiter
+        
+    Returns:
+        Response
+    """
+    try:
+        # Check rate limit
+        await check_rate_limit(request, rate_limiter)
+        
+        # Forward to backend
+        result = await gateway_service.proxy(request, path)
+        
+        return Response(
+            content=result,
+            status_code=200,
+            media_type="application/json",
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(e)},
+        )

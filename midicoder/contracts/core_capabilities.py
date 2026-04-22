@@ -1187,6 +1187,466 @@ class CoreCapabilitiesRegistry:
         }
 
 
+# ============================================================================
+# CP06: Gateway & Service Mesh Core Capabilities (10 new caps)
+# ============================================================================
+
+
+@dataclass
+class GatewayCoreCapabilities:
+    """
+    CP06: Gateway & Service Mesh Core Capabilities (10 capabilities).
+    
+    Các capabilities này hỗ trợ API Gateway và Service Mesh patterns:
+    - Gateway Operations (4): proxy_request, aggregate_data_sequential, 
+      aggregate_data_parallel, cache_response
+    - Resilience Operations (3): check_circuit_breaker, execute_with_retry, 
+      apply_rate_limit
+    - Service Mesh Operations (3): register_service, service_discovery, 
+      emit_metric
+    """
+    
+    # =========================================================================
+    # Gateway Operations (4 capabilities)
+    # =========================================================================
+    
+    PROXY_REQUEST: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="proxy_request",
+            name="Proxy Request",
+            description="Proxy request đến backend service qua API Gateway",
+            params_schema={
+                "service_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Backend service ID để proxy đến"
+                },
+                "request": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Request object (method, path, headers, body)"
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 30000,
+                    "description": "Request timeout (ms)"
+                },
+                "forward_headers": {
+                    "type": "array",
+                    "required": False,
+                    "description": "Headers để forward đến backend"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Tenant ID cho multi-tenant routing"
+                }
+            },
+            default_obligations=[
+                "service_discovery_required",
+                "request_timeout_enforced",
+                "tenant_scope_propagated"
+            ],
+            read_access=[],
+            write_access=[],
+            effects=["outbound_call"]
+        )
+    )
+    
+    AGGREGATE_DATA_SEQUENTIAL: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="aggregate_data_sequential",
+            name="Aggregate Data Sequential",
+            description="Aggregate data từ multiple services theo thứ tự tuần tự (sequential/waterfall)",
+            params_schema={
+                "service_chain": {
+                    "type": "array",
+                    "required": True,
+                    "description": "Danh sách service calls theo thứ tự tuần tự",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "service_id": {"type": "string"},
+                            "operation": {"type": "string"},
+                            "params": {"type": "object"}
+                        }
+                    }
+                },
+                "accumulate_results": {
+                    "type": "boolean",
+                    "required": False,
+                    "default": True,
+                    "description": "Accumulate results từ mỗi service"
+                },
+                "fail_fast": {
+                    "type": "boolean",
+                    "required": False,
+                    "default": True,
+                    "description": "Dừng ngay khi service đầu tiên fail"
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 60000,
+                    "description": "Total timeout cho toàn chain"
+                }
+            },
+            default_obligations=[
+                "service_chain_valid",
+                "sequential_execution_guaranteed"
+            ],
+            read_access=[],
+            write_access=[],
+            effects=["outbound_call"]
+        )
+    )
+    
+    AGGREGATE_DATA_PARALLEL: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="aggregate_data_parallel",
+            name="Aggregate Data Parallel",
+            description="Aggregate data từ multiple services đồng thời (parallel/fan-out)",
+            params_schema={
+                "services": {
+                    "type": "array",
+                    "required": True,
+                    "description": "Danh sách services để call parallel",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "service_id": {"type": "string"},
+                            "operation": {"type": "string"},
+                            "params": {"type": "object"},
+                            "optional": {"type": "boolean", "default": False}
+                        }
+                    }
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 10000,
+                    "description": "Timeout cho mỗi parallel call"
+                },
+                "collect_partial": {
+                    "type": "boolean",
+                    "required": False,
+                    "default": True,
+                    "description": "Trả về partial results nếu 1 vài services timeout"
+                }
+            },
+            default_obligations=[
+                "parallel_execution_guaranteed",
+                "timeout_per_call_enforced"
+            ],
+            read_access=[],
+            write_access=[],
+            effects=["outbound_call"]
+        )
+    )
+    
+    CACHE_RESPONSE: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="cache_response",
+            name="Cache Response",
+            description="Cache response với TTL và cache key strategy",
+            params_schema={
+                "cache_key": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Cache key để store/retrieve"
+                },
+                "data": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Response data để cache"
+                },
+                "ttl": {
+                    "type": "integer",
+                    "required": True,
+                    "description": "Time-to-live in seconds"
+                },
+                "cache_strategy": {
+                    "type": "string",
+                    "required": False,
+                    "default": "cache-aside",
+                    "enum": ["cache-aside", "read-through", "write-through", "write-behind"],
+                    "description": "Cache strategy"
+                },
+                "version": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Cache version cho invalidation"
+                }
+            },
+            default_obligations=[
+                "cache_key_generated",
+                "ttl_valid"
+            ],
+            read_access=["cache"],
+            write_access=["cache"],
+            effects=["cache_write"]
+        )
+    )
+    
+    # =========================================================================
+    # Resilience Operations (3 capabilities)
+    # =========================================================================
+    
+    CHECK_CIRCUIT_BREAKER: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="check_circuit_breaker",
+            name="Check Circuit Breaker",
+            description="Check circuit breaker state trước khi call service",
+            params_schema={
+                "service_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Service ID để check circuit"
+                },
+                "circuit_id": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Circuit breaker ID (mặc định: service_id)"
+                },
+                "state": {
+                    "type": "string",
+                    "required": False,
+                    "enum": ["closed", "open", "half-open"],
+                    "description": "Circuit state hiện tại"
+                }
+            },
+            default_obligations=[
+                "circuit_state_checked"
+            ],
+            read_access=["circuit_breaker_state"],
+            write_access=[],
+            effects=[]
+        )
+    )
+    
+    EXECUTE_WITH_RETRY: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="execute_with_retry",
+            name="Execute With Retry",
+            description="Execute operation với retry policy và backoff strategy",
+            params_schema={
+                "operation": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Operation để execute"
+                },
+                "max_retries": {
+                    "type": "integer",
+                    "required": True,
+                    "description": "Max số lần retry"
+                },
+                "backoff_strategy": {
+                    "type": "string",
+                    "required": True,
+                    "enum": ["fixed", "exponential", "exponential_with_jitter"],
+                    "description": "Backoff strategy"
+                },
+                "initial_delay_ms": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 1000,
+                    "description": "Initial delay (ms)"
+                },
+                "max_delay_ms": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 30000,
+                    "description": "Max delay (ms)"
+                },
+                "retryable_errors": {
+                    "type": "array",
+                    "required": False,
+                    "description": "Danh sách error codes để retry"
+                }
+            },
+            default_obligations=[
+                "retry_count_tracked",
+                "backoff_calculated"
+            ],
+            read_access=[],
+            write_access=[],
+            effects=["operation_retry"]
+        )
+    )
+    
+    APPLY_RATE_LIMIT: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="apply_rate_limit",
+            name="Apply Rate Limit",
+            description="Apply rate limiting cho request",
+            params_schema={
+                "limit": {
+                    "type": "integer",
+                    "required": True,
+                    "description": "Max requests cho window"
+                },
+                "window": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Window duration (vd: '60s', '1h')"
+                },
+                "scope": {
+                    "type": "string",
+                    "required": True,
+                    "enum": ["global", "user", "tenant", "ip", "endpoint"],
+                    "description": "Rate limit scope"
+                },
+                "scope_id": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Scope ID (user_id, tenant_id, ip)"
+                },
+                "action_on_exceed": {
+                    "type": "string",
+                    "required": False,
+                    "default": "reject",
+                    "enum": ["reject", "queue", "slow_down"],
+                    "description": "Action khi exceed limit"
+                }
+            },
+            default_obligations=[
+                "rate_limit_checked",
+                "scope_validated"
+            ],
+            read_access=["rate_limit_counter"],
+            write_access=["rate_limit_counter"],
+            effects=["rate_limit_enforced"]
+        )
+    )
+    
+    # =========================================================================
+    # Service Mesh Operations (3 capabilities)
+    # =========================================================================
+    
+    REGISTER_SERVICE: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="register_service",
+            name="Register Service",
+            description="Register service vào service mesh (Consul)",
+            params_schema={
+                "service_config": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Service configuration",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "id": {"type": "string"},
+                        "address": {"type": "string"},
+                        "port": {"type": "integer"},
+                        "tags": {"type": "array"},
+                        "meta": {"type": "object"}
+                    }
+                },
+                "health_check": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Health check configuration"
+                },
+                "connect": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Consul Connect configuration"
+                }
+            },
+            default_obligations=[
+                "service_registered",
+                "health_check_configured"
+            ],
+            read_access=[],
+            write_access=["service_registry"],
+            effects=["service_registered"]
+        )
+    )
+    
+    SERVICE_DISCOVERY: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="service_discovery",
+            name="Service Discovery",
+            description="Discover service endpoints từ service mesh",
+            params_schema={
+                "service_name": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Service name để discover"
+                },
+                "tags": {
+                    "type": "array",
+                    "required": False,
+                    "description": "Filter by tags"
+                },
+                "healthy_only": {
+                    "type": "boolean",
+                    "required": False,
+                    "default": True,
+                    "description": "Chỉ healthy instances"
+                },
+                "passing_only": {
+                    "type": "boolean",
+                    "required": False,
+                    "default": True,
+                    "description": "Chỉ passing health checks"
+                }
+            },
+            default_obligations=[
+                "service_found",
+                "endpoints_valid"
+            ],
+            read_access=["service_registry"],
+            write_access=[],
+            effects=[]
+        )
+    )
+    
+    EMIT_METRIC: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="emit_metric",
+            name="Emit Metric",
+            description="Emit custom metric cho observability",
+            params_schema={
+                "metric_name": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Metric name"
+                },
+                "value": {
+                    "type": "number",
+                    "required": True,
+                    "description": "Metric value"
+                },
+                "type": {
+                    "type": "string",
+                    "required": False,
+                    "default": "gauge",
+                    "enum": ["counter", "gauge", "histogram", "summary"],
+                    "description": "Metric type"
+                },
+                "labels": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Metric labels/dimensions"
+                },
+                "unit": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Metric unit"
+                }
+            },
+            default_obligations=[
+                "metric_emitted"
+            ],
+            read_access=[],
+            write_access=[],
+            effects=["metric_emit"]
+        )
+    )
+
+
 # Export all capabilities
 __all__ = [
     # Category classes
@@ -1196,6 +1656,7 @@ __all__ = [
     "EventIntegrationCoreCapabilities",
     "AuditObservabilityCoreCapabilities",
     "StreamingCoreCapabilities",
+    "GatewayCoreCapabilities",  # CP06 new
     # Registry
     "CoreCapabilitiesRegistry",
 ]
