@@ -1,0 +1,224 @@
+/**
+ * File Upload Service cho NestJS.
+ *
+ * Cung cấp:
+ * - File upload handling
+ * - Validation
+ * - S3 integration
+ *
+ * CP11: File Storage & Media
+ */
+
+import { Injectable, Inject } from "@nestjs/common";
+import { v4 as uuidv4 } from "uuid";
+import * as AWS from "@aws-sdk/client-s3";
+import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+// Allowed content types
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm"];
+const ALLOWED_DOCUMENT_TYPES = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+
+// Max file sizes
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024; // 10MB
+
+/**
+ * File Upload Service.
+ */
+@Injectable()
+export class FileUploadService {
+  /**
+   * Constructor.
+   *
+   * @param s3Client - AWS S3 client
+   */
+  constructor(
+    @Inject("S3_CLIENT")
+    private readonly s3Client: AWS.S3Client,
+  ) {}
+
+  private readonly bucket = process.env.S3_BUCKET || "uploads";
+
+  /**
+   * Upload image file.
+   *
+   * @param buffer - File buffer
+   * @param filename - Original filename
+   * @param contentType - Content type
+   * @param folder - Storage folder
+   * @returns Upload result
+   */
+  async uploadImage(
+    buffer: Buffer,
+    filename: string,
+    contentType: string,
+    folder: string = "images",
+  ): Promise<{ key: string; url: string; size: number }> {
+    if (!ALLOWED_IMAGE_TYPES.includes(contentType)) {
+      throw new Error(`Unsupported image type: ${contentType}`);
+    }
+
+    if (buffer.length > MAX_IMAGE_SIZE) {
+      throw new Error(`Image too large. Max size: ${MAX_IMAGE_SIZE / 1024 / 1024}MB`);
+    }
+
+    const ext = filename.split(".").pop() || "jpg";
+    const key = `${folder}/${uuidv4()}.${ext}`;
+
+    await this.s3Client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      }),
+    );
+
+    const url = `https://${this.bucket}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com/${key}`;
+
+    return { key, url, size: buffer.length };
+  }
+
+  /**
+   * Upload video file.
+   *
+   * @param buffer - File buffer
+   * @param filename - Original filename
+   * @param contentType - Content type
+   * @param folder - Storage folder
+   * @returns Upload result
+   */
+  async uploadVideo(
+    buffer: Buffer,
+    filename: string,
+    contentType: string,
+    folder: string = "videos",
+  ): Promise<{ key: string; url: string; size: number }> {
+    if (!ALLOWED_VIDEO_TYPES.includes(contentType)) {
+      throw new Error(`Unsupported video type: ${contentType}`);
+    }
+
+    if (buffer.length > MAX_VIDEO_SIZE) {
+      throw new Error(`Video too large. Max size: ${MAX_VIDEO_SIZE / 1024 / 1024}MB`);
+    }
+
+    const ext = filename.split(".").pop() || "mp4";
+    const key = `${folder}/${uuidv4()}.${ext}`;
+
+    await this.s3Client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      }),
+    );
+
+    const url = `https://${this.bucket}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com/${key}`;
+
+    return { key, url, size: buffer.length };
+  }
+
+  /**
+   * Upload document file.
+   *
+   * @param buffer - File buffer
+   * @param filename - Original filename
+   * @param contentType - Content type
+   * @param folder - Storage folder
+   * @returns Upload result
+   */
+  async uploadDocument(
+    buffer: Buffer,
+    filename: string,
+    contentType: string,
+    folder: string = "documents",
+  ): Promise<{ key: string; url: string; size: number }> {
+    if (!ALLOWED_DOCUMENT_TYPES.includes(contentType)) {
+      throw new Error(`Unsupported document type: ${contentType}`);
+    }
+
+    if (buffer.length > MAX_DOCUMENT_SIZE) {
+      throw new Error(`Document too large. Max size: ${MAX_DOCUMENT_SIZE / 1024 / 1024}MB`);
+    }
+
+    const ext = filename.split(".").pop() || "pdf";
+    const key = `${folder}/${uuidv4()}.${ext}`;
+
+    await this.s3Client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      }),
+    );
+
+    const url = `https://${this.bucket}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com/${key}`;
+
+    return { key, url, size: buffer.length };
+  }
+
+  /**
+   * Delete file from S3.
+   *
+   * @param key - File key
+   * @returns True if deleted successfully
+   */
+  async deleteFile(key: string): Promise<boolean> {
+    await this.s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      }),
+    );
+    return true;
+  }
+
+  /**
+   * Get file from S3.
+   *
+   * @param key - File key
+   * @returns File buffer
+   */
+  async getFile(key: string): Promise<Buffer> {
+    const response = await this.s3Client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      }),
+    );
+
+    const body = response.Body;
+    if (body instanceof Uint8Array) {
+      return Buffer.from(body);
+    }
+
+    const chunks: Buffer[] = [];
+    if (body instanceof require("stream").Readable) {
+      for await (const chunk of body) {
+        chunks.push(Buffer.from(chunk));
+      }
+    }
+    return Buffer.concat(chunks);
+  }
+
+  /**
+   * Generate presigned URL for file.
+   *
+   * @param key - File key
+   * @param expiration - URL validity in seconds
+   * @returns Presigned URL
+   */
+  async getPresignedUrl(key: string, expiration: number = 3600): Promise<string> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    });
+
+    return getSignedUrl(this.s3Client, command, { expiresIn: expiration });
+  }
+}

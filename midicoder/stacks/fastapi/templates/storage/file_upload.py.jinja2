@@ -1,0 +1,224 @@
+"""
+File Upload Service cho FastAPI.
+
+Cung cấp:
+- File upload handling
+- Validation
+- Storage integration
+
+CP11: File Storage & Media
+"""
+
+import uuid
+from typing import Optional
+from fastapi import UploadFile, HTTPException
+from fastapi.responses import Response
+
+from .s3 import upload_file, download_file, delete_file, get_presigned_url
+
+# Allowed file types
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+ALLOWED_VIDEO_TYPES = {"video/mp4", "video/webm"}
+ALLOWED_DOCUMENT_TYPES = {"application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+
+# Max file sizes (bytes)
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_DOCUMENT_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+class FileUploadService:
+    """
+    Service cho file upload operations.
+
+    Hỗ trợ:
+    - Upload images, videos, documents
+    - Validation
+    - Storage integration
+    """
+
+    def __init__(self, bucket: Optional[str] = None) -> None:
+        """
+        Khởi tạo file upload service.
+
+        Args:
+            bucket: S3 bucket name
+        """
+        self.bucket = bucket
+
+    async def upload_image(
+        self,
+        file: UploadFile,
+        folder: str = "images",
+    ) -> dict:
+        """
+        Upload image file.
+
+        Args:
+            file: UploadFile
+            folder: Storage folder
+
+        Returns:
+            Upload result
+        """
+        # Validate content type
+        if file.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported image type: {file.content_type}",
+            )
+
+        # Read file and check size
+        content = await file.read()
+        if len(content) > MAX_IMAGE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image too large. Max size: {MAX_IMAGE_SIZE / 1024 / 1024:.0f}MB",
+            )
+
+        # Generate key
+        file_ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+        key = f"{folder}/{uuid.uuid4()}.{file_ext}"
+
+        # Upload to S3
+        result = upload_file(content, key, self.bucket, file.content_type)
+
+        return {
+            "filename": file.filename,
+            "url": result["url"],
+            "key": key,
+            "size": len(content),
+            "type": file.content_type,
+        }
+
+    async def upload_video(
+        self,
+        file: UploadFile,
+        folder: str = "videos",
+    ) -> dict:
+        """
+        Upload video file.
+
+        Args:
+            file: UploadFile
+            folder: Storage folder
+
+        Returns:
+            Upload result
+        """
+        # Validate content type
+        if file.content_type not in ALLOWED_VIDEO_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported video type: {file.content_type}",
+            )
+
+        # Read file and check size
+        content = await file.read()
+        if len(content) > MAX_VIDEO_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Video too large. Max size: {MAX_VIDEO_SIZE / 1024 / 1024:.0f}MB",
+            )
+
+        # Generate key
+        file_ext = file.filename.split(".")[-1] if "." in file.filename else "mp4"
+        key = f"{folder}/{uuid.uuid4()}.{file_ext}"
+
+        # Upload to S3
+        result = upload_file(content, key, self.bucket, file.content_type)
+
+        return {
+            "filename": file.filename,
+            "url": result["url"],
+            "key": key,
+            "size": len(content),
+            "type": file.content_type,
+        }
+
+    async def upload_document(
+        self,
+        file: UploadFile,
+        folder: str = "documents",
+    ) -> dict:
+        """
+        Upload document file.
+
+        Args:
+            file: UploadFile
+            folder: Storage folder
+
+        Returns:
+            Upload result
+        """
+        # Validate content type
+        if file.content_type not in ALLOWED_DOCUMENT_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported document type: {file.content_type}",
+            )
+
+        # Read file and check size
+        content = await file.read()
+        if len(content) > MAX_DOCUMENT_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Document too large. Max size: {MAX_DOCUMENT_SIZE / 1024 / 1024:.0f}MB",
+            )
+
+        # Generate key
+        file_ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+        key = f"{folder}/{uuid.uuid4()}.{file_ext}"
+
+        # Upload to S3
+        result = upload_file(content, key, self.bucket, file.content_type)
+
+        return {
+            "filename": file.filename,
+            "url": result["url"],
+            "key": key,
+            "size": len(content),
+            "type": file.content_type,
+        }
+
+    async def delete_file(self, key: str) -> bool:
+        """
+        Xóa file từ storage.
+
+        Args:
+            key: File key
+
+        Returns:
+            True nếu xóa thành công
+        """
+        return delete_file(key, self.bucket)
+
+    async def get_file(self, key: str) -> Response:
+        """
+        Download file.
+
+        Args:
+            key: File key
+
+        Returns:
+            File response
+        """
+        content = download_file(key, self.bucket)
+        return Response(content=content, media_type="application/octet-stream")
+
+    async def get_presigned_url(
+        self,
+        key: str,
+        expiration: int = 3600,
+    ) -> str:
+        """
+        Get presigned URL cho file.
+
+        Args:
+            key: File key
+            expiration: URL validity (seconds)
+
+        Returns:
+            Presigned URL
+        """
+        return get_presigned_url(key, self.bucket, expiration)
