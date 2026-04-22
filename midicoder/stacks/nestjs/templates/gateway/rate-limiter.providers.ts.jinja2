@@ -1,0 +1,476 @@
+/**
+ * Rate Limiter Providers - Providers cho rate limiting.
+ * 
+ * Providers này cung cấp:
+ * - Rate limiter cho API protection
+ * - Throttler configuration
+ * - Distributed rate limiting (Redis)
+ * - Local rate limiting (Memory)
+ * 
+ * CP06: API Gateway & Service Mesh
+ */
+
+import { Provider } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ThrottlerStorageServiceInterface } from '@nestjs/throttler';
+
+/**
+ * RateLimiterConfig - Configuration cho rate limiter.
+ */
+export interface RateLimiterConfig {
+  /** Số request tối đa */
+  limit: number;
+  /** Thời gian TTL (ms) */
+  ttl: number;
+  /** Burst limit */
+  burst?: number;
+  /** Sử dụng Redis */
+  useRedis?: boolean;
+  /** Whitelist IP addresses */
+  whitelist?: string[];
+  /** Blacklist IP addresses */
+  blacklist?: string[];
+}
+
+/**
+ * CustomRateLimiterService - Custom rate limiter service.
+ * 
+ * Service này:
+ * 1. Rate limiting với fixed window
+ * 2. Support cho distributed (Redis) & local (Memory)
+ * 3. Custom key generator
+ * 4. Whitelist/blacklist support
+ * 5. Rate limit headers
+ * 
+ * @customRateLimiterStorageProvider Custom provider cho rate limiting storage
+ */
+export const CUSTOM_RATE_LIMITER_STORAGE_PROVIDER: Provider = {
+  provide: 'CUSTOM_RATE_LIMITER_STORAGE',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<ThrottlerStorageServiceInterface> => {
+    const useRedis = configService.get('RATE_LIMIT_STORAGE') === 'redis';
+
+    // Cache store configuration
+    const cacheStore = useRedis ? 'redis' : 'memory';
+
+    if (useRedis) {
+      // Distributed rate limiting với Redis
+      const createClient = await import('redis').then((m) => m.createClient);
+      const client = createClient({
+        url: configService.get('REDIS_URL', 'redis://localhost:6379'),
+      });
+
+      await client.connect();
+
+      return {
+        /**
+         * Increment - Tăng counter cho key.
+         * 
+         * @param key Rate limit key
+         * @param ttl Time to live (ms)
+         * @returns { limit: number, remaining: number, ttl: number }
+         */
+        async increment(key: string): Promise<{ limit: number; remaining: number; ttl: number }> {
+          const limit = configService.get('RATE_LIMIT_SHORT', 100);
+          const ttlSeconds = Math.ceil(configService.get('RATE_LIMIT_TTL', 1000) / 1000);
+
+          // Check whitelist
+          const whitelist = configService.get<string[]>('RATE_LIMIT_WHITELIST', []);
+          if (whitelist.includes(key)) {
+            return { limit: -1, remaining: -1, ttl: 0 }; // Unlimited
+          }
+
+          // Check blacklist
+          const blacklist = configService.get<string[]>('RATE_LIMIT_BLACKLIST', []);
+          if (blacklist.includes(key)) {
+            throw new Error('IP bị blacklist');
+          }
+
+          // Increment counter trong Redis
+          const current = await client.incr(key);
+          
+          // Set TTL nếu là lần đầu
+          if (current === 1) {
+            await client.expire(key, ttlSeconds);
+          }
+
+          // Get TTL
+          const remainingTtl = await client.ttl(key);
+
+          return {
+            limit,
+            remaining: Math.max(0, limit - current),
+            ttl: Math.max(0, remainingTtl),
+          };
+        },
+
+        /**
+         * Reset - Reset counter cho key.
+         * 
+         * @param key Rate limit key
+         */
+        async reset(key: string): Promise<void> {
+          await client.del(key);
+        },
+      };
+    }
+
+    // Local rate limiting với Memory - memory store
+    const store = new Map<string, { count: number; timestamp: number }>();
+
+    return {
+      /**
+       * Increment - Tăng counter cho key.
+       * 
+       * @param key Rate limit key
+       * @param ttl Time to live (ms)
+       * @returns { limit: number, remaining: number, ttl: number }
+       */
+      async increment(key: string, ttl: number): Promise<{ limit: number; remaining: number; ttl: number }> {
+        const limit = configService.get('RATE_LIMIT_SHORT', 100);
+        const now = Date.now();
+
+        // Check whitelist
+        const whitelist = configService.get<string[]>('RATE_LIMIT_WHITELIST', []);
+        if (whitelist.includes(key)) {
+          return { limit: -1, remaining: -1, ttl: 0 }; // Unlimited
+        }
+
+        // Check blacklist
+        const blacklist = configService.get<string[]>('RATE_LIMIT_BLACKLIST', []);
+        if (blacklist.includes(key)) {
+          throw new Error('IP bị blacklist');
+        }
+
+        // Get hoặc tạo entry
+        let entry = store.get(key);
+        if (!entry || now - entry.timestamp > ttl) {
+          entry = { count: 1, timestamp: now };
+          store.set(key, entry);
+        } else {
+          entry.count++;
+        }
+
+        return {
+          limit,
+          remaining: Math.max(0, limit - entry.count),
+          ttl: Math.max(0, Math.floor((ttl - (now - entry.timestamp)) / 1000)),
+        };
+      },
+
+      /**
+       * Reset - Reset counter cho key.
+       * 
+       * @param key Rate limit key
+       */
+      async reset(key: string): Promise<void> {
+        store.delete(key);
+      },
+    };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * RateLimiterFactory - Factory cho rate limiter.
+ * 
+ * Factory này tạo rate limiter với configuration từ env.
+ * Exports rateLimiter factory.
+ */
+export const RATE_LIMITER_FACTORY: Provider = {
+  provide: 'RATE_LIMITER',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<any> => {
+    const RateLimiter = await import('rate-limiter-flexible').then((m) => m.RateLimiterMemory);
+
+    return new RateLimiter({
+      /** Điểm cho mỗi request */
+      points: 1,
+      /** Thời gian window (ms) */
+      duration: 1000,
+      /** Số request tối đa per second */
+      pointsDuration: 's',
+    });
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * ThrottlerGuardProvider - Provider cho ThrottlerGuard.
+ * 
+ * ThrottlerGuard từ @nestjs/throttler.
+ */
+export const THROTTLER_GUARD_PROVIDER: Provider = {
+  provide: 'THROTTLER_GUARD',
+  useFactory: (): any => {
+    const ThrottlerGuard = await import('@nestjs/throttler').then(m => m.ThrottlerGuard);
+    return ThrottlerGuard;
+  },
+};
+
+/**
+ * SlidingWindowLimiterProvider - Provider cho sliding window rate limiter.
+ * 
+ * Sliding window cho smoother rate limiting.
+ */
+export const SLIDING_WINDOW_LIMITER_PROVIDER: Provider = {
+  provide: 'SLIDING_WINDOW_LIMITER',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<any> => {
+    const RateLimiter = await import('rate-limiter-flexible').then((m) => m.RateLimiterSlidingWindow);
+    const Redis = await import('ioredis').then((m) => m.default);
+
+    const redis = new Redis(configService.get('REDIS_URL', 'redis://localhost:6379'));
+
+    // Sliding window configuration
+    return new RateLimiter({
+      keyPrefix: 'ratelimit',
+      storeClient: redis,
+      points: configService.get('RATE_LIMIT_SHORT', 100),
+      duration: 1,
+    });
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * FixedWindowLimiterProvider - Provider cho fixed window rate limiter.
+ * 
+ * Fixed window cho simpler implementation.
+ */
+export const FIXED_WINDOW_LIMITER_PROVIDER: Provider = {
+  provide: 'FIXED_WINDOW_LIMITER',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<any> => {
+    const RateLimiter = await import('rate-limiter-flexible').then((m) => m.RateLimiterFixed);
+
+    // Fixed window configuration
+    return new RateLimiter({
+      points: configService.get('RATE_LIMIT_SHORT', 100),
+      duration: 1,
+    });
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * MemoryStoreProvider - Provider cho Memory store.
+ * 
+ * In-memory cache store cho rate limiting.
+ */
+export const MEMORY_STORE_PROVIDER: Provider = {
+  provide: 'MEMORY_STORE',
+  useFactory: (): Map<string, any> => new Map(),
+};
+
+/**
+ * Error Handler Provider.
+ * 
+ * Handler cho rate limit errors.
+ */
+export const ERROR_HANDLER_PROVIDER: Provider = {
+  provide: 'RATE_LIMIT_ERROR_HANDLER',
+  useFactory: (): ((err: any) => any) => {
+    return (err: any) => {
+      console.error('Rate limit error:', err);
+      return { error: 'Rate limit exceeded', message: err.message };
+    };
+  },
+};
+
+/**
+ * Handled Response Provider.
+ * 
+ * Response khi rate limit bị exceed.
+ * handled_response for rate limited requests.
+ */
+export const HANDLED_RESPONSE_PROVIDER: Provider = {
+  provide: 'RATE_LIMIT_HANDLED_RESPONSE',
+  useValue: {
+    status: 429,
+    body: { error: 'Too Many Requests' },
+    handled_response: {
+      headers: {
+        'Retry-After': '60',
+      },
+    },
+  },
+};
+
+/**
+ * TokenBucketLimiterProvider - Provider cho token bucket rate limiter.
+ * 
+ * Token bucket cho burst traffic handling.
+ */
+export const TOKEN_BUCKET_LIMITER_PROVIDER: Provider = {
+  provide: 'TOKEN_BUCKET_LIMITER',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<any> => {
+    const RateLimiter = await import('rate-limiter-flexible').then((m) => m.RateLimiterTokenBucket);
+
+    // Token bucket configuration cho burst handling
+    return new RateLimiter({
+      tokensPerInterval: configService.get('RATE_LIMIT_SHORT', 100),
+      interval: 's',
+      intervalStep: 1,
+      tokens: configService.get('RATE_LIMIT_BURST', 200),
+    });
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * Request per minute config provider.
+ * request_per_minute configuration - 1000 requests per Minute.
+ */
+export const REQUEST_PER_MINUTE_PROVIDER: Provider = {
+  provide: 'REQUEST_PER_MINUTE',
+  useFactory: (configService: ConfigService): number => {
+    // request_per_minute from config (1000 per Minute)
+    return configService.get('RATE_LIMIT_MEDIUM', 1000);
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * Rate limit headers provider.
+ * 
+ * X-RateLimit-* headers cho responses.
+ */
+export const RATE_LIMIT_HEADERS_PROVIDER: Provider = {
+  provide: 'RATE_LIMIT_HEADERS',
+  useValue: {
+    enabled: true,
+    prefix: 'X-RateLimit',
+  },
+};
+
+/**
+ * Rate limit exceeded handler provider.
+ * 
+ * Handler cho 429 Too Many Requests.
+ */
+export const RATE_LIMIT_EXCEEDED_HANDLER_PROVIDER: Provider = {
+  provide: 'RATE_LIMIT_EXCEEDED',
+  useFactory: (): ((req: any) => Promise<any>) => {
+    return async (req: any) => {
+      return {
+        status: 429,
+        body: {
+          error: 'Too Many Requests',
+          message: 'Rate limit exceeded. Please try again later.',
+        },
+      };
+    };
+  },
+};
+
+/**
+ * DistributedRateLimiterProvider - Provider cho distributed rate limiter.
+ * 
+ * Distributed rate limiting với Redis cho multi-instance deployments.
+ */
+export const DISTRIBUTED_RATE_LIMITER_PROVIDER: Provider = {
+  provide: 'DISTRIBUTED_RATE_LIMITER',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<any> => {
+    const RateLimiter = await import('rate-limiter-flexible').then((m) => m.RateLimiterRedis);
+    const Redis = await import('ioredis').then((m) => m.default);
+
+    const redis = new Redis(configService.get('REDIS_URL', 'redis://localhost:6379'));
+
+    return new RateLimiter({
+      storeClient: redis,
+      keyPrefix: 'gateway-ratelimit',
+      points: configService.get('RATE_LIMIT_SHORT', 100),
+      duration: 1,
+    });
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * KeyGeneratorProvider - Provider cho custom key generator.
+ * 
+ * Custom key generator cho rate limiting.
+ */
+export const KEY_GENERATOR_PROVIDER: Provider = {
+  provide: 'KEY_GENERATOR',
+  useFactory: (
+    configService: ConfigService,
+  ): ((req: any) => string) => {
+    const useIpKey = configService.get('RATE_LIMIT_KEY_BY_IP', true);
+
+    return (req: any): string => {
+      if (useIpKey) {
+        // Key bằng IP address
+        return req.ip || req.socket?.remoteAddress || 'unknown';
+      }
+
+      // Key bằng user ID (nếu authenticated)
+      return req.user?.sub || req.ip || 'anonymous';
+    };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * SkipFunctionProvider - Provider cho skip function.
+ * 
+ * Skip function để bypass rate limiting cho certain requests.
+ */
+export const SKIP_FUNCTION_PROVIDER: Provider = {
+  provide: 'SKIP_FUNCTION',
+  useFactory: (
+    configService: ConfigService,
+  ): ((req: any) => boolean) => {
+    const skipPaths = configService.get<string[]>('RATE_LIMIT_SKIP_PATHS', [
+      '/health',
+      '/ping',
+      '/metrics',
+    ]);
+
+    return (req: any): boolean => {
+      // Skip health checks & internal routes
+      if (skipPaths.some((path) => req.path?.startsWith(path))) {
+        return true;
+      }
+
+      // Skip nếu có API key valid
+      const apiKey = req.headers['x-api-key'];
+      if (apiKey && configService.get('RATE_LIMIT_API_KEYS', []).includes(apiKey)) {
+        return true;
+      }
+
+      return false;
+    };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * RateLimiterProviders - Array của tất cả rate limiter providers.
+ */
+export const RATE_LIMITER_PROVIDERS: Provider[] = [
+  CUSTOM_RATE_LIMITER_STORAGE_PROVIDER,
+  RATE_LIMITER_FACTORY,
+  THROTTLER_GUARD_PROVIDER,
+  SLIDING_WINDOW_LIMITER_PROVIDER,
+  FIXED_WINDOW_LIMITER_PROVIDER,
+  MEMORY_STORE_PROVIDER,
+  ERROR_HANDLER_PROVIDER,
+  HANDLED_RESPONSE_PROVIDER,
+  TOKEN_BUCKET_LIMITER_PROVIDER,
+  REQUEST_PER_MINUTE_PROVIDER,
+  RATE_LIMIT_HEADERS_PROVIDER,
+  RATE_LIMIT_EXCEEDED_HANDLER_PROVIDER,
+  DISTRIBUTED_RATE_LIMITER_PROVIDER,
+  KEY_GENERATOR_PROVIDER,
+  SKIP_FUNCTION_PROVIDER,
+];

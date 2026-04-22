@@ -1,0 +1,245 @@
+"""
+FastAPI Route Config - Route configuration management.
+
+Module này cung cấp:
+- RouteConfig dataclass
+- BackendConfig dataclass
+- Route matching logic
+- Load/reload configuration
+
+CP06: API Gateway & Service Mesh
+"""
+
+import logging
+from typing import List, Optional
+from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RouteConfig:
+    """
+    RouteConfig - Cấu hình route.
+    
+    Attributes:
+        id: Route ID
+        name: Route name
+        paths: Danh sách paths
+        methods: HTTP methods
+        backend: Backend service ID
+        prefix: Prefix để strip
+        strip_prefix: Strip prefix flag
+        timeout: Timeout (ms)
+        weight: Weight cho load balancing
+        priority: Priority cho route matching
+        enabled: Enabled flag
+    """
+    id: str
+    name: str
+    paths: List[str]
+    methods: List[str]
+    backend: str
+    prefix: Optional[str] = None
+    strip_prefix: bool = True
+    rewrite: Optional[str] = None  # rewrite pattern
+    timeout: int = 30000
+    weight: int = 1
+    priority: int = 0
+    enabled: bool = True
+
+
+@dataclass
+class BackendConfig:
+    """
+    BackendConfig - Cấu hình backend.
+    
+    Attributes:
+        id: Backend ID
+        name: Backend name
+        url: Backend URL
+        health_path: Health check path
+        enabled: Enabled flag
+    """
+    id: str
+    name: str
+    url: str
+    health_path: str = "/health"
+    enabled: bool = True
+
+
+class RouteConfigManager:
+    """
+    RouteConfigManager - Quản lý route configuration.
+    
+    Class này:
+    1. Load routes từ config
+    2. Match requests với routes
+    3. Reload configuration
+    4. Validate routes
+    
+    Attributes:
+        routes: Danh sách routes
+        backends: Danh sách backends
+    """
+
+    def __init__(self):
+        """Khởi tạo RouteConfigManager."""
+        self.routes: List[RouteConfig] = []
+        self.backends: List[BackendConfig] = []
+    
+    async def load(self):
+        """
+        Load route configuration.
+        
+        Load routes và backends từ default config.
+        """
+        # Default routes
+        self.routes = [
+            RouteConfig(
+                id="api-default",
+                name="Default API Route",
+                paths=["/api/*"],
+                methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+                backend="api-backend",
+                prefix="/api",
+                strip_prefix=True,
+                timeout=30000,
+                enabled=True,
+            ),
+            RouteConfig(
+                id="graphql-default",
+                name="Default GraphQL Route",
+                paths=["/graphql"],
+                methods=["POST", "GET"],
+                backend="graphql-backend",
+                timeout=60000,
+                enabled=True,
+            ),
+        ]
+        
+        # Default backends
+        self.backends = [
+            BackendConfig(
+                id="api-backend",
+                name="API Backend",
+                url="http://localhost:3000",
+                health_path="/health",
+                enabled=True,
+            ),
+            BackendConfig(
+                id="graphql-backend",
+                name="GraphQL Backend",
+                url="http://localhost:4000",
+                health_path="/health",
+                enabled=True,
+            ),
+        ]
+        
+        logger.info(f"Loaded {len(self.routes)} routes and {len(self.backends)} backends")
+    
+    def find_route(self, path: str, method: str) -> Optional[RouteConfig]:
+        """
+        Find route cho request.
+        
+        Args:
+            path: Request path
+            method: HTTP method
+            
+        Returns:
+            Matching route hoặc None
+        """
+        for route in self.routes:
+            if not route.enabled:
+                continue
+            
+            # Method matching
+            if method not in route.methods:
+                continue
+            
+            # Path matching
+            for route_path in route.paths:
+                if route_path.endswith("/*"):
+                    prefix = route_path[:-1]
+                    if path.startswith(prefix):
+                        return route
+                elif route_path == path:
+                    return route
+        
+        return None
+    
+    def validate(self) -> bool:
+        """
+        Validate routes.
+        
+        Returns:
+            True nếu tất cả routes valid
+        """
+        for route in self.routes:
+            if not route.id:
+                logger.error(f"Route missing id: {route}")
+                return False
+            if not route.backend:
+                logger.error(f"Route missing backend: {route.id}")
+                return False
+            if not route.paths:
+                logger.error(f"Route missing paths: {route.id}")
+                return False
+        return True
+    
+    async def reload(self):
+        """Reload route configuration."""
+        logger.info("Reloading route configuration...")
+        await self.load()
+        logger.info("Route configuration reloaded")
+    
+    def get_backend(self, backend_id: str) -> Optional[BackendConfig]:
+        """
+        Get backend by ID.
+        
+        Args:
+            backend_id: Backend ID
+            
+        Returns:
+            Backend config hoặc None
+        """
+        for backend in self.backends:
+            if backend.id == backend_id and backend.enabled:
+                return backend
+        return None
+    
+    def add_route(self, route: RouteConfig):
+        """
+        Add route.
+        
+        Args:
+            route: Route config
+        """
+        self.routes.append(route)
+        logger.info(f"Added route: {route.id}")
+    
+    def remove_route(self, route_id: str):
+        """
+        Remove route.
+        
+        Args:
+            route_id: Route ID
+        """
+        self.routes = [r for r in self.routes if r.id != route_id]
+        logger.info(f"Removed route: {route_id}")
+    
+    def update_route(self, route_id: str, **kwargs):
+        """
+        Update route.
+        
+        Args:
+            route_id: Route ID
+            **kwargs: Route updates
+        """
+        for route in self.routes:
+            if route.id == route_id:
+                for key, value in kwargs.items():
+                    if hasattr(route, key):
+                        setattr(route, key, value)
+                logger.info(f"Updated route: {route_id}")
+                break

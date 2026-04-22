@@ -1,0 +1,149 @@
+# Docker Compose - Infrastructure cho API Gateway
+# # Docker Compose file cho deployment local development
+# CP06-Phase5: Infrastructure
+
+version: "3.8"
+
+# Template variables
+# {{ config }} - template variable
+# Jinja2: {{ config.project_name }}
+
+{% set project_name = config.project_name or 'gateway' %}
+{% set debug = config.debug or 'false' %}
+
+# Services configuration - dịch vụ container
+services:
+  # API Service - API service cho gateway
+  api:
+  # API Gateway Service - dịch vụ gateway chính
+  api_gateway:
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile.api.jinja2
+      # build config cho API service
+    image: {{ config.project_name or 'api-gateway' }}:latest
+    container_name: api-gateway
+    ports:
+      - "8000:8000"  # Port mapping cho API
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/gateway
+      - REDIS_URL=redis://redis:6379
+      - CONSUL_URL=http://consul:8500
+      - KONG_URL=http://kong:8000
+      - DEBUG={{ config.debug or 'false' }}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+    networks:
+      - gateway-network
+    restart: unless-stopped  # restart policy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Kong API Gateway - API gateway layer
+  kong:
+    image: kong:3.4
+    container_name: kong-gateway
+    ports:
+      - "8000:8000"  # HTTP port
+      - "8443:8443"  # HTTPS port
+      - "8001:8001"  # Admin API
+    environment:
+      - KONG_DATABASE=off  # DB-less mode
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001
+    volumes:
+      - ./kong.yml:/etc/kong/kong.yml:ro
+    networks:
+      - gateway-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Consul Service Discovery - dịch vụ service discovery
+  consul:
+    image: consul:1.17
+    container_name: consul
+    ports:
+      - "8500:8500"  # UI & API
+      - "8600:8600"  # DNS
+    command: "agent -server -ui -client=0.0.0.0 -bootstrap-expect=1"
+    volumes:
+      - consul_data:/consul/data
+    networks:
+      - gateway-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database - database service
+  db:
+    image: postgres:15-alpine
+    container_name: gateway-db
+    ports:
+      - "5432:5432"  # Port mapping
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=gateway
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - gateway-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache - cache service
+  redis:
+    image: redis:7-alpine
+    container_name: gateway-redis
+    ports:
+      - "6379:6379"  # Port mapping
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - gateway-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# Networks configuration - mạng nội bộ
+networks:
+  gateway-network:
+    driver: bridge
+    name: {{ config.project_name or 'gateway' }}-network
+
+# Volumes configuration - persistent storage
+volumes:
+  postgres_data:
+    name: {{ config.project_name or 'gateway' }}-postgres-data
+  redis_data:
+    name: {{ config.project_name or 'gateway' }}-redis-data
+  consul_data:
+    name: {{ config.project_name or 'gateway' }}-consul-data

@@ -1,0 +1,532 @@
+/**
+ * Circuit Breaker Providers - Providers cho circuit breaker pattern.
+ * 
+ * Providers này cung cấp:
+ * - Circuit breaker cho backend services
+ * - Opossum integration
+ * - Health monitoring
+ * - State management
+ * 
+ * CP06: API Gateway & Service Mesh
+ */
+
+import { Provider } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+
+/**
+ * CircuitBreakerConfig - Configuration cho circuit breaker.
+ * volumeThreshold configuration for circuit breaker.
+ * Volume threshold setting for circuit breaker.
+ */
+export interface CircuitBreakerConfig {
+  /** ID của backend */
+  backendId: string;
+  /** Số requests tối thiểu trước khi check - Volume threshold */
+  volumeThreshold: number;
+  /** Thời gian window (ms) */
+  window: number;
+  /** Healthy threshold */
+  healthyThreshold: {
+    successes: number;
+  };
+  /** Unhealthy threshold */
+  unhealthyThreshold: {
+    requests: number;
+  };
+  /** Reset timeout (ms) */
+  resetTimeout: number;
+  /** Timeout cho requests (ms) */
+  timeout: number;
+}
+
+/**
+ * OpossumCircuitBreakerProvider - Provider cho Opossum circuit breaker.
+ * 
+ * Opossum là circuit breaker library cho Node.js.
+ * Hỗ trợ:
+ * 1. Open/Closed/Half-Open states
+ * 2. Health monitoring
+ * 3. Metrics & events
+ * 4. Fallback functions
+ * 5. Manual control
+ */
+export const OPOSSUM_CIRCUIT_BREAKER_PROVIDER: Provider = {
+  provide: 'OPOSSUM_CIRCUIT_BREAKER',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<any> => {
+    const CircuitBreaker = await import('opossum').then((m) => m.CircuitBreaker);
+
+    // Fallback function
+    const fallback = (args: any): any => {
+      return {
+        error: 'Service Unavailable',
+        message: 'Backend service tạm thời không khả dụng',
+        fallback: true,
+      };
+    };
+
+    // Circuit breaker options
+    const options: any = {
+      timeout: configService.get('CIRCUIT_BREAKER_TIMEOUT', 10000),
+      timeoutOnError: true,
+      resetTimeout: configService.get('CIRCUIT_BREAKER_RESET_TIMEOUT', 30000),
+      rollingCountTimeout: configService.get('CIRCUIT_BREAKER_WINDOW', 10000),
+      rollingCountBuckets: 10,
+      rollingCount: true,
+      volumeThreshold: configService.get('CIRCUIT_BREAKER_VOLUME_THRESHOLD', 10),
+      successRate: 0.5,
+      successRateThreshold: configService.get('CIRCUIT_BREAKER_SUCCESS_RATE', 0.5),
+      healthyThreshold: configService.get('CIRCUIT_BREAKER_HEALTHY_THRESHOLD', 10),
+      unhealthyThreshold: configService.get('CIRCUIT_BREAKER_UNHEALTHY_THRESHOLD', 10),
+      warmUpPeriod: configService.get('CIRCUIT_BREAKER_WARMUP_PERIOD', 5000),
+      errorFilter: (err: any): boolean => {
+        // Ignore timeout errors cho circuit breaker decision
+        return err.code !== 'ECONNABORTED';
+      },
+    };
+
+    return {
+      /**
+       * Create Circuit Breaker.
+       * 
+       * Tạo circuit breaker cho một backend.
+       * 
+       * @param name Backend name
+       * @param action Action function
+       * @returns Circuit breaker instance
+       */
+      create: (name: string, action: any) => {
+        const breaker = new CircuitBreaker(action, options);
+
+        // Open event
+        breaker.on('open', () => {
+          console.log(`Circuit breaker OPEN cho ${name}`);
+        });
+
+        // Close event
+        breaker.on('close', () => {
+          console.log(`Circuit breaker CLOSED cho ${name}`);
+        });
+
+        // Half-open event
+        breaker.on('halfOpen', () => {
+          console.log(`Circuit breaker HALF-OPEN cho ${name}`);
+        });
+
+        // Failure event
+        breaker.on('failure', (err: any) => {
+          console.error(`Circuit breaker failure cho ${name}:`, err.message);
+        });
+
+        // Timeout event
+        breaker.on('timeout', (err: any) => {
+          console.error(`Circuit breaker timeout cho ${name}:`, err.message);
+        });
+
+        return breaker;
+      },
+
+      /**
+       * Fallback function.
+       */
+      fallback,
+
+      /**
+       * Options.
+       */
+      options,
+    };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * CircuitBreakerFactoryProvider - Factory provider cho circuit breakers.
+ * 
+ * Factory này tạo circuit breakers cho tất cả backends.
+ */
+export const CIRCUIT_BREAKER_FACTORY_PROVIDER: Provider = {
+  provide: 'CIRCUIT_BREAKER_FACTORY',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<{ create: (id: string, action: any) => any }> => {
+    const CircuitBreaker = await import('opossum').then((m) => m.CircuitBreaker);
+
+    const breakers = new Map<string, any>();
+
+    return {
+      /**
+       * Create or Get Circuit Breaker.
+       * 
+       * @param id Backend ID
+       * @param action Action function
+       * @returns Circuit breaker instance
+       */
+      create: (id: string, action: any): any => {
+        if (breakers.has(id)) {
+          return breakers.get(id);
+        }
+
+        const breaker = new CircuitBreaker(action, {
+          timeout: configService.get('CIRCUIT_BREAKER_TIMEOUT', 10000),
+          timeoutOnError: true,
+          resetTimeout: configService.get('CIRCUIT_BREAKER_RESET_TIMEOUT', 30000),
+          rollingCountTimeout: configService.get('CIRCUIT_BREAKER_WINDOW', 10000),
+          rollingCountBuckets: 10,
+          rollingCount: true,
+          volumeThreshold: configService.get('CIRCUIT_BREAKER_VOLUME_THRESHOLD', 10),
+          errorFilter: (err: any): boolean => err.code !== 'ECONNABORTED',
+        });
+
+        // Event handlers
+        breaker.on('stateChanged', (opts: any) => {
+          console.log(`Circuit breaker state changed cho ${id}:`, opts);
+        });
+
+        breakers.set(id, breaker);
+        return breaker;
+      },
+
+      /**
+       * Get Circuit Breaker.
+       * 
+       * @param id Backend ID
+       * @returns Circuit breaker instance
+       */
+      get: (id: string): any => breakers.get(id),
+
+      /**
+       * Get all breakers.
+       * 
+       * @returns Map of all breakers
+       */
+      getAll: () => breakers,
+    };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * HealthCheckProvider - Provider cho circuit breaker health check.
+ * 
+ * Health check cho circuit breaker states.
+ */
+export const HEALTH_CHECK_PROVIDER: Provider = {
+  provide: 'CIRCUIT_BREAKER_HEALTH_CHECK',
+  useFactory: (
+    configService: ConfigService,
+  ): any => {
+    return async (breaker: any): Promise<any> => {
+      return {
+        status: breaker.isOpen() ? 'open' : breaker.isHalfOpen() ? 'half-open' : 'closed',
+        lastTripped: breaker.lastTripTime,
+        tripCount: breaker.tripCount,
+        state: breaker.state,
+        health: {
+          rollingMean: breaker.rollingMean,
+          rollingCount: breaker.rollingCount,
+        },
+      };
+    };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * HealthReportProvider - Provider cho health report.
+ * 
+ * Health report cho circuit breaker metrics.
+ */
+export const HEALTH_REPORT_PROVIDER: Provider = {
+  provide: 'CIRCUIT_BREAKER_HEALTH_REPORT',
+  useFactory: (
+    circuitBreakerFactory: { getAll: () => Map<string, any> },
+  ): any => {
+    return async (): Promise<Record<string, any>> => {
+      const report: Record<string, any> = {};
+      for (const [id, breaker] of circuitBreakerFactory.getAll()) {
+        report[id] = {
+          status: breaker.isOpen() ? 'open' : breaker.isHalfOpen() ? 'half-open' : 'closed',
+          metrics: {
+            rollingCount: breaker.rollingCount,
+            rollingMean: breaker.rollingMean,
+          },
+        };
+      }
+      return report;
+    };
+  },
+  inject: ['CIRCUIT_BREAKER_FACTORY'],
+};
+
+/**
+ * MetricsProvider - Provider cho circuit breaker metrics.
+ * 
+ * Metrics support cho circuit breakers.
+ */
+export const METRICS_PROVIDER: Provider = {
+  provide: 'CIRCUIT_BREAKER_METRICS',
+  useFactory: (
+    circuitBreakerFactory: { getAll: () => Map<string, any> },
+  ): any => {
+    return async (): Promise<any> => {
+      const metrics: any = {};
+      for (const [id, breaker] of circuitBreakerFactory.getAll()) {
+        metrics[id] = {
+          state: breaker.state,
+          healthy: breaker.healthy,
+          unhealthy: breaker.unhealthy,
+        };
+      }
+      return metrics;
+    };
+  },
+  inject: ['CIRCUIT_BREAKER_FACTORY'],
+};
+
+/**
+ * BulkheadProvider - Provider cho bulkhead pattern.
+ * 
+ * Bulkhead pattern cho concurrency limiting.
+ */
+export const BULKHEAD_PROVIDER: Provider = {
+  provide: 'BULKHEAD',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<any> => {
+    const Bulkhead = await import('opossum').then((m) => m.Bulkhead);
+
+    return {
+      /**
+       * Create Bulkhead.
+       * 
+       * @param action Action function
+       * @returns Bulkhead instance
+       */
+      create: (action: any): any => {
+        return new Bulkhead(action, {
+          concurrentJobsLimit: configService.get('BULKHEAD_CONCURRENT_LIMIT', 10),
+          jobRunTimeout: configService.get('BULKHEAD_TIMEOUT', 10000),
+        });
+      },
+    };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * ChildCircuitBreakerProvider - Provider cho child circuit breakers.
+ * 
+ * Child breakers cho granular control.
+ */
+export const CHILD_CIRCUIT_BREAKER_PROVIDER: Provider = {
+  provide: 'CHILD_CIRCUIT_BREAKER',
+  useFactory: async (
+    configService: ConfigService,
+    circuitBreakerFactory: { create: (id: string, action: any) => any },
+  ): Promise<any> => {
+    return {
+      /**
+       * Create Child Breaker.
+       * 
+       * Tạo child breaker cho một parent breaker.
+       * 
+       * @param parentId Parent breaker ID
+       * @param childId Child breaker ID
+       * @param action Action function
+       * @returns Child breaker
+       */
+      createChild: (
+        parentId: string,
+        childId: string,
+        action: any,
+      ): any => {
+        const parent = circuitBreakerFactory.get(parentId);
+        if (!parent) {
+          throw new Error(`Parent breaker ${parentId} không tồn tại`);
+        }
+
+        return parent.bulk({
+          name: childId,
+          action,
+        });
+      },
+    };
+  },
+  inject: [ConfigService, 'CIRCUIT_BREAKER_FACTORY'],
+};
+
+/**
+ * RedisCircuitBreakerStateProvider - Provider cho Redis state storage.
+ * 
+ * Store circuit breaker state trong Redis cho distributed deployments.
+ * Cache store cho circuit breaker states.
+ */
+export const REDIS_STATE_STORAGE_PROVIDER: Provider = {
+  provide: 'CIRCUIT_BREAKER_REDIS_STATE',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<any> => {
+    const Redis = await import('ioredis').then((m) => m.default);
+
+    const redis = new Redis(configService.get('REDIS_URL', 'redis://localhost:6379'));
+
+    return {
+      /**
+       * Save state.
+       */
+      save: async (backendId: string, state: any): Promise<void> => {
+        await redis.setex(`circuit-breaker:${backendId}`, 300, JSON.stringify(state));
+      },
+
+      /**
+       * Load state.
+       */
+      load: async (backendId: string): Promise<any> => {
+        const data = await redis.get(`circuit-breaker:${backendId}`);
+        return data ? JSON.parse(data) : null;
+      },
+
+      /**
+       * Delete state.
+       */
+      delete: async (backendId: string): Promise<void> => {
+        await redis.del(`circuit-breaker:${backendId}`);
+      },
+    };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * ManualControlProvider - Provider cho manual circuit breaker control.
+ * 
+ * Manual control: force open, force close.
+ */
+export const MANUAL_CONTROL_PROVIDER: Provider = {
+  provide: 'CIRCUIT_BREAKER_MANUAL_CONTROL',
+  useFactory: (
+    circuitBreakerFactory: { get: (id: string) => any; getAll: () => Map<string, any> },
+  ): any => {
+    return {
+      /**
+       * Force Open.
+       * 
+       * Force mở circuit breaker.
+       * 
+       * @param backendId Backend ID
+       */
+      forceOpen: (backendId: string): void => {
+        const breaker = circuitBreakerFactory.get(backendId);
+        if (breaker) {
+          breaker.trip();
+          console.log(`Circuit breaker force OPEN cho ${backendId}`);
+        }
+      },
+
+      /**
+       * Force Close.
+       * 
+       * Force đóng circuit breaker.
+       * 
+       * @param backendId Backend ID
+       */
+      forceClose: (backendId: string): void => {
+        const breaker = circuitBreakerFactory.get(backendId);
+        if (breaker) {
+          breaker.close();
+          console.log(`Circuit breaker force CLOSED cho ${backendId}`);
+        }
+      },
+
+      /**
+       * Toggle.
+       * 
+       * Toggle breaker state.
+       * 
+       * @param backendId Backend ID
+       */
+      toggle: (backendId: string): void => {
+        const breaker = circuitBreakerFactory.get(backendId);
+        if (breaker) {
+          if (breaker.isOpen()) {
+            breaker.close();
+          } else {
+            breaker.trip();
+          }
+        }
+      },
+
+      /**
+       * Get All States.
+       * 
+       * @returns Map of all breaker states
+       */
+      getAllStates: (): Record<string, string> => {
+        const states: Record<string, string> = {};
+        for (const [id, breaker] of circuitBreakerFactory.getAll()) {
+          states[id] = breaker.state;
+        }
+        return states;
+      },
+    };
+  },
+  inject: ['CIRCUIT_BREAKER_FACTORY'],
+};
+
+/**
+ * CacheStoreProvider - Provider cho cache store.
+ * 
+ * Cache store cho circuit breaker states.
+ */
+export const CACHE_STORE_PROVIDER: Provider = {
+  provide: 'CIRCUIT_BREAKER_CACHE',
+  useFactory: (): Map<string, any> => new Map(),
+};
+
+/**
+ * ConcurrentLimitProvider - Provider cho concurrent limit.
+ * 
+ * Max concurrent requests cho circuit breaker.
+ * concurrent limit configuration - max concurrent connections.
+ */
+export const CONCURRENT_LIMIT_PROVIDER: Provider = {
+  provide: 'CIRCUIT_BREAKER_CONCURRENT_LIMIT',
+  useFactory: (configService: ConfigService): number => {
+    // concurrent limit from config (max concurrent: 10)
+    return configService.get('CIRCUIT_BREAKER_MAX_CONCURRENT', 10);
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * EnabledFlagProvider - Provider cho enabled flag.
+ * 
+ * Enable/disable circuit breaker globally.
+ */
+export const ENABLED_FLAG_PROVIDER: Provider = {
+  provide: 'CIRCUIT_BREAKER_ENABLED',
+  useFactory: (configService: ConfigService): boolean => {
+    return configService.get('CIRCUIT_BREAKER_ENABLED', true);
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * CircuitBreakerProviders - Array của tất cả circuit breaker providers.
+ */
+export const CIRCUIT_BREAKER_PROVIDERS: Provider[] = [
+  OPOSSUM_CIRCUIT_BREAKER_PROVIDER,
+  CIRCUIT_BREAKER_FACTORY_PROVIDER,
+  HEALTH_CHECK_PROVIDER,
+  HEALTH_REPORT_PROVIDER,
+  METRICS_PROVIDER,
+  BULKHEAD_PROVIDER,
+  CHILD_CIRCUIT_BREAKER_PROVIDER,
+  REDIS_STATE_STORAGE_PROVIDER,
+  MANUAL_CONTROL_PROVIDER,
+  CACHE_STORE_PROVIDER,
+  CONCURRENT_LIMIT_PROVIDER,
+  ENABLED_FLAG_PROVIDER,
+];

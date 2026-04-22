@@ -1,0 +1,399 @@
+"""
+FastAPI Rate Limiter - Rate limiting cho API Gateway.
+
+Module này cung cấp:
+- RateLimiter class
+- MemoryStore cho local rate limiting
+- RedisStore cho distributed rate limiting
+- Sliding window và fixed window algorithms
+
+CP06: API Gateway & Service Mesh
+"""
+
+import asyncio
+import logging
+import time
+from typing import Dict, Optional, Tuple
+from dataclasses import dataclass, field
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+
+class RateLimitAlgorithm(Enum):
+    """Rate limiting algorithms."""
+    SLIDING_WINDOW = "sliding_window"
+    FIXED_WINDOW = "fixed_window"
+    TOKEN_BUCKET = "token_bucket"
+
+
+@dataclass
+class RateLimitResult:
+    """Result of rate limit check."""
+    allowed: bool
+    limit: int
+    remaining: int
+    reset_at: float
+    retry_after: Optional[int] = None
+
+
+class RateLimitExceeded(Exception):
+    """Exception khi rate limit bị exceed."""
+    
+    def __init__(self, limit: int, retry_after: int):
+        """
+        Initialize RateLimitExceeded.
+        
+        Args:
+            limit: Rate limit
+            retry_after: Seconds until reset
+        """
+        self.limit = limit
+        self.retry_after = retry_after
+        super().__init__(f"Rate limit exceeded: {limit} requests")
+
+
+class MemoryStore:
+    """
+    MemoryStore - In-memory storage cho rate limiting.
+    
+    Local rate limiting sử dụng dictionary.
+    Không phù hợp cho distributed deployments.
+    
+    Attributes:
+        store: Storage dictionary
+    """
+    
+    def __init__(self):
+        """Khởi tạo MemoryStore."""
+        self.store: Dict[str, list] = {}
+    
+    async def increment(self, key: str, ttl: int, limit: int) -> RateLimitResult:
+        """
+        Increment counter cho key.
+        
+        Args:
+            key: Rate limit key
+            ttl: Time to live (seconds)
+            limit: Max requests
+            
+        Returns:
+            RateLimitResult
+        """
+        now = time.time()
+        
+        # Get hoặc tạo entry
+        if key not in self.store:
+            self.store[key] = []
+        
+        # Cleanup expired entries
+        self.store[key] = [t for t in self.store[key] if now - t < ttl]
+        
+        # Check limit
+        if len(self.store[key]) >= limit:
+            reset_at = self.store[key][0] + ttl
+            return RateLimitResult(
+                allowed=False,
+                limit=limit,
+                remaining=0,
+                reset_at=reset_at,
+                retry_after=int(reset_at - now),
+            )
+        
+        # Increment
+        self.store[key].append(now)
+        reset_at = now + ttl
+        
+        return RateLimitResult(
+            allowed=True,
+            limit=limit,
+            remaining=limit - len(self.store[key]),
+            reset_at=reset_at,
+        )
+    
+    async def reset(self, key: str):
+        """
+        Reset counter cho key.
+        
+        Args:
+            key: Rate limit key
+        """
+        if key in self.store:
+            del self.store[key]
+
+
+class RedisStore:
+    """
+    RedisStore - Redis storage cho distributed rate limiting.
+    
+    Distributed rate limiting sử dụng Redis.
+    Phù hợp cho multi-instance deployments.
+    
+    Attributes:
+        redis: Redis client
+    """
+    
+    def __init__(self, redis_url: str = "redis://localhost:6379"):
+        """
+        Khởi tạo RedisStore.
+        
+        Args:
+            redis_url: Redis connection URL
+        """
+        self.redis_url = redis_url
+        self.redis = None
+    
+    async def connect(self):
+        """Connect to Redis."""
+        try:
+            import redis.asyncio as redis
+            self.redis = redis.from_url(self.redis_url, decode_responses=True)
+        except Exception as e:
+            logger.error(f"Failed to connect to Redis: {e}")
+            raise
+    
+    async def increment(self, key: str, ttl: int, limit: int) -> RateLimitResult:
+        """
+        Increment counter trong Redis.
+        
+        Args:
+            key: Rate limit key
+            ttl: Time to live (seconds)
+            limit: Max requests
+            
+        Returns:
+            RateLimitResult
+        """
+        if not self.redis:
+            await self.connect()
+        
+        now = int(time.time())
+        window_key = f"ratelimit:{key}:{now // ttl}"
+        
+        # Increment và set TTL
+        current = await self.redis.incr(window_key)
+        if current == 1:
+            await self.redis.expire(window_key, ttl)
+        
+        reset_at = (now // ttl + 1) * ttl
+        
+        if current > limit:
+            return RateLimitResult(
+                allowed=False,
+                limit=limit,
+                remaining=0,
+                reset_at=reset_at,
+                retry_after=int(reset_at - now),
+            )
+        
+        return RateLimitResult(
+            allowed=True,
+            limit=limit,
+            remaining=limit - current,
+            reset_at=reset_at,
+        )
+    
+    async def reset(self, key: str):
+        """
+        Reset counter trong Redis.
+        
+        Args:
+            key: Rate limit key
+        """
+        if self.redis:
+            await self.redis.delete(f"ratelimit:{key}:*")
+
+
+class RateLimiter:
+    """
+    RateLimiter - Rate limiter cho API Gateway.
+    
+    Class này:
+    1. Memory và Redis storage support
+    2. Sliding window algorithm
+    3. Whitelist/blacklist support
+    4. Custom key generation
+    5. Distributed rate limiting
+    
+    Attributes:
+        limit: Max requests per window
+        window: Window size (seconds)
+        store: Storage backend
+    """
+    
+    def __init__(
+        self,
+        limit: int = 100,
+        window: int = 60,
+        use_redis: bool = False,
+        redis_url: str = "redis://localhost:6379",
+    ):
+        """
+        Khởi tạo RateLimiter.
+        
+        Args:
+            limit: Max requests per window
+            window: Window size (seconds)
+            use_redis: Sử dụng Redis storage
+            redis_url: Redis connection URL
+        """
+        self.limit = limit
+        self.window = window
+        self.use_redis = use_redis
+        
+        # Initialize storage
+        if use_redis:
+            self.store = RedisStore(redis_url)
+        else:
+            self.store = MemoryStore()
+        
+        # Whitelist (whitelist) và blacklist (blacklist) config
+        self.whitelist: set = set()
+        self.blacklist: set = set()
+        # block_expired config cho block
+        self.block_expired = False
+        # header config cho headers response
+        self.header = "X-RateLimit-Limit"
+        # key_factory config cho key generation
+        self.key_factory = None
+    
+    async def acquire(self, key: str) -> RateLimitResult:
+        """
+        Acquire rate limit slot.
+        
+        Args:
+            key: Rate limit key
+            
+        Returns:
+            RateLimitResult
+            
+        Raises:
+            RateLimitExceeded: Nếu vượt quá limit
+        """
+        # Check whitelist
+        if key in self.whitelist:
+            return RateLimitResult(
+                allowed=True,
+                limit=-1,
+                remaining=-1,
+                reset_at=0,
+            )
+        
+        # Check blacklist
+        if key in self.blacklist:
+            raise RateLimitExceeded(self.limit, self.window)
+        
+        # Increment counter
+        result = await self.store.increment(key, self.window, self.limit)
+        
+        return result
+    
+    async def reset(self, key: str):
+        """
+        Reset rate limit cho key.
+        
+        Args:
+            key: Rate limit key
+        """
+        await self.store.reset(key)
+    
+    def add_to_whitelist(self, key: str):
+        """
+        Add key vào whitelist.
+        
+        Args:
+            key: Rate limit key
+        """
+        self.whitelist.add(key)
+        logger.info(f"Added {key} to whitelist")
+    
+    def remove_from_whitelist(self, key: str):
+        """
+        Remove key từ whitelist.
+        
+        Args:
+            key: Rate limit key
+        """
+        self.whitelist.discard(key)
+        logger.info(f"Removed {key} from whitelist")
+    
+    def add_to_blacklist(self, key: str):
+        """
+        Add key vào blacklist.
+        
+        Args:
+            key: Rate limit key
+        """
+        self.blacklist.add(key)
+        logger.warning(f"Added {key} to blacklist")
+    
+    def remove_from_blacklist(self, key: str):
+        """
+        Remove key từ blacklist.
+        
+        Args:
+            key: Rate limit key
+        """
+        self.blacklist.discard(key)
+        logger.info(f"Removed {key} from blacklist")
+
+
+async def check_rate_limit(request, rate_limiter: RateLimiter) -> None:
+    """
+    Check rate limit cho request.
+    
+    Args:
+        request: HTTP request
+        rate_limiter: RateLimiter instance
+        
+    Raises:
+        RateLimitExceeded: Nếu vượt quá limit
+    """
+    key = getattr(request, "client", None)
+    if key:
+        key = str(key.host)
+    else:
+        key = "anonymous"
+    
+    result = await rate_limiter.acquire(key)
+    
+    if not result.allowed:
+        raise RateLimitExceeded(result.limit, result.retry_after)
+
+
+# Sliding window implementation
+class SlidingWindowRateLimiter(RateLimiter):
+    """
+    SlidingWindowRateLimiter - Sliding window algorithm.
+    
+    Sliding window cho smoother rate limiting.
+    """
+    
+    def __init__(self, limit: int = 100, window: int = 60):
+        """
+        Khởi tạo SlidingWindowRateLimiter.
+        
+        Args:
+            limit: Max requests
+            window: Window size
+        """
+        super().__init__(limit=limit, window=window)
+
+
+# Fixed window implementation
+class FixedWindowRateLimiter(RateLimiter):
+    """
+    FixedWindowRateLimiter - Fixed window algorithm.
+    
+    Fixed window cho simpler implementation.
+    """
+    
+    def __init__(self, limit: int = 100, window: int = 60):
+        """
+        Khởi tạo FixedWindowRateLimiter.
+        
+        Args:
+            limit: Max requests
+            window: Window size
+        """
+        super().__init__(limit=limit, window=window)

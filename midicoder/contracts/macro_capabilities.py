@@ -7163,6 +7163,451 @@ class MacroCapabilitiesRegistry:
         }
 
 
+# ============================================================================
+# CP06: Gateway & Service Mesh Macro Capabilities (10 new macros)
+# ============================================================================
+
+
+@dataclass
+class GatewayMacroCapabilities:
+    """
+    CP06: Gateway & Service Mesh Macro Capabilities (10 macros).
+    
+    Các macro capabilities này hỗ trợ API Gateway và Service Mesh patterns:
+    - Gateway patterns: proxy_with_auth, rate_limited_proxy, circuit_breaker_proxy
+    - Aggregation patterns: aggregate_dashboard, aggregate_order_details, multi_tenant_aggregation
+    - Cache patterns: cache_with_invalidation, cached_fallback
+    - Resilience patterns: resilient_service_call, tenant_rate_limit
+    """
+    
+    # =========================================================================
+    # Gateway Patterns (3 macros)
+    # =========================================================================
+    
+    PROXY_WITH_AUTH: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="proxy_with_auth",
+            name="Proxy With Auth",
+            description="Proxy request đến backend service với permission check và tenant scope",
+            expands_to=[
+                "authorize_permission",
+                "enforce_tenant_scope",
+                "proxy_request",
+            ],
+            params_schema={
+                "permission": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Permission cần check (vd: 'api.access')"
+                },
+                "service_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Backend service ID để proxy đến"
+                },
+                "request": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Request object (method, path, headers, body)"
+                },
+                "tenant_scope": {
+                    "type": "string",
+                    "required": False,
+                    "default": "tenant_isolated",
+                    "description": "Tenant scope mode"
+                }
+            },
+            default_obligations=[
+                "permission_check_required",
+                "tenant_filter_required",
+                "service_discovery_required"
+            ]
+        )
+    )
+    
+    RATE_LIMITED_PROXY: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="rate_limited_proxy",
+            name="Rate Limited Proxy",
+            description="Proxy request với rate limiting để protect backend services",
+            expands_to=[
+                "apply_rate_limit",
+                "proxy_request",
+                "emit_metric",
+            ],
+            params_schema={
+                "service_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Backend service ID"
+                },
+                "request": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Request object"
+                },
+                "limit": {
+                    "type": "integer",
+                    "required": True,
+                    "description": "Max requests cho window"
+                },
+                "window": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Window duration (vd: '60s')"
+                },
+                "scope": {
+                    "type": "string",
+                    "required": False,
+                    "default": "global",
+                    "description": "Rate limit scope"
+                }
+            },
+            default_obligations=[
+                "rate_limit_checked",
+                "service_discovery_required"
+            ]
+        )
+    )
+    
+    CIRCUIT_BREAKER_PROXY: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="circuit_breaker_proxy",
+            name="Circuit Breaker Proxy",
+            description="Proxy request với circuit breaker để handle service failures",
+            expands_to=[
+                "check_circuit_breaker",
+                "proxy_request",
+                "emit_metric",
+            ],
+            params_schema={
+                "service_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Backend service ID"
+                },
+                "request": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Request object"
+                },
+                "circuit_id": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Circuit breaker ID"
+                },
+                "fallback": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Fallback response khi circuit open"
+                }
+            },
+            default_obligations=[
+                "circuit_state_checked",
+                "fallback_defined"
+            ]
+        )
+    )
+    
+    # =========================================================================
+    # Aggregation Patterns (3 macros)
+    # =========================================================================
+    
+    AGGREGATE_DASHBOARD: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="aggregate_dashboard",
+            name="Aggregate Dashboard",
+            description="Aggregate data từ multiple services đồng thời cho dashboard (parallel + cache)",
+            expands_to=[
+                "authorize_permission",
+                "aggregate_data_parallel",
+                "cache_response",
+            ],
+            params_schema={
+                "permission": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Permission cần check"
+                },
+                "services": {
+                    "type": "array",
+                    "required": True,
+                    "description": "Danh sách services để aggregate"
+                },
+                "cache_key": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Cache key cho dashboard data"
+                },
+                "ttl": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 300,
+                    "description": "Cache TTL (seconds)"
+                }
+            },
+            default_obligations=[
+                "permission_check_required",
+                "parallel_execution_guaranteed"
+            ]
+        )
+    )
+    
+    AGGREGATE_ORDER_DETAILS: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="aggregate_order_details",
+            name="Aggregate Order Details",
+            description="Aggregate order details theo thứ tự tuần tự (sequential/waterfall)",
+            expands_to=[
+                "authorize_permission",
+                "aggregate_data_sequential",
+            ],
+            params_schema={
+                "permission": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Permission cần check (vd: 'order.read')"
+                },
+                "order_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Order ID để aggregate"
+                },
+                "service_chain": {
+                    "type": "array",
+                    "required": False,
+                    "description": "Danh sách services theo thứ tự: order -> items -> payment -> inventory"
+                }
+            },
+            default_obligations=[
+                "permission_check_required",
+                "sequential_execution_guaranteed"
+            ]
+        )
+    )
+    
+    MULTI_TENANT_AGGREGATION: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="multi_tenant_aggregation",
+            name="Multi-Tenant Aggregation",
+            description="Aggregate data với tenant isolation cho multi-tenant environments",
+            expands_to=[
+                "enforce_tenant_scope",
+                "aggregate_data_parallel",
+                "emit_metric",
+            ],
+            params_schema={
+                "tenant_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Tenant ID để isolate data"
+                },
+                "services": {
+                    "type": "array",
+                    "required": True,
+                    "description": "Danh sách services để aggregate"
+                },
+                "tenant_scope": {
+                    "type": "string",
+                    "required": False,
+                    "default": "tenant_isolated",
+                    "description": "Tenant scope mode"
+                }
+            },
+            default_obligations=[
+                "tenant_filter_required",
+                "tenant_scope_propagated"
+            ]
+        )
+    )
+    
+    # =========================================================================
+    # Cache Patterns (2 macros)
+    # =========================================================================
+    
+    CACHE_WITH_INVALIDATION: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="cache_with_invalidation",
+            name="Cache With Invalidation",
+            description="Cache response với event-driven invalidation",
+            expands_to=[
+                "cache_response",
+                "publish_event",
+            ],
+            params_schema={
+                "cache_key": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Cache key"
+                },
+                "data": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Data để cache"
+                },
+                "ttl": {
+                    "type": "integer",
+                    "required": True,
+                    "description": "TTL in seconds"
+                },
+                "invalidation_event": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Event type để trigger invalidation"
+                }
+            },
+            default_obligations=[
+                "cache_key_generated",
+                "invalidation_event_published"
+            ]
+        )
+    )
+    
+    CACHED_FALLBACK: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="cached_fallback",
+            name="Cached Fallback",
+            description="Cache với fallback khi cache miss hoặc service fail",
+            expands_to=[
+                "cache_response",
+                "proxy_request",
+                "emit_metric",
+            ],
+            params_schema={
+                "cache_key": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Cache key"
+                },
+                "service_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Backend service ID"
+                },
+                "request": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Request object"
+                },
+                "fallback_data": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Fallback data khi service fail"
+                },
+                "ttl": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 300,
+                    "description": "Cache TTL"
+                }
+            },
+            default_obligations=[
+                "cache_key_generated",
+                "fallback_defined"
+            ]
+        )
+    )
+    
+    # =========================================================================
+    # Resilience Patterns (2 macros)
+    # =========================================================================
+    
+    RESILIENT_SERVICE_CALL: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="resilient_service_call",
+            name="Resilient Service Call",
+            description="Call service với full resilience (circuit breaker + retry + rate limit + metrics)",
+            expands_to=[
+                "check_circuit_breaker",
+                "execute_with_retry",
+                "apply_rate_limit",
+                "proxy_request",
+                "emit_metric",
+            ],
+            params_schema={
+                "service_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Backend service ID"
+                },
+                "request": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Request object"
+                },
+                "max_retries": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 3,
+                    "description": "Max retry attempts"
+                },
+                "backoff_strategy": {
+                    "type": "string",
+                    "required": False,
+                    "default": "exponential",
+                    "description": "Backoff strategy"
+                },
+                "limit": {
+                    "type": "integer",
+                    "required": False,
+                    "description": "Rate limit"
+                },
+                "window": {
+                    "type": "string",
+                    "required": False,
+                    "default": "60s",
+                    "description": "Rate limit window"
+                }
+            },
+            default_obligations=[
+                "circuit_state_checked",
+                "retry_count_tracked",
+                "rate_limit_checked"
+            ]
+        )
+    )
+    
+    TENANT_RATE_LIMIT: MacroCapability = field(
+        default_factory=lambda: MacroCapability(
+            id="tenant_rate_limit",
+            name="Tenant Rate Limit",
+            description="Apply per-tenant rate limiting cho multi-tenant API",
+            expands_to=[
+                "enforce_tenant_scope",
+                "apply_rate_limit",
+                "emit_metric",
+            ],
+            params_schema={
+                "tenant_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Tenant ID"
+                },
+                "limit": {
+                    "type": "integer",
+                    "required": True,
+                    "description": "Max requests cho tenant"
+                },
+                "window": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Window duration"
+                },
+                "tenant_scope": {
+                    "type": "string",
+                    "required": False,
+                    "default": "tenant_isolated",
+                    "description": "Tenant scope"
+                }
+            },
+            default_obligations=[
+                "tenant_filter_required",
+                "rate_limit_checked"
+            ]
+        )
+    )
+
+
 # Export all capabilities
 __all__ = [
     # Category classes
@@ -7174,6 +7619,7 @@ __all__ = [
     "DomainMacroCapabilitiesExtended",
     "DomainMacroCapabilitiesPhase4",
     "RegulatoryMacroCapabilities",
+    "GatewayMacroCapabilities",  # CP06 new
     # Registry
     "MacroCapabilitiesRegistry",
 ]

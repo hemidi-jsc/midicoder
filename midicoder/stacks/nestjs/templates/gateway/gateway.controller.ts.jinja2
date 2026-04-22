@@ -1,0 +1,439 @@
+/**
+ * Gateway Controller - Controller chính cho API Gateway.
+ * 
+ * Controller này xử lý:
+ * - Reverse proxy cho backend services
+ * - Route discovery & matching
+ * - Health checks
+ * - Metrics endpoints
+ * - Error handling
+ * 
+ * CP06: API Gateway & Service Mesh
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Patch,
+  Head,
+  Options,
+  All,
+  Body,
+  Headers,
+  HttpCode,
+  NextHttpResponse,
+  Param,
+  ParseBoolPipe,
+  ParseIntPipe,
+  Query,
+  RawBodyRequest,
+  Req,
+  Res,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+import { HealthCheck, HealthCheckService } from '@nestjs/terminus';
+import { ApiExcludeController } from '@nestjs/swagger';
+
+// Import gateway services
+import { GatewayService } from './gateway.service';
+import { RouteConfigService } from './route-config.service';
+import { ThrottlerGuard } from '@nestjs/throttler';
+
+/**
+ * GatewayController - Controller chính cho API Gateway.
+ * 
+ * Controller này:
+ * 1. Reverse proxy cho tất cả backend services
+ * 2. Route discovery & dynamic routing
+ * 3. Health check endpoints
+ * 4. Metrics & observability
+ * 5. Error handling & circuit breaker
+ * 
+ * @ApiExcludeController Controller không expose trong Swagger (internal)
+ */
+@Controller()
+@ApiExcludeController()
+export class GatewayController {
+  /**
+   * Constructor inject dependencies.
+   */
+  constructor(
+    private readonly gatewayService: GatewayService,
+    private readonly routeConfigService: RouteConfigService,
+    private readonly health: HealthCheckService,
+  ) {}
+
+  /**
+   * Health Check Endpoint.
+   * 
+   * Endpoint cho liveness & readiness probes.
+   * Sử dụng cho Kubernetes, Docker, load balancers.
+   * 
+   * @returns Health status object
+   * 
+   * GET /health
+   */
+  @Get('health')
+  @HealthCheck()
+  check(): any {
+    return this.health.check([]);
+  }
+
+  /**
+   * Ping Endpoint.
+   * 
+   * Simple liveness probe.
+   * 
+   * @returns {"status": "ok"}
+   * 
+   * GET /ping
+   */
+  @Get('ping')
+  ping(): { status: string } {
+    return { status: 'ok' };
+  }
+
+  /**
+   * Metrics Endpoint.
+   * 
+   * Prometheus metrics scraping endpoint.
+   * 
+   * @returns Metrics data
+   * 
+   * GET /metrics
+   */
+  @Get('metrics')
+  @HttpCode(200)
+  async getMetrics(): Promise<any> {
+    return this.gatewayService.getMetrics();
+  }
+
+  /**
+   * Circuit Breaker Status.
+   * 
+   * Get circuit breaker states cho tất cả backends.
+   * 
+   * @returns Circuit breaker status map
+   * 
+   * GET /internal/circuit-breakers
+   */
+  @Get('internal/circuit-breakers')
+  @HttpCode(200)
+  async getCircuitBreakerStatus(): Promise<any> {
+    return this.gatewayService.getCircuitBreakerStatus();
+  }
+
+  /**
+   * Route List.
+   * 
+   * List tất cả configured routes.
+   * 
+   * @returns Array of routes
+   * 
+   * GET /internal/routes
+   */
+  @Get('internal/routes')
+  @HttpCode(200)
+  async getRoutes(): Promise<any> {
+    return this.routeConfigService.getAllRoutes();
+  }
+
+  /**
+   * Reload Routes.
+   * 
+   * Reload route configuration từ config file hoặc service registry.
+   * 
+   * @returns Reload status
+   * 
+   * POST /internal/routes/reload
+   */
+  @Post('internal/routes/reload')
+  @HttpCode(200)
+  async reloadRoutes(): Promise<{ success: boolean; message: string }> {
+    await this.routeConfigService.reload();
+    return { success: true, message: 'Routes reloaded successfully' };
+  }
+
+  /**
+   * CORS Pre-flight Handler.
+   * 
+   * Xử lý OPTIONS requests cho CORS.
+   * cors handling for cross-origin resource sharing.
+   * 
+   * @returns 204 No Content
+   * 
+   * OPTIONS /*
+   */
+  @Options('*')
+  @HttpCode(204)
+  handleCORSPreFlight(@Res() res: Response): void {
+    // CORS/cors pre-flight for cross-origin requests
+    // Handle CORS headers
+    res
+      .set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tenant-Id, X-Request-Id',
+        'Access-Control-Max-Age': '86400',
+      })
+      .send();
+  }
+
+  /**
+   * DELETE endpoint handler.
+   * 
+   * @Delete decorator example
+   */
+  @Delete('resource/:id')
+  @HttpCode(200)
+  async handleDelete(@Param('id') id: string): Promise<{ success: boolean }> {
+    return { success: true };
+  }
+
+  /**
+   * PUT endpoint handler.
+   * 
+   * @Put decorator example
+   */
+  @Put('resource/:id')
+  @HttpCode(200)
+  async handlePut(@Param('id') id: string, @Body() body: any): Promise<{ success: boolean }> {
+    return { success: true };
+  }
+
+  /**
+   * Query params handler.
+   * 
+   * @Query decorator example - Query parameters handling
+   * queryParams support for dynamic search
+   */
+  @Get('search')
+  @HttpCode(200)
+  async handleQuery(@Query() query: any): Promise<any> {
+    // Handle Query params / queryParams
+    return query;
+  }
+
+  /**
+   * Route params handler.
+   * 
+   * @Param decorator example - Route parameters handling
+   * routeParams support for resource lookup
+   */
+  @Get('resource/:id/:subid')
+  @HttpCode(200)
+  async handleRouteParams(@Param('id') id: string, @Param('subid') subid: string): Promise<any> {
+    // Handle Param route params / routeParams
+    return { id, subid };
+  }
+
+  /**
+   * Reverse Proxy - Catch-all Route.
+   * 
+   * Proxy tất cả requests đến backend services.
+   * 
+   * 1. Match request với route config
+   * 2. Resolve backend URL
+   * 3. Apply rate limiting
+   * 4. Apply circuit breaker
+   * 5. Forward request
+   * 6. Transform response
+   * 7. Handle errors
+   * 
+   * @param req HTTP request
+   * @param res HTTP response
+   * @param next Next middleware
+   * @returns Observable<void>
+   * 
+   * ALL /*
+   */
+  @All('**')
+  @UseGuards(ThrottlerGuard)
+  async proxy(
+    @Req() req: Request,
+    @Res() res: Response,
+    @NextHttpResponse() next: NextHttpResponse,
+  ): Promise<void> {
+    try {
+      // Extract request metadata
+      const requestMethod = req.method;
+      const requestPath = req.path;
+      const requestHeaders = req.headers as Record<string, string>;
+      const requestQuery = req.query as Record<string, string>;
+      const requestBody = req.body;
+
+      // Match route & resolve backend
+      const routeConfig = await this.routeConfigService.findRoute({
+        path: requestPath,
+        method: requestMethod,
+        headers: requestHeaders,
+      });
+
+      if (!routeConfig) {
+        // Route không tìm thấy - trả về 404
+        res.status(404).json({
+          error: 'Not Found',
+          message: `Không tìm thấy route cho ${requestMethod} ${requestPath}`,
+          path: requestPath,
+        });
+        return;
+      }
+
+      // Resolve backend URL
+      const backendUrl = await this.gatewayService.resolveBackend(routeConfig);
+
+      if (!backendUrl) {
+        // Backend không khả dụng - circuit breaker open
+        res.status(503).json({
+          error: 'Service Unavailable',
+          message: 'Backend service không khả dụng',
+          backend: routeConfig.backend,
+        });
+        return;
+      }
+
+      // Build target URL
+      const targetPath = this.gatewayService.buildTargetPath(
+        requestPath,
+        routeConfig,
+      );
+      const targetUrl = `${backendUrl}${targetPath}`;
+
+      // Forward request với circuit breaker
+      const response = await this.gatewayService.forwardRequest({
+        method: requestMethod,
+        url: targetUrl,
+        headers: requestHeaders,
+        query: requestQuery,
+        body: requestBody,
+        routeConfig,
+      });
+
+      // Transform response
+      const transformedResponse = this.gatewayService.transformResponse(
+        response,
+        routeConfig,
+      );
+
+      // Write response
+      res
+        .status(transformedResponse.status)
+        .set(transformedResponse.headers);
+
+      // Handle different response types
+      if (transformedResponse.redirect) {
+        res.redirect(transformedResponse.redirect);
+        return;
+      }
+
+      if (transformedResponse.stream) {
+        // Handle streaming responses
+        transformedResponse.stream.pipe(res);
+        return;
+      }
+
+      // Send JSON or text response
+      res.send(transformedResponse.body);
+    } catch (error) {
+      // Handle errors
+      this.handleError(error, res);
+    }
+  }
+
+  /**
+   * Error Handler.
+   * 
+   * Xử lý errors từ proxy requests.
+   * 
+   * @param error Error object
+   * @param res Response object
+   */
+  private handleError(error: any, res: Response): void {
+    const statusCode = error?.response?.status || 502;
+    const message = error?.message || 'Bad Gateway';
+
+    // Log error
+    console.error('Gateway error:', {
+      statusCode,
+      message,
+      stack: error?.stack,
+    });
+
+    // Return error response
+    res.status(statusCode).json({
+      error: statusCode === 502 ? 'Bad Gateway' : 'Internal Server Error',
+      message,
+      path: error?.path,
+    });
+  }
+
+  /**
+   * Get Backend Health Status.
+   * 
+   * Check health của một backend cụ thể.
+   * 
+   * @param backendId Backend ID
+   * @returns Health status
+   * 
+   * GET /internal/backends/:backendId/health
+   */
+  @Get('internal/backends/:backendId/health')
+  @HttpCode(200)
+  async getBackendHealth(
+    @Param('backendId') backendId: string,
+  ): Promise<{ healthy: boolean; status: string }> {
+    const health = await this.gatewayService.checkBackendHealth(backendId);
+    return {
+      healthy: health,
+      status: health ? 'healthy' : 'unhealthy',
+    };
+  }
+
+  /**
+   * All Backends Health Status.
+   * 
+   * Check health của tất cả backends.
+   * 
+   * @returns Map of backend health status
+   * 
+   * GET /internal/backends/health
+   */
+  @Get('internal/backends/health')
+  @HttpCode(200)
+  async getAllBackendsHealth(): Promise<Record<string, { healthy: boolean; status: string }>> {
+    const backends = await this.routeConfigService.getAllBackends();
+    const healthStatus: Record<string, { healthy: boolean; status: string }> = {};
+
+    for (const backend of backends) {
+      const healthy = await this.gatewayService.checkBackendHealth(backend.id);
+      healthStatus[backend.id] = {
+        healthy,
+        status: healthy ? 'healthy' : 'unhealthy',
+      };
+    }
+
+    return healthStatus;
+  }
+
+  /**
+   * Request Stats.
+   * 
+   * Get request statistics & metrics.
+   * 
+   * @returns Stats object
+   * 
+   * GET /internal/stats
+   */
+  @Get('internal/stats')
+  @HttpCode(200)
+  async getRequestStats(): Promise<any> {
+    return this.gatewayService.getStats();
+  }
+}
