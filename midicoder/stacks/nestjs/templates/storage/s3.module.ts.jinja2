@@ -1,0 +1,51 @@
+/**
+ * S3 Module cho NestJS.
+ *
+ * Cấu hình AWS S3 client.
+ *
+ * CP11: File Storage & Media
+ */
+
+import { Global, Module } from "@nestjs/common";
+import { config } from "dotenv";
+import * as AWS from "@aws-sdk/client-s3";
+
+// Load environment variables
+config();
+
+/**
+ * S3 Client Factory.
+ */
+export const s3ClientFactory = {
+  provide: "S3_CLIENT",
+  useFactory: () => {
+    return new AWS.S3Client({
+      region: process.env.AWS_REGION || "us-east-1",
+      credentials:
+        process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+          ? {
+              accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+              secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+            }
+          : undefined,
+      endpoint: process.env.AWS_ENDPOINT_URL || undefined,
+      maxAttempts: 3,
+      requestHandler: new AWS.NodeHttpHandler({
+        connectionTimeout: 30000,
+        requestTimeout: 60000,
+      }),
+    });
+  },
+};
+
+/**
+ * S3 Module.
+ *
+ * Global module cung cấp S3 client cho toàn application.
+ */
+@Global()
+@Module({
+  providers: [s3ClientFactory],
+  exports: [s3ClientFactory],
+})
+export class S3Module {}
