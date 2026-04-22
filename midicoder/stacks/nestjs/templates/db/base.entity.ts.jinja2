@@ -1,0 +1,65 @@
+/**
+ * Base Entity cho TypeORM.
+ *
+ * Tất cả entities phải mở rộng BaseEntity để có:
+ * - ID tự động
+ * - Timestamps (createdAt, updatedAt)
+ * - JSON serialization
+ *
+ * CP08: Database & Data Access
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from "typeorm";
+
+/**
+ * Base Entity class.
+ *
+ * Cung cấp các columns chung cho tất cả entities:
+ * - id: Primary key tự tăng
+ * - createdAt: Thời điểm tạo (auto)
+ * - updatedAt: Thời điểm cập nhật (auto)
+ */
+@Entity()
+export class BaseEntity {
+  /**
+   * Primary key - khóa chính tự tăng.
+   */
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
+
+  /**
+   * Created at - thời điểm tạo bản ghi.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at - thời điểm cập nhật bản ghi.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  /**
+   * Chuyển entity thành object.
+   *
+   * @returns Object chứa tất cả properties
+   */
+  toObject(): Record<string, unknown> {
+    const object = { ...this };
+    return object;
+  }
+
+  /**
+   * Chuyển entity thành JSON.
+   *
+   * @returns JSON string
+   */
+  toJSON(): string {
+    return JSON.stringify(this.toObject());
+  }
+}

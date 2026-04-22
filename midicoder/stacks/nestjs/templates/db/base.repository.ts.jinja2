@@ -1,0 +1,182 @@
+/**
+ * Base Repository cho TypeORM.
+ *
+ * Repository pattern để abstract database operations.
+ * Tất cả domain repositories mở rộng BaseRepository.
+ *
+ * CP08: Database & Data Access
+ */
+
+import {
+  Injectable,
+  EntityTarget,
+  FindOptionsWhere,
+  FindOptionsRelations,
+  FindOptionsSelect,
+} from "@nestjs/common";
+import { Repository, UpdateResult, DeleteResult } from "typeorm";
+
+/**
+ * Base Repository class.
+ *
+ * Cung cấp các CRUD methods:
+ * - get: Tìm theo ID
+ * - create: Tạo mới
+ * - update: Cập nhật
+ * - delete: Xóa (hoặc soft delete)
+ * - list: List với pagination/filter
+ * - count: Đếm records
+ *
+ * Usage:
+ *   @Injectable()
+ *   export class UserRepository extends BaseRepository<User> {
+ *     constructor(
+ *       @InjectRepository(User)
+ *       repo: Repository<User>,
+ *     ) {
+ *       super(repo);
+ *     }
+ *   }
+ */
+@Injectable()
+export class BaseRepository<T> {
+  /**
+   * Constructor.
+   *
+   * @param repository TypeORM Repository
+   */
+  constructor(
+    protected repository: Repository<T>,
+  ) {}
+
+  /**
+   * Tìm record theo ID.
+   *
+   * @param id Primary key của record
+   * @param relations Relations cần load
+   * @returns Record nếu tồn tại, undefined nếu không
+   */
+  async get(
+    id: string | number,
+    relations?: FindOptionsRelations<T>,
+  ): Promise<T | null> {
+    return this.repository.findOne({
+      where: { id } as FindOptionsWhere<T>,
+      relations,
+    });
+  }
+
+  /**
+   * Tạo mới record.
+   *
+   * @param data Object chứa values cho columns
+   * @param relations Relations cần load
+   * @returns Record đã tạo
+   */
+  async create(
+    data: Partial<T>,
+    relations?: FindOptionsRelations<T>,
+  ): Promise<T> {
+    const entity = this.repository.create(data);
+    await this.repository.save(entity);
+    return this.get(entity.id as string | number, relations);
+  }
+
+  /**
+   * Cập nhật record.
+   *
+   * @param id Primary key của record
+   * @param data Object chứa values cần update
+   * @param relations Relations cần load
+   * @returns Record đã cập nhật, undefined nếu không tìm thấy
+   */
+  async update(
+    id: string | number,
+    data: Partial<T>,
+    relations?: FindOptionsRelations<T>,
+  ): Promise<T | null> {
+    const existing = await this.get(id);
+    if (!existing) {
+      return null;
+    }
+
+    await this.repository.update(id, data);
+    return this.get(id, relations);
+  }
+
+  /**
+   * Xóa record (soft delete nếu có @DeleteDateColumn).
+   *
+   * @param id Primary key của record
+   * @returns True nếu xóa thành công, False nếu không tìm thấy
+   */
+  async delete(id: string | number): Promise<boolean> {
+    const result = await this.repository.delete(id);
+    return result.affected !== 0;
+  }
+
+  /**
+   * List records với pagination và filters.
+   *
+   * @param where Where conditions
+   * @param offset Số records cần bỏ qua
+   * @param limit Max số records trả về
+   * @param relations Relations cần load
+   * @param select Columns cần select
+   * @returns Array của records và total count
+   */
+  async list(
+    where?: FindOptionsWhere<T>,
+    offset = 0,
+    limit = 100,
+    relations?: FindOptionsRelations<T>,
+    select?: FindOptionsSelect<T>,
+  ): Promise<{ data: T[]; total: number }> {
+    const [data, total] = await this.repository.findAndCount({
+      where,
+      skip: offset,
+      take: limit,
+      relations,
+      select,
+    });
+    return { data, total };
+  }
+
+  /**
+   * Đếm số records.
+   *
+   * @param where Where conditions
+   * @returns Số lượng records
+   */
+  async count(where?: FindOptionsWhere<T>): Promise<number> {
+    return this.repository.count({ where });
+  }
+
+  /**
+   * Tìm record đầu tiên theo conditions.
+   *
+   * @param where Where conditions
+   * @param relations Relations cần load
+   * @returns Record đầu tiên, undefined nếu không tìm thấy
+   */
+  async findBy(
+    where: FindOptionsWhere<T>,
+    relations?: FindOptionsRelations<T>,
+  ): Promise<T | null> {
+    return this.repository.findOne({ where, relations });
+  }
+
+  /**
+   * Tìm tất cả records theo conditions.
+   *
+   * @param where Where conditions
+   * @param relations Relations cần load
+   * @returns Array của records
+   */
+  async findByMany(
+    where: FindOptionsWhere<T>,
+    relations?: FindOptionsRelations<T>,
+  ): Promise<T[]> {
+    return this.repository.find({ where, relations });
+  }
+}
