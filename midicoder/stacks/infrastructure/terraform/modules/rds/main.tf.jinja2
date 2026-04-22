@@ -1,0 +1,141 @@
+# RDS Module - PostgreSQL Database cho AWS
+# # Terraform RDS module template
+# CP07: Infrastructure as Code
+
+# Variables - biến đầu vào
+variable "vpc_id" {
+  description = "VPC ID cho RDS instance"
+  type        = string
+}
+
+variable "db_subnet_group_ids" {
+  description = "IDs của DB subnet group"
+  type        = list(string)
+}
+
+variable "db_instance_class" {
+  description = "DB instance class"
+  type        = string
+  default     = "db.t3.medium"
+}
+
+variable "db_engine_version" {
+  description = "PostgreSQL engine version"
+  type        = string
+  default     = "15"
+}
+
+variable "db_instance_identifier" {
+  description = "RDS instance identifier"
+  type        = string
+  default     = "gateway-db"
+}
+
+variable "master_username" {
+  description = "Master username cho RDS"
+  type        = string
+  default     = "admin"
+}
+
+variable "master_password" {
+  description = "Master password cho RDS"
+  type        = string
+  sensitive   = true
+}
+
+variable "allocated_storage" {
+  description = "Allocated storage (GB)"
+  type        = number
+  default     = 20
+}
+
+# DB Subnet Group - subnet group cho RDS
+resource "aws_db_subnet_group" "main" {
+  name       = "${var.db_instance_identifier}-subnet-group"
+  description = "DB subnet group cho RDS instance"
+  subnet_ids = var.db_subnet_group_ids
+
+  tags = {
+    Name = "${var.db_instance_identifier}-subnet-group"
+  }
+}
+
+# Security Group - security group cho RDS
+resource "aws_security_group" "rds" {
+  name        = "${var.db_instance_identifier}-sg"
+  description = "Security group cho RDS instance"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "PostgreSQL access"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.db_instance_identifier}-sg"
+  }
+}
+
+# RDS Instance - PostgreSQL instance
+resource "aws_db_instance" "main" {
+  identifier           = var.db_instance_identifier
+  engine               = "postgres"
+  engine_version       = var.db_engine_version
+  instance_class       = var.db_instance_class
+  allocated_storage    = var.allocated_storage
+  storage_encrypted    = true
+  storage_type         = "gp2"
+
+  db_name  = "gateway"
+  username = var.master_username
+  password = var.master_password
+
+  db_subnet_group_name = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+
+  backup_retention_period = 7
+  backup_window          = "03:00-04:00"
+  maintenance_window     = "Mon:04:00-Mon:05:00"
+
+  multi_az                = true
+  skip_final_snapshot     = false
+  final_snapshot_identifier = "${var.db_instance_identifier}-final"
+
+  deletion_protection = true
+
+  tags = {
+    Name = var.db_instance_identifier
+    Type = "postgres"
+  }
+}
+
+# Outputs - giá trị đầu ra
+output "db_instance_arn" {
+  description = "ARN của RDS instance"
+  value       = aws_db_instance.main.arn
+}
+
+output "db_instance_endpoint" {
+  description = "Endpoint của RDS instance"
+  value       = aws_db_instance.main.endpoint
+}
+
+output "db_instance_address" {
+  description = "Address của RDS instance"
+  value       = aws_db_instance.main.address
+}
+
+output "db_instance_port" {
+  description = "Port của RDS instance"
+  value       = aws_db_instance.main.port
+}
