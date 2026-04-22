@@ -383,6 +383,26 @@ class BriefsManager:
                 (status, brief_id)
             )
             return True
+    
+    def _update_source_file(self, brief_id: str, source_file: str) -> bool:
+        """
+        Cập nhật source_file của brief.
+        
+        Method internal để cập nhật source file path sau khi tạo brief.
+        
+        Args:
+            brief_id: Brief ID
+            source_file: Đường dẫn file nguồn
+            
+        Returns:
+            True nếu thành công
+        """
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE briefs SET source_file = ?, updated_at = datetime('now') WHERE brief_id = ?",
+                (source_file, brief_id)
+            )
+            return True
 
 
 # ============================================================================
