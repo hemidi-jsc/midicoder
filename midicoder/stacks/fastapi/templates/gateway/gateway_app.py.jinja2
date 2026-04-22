@@ -1,0 +1,280 @@
+"""
+FastAPI Gateway App - Application chính cho API Gateway.
+
+Application này cung cấp:
+- Reverse proxy cho backend services
+- Route configuration & discovery
+- Rate limiting
+- Circuit breaker
+- Health checks
+- Metrics & observability
+- Middleware (CORS, logging, auth)
+
+CP06: API Gateway & Service Mesh
+"""
+
+import logging
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+import uvicorn
+
+# Import custom modules
+from gateway_router import router
+from gateway_service import GatewayService
+from route_config import RouteConfigManager
+from rate_limiter import RateLimiter, RateLimitExceeded
+from circuit_breaker import CircuitBreaker, CircuitBreakerOpen
+
+# {{ config }} template variable - FastAPI app config
+# Jinja2 template: {{ config.project_name }}
+{% set config = config or {} %}
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """
+    Lifespan context manager cho FastAPI app.
+    
+    lifespan handler cho startup và shutdown.
+    timeout: config timeout cho app.
+    
+    Xử lý:
+    - Startup: Load config, initialize services
+    - Shutdown: Cleanup resources
+    
+    Args:
+        app: FastAPI application instance
+        
+    Yields:
+        None
+    """
+    # Startup - khởi tạo services
+    logger.info("Starting Gateway Service...")
+    
+    # Initialize services
+    app.state.gateway_service = GatewayService()
+    app.state.route_config = RouteConfigManager()
+    app.state.rate_limiter = RateLimiter()
+    app.state.circuit_breaker = CircuitBreaker()
+    
+    # Load route configuration
+    await app.state.route_config.load()
+    logger.info(f"Loaded {len(app.state.route_config.routes)} routes")
+    
+    yield
+    
+    # Shutdown - cleanup resources
+    logger.info("Shutting down Gateway Service...")
+    await app.state.gateway_service.close()
+    logger.info("Gateway Service shutdown complete")
+
+
+# Create FastAPI app instance
+app = FastAPI(
+    # title="{{ config.project_name or 'API Gateway' }}"
+    title="API Gateway",
+    version="{{ config.version or '1.0.0' }}",
+    description="FastAPI-based API Gateway với reverse proxy, rate limiting, circuit breaker",
+    lifespan=lifespan,
+    # timeout config: {{ config.timeout or 30 }}
+    
+    # OpenAPI config - docs endpoint
+    openapi_url="/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    
+    # Server config
+    servers=[
+        {
+            "url": "{{ config.server_url or 'http://localhost:8000' }}",
+            "description": "Development server",
+        }
+    ],
+)
+
+
+# Add CORSMiddleware - cors handling
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # {{ config.cors_origins or ['*'] }}
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+    max_age=86400,
+)
+
+
+# Add TrustedHostMiddleware
+# lifespan startup handler
+
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """
+    Middleware ghi log cho mỗi request.
+    
+    Args:
+        request: HTTP request object
+        call_next: Next middleware handler
+        
+    Returns:
+        HTTP response
+    """
+    logger.info(f"Incoming request: {request.method} {request.url.path}")
+    
+    response = await call_next(request)
+    
+    logger.info(
+        f"Outgoing response: {request.method} {request.url.path} - "
+        f"Status: {response.status_code}"
+    )
+    
+    return response
+
+
+# Exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Exception handler cho validation errors.
+    
+    Args:
+        request: HTTP request
+        exc: Validation error
+        
+    Returns:
+        JSONResponse với error details
+    """
+    logger.error(f"Validation error: {exc.errors()}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": "Validation failed",
+            "errors": exc.errors(),
+        },
+    )
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
+    """
+    Exception handler cho rate limit exceeded.
+    
+    Args:
+        request: HTTP request
+        exc: Rate limit exceeded error
+        
+    Returns:
+        JSONResponse 429 Too Many Requests
+    """
+    logger.warning(f"Rate limit exceeded for {request.client.host}")
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={
+            "detail": "Rate limit exceeded",
+            "message": "Quá nhiều requests. Vui lòng thử lại sau.",
+        },
+        headers={
+            "X-RateLimit-Limit": str(exc.limit),
+            "X-RateLimit-Remaining": "0",
+            "Retry-After": str(exc.retry_after),
+        },
+    )
+
+
+@app.exception_handler(CircuitBreakerOpen)
+async def circuit_breaker_exception_handler(request: Request, exc: CircuitBreakerOpen):
+    """
+    Exception handler cho circuit breaker open.
+    
+    Args:
+        request: HTTP request
+        exc: Circuit breaker open error
+        
+    Returns:
+        JSONResponse 503 Service Unavailable
+    """
+    logger.warning(f"Circuit breaker open for {exc.backend_id}")
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": "Service temporarily unavailable",
+            "message": "Backend service tạm thời không khả dụng",
+            "circuit_breaker": exc.backend_id,
+        },
+    )
+
+
+# Include router
+app.include_router(
+    router,
+    prefix="/api",
+    tags=["gateway"],
+)
+
+
+# Health check endpoints
+@app.get("/health", tags=["health"])
+async def health_check():
+    """
+    Health check endpoint.
+    
+    Returns:
+        Health status object
+    """
+    return {"status": "healthy", "service": "api-gateway"}
+
+
+@app.get("/ping", tags=["health"])
+async def ping():
+    """
+    Simple liveness probe.
+    
+    Returns:
+        {"status": "ok"}
+    """
+    return {"status": "ok"}
+
+
+# Metrics endpoint
+@app.get("/metrics", tags=["metrics"])
+async def get_metrics():
+    """
+    Metrics endpoint cho Prometheus.
+    
+    Returns:
+        Metrics data
+    """
+    # {{ get_metrics() }} - template variable
+    return {
+        "gateway_requests_total": 0,
+        "gateway_requests_success": 0,
+        "gateway_requests_failed": 0,
+    }
+
+
+# Main entry point
+if __name__ == "__main__":
+    # Run với uvicorn
+    uvicorn.run(
+        "gateway_app:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info",
+    )

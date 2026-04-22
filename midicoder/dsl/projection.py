@@ -3112,7 +3112,280 @@ class SubledgerParams(TypedDict, total=False):
 
 
 # ============================================================================
-# Generic Params Union (Tất cả 107 Node Types)
+# CP06: API Gateway & Service Mesh Params (Kong + Consul)
+# ============================================================================
+
+
+class KongGatewayParams(TypedDict, total=False):
+    """
+    Tham số cho KongGateway nodes (CP06: API Gateway).
+
+    KongGateway định nghĩa Kong Gateway configuration.
+    Bao gồm version, global plugins, và tenant scope.
+
+    Fields:
+        id: Định danh của gateway
+        version: Kong declarative config version (3.0)
+        global_plugins: Danh sách global plugin names
+        tenant_scope: Phạm vi multi-tenancy (global, tenant_isolated)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    version: str
+    global_plugins: list[str]
+    tenant_scope: str
+    tags: list[str]
+    source: str
+
+
+class KongServiceParams(TypedDict, total=False):
+    """
+    Tham số cho KongService nodes (CP06: API Gateway).
+
+    KongService định nghĩa Kong Service cho backend services.
+    Bao gồm protocol, host, port, upstream reference, và timeouts.
+
+    Fields:
+        id: Định danh của service
+        name: Tên service trong Kong
+        protocol: Protocol (http, https, grpc, grpcs)
+        host: Host của backend service
+        port: Port của backend service
+        upstream_id: ID của Kong upstream (optional)
+        connect_timeout: Connect timeout (ms)
+        write_timeout: Write timeout (ms)
+        read_timeout: Read timeout (ms)
+        retries: Số lần retry
+        tenant_scope: Phạm vi multi-tenancy
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    name: str
+    protocol: str
+    host: str
+    port: int
+    upstream_id: str
+    connect_timeout: int
+    write_timeout: int
+    read_timeout: int
+    retries: int
+    tenant_scope: str
+    tags: list[str]
+    source: str
+
+
+class KongRouteParams(TypedDict, total=False):
+    """
+    Tham số cho KongRoute nodes (CP06: API Gateway).
+
+    KongRoute định nghĩa Kong Route cho API endpoints.
+    Bao gồm paths, methods, plugins, và rate limiter references.
+
+    Fields:
+        id: Định danh của route
+        name: Tên route trong Kong
+        paths: Danh sách URL paths
+        methods: Danh sách HTTP methods
+        strip_path: Có strip path prefix không
+        plugin_ids: Danh sách plugin IDs để apply
+        rate_limiter_id: ID của rate limiter (optional)
+        circuit_breaker_id: ID của circuit breaker (optional)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    name: str
+    paths: list[str]
+    methods: list[str]
+    strip_path: bool
+    plugin_ids: list[str]
+    rate_limiter_id: str
+    circuit_breaker_id: str
+    tags: list[str]
+    source: str
+
+
+class KongUpstreamParams(TypedDict, total=False):
+    """
+    Tham số cho KongUpstream nodes (CP06: API Gateway).
+
+    KongUpstream định nghĩa Kong Upstream cho load balancing.
+    Bao gồm load balancing type, health checks, và hashing config.
+
+    Fields:
+        id: Định danh của upstream
+        name: Tên upstream trong Kong
+        type: Load balancing type (round_robin, least_conn, consistent_hash)
+        hashes: Danh sách hashing config (cho consistent_hash)
+        healthchecks: Health check configuration
+        tenant_scope: Phạm vi multi-tenancy
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    name: str
+    type: str
+    hashes: list[dict[str, Any]]
+    healthchecks: dict[str, Any]
+    tenant_scope: str
+    tags: list[str]
+    source: str
+
+
+class KongPluginParams(TypedDict, total=False):
+    """
+    Tham số cho KongPlugin nodes (CP06: API Gateway).
+
+    KongPlugin định nghĩa Kong Plugin configuration.
+    Bao gồm plugin name và config parameters.
+
+    Fields:
+        id: Định danh của plugin
+        name: Tên plugin trong Kong (rate-limiting, cors, jwt, etc.)
+        config: Plugin configuration parameters
+        tenant_scope: Phạm vi multi-tenancy
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    name: str
+    config: dict[str, Any]
+    tenant_scope: str
+    tags: list[str]
+    source: str
+
+
+class ConsulServiceMeshParams(TypedDict, total=False):
+    """
+    Tham số cho ConsulServiceMesh nodes (CP06: Service Mesh).
+
+    ConsulServiceMesh định nghĩa Consul Service Mesh configuration.
+    Bao gồm datacenter, services, và multi-datacenter support.
+
+    Fields:
+        id: Định danh của service mesh
+        datacenter: Primary datacenter ID
+        datacenters: Danh sách tất cả datacenters (multi-DC support)
+        services: Danh sách service IDs
+        tenant_scope: Phạm vi multi-tenancy
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    datacenter: str
+    datacenters: list[str]
+    services: list[str]
+    tenant_scope: str
+    tags: list[str]
+    source: str
+
+
+class ConsulServiceParams(TypedDict, total=False):
+    """
+    Tham số cho ConsulService nodes (CP06: Service Mesh).
+
+    ConsulService định nghĩa Consul Service registration.
+    Bao gồm port, address, tags, health checks, và Connect config.
+
+    Fields:
+        id: Định danh của service
+        name: Tên service trong Consul
+        port: Service port
+        address: Service address
+        tags: Danh sách Consul tags
+        health_checks: Danh sách health check configs
+        connect_enabled: Có enable Consul Connect không
+        tenant_scope: Phạm vi multi-tenancy
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    name: str
+    port: int
+    address: str
+    tags: list[str]
+    health_checks: list[dict[str, Any]]
+    connect_enabled: bool
+    tenant_scope: str
+    source: str
+
+
+class ConsulConnectParams(TypedDict, total=False):
+    """
+    Tham số cho ConsulConnect nodes (CP06: Service Mesh).
+
+    ConsulConnect định nghĩa Consul Connect sidecar proxy configuration.
+    Bao gồm mTLS, rate limiting, và upstream definitions.
+
+    Fields:
+        id: Định danh của connect config
+        service_id: ID của service để attach connect
+        proxy_port: Sidecar proxy port
+        mtls_enabled: Có enable mTLS không
+        verify_server_name: Có verify server name không
+        rate_limit: Rate limiting configuration (optional)
+        upstreams: Danh sách upstream definitions (optional)
+        tenant_scope: Phạm vi multi-tenancy
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    service_id: str
+    proxy_port: int
+    mtls_enabled: bool
+    verify_server_name: bool
+    rate_limit: dict[str, Any]
+    upstreams: list[dict[str, Any]]
+    tenant_scope: str
+    tags: list[str]
+    source: str
+
+
+class ConsulHealthCheckParams(TypedDict, total=False):
+    """
+    Tham số cho ConsulHealthCheck nodes (CP06: Service Mesh).
+
+    ConsulHealthCheck định nghĩa Consul health check configuration.
+    Bao gồm check type, path, interval, và thresholds.
+
+    Fields:
+        id: Định danh của health check
+        service_id: ID của service để attach health check
+        type: Check type (http, grpc, tcp, script)
+        path: Path cho http checks
+        address: Address cho grpc checks
+        interval: Check interval (ví dụ: "10s")
+        timeout: Check timeout (ví dụ: "5s")
+        healthy_threshold: Threshold cho healthy state
+        unhealthy_threshold: Threshold cho unhealthy state
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    service_id: str
+    type: str
+    path: str
+    address: str
+    interval: str
+    timeout: str
+    healthy_threshold: int
+    unhealthy_threshold: int
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# Generic Params Union (Tất cả 116 Node Types với CP06)
 # ============================================================================
 
 # Union type cho tất cả các loại node params
@@ -3496,6 +3769,25 @@ class NodeKind(Enum):
     CALENDAR_SCHEDULE = "advanced.calendar"  # GAP-P1-02 (Academic calendar)
     SUBLEDGER = "finance.subledger"  # GAP-P3-06 (Complex accounting)
 
+    # =========================================================================
+    # CP06: Kong Gateway (5 loại) - API Gateway & Service Mesh
+    # =========================================================================
+    KONG_GATEWAY = "gateway.kong"  # Kong Gateway configuration
+    KONG_SERVICE = "kong.service"  # Kong Service definition
+    KONG_ROUTE = "kong.route"  # Kong Route definition
+    KONG_UPSTREAM = "kong.upstream"  # Kong Upstream/load balancer
+    KONG_PLUGIN = "kong.plugin"  # Kong Plugin configuration
+
+    # =========================================================================
+    # CP06: Consul Service Mesh (4 loại) - Service Mesh
+    # =========================================================================
+    CONSUL_SERVICE_MESH = "mesh.consul"  # Consul Service Mesh configuration
+    CONSUL_SERVICE = "consul.service"  # Consul Service definition
+    CONSUL_CONNECT = "consul.connect"  # Consul Connect sidecar proxy
+    CONSUL_HEALTH_CHECK = "consul.healthcheck"  # Consul Health check
+
+
+
 
 # ============================================================================
 # Projection Node
@@ -3792,6 +4084,23 @@ class ProjectionNode:
             NodeKind.CIRCUIT_BREAKER: ["id", "target_service"],  # GAP-P3-08
             NodeKind.CALENDAR_SCHEDULE: ["id", "calendar_type"],  # GAP-P1-02
             NodeKind.SUBLEDGER: ["id", "ledger_type"],  # GAP-P3-06
+
+            # =========================================================================
+            # CP06: Kong Gateway
+            # =========================================================================
+            NodeKind.KONG_GATEWAY: ["id", "version"],
+            NodeKind.KONG_SERVICE: ["id", "name", "protocol", "host", "port"],
+            NodeKind.KONG_ROUTE: ["id", "name", "paths"],
+            NodeKind.KONG_UPSTREAM: ["id", "name", "type"],
+            NodeKind.KONG_PLUGIN: ["id", "name"],
+
+            # =========================================================================
+            # CP06: Consul Service Mesh
+            # =========================================================================
+            NodeKind.CONSUL_SERVICE_MESH: ["id", "datacenter"],
+            NodeKind.CONSUL_SERVICE: ["id", "name", "port"],
+            NodeKind.CONSUL_CONNECT: ["id", "service_id"],
+            NodeKind.CONSUL_HEALTH_CHECK: ["id", "type"],
         }
         return required_map.get(self.kind, ["id"])
 

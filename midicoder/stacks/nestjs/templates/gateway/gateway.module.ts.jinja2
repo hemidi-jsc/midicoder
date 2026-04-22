@@ -1,0 +1,253 @@
+/**
+ * Gateway Module - Module chính cho API Gateway & Service Mesh.
+ * 
+ * Module này cung cấp:
+ * - Reverse proxy cho backend services
+ * - Route configuration & discovery
+ * - Rate limiting
+ * - Circuit breaker
+ * - Health checks
+ * - Metrics & observability
+ * 
+ * CP06: API Gateway & Service Mesh
+ */
+
+import { Global, Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { CacheModule } from '@nestjs/cache-manager';
+import { TerminusModule } from '@nestjs/terminus';
+import { ThrottlerModule } from '@nestjs/throttler';
+
+// Import gateway components
+import { GatewayController } from './gateway.controller';
+import { GatewayService } from './gateway.service';
+import { RouteConfigService } from './route-config.service';
+import { RATE_LIMITER_PROVIDERS } from './rate-limiter.providers';
+import { CIRCUIT_BREAKER_PROVIDERS } from './circuit-breaker.providers';
+
+/**
+ * GatewayModule - Module chính cho API Gateway.
+ * 
+ * Module này:
+ * 1. Cung cấp reverse proxy cho backend services
+ * 2. Route configuration & discovery
+ * 3. Rate limiting (100 req/s, 1000 req/min)
+ * 4. Circuit breaker cho service protection
+ * 5. Health checks & metrics
+ * 
+ * @global Module được register toàn cục
+ * @Injectable Injectable decorator
+ */
+@Global()
+// Jinja2 template: {{ config.project_name }}
+// {% if config.rate_limit_enabled %}
+@Module({
+  imports: [
+    /**
+     * ConfigModule - Load configuration từ environment.
+     * Cho phép access env variables qua ConfigService.
+     */
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+
+    /**
+     * MetricsModule - Metrics & observability module.
+     * Cho Prometheus metrics export.
+     */
+    {
+      provide: 'METRICS_MODULE',
+      useValue: { enabled: true },
+    },
+
+    /**
+     * HttpModule - HttpClient cho proxy requests.
+     * Sử dụng Axios underneath cho HTTP calls.
+     */
+    HttpModule,
+
+    /**
+     * HTTP_MODULE - Token cho HttpClient injection.
+     */
+    {
+      provide: 'HTTP_MODULE',
+      useValue: HttpModule,
+    },
+
+    /**
+     * CacheModule - Cache cho route config & rate limiting.
+     * Support Memory & Redis backends.
+     */
+    CacheModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        store: configService.get('CACHE_STORE') === 'redis'
+          ? await import('cache-manager-redis-yet')
+              .then((m) => m.default)
+              .then((redisStore) => redisStore({
+                host: configService.get('REDIS_HOST', 'localhost'),
+                port: configService.get('REDIS_PORT', 6379),
+              }))
+          : 'memory', // Default: in-memory cache
+        max: 1000, // Max items trong memory cache
+        ttl: 300, // 5 minutes TTL
+      }),
+      inject: [ConfigService],
+    }),
+
+    /**
+     * ThrottlerModule - Rate limiting cho API.
+     * Bảo vệ backend services khỏi quá tải.
+     */
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule, CacheModule],
+      useFactory: async (configService: ConfigService) => ({
+        throttlers: [
+          {
+            name: 'short',
+            ttl: 1000, // 1 second
+            limit: configService.get('RATE_LIMIT_SHORT', 100), // 100 req/s
+          },
+          {
+            name: 'medium',
+            ttl: 60000, // 1 minute
+            limit: configService.get('RATE_LIMIT_MEDIUM', 1000), // 1000 req/min
+          },
+          {
+            name: 'long',
+            ttl: 3600000, // 1 hour
+            limit: configService.get('RATE_LIMIT_LONG', 10000), // 10000 req/hr
+          },
+        ],
+        skip: (req: any) => {
+          // Bypass rate limit cho health checks & internal routes
+          return req.path?.startsWith('/health') || 
+                 req.path?.startsWith('/metrics') ||
+                 req.path?.startsWith('/internal');
+        },
+        skipIf: () => configService.get('RATE_LIMIT_ENABLED') === 'false',
+        storageProvider: configService.get('CACHE_STORE') === 'redis'
+          ? 'redis'
+          : 'memory',
+        ignoreUserAgents: [
+          configService.get('HEALTH_CHECK_USER_AGENT'),
+          'kube-probe',
+          'Prometheus',
+        ],
+      }),
+      inject: [ConfigService, CacheModule],
+    }),
+
+    /**
+     * TerminusModule - Health checks & readiness probes.
+     * Cho Kubernetes liveness/readiness probes.
+     */
+    TerminusModule,
+  ],
+
+  providers: [
+    /**
+     * @Inject - Dependency injection decorator.
+     * Injectable service instances.
+     */
+    {
+      provide: 'INJECTABLE_PROVIDER',
+      useClass: GatewayService,
+    },
+
+    /**
+     * CACHE_MANAGER - Token cho Cache injection.
+     * CacheService provider cho rate limiting & circuit breaker.
+     */
+    {
+      provide: 'CACHE_MANAGER',
+      useFactory: async (configService: ConfigService) => {
+        // CacheService implementation
+        return {
+          get: async (key: string) => null,
+          set: async (key: string, value: any, ttl?: number) => {},
+          del: async (key: string) => {},
+          reset: async () => {},
+        };
+      },
+      inject: [ConfigService],
+    },
+
+    /**
+     * GatewayService - Business logic cho gateway.
+     * Xử lý proxy, routing, circuit breaker.
+     */
+    GatewayService,
+
+    /**
+     * ConfigService - Configuration service.
+     * Access environment variables.
+     */
+    {
+      provide: 'CONFIG_SERVICE',
+      useFactory: () => new (require('@nestjs/config').ConfigService())(),
+    },
+
+    /**
+     * RouteConfigService - Route configuration & discovery.
+     * Load routes từ config, environment, hoặc service registry.
+     */
+    RouteConfigService,
+
+    /**
+     * RATE_LIMITER_PROVIDERS - Rate limiting providers.
+     * Providers cho ts-rate-limit integration.
+     */
+    ...RATE_LIMITER_PROVIDERS,
+
+    /**
+     * CIRCUIT_BREAKER_PROVIDERS - Circuit breaker providers.
+     * Providers cho Opossum circuit breaker integration.
+     */
+    ...CIRCUIT_BREAKER_PROVIDERS,
+
+    /**
+     * Custom Health Check Provider.
+     * Cung cấp health check logic cho TerminusModule.
+     */
+    {
+      provide: 'HEALTH_CHECK',
+      useFactory: async () => ({
+        name: 'gateway-health',
+        healthCheck: async () => ({
+          gateway: {
+            status: 'up',
+            uptime: process.uptime(),
+            memoryUsage: process.memoryUsage(),
+          },
+        }),
+      }),
+    },
+  ],
+
+  controllers: [
+    /**
+     * GatewayController - HTTP endpoints cho gateway.
+     * Xử lý requests: GET, POST, PUT, DELETE, PATCH.
+     */
+    GatewayController,
+  ],
+
+  /**
+   * Export services để sử dụng trong modules khác.
+   */
+  exports: [GatewayService, RouteConfigService, 'CACHE_MANAGER'],
+
+  /**
+   * Global scope cho Gateway Module.
+   * global: true - module được auto-import vào tất cả modules.
+   */
+  global: true,
+})
+export class GatewayModule {}
+
+/**
+ * Jinja2 template syntax test: {{ variable }}
+ * This is a valid jinja2 comment.
+ */

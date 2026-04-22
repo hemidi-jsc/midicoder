@@ -1,0 +1,410 @@
+"""
+FastAPI Circuit Breaker - Circuit breaker pattern cho API Gateway.
+
+Module này cung cấp:
+- CircuitBreaker class với open/closed/half-open states
+- Health monitoring
+- Fallback functions
+- Metrics & events
+- Manual control
+
+CP06: API Gateway & Service Mesh
+"""
+
+import asyncio
+import logging
+import time
+from typing import Callable, Optional, Dict, Any, List
+from dataclasses import dataclass
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+
+class CircuitState(Enum):
+    """Circuit breaker states."""
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+@dataclass
+class CircuitBreakerConfig:
+    """
+    CircuitBreakerConfig - Cấu hình circuit breaker.
+    
+    Attributes:
+        failure_threshold: Số failures trước khi open
+        success_threshold: Số successes trước khi close
+        healthy_threshold: Số successes để healthy
+        unhealthy_threshold: Số failures để unhealthy
+        timeout: Timeout (seconds) trước khi half-open
+        volume_threshold: Min requests trước khi check
+    """
+    failure_threshold: int = 5
+    success_threshold: int = 3
+    healthy_threshold: int = 3
+    unhealthy_threshold: int = 5
+    timeout: float = 30.0
+    volume_threshold: int = 10
+
+
+@dataclass
+class CircuitBreakerMetrics:
+    """Metrics cho circuit breaker."""
+    total_calls: int = 0
+    successful_calls: int = 0
+    failed_calls: int = 0
+    rejected_calls: int = 0
+    state_changes: int = 0
+
+
+class CircuitBreakerOpen(Exception):
+    """Exception khi circuit breaker open."""
+    
+    def __init__(self, backend_id: str, state: str, reset_at: float):
+        """
+        Initialize CircuitBreakerOpen.
+        
+        Args:
+            backend_id: Backend ID
+            state: Circuit state
+            reset_at: Reset timestamp
+        """
+        self.backend_id = backend_id
+        self.state = state
+        self.reset_at = reset_at
+        super().__init__(f"Circuit breaker open for {backend_id}")
+
+
+class CircuitBreaker:
+    """
+    CircuitBreaker interface - Circuit breaker cho API Gateway.
+    
+    CircuitBreaker interface với:
+    1. Open/Closed/Half-Open states
+    2. Health monitoring
+    3. Fallback functions
+    4. Metrics & events
+    5. Manual control (force open/close)
+    
+    Attributes:
+        config: CircuitBreakerConfig
+        metrics: CircuitBreakerMetrics
+        callbacks: List of callbacks
+    """
+    
+    def __init__(
+        self,
+        config: Optional[CircuitBreakerConfig] = None,
+        max_concurrent: int = 10,
+    ):
+        """
+        Khởi tạo CircuitBreaker.
+        
+        Args:
+            config: CircuitBreakerConfig
+            max_concurrent: Max concurrent connections
+        """
+        self.config = config or CircuitBreakerConfig()
+        self.max_concurrent = max_concurrent
+        
+        # State tracking
+        self._state = CircuitState.CLOSED
+        self._failure_count = 0
+        self._success_count = 0
+        self._last_failure_time: Optional[float] = None
+        self._opened_at: Optional[float] = None
+        
+        # Metrics
+        self.metrics = CircuitBreakerMetrics()
+        
+        # Fallback function
+        self._fallback: Optional[Callable] = None
+        
+        # State change callbacks (state_events)
+        self.callbacks: List[Callable] = []
+        
+        # Enabled flag
+        self.enabled = True
+    
+    @property
+    def state(self) -> CircuitState:
+        """
+        Get current circuit state.
+        
+        Returns:
+            Current CircuitState
+        """
+        # Check if should transition to half-open
+        if self._state == CircuitState.OPEN and self._opened_at:
+            if time.time() - self._opened_at >= self.config.timeout:
+                return CircuitState.HALF_OPEN
+        
+        return self._state
+    
+    @property
+    def is_closed(self) -> bool:
+        """Check if circuit is closed."""
+        return self.state == CircuitState.CLOSED
+    
+    @property
+    def is_open(self) -> bool:
+        """Check if circuit is open."""
+        return self.state == CircuitState.OPEN
+    
+    @property
+    def is_half_open(self) -> bool:
+        """Check if circuit is half-open."""
+        return self.state == CircuitState.HALF_OPEN
+    
+    async def call(
+        self,
+        func: Callable,
+        *args,
+        fallback: Optional[Callable] = None,
+        **kwargs,
+    ) -> Any:
+        """
+        Call function với circuit breaker protection.
+        
+        Args:
+            func: Function to call
+            *args: Function args
+            fallback: Fallback function
+            **kwargs: Function kwargs
+            
+        Returns:
+            Function result
+            
+        Raises:
+            CircuitBreakerOpen: Nếu circuit open
+        """
+        self.metrics.total_calls += 1
+        
+        # Check state
+        if self.state == CircuitState.OPEN:
+            self.metrics.rejected_calls += 1
+            raise CircuitBreakerOpen(
+                backend_id="backend",
+                state="open",
+                reset_at=time.time() + self.config.timeout,
+            )
+        
+        try:
+            # Call function
+            result = await func(*args, **kwargs)
+            
+            # Record success
+            self._on_success()
+            
+            return result
+            
+        except Exception as e:
+            # Record failure
+            self._on_failure()
+            
+            # Try fallback
+            if fallback:
+                try:
+                    return await fallback(*args, **kwargs)
+                except Exception as fb_error:
+                    logger.error(f"Fallback failed: {fb_error}")
+            
+            raise
+    
+    def _on_success(self):
+        """Handle success callback."""
+        self.metrics.successful_calls += 1
+        self._success_count += 1
+        
+        # Transition to closed if half-open
+        if self.state == CircuitState.HALF_OPEN:
+            if self._success_count >= self.config.success_threshold:
+                self._set_state(CircuitState.CLOSED)
+                self._success_count = 0
+                self._failure_count = 0
+    
+    def _on_failure(self):
+        """Handle failure callback."""
+        self.metrics.failed_calls += 1
+        self._failure_count += 1
+        self._last_failure_time = time.time()
+        
+        # Transition to open if closed
+        if self.state == CircuitState.CLOSED:
+            if self._failure_count >= self.config.failure_threshold:
+                self._set_state(CircuitState.OPEN)
+                self._opened_at = time.time()
+        
+        # Transition back to open if half-open
+        elif self.state == CircuitState.HALF_OPEN:
+            self._set_state(CircuitState.OPEN)
+            self._opened_at = time.time()
+    
+    def _set_state(self, new_state: CircuitState):
+        """
+        Set circuit state.
+        
+        Args:
+            new_state: New CircuitState
+        """
+        if self._state != new_state:
+            old_state = self._state
+            self._state = new_state
+            self.metrics.state_changes += 1
+            logger.info(
+                f"Circuit breaker state changed: {old_state.value} -> {new_state.value}"
+            )
+            
+            # Call callbacks (state_events)
+            for callback in self.callbacks:
+                try:
+                    callback(old_state, new_state)
+                except Exception as e:
+                    logger.error(f"Callback error: {e}")
+    
+    def set_fallback(self, fallback: Callable):
+        """
+        Set fallback function.
+        
+        Args:
+            fallback: Fallback callable
+        """
+        self._fallback = fallback
+        logger.info("Fallback function set")
+    
+    def add_callback(self, callback: Callable):
+        """
+        Add state change callback (state_events).
+        
+        Args:
+            callback: Callback function
+        """
+        self.callbacks.append(callback)
+        logger.info("Callback added (Event handler)")
+    
+    def force_open(self):
+        """Force open circuit (manual control)."""
+        self._set_state(CircuitState.OPEN)
+        self._opened_at = time.time()
+        logger.warning("Circuit breaker forced open")
+    
+    def force_close(self):
+        """Force close circuit (manual control)."""
+        self._set_state(CircuitState.CLOSED)
+        self._failure_count = 0
+        self._success_count = 0
+        logger.info("Circuit breaker forced closed")
+    
+    def get_health_report(self) -> Dict[str, Any]:
+        """
+        Get health report.
+        
+        Returns:
+            Health report dictionary
+        """
+        return {
+            "state": self.state.value,
+            "failure_count": self._failure_count,
+            "success_count": self._success_count,
+            "metrics": {
+                "total_calls": self.metrics.total_calls,
+                "successful_calls": self.metrics.successful_calls,
+                "failed_calls": self.metrics.failed_calls,
+                "rejected_calls": self.metrics.rejected_calls,
+            },
+        }
+    
+    def get_metrics(self) -> CircuitBreakerMetrics:
+        """
+        Get metrics.
+        
+        Returns:
+            CircuitBreakerMetrics
+        """
+        return self.metrics
+
+
+class Bulkhead:
+    """
+    Bulkhead - Concurrency limiting.
+    
+    Limit max concurrent calls.
+    """
+    
+    def __init__(self, max_concurrent: int = 10):
+        """
+        Khởi tạo Bulkhead.
+        
+        Args:
+            max_concurrent: Max concurrent calls
+        """
+        self.max_concurrent = max_concurrent
+        self.semaphore = asyncio.Semaphore(max_concurrent)
+    
+    async def call(self, func: Callable, *args, **kwargs) -> Any:
+        """
+        Call function với concurrency limit.
+        
+        Args:
+            func: Function to call
+            *args: Function args
+            **kwargs: Function kwargs
+            
+        Returns:
+            Function result
+        """
+        async with self.semaphore:
+            return await func(*args, **kwargs)
+
+
+# Global circuit breakers registry
+class CircuitBreakerRegistry:
+    """
+    CircuitBreakerRegistry - Registry cho circuit breakers.
+    
+    Track multiple circuit breakers.
+    """
+    
+    def __init__(self):
+        """Khởi tạo CircuitBreakerRegistry."""
+        self.breakers: Dict[str, CircuitBreaker] = {}
+    
+    def get(self, backend_id: str) -> CircuitBreaker:
+        """
+        Get circuit breaker cho backend.
+        
+        Args:
+            backend_id: Backend ID
+            
+        Returns:
+            CircuitBreaker
+        """
+        if backend_id not in self.breakers:
+            self.breakers[backend_id] = CircuitBreaker()
+        return self.breakers[backend_id]
+    
+    def get_all_states(self) -> Dict[str, str]:
+        """
+        Get tất cả circuit breaker states.
+        
+        Returns:
+            State dictionary
+        """
+        return {
+            backend_id: cb.state.value
+            for backend_id, cb in self.breakers.items()
+        }
+    
+    def get_health_report(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get health report cho tất cả breakers.
+        
+        Returns:
+            Health report dictionary
+        """
+        return {
+            backend_id: cb.get_health_report()
+            for backend_id, cb in self.breakers.items()
+        }
