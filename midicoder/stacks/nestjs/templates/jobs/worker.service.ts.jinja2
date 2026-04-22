@@ -1,0 +1,216 @@
+/**
+ * Worker Service cho NestJS (Bull).
+ *
+ * Cung cấp:
+ * - Process jobs from queue
+ * - Error handling
+ * - Job processing examples
+ *
+ * CP13: Background Job & Workflow
+ */
+
+import { Injectable, Inject } from "@nestjs/common";
+import { Process, Processor } from "@nestjs/bull";
+import { Job } from "bull";
+
+/**
+ * Worker Service.
+ *
+ * Process jobs from different queues.
+ */
+@Processor("email")
+@Injectable()
+export class EmailWorkerService {
+  /**
+   * Process email jobs.
+   *
+   * @param job - Bull job
+   * @returns Promise<void>
+   */
+  @Process("send-welcome-email")
+  async processWelcomeEmail(job: Job): Promise<void> {
+    const { userId, email } = job.data;
+
+    try {
+      // TODO: Implement email sending
+      console.log(`Sending welcome email to ${email} (user: ${userId})`);
+      await this.sendEmail(email, "Welcome", "Xin chào!");
+    } catch (error) {
+      console.error("Failed to send welcome email:", error);
+      throw error; // Will retry
+    }
+  }
+
+  @Process("send-password-reset")
+  async processPasswordReset(job: Job): Promise<void> {
+    const { userId, email, token } = job.data;
+
+    try {
+      console.log(`Sending password reset to ${email}`);
+      await this.sendEmail(email, "Đặt lại mật khẩu", `Token: ${token}`);
+    } catch (error) {
+      console.error("Failed to send password reset:", error);
+      throw error;
+    }
+  }
+
+  private async sendEmail(to: string, subject: string, body: string): Promise<void> {
+    // TODO: Implement email sending
+    console.log(`Email: ${to} - ${subject}`);
+  }
+}
+
+/**
+ * Notification Worker.
+ */
+@Processor("notification")
+@Injectable()
+export class NotificationWorkerService {
+  /**
+   * Process push notification jobs.
+   */
+  @Process("send-push-notification")
+  async processPushNotification(job: Job): Promise<void> {
+    const { userId, message, title } = job.data;
+
+    try {
+      console.log(`Sending push to user ${userId}: ${title}`);
+      // TODO: Implement push notification
+    } catch (error) {
+      console.error("Failed to send push notification:", error);
+      throw error;
+    }
+  }
+}
+
+/**
+ * Report Worker.
+ */
+@Processor("report")
+@Injectable()
+export class ReportWorkerService {
+  /**
+   * Process daily report generation.
+   */
+  @Process("generate-daily-report")
+  async processDailyReport(job: Job): Promise<void> {
+    const { date } = job.data;
+
+    try {
+      console.log(`Generating daily report for ${date}`);
+      // TODO: Implement report generation
+    } catch (error) {
+      console.error("Failed to generate report:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process weekly report generation.
+   */
+  @Process("generate-weekly-report")
+  async processWeeklyReport(job: Job): Promise<void> {
+    const { weekStart } = job.data;
+
+    try {
+      console.log(`Generating weekly report from ${weekStart}`);
+      // TODO: Implement report generation
+    } catch (error) {
+      console.error("Failed to generate weekly report:", error);
+      throw error;
+    }
+  }
+}
+
+/**
+ * Sync Worker.
+ */
+@Processor("sync")
+@Injectable()
+export class SyncWorkerService {
+  /**
+   * Process external data sync.
+   */
+  @Process("sync-external-data")
+  async processSync(job: Job): Promise<void> {
+    const { source, entityType } = job.data;
+
+    try {
+      console.log(`Syncing ${entityType} from ${source}`);
+      // TODO: Implement sync logic
+    } catch (error) {
+      console.error("Failed to sync data:", error);
+      throw error;
+    }
+  }
+}
+
+/**
+ * Cleanup Worker.
+ */
+@Processor("cleanup")
+@Injectable()
+export class CleanupWorkerService {
+  /**
+   * Process expired data cleanup.
+   */
+  @Process("cleanup-expired-data")
+  async processCleanup(job: Job): Promise<void> {
+    const { days } = job.data;
+
+    try {
+      console.log(`Cleaning up data older than ${days} days`);
+      // TODO: Implement cleanup logic
+    } catch (error) {
+      console.error("Failed to cleanup:", error);
+      throw error;
+    }
+  }
+}
+
+/**
+ * Job decorators.
+ */
+
+/**
+ * Email job data.
+ */
+export interface EmailJobData {
+  userId: string;
+  email: string;
+  token?: string;
+}
+
+/**
+ * Notification job data.
+ */
+export interface NotificationJobData {
+  userId: string;
+  message: string;
+  title?: string;
+  data?: Record<string, any>;
+}
+
+/**
+ * Report job data.
+ */
+export interface ReportJobData {
+  date?: string;
+  weekStart?: string;
+  type: "daily" | "weekly" | "monthly";
+}
+
+/**
+ * Sync job data.
+ */
+export interface SyncJobData {
+  source: string;
+  entityType: string;
+}
+
+/**
+ * Cleanup job data.
+ */
+export interface CleanupJobData {
+  days: number;
+}
