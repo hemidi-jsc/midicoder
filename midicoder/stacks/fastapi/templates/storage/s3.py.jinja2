@@ -1,0 +1,179 @@
+"""
+S3 Configuration cho FastAPI.
+
+Cung cấp:
+- Async S3 client (aioboto3)
+- Upload/download operations
+- Presigned URLs
+
+CP11: File Storage & Media
+"""
+
+import os
+from typing import Optional
+
+import boto3
+from botocore.config import Config
+
+# AWS S3 settings từ environment
+AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL", None)  # For MinIO/S3 compatible
+
+# S3 Bucket
+DEFAULT_BUCKET = os.getenv("S3_BUCKET", "uploads")
+
+# Connection config
+S3_CONFIG = Config(
+    retries={"max_attempts": 3, "mode": "standard"},
+    connect_timeout=30,
+    read_timeout=60,
+)
+
+
+# S3 Client
+_s3_client = None
+
+
+def get_s3_client() -> boto3.client:
+    """
+    Tạo hoặc trả về S3 client.
+
+    Returns:
+        Boto3 S3 client
+    """
+    global _s3_client
+
+    if _s3_client is None:
+        _s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=AWS_ACCESS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY,
+            region_name=AWS_REGION,
+            endpoint_url=AWS_ENDPOINT_URL,
+            config=S3_CONFIG,
+        )
+
+    return _s3_client
+
+
+def get_s3_resource() -> boto3.resource:
+    """
+    Tạo hoặc trả về S3 resource.
+
+    Returns:
+        Boto3 S3 resource
+    """
+    return boto3.resource(
+        "s3",
+        aws_access_key_id=AWS_ACCESS_KEY,
+        aws_secret_access_key=AWS_SECRET_KEY,
+        region_name=AWS_REGION,
+        endpoint_url=AWS_ENDPOINT_URL,
+        config=S3_CONFIG,
+    )
+
+
+def upload_file(
+    file_bytes: bytes,
+    key: str,
+    bucket: Optional[str] = None,
+    content_type: str = "application/octet-stream",
+) -> dict:
+    """
+    Upload file lên S3.
+
+    Args:
+        file_bytes: File content
+        key: Object key
+        bucket: Bucket name
+        content_type: Content type
+
+    Returns:
+        Upload result
+    """
+    client = get_s3_client()
+    target_bucket = bucket or DEFAULT_BUCKET
+
+    client.put_object(
+        Bucket=target_bucket,
+        Key=key,
+        Body=file_bytes,
+        ContentType=content_type,
+    )
+
+    return {
+        "bucket": target_bucket,
+        "key": key,
+        "url": f"https://{target_bucket}.s3.{AWS_REGION}.amazonaws.com/{key}",
+    }
+
+
+def download_file(key: str, bucket: Optional[str] = None) -> bytes:
+    """
+    Download file từ S3.
+
+    Args:
+        key: Object key
+        bucket: Bucket name
+
+    Returns:
+        File content
+    """
+    client = get_s3_client()
+    target_bucket = bucket or DEFAULT_BUCKET
+
+    response = client.get_object(Bucket=target_bucket, Key=key)
+    return response["Body"].read()
+
+
+def delete_file(key: str, bucket: Optional[str] = None) -> bool:
+    """
+    Xóa file từ S3.
+
+    Args:
+        key: Object key
+        bucket: Bucket name
+
+    Returns:
+        True nếu xóa thành công
+    """
+    client = get_s3_client()
+    target_bucket = bucket or DEFAULT_BUCKET
+
+    client.delete_object(Bucket=target_bucket, Key=key)
+    return True
+
+
+def get_presigned_url(
+    key: str,
+    bucket: Optional[str] = None,
+    expiration: int = 3600,
+    method: str = "GET",
+) -> str:
+    """
+    Generate presigned URL cho object.
+
+    Args:
+        key: Object key
+        bucket: Bucket name
+        expiration: URL validity (seconds)
+        method: HTTP method
+
+    Returns:
+        Presigned URL
+    """
+    client = get_s3_client()
+    target_bucket = bucket or DEFAULT_BUCKET
+
+    url = client.generate_presigned_url(
+        "get_object" if method == "GET" else "put_object",
+        Params={
+            "Bucket": target_bucket,
+            "Key": key,
+        },
+        ExpiresIn=expiration,
+    )
+
+    return url
