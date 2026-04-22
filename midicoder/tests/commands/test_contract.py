@@ -135,100 +135,139 @@ def contracts_dir(temp_workspace):
 
 def test_generate_placeholder_contracts_creates_files(contracts_dir):
     """
-    Test: Tạo placeholder contracts files (entities, commands, queries).
+    Test: Tạo placeholder contracts files (entities, commands, queries, events).
     
     Expected:
-    - entities.yml được tạo với meta và entities
-    - commands.yml được tạo với meta và commands
-    - queries.yml được tạo với meta và queries
+    - entities.yaml được tạo với meta và entities
+    - commands.yaml được tạo với meta và commands
+    - queries.yaml được tạo với meta và queries
+    - events.yaml được tạo với meta và events
     """
     brief_id = "test-brief-001"
     
     generate_placeholder_contracts(contracts_dir, brief_id)
     
-    # Verify files exist
-    assert (contracts_dir / "entities.yml").exists()
-    assert (contracts_dir / "commands.yml").exists()
-    assert (contracts_dir / "queries.yml").exists()
+    # Verify files exist (using .yaml extension as per DSL v1)
+    assert (contracts_dir / "entities.yaml").exists()
+    assert (contracts_dir / "commands.yaml").exists()
+    assert (contracts_dir / "queries.yaml").exists()
+    assert (contracts_dir / "events.yaml").exists()
     
-    # Verify entities.yml content
-    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
+    # Verify entities.yaml content
+    entities = yaml.safe_load((contracts_dir / "entities.yaml").read_text(encoding="utf-8"))
     assert "meta" in entities
     assert "entities" in entities
     assert entities["meta"]["brief_id"] == brief_id
-    assert len(entities["entities"]) > 0
+    assert len(entities["entities"]) == 3  # User, Product, Order
     
-    # Verify commands.yml content
-    commands = yaml.safe_load((contracts_dir / "commands.yml").read_text())
+    # Verify commands.yaml content
+    commands = yaml.safe_load((contracts_dir / "commands.yaml").read_text(encoding="utf-8"))
     assert "meta" in commands
     assert "commands" in commands
     assert commands["meta"]["brief_id"] == brief_id
+    assert len(commands["commands"]) == 2  # CreateUser, CreateOrder
     
-    # Verify queries.yml content
-    queries = yaml.safe_load((contracts_dir / "queries.yml").read_text())
+    # Verify queries.yaml content
+    queries = yaml.safe_load((contracts_dir / "queries.yaml").read_text(encoding="utf-8"))
     assert "meta" in queries
     assert "queries" in queries
     assert queries["meta"]["brief_id"] == brief_id
+    assert len(queries["queries"]) == 3  # GetUserById, ListProducts, GetOrdersByUser
+    
+    # Verify events.yaml content
+    events = yaml.safe_load((contracts_dir / "events.yaml").read_text(encoding="utf-8"))
+    assert "meta" in events
+    assert "events" in events
+    assert events["meta"]["brief_id"] == brief_id
+    assert len(events["events"]) == 2  # UserCreated, OrderCreated
 
 
 def test_generate_placeholder_contracts_has_required_fields(contracts_dir):
     """
-    Test: Placeholder contracts có required fields theo DSL schema.
+    Test: Placeholder contracts có required fields theo DSL schema v1.
     
-    Expected:
-    - Entity có: id, description, fields
-    - Command có: id, description, input, output
-    - Query có: id, description, input, output
+    Expected theo loader.py:
+    - Entity có: id, description, fields, primary_key, tenant_scope, tags
+    - Command có: id, description, input, fetches, guards, effects, returns, required_permissions
+    - Query có: id, description, input, fetches, returns, required_permissions
+    - Event có: id, description, type, source_entity, fields, version
     """
     brief_id = "test-brief-001"
     
     generate_placeholder_contracts(contracts_dir, brief_id)
     
-    # Verify entity fields
-    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
+    # Verify entity fields (DSL v1 schema)
+    entities = yaml.safe_load((contracts_dir / "entities.yaml").read_text(encoding="utf-8"))
     entity = entities["entities"][0]
     
     assert "id" in entity
     assert "description" in entity
     assert "fields" in entity
+    assert "primary_key" in entity
+    assert "tenant_scope" in entity
+    assert "tags" in entity
     
     for field in entity["fields"]:
         assert "name" in field
         assert "type" in field
+        assert "required" in field
     
-    # Verify command fields
-    commands = yaml.safe_load((contracts_dir / "commands.yml").read_text())
+    # Verify command fields (DSL v1 schema)
+    commands = yaml.safe_load((contracts_dir / "commands.yaml").read_text(encoding="utf-8"))
     command = commands["commands"][0]
     
     assert "id" in command
     assert "description" in command
     assert "input" in command
-    assert "output" in command
+    assert "fetches" in command
+    assert "guards" in command
+    assert "effects" in command
+    assert "returns" in command
+    assert "required_permissions" in command
+    assert "tenant_scope" in command
     
-    # Verify query fields
-    queries = yaml.safe_load((contracts_dir / "queries.yml").read_text())
+    # Verify query fields (DSL v1 schema)
+    queries = yaml.safe_load((contracts_dir / "queries.yaml").read_text(encoding="utf-8"))
     query = queries["queries"][0]
     
     assert "id" in query
     assert "description" in query
     assert "input" in query
-    assert "output" in query
+    assert "fetches" in query
+    assert "returns" in query
+    assert "required_permissions" in query
+    assert "tenant_scope" in query
+    
+    # Verify event fields (DSL v1 schema)
+    events = yaml.safe_load((contracts_dir / "events.yaml").read_text(encoding="utf-8"))
+    event = events["events"][0]
+    
+    assert "id" in event
+    assert "description" in event
+    assert "type" in event
+    assert "source_entity" in event
+    assert "fields" in event
+    assert "version" in event
+    assert "tenant_scope" in event
 
 
 def test_generate_placeholder_contracts_meta_version(contracts_dir):
     """
-    Test: Meta section có version và generated_at.
+    Test: Meta section có version, brief_id và generated_at.
     """
     brief_id = "test-brief-001"
     
     generate_placeholder_contracts(contracts_dir, brief_id)
     
-    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
-    
-    assert "version" in entities["meta"]
-    assert entities["meta"]["version"] == "1.0.0"
-    assert "generated_at" in entities["meta"]
-    assert "brief_id" in entities["meta"]
+    # Check all files have proper meta
+    for filename in ["entities.yaml", "commands.yaml", "queries.yaml", "events.yaml"]:
+        content = yaml.safe_load((contracts_dir / filename).read_text(encoding="utf-8"))
+        
+        assert "meta" in content, f"{filename} missing meta section"
+        assert "version" in content["meta"]
+        assert content["meta"]["version"] == "1.0.0"
+        assert "generated_at" in content["meta"]
+        assert content["meta"]["brief_id"] == brief_id
 
 
 # ============================================================================
@@ -323,8 +362,8 @@ def test_generate_contracts_force_overwrite(
     ]
     mock_briefs_manager_class.return_value = mock_manager_instance
     
-    # Tạo file contracts trước
-    (contracts_dir / "entities.yml").write_text("existing: content")
+    # Tạo file contracts trước (using .yaml extension)
+    (contracts_dir / "entities.yaml").write_text("existing: content")
     
     mock_prompt.return_value = "y"
     
@@ -332,7 +371,7 @@ def test_generate_contracts_force_overwrite(
     generate_contracts(force=True)
     
     # Verify files were overwritten
-    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
+    entities = yaml.safe_load((contracts_dir / "entities.yaml").read_text(encoding="utf-8"))
     assert "meta" in entities  # New format, not "existing: content"
 
 
@@ -364,9 +403,9 @@ def test_generate_contracts_cancel_overwrite(
     ]
     mock_briefs_manager_class.return_value = mock_manager_instance
     
-    # Tạo file contracts trước
+    # Tạo file contracts trước (using .yaml extension)
     original_content = "existing: content"
-    (contracts_dir / "entities.yml").write_text(original_content)
+    (contracts_dir / "entities.yaml").write_text(original_content)
     
     # User declines
     mock_prompt.return_value = "n"
@@ -374,8 +413,8 @@ def test_generate_contracts_cancel_overwrite(
     # Run
     generate_contracts()
     
-    # Verify file was NOT overwritten
-    content = (contracts_dir / "entities.yml").read_text()
+    # Verify file was NOT overwritten (note: mock doesn't trigger generate, file stays same)
+    content = (contracts_dir / "entities.yaml").read_text(encoding="utf-8")
     assert content == original_content
 
 
@@ -595,19 +634,20 @@ def test_full_generate_and_check_flow(temp_workspace, briefs_manager, artifacts_
     contracts_dir = Path(".midicoder/contracts")
     assert contracts_dir.exists()
     
-    # Step 4: Verify files exist
-    assert (contracts_dir / "entities.yml").exists()
-    assert (contracts_dir / "commands.yml").exists()
-    assert (contracts_dir / "queries.yml").exists()
+    # Step 4: Verify files exist (using .yaml extension)
+    assert (contracts_dir / "entities.yaml").exists()
+    assert (contracts_dir / "commands.yaml").exists()
+    assert (contracts_dir / "queries.yaml").exists()
+    assert (contracts_dir / "events.yaml").exists()
     
     # Step 5: Check contracts (suppress output)
     with patch("midicoder.pipeline.commands.contract.click.echo"):
         check_contracts()
     
     # Step 6: Verify YAML is valid
-    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
+    entities = yaml.safe_load((contracts_dir / "entities.yaml").read_text(encoding="utf-8"))
     assert "entities" in entities
-    assert len(entities["entities"]) > 0
+    assert len(entities["entities"]) == 3  # User, Product, Order
 
 
 # ============================================================================
@@ -618,8 +658,8 @@ def test_check_contracts_load_error(temp_workspace, contracts_dir):
     """
     Test: Check contracts khi load ProjectionTree lỗi.
     """
-    # Create some contract files
-    (contracts_dir / "entities.yml").write_text("valid: yaml")
+    # Create some contract files (using .yaml extension)
+    (contracts_dir / "entities.yaml").write_text("valid: yaml")
     
     # Mock load_projection_tree to raise exception
     with patch("midicoder.pipeline.commands.contract.click.echo"):
@@ -631,8 +671,8 @@ def test_check_contracts_validation_error(temp_workspace, contracts_dir):
     """
     Test: Check contracts khi validation lỗi.
     """
-    # Create some contract files
-    (contracts_dir / "entities.yml").write_text("valid: yaml")
+    # Create some contract files (using .yaml extension)
+    (contracts_dir / "entities.yaml").write_text("valid: yaml")
     
     # Mock validate_tree to raise exception
     mock_tree = MagicMock()
