@@ -1,0 +1,107 @@
+# Terraform Root Module - Infrastructure cho AWS
+# # Terraform root module template
+# CP07: Infrastructure as Code
+
+# Terraform configuration
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+
+  # Backend configuration - Terraform state
+  backend "s3" {
+    bucket = "my-project-terraform-state"
+    key    = "terraform.tfstate"
+    region = "ap-southeast-1"
+  }
+}
+
+# Provider configuration - AWS provider
+provider "aws" {
+  region = var.aws_region
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
+# Variables - biến đầu vào
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+  default     = "ap-southeast-1"
+}
+
+variable "project_name" {
+  description = "Tên dự án"
+  type        = string
+  default     = "gateway"
+}
+
+variable "environment" {
+  description = "Môi trường (dev/staging/prod)"
+  type        = string
+  default     = "dev"
+}
+
+# VPC Module - Virtual Private Cloud
+module "vpc" {
+  source = "./modules/vpc"
+
+  aws_region         = var.aws_region
+  project_name       = var.project_name
+  vpc_cidr           = var.vpc_cidr
+  public_subnet_cidrs = var.public_subnet_cidrs
+  private_subnet_cidrs = var.private_subnet_cidrs
+}
+
+# RDS Module - PostgreSQL Database
+module "rds" {
+  source = "./modules/rds"
+
+  vpc_id              = module.vpc.vpc_id
+  db_subnet_group_ids = module.vpc.private_subnet_ids
+  db_instance_class   = var.db_instance_class
+  master_username     = var.db_master_username
+  master_password     = var.db_master_password
+}
+
+# ElastiCache Module - Redis Cache
+module "elasticache" {
+  source = "./modules/elasticache"
+
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnet_ids
+  cluster_id = "${var.project_name}-redis"
+}
+
+# Outputs - giá trị đầu ra
+output "vpc_id" {
+  description = "VPC ID"
+  value       = module.vpc.vpc_id
+}
+
+output "rds_endpoint" {
+  description = "RDS endpoint"
+  value       = module.rds.db_instance_endpoint
+  sensitive   = true
+}
+
+output "redis_endpoint" {
+  description = "Redis endpoint"
+  value       = module.elasticache.cluster_address
+}
+
+output "redis_port" {
+  description = "Redis port"
+  value       = module.elasticache.cluster_port
+}
