@@ -1,0 +1,187 @@
+/**
+ * Event Subscriber - Subscribe và handle events.
+ * 
+ * Module này cung cấp EventSubscriber để subscribe và handle events.
+ * Hỗ trợ filter, retry policies, và error handling.
+ * 
+ * CP05: Event-Driven Architecture
+ */
+
+import { Injectable, Logger } from '@nestjs/common';
+import { EventBusService, EventMessage, EventHandler } from './event-bus.service';
+
+/**
+ * Retry Policy configuration.
+ * 
+ * Cấu hình cho retry logic.
+ */
+export interface RetryPolicy {
+  max_retries: number;
+  backoff_ms: number;
+}
+
+/**
+ * Filter Function type.
+ * 
+ * Function để filter events.
+ */
+export type EventFilter = (message: EventMessage) => boolean;
+
+/**
+ * EventSubscriberService - Subscribe và handle events.
+ * 
+ * EventSubscriber đăng ký handler để xử lý events.
+ * Có thể có filter và retry policies.
+ */
+@Injectable()
+export class EventSubscriberService {
+  private readonly logger = new Logger(EventSubscriberService.name);
+  private subscriptions: Map<string, { handler: EventHandler; filter?: EventFilter }> = new Map();
+
+  constructor(private readonly eventBus: EventBusService) {
+    this.logger.log('EventSubscriberService đã được khởi tạo');
+  }
+
+  /**
+   * Subscribe handler đến topic.
+   * 
+   * @param topic - Topic để subscribe
+   * @param handler - Function để handle events
+   * @param filter - Optional filter function
+   */
+  subscribe(
+    topic: string,
+    handler: EventHandler,
+    filter?: EventFilter,
+  ): void {
+    const wrappedHandler = async (message: EventMessage) => {
+      // Apply filter nếu có
+      if (filter && !filter(message)) {
+        this.logger.debug(`Event '${message.event_id}' bị filter bởi subscriber`);
+        return;
+      }
+
+      this.logger.info(`Handling event '${message.event_id}'`);
+
+      try {
+        await this.handleWithRetry(message, handler);
+      } catch (error) {
+        this.logger.error(
+          `Error xử lý event '${message.event_id}': ${error.message}`,
+          error.stack,
+        );
+        throw error;
+      }
+    };
+
+    this.eventBus.subscribe(topic, wrappedHandler);
+    this.subscriptions.set(topic, { handler: wrappedHandler, filter });
+    this.logger.info(`EventSubscriber đã subscribe đến topic '${topic}'`);
+  }
+
+  /**
+   * Handle event với retry logic.
+   * 
+   * @param message - EventMessage cần handle
+   * @param handler - Handler function
+   * @param retryPolicy - Retry configuration
+   */
+  private async handleWithRetry(
+    message: EventMessage,
+    handler: EventHandler,
+    retryPolicy: RetryPolicy = { max_retries: 3, backoff_ms: 1000 },
+  ): Promise<void> {
+    const { max_retries, backoff_ms } = retryPolicy;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= max_retries; attempt++) {
+      try {
+        await handler(message);
+        return;
+      } catch (error) {
+        lastError = error as Error;
+        this.logger.warning(
+          `Attempt ${attempt + 1}/${max_retries + 1} failed: ${error.message}`,
+        );
+
+        if (attempt < max_retries) {
+          // Backoff trước khi retry
+          await new Promise((resolve) => setTimeout(resolve, backoff_ms));
+        }
+      }
+    }
+
+    // All retries failed
+    this.logger.error(
+      `All retries failed for event '${message.event_id}': ${lastError?.message}`,
+    );
+    // Trong production, có thể send to dead letter queue
+    throw lastError;
+  }
+
+  /**
+   * Unsubscribe khỏi topic.
+   * 
+   * @param topic - Topic để unsubscribe
+   */
+  unsubscribe(topic: string): void {
+    const subscription = this.subscriptions.get(topic);
+    if (subscription) {
+      this.eventBus.unsubscribe(topic, subscription.handler);
+      this.subscriptions.delete(topic);
+      this.logger.info(`EventSubscriber đã unsubscribe khỏi topic '${topic}'`);
+    }
+  }
+
+  /**
+   * Unsubscribe tất cả.
+   */
+  unsubscribeAll(): void {
+    for (const [topic, subscription] of this.subscriptions.entries()) {
+      this.eventBus.unsubscribe(topic, subscription.handler);
+    }
+    this.subscriptions.clear();
+    this.logger.info('Tất cả subscriptions đã được clear');
+  }
+}
+
+/**
+ * Filter by event type.
+ * 
+ * Tạo filter function để filter theo event type.
+ * 
+ * @param eventType - Event type để filter
+ * @returns Filter function
+ */
+export function filterByEventType(eventType: string): EventFilter {
+  return (message: EventMessage) => message.event_id === eventType;
+}
+
+/**
+ * Filter by metadata.
+ * 
+ * Tạo filter function để filter theo metadata.
+ * 
+ * @param key - Metadata key để filter
+ * @param value - Giá trị để match
+ * @returns Filter function
+ */
+export function filterByMetadata(key: string, value: any): EventFilter {
+  return (message: EventMessage) => {
+    if (!message.metadata) return false;
+    return message.metadata[key] === value;
+  };
+}
+
+/**
+ * Filter by payload field.
+ * 
+ * Tạo filter function để filter theo payload field.
+ * 
+ * @param field - Payload field để filter
+ * @param value - Giá trị để match
+ * @returns Filter function
+ */
+export function filterByPayloadField(field: string, value: any): EventFilter {
+  return (message: EventMessage) => message.payload[field] === value;
+}

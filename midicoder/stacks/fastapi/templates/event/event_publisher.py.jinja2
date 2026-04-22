@@ -1,0 +1,183 @@
+"""
+Event Publisher - Publish events đến event bus.
+
+Module này cung cấp EventPublisher để publish events.
+Có thể mở rộng để publish sang Kafka, RabbitMQ, SQS, v.v.
+
+CP05: Event-Driven Architecture
+"""
+
+from typing import Any, Optional
+from dataclasses import dataclass
+import logging
+import uuid
+
+from app.core.event.event_bus import EventBus, EventMessage
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Event Publisher
+# ============================================================================
+
+
+@dataclass
+class EventPublisher:
+    """
+    Publisher để publish events đến event bus.
+
+    EventPublisher cung cấp interface để publish events.
+    Có thể tích hợp với Kafka, RabbitMQ, SQS, v.v.
+
+    Attributes:
+        bus_name: Tên của event bus
+        topic: Topic để publish events
+        event_bus: EventBus instance để publish
+    """
+
+    bus_name: str
+    topic: str
+    event_bus: EventBus = None  # type: ignore
+
+    def __post_init__(self):
+        """Khởi tạo event bus nếu chưa có."""
+        if self.event_bus is None:
+            self.event_bus = EventBus(name=self.bus_name)
+
+    def publish(self, message: EventMessage) -> EventMessage:
+        """
+        Publish event message đến event bus.
+
+        Args:
+            message: EventMessage cần publish
+
+        Returns:
+            EventMessage đã được publish (có thể có topic được set)
+        """
+        # Set topic cho message
+        message.topic = self.topic
+
+        # Publish đến event bus
+        self.event_bus.publish(message)
+
+        logger.info(
+            f"Event '{message.event_id}' đã publish đến topic '{self.topic}'"
+        )
+
+        return message
+
+    def publish_event(
+        self,
+        event_id: str,
+        payload: dict[str, Any],
+        correlation_id: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> EventMessage:
+        """
+        Publish event với event_id và payload.
+
+        Args:
+            event_id: ID của event type (ví dụ: "order.created")
+            payload: Dữ liệu event
+            correlation_id: ID để trace event (optional, auto-generate nếu không có)
+            metadata: Metadata bổ sung (optional)
+
+        Returns:
+            EventMessage đã được publish
+        """
+        # Auto-generate correlation ID nếu không có
+        if correlation_id is None:
+            correlation_id = str(uuid.uuid4())
+
+        message = EventMessage(
+            event_id=event_id,
+            payload=payload,
+            correlation_id=correlation_id,
+            metadata=metadata,
+            topic=self.topic,
+        )
+
+        return self.publish(message)
+
+
+# ============================================================================
+# Event Publisher Factory
+# ============================================================================
+
+
+def create_publisher(
+    bus_name: str = "default",
+    topic: str = "events",
+) -> EventPublisher:
+    """
+    Tạo EventPublisher mới.
+
+    Factory function để tạo EventPublisher với config.
+
+    Args:
+        bus_name: Tên của event bus
+        topic: Topic để publish events
+
+    Returns:
+        EventPublisher instance
+    """
+    return EventPublisher(bus_name=bus_name, topic=topic)
+
+
+# ============================================================================
+# Decorator Pattern - Event Publishing
+# ============================================================================
+
+
+def publish_event(
+    event_id: str,
+    topic: str = "events",
+    bus_name: str = "default",
+):
+    """
+    Decorator để publish event sau khi function execute.
+
+    Decorator tự động publish event với return value của function làm payload.
+
+    Args:
+        event_id: ID của event type
+        topic: Topic để publish
+        bus_name: Tên của event bus
+
+    Returns:
+        Decorated function
+    """
+
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            # Execute function
+            result = func(*args, **kwargs)
+
+            # Create payload từ return value
+            payload = {}
+            if result is not None:
+                if hasattr(result, "dict"):
+                    # Pydantic model
+                    payload = result.dict()
+                elif hasattr(result, "__dict__"):
+                    # Dataclass hoặc object
+                    payload = result.__dict__
+                elif isinstance(result, dict):
+                    payload = result
+                else:
+                    payload = {"result": result}
+
+            # Publish event
+            publisher = EventPublisher(bus_name=bus_name, topic=topic)
+            publisher.publish_event(
+                event_id=event_id,
+                payload=payload,
+                metadata={"function": func.__name__},
+            )
+
+            return result
+
+        return wrapper
+
+    return decorator

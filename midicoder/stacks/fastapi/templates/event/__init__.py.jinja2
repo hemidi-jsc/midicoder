@@ -1,0 +1,22 @@
+"""
+Event-Driven Architecture - Event bus cho FastAPI.
+
+Module này cung cấp event publishing/subscribing cho FastAPI application.
+Hỗ trợ in-memory event bus với khả năng mở rộng sang Kafka/RabbitMQ.
+
+CP05: Event-Driven Architecture
+"""
+
+from app.core.event.event_bus import EventBus
+from app.core.event.event_publisher import EventPublisher
+from app.core.event.event_subscriber import EventSubscriber
+
+# Default event bus instance
+event_bus = EventBus(name="default")
+
+__all__ = [
+    "EventBus",
+    "EventPublisher",
+    "EventSubscriber",
+    "event_bus",
+]

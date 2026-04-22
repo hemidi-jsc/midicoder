@@ -81,6 +81,13 @@ from .capability_params import (
     BatchJobParams,
     DataRetentionParams,
 )
+from .event_models import (
+    DomainEvent,
+    EventBus,
+    EventMessage,
+    EventPublisher,
+    EventSubscriber,
+)
 from .capability_validator import (
     CAPABILITY_VALIDATORS,
     validate_capability_params,
@@ -198,4 +205,11 @@ __all__ = [
     "InvariantsConfig",
     "BlueprintConfig",
     "BlueprintReferences",
+    
+    # Event Models (CP05)
+    "DomainEvent",
+    "EventBus",
+    "EventMessage",
+    "EventPublisher",
+    "EventSubscriber",
 ]

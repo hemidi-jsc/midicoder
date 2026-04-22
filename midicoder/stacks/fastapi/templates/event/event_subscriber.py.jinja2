@@ -1,0 +1,245 @@
+"""
+Event Subscriber - Subscribe và handle events.
+
+Module này cung cấp EventSubscriber để subscribe và handle events.
+Hỗ trợ filter, retry policies, và error handling.
+
+CP05: Event-Driven Architecture
+"""
+
+from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+import logging
+import asyncio
+
+from app.core.event.event_bus import EventBus, EventMessage
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Event Subscriber
+# ============================================================================
+
+
+@dataclass
+class EventSubscriber:
+    """
+    Subscriber để subscribe và handle events.
+
+    EventSubscriber đăng ký handler để xử lý events.
+    Có thể có filter và retry policies.
+
+    Attributes:
+        bus_name: Tên của event bus
+        topic: Topic để subscribe
+        handler: Function để handle events
+        filter: Optional filter để filter events
+        retry_policy: Retry configuration
+        event_bus: EventBus instance để subscribe
+    """
+
+    bus_name: str
+    topic: str
+    handler: Callable[[EventMessage], Any]
+    filter: Optional[Callable[[EventMessage], bool]] = None
+    retry_policy: Optional[dict[str, Any]] = field(default_factory=lambda: {
+        "max_retries": 3,
+        "backoff_ms": 1000,
+    })
+    event_bus: EventBus = None  # type: ignore
+
+    def __post_init__(self):
+        """Khởi tạo event bus và subscribe."""
+        if self.event_bus is None:
+            self.event_bus = EventBus(name=self.bus_name)
+        
+        # Subscribe handler đến topic
+        self.event_bus.subscribe(self.topic, self.handle_with_retry)
+        logger.info(f"EventSubscriber đã subscribe đến topic '{self.topic}'")
+
+    def should_handle(self, message: EventMessage) -> bool:
+        """
+        Kiểm tra xem subscriber có nên handle message không.
+
+        Args:
+            message: EventMessage cần kiểm tra
+
+        Returns:
+            True nếu nên handle, False nếu không
+        """
+        if self.filter is None:
+            return True
+        return self.filter(message)
+
+    def handle(self, message: EventMessage) -> Any:
+        """
+        Handle event message.
+
+        Args:
+            message: EventMessage cần handle
+
+        Returns:
+            Kết quả từ handler
+        """
+        if not self.should_handle(message):
+            logger.debug(
+                f"Event '{message.event_id}' bị filter bởi subscriber"
+            )
+            return None
+
+        logger.info(f"Handling event '{message.event_id}'")
+
+        try:
+            # Support cả async và sync handlers
+            if asyncio.iscoroutinefunction(self.handler):
+                return asyncio.run(self.handler(message))
+            else:
+                return self.handler(message)
+        except Exception as e:
+            logger.error(
+                f"Error xử lý event '{message.event_id}': {str(e)}",
+                exc_info=True,
+            )
+            raise
+
+    def handle_with_retry(self, message: EventMessage) -> Any:
+        """
+        Handle event với retry logic.
+
+        Args:
+            message: EventMessage cần handle
+
+        Returns:
+            Kết quả từ handler
+        """
+        max_retries = self.retry_policy.get("max_retries", 3)
+        backoff_ms = self.retry_policy.get("backoff_ms", 1000)
+
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                return self.handle(message)
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    f"Attempt {attempt + 1}/{max_retries + 1} failed: {str(e)}"
+                )
+                
+                if attempt < max_retries:
+                    # Backoff trước khi retry
+                    import time
+                    time.sleep(backoff_ms / 1000)
+
+        # All retries failed
+        logger.error(
+            f"All retries failed for event '{message.event_id}': {str(last_error)}"
+        )
+        # Trong production, có thể send to dead letter queue
+        raise last_error
+
+    def unsubscribe(self) -> None:
+        """
+        Unsubscribe khỏi event bus.
+        """
+        self.event_bus.unsubscribe(self.topic, self.handle_with_retry)
+        logger.info(f"EventSubscriber đã unsubscribe khỏi topic '{self.topic}'")
+
+
+# ============================================================================
+# Event Subscriber Factory
+# ============================================================================
+
+
+def create_subscriber(
+    topic: str,
+    handler: Callable[[EventMessage], Any],
+    bus_name: str = "default",
+    filter_func: Optional[Callable[[EventMessage], bool]] = None,
+    retry_policy: Optional[dict[str, Any]] = None,
+) -> EventSubscriber:
+    """
+    Tạo EventSubscriber mới.
+
+    Factory function để tạo EventSubscriber với config.
+
+    Args:
+        topic: Topic để subscribe
+        handler: Function để handle events
+        bus_name: Tên của event bus
+        filter_func: Optional filter function
+        retry_policy: Retry configuration
+
+    Returns:
+        EventSubscriber instance
+    """
+    return EventSubscriber(
+        bus_name=bus_name,
+        topic=topic,
+        handler=handler,
+        filter=filter_func,
+        retry_policy=retry_policy or {
+            "max_retries": 3,
+            "backoff_ms": 1000,
+        },
+    )
+
+
+# ============================================================================
+# Filter Helpers
+# ============================================================================
+
+
+def filter_by_event_type(event_type: str):
+    """
+    Tạo filter function để filter theo event type.
+
+    Args:
+        event_type: Event type để filter
+
+    Returns:
+        Filter function
+    """
+
+    def filter_func(message: EventMessage) -> bool:
+        return message.event_id == event_type
+
+    return filter_func
+
+
+def filter_by_metadata(key: str, value: Any):
+    """
+    Tạo filter function để filter theo metadata.
+
+    Args:
+        key: Metadata key để filter
+        value: Giá trị để match
+
+    Returns:
+        Filter function
+    """
+
+    def filter_func(message: EventMessage) -> bool:
+        if message.metadata is None:
+            return False
+        return message.metadata.get(key) == value
+
+    return filter_func
+
+
+def filter_by_payload_field(field: str, value: Any):
+    """
+    Tạo filter function để filter theo payload field.
+
+    Args:
+        field: Payload field để filter
+        value: Giá trị để match
+
+    Returns:
+        Filter function
+    """
+
+    def filter_func(message: EventMessage) -> bool:
+        return message.payload.get(field) == value
+
+    return filter_func
