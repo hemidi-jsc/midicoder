@@ -1,0 +1,222 @@
+"""
+Task Definitions cho Celery.
+
+Cung cấp:
+- Task decorators
+- Retry logic
+- Periodic task examples
+
+CP13: Background Job & Workflow
+"""
+
+from functools import wraps
+from typing import Any, Callable, Optional
+
+from .celery_app import get_celery
+
+celery = get_celery()
+
+
+def task(
+    name: Optional[str] = None,
+    retries: int = 3,
+    interval: int = 60,
+    queue: str = "default",
+):
+    """
+    Decorator để define Celery task.
+
+    Args:
+        name: Task name (optional)
+        retries: Max retries (default 3)
+        interval: Retry interval in seconds (default 60)
+        queue: Queue name (default "default")
+
+    Usage:
+        @task(queue="email", retries=5)
+        async def send_welcome_email(user_id: int):
+            ...
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        @celery.task(
+            name=name or func.__name__,
+            max_retries=retries,
+            default_retry_delay=interval,
+            queue=queue,
+            acks_late=True,
+        )
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                # Call the async function
+                if hasattr(func, "__await__"):
+                    return await func(*args, **kwargs)
+                return func(*args, **kwargs)
+            except Exception as e:
+                # Retry on exception
+                wrapper.retry(exc=e)
+                raise
+
+        return wrapper
+
+    return decorator
+
+
+@task(queue="email", retries=3)
+async def send_welcome_email(user_id: int, email: str) -> dict:
+    """
+    Gửi welcome email.
+
+    Args:
+        user_id: User ID
+        email: Email address
+
+    Returns:
+        Result dict
+    """
+    # TODO: Implement email sending
+    return {"status": "sent", "user_id": user_id, "email": email}
+
+
+@task(queue="email", retries=3)
+async def send_password_reset_email(user_id: int, email: str, token: str) -> dict:
+    """
+    Gửi password reset email.
+
+    Args:
+        user_id: User ID
+        email: Email address
+        token: Reset token
+
+    Returns:
+        Result dict
+    """
+    # TODO: Implement password reset email
+    return {"status": "sent", "user_id": user_id}
+
+
+@task(queue="notification", retries=2)
+async def send_push_notification(user_id: int, message: str) -> dict:
+    """
+    Gửi push notification.
+
+    Args:
+        user_id: User ID
+        message: Notification message
+
+    Returns:
+        Result dict
+    """
+    # TODO: Implement push notification
+    return {"status": "sent", "user_id": user_id}
+
+
+@task(queue="report", retries=5, interval=300)
+async def generate_daily_report(date: str) -> dict:
+    """
+    Generate daily report.
+
+    Args:
+        date: Report date
+
+    Returns:
+        Report result
+    """
+    # TODO: Implement report generation
+    return {"status": "generated", "date": date}
+
+
+@task(queue="sync", retries=5, interval=60)
+async def sync_external_data(source: str, entity_type: str) -> dict:
+    """
+    Sync data từ external source.
+
+    Args:
+        source: External source name
+        entity_type: Entity type to sync
+
+    Returns:
+        Sync result
+    """
+    # TODO: Implement sync logic
+    return {"status": "synced", "source": source, "entity_type": entity_type}
+
+
+@task(queue="cleanup", retries=1)
+async def cleanup_expired_data(days: int = 30) -> dict:
+    """
+    Cleanup expired data.
+
+    Args:
+        days: Days threshold
+
+    Returns:
+        Cleanup result
+    """
+    # TODO: Implement cleanup logic
+    return {"status": "cleaned", "days": days}
+
+
+@task(queue="email", retries=3)
+async def send_bulk_emails(recipients: list) -> dict:
+    """
+    Gửi bulk emails.
+
+    Args:
+        recipients: List of {email, context}
+
+    Returns:
+        Bulk send result
+    """
+    results = {"success": 0, "failed": 0}
+
+    for recipient in recipients:
+        try:
+            # TODO: Send email
+            results["success"] += 1
+        except Exception:
+            results["failed"] += 1
+
+    return results
+
+
+def chain_tasks(tasks: list) -> Callable:
+    """
+    Chain multiple tasks.
+
+    Args:
+        tasks: List of task functions
+
+    Returns:
+        Chained task
+    """
+    @task(queue="default")
+    async def chained(*args, **kwargs):
+        for task in tasks:
+            result = await task(*args, **kwargs)
+        return result
+
+    return chained
+
+
+def retry_on_failure(max_retries: int = 3, delay: int = 60):
+    """
+    Decorator để retry task on failure.
+
+    Args:
+        max_retries: Max retry attempts
+        delay: Delay between retries (seconds)
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    await asyncio.sleep(delay)
+        return wrapper
+    return decorator

@@ -1,0 +1,104 @@
+/**
+ * Queue Module cho NestJS (Bull).
+ *
+ * Cung cấp:
+ * - Bull queue setup
+ * - Redis connection
+ * - Multiple queues
+ *
+ * CP13: Background Job & Workflow
+ */
+
+import { Global, Module } from "@nestjs/common";
+import { BullModule } from "@nestjs/bull";
+import { config } from "dotenv";
+
+// Load environment variables
+config();
+
+/**
+ * Queue names.
+ */
+export enum QueueName {
+  EMAIL = "email",
+  NOTIFICATION = "notification",
+  REPORT = "report",
+  SYNC = "sync",
+  CLEANUP = "cleanup",
+  DEFAULT = "default",
+}
+
+/**
+ * Queue Module.
+ *
+ * Global module cung cấp Bull queues.
+ */
+@Global()
+@Module({
+  imports: [
+    BullModule.forRoot({
+      redis: {
+        host: process.env.REDIS_HOST || "localhost",
+        port: parseInt(process.env.REDIS_PORT || "6379", 10),
+        password: process.env.REDIS_PASSWORD || undefined,
+        db: parseInt(process.env.REDIS_DB || "0", 10),
+      },
+    }),
+    // Email queue
+    BullModule.registerQueue({
+      name: QueueName.EMAIL,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 10000,
+        },
+        removeOnComplete: 100,
+        removeOnFail: 1000,
+      },
+    }),
+    // Notification queue
+    BullModule.registerQueue({
+      name: QueueName.NOTIFICATION,
+      defaultJobOptions: {
+        attempts: 2,
+        backoff: {
+          type: "exponential",
+          delay: 5000,
+        },
+      },
+    }),
+    // Report queue
+    BullModule.registerQueue({
+      name: QueueName.REPORT,
+      defaultJobOptions: {
+        attempts: 5,
+        backoff: {
+          type: "exponential",
+          delay: 30000,
+        },
+        timeout: 3600000, // 1 hour
+      },
+    }),
+    // Sync queue
+    BullModule.registerQueue({
+      name: QueueName.SYNC,
+      defaultJobOptions: {
+        attempts: 5,
+        backoff: {
+          type: "exponential",
+          delay: 60000,
+        },
+      },
+    }),
+    // Cleanup queue
+    BullModule.registerQueue({
+      name: QueueName.CLEANUP,
+      defaultJobOptions: {
+        attempts: 1,
+      },
+    }),
+  ],
+  exports: [BullModule],
+})
+export class QueueModule {}
