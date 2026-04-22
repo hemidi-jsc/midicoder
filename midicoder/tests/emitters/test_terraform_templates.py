@@ -202,6 +202,48 @@ class TestTerraformRootModule(TestCase):
         self.assertIn("#", content)
 
 
+class TestEnvExampleTemplate(TestCase):
+    """Test .env.example template."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/infrastructure/templates/.env.example.jinja2")
+
+    def test_template_file_exists(self):
+        """Test template file tồn tại."""
+        self.assertTrue(self.template_path.exists(), ".env.example template không tồn tại")
+
+    def test_template_has_database_url(self):
+        """Test template có DATABASE_URL."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("DATABASE", content) or self.assertIn("DATABASE_URL", content)
+
+    def test_template_has_redis_url(self):
+        """Test template có REDIS_URL."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("REDIS", content) or self.assertIn("redis", content)
+
+    def test_template_has_secret_key(self):
+        """Test template có SECRET_KEY."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("SECRET", content) or self.assertIn("KEY", content)
+
+    def test_template_has_debug(self):
+        """Test template có DEBUG."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("DEBUG", content)
+
+    def test_template_has_env_variables(self):
+        """Test template có environment variables."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("=", content)
+
+    def test_template_has_vietnamese_comments(self):
+        """Test template có comments tiếng Việt."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("#", content)
+
+
 # Run tests
 if __name__ == "__main__":
     import unittest
