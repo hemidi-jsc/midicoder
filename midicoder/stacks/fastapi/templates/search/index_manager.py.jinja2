@@ -1,0 +1,206 @@
+"""
+Index Manager cho Elasticsearch.
+
+Cung cấp:
+- Create/delete index
+- Manage mappings
+- Manage aliases
+- Index lifecycle management
+
+CP10: Search & Indexing
+"""
+
+from typing import Any, Dict, Optional
+
+from .elasticsearch import get_elasticsearch
+
+
+class IndexManager:
+    """
+    Manager cho Elasticsearch index operations.
+
+    Hỗ trợ:
+    - Tạo/Xóa index
+    - Quét mapping
+    - Quản lý aliases
+    - Index templates
+    """
+
+    def __init__(self) -> None:
+        """Khởi tạo index manager."""
+        pass
+
+    async def create_index(
+        self,
+        name: str,
+        mapping: Optional[Dict[str, Any]] = None,
+        settings: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Tạo Elasticsearch index.
+
+        Args:
+            name: Index name
+            mapping: Field mappings
+            settings: Index settings
+
+        Returns:
+            Create response
+        """
+        client = get_elasticsearch()
+
+        body = {}
+        if mapping:
+            body["mappings"] = mapping
+        if settings:
+            body["settings"] = settings
+
+        response = await client.indices.create(
+            index=name,
+            body=body,
+        )
+
+        return response
+
+    async def delete_index(self, name: str) -> Dict[str, Any]:
+        """
+        Xóa Elasticsearch index.
+
+        Args:
+            name: Index name
+
+        Returns:
+            Delete response
+        """
+        client = get_elasticsearch()
+        return await client.indices.delete(index=name)
+
+    async def index_exists(self, name: str) -> bool:
+        """
+        Kiểm tra index tồn tại.
+
+        Args:
+            name: Index name
+
+        Returns:
+            True nếu tồn tại
+        """
+        client = get_elasticsearch()
+        return await client.indices.exists(index=name)
+
+    async def get_mapping(self, name: str) -> Dict[str, Any]:
+        """
+        Lấy index mapping.
+
+        Args:
+            name: Index name
+
+        Returns:
+            Mapping dictionary
+        """
+        client = get_elasticsearch()
+        response = await client.indices.get_mapping(index=name)
+        return response
+
+    async def update_mapping(
+        self,
+        name: str,
+        mapping: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Cập nhật index mapping.
+
+        Args:
+            name: Index name
+            mapping: Mapping updates
+
+        Returns:
+            Update response
+        """
+        client = get_elasticsearch()
+        return await client.indices.put_mapping(
+            index=name,
+            body=mapping,
+        )
+
+    async def create_alias(
+        self,
+        alias: str,
+        index: str,
+    ) -> Dict[str, Any]:
+        """
+        Tạo index alias.
+
+        Args:
+            alias: Alias name
+            index: Target index
+
+        Returns:
+            Create response
+        """
+        client = get_elasticsearch()
+        return await client.indices.put_alias(
+            index=index,
+            name=alias,
+        )
+
+    async def delete_alias(
+        self,
+        alias: str,
+        index: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Xóa index alias.
+
+        Args:
+            alias: Alias name
+            index: Target index (optional)
+
+        Returns:
+            Delete response
+        """
+        client = get_elasticsearch()
+        return await client.indices.delete_alias(
+            index=index or alias,
+            name=alias,
+        )
+
+    async def refresh_index(self, name: str) -> Dict[str, Any]:
+        """
+        Refresh index (make documents searchable).
+
+        Args:
+            name: Index name
+
+        Returns:
+            Refresh response
+        """
+        client = get_elasticsearch()
+        return await client.indices.refresh(index=name)
+
+    async def optimize_index(self, name: str) -> Dict[str, Any]:
+        """
+        Optimize index (force merge).
+
+        Args:
+            name: Index name
+
+        Returns:
+            Force merge response
+        """
+        client = get_elasticsearch()
+        return await client.indices.forcemerge(
+            index=name,
+            num_segments=1,
+        )
+
+    async def get_all_indices(self) -> list[str]:
+        """
+        Lấy danh sách tất cả indices.
+
+        Returns:
+            List của index names
+        """
+        client = get_elasticsearch()
+        response = await client.indices.get_alias()
+        return list(response.keys())
