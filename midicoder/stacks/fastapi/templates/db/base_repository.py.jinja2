@@ -1,0 +1,240 @@
+"""
+Base Repository Pattern cho Async SQLAlchemy.
+
+Repository pattern để abstract database operations.
+Tất cả domain repositories kế thừa BaseRepository.
+
+CP08: Database & Data Access
+"""
+
+from abc import ABC, abstractmethod
+from datetime import datetime
+from typing import Any, Generic, TypeVar
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapped, selectinload
+
+from .base_model import Base
+
+# Type variable cho model
+ModelType = TypeVar("ModelType", bound=Base)
+
+
+class BaseRepository(ABC, Generic[ModelType]):
+    """
+    Base repository với async CRUD operations.
+
+    Cung cấp methods:
+    - get: Tìm theo ID
+    - create: Tạo mới
+    - update: Cập nhật
+    - delete: Xóa (hoặc soft delete)
+    - list: List với pagination/filter
+    - count: Đếm records
+
+    Usage:
+        class UserRepository(BaseRepository[User]):
+            model = User
+            ...
+    """
+
+    model: type[ModelType]
+
+    def __init__(self, db: AsyncSession) -> None:
+        """
+        Khởi tạo repository với database session.
+
+        Args:
+            db: AsyncSession cho database
+        """
+        self.db = db
+
+    async def get(self, id: int, tenant_id: str | None = None) -> ModelType | None:
+        """
+        Tìm record theo ID.
+
+        Args:
+            id: Primary key của record
+            tenant_id: Tenant ID (optional filter)
+
+        Returns:
+            Record nếu tồn tại, None nếu không
+        """
+        query = select(self.model).where(self.model.id == id)
+
+        if tenant_id and hasattr(self.model, "tenant_id"):
+            query = query.where(self.model.tenant_id == tenant_id)
+
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
+
+    async def create(
+        self,
+        data: dict[str, Any],
+        tenant_id: str | None = None,
+        created_by: str | None = None,
+    ) -> ModelType:
+        """
+        Tạo mới record.
+
+        Args:
+            data: Dictionary chứa values cho columns
+            tenant_id: Tenant ID (optional)
+            created_by: User tạo (optional)
+
+        Returns:
+            Record đã tạo
+        """
+        # Thêm metadata nếu có
+        if tenant_id and hasattr(self.model, "tenant_id"):
+            data["tenant_id"] = tenant_id
+
+        if created_by and hasattr(self.model, "created_by"):
+            data["created_by"] = created_by
+
+        # Tạo instance
+        instance = self.model(**data)
+
+        # Add đến session
+        self.db.add(instance)
+
+        # Flush để get ID
+        await self.db.flush()
+
+        return instance
+
+    async def update(
+        self,
+        id: int,
+        data: dict[str, Any],
+        updated_by: str | None = None,
+    ) -> ModelType | None:
+        """
+        Cập nhật record.
+
+        Args:
+            id: Primary key của record
+            data: Dictionary chứa values cần update
+            updated_by: User cập nhật (optional)
+
+        Returns:
+            Record đã cập nhật, None nếu không tìm thấy
+        """
+        instance = await self.get(id)
+
+        if instance is None:
+            return None
+
+        # Update các fields
+        for key, value in data.items():
+            if hasattr(instance, key):
+                setattr(instance, key, value)
+
+        # Update metadata
+        if updated_by and hasattr(instance, "updated_by"):
+            instance.updated_by = updated_by
+
+        if hasattr(instance, "updated_at"):
+            instance.updated_at = datetime.utcnow()
+
+        await self.db.flush()
+        return instance
+
+    async def delete(self, id: int) -> bool:
+        """
+        Xóa record (hard delete hoặc soft delete).
+
+        Args:
+            id: Primary key của record
+
+        Returns:
+            True nếu xóa thành công, False nếu không tìm thấy
+        """
+        instance = await self.get(id)
+
+        if instance is None:
+            return False
+
+        # Soft delete nếu có AuditMixin
+        if hasattr(instance, "soft_delete"):
+            instance.soft_delete()
+        else:
+            await self.db.delete(instance)
+
+        await self.db.flush()
+        return True
+
+    async def list(
+        self,
+        offset: int = 0,
+        limit: int = 100,
+        tenant_id: str | None = None,
+        filters: dict[str, Any] | None = None,
+    ) -> list[ModelType]:
+        """
+        List records với pagination và filters.
+
+        Args:
+            offset: Number of records to skip
+            limit: Max number of records to return
+            tenant_id: Tenant ID filter (optional)
+            filters: Additional filters (optional)
+
+        Returns:
+            List của records
+        """
+        query = select(self.model)
+
+        # Tenant filter
+        if tenant_id and hasattr(self.model, "tenant_id"):
+            query = query.where(self.model.tenant_id == tenant_id)
+
+        # Additional filters
+        if filters:
+            for key, value in filters.items():
+                if hasattr(self.model, key):
+                    query = query.where(getattr(self.model, key) == value)
+
+        # Pagination
+        query = query.offset(offset).limit(limit)
+
+        # Exclude soft deleted records
+        if hasattr(self.model, "deleted_at"):
+            query = query.where(self.model.deleted_at == None)
+
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def count(
+        self,
+        tenant_id: str | None = None,
+        filters: dict[str, Any] | None = None,
+    ) -> int:
+        """
+        Đếm số records.
+
+        Args:
+            tenant_id: Tenant ID filter (optional)
+            filters: Additional filters (optional)
+
+        Returns:
+            Số lượng records
+        """
+        from sqlalchemy import func
+
+        query = select(func.count()).select_from(self.model)
+
+        if tenant_id and hasattr(self.model, "tenant_id"):
+            query = query.where(self.model.tenant_id == tenant_id)
+
+        if filters:
+            for key, value in filters.items():
+                if hasattr(self.model, key):
+                    query = query.where(getattr(self.model, key) == value)
+
+        if hasattr(self.model, "deleted_at"):
+            query = query.where(self.model.deleted_at == None)
+
+        result = await self.db.execute(query)
+        return result.scalar() or 0
