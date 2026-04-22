@@ -1,0 +1,225 @@
+"""
+Search Service cho FastAPI.
+
+Cung cấp:
+- Full-text search
+- Filtering & sorting
+- Pagination
+- Highlighting
+
+CP10: Search & Indexing
+"""
+
+import json
+from typing import Any, Dict, List, Optional
+
+from .elasticsearch import get_elasticsearch
+
+
+class SearchService:
+    """
+    Service cho Elasticsearch search operations.
+
+    Hỗ trợ:
+    - Full-text search
+    - Filtered search
+    - Aggregations
+    - Highlighting
+    """
+
+    def __init__(self, index: str = "documents") -> None:
+        """
+        Khởi tạo search service.
+
+        Args:
+            index: Default index name
+        """
+        self.index = index
+
+    async def search(
+        self,
+        query: str,
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        sort: Optional[List[str]] = None,
+        size: int = 20,
+        from_page: int = 0,
+        highlight: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Thực hiện full-text search.
+
+        Args:
+            query: Search query string
+            index: Index name (override default)
+            filters: Additional filters
+            sort: Sort fields
+            size: Số lượng kết quả trả về
+            from_page: Pagination offset
+            highlight: Enable highlighting
+
+        Returns:
+            Search results dictionary
+        """
+        client = get_elasticsearch()
+        target_index = index or self.index
+
+        # Build query
+        search_body = {
+            "query": {
+                "multi_match": {
+                    "query": query,
+                    "fields": ["*"],
+                    "fuzziness": "AUTO",
+                }
+            },
+            "size": size,
+            "from": from_page,
+        }
+
+        # Add filters
+        if filters:
+            search_body["query"] = {
+                "bool": {
+                    "must": [search_body["query"]],
+                    "filter": [{"term": {k: v}} for k, v in filters.items()],
+                }
+            }
+
+        # Add sorting
+        if sort:
+            search_body["sort"] = [{"field": s} for s in sort]
+
+        # Add highlighting
+        if highlight:
+            search_body["highlight"] = {
+                "fields": {"*": {}},
+                "pre_tags": ["<em>"],
+                "post_tags": ["</em>"],
+            }
+
+        # Execute search
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "hits": response["hits"]["hits"],
+            "total": response["hits"]["total"]["value"],
+            "took": response["took"],
+        }
+
+    async def index_document(
+        self,
+        doc_id: str,
+        document: Dict[str, Any],
+        index: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Index một document vào Elasticsearch.
+
+        Args:
+            doc_id: Document ID
+            document: Document data
+            index: Index name (override default)
+
+        Returns:
+            Index response
+        """
+        client = get_elasticsearch()
+        target_index = index or self.index
+
+        response = await client.index(
+            index=target_index,
+            id=doc_id,
+            body=document,
+            refresh=True,
+        )
+
+        return response
+
+    async def delete_document(
+        self,
+        doc_id: str,
+        index: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Xóa document từ Elasticsearch.
+
+        Args:
+            doc_id: Document ID
+            index: Index name (override default)
+
+        Returns:
+            Delete response
+        """
+        client = get_elasticsearch()
+        target_index = index or self.index
+
+        response = await client.delete(
+            index=target_index,
+            id=doc_id,
+            refresh=True,
+        )
+
+        return response
+
+    async def update_document(
+        self,
+        doc_id: str,
+        updates: Dict[str, Any],
+        index: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Cập nhật document trong Elasticsearch.
+
+        Args:
+            doc_id: Document ID
+            updates: Fields to update
+            index: Index name (override default)
+
+        Returns:
+            Update response
+        """
+        client = get_elasticsearch()
+        target_index = index or self.index
+
+        response = await client.update(
+            index=target_index,
+            id=doc_id,
+            body={"doc": updates},
+            refresh=True,
+        )
+
+        return response
+
+    async def bulk_index(
+        self,
+        documents: List[Dict[str, Any]],
+        index: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Bulk index nhiều documents.
+
+        Args:
+            documents: List của documents với doc_id
+            index: Index name (override default)
+
+        Returns:
+            Bulk response
+        """
+        client = get_elasticsearch()
+        target_index = index or self.index
+
+        actions = []
+        for doc in documents:
+            doc_id = doc.pop("doc_id", None)
+            if doc_id:
+                actions.append(
+                    {"index": {"_index": target_index, "_id": doc_id}}
+                )
+                actions.append(doc)
+            else:
+                actions.append({"index": {"_index": target_index}})
+                actions.append(doc)
+
+        response = await client.bulk(body=actions)
+        return response

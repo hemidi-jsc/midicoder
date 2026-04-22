@@ -1,0 +1,54 @@
+/**
+ * Search Module cho NestJS.
+ *
+ * Cấu hình Elasticsearch client và search services.
+ *
+ * CP10: Search & Indexing
+ */
+
+import { Module } from "@nestjs/common";
+import { config } from "dotenv";
+
+// Load environment variables
+config();
+
+/**
+ * Elasticsearch Client Factory.
+ *
+ * Tạo Elasticsearch client singleton.
+ */
+export const elasticsearchFactory = {
+  provide: "ELASTICSEARCH_CLIENT",
+  useFactory: () => {
+    const { Client } = require("@elastic/elasticsearch");
+
+    return new Client({
+      // Elasticsearch URL
+      node: process.env.ELASTICSEARCH_URL || "http://localhost:9200",
+
+      // Authentication (optional)
+      auth:
+        process.env.ES_USERNAME && process.env.ES_PASSWORD
+          ? {
+              username: process.env.ES_USERNAME,
+              password: process.env.ES_PASSWORD,
+            }
+          : undefined,
+
+      // Connection settings
+      maxRetries: parseInt(process.env.ES_MAX_RETRIES || "3", 10),
+      requestTimeout: parseInt(process.env.ES_TIMEOUT || "30000", 10),
+    });
+  },
+};
+
+/**
+ * Search Module.
+ *
+ * Cung cấp Elasticsearch client và search service cho toàn application.
+ */
+@Module({
+  providers: [elasticsearchFactory],
+  exports: [elasticsearchFactory],
+})
+export class SearchModule {}
