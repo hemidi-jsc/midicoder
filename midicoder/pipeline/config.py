@@ -27,7 +27,7 @@ PROJECT_CONFIG_FILE = PROJECT_CONFIG_DIR / "config" / "midicoder.yml"
 
 # Cấu hình mặc định global
 DEFAULT_GLOBAL_CONFIG = {
-    "version": "1.0.0",
+    "midicoder_version": "1.0.0",
     "created_at": None,  # Will be set on first init
     "last_run": None,
     "cli": {
@@ -288,8 +288,8 @@ class ConfigManager:
 
     def _get_timestamp(self) -> str:
         """Trả về timestamp hiện tại."""
-        from datetime import datetime
-        return datetime.utcnow().isoformat() + "Z"
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # Global config manager instance
