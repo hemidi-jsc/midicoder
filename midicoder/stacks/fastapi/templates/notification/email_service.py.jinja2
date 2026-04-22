@@ -1,0 +1,198 @@
+"""
+Email Service cho FastAPI.
+
+Cung cấp:
+- SMTP email sending
+- Email templates
+- Async email operations
+
+CP12: Notification & Communication
+"""
+
+import os
+from typing import Optional, List
+import aiosmtplib
+from email.message import EmailMessage
+
+# SMTP settings từ environment
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+DEFAULT_FROM = os.getenv("DEFAULT_FROM_EMAIL", "noreply@example.com")
+
+
+class EmailService:
+    """
+    Service cho email operations.
+
+    Hỗ trợ:
+    - Send emails
+    - Send templated emails
+    - Send bulk emails
+    """
+
+    def __init__(self) -> None:
+        """Khởi tạo email service."""
+        self.smtp_host = SMTP_HOST
+        self.smtp_port = SMTP_PORT
+        self.smtp_user = SMTP_USER
+        self.smtp_password = SMTP_PASSWORD
+        self.use_tls = SMTP_USE_TLS
+        self.default_from = DEFAULT_FROM
+
+    async def send_email(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        from_email: Optional[str] = None,
+        cc: Optional[List[str]] = None,
+        bcc: Optional[List[str]] = None,
+    ) -> bool:
+        """
+        Gửi email đơn giản.
+
+        Args:
+            to: Email address người nhận
+            subject: Tiêu đề email
+            body: Nội dung email (HTML)
+            from_email: Email người gửi (optional)
+            cc: CC recipients (optional)
+            bcc: BCC recipients (optional)
+
+        Returns:
+            True nếu gửi thành công
+        """
+        msg = EmailMessage()
+        msg["From"] = from_email or self.default_from
+        msg["To"] = to
+        msg["Subject"] = subject
+        msg.set_content(body)
+
+        if cc:
+            msg["Cc"] = ", ".join(cc)
+
+        try:
+            await aiosmtplib.send(
+                msg,
+                hostname=self.smtp_host,
+                port=self.smtp_port,
+                username=self.smtp_user,
+                password=self.smtp_password,
+                use_tls=self.use_tls,
+            )
+            return True
+        except Exception as e:
+            print(f"Failed to send email: {e}")
+            return False
+
+    async def send_html_email(
+        self,
+        to: str,
+        subject: str,
+        html_body: str,
+        from_email: Optional[str] = None,
+    ) -> bool:
+        """
+        Gửi email HTML.
+
+        Args:
+            to: Email address người nhận
+            subject: Tiêu đề email
+            html_body: Nội dung HTML
+            from_email: Email người gửi (optional)
+
+        Returns:
+            True nếu gửi thành công
+        """
+        msg = EmailMessage()
+        msg["From"] = from_email or self.default_from
+        msg["To"] = to
+        msg["Subject"] = subject
+        msg.set_content(html_body, subtype="html")
+
+        try:
+            await aiosmtplib.send(
+                msg,
+                hostname=self.smtp_host,
+                port=self.smtp_port,
+                username=self.smtp_user,
+                password=self.smtp_password,
+                use_tls=self.use_tls,
+            )
+            return True
+        except Exception as e:
+            print(f"Failed to send HTML email: {e}")
+            return False
+
+    async def send_template_email(
+        self,
+        to: str,
+        template_name: str,
+        context: dict,
+        subject_template: Optional[str] = None,
+    ) -> bool:
+        """
+        Gửi email từ template.
+
+        Args:
+            to: Email address người nhận
+            template_name: Tên template file
+            context: Context cho template
+            subject_template: Subject template (optional)
+
+        Returns:
+            True nếu gửi thành công
+        """
+        # Load template
+        from jinja2 import Environment, FileSystemLoader
+
+        env = Environment(loader=FileSystemLoader("templates/emails"))
+        template = env.get_template(f"{template_name}.html")
+        html_body = template.render(**context)
+
+        # Load subject template
+        subject = ""
+        if subject_template:
+            subject_template_file = env.get_template(f"{subject_template}.subject")
+            subject = subject_template_file.render(**context)
+        else:
+            subject = context.get("subject", "No Subject")
+
+        return await self.send_html_email(to, subject, html_body)
+
+    async def send_bulk_emails(
+        self,
+        recipients: List[dict],
+        template_name: str,
+    ) -> dict:
+        """
+        Gửi bulk emails.
+
+        Args:
+            recipients: List của {email, context}
+            template_name: Template name
+
+        Returns:
+            Result summary
+        """
+        results = {"success": 0, "failed": 0, "errors": []}
+
+        for recipient in recipients:
+            email = recipient["email"]
+            context = recipient.get("context", {})
+
+            try:
+                success = await self.send_template_email(email, template_name, context)
+                if success:
+                    results["success"] += 1
+                else:
+                    results["failed"] += 1
+                    results["errors"].append(email)
+            except Exception as e:
+                results["failed"] += 1
+                results["errors"].append(f"{email}: {str(e)}")
+
+        return results

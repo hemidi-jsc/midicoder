@@ -1,0 +1,175 @@
+/**
+ * Email Service cho NestJS.
+ *
+ * Cung cấp:
+ * - Send emails qua Nodemailer
+ * - Email templates
+ * - Bulk emails
+ *
+ * CP12: Notification & Communication
+ */
+
+import { Injectable, Inject } from "@nestjs/common";
+import { Transporter } from "nodemailer";
+import * as fs from "fs";
+import * as path from "path";
+
+/**
+ * Email Service.
+ */
+@Injectable()
+export class EmailService {
+  /**
+   * Constructor.
+   *
+   * @param transporter - Nodemailer transporter
+   */
+  constructor(
+    @Inject("EMAIL_SERVICE")
+    private readonly transporter: Transporter,
+  ) {}
+
+  /**
+   * Gửi email đơn giản.
+   *
+   * @param to - Email người nhận
+   * @param subject - Tiêu đề
+   * @param text - Nội dung text
+   * @param html - Nội dung HTML (optional)
+   * @returns Promise<boolean>
+   */
+  async sendEmail(
+    to: string,
+    subject: string,
+    text: string,
+    html?: string,
+  ): Promise<boolean> {
+    try {
+      await this.transporter.sendMail({
+        from: process.env.DEFAULT_FROM_EMAIL || "noreply@example.com",
+        to,
+        subject,
+        text,
+        html,
+      });
+      return true;
+    } catch (error) {
+      console.error("Failed to send email:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Gửi email HTML.
+   *
+   * @param to - Email người nhận
+   * @param subject - Tiêu đề
+   * @param html - Nội dung HTML
+   * @returns Promise<boolean>
+   */
+  async sendHtmlEmail(to: string, subject: string, html: string): Promise<boolean> {
+    return this.sendEmail(to, subject, subject, html);
+  }
+
+  /**
+   * Gửi email từ template.
+   *
+   * @param to - Email người nhận
+   * @param templateName - Tên template
+   * @param context - Template context
+   * @returns Promise<boolean>
+   */
+  async sendTemplateEmail(
+    to: string,
+    templateName: string,
+    context: Record<string, any>,
+  ): Promise<boolean> {
+    try {
+      const { render } = require("ejs");
+
+      // Read template
+      const templatePath = path.join(__dirname, "../../../templates/emails", `${templateName}.ejs`);
+      const template = fs.readFileSync(templatePath, "utf-8");
+
+      // Render template
+      const html = render(template, context);
+
+      // Get subject from context or template
+      const subject = context.subject || "Thông báo từ ứng dụng";
+
+      return this.sendHtmlEmail(to, subject, html);
+    } catch (error) {
+      console.error("Failed to send template email:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Gửi bulk emails.
+   *
+   * @param recipients - List of {email, context}
+   * @param templateName - Template name
+   * @returns Promise<{success: number, failed: number}>
+   */
+  async sendBulkEmails(
+    recipients: Array<{ email: string; context: Record<string, any> }>,
+    templateName: string,
+  ): Promise<{ success: number; failed: number; errors: string[] }> {
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [] as string[],
+    };
+
+    for (const recipient of recipients) {
+      const success = await this.sendTemplateEmail(
+        recipient.email,
+        templateName,
+        recipient.context,
+      );
+
+      if (success) {
+        results.success++;
+      } else {
+        results.failed++;
+        results.errors.push(recipient.email);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Gửi email với attachments.
+   *
+   * @param to - Email người nhận
+   * @param subject - Tiêu đề
+   * @param text - Nội dung text
+   * @param attachments - List of attachments
+   * @returns Promise<boolean>
+   */
+  async sendEmailWithAttachments(
+    to: string,
+    subject: string,
+    text: string,
+    attachments: Array<{ filename: string; content: Buffer | string; contentType?: string }>,
+  ): Promise<boolean> {
+    try {
+      await this.transporter.sendMail({
+        from: process.env.DEFAULT_FROM_EMAIL || "noreply@example.com",
+        to,
+        subject,
+        text,
+        attachments: attachments.map((att) => ({
+          filename: att.filename,
+          content: att.content,
+          contentType: att.contentType,
+        })),
+      });
+      return true;
+    } catch (error) {
+      console.error("Failed to send email with attachments:", error);
+      return false;
+    }
+  }
+}
