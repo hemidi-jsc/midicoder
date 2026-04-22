@@ -1,0 +1,204 @@
+"""
+Cache Invalidation Service cho FastAPI.
+
+Cung cấp services cho:
+- Pattern-based invalidation
+- Tag-based invalidation
+- Bulk operations
+
+CP09: Caching & Performance
+"""
+
+import asyncio
+from typing import List, Optional
+
+from .redis import get_redis
+
+# Default settings
+DEFAULT_BATCH_SIZE = 100
+SCAN_COUNT = 100
+
+
+class CacheInvalidateService:
+    """
+    Service cho cache invalidation.
+
+    Hỗ trợ:
+    - Pattern-based: Xóa theo glob pattern
+    - Tag-based: Xóa theo tags
+    - Bulk: Xóa nhiều keys cùng lúc
+    """
+
+    def __init__(self, prefix: str = "cache:") -> None:
+        """
+        Khởi tạo invalidate service.
+
+        Args:
+            prefix: Cache key prefix
+        """
+        self.prefix = prefix
+
+    async def invalidate_by_pattern(self, pattern: str) -> int:
+        """
+        Xóa cache theo glob pattern.
+
+        Args:
+            pattern: Glob pattern (e.g., "user:*")
+
+        Returns:
+            Số lượng keys đã xóa
+        """
+        redis = get_redis()
+        full_pattern = f"{self.prefix}{pattern}"
+
+        keys = []
+        cursor = 0
+
+        # Scan for matching keys
+        while True:
+            cursor, keys_batch = await redis.scan(
+                cursor=cursor, match=full_pattern, count=SCAN_COUNT
+            )
+            keys.extend(keys_batch)
+
+            if cursor == 0:
+                break
+
+        # Delete all keys
+        if keys:
+            return await redis.delete(*keys)
+
+        return 0
+
+    async def invalidate_by_tags(self, tags: List[str]) -> int:
+        """
+        Xóa cache theo tags.
+
+        Tags được lưu trong set, mỗi key có thể có nhiều tags.
+
+        Args:
+            tags: List của tags cần invalidate
+
+        Returns:
+            Số lượng keys đã xóa
+        """
+        redis = get_redis()
+        total_deleted = 0
+
+        for tag in tags:
+            tag_key = f"{self.prefix}tag:{tag}"
+
+            # Get all keys with this tag
+            keys = await redis.smembers(tag_key)
+
+            if keys:
+                # Delete the keys
+                if keys:
+                    deleted = await redis.delete(*keys)
+                    total_deleted += deleted
+
+                # Delete the tag set
+                await redis.delete(tag_key)
+
+        return total_deleted
+
+    async def invalidate_prefix(self, sub_prefix: str) -> int:
+        """
+        Xóa tất cả cache với specific prefix.
+
+        Args:
+            sub_prefix: Sub-prefix (e.g., "user" sẽ xóa "cache:user:*")
+
+        Returns:
+            Số lượng keys đã xóa
+        """
+        return await self.invalidate_by_pattern(f"{sub_prefix}:*")
+
+    async def invalidate_bulk(self, keys: List[str]) -> int:
+        """
+        Xóa nhiều keys cùng lúc.
+
+        Args:
+            keys: List của keys cần xóa
+
+        Returns:
+            Số lượng keys đã xóa
+        """
+        redis = get_redis()
+
+        if not keys:
+            return 0
+
+        # Add prefix to all keys
+        prefixed_keys = [f"{self.prefix}{key}" for key in keys]
+
+        return await redis.delete(*prefixed_keys)
+
+    async def invalidate_all(self) -> int:
+        """
+        Xóa tất cả cache.
+
+        Warning: Operation này có thể rất chậm với large cache!
+
+        Returns:
+            Số lượng keys đã xóa
+        """
+        return await self.invalidate_by_pattern("*")
+
+    async def add_tag(self, key: str, tag: str) -> bool:
+        """
+        Thêm tag vào key.
+
+        Args:
+            key: Cache key
+            tag: Tag để thêm
+
+        Returns:
+            True nếu thêm thành công
+        """
+        redis = get_redis()
+        tag_key = f"{self.prefix}tag:{tag}"
+        full_key = f"{self.prefix}{key}"
+
+        await redis.sadd(tag_key, full_key)
+        return True
+
+    async def remove_tag(self, key: str, tag: str) -> bool:
+        """
+        Xóa tag từ key.
+
+        Args:
+            key: Cache key
+            tag: Tag để xóa
+
+        Returns:
+            True nếu xóa thành công
+        """
+        redis = get_redis()
+        tag_key = f"{self.prefix}tag:{tag}"
+        full_key = f"{self.prefix}{key}"
+
+        removed = await redis.srem(tag_key, full_key)
+        return removed > 0
+
+
+# Singleton instance
+_invalidate_service: Optional[CacheInvalidateService] = None
+
+
+def get_invalidate_service(prefix: str = "cache:") -> CacheInvalidateService:
+    """
+    Get singleton invalidate service.
+
+    Args:
+        prefix: Cache prefix
+
+    Returns:
+        CacheInvalidateService instance
+    """
+    global _invalidate_service
+
+    if _invalidate_service is None:
+        _invalidate_service = CacheInvalidateService(prefix)
+
+    return _invalidate_service

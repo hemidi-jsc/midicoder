@@ -1,0 +1,56 @@
+/**
+ * Redis Module cho NestJS.
+ *
+ * Cấu hình Redis connection với caching support.
+ *
+ * CP09: Caching & Performance
+ */
+
+import { Module } from "@nestjs/common";
+import { Redis } from "ioredis";
+import { config } from "dotenv";
+
+// Load environment variables
+config();
+
+/**
+ * Redis Factory - tạo Redis connection.
+ *
+ * Sử dụng ioredis cho better performance và cluster support.
+ */
+export const redisFactory = {
+  provide: "REDIS_CLIENT",
+  useFactory: () => {
+    return new Redis({
+      // Redis URL từ environment
+      host: process.env.REDIS_HOST || "localhost",
+      port: parseInt(process.env.REDIS_PORT || "6379", 10),
+      password: process.env.REDIS_PASSWORD || undefined,
+      db: parseInt(process.env.REDIS_DB || "0", 10),
+
+      // Connection pooling settings
+      maxRetriesPerRequest: 3,
+      connectTimeout: parseInt(process.env.REDIS_TIMEOUT || "10000", 10),
+
+      // Retry strategy
+      retryStrategy: (times: number) => {
+        const delay = Math.min(times * 50, 2000);
+        return delay;
+      },
+
+      // Key prefix
+      keyPrefix: process.env.REDIS_KEY_PREFIX || "cache:",
+    });
+  },
+};
+
+/**
+ * Redis Module.
+ *
+ * Cung cấp Redis client cho toàn application.
+ */
+@Module({
+  providers: [redisFactory],
+  exports: [redisFactory],
+})
+export class RedisModule {}
