@@ -1,0 +1,118 @@
+"""
+Celery Configuration cho FastAPI.
+
+Cung cấp:
+- Celery app setup
+- Redis broker/backend
+- Task routing
+- Beat scheduler
+
+CP13: Background Job & Workflow
+"""
+
+import os
+from celery import Celery
+
+# Redis settings từ environment
+REDIS_URL = os.getenv(
+    "REDIS_URL",
+    "redis://localhost:6379/0",
+)
+CELERY_QUEUE = os.getenv("CELERY_QUEUE", "default")
+CELERY_RESULT_EXPIRES = int(os.getenv("CELERY_RESULT_EXPIRES", "3600"))  # 1 hour
+
+# Celery settings
+CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "3600"))  # 1 hour
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "3000"))  # 50 minutes
+CELERY_TASK_MAX_RETRIES = int(os.getenv("CELERY_TASK_MAX_RETRIES", "3"))
+
+
+# Create Celery app
+celery_app = Celery(
+    "tasks",
+    broker=REDIS_URL,
+    backend=REDIS_URL,
+)
+
+# Load config từ environment
+celery_app.conf.update(
+    # Result settings
+    result_backend=REDIS_URL,
+    result_expires=CELERY_RESULT_EXPIRES,
+    result_extended=True,
+
+    # Task settings
+    task_time_limit=CELERY_TASK_TIME_LIMIT,
+    task_soft_time_limit=CELERY_TASK_SOFT_TIME_LIMIT,
+    task_max_retries=CELERY_TASK_MAX_RETRIES,
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+
+    # Queue settings
+    task_default_queue=CELERY_QUEUE,
+    task_queue_max_priority=10,
+
+    # Beat scheduler settings
+    beat_scheduler="celery.schedules:PersistentTimer",
+    beat_max_loop_interval=300,
+
+    # Security
+    worker_hijack_root_logger=False,
+    worker_send_task_events=True,
+    task_send_sent_event=True,
+)
+
+# Auto-discover tasks
+celery_app.autodiscover_tasks(
+    packages=["app"],
+    related_name="tasks",
+)
+
+
+# Task routing
+celery_app.conf.task_routes = {
+    "app.tasks.email.*": {"queue": "email"},
+    "app.tasks.notification.*": {"queue": "notification"},
+    "app.tasks.report.*": {"queue": "report"},
+    "app.tasks.sync.*": {"queue": "sync"},
+}
+
+
+# Periodic tasks (Beat)
+celery_app.conf.beat_schedule = {
+    # Cleanup expired data every day at midnight
+    "cleanup-expired-data": {
+        "task": "app.tasks.cleanup.expired_data",
+        "schedule": 86400,  # Every 24 hours
+    },
+    # Send daily reports every morning at 8 AM
+    "send-daily-reports": {
+        "task": "app.tasks.report.daily_summary",
+        "schedule": 86400,
+        "options": {"queue": "report"},
+    },
+    # Health check every 5 minutes
+    "health-check": {
+        "task": "app.tasks.health.check_all",
+        "schedule": 300,  # Every 5 minutes
+    },
+}
+
+
+def init_celery():
+    """
+    Khởi tạo Celery app.
+
+    Gọi khi startup application.
+    """
+    return celery_app
+
+
+def get_celery():
+    """
+    Trả về Celery app instance.
+
+    Returns:
+        Celery app
+    """
+    return celery_app
