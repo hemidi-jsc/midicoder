@@ -1,0 +1,102 @@
+"""
+Redis Configuration cho FastAPI.
+
+Cung cấp:
+- Async Redis client với connection pooling
+- Cache service với TTL support
+- Health check cho Redis
+
+CP09: Caching & Performance
+"""
+
+import os
+from typing import Optional
+
+from redis.asyncio import Redis, ConnectionPool
+
+# Redis URL từ environment
+REDIS_URL = os.getenv(
+    "REDIS_URL",
+    "redis://localhost:6379/0",
+)
+
+# Connection Pool Settings - tối ưu performance
+POOL_MAX_CONNECTIONS = int(os.getenv("REDIS_POOL_MAX_CONNECTIONS", "10"))
+POOL_TIMEOUT = int(os.getenv("REDIS_POOL_TIMEOUT", "30"))
+POOL_RETRY_ON_ERROR = os.getenv("REDIS_RETRY_ON_ERROR", "true").lower() == "true"
+
+
+# Create connection pool - pooling cho Redis connections
+_connection_pool: Optional[ConnectionPool] = None
+
+
+def get_redis_pool() -> ConnectionPool:
+    """
+    Tạo hoặc trả về Redis connection pool.
+
+    Returns:
+        ConnectionPool cho Redis
+    """
+    global _connection_pool
+
+    if _connection_pool is None:
+        _connection_pool = ConnectionPool.from_url(
+            REDIS_URL,
+            max_connections=POOL_MAX_CONNECTIONS,
+            timeout=POOL_TIMEOUT,
+            retry_on_error=POOL_RETRY_ON_ERROR,
+            decode_responses=True,
+        )
+
+    return _connection_pool
+
+
+# Async Redis client - client async cho operations
+redis_client: Optional[Redis] = None
+
+
+def get_redis() -> Redis:
+    """
+    Tạo hoặc trả về async Redis client.
+
+    Returns:
+        Redis async client
+    """
+    global redis_client
+
+    if redis_client is None:
+        redis_client = Redis(connection_pool=get_redis_pool())
+
+    return redis_client
+
+
+async def redis_health_check() -> bool:
+    """
+    Kiểm tra Redis health.
+
+    Returns:
+        True nếu Redis đang hoạt động, False nếu không
+    """
+    client = get_redis()
+    try:
+        await client.ping()
+        return True
+    except Exception:
+        return False
+
+
+async def close_redis_connections() -> None:
+    """
+    Đóng tất cả Redis connections.
+
+    Gọi khi shutdown application.
+    """
+    global redis_client, _connection_pool
+
+    if redis_client:
+        await redis_client.close()
+        redis_client = None
+
+    if _connection_pool:
+        _connection_pool.disconnect()
+        _connection_pool = None

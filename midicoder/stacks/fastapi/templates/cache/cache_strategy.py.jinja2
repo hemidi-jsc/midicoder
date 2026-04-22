@@ -1,0 +1,200 @@
+"""
+Cache Strategies cho FastAPI.
+
+Cung cấp các cache strategies:
+- Read-through: Load from cache, fallback to DB
+- Write-through: Write to DB then cache
+- Cache-aside: Manual cache management
+
+CP09: Caching & Performance
+"""
+
+import json
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Optional, TypeVar
+
+from .redis import get_redis
+
+T = TypeVar("T")
+
+# Default TTL
+DEFAULT_TTL = 300
+
+
+class CacheStrategy(ABC):
+    """
+    Abstract base class cho cache strategies.
+
+    Cung cấp interface thống nhất cho các strategies.
+    """
+
+    def __init__(self, prefix: str = "cache:", ttl: int = DEFAULT_TTL) -> None:
+        """
+        Khởi tạo cache strategy.
+
+        Args:
+            prefix: Cache key prefix
+            ttl: Default TTL (giây)
+        """
+        self.prefix = prefix
+        self.ttl = ttl
+
+    @abstractmethod
+    async def get(self, key: str, loader: Callable[[], Any]) -> Any:
+        """
+        Get value với fallback loader.
+
+        Args:
+            key: Cache key
+            loader: Function để load value khi cache miss
+
+        Returns:
+            Cached hoặc loaded value
+        """
+        pass
+
+    @abstractmethod
+    async def set(self, key: str, value: Any) -> None:
+        """
+        Set value vào cache.
+
+        Args:
+            key: Cache key
+            value: Value để cache
+        """
+        pass
+
+    @abstractmethod
+    async def delete(self, key: str) -> bool:
+        """
+        Delete value từ cache.
+
+        Args:
+            key: Cache key
+
+        Returns:
+            True nếu xóa thành công
+        """
+        pass
+
+
+class ReadThroughStrategy(CacheStrategy):
+    """
+    Read-through cache strategy.
+
+    Tự động load data từ DB khi cache miss.
+    """
+
+    async def get(self, key: str, loader: Callable[[], Any]) -> Any:
+        """
+        Get với automatic loading.
+
+        Args:
+            key: Cache key
+            loader: Function để load value
+
+        Returns:
+            Cached hoặc loaded value
+        """
+        redis = get_redis()
+        full_key = f"{self.prefix}{key}"
+
+        # Try get from cache
+        cached = await redis.get(full_key)
+
+        if cached is not None:
+            # Cache hit
+            return json.loads(cached)
+
+        # Cache miss - load và cache
+        if callable(loader):
+            if hasattr(loader, "__await__"):
+                value = await loader()
+            else:
+                value = loader()
+        else:
+            value = loader
+
+        # Cache the value
+        await redis.setex(full_key, self.ttl, json.dumps(value, default=str))
+
+        return value
+
+    async def set(self, key: str, value: Any) -> None:
+        """Set value vào cache."""
+        redis = get_redis()
+        await redis.setex(f"{self.prefix}{key}", self.ttl, json.dumps(value, default=str))
+
+    async def delete(self, key: str) -> bool:
+        """Delete value từ cache."""
+        redis = get_redis()
+        deleted = await redis.delete(f"{self.prefix}{key}")
+        return deleted > 0
+
+
+class WriteThroughStrategy(CacheStrategy):
+    """
+    Write-through cache strategy.
+
+    Write vào DB trước, sau đó update cache.
+    """
+
+    async def get(self, key: str, loader: Callable[[], Any]) -> Any:
+        """Get value từ cache với fallback."""
+        return await super().get(key, loader)
+
+    async def set(self, key: str, value: Any) -> None:
+        """
+        Write-through: Write to cache after DB.
+
+        Usage:
+            # Trong repository:
+            async def create(self, data: dict) -> Entity:
+                # Write to DB
+                entity = await db.insert(data)
+                # Write to cache
+                await self.cache.set(f"entity:{entity.id}", entity)
+        """
+        redis = get_redis()
+        await redis.setex(f"{self.prefix}{key}", self.ttl, json.dumps(value, default=str))
+
+    async def delete(self, key: str) -> bool:
+        """Delete value từ cache."""
+        redis = get_redis()
+        deleted = await redis.delete(f"{self.prefix}{key}")
+        return deleted > 0
+
+
+class CacheAsideStrategy(CacheStrategy):
+    """
+    Cache-aside strategy (Lazy Loading).
+
+    Manual cache management - cache chỉ được set khi cần.
+    """
+
+    async def get(self, key: str, loader: Callable[[], Any]) -> Any:
+        """
+        Get với manual cache management.
+
+        Không tự động cache - caller phải gọi set() sau khi load.
+        """
+        redis = get_redis()
+        cached = await redis.get(f"{self.prefix}{key}")
+
+        if cached is not None:
+            return json.loads(cached)
+
+        # Cache miss - return None, caller phải load manually
+        return None
+
+    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+        """Set value vào cache."""
+        redis = get_redis()
+        actual_ttl = ttl if ttl is not None else self.ttl
+        await redis.setex(f"{self.prefix}{key}", actual_ttl, json.dumps(value, default=str))
+
+    async def delete(self, key: str) -> bool:
+        """Delete value từ cache."""
+        redis = get_redis()
+        deleted = await redis.delete(f"{self.prefix}{key}")
+        return deleted > 0
