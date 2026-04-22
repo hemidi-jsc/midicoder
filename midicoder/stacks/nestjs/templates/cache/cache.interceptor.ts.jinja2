@@ -1,0 +1,212 @@
+/**
+ * Cache Interceptor cho NestJS.
+ *
+ * Tự động cache HTTP responses với TTL.
+ * Hỗ trợ cache invalidation.
+ *
+ * CP09: Caching & Performance
+ */
+
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { Observable, of } from "rxjs";
+import { tap, catchError } from "rxjs/operators";
+import { Redis } from "ioredis";
+
+// Decorator metadata key
+export const CACHE_TTL = "cacheTtl";
+export const CACHE_KEY = "cacheKey";
+export const CACHE_DISABLE = "cacheDisable";
+
+// Default TTL (giây)
+const DEFAULT_TTL = 300;
+
+/**
+ * Cache TTL Decorator.
+ *
+ * @param ttl - Time-to-live (giây)
+ *
+ * Usage:
+ *   @UseInterceptors(CacheInterceptor)
+ *   @CacheTTL(600)
+ *   @Get(":id")
+ *   findOne(@Param('id') id: string) { ... }
+ */
+export function CacheTTL(ttl: number) {
+  return Reflect.metadata(CACHE_TTL, ttl);
+}
+
+/**
+ * Cache Key Decorator.
+ *
+ * @param key - Custom cache key
+ *
+ * Usage:
+ *   @CacheTTL(300)
+ *   @CacheKey("user:profile")
+ *   @Get("profile")
+ *   getProfile() { ... }
+ */
+export function CacheKey(key: string) {
+  return Reflect.metadata(CACHE_KEY, key);
+}
+
+/**
+ * Cache Disable Decorator.
+ *
+ * Tắt caching cho endpoint.
+ *
+ * Usage:
+ *   @CacheDisable()
+ *   @Post()
+ *   create() { ... }
+ */
+export function CacheDisable() {
+  return Reflect.metadata(CACHE_DISABLE, true);
+}
+
+/**
+ * Cache Interceptor.
+ *
+ * Tự động cache responses và invalidate khi cần.
+ */
+@Injectable()
+export class CacheInterceptor implements NestInterceptor {
+  /**
+   * Constructor.
+   *
+   * @param redis - Redis client
+   * @param reflector - NestJS Reflector
+   */
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly redis: Redis,
+  ) {}
+
+  /**
+   * Intercept HTTP requests.
+   *
+   * @param context - Execution context
+   * @param next - Next handler
+   * @returns Observable với cache logic
+   */
+  intercept(
+    context: ExecutionContext,
+    next: CallHandler,
+  ): Observable<unknown> {
+    // Check if cache is disabled
+    const isDisabled = this.reflector.getAllAndOverride<boolean>(
+      CACHE_DISABLE,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (isDisabled) {
+      return next.handle();
+    }
+
+    // Get cache configuration
+    const ttl = this.reflector.getAllAndOverride<number>(
+      CACHE_TTL,
+      [context.getHandler(), context.getClass()],
+    ) || DEFAULT_TTL;
+
+    const customKey = this.reflector.getAllAndOverride<string>(
+      CACHE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    // Generate cache key
+    const request = context.switchToHttp().getRequest();
+    const key = customKey || this.generateKey(request);
+
+    // Try get from cache
+    return this.redis.get(key).then((cached) => {
+      if (cached) {
+        // Cache hit
+        console.log(`[Cache] HIT: ${key}`);
+        return of(JSON.parse(cached));
+      }
+
+      // Cache miss - call handler
+      console.log(`[Cache] MISS: ${key}`);
+      return next.handle().pipe(
+        tap((response) => {
+          // Cache the response
+          this.redis.setex(key, ttl, JSON.stringify(response));
+        }),
+        catchError((error) => {
+          // Don't cache errors
+          console.error(`[Cache] Error: ${key}`, error);
+          throw error;
+        }),
+      );
+    });
+  }
+
+  /**
+   * Generate cache key từ request.
+   *
+   * @param request - HTTP request
+   * @returns Cache key string
+   */
+  private generateKey(request: Request): string {
+    const method = request.method || "GET";
+    const path = request.url || "/";
+    return `${method}:${path}`;
+  }
+
+  /**
+   * Invalidate cache theo pattern.
+   *
+   * @param pattern - Glob pattern
+   * @returns Số lượng keys đã xóa
+   */
+  async invalidate(pattern: string): Promise<number> {
+    const keys: string[] = [];
+    let cursor = "0";
+
+    do {
+      const [newCursor, keysBatch] = await this.redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        "100",
+      );
+      cursor = newCursor;
+      keys.push(...keysBatch);
+    } while (cursor !== "0");
+
+    if (keys.length > 0) {
+      await this.redis.del(...keys);
+    }
+
+    return keys.length;
+  }
+
+  /**
+   * Invalidate single key.
+   *
+   * @param key - Cache key
+   * @returns True nếu xóa thành công
+   */
+  async invalidateKey(key: string): Promise<boolean> {
+    const deleted = await this.redis.del(key);
+    return deleted > 0;
+  }
+
+  /**
+   * Clear all cache.
+   *
+   * Warning: Slow với large cache!
+   * @returns Số lượng keys đã xóa
+   */
+  async clearAll(): Promise<number> {
+    return this.invalidate("*");
+  }
+}

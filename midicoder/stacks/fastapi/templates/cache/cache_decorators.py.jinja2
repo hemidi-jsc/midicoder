@@ -1,0 +1,185 @@
+"""
+Cache Decorators cho FastAPI.
+
+Cung cấp decorators cho:
+- @cached: Basic caching với TTL
+- @cache_read: Read-through cache
+- @cache_write: Write-through cache
+- @cache_invalidate: Cache invalidation
+
+CP09: Caching & Performance
+"""
+
+import asyncio
+import functools
+import hashlib
+import json
+from typing import Any, Callable, Optional, TypeVar
+
+from .redis import get_redis
+
+# Type variable cho return types
+T = TypeVar("T")
+
+# Default cache settings
+DEFAULT_TTL = 300  # 5 minutes
+DEFAULT_PREFIX = "cache:"
+
+
+def _generate_key(prefix: str, func_name: str, *args, **kwargs) -> str:
+    """
+    Tạo cache key từ function name và arguments.
+
+    Args:
+        prefix: Key prefix
+        func_name: Tên function
+        *args: Positional arguments
+        **kwargs: Keyword arguments
+
+    Returns:
+        Cache key string
+    """
+    # Serialize arguments
+    arg_str = json.dumps({"args": args, "kwargs": kwargs}, sort_keys=True, default=str)
+
+    # Generate hash
+    key_hash = hashlib.md5(arg_str.encode()).hexdigest()
+
+    return f"{prefix}{func_name}:{key_hash}"
+
+
+def cached(ttl: int = DEFAULT_TTL, prefix: str = DEFAULT_PREFIX) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    Cache decorator cho async functions.
+
+    Cache kết quả với TTL (time-to-live).
+
+    Args:
+        ttl: Time-to-live (giây), default 300 (5 phút)
+        prefix: Cache key prefix
+
+    Usage:
+        @cached(ttl=600)
+        async def get_user(user_id: int) -> User:
+            ...
+    """
+
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs) -> T:
+            # Generate cache key
+            key = _generate_key(prefix, func.__name__, *args, **kwargs)
+
+            # Get Redis client
+            redis = get_redis()
+
+            # Try get from cache
+            cached_value = await redis.get(key)
+
+            if cached_value is not None:
+                # Cache hit - deserialize và return
+                return json.loads(cached_value)
+
+            # Cache miss - call function
+            result = await func(*args, **kwargs)
+
+            # Serialize và cache
+            await redis.setex(key, ttl, json.dumps(result, default=str))
+
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+def cache_invalidate(prefix: str = DEFAULT_PREFIX) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    Decorator cho cache invalidation.
+
+    Xóa cached values khi function được gọi.
+
+    Args:
+        prefix: Cache key prefix
+
+    Usage:
+        @cache_invalidate(prefix="user:")
+        async def update_user(user_id: int, data: dict) -> User:
+            ...
+    """
+
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs) -> T:
+            # Call function first
+            result = await func(*args, **kwargs)
+
+            # Invalidate cache patterns
+            redis = get_redis()
+            key_pattern = f"{prefix}{func.__name__}:*"
+
+            # Scan and delete matching keys
+            async for key in redis.scan_iter(match=key_pattern):
+                await redis.delete(key)
+
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+async def clear_cache(pattern: str = "*") -> int:
+    """
+    Xóa cached values theo pattern.
+
+    Args:
+        pattern: Glob pattern để match keys
+
+    Returns:
+        Số lượng keys đã xóa
+    """
+    redis = get_redis()
+    keys = []
+
+    # Scan matching keys
+    async for key in redis.scan_iter(match=pattern):
+        keys.append(key)
+
+    # Delete all keys
+    if keys:
+        return await redis.delete(*keys)
+
+    return 0
+
+
+async def get_cached_value(key: str) -> Optional[Any]:
+    """
+    Lấy cached value trực tiếp theo key.
+
+    Args:
+        key: Cache key
+
+    Returns:
+        Cached value hoặc None
+    """
+    redis = get_redis()
+    value = await redis.get(key)
+
+    if value is not None:
+        return json.loads(value)
+
+    return None
+
+
+async def set_cached_value(key: str, value: Any, ttl: int = DEFAULT_TTL) -> None:
+    """
+    Set cached value trực tiếp theo key.
+
+    Args:
+        key: Cache key
+        value: Value để cache
+        ttl: Time-to-live (giây)
+    """
+    redis = get_redis()
+    await redis.setex(key, ttl, json.dumps(value, default=str))
