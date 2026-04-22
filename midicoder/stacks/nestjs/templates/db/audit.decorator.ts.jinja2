@@ -1,0 +1,97 @@
+/**
+ * Audit Decorator cho TypeORM Entities.
+ *
+ * Thêm audit columns vào entities cần audit trail:
+ * - createdBy, updatedBy
+ * - deletedAt (soft delete)
+ *
+ * CP08: Database & Data Access
+ */
+
+import { Column, DeleteDateColumn, Index } from "typeorm";
+
+/**
+ * CreatedBy Column decorator.
+ *
+ * Thêm created_by column vào entity.
+ *
+ * Usage:
+ *   @CreatedByColumn()
+ *   createdBy: string;
+ */
+export function CreatedByColumn(): PropertyDecorator {
+  return (target: object, propertyName: string | symbol) => {
+    Column({
+      name: "created_by",
+      type: "uuid",
+      nullable: true,
+    })(target, propertyName);
+
+    Index()(target, [propertyName as string]);
+  };
+}
+
+/**
+ * UpdatedBy Column decorator.
+ *
+ * Thêm updated_by column vào entity.
+ *
+ * Usage:
+ *   @UpdatedByColumn()
+ *   updatedBy: string;
+ */
+export function UpdatedByColumn(): PropertyDecorator {
+  return (target: object, propertyName: string | symbol) => {
+    Column({
+      name: "updated_by",
+      type: "uuid",
+      nullable: true,
+    })(target, propertyName);
+
+    Index()(target, [propertyName as string]);
+  };
+}
+
+/**
+ * DeletedAt Column decorator (soft delete).
+ *
+ * Thêm deleted_at column vào entity cho soft delete.
+ *
+ * Usage:
+ *   @DeletedAtColumn()
+ *   deletedAt: Date;
+ */
+export function DeletedAtColumn(): PropertyDecorator {
+  return DeleteDateColumn({
+    name: "deleted_at",
+  });
+}
+
+/**
+ * Audit Interface.
+ *
+ * Interface cho tất cả audit-aware entities.
+ */
+export interface IAudit {
+  /**
+   * Created by - user tạo bản ghi.
+   */
+  createdBy?: string;
+
+  /**
+   * Updated by - user cập nhật bản ghi.
+   */
+  updatedBy?: string;
+
+  /**
+   * Deleted at - thời điểm soft delete.
+   */
+  deletedAt?: Date;
+
+  /**
+   * Kiểm tra bản ghi đã soft delete.
+   *
+   * @returns True nếu đã soft delete
+   */
+  isDeleted(): boolean;
+}

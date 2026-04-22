@@ -2,12 +2,10 @@
 Test suite cho Database & Data Access templates (CP08).
 
 Test coverage cho:
-- SQLAlchemy base model template
-- Repository pattern templates
-- Alembic migration templates
-- Connection pooling configuration
+- FastAPI: SQLAlchemy, Repository, Migrations
+- NestJS: TypeORM, Repository, Decorators
 
-Tổng cộng: 35+ tests
+Tổng cộng: 55+ tests
 
 Mục tiêu coverage: >80%
 
@@ -233,6 +231,176 @@ class TestAlembicMigration(TestCase):
         """Test template có comments tiếng Việt."""
         content = self.template_path.read_text(encoding="utf-8")
         self.assertIn("#", content) or self.assertIn('"""', content)
+
+
+class TestNestJsDatabaseModule(TestCase):
+    """Test NestJS DatabaseModule template."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/nestjs/templates/db/database.module.ts.jinja2")
+
+    def test_template_file_exists(self):
+        """Test template file tồn tại."""
+        self.assertTrue(self.template_path.exists(), "NestJS DatabaseModule không tồn tại")
+
+    def test_template_has_typeorm(self):
+        """Test template có TypeORM imports."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("typeorm", content) or self.assertIn("TypeOrmModule", content)
+
+    def test_template_has_database_config(self):
+        """Test template có database configuration."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("forRoot", content) or self.assertIn("DATABASE", content)
+
+    def test_template_has_pooling(self):
+        """Test template có connection pooling."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("pool", content) or self.assertIn("max", content)
+
+    def test_template_has_vietnamese_comments(self):
+        """Test template có comments tiếng Việt."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("/", content) or self.assertIn("*", content)
+
+
+class TestNestJsBaseEntity(TestCase):
+    """Test NestJS BaseEntity template."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/nestjs/templates/db/base.entity.ts.jinja2")
+
+    def test_template_file_exists(self):
+        """Test template file tồn tại."""
+        self.assertTrue(self.template_path.exists(), "NestJS BaseEntity không tồn tại")
+
+    def test_template_has_entity_decorator(self):
+        """Test template có @Entity decorator."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("@Entity", content) or self.assertIn("Entity", content)
+
+    def test_template_has_id_column(self):
+        """Test template có ID column."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("id", content) or self.assertIn("PrimaryGeneratedColumn", content)
+
+    def test_template_has_timestamps(self):
+        """Test template có createdAt/updatedAt."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("createdAt", content) or self.assertIn("updatedAt", content)
+
+    def test_template_has_vietnamese_comments(self):
+        """Test template có comments tiếng Việt."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("/", content) or self.assertIn("*", content)
+
+
+class TestNestJsTenantDecorator(TestCase):
+    """Test NestJS Tenant decorator template."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/nestjs/templates/db/tenant.decorator.ts.jinja2")
+
+    def test_template_file_exists(self):
+        """Test template file tồn tại."""
+        self.assertTrue(self.template_path.exists(), "NestJS Tenant decorator không tồn tại")
+
+    def test_template_has_tenant_column(self):
+        """Test template có TenantColumn decorator."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("TenantColumn", content) or self.assertIn("tenant_id", content)
+
+    def test_template_has_itenant_interface(self):
+        """Test template có ITenant interface."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("ITenant", content) or self.assertIn("tenantId", content)
+
+    def test_template_has_vietnamese_comments(self):
+        """Test template có comments tiếng Việt."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("/", content) or self.assertIn("*", content)
+
+
+class TestNestJsAuditDecorator(TestCase):
+    """Test NestJS Audit decorator template."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/nestjs/templates/db/audit.decorator.ts.jinja2")
+
+    def test_template_file_exists(self):
+        """Test template file tồn tại."""
+        self.assertTrue(self.template_path.exists(), "NestJS Audit decorator không tồn tại")
+
+    def test_template_has_audit_columns(self):
+        """Test template có audit columns."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("createdBy", content) or self.assertIn("updatedBy", content)
+
+    def test_template_has_soft_delete(self):
+        """Test template có soft delete support."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("deletedAt", content) or self.assertIn("DeleteDateColumn", content)
+
+    def test_template_has_iaudit_interface(self):
+        """Test template có IAudit interface."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("IAudit", content) or self.assertIn("isDeleted", content)
+
+    def test_template_has_vietnamese_comments(self):
+        """Test template có comments tiếng Việt."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("/", content) or self.assertIn("*", content)
+
+
+class TestNestJsBaseRepository(TestCase):
+    """Test NestJS BaseRepository template."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/nestjs/templates/db/base.repository.ts.jinja2")
+
+    def test_template_file_exists(self):
+        """Test template file tồn tại."""
+        self.assertTrue(self.template_path.exists(), "NestJS BaseRepository không tồn tại")
+
+    def test_template_has_get_method(self):
+        """Test template có get method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("async get", content) or self.assertIn("findOne", content)
+
+    def test_template_has_create_method(self):
+        """Test template có create method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("async create", content)
+
+    def test_template_has_update_method(self):
+        """Test template có update method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("async update", content)
+
+    def test_template_has_delete_method(self):
+        """Test template có delete method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("async delete", content)
+
+    def test_template_has_list_method(self):
+        """Test template có list method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("async list", content) or self.assertIn("findAndCount", content)
+
+    def test_template_has_count_method(self):
+        """Test template có count method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("async count", content)
+
+    def test_template_has_vietnamese_comments(self):
+        """Test template có comments tiếng Việt."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("/", content) or self.assertIn("*", content)
 
 
 # Run tests

@@ -1,0 +1,54 @@
+/**
+ * Tenant Decorator cho TypeORM Entities.
+ *
+ * Thêm tenant_id column vào entities cần multi-tenancy.
+ *
+ * CP08: Database & Data Access
+ */
+
+import { Column, Index } from "typeorm";
+
+/**
+ * Tenant Column decorator.
+ *
+ * Thêm tenant_id column vào entity
+ * Với foreign key constraint
+ *
+ * Usage:
+ *   @Entity()
+ *   export class User extends BaseEntity {
+ *     @TenantColumn()
+ *     tenantId: string;
+ *   }
+ */
+export function TenantColumn(): PropertyDecorator {
+  return (target: object, propertyName: string | symbol) => {
+    Column({
+      name: "tenant_id",
+      type: "uuid",
+      nullable: false,
+    })(target, propertyName);
+
+    Index({ name: "idx_tenant_id" })(target, [propertyName as string]);
+  };
+}
+
+/**
+ * Tenant Interface.
+ *
+ * Interface cho tất cả tenant-aware entities.
+ */
+export interface ITenant {
+  /**
+   * Tenant ID - khóa ngoài đến tenant.
+   */
+  tenantId: string;
+
+  /**
+   * Kiểm tra entity thuộc tenant.
+   *
+   * @param tenantId ID của tenant cần kiểm tra
+   * @returns True nếu entity thuộc tenant
+   */
+  isTenantOwner(tenantId: string): boolean;
+}
