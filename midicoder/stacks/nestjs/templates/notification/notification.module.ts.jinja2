@@ -1,0 +1,53 @@
+/**
+ * Notification Module cho NestJS.
+ *
+ * Cung cấp:
+ * - Email service
+ * - SMS service
+ * - Push notification service
+ *
+ * CP12: Notification & Communication
+ */
+
+import { Global, Module } from "@nestjs/common";
+import { config } from "dotenv";
+
+// Load environment variables
+config();
+
+/**
+ * Email Service Factory.
+ */
+export const emailServiceFactory = {
+  provide: "EMAIL_SERVICE",
+  useFactory: () => {
+    const { nodemailer } = require("nodemailer");
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || "smtp.gmail.com",
+      port: parseInt(process.env.SMTP_PORT || "587", 10),
+      secure: process.env.SMTP_SECURE === "true",
+      auth:
+        process.env.SMTP_USER && process.env.SMTP_PASSWORD
+          ? {
+              user: process.env.SMTP_USER,
+              pass: process.env.SMTP_PASSWORD,
+            }
+          : undefined,
+    });
+
+    return transporter;
+  },
+};
+
+/**
+ * Notification Module.
+ *
+ * Global module cung cấp notification services.
+ */
+@Global()
+@Module({
+  providers: [emailServiceFactory],
+  exports: [emailServiceFactory],
+})
+export class NotificationModule {}
