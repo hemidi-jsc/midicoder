@@ -1,0 +1,33 @@
+/**
+ * Event-Driven Architecture - Event module cho NestJS.
+ * 
+ * Module này cung cấp event publishing/subscribing cho NestJS application.
+ * Hỗ trợ in-memory event bus với khả năng mở rộng sang Kafka/RabbitMQ.
+ * 
+ * CP05: Event-Driven Architecture
+ */
+
+import { Module, Global } from '@nestjs/common';
+import { EventBusService } from './event-bus.service';
+import { EventPublisherService } from './event-publisher.service';
+import { EventSubscriberService } from './event-subscriber.service';
+
+/**
+ * Event module - Global module cho event bus.
+ * 
+ * Import module này vào AppModule để sử dụng event bus trong toàn app.
+ */
+@Global()
+@Module({
+  providers: [
+    EventBusService,
+    EventPublisherService,
+    EventSubscriberService,
+  ],
+  exports: [
+    EventBusService,
+    EventPublisherService,
+    EventSubscriberService,
+  ],
+})
+export class EventModule {}
