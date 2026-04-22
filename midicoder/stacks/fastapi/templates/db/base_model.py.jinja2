@@ -1,0 +1,78 @@
+"""
+Base Model cho SQLAlchemy.
+
+Tất cả models phải kế thừa Base để có:
+- ID tự động
+- Timestamps (created_at, updated_at)
+- JSON encoding/decoding
+
+CP08: Database & Data Access
+"""
+
+from datetime import datetime
+from typing import Any
+from sqlalchemy import DateTime, Integer
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    """
+    Base class cho tất cả SQLAlchemy models.
+
+    Cung cấp các attributes chung:
+    - id: Primary key tự tăng
+    - created_at: Thời điểm tạo (auto)
+    - updated_at: Thời điểm cập nhật (auto)
+    """
+
+    # Primary key - khóa chính tự tăng
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        nullable=False,
+        index=True,
+    )
+
+    # Created at - thời điểm tạo bản ghi
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        index=True,
+    )
+
+    # Updated at - thời điểm cập nhật bản ghi
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+        index=True,
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Chuyển model thành dictionary.
+
+        Returns:
+            Dictionary chứa tất cả attributes của model
+        """
+        return {column.key: getattr(self, column.key) for column in self.__table__.columns}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Base":
+        """
+        Tạo instance từ dictionary.
+
+        Args:
+            data: Dictionary chứa values cho các columns
+
+        Returns:
+            Instance của model
+        """
+        instance = cls()
+        for key, value in data.items():
+            if hasattr(instance, key):
+                setattr(instance, key, value)
+        return instance

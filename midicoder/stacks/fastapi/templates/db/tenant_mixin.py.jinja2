@@ -1,0 +1,51 @@
+"""
+Tenant Mixin cho Multi-Tenancy.
+
+Tất cả models cần isolation giữa tenants phải kế thừa TenantMixin.
+
+CP08: Database & Data Access
+"""
+
+from sqlalchemy import Column, String, ForeignKey, Index
+from sqlalchemy.orm import Mapped, mapped_column
+
+
+class TenantMixin:
+    """
+    Mixin cho multi-tenancy support.
+
+    Cung cấp:
+    - tenant_id: Foreign key đến Tenant model
+    - Index cho tenant_id queries
+    - Soft query filter cho tenant scope
+
+    Usage:
+        class User(Base, TenantMixin):
+            __tablename__ = "users"
+            ...
+    """
+
+    # Tenant ID - khóa ngoài đến tenant
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Index cho tenant_id queries - tối ưu performance
+    __table_args__ = (
+        Index("idx_tenant_id", "tenant_id"),
+    )
+
+    def is_tenant_owner(self, tenant_id: str) -> bool:
+        """
+        Kiểm tra model thuộc về tenant.
+
+        Args:
+            tenant_id: ID của tenant cần kiểm tra
+
+        Returns:
+            True nếu model thuộc tenant
+        """
+        return self.tenant_id == tenant_id
