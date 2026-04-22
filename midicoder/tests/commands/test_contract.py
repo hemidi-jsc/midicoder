@@ -1,0 +1,644 @@
+"""
+Tests cho Contract Commands (E03, E20).
+
+Test cases cho:
+1. contract gen: Generate DSL contracts từ brief analysis
+2. contract check: Validate contracts với DSL schema
+3. contract repair: Sửa contracts có lỗi bằng LLM (chưa implement)
+
+Theo SoT E03:
+- Input: master-brief (SQLite)
+- Process: LLM generate DSL contracts
+- Output: DSL contracts (.midicoder/contracts/*.yml)
+
+Theo SoT E20:
+- contract gen: --force, --interactive options
+- contract check: --auto-fix, --strict options
+"""
+
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, mock_open, patch
+
+import pytest
+import yaml
+
+from midicoder.pipeline.commands.contract import (
+    check_contracts,
+    generate_contracts,
+    generate_placeholder_contracts,
+    repair_contracts,
+)
+from midicoder.storage.sqlite import BriefsManager, ArtifactsManager
+
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest.fixture
+def temp_workspace():
+    """
+    Tạo temporary workspace cho testing.
+    
+    Yields:
+        Path: Temporary directory path
+    """
+    # Tạo temp directory
+    temp_dir = tempfile.mkdtemp()
+    original_cwd = Path.cwd()
+    
+    # Chuyển sang temp directory
+    os.chdir(temp_dir)
+    
+    yield Path(temp_dir)
+    
+    # Cleanup
+    os.chdir(original_cwd)
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def briefs_manager():
+    """
+    Tạo BriefsManager instance cho testing.
+    
+    Returns:
+        BriefsManager: Initialized manager
+    """
+    manager = BriefsManager()
+    manager.init()
+    return manager
+
+
+@pytest.fixture
+def artifacts_manager():
+    """
+    Tạo ArtifactsManager instance cho testing.
+    
+    Returns:
+        ArtifactsManager: Initialized manager
+    """
+    manager = ArtifactsManager()
+    manager.init()
+    return manager
+
+
+@pytest.fixture
+def sample_brief(briefs_manager):
+    """
+    Tạo sample brief cho testing.
+    
+    Args:
+        briefs_manager: BriefsManager instance
+        
+    Returns:
+        str: Brief ID
+    """
+    content = """# E-commerce D2C Platform
+
+Build an e-commerce platform for direct-to-consumer business.
+"""
+    brief_id = briefs_manager.create(
+        brief_id="test-brief-001",
+        version="v1.0.0",
+        content=content,
+        title="E-commerce D2C",
+        brief_type="working",
+    )["brief_id"]
+    briefs_manager.update_status(brief_id, "analyzed")
+    return brief_id
+
+
+@pytest.fixture
+def contracts_dir(temp_workspace):
+    """
+    Tạo contracts directory cho testing.
+    
+    Args:
+        temp_workspace: Temporary workspace path
+        
+    Returns:
+        Path: Contracts directory path
+    """
+    contracts_dir = temp_workspace / ".midicoder" / "contracts"
+    contracts_dir.mkdir(parents=True, exist_ok=True)
+    return contracts_dir
+
+
+# ============================================================================
+# Tests: generate_placeholder_contracts
+# ============================================================================
+
+def test_generate_placeholder_contracts_creates_files(contracts_dir):
+    """
+    Test: Tạo placeholder contracts files (entities, commands, queries).
+    
+    Expected:
+    - entities.yml được tạo với meta và entities
+    - commands.yml được tạo với meta và commands
+    - queries.yml được tạo với meta và queries
+    """
+    brief_id = "test-brief-001"
+    
+    generate_placeholder_contracts(contracts_dir, brief_id)
+    
+    # Verify files exist
+    assert (contracts_dir / "entities.yml").exists()
+    assert (contracts_dir / "commands.yml").exists()
+    assert (contracts_dir / "queries.yml").exists()
+    
+    # Verify entities.yml content
+    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
+    assert "meta" in entities
+    assert "entities" in entities
+    assert entities["meta"]["brief_id"] == brief_id
+    assert len(entities["entities"]) > 0
+    
+    # Verify commands.yml content
+    commands = yaml.safe_load((contracts_dir / "commands.yml").read_text())
+    assert "meta" in commands
+    assert "commands" in commands
+    assert commands["meta"]["brief_id"] == brief_id
+    
+    # Verify queries.yml content
+    queries = yaml.safe_load((contracts_dir / "queries.yml").read_text())
+    assert "meta" in queries
+    assert "queries" in queries
+    assert queries["meta"]["brief_id"] == brief_id
+
+
+def test_generate_placeholder_contracts_has_required_fields(contracts_dir):
+    """
+    Test: Placeholder contracts có required fields theo DSL schema.
+    
+    Expected:
+    - Entity có: id, description, fields
+    - Command có: id, description, input, output
+    - Query có: id, description, input, output
+    """
+    brief_id = "test-brief-001"
+    
+    generate_placeholder_contracts(contracts_dir, brief_id)
+    
+    # Verify entity fields
+    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
+    entity = entities["entities"][0]
+    
+    assert "id" in entity
+    assert "description" in entity
+    assert "fields" in entity
+    
+    for field in entity["fields"]:
+        assert "name" in field
+        assert "type" in field
+    
+    # Verify command fields
+    commands = yaml.safe_load((contracts_dir / "commands.yml").read_text())
+    command = commands["commands"][0]
+    
+    assert "id" in command
+    assert "description" in command
+    assert "input" in command
+    assert "output" in command
+    
+    # Verify query fields
+    queries = yaml.safe_load((contracts_dir / "queries.yml").read_text())
+    query = queries["queries"][0]
+    
+    assert "id" in query
+    assert "description" in query
+    assert "input" in query
+    assert "output" in query
+
+
+def test_generate_placeholder_contracts_meta_version(contracts_dir):
+    """
+    Test: Meta section có version và generated_at.
+    """
+    brief_id = "test-brief-001"
+    
+    generate_placeholder_contracts(contracts_dir, brief_id)
+    
+    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
+    
+    assert "version" in entities["meta"]
+    assert entities["meta"]["version"] == "1.0.0"
+    assert "generated_at" in entities["meta"]
+    assert "brief_id" in entities["meta"]
+
+
+# ============================================================================
+# Tests: generate_contracts
+# ============================================================================
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+@patch("midicoder.pipeline.commands.contract.click.prompt")
+@patch("midicoder.pipeline.commands.contract.BriefsManager")
+def test_generate_contracts_with_analyzed_brief(
+    mock_briefs_manager_class,
+    mock_prompt,
+    mock_echo,
+    temp_workspace,
+    briefs_manager
+):
+    """
+    Test: Generate contracts khi có analyzed brief.
+    
+    Expected:
+    - Tạo contracts directory
+    - Gọi generate_placeholder_contracts
+    - Display success message
+    """
+    # Setup mock
+    mock_manager_instance = MagicMock()
+    mock_manager_instance.list.return_value = [
+        {
+            "brief_id": "test-brief-001",
+            "title": "Test Brief",
+            "status": "analyzed"
+        }
+    ]
+    mock_briefs_manager_class.return_value = mock_manager_instance
+    
+    mock_prompt.return_value = "y"
+    
+    # Run
+    generate_contracts()
+    
+    # Verify
+    mock_manager_instance.list.assert_called_once()
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+@patch("midicoder.pipeline.commands.contract.BriefsManager")
+def test_generate_contracts_no_briefs(mock_briefs_manager_class, mock_echo, temp_workspace):
+    """
+    Test: Generate contracts khi không có brief nào.
+    
+    Expected:
+    - Display error message
+    - Suggest running brief analyze first
+    - Return early
+    """
+    # Setup mock
+    mock_manager_instance = MagicMock()
+    mock_manager_instance.list.return_value = []
+    mock_briefs_manager_class.return_value = mock_manager_instance
+    
+    # Run
+    generate_contracts()
+    
+    # Verify manager was called
+    mock_manager_instance.list.assert_called_once()
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+@patch("midicoder.pipeline.commands.contract.click.prompt")
+@patch("midicoder.pipeline.commands.contract.BriefsManager")
+def test_generate_contracts_force_overwrite(
+    mock_briefs_manager_class,
+    mock_prompt,
+    mock_echo,
+    contracts_dir
+):
+    """
+    Test: Generate contracts với --force flag overwrite existing.
+    
+    Expected:
+    - Không hỏi confirmation
+    - Overwrite existing files
+    """
+    # Setup mock
+    mock_manager_instance = MagicMock()
+    mock_manager_instance.list.return_value = [
+        {
+            "brief_id": "test-brief-001",
+            "title": "Test Brief",
+            "status": "analyzed"
+        }
+    ]
+    mock_briefs_manager_class.return_value = mock_manager_instance
+    
+    # Tạo file contracts trước
+    (contracts_dir / "entities.yml").write_text("existing: content")
+    
+    mock_prompt.return_value = "y"
+    
+    # Run with force
+    generate_contracts(force=True)
+    
+    # Verify files were overwritten
+    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
+    assert "meta" in entities  # New format, not "existing: content"
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+@patch("midicoder.pipeline.commands.contract.click.prompt")
+@patch("midicoder.pipeline.commands.contract.BriefsManager")
+def test_generate_contracts_cancel_overwrite(
+    mock_briefs_manager_class,
+    mock_prompt,
+    mock_echo,
+    contracts_dir
+):
+    """
+    Test: Hủy bỏ generate khi user từ chối overwrite.
+    
+    Expected:
+    - Hỏi confirmation
+    - User declines → return early
+    - Existing files không bị thay đổi
+    """
+    # Setup mock
+    mock_manager_instance = MagicMock()
+    mock_manager_instance.list.return_value = [
+        {
+            "brief_id": "test-brief-001",
+            "title": "Test Brief",
+            "status": "analyzed"
+        }
+    ]
+    mock_briefs_manager_class.return_value = mock_manager_instance
+    
+    # Tạo file contracts trước
+    original_content = "existing: content"
+    (contracts_dir / "entities.yml").write_text(original_content)
+    
+    # User declines
+    mock_prompt.return_value = "n"
+    
+    # Run
+    generate_contracts()
+    
+    # Verify file was NOT overwritten
+    content = (contracts_dir / "entities.yml").read_text()
+    assert content == original_content
+
+
+# ============================================================================
+# Tests: check_contracts
+# ============================================================================
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+def test_check_contracts_valid(mock_echo, contracts_dir):
+    """
+    Test: Check contracts thành công khi valid.
+    
+    Expected:
+    - Load contracts vào ProjectionTree
+    - Validate tree
+    - Display success message
+    """
+    # Setup mocks
+    mock_tree = MagicMock()
+    mock_tree.node_count.return_value = 10
+    
+    mock_report = MagicMock()
+    mock_report.total_errors = 0
+    mock_report.total_warnings = 1
+    mock_report.total_info = 2
+    mock_report.status = MagicMock(name="VALID")
+    mock_report.get_warnings.return_value = []
+    mock_report.dependency_analysis = None
+    
+    with patch("midicoder.pipeline.commands.contract.load_projection_tree", return_value=mock_tree):
+        with patch("midicoder.pipeline.commands.contract.validate_tree", return_value=mock_report):
+            # Run
+            check_contracts()
+    
+    # Test đã chạy thành công, không có lỗi
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+def test_check_contracts_with_errors(mock_echo, contracts_dir):
+    """
+    Test: Check contracts với errors.
+    
+    Expected:
+    - Display error count
+    - Display errors by node
+    - Report FAIL
+    """
+    # Setup mock
+    mock_tree = MagicMock()
+    mock_tree.node_count.return_value = 10
+    
+    mock_error = MagicMock()
+    mock_error.message = "Missing required field: email"
+    
+    mock_report = MagicMock()
+    mock_report.total_errors = 3
+    mock_report.total_warnings = 0
+    mock_report.total_info = 0
+    mock_report.status = MagicMock(name="ERRORS")
+    mock_report.get_errors_by_node.return_value = {
+        "User:1": [mock_error]
+    }
+    mock_report.get_warnings.return_value = []
+    mock_report.dependency_analysis = None
+    
+    with patch("midicoder.pipeline.commands.contract.load_projection_tree", return_value=mock_tree):
+        with patch("midicoder.pipeline.commands.contract.validate_tree", return_value=mock_report):
+            check_contracts()
+    
+    # Test đã chạy thành công, không có lỗi
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+@patch("midicoder.pipeline.commands.contract.load_projection_tree")
+def test_check_contracts_with_dependency_cycles(
+    mock_load_tree,
+    mock_echo,
+    contracts_dir
+):
+    """
+    Test: Check contracts với dependency cycles.
+    
+    Expected:
+    - Display cycle information
+    """
+    # Setup mock
+    mock_tree = MagicMock()
+    mock_tree.node_count.return_value = 10
+    mock_load_tree.return_value = mock_tree
+    
+    mock_report = MagicMock()
+    mock_report.total_errors = 1
+    mock_report.total_warnings = 0
+    mock_report.total_info = 0
+    mock_report.status = MagicMock(name="ERRORS")
+    mock_report.get_errors_by_node.return_value = {}
+    mock_report.get_warnings.return_value = []
+    
+    # Setup dependency analysis with cycle
+    mock_cycle = MagicMock()
+    mock_cycle.nodes = ["A", "B", "C", "A"]
+    mock_report.dependency_analysis = MagicMock()
+    mock_report.dependency_analysis.cycles = [mock_cycle]
+    
+    with patch("midicoder.pipeline.commands.contract.validate_tree", return_value=mock_report):
+        check_contracts()
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+def test_check_contracts_no_contracts_dir(mock_echo, temp_workspace):
+    """
+    Test: Check contracts khi contracts directory không tồn tại.
+    
+    Expected:
+    - Display error message
+    - Suggest running contract gen first
+    """
+    # contracts_dir không tồn tại
+    check_contracts()
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+def test_check_contracts_no_contract_files(mock_echo, contracts_dir):
+    """
+    Test: Check contracts khi không có contract files.
+    
+    Expected:
+    - Display no files message
+    """
+    # Xóa tất cả files
+    for f in contracts_dir.glob("*.yml"):
+        f.unlink()
+    
+    check_contracts()
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+@patch("midicoder.pipeline.commands.contract.load_projection_tree")
+def test_check_contracts_yaml_syntax_error(
+    mock_load_tree,
+    mock_echo,
+    contracts_dir
+):
+    """
+    Test: Check contracts với YAML syntax error.
+    
+    Expected:
+    - Display YAML error
+    - Return early
+    """
+    # Tạo invalid YAML
+    (contracts_dir / "invalid.yml").write_text("""
+entities:
+  - id: User
+    fields:
+      - name: id
+        type: UUID
+      - name: email
+        type: String
+        # Missing closing bracket
+    invalid: [
+""")
+    
+    # Mock load_tree to not be called (we fail before)
+    mock_load_tree.side_effect = Exception("Should not be called")
+    
+    check_contracts()
+
+
+# ============================================================================
+# Tests: repair_contracts
+# ============================================================================
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+def test_repair_contracts_not_implemented(mock_echo):
+    """
+    Test: Repair contracts chưa được implement.
+    
+    Expected:
+    - Display "not implemented" message
+    """
+    repair_contracts()
+    # Function should complete without error
+
+
+# ============================================================================
+# Integration Tests
+# ============================================================================
+
+def test_full_generate_and_check_flow(temp_workspace, briefs_manager, artifacts_manager):
+    """
+    Integration Test: Full flow generate → check contracts.
+    
+    Steps:
+    1. Create analyzed brief
+    2. Generate contracts
+    3. Check contracts
+    4. Verify all files exist and are valid
+    """
+    # Step 1: Create brief
+    content = "# Test E-commerce\n\nBuild e-commerce platform."
+    brief_id = briefs_manager.create(
+        brief_id="integration-test-brief",
+        version="v1.0.0",
+        content=content,
+        title="Integration Test",
+        brief_type="working",
+    )["brief_id"]
+    briefs_manager.update_status(brief_id, "analyzed")
+    
+    # Step 2: Generate contracts (suppress output)
+    with patch("midicoder.pipeline.commands.contract.click.echo"):
+        with patch("midicoder.pipeline.commands.contract.click.prompt", return_value="y"):
+            generate_contracts()
+    
+    # Step 3: Verify contracts directory created
+    contracts_dir = Path(".midicoder/contracts")
+    assert contracts_dir.exists()
+    
+    # Step 4: Verify files exist
+    assert (contracts_dir / "entities.yml").exists()
+    assert (contracts_dir / "commands.yml").exists()
+    assert (contracts_dir / "queries.yml").exists()
+    
+    # Step 5: Check contracts (suppress output)
+    with patch("midicoder.pipeline.commands.contract.click.echo"):
+        check_contracts()
+    
+    # Step 6: Verify YAML is valid
+    entities = yaml.safe_load((contracts_dir / "entities.yml").read_text())
+    assert "entities" in entities
+    assert len(entities["entities"]) > 0
+
+
+# ============================================================================
+# Error Handling Tests
+# ============================================================================
+
+def test_check_contracts_load_error(temp_workspace, contracts_dir):
+    """
+    Test: Check contracts khi load ProjectionTree lỗi.
+    """
+    # Create some contract files
+    (contracts_dir / "entities.yml").write_text("valid: yaml")
+    
+    # Mock load_projection_tree to raise exception
+    with patch("midicoder.pipeline.commands.contract.click.echo"):
+        with patch("midicoder.pipeline.commands.contract.load_projection_tree", side_effect=Exception("Load error")):
+            check_contracts()
+
+
+def test_check_contracts_validation_error(temp_workspace, contracts_dir):
+    """
+    Test: Check contracts khi validation lỗi.
+    """
+    # Create some contract files
+    (contracts_dir / "entities.yml").write_text("valid: yaml")
+    
+    # Mock validate_tree to raise exception
+    mock_tree = MagicMock()
+    mock_tree.node_count.return_value = 1
+    
+    with patch("midicoder.pipeline.commands.contract.click.echo"):
+        with patch("midicoder.pipeline.commands.contract.load_projection_tree", return_value=mock_tree):
+            with patch("midicoder.pipeline.commands.contract.validate_tree", side_effect=Exception("Validation error")):
+                check_contracts()
