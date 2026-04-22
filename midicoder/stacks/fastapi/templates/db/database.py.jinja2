@@ -1,0 +1,106 @@
+"""
+Database Configuration cho Async SQLAlchemy.
+
+Cung cấp:
+- Async engine với connection pooling
+- AsyncSessionMaker
+- Dependency injection cho FastAPI
+
+CP08: Database & Data Access
+"""
+
+import os
+from contextlib import asynccontextmanager
+
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.orm import DeclarativeBase
+
+# DATABASE URL từ environment
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/gateway",
+)
+
+# Connection Pool Settings - cấu hình connection pooling
+POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
+MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+
+
+# Create async engine - tạo engine async
+engine = create_async_engine(
+    DATABASE_URL,
+    pool_size=POOL_SIZE,
+    max_overflow=MAX_OVERFLOW,
+    pool_timeout=POOL_TIMEOUT,
+    pool_recycle=POOL_RECYCLE,
+    echo=os.getenv("DB_ECHO", "false").lower() == "true",
+    future=True,
+)
+
+# AsyncSessionMaker - session factory cho async
+async_session_factory = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
+
+
+# Dependency cho FastAPI - cung cấp database session
+@asynccontextmanager
+async def get_db():
+    """
+    Dependency cho database session.
+
+    Usage trong FastAPI:
+        @router.get("/items")
+        async def list_items(db: AsyncSession = Depends(get_db)):
+            ...
+
+    Yields:
+        AsyncSession cho database operations
+    """
+    async with async_session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+# Base class cho models
+class Base(DeclarativeBase):
+    """Base class cho tất cả models."""
+    pass
+
+
+# Init database tables - khởi tạo tables
+async def init_db() -> None:
+    """
+    Khởi tạo database tables.
+
+    Gọi khi startup để create all tables.
+    """
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+# Drop database tables - xóa tất cả tables
+async def drop_db() -> None:
+    """
+    Drop tất cả database tables.
+
+    ChỈ dùng cho testing!
+    """
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
