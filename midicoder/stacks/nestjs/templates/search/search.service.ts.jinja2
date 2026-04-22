@@ -1,0 +1,223 @@
+/**
+ * Search Service cho NestJS.
+ *
+ * Cung cấp Elasticsearch search operations:
+ * - Full-text search
+ * - Document indexing
+ * - Bulk operations
+ *
+ * CP10: Search & Indexing
+ */
+
+import { Injectable, Inject } from "@nestjs/common";
+import { Client } from "@elastic/elasticsearch";
+
+/**
+ * Search Result interface.
+ */
+export interface SearchResult<T> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+}
+
+/**
+ * Search Service.
+ *
+ * Cung cấp các search operations cho Elasticsearch.
+ */
+@Injectable()
+export class SearchService {
+  /**
+   * Constructor.
+   *
+   * @param client - Elasticsearch client
+   */
+  constructor(
+    @Inject("ELASTICSEARCH_CLIENT")
+    private readonly client: Client,
+  ) {}
+
+  /**
+   * Thực hiện full-text search.
+   *
+   * @param index - Index name
+   * @param query - Search query
+   * @param options - Search options
+   * @returns Search results
+   */
+  async search<T = any>(
+    index: string,
+    query: string,
+    options?: {
+      size?: number;
+      from?: number;
+      filters?: Record<string, any>;
+      sort?: Array<{ field: string; order?: "asc" | "desc" }>;
+      highlight?: boolean;
+    },
+  ): Promise<SearchResult<T>> {
+    const size = options?.size ?? 20;
+    const from = options?.from ?? 0;
+
+    // Build query
+    const searchBody: any = {
+      query: {
+        multi_match: {
+          query,
+          fields: ["*"],
+          fuzziness: "AUTO",
+        },
+      },
+      size,
+      from,
+    };
+
+    // Add filters
+    if (options?.filters) {
+      searchBody.query = {
+        bool: {
+          must: [searchBody.query],
+          filter: Object.entries(options.filters).map(([k, v]) => ({
+            term: { [k]: v },
+          })),
+        },
+      };
+    }
+
+    // Add sorting
+    if (options?.sort) {
+      searchBody.sort = options.sort.map((s) => ({
+        [s.field]: { order: s.order ?? "asc" },
+      }));
+    }
+
+    // Add highlighting
+    if (options?.highlight) {
+      searchBody.highlight = {
+        fields: { "*": {} },
+        pre_tags: ["<em>"],
+        post_tags: ["</em>"],
+      };
+    }
+
+    // Execute search
+    const response = await this.client.search<{ hits: { hits: any[]; total: { value: number } } }, any>({
+      index,
+      body: searchBody,
+    });
+
+    return {
+      hits: response.body.hits.hits.map((hit) => ({
+        _id: hit._id,
+        _source: hit._source as T,
+        _score: hit._score,
+      })),
+      total: response.body.hits.total.value,
+      took: response.headers["x-foundry-time-ms"] as unknown as number,
+    };
+  }
+
+  /**
+   * Index một document.
+   *
+   * @param index - Index name
+   * @param id - Document ID
+   * @param document - Document data
+   * @returns Index response
+   */
+  async index<T = any>(
+    index: string,
+    id: string,
+    document: T,
+  ): Promise<{ result: string; _id: string }> {
+    const response = await this.client.index({
+      index,
+      id,
+      body: document,
+      refresh: true,
+    });
+
+    return {
+      result: response.body.result,
+      _id: response.body._id,
+    };
+  }
+
+  /**
+   * Xóa document.
+   *
+   * @param index - Index name
+   * @param id - Document ID
+   * @returns Delete response
+   */
+  async delete(index: string, id: string): Promise<{ result: string }> {
+    const response = await this.client.delete({
+      index,
+      id,
+      refresh: true,
+    });
+
+    return { result: response.body.result };
+  }
+
+  /**
+   * Cập nhật document.
+   *
+   * @param index - Index name
+   * @param id - Document ID
+   * @param updates - Fields to update
+   * @returns Update response
+   */
+  async update<T = any>(
+    index: string,
+    id: string,
+    updates: Partial<T>,
+  ): Promise<{ result: string }> {
+    const response = await this.client.update({
+      index,
+      id,
+      body: { doc: updates },
+      refresh: true,
+    });
+
+    return { result: response.body.result };
+  }
+
+  /**
+   * Bulk index nhiều documents.
+   *
+   * @param index - Index name
+   * @param documents - List of documents
+   * @returns Bulk response
+   */
+  async bulkIndex<T = any>(
+    index: string,
+    documents: Array<{ id?: string; data: T }>,
+  ): Promise<{ errors: boolean; items: any[] }> {
+    const actions: any[] = [];
+
+    for (const doc of documents) {
+      if (doc.id) {
+        actions.push({ index: { _index: index, _id: doc.id } });
+        actions.push(doc.data);
+      } else {
+        actions.push({ index: { _index: index } });
+        actions.push(doc.data);
+      }
+    }
+
+    const response = await this.client.bulk({
+      body: actions,
+    });
+
+    return {
+      errors: response.body.errors,
+      items: response.body.items,
+    };
+  }
+}

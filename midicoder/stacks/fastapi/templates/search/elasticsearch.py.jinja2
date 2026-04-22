@@ -1,0 +1,83 @@
+"""
+Elasticsearch Configuration cho FastAPI.
+
+Cung cấp:
+- Async Elasticsearch client
+- Index management
+- Search operations
+
+CP10: Search & Indexing
+"""
+
+import os
+from typing import Optional
+
+from elasticsearch import AsyncElasticsearch
+
+# Elasticsearch URL từ environment
+ELASTICSEARCH_URL = os.getenv(
+    "ELASTICSEARCH_URL",
+    "http://localhost:9200",
+)
+
+# Connection settings
+ES_MAX_RETRIES = int(os.getenv("ES_MAX_RETRIES", "3"))
+ES_TIMEOUT = int(os.getenv("ES_TIMEOUT", "30"))
+ES_SNIFF_ON_START = os.getenv("ES_SNIFF_ON_START", "false").lower() == "true"
+
+# Default index settings
+DEFAULT_INDEX = os.getenv("ES_DEFAULT_INDEX", "documents")
+DEFAULT_REFRESH_INTERVAL = os.getenv("ES_REFRESH_INTERVAL", "1s")
+
+
+# Async Elasticsearch client - client async cho operations
+_es_client: Optional[AsyncElasticsearch] = None
+
+
+def get_elasticsearch() -> AsyncElasticsearch:
+    """
+    Tạo hoặc trả về async Elasticsearch client.
+
+    Returns:
+        AsyncElasticsearch client
+    """
+    global _es_client
+
+    if _es_client is None:
+        _es_client = AsyncElasticsearch(
+            hosts=[ELASTICSEARCH_URL],
+            max_retries=ES_MAX_RETRIES,
+            retry_on_timeout=True,
+            timeout=ES_TIMEOUT,
+            sniff_on_start=ES_SNIFF_ON_START,
+        )
+
+    return _es_client
+
+
+async def es_health_check() -> bool:
+    """
+    Kiểm tra Elasticsearch health.
+
+    Returns:
+        True nếu Elasticsearch đang hoạt động
+    """
+    client = get_elasticsearch()
+    try:
+        await client.ping()
+        return True
+    except Exception:
+        return False
+
+
+async def close_elasticsearch() -> None:
+    """
+    Đóng Elasticsearch connection.
+
+    Gọi khi shutdown application.
+    """
+    global _es_client
+
+    if _es_client:
+        await _es_client.close()
+        _es_client = None

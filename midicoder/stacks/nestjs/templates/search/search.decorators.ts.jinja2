@@ -1,0 +1,193 @@
+/**
+ * Search Decorators cho NestJS.
+ *
+ * Decorators để annotate entities cho Elasticsearch indexing:
+ * - @SearchIndex: Chỉ định index configuration
+ * - @SearchField: Chỉ định field mapping
+ * - @SearchKeyword: Field không phân tích
+ * - @SearchText: Field full-text
+ *
+ * CP10: Search & Indexing
+ */
+
+import { SetMetadata } from "@nestjs/common";
+
+// Metadata keys
+export const SEARCH_INDEX = "searchIndex";
+export const SEARCH_FIELD = "searchField";
+export const SEARCH_KEYWORD = "searchKeyword";
+export const SEARCH_TEXT = "searchText";
+
+/**
+ * Search Index Decorator.
+ *
+ * Chỉ định Elasticsearch index configuration cho entity.
+ *
+ * Usage:
+ *   @SearchIndex({
+ *     index: 'users',
+ *     settings: { number_of_shards: 1 }
+ *   })
+ *   export class User { ... }
+ *
+ * @param config - Index configuration
+ */
+export function SearchIndex(config: {
+  index: string;
+  settings?: Record<string, any>;
+  mappings?: Record<string, any>;
+}) {
+  return SetMetadata(SEARCH_INDEX, config);
+}
+
+/**
+ * Search Field Decorator.
+ *
+ * Chỉ định field mapping cho Elasticsearch.
+ *
+ * Usage:
+ *   export class User {
+ *     @SearchField({ type: 'text', analyzer: 'standard' })
+ *     name: string;
+ *   }
+ *
+ * @param options - Field options
+ */
+export function SearchField(options: {
+  type: "text" | "keyword" | "integer" | "long" | "date" | "boolean" | "object" | "nested";
+  analyzer?: string;
+  fields?: Record<string, { type: string; analyzer?: string }>;
+  store?: boolean;
+  doc_values?: boolean;
+}) {
+  return SetMetadata(SEARCH_FIELD, options);
+}
+
+/**
+ * Search Keyword Decorator.
+ *
+ * Field không phân tích (exact match).
+ *
+ * Usage:
+ *   @SearchKeyword()
+ *   email: string;
+ *
+ * @param options - Optional keyword config
+ */
+export function SearchKeyword(options?: {
+  normalizer?: string;
+  ignore_above?: number;
+}) {
+  return SetMetadata(SEARCH_KEYWORD, {
+    type: "keyword" as const,
+    ...options,
+  });
+}
+
+/**
+ * Search Text Decorator.
+ *
+ * Field full-text search (analyzed).
+ *
+ * Usage:
+ *   @SearchText({ analyzer: 'standard' })
+ *   description: string;
+ *
+ * @param options - Text field options
+ */
+export function SearchText(options?: {
+  analyzer?: string;
+  search_analyzer?: string;
+  term_vector?: "no" | "yes" | "with_positions" | "with_offsets";
+  fields?: Record<string, { type: "keyword"; ignore_above?: number }>;
+}) {
+  return SetMetadata(SEARCH_TEXT, {
+    type: "text" as const,
+    ...options,
+  });
+}
+
+/**
+ * Search Date Decorator.
+ *
+ * Field date mapping.
+ *
+ * Usage:
+ *   @SearchDate()
+ *   createdAt: Date;
+ *
+ * @param options - Date field options
+ */
+export function SearchDate(options?: {
+  format?: string;
+}) {
+  return SetMetadata(SEARCH_FIELD, {
+    type: "date" as const,
+    format: options?.format ?? "strict_date_optional_time||epoch_millis",
+  });
+}
+
+/**
+ * Search Integer Decorator.
+ *
+ * Field integer mapping.
+ *
+ * Usage:
+ *   @SearchInteger()
+ *   age: number;
+ */
+export function SearchInteger() {
+  return SetMetadata(SEARCH_FIELD, { type: "integer" as const });
+}
+
+/**
+ * Search Long Decorator.
+ *
+ * Field long mapping.
+ *
+ * Usage:
+ *   @SearchLong()
+ *   amount: number;
+ */
+export function SearchLong() {
+  return SetMetadata(SEARCH_FIELD, { type: "long" as const });
+}
+
+/**
+ * Search Boolean Decorator.
+ *
+ * Field boolean mapping.
+ *
+ * Usage:
+ *   @SearchBoolean()
+ *   isActive: boolean;
+ */
+export function SearchBoolean() {
+  return SetMetadata(SEARCH_FIELD, { type: "boolean" as const });
+}
+
+/**
+ * Search Nested Decorator.
+ *
+ * Field nested object mapping.
+ *
+ * Usage:
+ *   @SearchNested()
+ *   addresses: Address[];
+ */
+export function SearchNested() {
+  return SetMetadata(SEARCH_FIELD, { type: "nested" as const });
+}
+
+/**
+ * Search Object Decorator.
+ *
+ * Field object mapping.
+ *
+ * Usage:
+ *   @SearchObject()
+ *   metadata: Record<string, any>;
+ */
+export function SearchObject() {
+  return SetMetadata(SEARCH_FIELD, { type: "object" as const });
+}
