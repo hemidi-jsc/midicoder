@@ -1,0 +1,110 @@
+# ElastiCache Module - Redis Cache cho AWS
+# # Terraform ElastiCache module template
+# CP07: Infrastructure as Code
+
+# Variables - biến đầu vào
+variable "vpc_id" {
+  description = "VPC ID cho ElastiCache"
+  type        = string
+}
+
+variable "subnet_ids" {
+  description = "IDs của subnets cho ElastiCache"
+  type        = list(string)
+}
+
+variable "cluster_id" {
+  description = "ElastiCache cluster ID"
+  type        = string
+  default     = "gateway-cache"
+}
+
+variable "cache_node_type" {
+  description = "Cache node type"
+  type        = string
+  default     = "cache.t3.medium"
+}
+
+variable "engine_version" {
+  description = "Redis engine version"
+  type        = string
+  default     = "7.0"
+}
+
+# Subnet Group - subnet group cho ElastiCache
+resource "aws_elasticache_subnet_group" "main" {
+  name       = "${var.cluster_id}-subnet-group"
+  description = "Subnet group cho ElastiCache Redis"
+  subnet_ids = var.subnet_ids
+
+  tags = {
+    Name = "${var.cluster_id}-subnet-group"
+  }
+}
+
+# Security Group - security group cho ElastiCache
+resource "aws_security_group" "elasticache" {
+  name        = "${var.cluster_id}-sg"
+  description = "Security group cho ElastiCache Redis"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "Redis access"
+    from_port   = 6379
+    to_port     = 6379
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.cluster_id}-sg"
+  }
+}
+
+# ElastiCache Redis Cluster - Redis cluster
+resource "aws_elasticache_cluster" "main" {
+  cluster_id           = var.cluster_id
+  engine               = "redis"
+  engine_version       = var.engine_version
+  node_type            = var.cache_node_type
+  num_cache_nodes      = 1
+  parameter_group_name = "default.redis7"
+  port                 = 6379
+
+  subnet_group_name          = aws_elasticache_subnet_group.main.name
+  security_group_ids         = [aws_security_group.elasticache.id]
+
+  maintenance_window = "Mon:04:00-Mon:05:00"
+  snapshot_retention_limit = 7
+
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
+
+  tags = {
+    Name = var.cluster_id
+    Type = "redis"
+  }
+}
+
+# Outputs - giá trị đầu ra
+output "cluster_address" {
+  description = "Address của ElastiCache cluster"
+  value       = aws_elasticache_cluster.main.address
+}
+
+output "cluster_port" {
+  description = "Port của ElastiCache cluster"
+  value       = aws_elasticache_cluster.main.port
+}
+
+output "cluster_id" {
+  description = "ID của ElastiCache cluster"
+  value       = aws_elasticache_cluster.main.id
+}
