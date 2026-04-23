@@ -11,6 +11,7 @@ E03: Contract Commands
 
 import click
 from pathlib import Path
+import tempfile
 import yaml
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -18,6 +19,13 @@ from typing import Any, Dict, List
 from midicoder.storage.sqlite import BriefsManager
 from midicoder.dsl.loader import load_projection_tree
 from midicoder.dsl.validator import validate_tree, ValidationStatus
+from midicoder.llm.client import (
+    LlmConfig,
+    LlmRequestError,
+    call_llm,
+    load_llm_config,
+)
+from midicoder.commands.base import MidicoderPaths
 
 
 def generate_contracts(force: bool = False):
@@ -512,15 +520,292 @@ def check_contracts(auto_fix: bool = False, strict: bool = False):
     click.echo("  1. Chạy: midicoder ir build (build MIR from contracts)")
 
 
+# Số lần thử tối đa để LLM fix contracts
+MAX_REPAIR_ATTEMPTS = 3
+
+
+def _build_repair_prompt(
+    contract_file: Path,
+    content: dict,
+    errors: list,
+) -> tuple[str, str]:
+    """
+    Xây dựng prompt để LLM fix contracts.
+    
+    Args:
+        contract_file: File contract cần sửa
+        content: Nội dung YAML hiện tại
+        errors: Danh sách validation errors
+        
+    Returns:
+        Tuple của (system prompt, user prompt)
+    """
+    # System prompt - hướng dẫn LLM cách fix
+    system = """You are a DSL contract repair expert. Your task is to fix validation errors in DSL contracts.
+    
+DSL Schema Rules:
+1. Entity MUST have: id, description, fields, primary_key, tenant_scope, tags
+2. Field MUST have: name, type, required
+3. Command MUST have: id, description, input, fetches, guards, effects, returns, required_permissions, tenant_scope
+4. Query MUST have: id, description, input, fetches, returns, required_permissions, tenant_scope
+5. Event MUST have: id, description, type, source_entity, fields, version, tenant_scope
+6. All strings support Vietnamese characters
+7. Output ONLY valid YAML, no markdown formatting, no explanations
+
+Fix Guidelines:
+- Add missing required fields with sensible defaults
+- Fix field type mismatches
+- Ensure all references point to existing entities
+- Preserve existing content, only fix errors
+- Output complete fixed YAML content"""
+    
+    # User prompt - cung cấp context cụ thể
+    error_messages = "\n".join(
+        f"- {getattr(e, 'message', str(e))}" for e in errors
+    )
+    
+    yaml_content = yaml.dump(content, default_flow_style=False, allow_unicode=True)
+    
+    user = f"""File: {contract_file.name}
+
+Current YAML content:
+{yaml_content}
+
+Validation errors:
+{error_messages}
+
+Please fix the YAML to resolve all validation errors. Output ONLY the complete fixed YAML content, no markdown formatting."""
+    
+    return system, user
+
+
+def _try_fix_with_llm(
+    config: LlmConfig,
+    contract_file: Path,
+    content: dict,
+    errors: list,
+) -> tuple[bool, dict | None]:
+    """
+    Thử fix contracts bằng LLM.
+    
+    Args:
+        config: LLM config
+        contract_file: File contract cần sửa
+        content: Nội dung YAML hiện tại
+        errors: Danh sách validation errors
+        
+    Returns:
+        Tuple của (success, fixed_content hoặc None)
+    """
+    try:
+        # Build prompt
+        system, user = _build_repair_prompt(contract_file, content, errors)
+        
+        # Call LLM
+        response = call_llm(
+            config,
+            system=system,
+            prompt=user,
+            temperature=0.3,  # Low temperature cho deterministic output
+            max_tokens=4096,
+        )
+        
+        # Parse YAML từ response
+        yaml_content = response.content.strip()
+        
+        # Remove markdown code blocks nếu có
+        yaml_content = yaml_content.replace("```yaml", "").replace("```", "").strip()
+        
+        fixed_content = yaml.safe_load(yaml_content)
+        
+        if not isinstance(fixed_content, dict):
+            click.echo(f"      ⚠️  LLM output không phải dict")
+            return False, None
+        
+        return True, fixed_content
+        
+    except LlmRequestError as e:
+        click.echo(f"      ❌ LLM error: {e}")
+        return False, None
+    except yaml.YAMLError as e:
+        click.echo(f"      ❌ LLM output không phải valid YAML: {e}")
+        return False, None
+    except Exception as e:
+        click.echo(f"      ❌ Error processing LLM response: {e}")
+        return False, None
+
+
 def repair_contracts():
     """
     Sửa contracts có lỗi bằng LLM.
     
     Process:
-    1. Chạy contract check để tìm errors
-    2. Sử dụng LLM để fix errors
-    3. Re-validate
+    1. Load contracts từ .midicoder/contracts/
+    2. Validate để tìm errors
+    3. Nếu có errors → gọi LLM để fix từng file
+    4. Re-validate để confirm fix thành công
+    5. Retry tối đa MAX_REPAIR_ATTEMPTS lần
     """
-    click.echo("🔧 Repair contracts mode")
-    click.echo("   ⚠️  Chưa được implement")
-    click.echo("   💡 Sẽ integrate với LLM để auto-fix DSL errors")
+    click.echo("🔧 Đang repair contracts bằng LLM...")
+    
+    contracts_dir = Path(".midicoder/contracts")
+    if not contracts_dir.exists():
+        click.echo("❌ Contracts directory không tồn tại")
+        click.echo("💡 Chạy 'midicoder contract gen' trước")
+        return
+    
+    # Tìm contract files (cả .yml và .yaml)
+    contract_files = list(contracts_dir.glob("*.yml")) + list(contracts_dir.glob("*.yaml"))
+    if not contract_files:
+        click.echo("❌ Không có contract files nào")
+        click.echo("💡 Chạy 'midicoder contract gen' trước")
+        return
+    
+    click.echo(f"   → Found {len(contract_files)} contract files")
+    
+    # Load LLM config (sử dụng 'repair' tier cho cost optimization)
+    try:
+        paths = MidicoderPaths(".")
+        config = load_llm_config(paths, tier="repair")
+    except Exception as e:
+        click.echo(f"❌ Không thể load LLM config: {e}")
+        click.echo("💡 Kiểm tra ~/.midicoder/midicoder.json")
+        return
+    
+    # Track files cần fix
+    files_to_fix: list[tuple[Path, dict, list]] = []
+    
+    # Step 1: Validate từng file để tìm errors
+    click.echo("")
+    click.echo("   → Đang validate contracts...")
+    
+    for contract_file in contract_files:
+        try:
+            content = yaml.safe_load(contract_file.read_text(encoding="utf-8"))
+            
+            # Tạo temp tree chỉ từ file này để validate
+            temp_dir = Path(tempfile.mkdtemp())
+            temp_file = temp_dir / contract_file.name
+            temp_file.write_text(
+                yaml.dump(content, default_flow_style=False, allow_unicode=True),
+                encoding="utf-8"
+            )
+            
+            try:
+                tree = load_projection_tree(temp_dir)
+                report = validate_tree(tree)
+                
+                if report.total_errors > 0:
+                    errors = []
+                    for node_id, node_errors in report.get_errors_by_node().items():
+                        errors.extend(node_errors)
+                    files_to_fix.append((contract_file, content, errors))
+                    click.echo(f"      ⚠️  {contract_file.name}: {report.total_errors} errors")
+                else:
+                    click.echo(f"      ✓ {contract_file.name}: valid")
+            finally:
+                # Cleanup temp dir
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                
+        except yaml.YAMLError as e:
+            click.echo(f"      ❌ {contract_file.name}: YAML error - {e}")
+            files_to_fix.append((contract_file, {}, [e]))
+        except Exception as e:
+            click.echo(f"      ❌ {contract_file.name}: {e}")
+            files_to_fix.append((contract_file, {}, [e]))
+    
+    # Nếu không có file nào cần fix
+    if not files_to_fix:
+        click.echo("")
+        click.echo("✅ Tất cả contracts đã valid, không cần repair!")
+        return
+    
+    click.echo("")
+    click.echo(f"   → Found {len(files_to_fix)} file(s) to repair")
+    
+    # Step 2: Repair từng file bằng LLM
+    repaired_count = 0
+    failed_files: list[str] = []
+    
+    for contract_file, content, errors in files_to_fix:
+        click.echo(f"")
+        click.echo(f"   → Repairing: {contract_file.name}")
+        
+        success = False
+        fixed_content = None
+        
+        for attempt in range(1, MAX_REPAIR_ATTEMPTS + 1):
+            if attempt > 1:
+                click.echo(f"      → Retry attempt {attempt}/{MAX_REPAIR_ATTEMPTS}")
+            
+            # Try fix với LLM
+            result, fixed = _try_fix_with_llm(config, contract_file, content, errors)
+            
+            if not result or fixed is None:
+                continue
+            
+            fixed_content = fixed
+            
+            # Validate fix bằng cách write temp và re-validate
+            temp_dir = Path(tempfile.mkdtemp())
+            temp_file = temp_dir / contract_file.name
+            
+            try:
+                temp_file.write_text(
+                    yaml.dump(fixed_content, default_flow_style=False, allow_unicode=True),
+                    encoding="utf-8"
+                )
+                
+                tree = load_projection_tree(temp_dir)
+                report = validate_tree(tree)
+                
+                if report.total_errors == 0:
+                    success = True
+                    click.echo(f"      ✓ Fixed after {attempt} attempt(s)")
+                    break
+                else:
+                    # Update errors cho next retry
+                    errors = []
+                    for node_id, node_errors in report.get_errors_by_node().items():
+                        errors.extend(node_errors)
+                    click.echo(f"      ⚠️  Still {report.total_errors} errors, retrying...")
+                    
+            except Exception as e:
+                click.echo(f"      ⚠️  Validation error: {e}")
+            finally:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        if success and fixed_content is not None:
+            # Write fixed content to file
+            try:
+                contract_file.write_text(
+                    yaml.dump(fixed_content, default_flow_style=False, allow_unicode=True),
+                    encoding="utf-8"
+                )
+                repaired_count += 1
+            except Exception as e:
+                click.echo(f"      ❌ Failed to write: {e}")
+                failed_files.append(contract_file.name)
+        else:
+            click.echo(f"      ❌ Failed to repair after {MAX_REPAIR_ATTEMPTS} attempts")
+            failed_files.append(contract_file.name)
+    
+    # Final report
+    click.echo("")
+    
+    if repaired_count > 0:
+        click.echo(f"✅ Repaired {repaired_count} file(s)")
+    
+    if failed_files:
+        click.echo(f"")
+        click.echo(f"⚠️  Failed to repair {len(failed_files)} file(s):")
+        for name in failed_files:
+            click.echo(f"    - {name}")
+        click.echo("💡 Vui lòng sửa thủ công hoặc chạy lại 'midicoder contract repair'")
+    else:
+        click.echo("")
+        click.echo("Tiếp theo:")
+        click.echo("  1. Chạy: midicoder contract check (verify repairs)")
+        click.echo("  2. Chạy: midicoder ir build (build MIR)")
