@@ -588,16 +588,274 @@ entities:
 # Tests: repair_contracts
 # ============================================================================
 
+# ============================================================================
+# Tests: repair_contracts (LLM-based DSL Repair)
+# ============================================================================
+
 @patch("midicoder.pipeline.commands.contract.click.echo")
-def test_repair_contracts_not_implemented(mock_echo):
+def test_repair_contracts_no_contracts_dir(mock_echo, temp_workspace):
     """
-    Test: Repair contracts chưa được implement.
+    Test: Repair contracts khi contracts directory không tồn tại.
     
     Expected:
-    - Display "not implemented" message
+    - Display error message
+    - Suggest running contract gen first
     """
+    # Contracts directory không tồn tại
     repair_contracts()
-    # Function should complete without error
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+def test_repair_contracts_valid_contracts(mock_echo, contracts_dir):
+    """
+    Test: Repair contracts khi contracts đã valid.
+    
+    Expected:
+    - Chạy validation
+    - Không có errors → không cần repair
+    - Display success message
+    """
+    # Tạo valid contracts (dùng encoding UTF-8 cho tiếng Việt)
+    (contracts_dir / "entities.yaml").write_text("""
+meta:
+  version: "1.0.0"
+  brief_id: test-brief-001
+entities:
+  - id: User
+    description: User entity
+    fields:
+      - name: id
+        type: UUID
+        required: true
+    primary_key: id
+    tenant_scope: tenant_isolated
+    tags: [core]
+""", encoding="utf-8")
+    
+    # Mock load_tree và validate_tree (valid)
+    mock_tree = MagicMock()
+    mock_tree.node_count.return_value = 1
+    
+    mock_report = MagicMock()
+    mock_report.total_errors = 0
+    mock_report.total_warnings = 0
+    mock_report.total_info = 0
+    mock_report.status = MagicMock(name="VALID")
+    mock_report.get_errors_by_node.return_value = {}
+    mock_report.get_warnings.return_value = []
+    mock_report.dependency_analysis = None
+    
+    with patch("midicoder.pipeline.commands.contract.load_projection_tree", return_value=mock_tree):
+        with patch("midicoder.pipeline.commands.contract.validate_tree", return_value=mock_report):
+            repair_contracts()
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+@patch("midicoder.pipeline.commands.contract.call_llm")
+@patch("midicoder.pipeline.commands.contract.load_llm_config")
+def test_repair_contracts_with_errors_uses_llm(
+    mock_load_llm_config,
+    mock_call_llm,
+    mock_echo,
+    contracts_dir
+):
+    """
+    Test: Repair contracts với errors sử dụng LLM để fix.
+    
+    Expected theo TDD:
+    - Chạy validation để tìm errors
+    - Nếu có errors → gọi LLM để fix
+    - Write fixed contracts back
+    - Re-validate để confirm
+    """
+    # Tạo contracts có lỗi (thiếu required field) - dùng UTF-8 encoding
+    (contracts_dir / "entities.yaml").write_text("""
+meta:
+  version: "1.0.0"
+  brief_id: test-brief-001
+entities:
+  - id: User
+    description: User entity missing fields
+    # Thiếu fields (required field)
+    primary_key: id
+    tenant_scope: tenant_isolated
+    tags: [core]
+""", encoding="utf-8")
+    
+    # Mock LLM config
+    mock_config = MagicMock()
+    mock_config.base_url = "http://localhost:11434"
+    mock_config.model = "test-model"
+    mock_config.api_key = None
+    mock_config.provider = "ollama"
+    mock_config.cache_enabled = False
+    mock_config.cache_type = None
+    mock_load_llm_config.return_value = mock_config
+    
+    # Mock LLM response - fixed YAML
+    fixed_yaml = """meta:
+  version: "1.0.0"
+  brief_id: test-brief-001
+entities:
+  - id: User
+    description: Người dùng hệ thống
+    fields:
+      - name: id
+        type: UUID
+        required: true
+    primary_key: id
+    tenant_scope: tenant_isolated
+    tags: [core]
+"""
+    mock_llm_response = MagicMock()
+    mock_llm_response.content = fixed_yaml
+    mock_call_llm.return_value = mock_llm_response
+    
+    # Mock validate_tree - lần đầu có errors
+    mock_tree = MagicMock()
+    mock_tree.node_count.return_value = 1
+    
+    mock_error = MagicMock()
+    mock_error.node_id = "User:1"
+    mock_error.message = "Missing required field: fields"
+    
+    mock_report_invalid = MagicMock()
+    mock_report_invalid.total_errors = 1
+    mock_report_invalid.total_warnings = 0
+    mock_report_invalid.total_info = 0
+    mock_report_invalid.status = MagicMock(name="ERRORS")
+    mock_report_invalid.get_errors_by_node.return_value = {
+        "User:1": [mock_error]
+    }
+    mock_report_invalid.get_warnings.return_value = []
+    mock_report_invalid.dependency_analysis = None
+    
+    mock_report_valid = MagicMock()
+    mock_report_valid.total_errors = 0
+    mock_report_valid.total_warnings = 0
+    mock_report_valid.total_info = 0
+    mock_report_valid.status = MagicMock(name="VALID")
+    mock_report_valid.get_errors_by_node.return_value = {}
+    mock_report_valid.get_warnings.return_value = []
+    mock_report_valid.dependency_analysis = None
+    
+    # Lần đầu validate → có errors, lần sau → valid
+    mock_validate_tree = MagicMock(side_effect=[mock_report_invalid, mock_report_valid])
+    mock_load_tree = MagicMock(return_value=mock_tree)
+    
+    with patch("midicoder.pipeline.commands.contract.load_projection_tree", mock_load_tree):
+        with patch("midicoder.pipeline.commands.contract.validate_tree", mock_validate_tree):
+            repair_contracts()
+    
+    # Verify LLM was called with repair prompt
+    assert mock_call_llm.called
+    call_args = mock_call_llm.call_args
+    assert "repair" in call_args.kwargs.get("system", "").lower() or "fix" in call_args.kwargs.get("system", "").lower()
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+@patch("midicoder.pipeline.commands.contract.call_llm")
+def test_repair_contracts_llm_error_handling(mock_call_llm, mock_echo, contracts_dir):
+    """
+    Test: Repair contracts khi LLM error.
+    
+    Expected:
+    - Display error message
+    - Suggest manual fix
+    - Return gracefully (không crash)
+    """
+    # Tạo contracts có lỗi
+    (contracts_dir / "entities.yaml").write_text("""
+meta:
+  version: "1.0.0"
+entities:
+  - id: User
+""")
+    
+    # Mock LLM error
+    from midicoder.llm.client import LlmRequestError
+    mock_call_llm.side_effect = LlmRequestError("LLM unavailable")
+    
+    mock_tree = MagicMock()
+    mock_tree.node_count.return_value = 1
+    
+    mock_report = MagicMock()
+    mock_report.total_errors = 1
+    mock_report.total_warnings = 0
+    mock_report.total_info = 0
+    mock_report.status = MagicMock(name="ERRORS")
+    mock_report.get_errors_by_node.return_value = {}
+    mock_report.get_warnings.return_value = []
+    mock_report.dependency_analysis = None
+    
+    with patch("midicoder.pipeline.commands.contract.load_projection_tree", return_value=mock_tree):
+        with patch("midicoder.pipeline.commands.contract.validate_tree", return_value=mock_report):
+            # Should not raise, handle gracefully
+            repair_contracts()
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+@patch("midicoder.pipeline.commands.contract.call_llm")
+@patch("midicoder.pipeline.commands.contract.load_llm_config")
+def test_repair_contracts_max_attempts(
+    mock_load_llm_config,
+    mock_call_llm,
+    mock_echo,
+    contracts_dir
+):
+    """
+    Test: Repair contracts với max retry attempts.
+    
+    Expected:
+    - Nếu LLM fix không valid → retry (max 3 attempts)
+    - Sau max attempts → display error và return
+    """
+    # Tạo contracts có lỗi
+    (contracts_dir / "entities.yaml").write_text("""
+meta:
+  version: "1.0.0"
+entities:
+  - id: User
+""")
+    
+    # Mock LLM config
+    mock_config = MagicMock()
+    mock_load_llm_config.return_value = mock_config
+    
+    # Mock LLM luôn trả về invalid fix
+    mock_llm_response = MagicMock()
+    mock_llm_response.content = "# Invalid YAML"
+    mock_call_llm.return_value = mock_llm_response
+    
+    mock_tree = MagicMock()
+    mock_tree.node_count.return_value = 1
+    
+    mock_report_invalid = MagicMock()
+    mock_report_invalid.total_errors = 1
+    mock_report_invalid.total_warnings = 0
+    mock_report_invalid.total_info = 0
+    mock_report_invalid.status = MagicMock(name="ERRORS")
+    mock_report_invalid.get_errors_by_node.return_value = {}
+    mock_report_invalid.get_warnings.return_value = []
+    mock_report_invalid.dependency_analysis = None
+    
+    with patch("midicoder.pipeline.commands.contract.load_projection_tree", return_value=mock_tree):
+        with patch("midicoder.pipeline.commands.contract.validate_tree", return_value=mock_report_invalid):
+            # Should not raise, should retry and eventually give up
+            repair_contracts()
+
+
+@patch("midicoder.pipeline.commands.contract.click.echo")
+def test_repair_contracts_empty_contract_dir(mock_echo, contracts_dir):
+    """
+    Test: Repair contracts khi contracts directory trống.
+    
+    Expected:
+    - Display error message
+    - Suggest running contract gen first
+    """
+    # Directory tồn tại nhưng không có files
+    repair_contracts()
 
 
 # ============================================================================
