@@ -10,7 +10,6 @@ Module này cung cấp:
 E00: Installation & Setup
 """
 
-from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
@@ -25,26 +24,8 @@ from prompt_toolkit.styles import Style as PromptStyle
 from prompt_toolkit.formatted_text import HTML
 
 
-# Đường dẫn ASCII logo
-ASCII_LOGO_PATH = Path(__file__) / "logo.txt"
-
-# Console instance với Rich styling - Force colors
-console = Console(force_terminal=True, color_system="truecolor")
-
-
-def get_ascii_logo() -> str:
-    """
-    Lấy ASCII logo từ file.
-
-    Returns:
-        ASCII art string
-
-    Raises:
-        FileNotFoundError: Nếu file logo không tồn tại
-    """
-    if not ASCII_LOGO_PATH.exists():
-        # Return fallback logo nếu file không có
-        return """
+# ASCII logo hardcoded
+ASCII_LOGO = """
        ##                               ##       
        #####                         #####       
        #######                     #######       
@@ -63,7 +44,19 @@ def get_ascii_logo() -> str:
        ######                       ######       
        ######                       ######       
         """
-    return ASCII_LOGO_PATH.read_text(encoding="utf-8")
+
+# Console instance với Rich styling - Force colors
+console = Console(force_terminal=True, color_system="truecolor")
+
+
+def get_ascii_logo() -> str:
+    """
+    Lấy ASCII logo.
+
+    Returns:
+        ASCII art string
+    """
+    return ASCII_LOGO
 
 
 def display_logo():
