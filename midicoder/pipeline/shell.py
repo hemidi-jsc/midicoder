@@ -6,10 +6,14 @@ Module này cung cấp:
 - ASCII logo display
 - Command completion
 - Beautiful output formatting
+- Update global config khi mở shell
 
 E00: Installation & Setup
 """
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
@@ -185,8 +189,22 @@ TEXTBOX_STYLE = PromptStyle.from_dict({
     'scrollbar-button-background': 'bg:#333333',
 })
 
-# Prompt với border style - Brand color: pink (#e90089)
-PROMPT_MESSAGE = HTML('<style bg="#e90089" fg="white">midicoder></style> ')
+
+def _get_prompt_message(cwd: str) -> str:
+    """
+    Lấy prompt message với cwd path.
+
+    Args:
+        cwd: Current working directory
+
+    Returns:
+        HTML prompt message với cwd
+    """
+    # Rút gọn path nếu quá dài
+    if len(cwd) > 50:
+        cwd = "..." + cwd[-47:]
+    
+    return HTML(f'<style bg="#e90089" fg="white">{cwd}> </style>')
 
 
 class MidicoderShell:
@@ -230,9 +248,12 @@ class MidicoderShell:
         # Start REPL loop
         while self.running:
             try:
-                # Prompt cho user input với textbox style (cyan background)
+                # Lấy current cwd để hiển thị trong prompt
+                current_cwd = str(Path.cwd().resolve())
+                
+                # Prompt cho user input với textbox style (pink background)
                 user_input = prompt(
-                    PROMPT_MESSAGE,
+                    _get_prompt_message(current_cwd),
                     style=TEXTBOX_STYLE,
                     default="",
                 )
@@ -321,6 +342,36 @@ class MidicoderShell:
             print_warning(f"Command exited with code {result.exit_code}")
 
 
+def _update_global_config_project_info():
+    """
+    Cập nhật project.cwd và project.last_opened trong global config.
+
+    Được gọi mỗi khi user mở shell (lệnh `midicoder`).
+    """
+    try:
+        from midicoder.pipeline.config import get_global_config_path
+        
+        config_path = get_global_config_path()
+        if not config_path.exists():
+            return
+        
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        current_cwd = str(Path.cwd().resolve())
+        
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+        
+        config_data["last_run"] = now
+        config_data["project"]["cwd"] = current_cwd
+        config_data["project"]["last_opened"] = now
+        
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=2, ensure_ascii=False)
+    except Exception:
+        # Không crash nếu có lỗi update config
+        pass
+
+
 def launch_shell(cli_callable, initial_command: Optional[str] = None):
     """
     Launch interactive shell.
@@ -329,5 +380,8 @@ def launch_shell(cli_callable, initial_command: Optional[str] = None):
         cli_callable: Click CLI group
         initial_command: Command để auto-execute (nếu có)
     """
+    # Cập nhật project.cwd và last_opened khi mở shell
+    _update_global_config_project_info()
+    
     shell = MidicoderShell(cli_callable)
     shell.start(initial_command)
