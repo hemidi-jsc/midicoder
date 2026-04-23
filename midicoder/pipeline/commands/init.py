@@ -27,7 +27,10 @@ import click
 from midicoder.pipeline.config import get_config, get_global_config_path, DEFAULT_GLOBAL_CONFIG
 
 
-def run_init() -> None:
+def run_init(
+    force: bool = False,
+    version: str = "v1.0.0"
+) -> None:
     """
     Khởi tạo Midicoder workspace.
 
@@ -39,17 +42,26 @@ def run_init() -> None:
     5. Start WebGUI
     6. Mở browser
 
+    Args:
+        force: Ghi đè .midicoder/ nếu đã tồn tại (không hỏi confirm)
+        version: Version ban đầu cho project (ví dụ: v1.0.0)
+
     Raises:
         Exception: Nếu bước nào đó thất bại
     """
     click.echo("🚀 Khởi tạo Midicoder workspace...")
 
+    # Lưu current working directory để update vào config
+    current_cwd = str(Path.cwd().resolve())
+
     # Bước 1: Kiểm tra workspace đã tồn tại chưa
     workspace_dir = Path.cwd() / ".midicoder"
     if workspace_dir.exists():
-        click.echo("⚠️  Workspace đã tồn tại.")
-        response = click.prompt("Ghi đè?", type=str, default="n")
-        if response.lower() != "y":
+        if force:
+            click.echo("⚠️  Workspace đã tồn tại, ghi đè với --force.")
+        else:
+            click.echo("⚠️  Workspace đã tồn tại.")
+            click.echo("💡 Sử dụng 'init --force' để ghi đè workspace cũ.")
             click.echo("❌ Hủy bỏ.")
             return
 
@@ -57,13 +69,13 @@ def run_init() -> None:
     click.echo("📁 Tạo cấu trúc thư mục...")
     _create_workspace_structure(workspace_dir)
 
-    # Bước 3: Khởi tạo global config
+    # Bước 3: Khởi tạo global config và update project.cwd
     click.echo("⚙️  Khởi tạo global config...")
-    _ensure_global_config()
+    _ensure_global_config(current_cwd)
 
     # Bước 4: Khởi tạo project config
     click.echo("📋 Khởi tạo project config...")
-    _create_project_config(workspace_dir)
+    _create_project_config(workspace_dir, version)
 
     # Bước 5: Khởi tạo SQLite databases
     click.echo("💾 Khởi tạo SQLite databases...")
@@ -72,6 +84,10 @@ def run_init() -> None:
     # Bước 6: Kiểm tra và start Neo4j
     click.echo("🔍 Kiểm tra Neo4j...")
     _ensure_neo4j_running()
+
+    # Bước 7: Start WebGUI
+    click.echo("🌐 Khởi động WebGUI...")
+    _start_webgui()
 
     # Xong
     click.echo("")
@@ -111,51 +127,77 @@ def _create_workspace_structure(workspace_dir: Path) -> None:
         click.echo(f"   ✓ {folder.relative_to(workspace_dir.parent)}")
 
 
-def _ensure_global_config() -> None:
+def _ensure_global_config(current_cwd: str) -> None:
     """
-    Đảm bảo global config file tồn tại.
+    Đảm bảo global config file tồn tại và update project info.
 
     Tạo ~/.midicoder/midicoder.json nếu chưa có.
+    Update project.cwd và project.last_opened mỗi khi init.
+
+    Args:
+        current_cwd: Đường dẫn project hiện tại
     """
     config_path = get_global_config_path()
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     if not config_path.exists():
         config_dir = config_path.parent
         config_dir.mkdir(parents=True, exist_ok=True)
 
         config_data = DEFAULT_GLOBAL_CONFIG.copy()
-        config_data["created_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        config_data["last_run"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        config_data["created_at"] = now
+        config_data["last_run"] = now
+        config_data["project"]["cwd"] = current_cwd
+        config_data["project"]["last_opened"] = now
 
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=2, ensure_ascii=False)
 
         click.echo(f"   ✓ Global config: {config_path}")
+        click.echo(f"   ✓ Project directory: {current_cwd}")
     else:
+        # Update project.cwd và last_opened mỗi khi init
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+
+        config_data["last_run"] = now
+        config_data["project"]["cwd"] = current_cwd
+        config_data["project"]["last_opened"] = now
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=2, ensure_ascii=False)
+
         click.echo(f"   ✓ Global config: {config_path}")
+        click.echo(f"   ✓ Updated project directory: {current_cwd}")
 
 
-def _create_project_config(workspace_dir: Path) -> None:
+def _create_project_config(workspace_dir: Path, version: str = "v1.0.0") -> None:
     """
-    Tạo project config file.
+    Tạo project config file theo SoT E01.
 
     Args:
         workspace_dir: Đường dẫn đến .midicoder/
+        version: Version ban đầu cho project
 
     Tạo file: .midicoder/config/midicoder.yml
     """
     import yaml
 
     config_file = workspace_dir / "config" / "midicoder.yml"
+    
+    # Tạo parent directory nếu chưa có
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     config_data = {
-        "version": "1.0.0",
+        "midicoder_version": "1.0.0",
         "created_at": now,
-        "active_version": "v1.0.0",
+        "active_version": version,
+        "max_versions": 5,  # Auto-cleanup khi vượt quá
         "capabilities": {
-            "enabled": [],
-            "domain_packs": [],
-            "regulatory_overlays": [],
+            "enabled": [],  # Ví dụ: CP01, CP02, CP03
+            "domain_packs": [],  # Ví dụ: DP01 (E-commerce)
+            "regulatory_overlays": [],  # Ví dụ: RX01 (GDPR)
         },
     }
 
@@ -215,13 +257,17 @@ def _ensure_neo4j_running() -> None:
     Kiểm tra và start Neo4j nếu cần.
 
     Theo config neo4j.docker_auto_start
+
+    Neo4j là dependency bắt buộc cho Midicoder.
+    Nếu không thể start, hiển thị hướng dẫn chi tiết.
     """
     config = get_config()
     neo4j_config = config.get("neo4j", {})
 
     if not neo4j_config.get("docker_auto_start", True):
         click.echo("   ℹ️  Docker auto-start disabled trong config")
-        click.echo("   💡 Để start Neo4j thủ công: docker-compose up -d neo4j")
+        click.echo("   💡 Để start Neo4j thủ công:")
+        click.echo("      docker run -d --name neo4j -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j:5")
         return
 
     # Kiểm tra Neo4j có đang chạy không
@@ -234,8 +280,25 @@ def _ensure_neo4j_running() -> None:
 
     # Kiểm tra Docker
     if not _docker_installed():
-        click.echo("   ⚠️  Docker không được cài đặt hoặc không chạy")
-        click.echo("   💡 Để start Neo4j: docker run -d --name neo4j -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j:5")
+        click.echo("")
+        click.echo("   ╔═══════════════════════════════════════════════════════════╗")
+        click.echo("   ║  DOCKER CHƯA ĐƯỢC CÀI ĐẶT HOẶC KHÔNG CHẠY                 ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Neo4j là dependency BẮT BUỘC cho Midicoder.              ║")
+        click.echo("   ║  Bạn cần cài đặt Docker và Neo4j để tiếp tục.             ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║ Hướng dẫn cài đặt:                                        ║")
+        click.echo("   ║  - docs/neo4j-setup.md (tiếng Anh)                        ║")
+        click.echo("   ║  - docs/neo4j-setup-vi.md (tiếng Việt)                    ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Cách nhanh nhất (Docker):                                ║")
+        click.echo("   ║  docker run -d --name midicoder-neo4j                     ║")
+        click.echo("   ║    -p 7474:7474 -p 7687:7687                              ║")
+        click.echo("   ║    -e NEO4J_AUTH=neo4j/password neo4j:5                   ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Sau đó chạy lại: midicoder init                          ║")
+        click.echo("   ╚═══════════════════════════════════════════════════════════╝")
+        click.echo("")
         return
 
     try:
@@ -259,13 +322,36 @@ def _ensure_neo4j_running() -> None:
             click.echo("   ℹ️  Đợi 10 giây để Neo4j khởi động...")
             import time
             time.sleep(10)
+            
+            # Kiểm tra lại sau khi đợi
+            if _is_neo4j_running():
+                click.echo("   ✓ Neo4j đã sẵn sàng!")
+            else:
+                click.echo("   ⚠️  Neo4j container started nhưng chưa sẵn sàng")
+                click.echo("   💡 Kiểm tra: docker logs midicoder-neo4j")
         else:
-            click.echo(f"   ⚠️  Không thể start Neo4j: {result.stderr}")
+            error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+            click.echo("")
+            click.echo("   ╔═══════════════════════════════════════════════════════════╗")
+            click.echo("   ║  KHÔNG THỂ START NEO4J CONTAINER                          ║")
+            click.echo("   ║                                                           ║")
+            click.echo(f"  ║  Lỗi: {error_msg[:60]}                                    ║")
+            click.echo("   ║                                                           ║")
+            click.echo("   ║  Nguyên nhân có thể:                                      ║")
+            click.echo("   ║  - Container đã tồn tại: docker rm -f midicoder-neo4j     ║")
+            click.echo("   ║  - Port bị chiếm: docker ps | grep neo4j                  ║")
+            click.echo("   ║  - Image chưa pull: docker pull neo4j:5                   ║")
+            click.echo("   ║                                                           ║")
+            click.echo("   ║  Hướng dẫn chi tiết: docs/neo4j-setup-vi.md               ║")
+            click.echo("   ╚═══════════════════════════════════════════════════════════╝")
+            click.echo("")
 
     except subprocess.TimeoutExpired:
         click.echo("   ⚠️  Timeout khi start Neo4j")
+        click.echo("   💡 Kiểm tra: docker logs midicoder-neo4j")
     except Exception as e:
         click.echo(f"   ⚠️  Lỗi khi start Neo4j: {e}")
+        click.echo("   💡 Hướng dẫn: docs/neo4j-setup-vi.md")
 
 
 def _is_neo4j_running() -> bool:
@@ -302,6 +388,30 @@ def _docker_installed() -> bool:
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
+
+
+def _start_webgui() -> None:
+    """
+    Khởi động WebGUI (FastAPI + Angular).
+
+    Theo SoT E00, WebGUI bao gồm:
+    - Backend: FastAPI chạy trên port 6868
+    - Frontend: Angular chạy trên port 7272
+
+    Hiện tại: Stub function, hiển thị hướng dẫn manual start.
+    """
+    click.echo("   ⚠️  WebGUI chưa được start tự động.")
+    click.echo("   💡 Để start WebGUI thủ công:")
+    click.echo("")
+    click.echo("   Backend (FastAPI):")
+    click.echo("     cd webgui/backend")
+    click.echo("     uvicorn main:app --host 0.0.0.0 --port 6868 --reload")
+    click.echo("")
+    click.echo("   Frontend (Angular):")
+    click.echo("     cd webgui/frontend")
+    click.echo("     ng serve --port 7272")
+    click.echo("")
+    click.echo("   Sau đó mở browser: http://localhost:7272")
 
 
 def run_init_interactive() -> None:

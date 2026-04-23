@@ -76,9 +76,8 @@ def cli(ctx, debug, quiet, json_output, config, project):
 
 @cli.command()
 @click.option("--force", is_flag=True, help="Ghi đè .midicoder/ nếu đã tồn tại")
-@click.option("--no-index", is_flag=True, help="Bỏ qua codebase indexing")
 @click.option("--version", "-v", default="v1.0.0", help="Phiên bản ban đầu (mặc định: v1.0.0)")
-def init(force, no_index, version):
+def init(force, version):
     """
     Khởi tạo Midicoder workspace.
 
@@ -94,7 +93,7 @@ def init(force, no_index, version):
       midicoder init --force --version v1.0.0
     """
     from midicoder.pipeline.commands.init import run_init
-    run_init(force=force, no_index=no_index, version=version)
+    run_init(force=force, version=version)
 
 
 @cli.group()

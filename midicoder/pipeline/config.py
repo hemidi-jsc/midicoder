@@ -41,9 +41,10 @@ GLOBAL_CONFIG_FILE = GLOBAL_CONFIG_DIR / "midicoder.json"
 PROJECT_CONFIG_DIR = Path(".midicoder")
 PROJECT_CONFIG_FILE = PROJECT_CONFIG_DIR / "config" / "midicoder.yml"
 
-# Cấu hình mặc định global theo SoT
+# Cấu hình mặc định global theo SoT E00
+# Lưu ý: project.cwd sẽ được update khi init, không phải khi import
 DEFAULT_GLOBAL_CONFIG = {
-    "midicoder_version": "1.0.0",
+    "version": "1.0.0",
     "created_at": None,  # Will be set on first init
     "last_run": None,
     "cli": {
@@ -81,22 +82,26 @@ DEFAULT_GLOBAL_CONFIG = {
         "open_browser": True,
     },
     "project": {
-        "cwd": str(Path.cwd()),
-        "last_opened": None,
+        "cwd": None,  # Will be set on init - đường dẫn project hiện tại
+        "last_opened": None,  # Will be set when project is opened
     },
-    "max_versions": 5,
+    "version": {
+        "max_versions": 5,
+    },
 }
 
-# Cấu hình mặc định project theo SoT
+# Cấu hình mặc định project theo SoT E01
 DEFAULT_PROJECT_CONFIG = {
-    "midicoder_version": "1.0.0",
+    "version": "1.0.0",
     "created_at": None,
+    "version": {
+        "max_versions": 5,  # Auto-cleanup when exceeded
+    },
     "active_version": "v1.0.0",
-    "max_versions": 5,
     "capabilities": {
-        "enabled": [],
-        "domain_packs": [],
-        "regulatory_overlays": [],
+        "enabled": [],  # Ví dụ: CP01, CP02, CP03
+        "domain_packs": [],  # Ví dụ: DP01 (E-commerce)
+        "regulatory_overlays": [],  # Ví dụ: RX01 (GDPR)
     },
 }
 
