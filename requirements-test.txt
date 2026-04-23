@@ -2,6 +2,7 @@ pytest
 pytest-cov
 pytest-mock
 pytest-asyncio
+pytest-subprocess
 ruamel.yaml
 rich
 pydantic

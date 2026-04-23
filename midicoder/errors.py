@@ -133,6 +133,65 @@ class ErrorCode(str, Enum):
     CONFIG_KEY_NOT_FOUND = "MDC-CONFIG-004"
     CONFIG_VALUE_INVALID = "MDC-CONFIG-005"
 
+
+class ExitCode(Enum):
+    """
+    Exit codes cho CLI commands.
+    
+    Theo standard Unix conventions:
+    - 0: Success
+    - 1-125: Errors from command
+    - 126: Command invoked cannot execute
+    - 127: Command not found
+    - 128+n: Fatal error signal
+    
+    Midicoder exit codes:
+    - 0: Success
+    - 1: Generic Error
+    - 2: Bad Arguments
+    - 3: File Not Found
+    - 4: Permission Denied
+    - 5: Config Error
+    - 6: Command Not Found
+    - 7: Already Initialized
+    - 130: Interrupt (Ctrl+C)
+    """
+    
+    SUCCESS = 0
+    GENERIC_ERROR = 1
+    BAD_ARGUMENTS = 2
+    FILE_NOT_FOUND = 3
+    PERMISSION_DENIED = 4
+    CONFIG_ERROR = 5
+    COMMAND_NOT_FOUND = 6
+    ALREADY_INITIALIZED = 7
+    INTERRUPT = 130
+    
+    @classmethod
+    def get_description(cls, code: int) -> str:
+        """
+        Lấy mô tả tiếng Việt cho exit code.
+        
+        Args:
+            code: Exit code integer
+            
+        Returns:
+            Mô tả tiếng Việt của exit code
+        """
+        descriptions = {
+            0: "Thành công",
+            1: "Lỗi không xác định",
+            2: "Lỗi arguments CLI",
+            3: "File/thư mục không tìm thấy",
+            4: "Không có quyền truy cập",
+            5: "Lỗi cấu hình",
+            6: "Command không tồn tại",
+            7: "Project đã được khởi tạo",
+            130: "Người dùng hủy bỏ (Ctrl+C)",
+        }
+        return descriptions.get(code, f"Exit code: {code}")
+
+
 @dataclass
 class MidicoderError(RuntimeError):
     """
