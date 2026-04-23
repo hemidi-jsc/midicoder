@@ -1,3 +1,12 @@
+# ============================================================================
+# MUST BE FIRST: Force UTF-8 encoding for Windows (before any imports)
+# ============================================================================
+import os
+
+# Force UTF-8 encoding for Windows
+os.environ["PYTHONUTF8"] = "1"
+# ============================================================================
+
 """
 CLI Entry Point cho Midicoder Pipeline.
 
@@ -9,11 +18,16 @@ CLI commands chính (theo requirement.md E20):
 - midicoder code plan/gen     : Tạo code
 - midicoder preview           : Start preview
 
+Interactive Shell:
+- midicoder                   : Mở interactive shell với Rich UI
+- midicoder init              : Vào shell rồi chạy init
+
 E00-E07: Core Pipeline Commands
 """
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 import click
 
@@ -348,11 +362,45 @@ def main():
     Main entry point cho CLI.
 
     Gọi từ __main__.py hoặc khi chạy `midicoder` command.
+
+    Logic:
+    - `midicoder` → Mở interactive shell
+    - `midicoder init` → Mở shell rồi chạy init
+    - `midicoder --help` → Hiển thị help (không vào shell)
     """
     try:
-        cli(obj={})
+        # Check có command nào không (loại bỏ các global flags)
+        args = sys.argv[1:]
+        
+        # Check nếu có --help hoặc --version thì CLI bình thường (không vào shell)
+        has_help = "--help" in args or "-h" in args
+        has_version = "--version" in args
+        
+        if has_help or has_version:
+            # midicoder --help / --version → CLI bình thường
+            cli(obj={})
+        elif not args:
+            # midicoder (không có gì) → vào shell
+            from midicoder.pipeline.shell import launch_shell
+            launch_shell(cli, initial_command=None)
+        else:
+            # Có command → vào shell rồi execute command
+            # Bỏ global flags ra khỏi command
+            commands = [
+                arg for arg in args 
+                if not arg.startswith("--") and arg not in ["-h", "-v"]
+            ]
+            if commands:
+                initial_command = " ".join(commands)
+                from midicoder.pipeline.shell import launch_shell
+                launch_shell(cli, initial_command=initial_command)
+            else:
+                # Chỉ có flags → vào shell
+                from midicoder.pipeline.shell import launch_shell
+                launch_shell(cli, initial_command=None)
+
     except KeyboardInterrupt:
-        click.echo("\nInterrupted by user")
+        click.echo("\n\nInterrupted by user")
         sys.exit(130)
     except Exception as e:
         click.echo(f"Lỗi: {e}", err=True)
