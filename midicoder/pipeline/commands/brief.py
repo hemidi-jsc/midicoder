@@ -7,6 +7,7 @@ Lệnh quản lý briefs theo SoT E02, E20:
 - brief save: Lưu vào library
 - brief load: Load từ library
 - brief list: Hiển thị danh sách briefs
+- brief library: Hiển thị industry templates
 
 Brief types (E01):
 - working-brief: Brief đang phân tích (draft)
@@ -30,23 +31,71 @@ from midicoder.storage.sqlite import (
 )
 
 
-def analyze_brief(
-    brief_path: Optional[str] = None,
-    domain: Optional[str] = None,
-    force: bool = False
-) -> None:
+@click.group()
+def brief():
     """
-    Phân tích brief để extract requirements bằng LLM.
+    Quản lý và phân tích yêu cầu (briefs).
 
-    Theo SoT E02:
-    - Input: user brief (natural language)
-    - Process: LLM extracts requirements
-    - Output: working-brief (SQLite)
+    Brief là mô tả yêu cầu hệ thống bằng tự nhiên (Markdown).
+    Các lệnh con:
+      analyze  Phân tích brief để extract requirements
+      clarify  Interactive clarification session
+      save     Lưu brief vào library
+      load     Load brief từ library
+      list     Hiển thị danh sách briefs
+      library  Hiển thị industry brief templates
+    """
+    pass
+
+
+@brief.command()
+@click.argument("brief_path", type=click.Path(exists=True), required=False)
+@click.option(
+    "--file", "-f",
+    "file_path",
+    type=click.Path(exists=True),
+    help="Đường dẫn đến brief file (default: brief.md)"
+)
+@click.option(
+    "--domain",
+    type=str,
+    help="Tên domain (optional)"
+)
+def analyze(brief_path, file_path, domain):
+    """
+    Phân tích brief để extract requirements.
+
+    Sử dụng LLM để hiểu brief và tạo brief analysis.
+    Lưu kết quả vào SQLite (working-brief).
+
+    ARGUMENTS:
+      brief_path  Đường dẫn đến brief file (optional)
+
+    OPTIONS:
+      -f, --file FILE    Đường dẫn đến brief file
+      --domain DOMAIN    Tên domain (optional)
+
+    EXAMPLES:
+      midicoder brief analyze
+      midicoder brief analyze -f my-brief.md
+      midicoder brief analyze ./docs/requirements.md
+    """
+    # Ưu tiên file_path từ --file option
+    if file_path:
+        brief_path = file_path
+    elif not brief_path:
+        brief_path = "brief.md"
+
+    _execute_analyze(brief_path, domain)
+
+
+def _execute_analyze(brief_path: str, domain: Optional[str] = None) -> None:
+    """
+    Thực thi phân tích brief.
 
     Args:
-        brief_path: Đường dẫn đến brief file (default: brief.md)
-        domain: Domain name (optional)
-        force: Force regenerate even if exists
+        brief_path: Đường dẫn đến brief file
+        domain: Tên domain (optional)
 
     Raises:
         FileNotFoundError: Nếu brief file không tồn tại
@@ -54,9 +103,6 @@ def analyze_brief(
     click.echo("📖 Đang phân tích brief...")
 
     # Bước 1: Đọc brief
-    if brief_path is None:
-        brief_path = "brief.md"
-
     brief_file = Path(brief_path)
     if not brief_file.exists():
         click.echo(f"❌ File không tồn tại: {brief_path}")
@@ -78,7 +124,7 @@ def analyze_brief(
             existing = brief
             break
 
-    if existing and not force:
+    if existing:
         click.echo(f"⚠️  Brief đã tồn tại: {existing.get('brief_id')}")
         response = click.prompt("Ghi đè?", type=str, default="n")
         if response.lower() != "y":
@@ -107,14 +153,14 @@ def analyze_brief(
     click.echo(f"   → Type: {record['type']}")
     click.echo(f"   → Status: {record['status']}")
 
-    # Bước 4: LLM analysis (placeholder - integrate with LLM client later)
+    # Bước 4: LLM analysis (placeholder - integrate với LLM client sau)
     click.echo("")
     click.echo("🤖 Đang phân tích requirements bằng LLM...")
     click.echo("   ℹ️  LLM analysis - sẽ integrate với LLM client")
     click.echo("   → Extract: entities, commands, queries, events")
     click.echo("   → Domain: " + (domain or "auto-detect"))
 
-    # Step 5: Log activity
+    # Bước 5: Log activity
     try:
         artifacts_manager = ArtifactsManager()
         artifacts_manager.init()
@@ -126,9 +172,9 @@ def analyze_brief(
             brief_id=brief_id,
         )
     except Exception as e:
-        click.echo(f"   ⚠️  Could not log artifact: {e}")
+        click.echo(f"   ⚠️  Không thể log artifact: {e}")
 
-    # Step 6: Update status
+    # Bước 6: Update status
     briefs_manager.update_status(brief_id, "analyzed")
 
     # Done
@@ -140,23 +186,36 @@ def analyze_brief(
     click.echo("  2. midicoder contract gen - Generate DSL contracts (skip clarify)")
 
 
-def clarify_brief(max_rounds: int = 10) -> None:
+@brief.command()
+@click.option(
+    "--max-rounds", "-n",
+    default=10,
+    type=int,
+    help="Số vòng clarification tối đa (default: 10)"
+)
+def clarify(max_rounds):
     """
-    Interactive clarification session với LLM.
+    Interactive clarification session.
 
-    Theo SoT E02:
-    - Input: working-brief + user answers
-    - Process: Interactive Q&A loop
-    - Output: master-brief + clarifications (SQLite)
+    Chat với LLM để làm rõ yêu cầu từ working-brief.
+    Kết quả: master-brief + clarifications (SQLite)
 
-    Clarifications lưu trong table clarifications:
-    - brief_id, round_number, question, answer, is_memo
+    OPTIONS:
+      -n, --max-rounds N  Số vòng clarification tối đa (default: 10)
+
+    EXAMPLES:
+      midicoder brief clarify
+      midicoder brief clarify --max-rounds 5
+    """
+    _execute_clarify(max_rounds)
+
+
+def _execute_clarify(max_rounds: int = 10) -> None:
+    """
+    Thực thi clarification session.
 
     Args:
-        max_rounds: Max clarification rounds (default: 10)
-
-    Raises:
-        RuntimeError: Nếu không có working-brief
+        max_rounds: Số vòng clarification tối đa
     """
     click.echo("💬 Clarification mode")
     click.echo("=" * 60)
@@ -211,14 +270,39 @@ def clarify_brief(max_rounds: int = 10) -> None:
     click.echo("  2. midicoder contract gen - Generate DSL contracts")
 
 
-def save_brief(name: str, tags: Optional[str] = None) -> None:
+@brief.command()
+@click.option(
+    "--name", "-n",
+    required=True,
+    type=str,
+    help="Tên library brief (bắt buộc)"
+)
+@click.option(
+    "--tags", "-t",
+    type=str,
+    help="Tags cách nhau bằng dấu phẩy (optional)"
+)
+def save(name, tags):
     """
     Lưu brief vào library.
 
-    Theo SoT E02:
-    - Input: master-brief (đã clarified)
-    - Process: Mark as library-brief
-    - Output: library-brief (SQLite + optional MD export)
+    Lưu master-brief vào library để tái sử dụng.
+    Có thể export ra file Markdown.
+
+    OPTIONS:
+      -n, --name NAME    Tên library brief (bắt buộc)
+      -t, --tags TAGS    Tags cách nhau bằng dấu phẩy (optional)
+
+    EXAMPLES:
+      midicoder brief save --name "ecommerce-d2c"
+      midicoder brief save -n "ecommerce-d2c" -t "ecommerce,retail"
+    """
+    _execute_save(name, tags)
+
+
+def _execute_save(name: str, tags: Optional[str] = None) -> None:
+    """
+    Thực thi lưu brief vào library.
 
     Args:
         name: Tên library brief
@@ -257,17 +341,31 @@ def save_brief(name: str, tags: Optional[str] = None) -> None:
     click.echo(f"✅ Brief đã lưu vào library: {name}")
 
 
-def load_brief(name: str) -> None:
+@brief.command()
+@click.argument("name")
+def load(name):
     """
     Load brief từ library.
 
-    Theo SoT E02:
-    - Input: library brief name
-    - Process: Load from SQLite or industry/briefs/
-    - Output: working-brief
+    Load brief từ library (SQLite hoặc industry/briefs/).
+    Tạo working-brief mới từ library brief.
+
+    ARGUMENTS:
+      name  Tên library brief
+
+    EXAMPLES:
+      midicoder brief load ecommerce-d2c
+      midicoder brief load banking-core
+    """
+    _execute_load(name)
+
+
+def _execute_load(name: str) -> None:
+    """
+    Thực thi load brief từ library.
 
     Args:
-        name: Library brief name
+        name: Tên library brief
     """
     click.echo(f"📚 Load brief từ library: {name}")
 
@@ -301,9 +399,31 @@ def load_brief(name: str) -> None:
     click.echo(f"✅ Brief đã load: {name}")
 
 
-def list_briefs(domain: Optional[str] = None) -> None:
+@brief.command()
+@click.option(
+    "--domain",
+    type=str,
+    help="Lọc theo domain (optional)"
+)
+def list(domain):
     """
     Hiển thị danh sách briefs.
+
+    Hiển thị tất cả briefs trong SQLite, phân loại theo type.
+
+    OPTIONS:
+      --domain DOMAIN  Lọc theo domain (optional)
+
+    EXAMPLES:
+      midicoder brief list
+      midicoder brief list --domain finance
+    """
+    _execute_list(domain)
+
+
+def _execute_list(domain: Optional[str] = None) -> None:
+    """
+    Thực thi hiển thị danh sách briefs.
 
     Args:
         domain: Filter by domain (optional)
@@ -355,11 +475,23 @@ def list_briefs(domain: Optional[str] = None) -> None:
     click.echo(f"Total: {len(briefs)} briefs")
 
 
-def brief_library() -> None:
+@brief.command()
+def library():
     """
-    Industry brief library browser.
+    Hiển thị industry brief templates.
 
-    Hiển thị các templates sẵn có trong industry/briefs/
+    Hiển thị các brief templates sẵn có trong industry/briefs/.
+    Có thể load bằng 'midicoder brief load <name>'.
+
+    EXAMPLES:
+      midicoder brief library
+    """
+    _execute_library()
+
+
+def _execute_library() -> None:
+    """
+    Thực thi hiển thị industry brief library.
     """
     click.echo("📚 Industry Brief Library")
     click.echo("=" * 60)

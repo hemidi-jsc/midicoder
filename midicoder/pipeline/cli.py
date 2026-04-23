@@ -96,44 +96,9 @@ def init(force, version):
     run_init(force=force, version=version)
 
 
-@cli.group()
-def brief():
-    """
-    Quản lý và phân tích yêu cầu (briefs).
-
-    Brief là mô tả yêu cầu hệ thống bằng tự nhiên (Markdown).
-    """
-    pass
-
-
-@brief.command()
-@click.argument("brief_path", type=click.Path(exists=True), required=False)
-def analyze(brief_path):
-    """
-    Phân tích brief để extract requirements.
-
-    Sử dụng LLM để hiểu brief và tạo brief analysis.
-    """
-    from midicoder.pipeline.commands.brief import analyze_brief
-    analyze_brief(brief_path or "brief.md")
-
-
-@brief.command()
-def clarify():
-    """
-    Interactive clarification session.
-
-    Chat với LLM để làm rõ yêu cầu.
-    """
-    click.echo("Clarification mode - coming soon")
-
-
-@brief.command()
-def list():
-    """
-    Hiển thị danh sách briefs.
-    """
-    click.echo("Brief list - coming soon")
+# Import brief group từ brief.py
+from midicoder.pipeline.commands.brief import brief as brief_group
+cli.add_command(brief_group)
 
 
 @cli.group()
