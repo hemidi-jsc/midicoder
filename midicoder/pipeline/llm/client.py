@@ -1,42 +1,63 @@
 """
-LLM Client cho Midicoder Pipeline.
+LLM Client cho Midicoder Pipeline (REBUILD với litellm).
 
-Cung cấp wrapper abstraction cho nhiều LLM providers:
-- openai-compatible: Custom URL với OpenAI API format (default)
+Sử dụng litellm SDK để wrap multiple LLM providers:
+- openai-compatible: Custom URL với OpenAI API format
 - openai: OpenAI API
 - anthropic: Anthropic API
 - aws-bedrock: AWS Bedrock
 - azure: Azure AI Foundry
 - vertex: Google Vertex AI
 
-E20: CLI Commands
+Sử dụng:
+    from midicoder.pipeline.llm import load_llm_config, call_llm, call_llm_async, call_llm_stream
+
+    # Load config
+    config = load_llm_config()
+
+    # Sync call
+    response = call_llm(config=config, messages=[{"role": "user", "content": "Hello!"}])
+
+    # Async call
+    response = await call_llm_async(config=config, messages=...)
+
+    # Streaming
+    async for chunk in call_llm_stream(config=config, messages=...):
+        print(chunk.content, end="")
 """
 
 from __future__ import annotations
 
-import json
-import os
 import time
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Optional
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from typing import Any, AsyncIterator, Optional
 
-from midicoder.errors import ErrorCode, MidicoderError, MidicoderErrorManager as EM
+import litellm
+from litellm import APIError, RateLimitError, AuthenticationError
+
 from midicoder.pipeline.config import get_config
 
+# Logger cho metadata logging
+logger = __import__("logging").getLogger(__name__)
 
-class LlmProvider(Enum):
-    """Các LLM providers được hỗ trợ."""
-    
-    OPENAI_COMPATIBLE = "openai-compatible"
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    AWS_BEDROCK = "aws-bedrock"
-    AZURE = "azure"
-    VERTEX = "vertex"
 
+# ============================================================================
+# Supported Providers
+# ============================================================================
+
+SUPPORTED_PROVIDERS = [
+    "openai-compatible",
+    "openai",
+    "anthropic",
+    "aws-bedrock",
+    "azure",
+    "vertex",
+]
+
+
+# ============================================================================
+# Data Classes
+# ============================================================================
 
 @dataclass(frozen=True)
 class LlmConfig:
@@ -44,23 +65,23 @@ class LlmConfig:
     Cấu hình cho LLM client.
     
     Attributes:
-        provider: LLM provider để sử dụng
-        model: Model name (vd: "gpt-4o", "claude-3-sonnet")
+        provider: LLM provider (openai-compatible, openai, anthropic, aws-bedrock, azure, vertex)
+        model: Model name (vd: "gpt-4o", "claude-3-sonnet", "qwen3.5-27B")
         api_url: API endpoint URL
         api_key: API key cho authentication (optional)
-        max_tokens: Max tokens cho response
-        temperature: Temperature cho sampling (0.0-1.0)
-        timeout_seconds: Timeout cho request
-        retry_attempts: Số lần retry khi fail
+        max_tokens: Max tokens cho response (default: 8192)
+        temperature: Temperature cho sampling 0.0-1.0 (default: 0.3)
+        timeout: Timeout cho request bằng giây (default: 300)
+        retry_attempts: Số lần retry khi fail (default: 3)
     """
     
-    provider: LlmProvider
+    provider: str
     model: str
     api_url: str
     api_key: Optional[str] = None
     max_tokens: int = 8192
     temperature: float = 0.3
-    timeout_seconds: int = 300
+    timeout: int = 300
     retry_attempts: int = 3
 
 
@@ -71,190 +92,92 @@ class LlmResponse:
     
     Attributes:
         content: Content từ LLM response
-        raw: Raw JSON response
-        usage: Token usage info (nếu có)
+        usage: Token usage info (prompt_tokens, completion_tokens, total_tokens)
+        raw: Raw response object từ litellm
     """
     
     content: str
-    raw: str
+    usage: dict
+    raw: Any = None
+
+
+@dataclass
+class LlmStreamChunk:
+    """
+    Chunk từ streaming LLM response.
+    
+    Attributes:
+        content: Incremental content (có thể empty)
+        usage: Token usage (chỉ có trong last chunk)
+    """
+    
+    content: str
     usage: Optional[dict] = None
-
-
-# ============================================================================
-# LLM Error Classes
-# ============================================================================
-
-class LlmError(MidicoderError):
-    """Base class cho tất cả LLM errors."""
-    
-    pass
-
-
-class LlmRequestError(LlmError):
-    """
-    Lỗi khi request đến LLM fail.
-    
-    Attributes:
-        status_code: HTTP status code (nếu có)
-        raw_response: Raw response từ server
-    """
-    
-    def __init__(
-        self,
-        message: str,
-        *,
-        status_code: Optional[int] = None,
-        raw_response: Optional[str] = None,
-    ) -> None:
-        context = _filter_null_values({
-            "status_code": status_code,
-            "raw_response": raw_response,
-        })
-        self._raw_message = message  # Store raw message for custom str
-        super().__init__(
-            code=ErrorCode.LLM_REQUEST_FAILED,
-            message=message,  # Store raw message
-            context=context,
-        )
-        self.status_code = status_code
-        self.raw_response = raw_response
-    
-    def __str__(self) -> str:
-        parts = [f"[LLM-001] LLM request thất bại: {self._raw_message}"]
-        if self.status_code:
-            parts.append(f"(status_code={self.status_code})")
-        return " ".join(parts)
-
-
-class LlmAuthError(LlmError):
-    """Lỗi authentication (401)."""
-    
-    def __init__(self, message: str = "Authentication failed") -> None:
-        super().__init__(
-            code=ErrorCode.LLM_AUTH_FAILED,
-            message=f"LLM authentication thất bại: {message}",
-        )
-
-
-class LlmRateLimitError(LlmError):
-    """
-    Lỗi rate limit (429).
-    
-    Attributes:
-        retry_after: Số giây cần chờ trước khi retry
-    """
-    
-    def __init__(
-        self,
-        message: str = "Rate limit exceeded",
-        *,
-        retry_after: Optional[int] = None,
-    ) -> None:
-        super().__init__(
-            code=ErrorCode.LLM_RATE_LIMIT,
-            message=f"LLM rate limit: {message}",
-            context={"retry_after": retry_after} if retry_after else {},
-        )
-        self.retry_after = retry_after
-
-
-class LlmTimeoutError(LlmError):
-    """
-    Lỗi timeout khi call LLM.
-    
-    Attributes:
-        timeout: Timeout seconds đã thiết lập
-    """
-    
-    def __init__(
-        self,
-        message: str = "Request timeout",
-        *,
-        timeout: int = 300,
-    ) -> None:
-        super().__init__(
-            code=ErrorCode.LLM_TIMEOUT,
-            message=f"LLM request timeout: {message}",
-            context={"timeout": timeout},
-        )
-        self.timeout = timeout
-
-
-def _filter_null_values(d: dict) -> dict:
-    """
-    Lọc các key với None values từ dict.
-    
-    Args:
-        d: Dict source
-        
-    Returns:
-        Dict không chứa None values
-    """
-    return {k: v for k, v in d.items() if v is not None}
 
 
 # ============================================================================
 # Config Loading
 # ============================================================================
 
-def load_llm_config(tier: str = "analyze") -> LlmConfig:
+def load_llm_config() -> LlmConfig:
     """
-    Load LLM config từ global config.
+    Load LLM config từ global config file.
     
-    Load config theo thứ tự ưu tiên:
-    1. Tier-specific overrides (llm.<tier>.*)
-    2. Base LLM config (llm.*)
-    3. Environment variables
-    4. Defaults
+    Đọc config từ ~/.midicoder/midicoder.json với structure:
+    {
+        "llm": {
+            "provider": "openai-compatible",
+            "model": "qwen3.5-27B",
+            "api_url": "http://localhost:11434/v1",
+            "api_key": "sk-...",
+            "max_tokens": 8192,
+            "temperature": 0.3,
+            "timeout": 300,
+            "retry_attempts": 3
+        }
+    }
     
-    Args:
-        tier: Tier name ("analyze", "repair", "code")
-        
     Returns:
-        LlmConfig instance
-        
+        LlmConfig instance với values từ config file + defaults
+    
     Raises:
-        MidicoderError: Nếu config không hợp lệ
+        ValueError: Nếu thiếu required fields (model, api_url) hoặc provider không hợp lệ
     """
     config = get_config()
     
-    # Load base LLM config
-    provider_str = config.get("llm.provider", "openai-compatible")
+    # Read from nested llm.* keys
+    provider = config.get("llm.provider", "openai-compatible")
     model = config.get("llm.model")
     api_url = config.get("llm.api_url")
     api_key = config.get("llm.api_key")
+    
+    # Optional fields với defaults
     max_tokens = config.get("llm.max_tokens", 8192)
     temperature = config.get("llm.temperature", 0.3)
-    timeout_seconds = config.get("llm.timeout_seconds", 300)
+    timeout = config.get("llm.timeout", 300)
     retry_attempts = config.get("llm.retry_attempts", 3)
     
+    # Apply defaults nếu None
+    if max_tokens is None:
+        max_tokens = 8192
+    if temperature is None:
+        temperature = 0.3
+    if timeout is None:
+        timeout = 300
+    if retry_attempts is None:
+        retry_attempts = 3
+    
     # Validate required fields
-    if not model or not api_url:
-        raise EM.raise_error(
-            ErrorCode.LLM_CONFIG_INVALID,
-            message="Thiếu model hoặc api_url trong LLM config",
-        )
+    if not model:
+        raise ValueError("Thiếu 'llm.model' trong config file")
+    if not api_url:
+        raise ValueError("Thiếu 'llm.api_url' trong config file")
     
-    # Apply tier-specific overrides
-    tier_max_tokens = config.get(f"llm.{tier}.max_tokens")
-    tier_temperature = config.get(f"llm.{tier}.temperature")
-    
-    if tier_max_tokens is not None:
-        max_tokens = tier_max_tokens
-    if tier_temperature is not None:
-        temperature = tier_temperature
-    
-    # Try to get API key from environment if not in config
-    if not api_key:
-        api_key = _get_api_key_from_env(provider_str)
-    
-    # Convert provider string to enum
-    try:
-        provider = LlmProvider(provider_str)
-    except ValueError:
-        raise EM.raise_error(
-            ErrorCode.LLM_CONFIG_INVALID,
-            message=f"Provider không hợp lệ: {provider_str}",
+    # Validate provider
+    if provider not in SUPPORTED_PROVIDERS:
+        raise ValueError(
+            f"Provider '{provider}' không hợp lệ. "
+            f"Supported: {', '.join(SUPPORTED_PROVIDERS)}"
         )
     
     return LlmConfig(
@@ -264,345 +187,306 @@ def load_llm_config(tier: str = "analyze") -> LlmConfig:
         api_key=api_key,
         max_tokens=max_tokens,
         temperature=temperature,
-        timeout_seconds=timeout_seconds,
+        timeout=timeout,
         retry_attempts=retry_attempts,
     )
 
 
-def _get_api_key_from_env(provider: str) -> Optional[str]:
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def _build_messages(system: Optional[str], messages: list[dict[str, str]]) -> list[dict[str, str]]:
     """
-    Lấy API key từ environment variable.
+    Build messages list cho litellm từ system prompt + messages.
     
     Args:
-        provider: Provider name
+        system: System prompt (optional)
+        messages: User messages list
         
     Returns:
-        API key hoặc None
+        Formatted messages list cho litellm
     """
-    env_key_mapping = {
-        "openai": "OPENAI_API_KEY",
-        "openai-compatible": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "aws-bedrock": "AWS_bedrock_API_KEY",
-        "azure": "AZURE_API_KEY",
-        "vertex": "VERTEX_API_KEY",
+    result = []
+    
+    if system:
+        result.append({"role": "system", "content": system})
+    
+    result.extend(messages)
+    
+    return result
+
+
+def _extract_usage(usage_obj: Any) -> dict:
+    """
+    Extract usage dict từ litellm response usage object.
+    
+    Args:
+        usage_obj: Usage object từ litellm response
+        
+    Returns:
+        Dict với prompt_tokens, completion_tokens, total_tokens
+    """
+    if usage_obj is None:
+        return {}
+    
+    # litellm usage có thể là object hoặc dict
+    if hasattr(usage_obj, "prompt_tokens"):
+        return {
+            "prompt_tokens": getattr(usage_obj, "prompt_tokens", 0),
+            "completion_tokens": getattr(usage_obj, "completion_tokens", 0),
+            "total_tokens": getattr(usage_obj, "total_tokens", 0),
+        }
+    
+    # Nếu là dict
+    return {
+        "prompt_tokens": usage_obj.get("prompt_tokens", 0),
+        "completion_tokens": usage_obj.get("completion_tokens", 0),
+        "total_tokens": usage_obj.get("total_tokens", 0),
     }
+
+
+def _log_call(
+    config: LlmConfig,
+    status: str,
+    tokens_used: int = 0,
+    latency_ms: int = 0,
+) -> None:
+    """
+    Log LLM call metadata (không log content).
     
-    env_var = env_key_mapping.get(provider)
-    if env_var:
-        return os.environ.get(env_var)
-    
-    return None
+    Args:
+        config: LLM config
+        status: "success" hoặc "error"
+        tokens_used: Số tokens đã dùng
+        latency_ms: Latency bằng mili giây
+    """
+    logger.info(
+        "LLM call completed",
+        extra={
+            "provider": config.provider,
+            "model": config.model,
+            "tokens_used": tokens_used,
+            "latency_ms": latency_ms,
+            "status": status,
+        },
+    )
 
 
 # ============================================================================
-# LLM Calling
+# Sync API
 # ============================================================================
 
 def call_llm(
     config: LlmConfig,
     *,
     system: Optional[str] = None,
-    context: Optional[str] = None,
-    prompt: Optional[str] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
+    messages: Optional[list[dict[str, str]]] = None,
 ) -> LlmResponse:
     """
-    Call LLM với retry logic và error handling.
+    Call LLM sync, trả về full response.
     
-    Xây dựng messages theo OpenAI format và gửi request đến LLM.
-    Hỗ trợ retry với exponential backoff.
+    Sử dụng litellm.completion() để gọi LLM. Block cho đến khi response
+    hoàn chỉnh. Retry logic do litellm handle.
     
     Args:
         config: LLM config
         system: System prompt (optional)
-        context: Context message (optional)
-        prompt: User prompt (optional)
-        temperature: Override temperature (optional)
-        max_tokens: Override max tokens (optional)
+        messages: User messages list (OpenAI-style format)
         
     Returns:
-        LlmResponse với content và raw response
+        LlmResponse với content, usage, raw
         
     Raises:
-        ValueError: Nếu không có system, context, hoặc prompt
-        LlmAuthError: Nếu authentication fail (401)
-        LlmRateLimitError: Nếu rate limited (429)
-        LlmTimeoutError: Nếu request timeout
-        LlmRequestError: Nếu request fail khác
+        litellm.APIError: Khi API trả về error
+        litellm.RateLimitError: Khi rate limit
+        litellm.AuthenticationError: Khi auth fail
     """
-    if not any([system, context, prompt]):
-        raise ValueError("call_llm requires at least one of system, context, or prompt")
+    messages_list = _build_messages(system, messages or [])
     
-    # Build messages
-    messages: list[dict[str, Any]] = []
+    start_time = time.time()
     
-    if system:
-        messages.append({"role": "system", "content": system})
-    
-    if context:
-        messages.append({"role": "user", "content": context})
-    
-    if prompt:
-        messages.append({"role": "user", "content": prompt})
-    
-    # Build payload
-    payload = _build_payload(
-        config=config,
-        messages=messages,
-        temperature=temperature or config.temperature,
-        max_tokens=max_tokens or config.max_tokens,
-    )
-    
-    # Retry loop
-    last_error: Optional[Exception] = None
-    
-    for attempt in range(config.retry_attempts):
-        try:
-            return _send_request(config, payload)
-        except (LlmAuthError, LlmRateLimitError, LlmTimeoutError):
-            # Re-raise immediately for these errors
-            raise
-        except LlmRequestError as e:
-            last_error = e
-            if attempt < config.retry_attempts - 1:
-                # Exponential backoff
-                wait_time = (2 ** attempt) * 1
-                time.sleep(wait_time)
+    try:
+        # Call litellm completion
+        response = litellm.completion(
+            model=f"{config.provider}/{config.model}",
+            messages=messages_list,
+            api_base=config.api_url,
+            api_key=config.api_key,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            timeout=config.timeout,
+            num_retries=config.retry_attempts,
+            stream=False,
+        )
+        
+        # Extract content (handle cả dict và object response)
+        content = ""
+        if response.choices:
+            choice = response.choices[0]
+            if isinstance(choice, dict):
+                content = choice.get("message", {}).get("content", "")
             else:
-                raise
-        except Exception as e:
-            last_error = e
-            if attempt < config.retry_attempts - 1:
-                wait_time = (2 ** attempt) * 1
-                time.sleep(wait_time)
-            else:
-                raise LlmRequestError(f"Unknown error: {e}") from e
-    
-    raise LlmRequestError("Max retry attempts exceeded") from last_error
+                content = choice.message.content
+        
+        # Extract usage
+        usage = _extract_usage(response.usage)
+        
+        latency_ms = int((time.time() - start_time) * 1000)
+        _log_call(config, "success", usage.get("total_tokens", 0), latency_ms)
+        
+        return LlmResponse(
+            content=content,
+            usage=usage,
+            raw=response,
+        )
+        
+    except (APIError, RateLimitError, AuthenticationError):
+        latency_ms = int((time.time() - start_time) * 1000)
+        _log_call(config, "error", 0, latency_ms)
+        raise
 
 
-def _build_payload(
+# ============================================================================
+# Async API
+# ============================================================================
+
+async def call_llm_async(
     config: LlmConfig,
-    messages: list[dict[str, Any]],
-    temperature: float,
-    max_tokens: int,
-) -> dict[str, Any]:
+    *,
+    system: Optional[str] = None,
+    messages: Optional[list[dict[str, str]]] = None,
+) -> LlmResponse:
     """
-    Build request payload theo provider.
+    Call LLM async, trả về full response.
+    
+    Sử dụng litellm.acompletion() để gọi LLM non-blocking.
     
     Args:
         config: LLM config
-        messages: Messages list
-        temperature: Temperature
-        max_tokens: Max tokens
+        system: System prompt (optional)
+        messages: User messages list
         
     Returns:
-        Payload dict
-    """
-    base_payload = {
-        "model": config.model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    
-    # Provider-specific adjustments
-    if config.provider == LlmProvider.ANTHROPIC:
-        return _build_anthropic_payload(base_payload, messages)
-    elif config.provider == LlmProvider.AWS_BEDROCK:
-        return _build_bedrock_payload(base_payload)
-    elif config.provider == LlmProvider.AZURE:
-        return _build_azure_payload(base_payload)
-    elif config.provider == LlmProvider.VERTEX:
-        return _build_vertex_payload(base_payload)
-    
-    # Default: OpenAI-compatible format
-    return base_payload
-
-
-def _build_anthropic_payload(
-    base_payload: dict,
-    messages: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Build Anthropic-specific payload."""
-    # Anthropic uses different field names
-    return {
-        "model": base_payload["model"],
-        "messages": messages,
-        "temperature": base_payload["temperature"],
-        "max_tokens": base_payload["max_tokens"],
-        "system": next(
-            (m["content"] for m in messages if m.get("role") == "system"),
-            None,
-        ),
-    }
-
-
-def _build_bedrock_payload(base_payload: dict) -> dict[str, Any]:
-    """Build AWS Bedrock-specific payload."""
-    # Bedrock wraps payload in additional structure
-    return {
-        "modelId": base_payload["model"],
-        "inputs": base_payload["messages"],
-        "parameters": {
-            "temperature": base_payload["temperature"],
-            "max_tokens": base_payload["max_tokens"],
-        },
-    }
-
-
-def _build_azure_payload(base_payload: dict) -> dict[str, Any]:
-    """Build Azure-specific payload."""
-    # Azure uses similar format to OpenAI
-    return base_payload
-
-
-def _build_vertex_payload(base_payload: dict) -> dict[str, Any]:
-    """Build Google Vertex-specific payload."""
-    # Vertex uses instances and parameters
-    return {
-        "instances": [{"content": msg["content"] for msg in base_payload["messages"]}],
-        "parameters": {
-            "temperature": base_payload["temperature"],
-            "maxOutputTokens": base_payload["max_tokens"],
-        },
-    }
-
-
-def _send_request(config: LlmConfig, payload: dict[str, Any]) -> LlmResponse:
-    """
-    Gửi request đến LLM.
-    
-    Args:
-        config: LLM config
-        payload: Request payload
-        
-    Returns:
-        LlmResponse
+        LlmResponse với content, usage, raw
         
     Raises:
-        LlmAuthError: Nếu 401
-        LlmRateLimitError: Nếu 429
-        LlmTimeoutError: Nếu timeout
-        LlmRequestError: Nếu fail khác
+        litellm.APIError: Khi API trả về error
+        litellm.RateLimitError: Khi rate limit
+        litellm.AuthenticationError: Khi auth fail
     """
-    # Build URL
-    url = _build_url(config)
+    messages_list = _build_messages(system, messages or [])
     
-    # Build headers
-    headers = _build_headers(config)
-    
-    # Build request
-    data = json.dumps(payload).encode("utf-8")
-    request = Request(url, data=data, headers=headers, method="POST")
+    start_time = time.time()
     
     try:
-        with urlopen(request, timeout=config.timeout_seconds) as response:
-            raw_bytes = response.read()
-    except HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
+        response = await litellm.acompletion(
+            model=f"{config.provider}/{config.model}",
+            messages=messages_list,
+            api_base=config.api_url,
+            api_key=config.api_key,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            timeout=config.timeout,
+            num_retries=config.retry_attempts,
+            stream=False,
+        )
         
-        if exc.code == 401:
-            raise LlmAuthError(f"Invalid API key: {error_body}")
-        elif exc.code == 429:
-            retry_after = exc.headers.get("Retry-After")
-            raise LlmRateLimitError(
-                f"Rate limit exceeded: {error_body}",
-                retry_after=int(retry_after) if retry_after else None,
-            )
-        else:
-            raise LlmRequestError(
-                f"HTTP {exc.code}: {error_body}",
-                status_code=exc.code,
-                raw_response=error_body,
-            ) from exc
-    except URLError as exc:
-        if "timed out" in str(exc).lower():
-            raise LlmTimeoutError(
-                "Connection timed out",
-                timeout=config.timeout_seconds,
-            ) from exc
-        raise LlmRequestError(f"Request failed: {exc}") from exc
-    except TimeoutError:
-        raise LlmTimeoutError(
-            "Request timeout",
-            timeout=config.timeout_seconds,
+        # Extract content (handle cả dict và object response)
+        content = ""
+        if response.choices:
+            choice = response.choices[0]
+            if isinstance(choice, dict):
+                content = choice.get("message", {}).get("content", "")
+            else:
+                content = choice.message.content
+        
+        usage = _extract_usage(response.usage)
+        
+        latency_ms = int((time.time() - start_time) * 1000)
+        _log_call(config, "success", usage.get("total_tokens", 0), latency_ms)
+        
+        return LlmResponse(
+            content=content,
+            usage=usage,
+            raw=response,
         )
+        
+    except (APIError, RateLimitError, AuthenticationError):
+        latency_ms = int((time.time() - start_time) * 1000)
+        _log_call(config, "error", 0, latency_ms)
+        raise
+
+
+async def call_llm_stream(
+    config: LlmConfig,
+    *,
+    system: Optional[str] = None,
+    messages: Optional[list[dict[str, str]]] = None,
+) -> AsyncIterator[LlmStreamChunk]:
+    """
+    Call LLM với streaming, trả về chunks qua async generator.
     
-    # Parse response
-    raw_text = raw_bytes.decode("utf-8", errors="replace")
+    Sử dụng litellm.acompletion(stream=True) để stream response.
+    Yield từng chunk theo thời gian thực.
+    
+    Args:
+        config: LLM config
+        system: System prompt (optional)
+        messages: User messages list
+        
+    Yields:
+        LlmStreamChunk với content và usage (usage chỉ có trong last chunk)
+        
+    Raises:
+        litellm.APIError: Khi API trả về error
+        litellm.RateLimitError: Khi rate limit
+        litellm.AuthenticationError: Khi auth fail
+    """
+    messages_list = _build_messages(system, messages or [])
+    
+    start_time = time.time()
     
     try:
-        response_json = json.loads(raw_text)
-    except json.JSONDecodeError:
-        raise LlmRequestError(
-            f"Response was not valid JSON: {raw_text}",
-            raw_response=raw_text,
+        stream = await litellm.acompletion(
+            model=f"{config.provider}/{config.model}",
+            messages=messages_list,
+            api_base=config.api_url,
+            api_key=config.api_key,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            timeout=config.timeout,
+            num_retries=config.retry_attempts,
+            stream=True,
         )
-    
-    # Extract content based on provider
-    content = _extract_content(response_json, config.provider)
-    
-    # Get usage info if available
-    usage = response_json.get("usage")
-    
-    raw_pretty = json.dumps(response_json, indent=2, ensure_ascii=False)
-    
-    return LlmResponse(content=content, raw=raw_pretty, usage=usage)
-
-
-def _build_url(config: LlmConfig) -> str:
-    """Build API URL từ config."""
-    url = config.api_url
-    
-    # Ensure proper endpoint
-    if not url.endswith("chat/completions"):
-        if url.endswith("/v1"):
-            url = f"{url}/chat/completions"
-        else:
-            url = f"{url.rstrip('/')}/v1/chat/completions"
-    
-    return url
-
-
-def _build_headers(config: LlmConfig) -> dict[str, str]:
-    """Build request headers."""
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-    
-    if config.api_key:
-        headers["Authorization"] = f"Bearer {config.api_key}"
-    
-    # Provider-specific headers
-    if config.provider == LlmProvider.ANTHROPIC:
-        headers["x-api-key"] = config.api_key or ""
-        headers["anthropic-version"] = "2023-06-01"
-    
-    return headers
-
-
-def _extract_content(response: dict, provider: LlmProvider) -> str:
-    """Extract content từ response theo provider."""
-    if provider == LlmProvider.ANTHROPIC:
-        # Anthropic format
-        content = response.get("content", [])
-        if isinstance(content, list) and len(content) > 0:
-            return content[0].get("text", "")
-        return response.get("content", "")
-    elif provider == LlmProvider.AWS_BEDROCK:
-        # Bedrock format
-        outputs = response.get("outputs", [])
-        if outputs:
-            return outputs[0].get("text", "")
-        return response.get("text", "")
-    else:
-        # OpenAI-compatible format
-        choices = response.get("choices", [])
-        if choices:
-            message = choices[0].get("message", {})
-            return message.get("content", "")
-        return ""
+        
+        last_chunk_usage = None
+        
+        async for chunk in stream:
+            # Extract content from delta (handle cả dict và object)
+            content = ""
+            if chunk.choices:
+                choice = chunk.choices[0]
+                if isinstance(choice, dict):
+                    delta = choice.get("delta", {})
+                    content = delta.get("content", "") if isinstance(delta, dict) else ""
+                else:
+                    delta = choice.delta
+                    if hasattr(delta, "content") and delta.content:
+                        content = delta.content
+            
+            # Check for usage in chunk (usually in last chunk)
+            if hasattr(chunk, "usage") and chunk.usage:
+                last_chunk_usage = _extract_usage(chunk.usage)
+            elif isinstance(chunk, dict) and chunk.get("usage"):
+                last_chunk_usage = _extract_usage(chunk["usage"])
+            
+            yield LlmStreamChunk(content=content, usage=last_chunk_usage)
+        
+        latency_ms = int((time.time() - start_time) * 1000)
+        _log_call(config, "success", last_chunk_usage.get("total_tokens", 0) if last_chunk_usage else 0, latency_ms)
+        
+    except (APIError, RateLimitError, AuthenticationError):
+        latency_ms = int((time.time() - start_time) * 1000)
+        _log_call(config, "error", 0, latency_ms)
+        raise
