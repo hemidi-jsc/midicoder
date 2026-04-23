@@ -19,16 +19,179 @@ Brief lifecycle:
 user-brief.md → brief analyze → working-brief → brief clarify → master-brief → brief save → library-brief
 """
 
+import json
 import uuid
+import time
 import click
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from midicoder.storage.sqlite import (
     BriefsManager,
     ArtifactsManager,
 )
+from midicoder.pipeline.llm import load_llm_config, call_llm
+from midicoder.pipeline.domain import (
+    detect_domain,
+    get_domain_prompt,
+    normalize_domain,
+)
+
+
+@dataclass
+class BriefAnalysis:
+    """
+    Kết quả phân tích brief.
+    
+    Attributes:
+        json_data: JSON structured data (entities, commands, queries, events)
+        text_summary: Tóm tắt text
+        domain: Domain detected
+        confidence: Độ tin cậy
+        tokens_used: Số tokens LLM đã dùng
+        latency_ms: Thời gian LLM call (ms)
+    """
+    json_data: dict
+    text_summary: str
+    domain: str
+    confidence: float
+    tokens_used: int = 0
+    latency_ms: int = 0
+
+
+def _analyze_with_llm(
+    brief_content: str,
+    domain: Optional[str],
+    brief_id: str,
+) -> BriefAnalysis:
+    """
+    Gọi LLM để phân tích brief.
+    
+    Process:
+    1. Xác định domain (user-provided hoặc auto-detect)
+    2. Load domain prompt template
+    3. Call LLM với prompt + brief content
+    4. Parse JSON response
+    5. Tạo text summary từ JSON
+    
+    Args:
+        brief_content: Nội dung brief (Markdown)
+        domain: Domain user-provided (optional)
+        brief_id: Brief ID (cho artifact naming)
+    
+    Returns:
+        BriefAnalysis với json_data và text_summary
+    
+    Raises:
+        MidicoderError: Khi LLM call fail hoặc JSON parse error
+    """
+    # Step 1: Load LLM config
+    try:
+        llm_config = load_llm_config()
+    except Exception as e:
+        click.echo(f"⚠️  Không thể load LLM config: {e}")
+        click.echo("💡 Cấu hình LLM tại ~/.midicoder/midicoder.json")
+        raise
+    
+    # Step 2: Xác định domain
+    if domain:
+        final_domain = normalize_domain(domain)
+        click.echo(f"   → Domain (user-provided): {final_domain}")
+    else:
+        click.echo("   → Đang auto-detect domain...")
+        final_domain = detect_domain(brief_content, llm_config)
+        click.echo(f"   → Domain detected: {final_domain}")
+    
+    # Step 3: Load prompt template
+    try:
+        system_prompt = get_domain_prompt(final_domain)
+        click.echo(f"   → Đã load prompt template")
+    except Exception as e:
+        click.echo(f"⚠️  Lỗi load prompt: {e}, dùng default")
+        system_prompt = get_domain_prompt("generic")
+    
+    # Step 4: Call LLM
+    click.echo("   → Đang gọi LLM...")
+    start_time = time.time()
+    
+    try:
+        response = call_llm(
+            config=llm_config,
+            system=system_prompt,
+            messages=[{"role": "user", "content": brief_content}],
+        )
+        
+        latency_ms = int((time.time() - start_time) * 1000)
+        tokens_used = response.usage.get("total_tokens", 0)
+        
+        click.echo(f"   ✓ LLM response: {tokens_used} tokens, {latency_ms}ms")
+        
+    except Exception as e:
+        click.echo(f"❌ LLM call failed: {e}")
+        briefs_manager = BriefsManager()
+        briefs_manager.update_status(brief_id, "error")
+        raise
+    
+    # Step 5: Parse JSON response
+    click.echo("   → Đang parse JSON response...")
+    llm_content = response.content.strip()
+    
+    try:
+        # Try to extract JSON if wrapped in markdown
+        if llm_content.startswith("```json"):
+            llm_content = llm_content.removeprefix("```json").removesuffix("```")
+        elif llm_content.startswith("```"):
+            llm_content = llm_content.removeprefix("```").removesuffix("```")
+        
+        json_data = json.loads(llm_content)
+        click.echo("   ✓ JSON parsed successfully")
+        
+    except json.JSONDecodeError as e:
+        click.echo(f"❌ JSON parse error: {e}")
+        click.echo("💡 Lưu raw response vào artifact")
+        
+        # Lưu raw response vào artifact
+        artifacts_manager = ArtifactsManager()
+        artifacts_manager.init()
+        artifacts_manager.create(
+            artifact_id=f"analysis-{brief_id}",
+            artifact_type="analysis",
+            name="Brief Analysis (Raw)",
+            version="v1.0.0",
+            brief_id=brief_id,
+            content=llm_content,
+            metadata={"error": "JSON parse failed", "latency_ms": latency_ms},
+        )
+        
+        raise
+    
+    # Step 6: Tạo text summary từ JSON
+    entities = json_data.get("entities", [])
+    commands = json_data.get("commands", [])
+    queries = json_data.get("queries", [])
+    events = json_data.get("events", [])
+    confidence = json_data.get("confidence", 0.5)
+    summary = json_data.get("summary", "")
+    
+    text_summary = f"""Tóm tắt phân tích brief:
+- Domain: {final_domain.title()}
+- Số entities: {len(entities)} ({', '.join(e.get('name', '') for e in entities[:5])})
+- Số commands: {len(commands)}
+- Số queries: {len(queries)}
+- Số events: {len(events)}
+- Độ tin cậy: {confidence:.0%}
+- {summary}"""
+    
+    return BriefAnalysis(
+        json_data=json_data,
+        text_summary=text_summary,
+        domain=final_domain,
+        confidence=confidence,
+        tokens_used=tokens_used,
+        latency_ms=latency_ms,
+    )
 
 
 @click.group()
@@ -153,15 +316,19 @@ def _execute_analyze(brief_path: str, domain: Optional[str] = None) -> None:
     click.echo(f"   → Type: {record['type']}")
     click.echo(f"   → Status: {record['status']}")
 
-    # Bước 4: LLM analysis (placeholder - integrate với LLM client sau)
+    # Bước 4: LLM analysis
     click.echo("")
     click.echo("🤖 Đang phân tích requirements bằng LLM...")
-    click.echo("   ℹ️  LLM analysis - sẽ integrate với LLM client")
-    click.echo("   → Extract: entities, commands, queries, events")
-    click.echo("   → Domain: " + (domain or "auto-detect"))
-
-    # Bước 5: Log activity
+    
     try:
+        # Gọi LLM để phân tích
+        analysis = _analyze_with_llm(
+            brief_content=content,
+            domain=domain,
+            brief_id=brief_id,
+        )
+        
+        # Bước 5: Lưu kết quả vào artifact
         artifacts_manager = ArtifactsManager()
         artifacts_manager.init()
         artifacts_manager.create(
@@ -170,12 +337,36 @@ def _execute_analyze(brief_path: str, domain: Optional[str] = None) -> None:
             name="Brief Analysis",
             version=version,
             brief_id=brief_id,
+            content=json.dumps(analysis.json_data, indent=2, ensure_ascii=False),
+            metadata={
+                "domain": analysis.domain,
+                "confidence": analysis.confidence,
+                "tokens_used": analysis.tokens_used,
+                "latency_ms": analysis.latency_ms,
+                "summary": analysis.text_summary,
+            },
         )
+        
+        click.echo(f"   ✓ Analysis artifact đã lưu")
+        
+        # Bước 6: Update status
+        briefs_manager.update_status(brief_id, "analyzed")
+        
+        # Bước 7: Hiển thị tóm tắt
+        click.echo("")
+        click.echo("📊 Kết quả phân tích:")
+        click.echo("=" * 60)
+        click.echo(analysis.text_summary)
+        click.echo("=" * 60)
+        
     except Exception as e:
-        click.echo(f"   ⚠️  Không thể log artifact: {e}")
-
-    # Bước 6: Update status
-    briefs_manager.update_status(brief_id, "analyzed")
+        click.echo(f"❌ Lỗi khi phân tích với LLM: {e}")
+        click.echo("💡 Brief đã lưu nhưng chưa có analysis. Hãy:")
+        click.echo("   1. Kiểm tra ~/.midicoder/midicoder.json")
+        click.echo("   2. Đảm bảo LLM server đang chạy")
+        click.echo("   3. Chạy lại lệnh")
+        briefs_manager.update_status(brief_id, "error")
+        raise SystemExit(1)
 
     # Done
     click.echo("")
