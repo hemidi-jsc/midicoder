@@ -133,6 +133,17 @@ class ErrorCode(str, Enum):
     CONFIG_KEY_NOT_FOUND = "MDC-CONFIG-004"
     CONFIG_VALUE_INVALID = "MDC-CONFIG-005"
 
+    # =========================================================================
+    # Database Errors
+    # =========================================================================
+    DB_CONNECTION_FAILED = "MDC-DB-001"
+    DB_SCHEMA_ERROR = "MDC-DB-002"
+    DB_CONSTRAINT_VIOLATION = "MDC-DB-003"
+    DB_TRANSACTION_FAILED = "MDC-DB-004"
+    DB_TIMEOUT = "MDC-DB-005"
+    DB_FILE_CORRUPTED = "MDC-DB-006"
+    DB_PERMISSION_DENIED = "MDC-DB-007"
+
 
 class ExitCode(Enum):
     """
@@ -354,6 +365,15 @@ class MidicoderErrorManager:
         ErrorCode.CONFIG_FORMAT_INVALID: "Config file không đúng format.",
         ErrorCode.CONFIG_KEY_NOT_FOUND: "Config key không tồn tại.",
         ErrorCode.CONFIG_VALUE_INVALID: "Config value không hợp lệ.",
+
+        # Database Errors
+        ErrorCode.DB_CONNECTION_FAILED: "Không thể kết nối đến database.",
+        ErrorCode.DB_SCHEMA_ERROR: "Lỗi schema database.",
+        ErrorCode.DB_CONSTRAINT_VIOLATION: "Vi phạm ràng buộc database.",
+        ErrorCode.DB_TRANSACTION_FAILED: "Giao dịch database thất bại.",
+        ErrorCode.DB_TIMEOUT: "Hết thời gian chờ database.",
+        ErrorCode.DB_FILE_CORRUPTED: "File database bị hỏng.",
+        ErrorCode.DB_PERMISSION_DENIED: "Không có quyền truy cập database.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {
@@ -421,6 +441,37 @@ class MidicoderErrorManager:
         ErrorCode.CONFIG_VALUE_INVALID: [
             "Kiểm tra type của value (string, int, bool, etc.)",
             "Xem documentation cho config value constraints",
+        ],
+
+        # Database Errors
+        ErrorCode.DB_CONNECTION_FAILED: [
+            "Kiểm tra đường dẫn database có chính xác không",
+            "Đảm bảo thư mục database tồn tại và có quyền ghi",
+            "Kiểm tra database không bị lock bởi process khác",
+        ],
+        ErrorCode.DB_SCHEMA_ERROR: [
+            "Kiểm tra schema SQL syntax",
+            "Chạy `midicoder init` để recreate databases",
+        ],
+        ErrorCode.DB_CONSTRAINT_VIOLATION: [
+            "Kiểm tra dữ liệu không vi phạm unique constraint",
+            "Kiểm tra foreign key references tồn tại",
+        ],
+        ErrorCode.DB_TRANSACTION_FAILED: [
+            "Retry transaction",
+            "Kiểm tra không có concurrent writes",
+        ],
+        ErrorCode.DB_TIMEOUT: [
+            "Tăng timeout configuration",
+            "Kiểm tra không có long-running transactions",
+        ],
+        ErrorCode.DB_FILE_CORRUPTED: [
+            "Khôi phục từ backup nếu có",
+            "Chạy `midicoder init --force` để recreate databases",
+        ],
+        ErrorCode.DB_PERMISSION_DENIED: [
+            "Kiểm tra quyền đọc/ghi thư mục database",
+            "Chạy với elevated permissions nếu cần",
         ],
     }
 
