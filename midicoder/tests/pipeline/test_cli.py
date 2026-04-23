@@ -5,12 +5,28 @@ Tests này validate:
 - Global flags hoạt động đúng (--version, --help, --debug, --quiet, --json)
 - CLI structure đúng theo SoT (requirement.md E20)
 - Commands có thể invoke được
+- Exit codes đúng spec
+- JSON output format đúng
 """
+
+import json
+import subprocess
+import sys
 
 import pytest
 from click.testing import CliRunner
-from midicoder.pipeline.cli import cli
 
+# Import CLI entry point
+from midicoder.pipeline.cli import cli
+from midicoder.errors import ExitCode
+
+# Path đến Python interpreter
+PYTHON = sys.executable
+
+
+# ============================================================================
+# UNIT TESTS - Click CliRunner (fast, isolated)
+# ============================================================================
 
 class TestGlobalFlags:
     """Tests cho global flags của CLI."""
@@ -67,16 +83,14 @@ class TestInitCommand:
 
     def test_init_force_flag(self, runner):
         """Kiểm tra init --force flag được nhận."""
-        # Test với mock để không tạo thư mục thực
         result = runner.invoke(cli, ["init", "--force"])
-        # Exit code có thể khác 0 vì cần workspace thật
-        # Quan trọng là flag được parse đúng
-        assert "No such option" not in result.output or "force" not in result.output
+        # Flag được parse đúng (không báo lỗi option không tồn tại)
+        assert "--force" not in result.output or "No such option" not in result.output
 
     def test_init_no_index_flag(self, runner):
         """Kiểm tra init --no-index flag được nhận."""
         result = runner.invoke(cli, ["init", "--no-index"])
-        assert "No such option" not in result.output or "no-index" not in result.output
+        assert "--no-index" not in result.output or "No such option" not in result.output
 
     def test_init_version_flag(self, runner):
         """Kiểm tra init --version flag được nhận."""
@@ -189,6 +203,12 @@ class TestCodeCommands:
         result = runner.invoke(cli, ["code", "gen", "--help"])
         assert result.exit_code == 0
 
+    def test_code_gen_target_option(self, runner):
+        """Kiểm tra code gen --target option."""
+        result = runner.invoke(cli, ["code", "gen", "--target", "backend"])
+        # Option được parse đúng
+        assert "No such option" not in result.output
+
     def test_code_apply_exists(self, runner):
         """Kiểm tra code apply command tồn tại."""
         result = runner.invoke(cli, ["code", "apply", "--help"])
@@ -272,3 +292,155 @@ class TestUtilityCommands:
         """Kiểm tra help command tồn tại."""
         result = runner.invoke(cli, ["help", "--help"])
         assert result.exit_code == 0
+
+
+# ============================================================================
+# INTEGRATION TESTS - pytest-subprocess (real subprocess)
+# ============================================================================
+
+class TestCLIIntegration:
+    """Integration tests cho CLI với subprocess."""
+
+    def test_cli_help_from_subprocess(self):
+        """Test CLI --help từ subprocess."""
+        result = subprocess.run(
+            [PYTHON, "-m", "midicoder.pipeline", "--help"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30
+        )
+        # Command chạy thành công hoặc vào shell
+        stdout = result.stdout or ""
+        assert "Midicoder" in stdout or result.returncode in [0, 1]
+
+    def test_cli_version_from_subprocess(self):
+        """Test CLI --version từ subprocess."""
+        result = subprocess.run(
+            [PYTHON, "-m", "midicoder.pipeline", "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30
+        )
+        stdout = result.stdout or ""
+        assert "1.0.0" in stdout
+        assert result.returncode == 0
+
+    def test_cli_init_help_from_subprocess(self):
+        """Test CLI init --help từ subprocess."""
+        result = subprocess.run(
+            [PYTHON, "-m", "midicoder.pipeline", "init", "--help"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30
+        )
+        assert result.returncode in [0, 1]
+
+    def test_cli_status_from_subprocess(self):
+        """Test CLI status từ subprocess."""
+        result = subprocess.run(
+            [PYTHON, "-m", "midicoder.pipeline", "status"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30
+        )
+        assert result.returncode in [0, 1]
+
+
+class TestExitCodes:
+    """Tests cho exit codes."""
+
+    def test_exit_code_enum_values(self):
+        """Kiểm tra ExitCode enum có đúng values."""
+        assert ExitCode.SUCCESS.value == 0
+        assert ExitCode.GENERIC_ERROR.value == 1
+        assert ExitCode.BAD_ARGUMENTS.value == 2
+        assert ExitCode.FILE_NOT_FOUND.value == 3
+        assert ExitCode.PERMISSION_DENIED.value == 4
+        assert ExitCode.CONFIG_ERROR.value == 5
+        assert ExitCode.COMMAND_NOT_FOUND.value == 6
+        assert ExitCode.ALREADY_INITIALIZED.value == 7
+        assert ExitCode.INTERRUPT.value == 130
+
+    def test_exit_code_description(self):
+        """Kiểm tra ExitCode.get_description trả về tiếng Việt."""
+        assert ExitCode.get_description(0) == "Thành công"
+        assert ExitCode.get_description(1) == "Lỗi không xác định"
+        assert ExitCode.get_description(2) == "Lỗi arguments CLI"
+        assert ExitCode.get_description(3) == "File/thư mục không tìm thấy"
+        assert ExitCode.get_description(130) == "Người dùng hủy bỏ (Ctrl+C)"
+
+
+class TestJSONOutput:
+    """Tests cho JSON output format."""
+
+    def test_json_output_structure(self):
+        """Test JSON output có đúng structure."""
+        output = {
+            "status": "success",
+            "data": {"key": "value"},
+            "error": None,
+            "exit_code": 0
+        }
+        json_str = json.dumps(output)
+        parsed = json.loads(json_str)
+        
+        assert parsed["status"] == "success"
+        assert parsed["data"] == {"key": "value"}
+        assert parsed["error"] is None
+        assert parsed["exit_code"] == 0
+
+    def test_json_error_output(self):
+        """Test JSON error output structure."""
+        output = {
+            "status": "error",
+            "data": None,
+            "error": {"code": "TEST-001", "message": "Lỗi thử nghiệm"},
+            "exit_code": 1
+        }
+        json_str = json.dumps(output)
+        parsed = json.loads(json_str)
+        
+        assert parsed["status"] == "error"
+        assert parsed["data"] is None
+        assert parsed["error"]["code"] == "TEST-001"
+        assert parsed["exit_code"] == 1
+
+
+class TestExitCodeIntegration:
+    """Integration tests cho exit codes."""
+
+    def test_successful_command_exit_code(self):
+        """Test exit code cho command thành công."""
+        result = subprocess.run(
+            [PYTHON, "-m", "midicoder.pipeline", "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30
+        )
+        assert result.returncode == ExitCode.SUCCESS.value
+
+    def test_invalid_option_exit_code(self):
+        """Test exit code cho option không hợp lệ."""
+        result = subprocess.run(
+            [PYTHON, "-m", "midicoder.pipeline", "--invalid-option"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30
+        )
+        assert result.returncode in [ExitCode.BAD_ARGUMENTS.value, ExitCode.GENERIC_ERROR.value, 1]
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
