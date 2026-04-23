@@ -1,8 +1,7 @@
 """
-Tests cho Storage Module.
+Tests cho storage module.
 
-Module này chứa tests cho:
-- SQLite persistence layer
-- Schema definitions
-- Managers (BriefsManager, ArtifactsManager, ActivityLogger)
+Bao gồm:
+- Unit tests với in-memory DB
+- Integration tests với temp files
 """
