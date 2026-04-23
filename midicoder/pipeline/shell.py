@@ -70,13 +70,13 @@ def display_logo():
     """Hiển thị ASCII logo với Rich panel."""
     logo = get_ascii_logo()
     
-    # Tạo panel với style đẹp - Brand color: red
+    # Tạo panel với style đẹp - Brand color: pink (#e90089)
     panel = Panel(
         logo,
-        title="[bold red]Midicoder v1.0.0[/bold red]",
+        title=f"[bold #e90089]Midicoder v1.0.0[/bold #e90089]",
         subtitle="[dim]Contract Coding Platform[/dim]",
         style="dim white",
-        border_style="red",
+        border_style="#e90089",
         padding=(1, 2),
     )
     console.print(panel)
@@ -87,10 +87,10 @@ def display_welcome_message():
     """Hiển thị welcome message."""
     # Dùng console.print với markup=True để resolve Rich tags
     console.print(
-        "[bold red]Welcome to Midicoder Interactive Shell![/bold red]"
+        f"[bold #e90089]Welcome to Midicoder Interactive Shell![/bold #e90089]"
     )
     console.print(
-        "[dim]Gõ [red]help[/red] để xem danh sách commands, [red]exit[/red] để thoát.[/dim]"
+        f"[dim]Gõ [#e90089]help[/#e90089] để xem danh sách commands, [#e90089]exit[/#e90089] để thoát.[/dim]"
     )
     console.print()
 
@@ -122,12 +122,12 @@ def display_help():
     from rich.table import Table
 
     console.print()
-    console.print(Panel("Available Commands", border_style="red"))
+    console.print(Panel("Available Commands", border_style="#e90089"))
     console.print()
 
-    # Tạo table cho commands - Brand color: red
-    table = Table(show_header=True, header_style="bold red")
-    table.add_column("Command", style="red", width=15)
+    # Tạo table cho commands - Brand color: pink (#e90089)
+    table = Table(show_header=True, header_style="bold #e90089")
+    table.add_column("Command", style="#e90089", width=15)
     table.add_column("Description", style="white", ratio=2)
 
     commands = get_available_commands()
@@ -137,7 +137,7 @@ def display_help():
 
     console.print(table)
     console.print()
-    console.print("Gõ [red]command --help[/red] để xem chi tiết của command.", style="dim")
+    console.print(f"Gõ [#e90089]command --help[/#e90089] để xem chi tiết của command.", style="dim")
 
 
 def format_success(message: str) -> Text:
@@ -180,17 +180,17 @@ def print_warning(message: str):
     console.print(format_warning(message))
 
 
-# Style cho prompt_toolkit textbox - Brand color: red
+# Style cho prompt_toolkit textbox - Brand color: pink (#e90089)
 TEXTBOX_STYLE = PromptStyle.from_dict({
-    'bottom-toolbar': 'bg:#cc0000 #ffffff',
-    'search-toolbar': 'bg:#cc0000 #ffffff',
-    'scrollbar': 'bg:#cc0000',
-    'scrollbar-button': 'bg:#cc0000',
-    'scrollbar-button-background': 'bg:#cc0000',
+    'bottom-toolbar': 'bg:#e90089 #ffffff',
+    'search-toolbar': 'bg:#e90089 #ffffff',
+    'scrollbar': 'bg:#e90089',
+    'scrollbar-button': 'bg:#e90089',
+    'scrollbar-button-background': 'bg:#e90089',
 })
 
-# Prompt với border style - Brand color: red
-PROMPT_MESSAGE = HTML('<style bg="red" fg="white">midicoder></style> ')
+# Prompt với border style - Brand color: pink (#e90089)
+PROMPT_MESSAGE = HTML('<style bg="#e90089" fg="white">midicoder></style> ')
 
 
 class MidicoderShell:
@@ -307,7 +307,7 @@ class MidicoderShell:
         if command not in self.commands and command not in ["exit", "quit", "help", "init", "brief", "contract", "ir", "code", "preview", "config", "status"]:
             print_error(f"Unknown command: {command}")
             console.print()
-            console.print("Gõ [red]help[/red] để xem danh sách commands.")
+            console.print(f"Gõ [#e90089]help[/#e90089] để xem danh sách commands.")
             return
 
         # Execute với Click runner (không dùng mix_stderr vì click mới không hỗ trợ)
