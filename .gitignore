@@ -26,3 +26,5 @@ Thumbs.db
 # Test package
 .midicoder/
 bak/
+# Added by code-review-graph
+.code-review-graph/
