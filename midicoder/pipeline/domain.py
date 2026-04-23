@@ -109,12 +109,18 @@ def get_domain_prompt(domain: str, industry_path: Optional[Path] = None) -> str:
     Load prompt template cho domain.
 
     Priority:
-    1. industry/<domain>/prompts/brief-analyze.md
-    2. industry/<domain>/brief-analyze.md
-    3. Default prompt (midicoder/pipeline/prompts/default-brief-analyze.md)
+    1. industry/<domain>/prompts/brief-analyze.md (original domain name)
+    2. industry/<domain>/brief-analyze.md (original domain name)
+    3. industry/<normalized-domain>/prompts/brief-analyze.md (canonical name)
+    4. industry/<normalized-domain>/brief-analyze.md (canonical name)
+    5. Default prompt (midicoder/pipeline/prompts/default-brief-analyze.md)
+
+    Ví dụ:
+    - Input: "ecommerce-d2c" → Check "industry/ecommerce-d2c/prompts/brief-analyze.md"
+    - Input: "e-commerce" → normalize → "ecommerce" → Check "industry/ecommerce/prompts/brief-analyze.md"
 
     Args:
-        domain: Domain name
+        domain: Domain name (original hoặc normalized)
         industry_path: Path đến industry folder (default: ./industry)
 
     Returns:
@@ -123,17 +129,31 @@ def get_domain_prompt(domain: str, industry_path: Optional[Path] = None) -> str:
     if industry_path is None:
         industry_path = Path("industry")
 
-    # Try domain-specific prompt
-    domain_prompt_path = industry_path / domain / "prompts" / "brief-analyze.md"
-    if domain_prompt_path.exists():
-        logger.info(f"Load domain prompt: {domain_prompt_path}")
-        return domain_prompt_path.read_text(encoding="utf-8")
+    # Try original domain name first (preserves exact path like "ecommerce-d2c")
+    original_prompt_path = industry_path / domain / "prompts" / "brief-analyze.md"
+    if original_prompt_path.exists():
+        logger.info(f"Load domain prompt (original): {original_prompt_path}")
+        return original_prompt_path.read_text(encoding="utf-8")
 
-    # Try alternate path
-    alt_prompt_path = industry_path / domain / "brief-analyze.md"
-    if alt_prompt_path.exists():
-        logger.info(f"Load alternate domain prompt: {alt_prompt_path}")
-        return alt_prompt_path.read_text(encoding="utf-8")
+    # Try alternate path with original domain
+    alt_original_path = industry_path / domain / "brief-analyze.md"
+    if alt_original_path.exists():
+        logger.info(f"Load alternate domain prompt (original): {alt_original_path}")
+        return alt_original_path.read_text(encoding="utf-8")
+
+    # Try normalized domain name (canonical)
+    normalized_domain = normalize_domain(domain)
+    if normalized_domain != domain:
+        normalized_prompt_path = industry_path / normalized_domain / "prompts" / "brief-analyze.md"
+        if normalized_prompt_path.exists():
+            logger.info(f"Load domain prompt (normalized): {normalized_prompt_path}")
+            return normalized_prompt_path.read_text(encoding="utf-8")
+
+        # Try alternate path with normalized domain
+        alt_normalized_path = industry_path / normalized_domain / "brief-analyze.md"
+        if alt_normalized_path.exists():
+            logger.info(f"Load alternate domain prompt (normalized): {alt_normalized_path}")
+            return alt_normalized_path.read_text(encoding="utf-8")
 
     # Fallback to default
     logger.info(f"Dùng default prompt cho domain '{domain}'")
@@ -154,8 +174,13 @@ def normalize_domain(domain: str) -> str:
     normalized = domain.lower().replace("-", "_").replace(" ", "_")
 
     # Map aliases (cả dạng có dash và có underscore)
+    # Lưu ý: domain name trong file system phải match với canonical name
+    # Ví dụ: industry/ecommerce-d2c/prompts/brief-analyze.md → canonical = "ecommerce"
     aliases = {
-        "ecommerce": ["ecommerce", "e_commerce", "ecom", "shop", "store", "retail", "e-commerce"],
+        "ecommerce": [
+            "ecommerce", "e_commerce", "ecom", "shop", "store", "retail", "e-commerce",
+            "ecommerce-d2c", "ecommerce_d2c", "d2c", "d_2_c"  # E-commerce D2C variants
+        ],
         "finance": ["finance", "fintech", "banking", "payment"],
         "healthcare": ["healthcare", "medical", "hospital", "clinic"],
         "saas": ["saas", "software"],
