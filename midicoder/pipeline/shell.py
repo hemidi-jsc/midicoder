@@ -46,6 +46,7 @@ ASCII_LOGO = """
         """
 
 # Console instance với Rich styling
+# KHÔNG dùng force_terminal để tránh vấn đề width detection
 console = Console(color_system="truecolor")
 
 
@@ -64,14 +65,13 @@ def display_logo():
     logo = get_ascii_logo()
     
     # Tạo panel với style đẹp - Brand color: pink (#e90089)
-    # Dùng bright_white cho text để nhìn rõ trên nền tối
+    # padding giảm để tiết kiệm không gian
     panel = Panel(
         logo,
-        title="[bright_white]Midicoder v1.0.0[/bright_white]",
-        subtitle="[white]Contract Coding Platform[/white]",
-        style="default",
+        title="[#e90089]Midicoder v1.0.0[/#e90089]",
+        subtitle="Contract Coding Platform",
         border_style="#e90089",
-        padding=(1, 2),
+        padding=(0, 1),
     )
     console.print(panel)
     console.print()
@@ -80,12 +80,12 @@ def display_logo():
 def display_welcome_message():
     """Hiển thị welcome message."""
     # Dùng console.print với markup=True để resolve Rich tags
-    # Brand color: pink (#e90089) cho các keyword, bright_white cho text chính
+    # Brand color: pink (#e90089) cho các keyword
     console.print(
-        "[bright_white]Welcome to Midicoder Interactive Shell![/bright_white]"
+        "Welcome to Midicoder - www.midicoder.com"
     )
     console.print(
-        "[white]Gõ [bold #e90089]help[/bold #e90089] để xem danh sách commands, [bold #e90089]exit[/bold #e90089] để thoát.[/white]"
+        "Gõ [#e90089]help[/#e90089] để xem danh sách commands, [#e90089]exit[/#e90089] để thoát."
     )
     console.print()
 
@@ -117,14 +117,14 @@ def display_help():
     from rich.table import Table
 
     console.print()
-    # Panel header với bright_white, border pink
-    console.print(Panel("[bright_white]Available Commands[/bright_white]", border_style="#e90089"))
+    # Panel header với pink border (#e90089)
+    console.print(Panel("Available Commands", border_style="#e90089"))
     console.print()
 
-    # Tạo table cho commands - Brand color: pink (#e90089) cho header, bright_white cho command names
-    table = Table(show_header=True, header_style="bright_white")
-    table.add_column("Command", style="bold #e90089", width=15)
-    table.add_column("Description", style="white", ratio=2)
+    # Tạo table cho commands - Brand color: pink (#e90089) cho header và commands
+    table = Table(show_header=True, header_style="#e90089")
+    table.add_column("Command", style="#e90089", width=15)
+    table.add_column("Description", ratio=2)
 
     commands = get_available_commands()
     for cmd, desc in commands.items():
@@ -133,7 +133,7 @@ def display_help():
 
     console.print(table)
     console.print()
-    console.print("[white]Gõ [bold #e90089]command --help[/bold #e90089] để xem chi tiết của command.[/white]")
+    console.print("Gõ [#e90089]command --help[/#e90089] để xem chi tiết của command.")
 
 
 def format_success(message: str) -> Text:
@@ -178,11 +178,11 @@ def print_warning(message: str):
 
 # Style cho prompt_toolkit textbox - Brand color: pink (#e90089)
 TEXTBOX_STYLE = PromptStyle.from_dict({
-    'bottom-toolbar': 'bg:#e90089 #ffffff',
-    'search-toolbar': 'bg:#e90089 #ffffff',
-    'scrollbar': 'bg:#e90089',
-    'scrollbar-button': 'bg:#e90089',
-    'scrollbar-button-background': 'bg:#e90089',
+    'bottom-toolbar': 'bg:#333333 #ffffff',
+    'search-toolbar': 'bg:#333333 #ffffff',
+    'scrollbar': 'bg:#333333',
+    'scrollbar-button': 'bg:#333333',
+    'scrollbar-button-background': 'bg:#333333',
 })
 
 # Prompt với border style - Brand color: pink (#e90089)
@@ -303,7 +303,7 @@ class MidicoderShell:
         if command not in self.commands and command not in ["exit", "quit", "help", "init", "brief", "contract", "ir", "code", "preview", "config", "status"]:
             print_error(f"Unknown command: {command}")
             console.print()
-            console.print("[bright_white]Gõ [bold #e90089]help[/bold #e90089] để xem danh sách commands.[/bright_white]")
+            console.print("Gõ [#e90089]help[/#e90089] để xem danh sách commands.")
             return
 
         # Execute với Click runner (không dùng mix_stderr vì click mới không hỗ trợ)
