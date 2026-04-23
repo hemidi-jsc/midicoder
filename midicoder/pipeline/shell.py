@@ -45,25 +45,23 @@ def get_ascii_logo() -> str:
     if not ASCII_LOGO_PATH.exists():
         # Return fallback logo nếu file không có
         return """
-                                              
-       ##                            ##       
-       #####                      #####       
-       #######                  #######       
-       ##########            ##########       
-       #############      #############       
-       ###############  ######### #####       
-       ######   ##############    #####       
-       ######     ##########      #####       
-       ######        ####         #####       
-       ######  ###          ###   #####       
-       ######  ######    ######   #####       
-       ######  ######    ######   #####       
-       ######    ####    ####     #####       
-       ######       #    ##       #####       
-       ######                     #####       
-       ######                     #####       
-       ######                     #####       
-                                              
+       ##                               ##       
+       #####                         #####       
+       #######                     #######       
+       ##########               ##########       
+       #############         #############       
+       ###############     ###############       
+       ######   #######  #######    ######       
+       ######     #####  #####      ######       
+       ######          ##           ######       
+       ######  ###            ###   ######       
+       ######  ######      ######   ######       
+       ######  ######      ######   ######       
+       ######    ####      ####     ######       
+       ######      ##      ##       ######       
+       ######                       ######       
+       ######                       ######       
+       ######                       ######       
         """
     return ASCII_LOGO_PATH.read_text(encoding="utf-8")
 
@@ -72,13 +70,13 @@ def display_logo():
     """Hiển thị ASCII logo với Rich panel."""
     logo = get_ascii_logo()
     
-    # Tạo panel với style đẹp
+    # Tạo panel với style đẹp - Brand color: red
     panel = Panel(
         logo,
-        title="[bold cyan]Midicoder v1.0.0[/bold cyan]",
-        subtitle="[dim]Contract-First Compiler Platform[/dim]",
+        title="[bold red]Midicoder v1.0.0[/bold red]",
+        subtitle="[dim]Contract Coding Platform[/dim]",
         style="dim white",
-        border_style="cyan",
+        border_style="red",
         padding=(1, 2),
     )
     console.print(panel)
@@ -89,10 +87,10 @@ def display_welcome_message():
     """Hiển thị welcome message."""
     # Dùng console.print với markup=True để resolve Rich tags
     console.print(
-        "[bold green]Welcome to Midicoder Interactive Shell![/bold green]"
+        "[bold red]Welcome to Midicoder Interactive Shell![/bold red]"
     )
     console.print(
-        "[dim]Gõ [cyan]help[/cyan] để xem danh sách commands, [cyan]exit[/cyan] để thoát.[/dim]"
+        "[dim]Gõ [red]help[/red] để xem danh sách commands, [red]exit[/red] để thoát.[/dim]"
     )
     console.print()
 
@@ -124,12 +122,12 @@ def display_help():
     from rich.table import Table
 
     console.print()
-    console.print(Panel("Available Commands", border_style="yellow"))
+    console.print(Panel("Available Commands", border_style="red"))
     console.print()
 
-    # Tạo table cho commands
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("Command", style="cyan", width=15)
+    # Tạo table cho commands - Brand color: red
+    table = Table(show_header=True, header_style="bold red")
+    table.add_column("Command", style="red", width=15)
     table.add_column("Description", style="white", ratio=2)
 
     commands = get_available_commands()
@@ -139,7 +137,7 @@ def display_help():
 
     console.print(table)
     console.print()
-    console.print("Gõ [cyan]command --help[/cyan] để xem chi tiết của command.", style="dim")
+    console.print("Gõ [red]command --help[/red] để xem chi tiết của command.", style="dim")
 
 
 def format_success(message: str) -> Text:
@@ -182,17 +180,17 @@ def print_warning(message: str):
     console.print(format_warning(message))
 
 
-# Style cho prompt_toolkit textbox
+# Style cho prompt_toolkit textbox - Brand color: red
 TEXTBOX_STYLE = PromptStyle.from_dict({
-    'bottom-toolbar': 'bg:#333333 #ffffff',
-    'search-toolbar': 'bg:#333333 #ffffff',
-    'scrollbar': 'bg:#333333',
-    'scrollbar-button': 'bg:#333333',
-    'scrollbar-button-background': 'bg:#333333',
+    'bottom-toolbar': 'bg:#cc0000 #ffffff',
+    'search-toolbar': 'bg:#cc0000 #ffffff',
+    'scrollbar': 'bg:#cc0000',
+    'scrollbar-button': 'bg:#cc0000',
+    'scrollbar-button-background': 'bg:#cc0000',
 })
 
-# Prompt với border style
-PROMPT_MESSAGE = HTML('<style bg="cyan" fg="white">midicoder></style> ')
+# Prompt với border style - Brand color: red
+PROMPT_MESSAGE = HTML('<style bg="red" fg="white">midicoder></style> ')
 
 
 class MidicoderShell:
@@ -257,6 +255,23 @@ class MidicoderShell:
                     self.running = False
                 elif command == "help":
                     display_help()
+                elif command == "init":
+                    # Execute command với brand color
+                    self.execute_command(user_input.strip())
+                elif command == "brief":
+                    self.execute_command(user_input.strip())
+                elif command == "contract":
+                    self.execute_command(user_input.strip())
+                elif command == "ir":
+                    self.execute_command(user_input.strip())
+                elif command == "code":
+                    self.execute_command(user_input.strip())
+                elif command == "preview":
+                    self.execute_command(user_input.strip())
+                elif command == "config":
+                    self.execute_command(user_input.strip())
+                elif command == "status":
+                    self.execute_command(user_input.strip())
                 else:
                     # Execute command
                     self.execute_command(user_input.strip())
@@ -289,10 +304,10 @@ class MidicoderShell:
         command = parts[0].lower()
 
         # Validate command
-        if command not in self.commands and command not in ["exit", "quit", "help"]:
+        if command not in self.commands and command not in ["exit", "quit", "help", "init", "brief", "contract", "ir", "code", "preview", "config", "status"]:
             print_error(f"Unknown command: {command}")
             console.print()
-            console.print("Gõ [cyan]help[/cyan] để xem danh sách commands.")
+            console.print("Gõ [red]help[/red] để xem danh sách commands.")
             return
 
         # Execute với Click runner (không dùng mix_stderr vì click mới không hỗ trợ)
