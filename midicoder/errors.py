@@ -115,6 +115,15 @@ class ErrorCode(str, Enum):
     TEMPLATE_RENDER_FAILED = "MDC-RUNTIME-002"
     FILE_WRITE_FAILED = "MDC-RUNTIME-003"
 
+    # =========================================================================
+    # LLM Errors
+    # =========================================================================
+    LLM_CONFIG_INVALID = "MDC-LLM-001"
+    LLM_REQUEST_FAILED = "MDC-LLM-002"
+    LLM_AUTH_FAILED = "MDC-LLM-003"
+    LLM_RATE_LIMIT = "MDC-LLM-004"
+    LLM_TIMEOUT = "MDC-LLM-005"
+
 
 @dataclass
 class MidicoderError(RuntimeError):
