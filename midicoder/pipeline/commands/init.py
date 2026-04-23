@@ -15,16 +15,32 @@ SoT Reference: E00, E01
 """
 
 import json
-import subprocess
-import webbrowser
+import os
 import socket
+import subprocess
+import sys
+import time
+import webbrowser
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 import click
 
 from midicoder.pipeline.config import get_config, get_global_config_path, DEFAULT_GLOBAL_CONFIG
+
+# Constants cho WebGUI ports
+WEBGUI_BACKEND_PORT = 6868
+WEBGUI_FRONTEND_PORT = 7272
+
+# Windows process flags
+if sys.platform == "win32":
+    CREATE_NEW_PROCESS_GROUP = 0x00000200
+    DETACHED_PROCESS = 0x00000008
+else:
+    CREATE_NEW_PROCESS_GROUP = 0
+    DETACHED_PROCESS = 0
 
 
 def run_init(
@@ -390,7 +406,386 @@ def _docker_installed() -> bool:
         return False
 
 
-def _start_webgui() -> None:
+def _check_uvicorn_installed() -> bool:
+    """
+    Kiểm tra uvicorn có được cài đặt không.
+
+    Returns:
+        True nếu uvicorn đã cài đặt và có thể chạy
+    """
+    try:
+        result = subprocess.run(
+            ["uvicorn", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _check_nodejs_installed() -> bool:
+    """
+    Kiểm tra Node.js có được cài đặt không.
+
+    Returns:
+        True nếu Node.js đã cài đặt và có thể chạy
+    """
+    try:
+        result = subprocess.run(
+            ["node", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _check_port_available(port: int) -> bool:
+    """
+    Kiểm tra port có available không.
+
+    Args:
+        port: Port number để check
+
+    Returns:
+        True nếu port đang available (không bị chiếm)
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            result = s.connect_ex(("127.0.0.1", port))
+            return result != 0
+    except socket.error:
+        return False
+
+
+def _wait_for_port(port: int, timeout: int = 10) -> bool:
+    """
+    Đợi port trở nên available.
+
+    Args:
+        port: Port number để wait
+        timeout: Timeout tối đa (giây)
+
+    Returns:
+        True nếu port trở nên available trong timeout
+    """
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if _check_port_available(port):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _save_pid_to_file(pid_file: Path, pid: int) -> None:
+    """
+    Lưu PID vào file.
+
+    Args:
+        pid_file: Path đến file PID
+        pid: Process ID cần lưu
+    """
+    pid_file.write_text(str(pid), encoding="utf-8")
+
+
+def _get_pid_from_file(pid_file: Path) -> Optional[int]:
+    """
+    Đọc PID từ file.
+
+    Args:
+        pid_file: Path đến file PID
+
+    Returns:
+        PID nếu file tồn tại và có nội dung, None nếu không
+    """
+    if not pid_file.exists():
+        return None
+    try:
+        content = pid_file.read_text(encoding="utf-8").strip()
+        return int(content) if content else None
+    except ValueError:
+        return None
+
+
+def _is_process_running(pid: int) -> bool:
+    """
+    Kiểm tra process có đang chạy không.
+
+    Args:
+        pid: Process ID cần check
+
+    Returns:
+        True nếu process đang chạy
+    """
+    try:
+        if sys.platform == "win32":
+            # Windows: dùng tasklist để check process
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            # Nếu process tồn tại, tasklist sẽ trả về dòng chứa PID
+            return result.returncode == 0 and str(pid) in str(result.stdout)
+        else:
+            # Unix: kill -0 để check
+            os.kill(pid, 0)
+            return True
+    except (ProcessLookupError, PermissionError):
+        return False
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _build_angular(webgui_dir: Path) -> bool:
+    """
+    Build Angular project.
+
+    Args:
+        webgui_dir: Path đến folder webgui
+
+    Returns:
+        True nếu build thành công
+    """
+    click.echo("   ⏳ Đang build Angular...")
+    
+    try:
+        result = subprocess.run(
+            ["ng", "build", "--configuration=development"],
+            cwd=webgui_dir,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 phút cho build
+        )
+        
+        if result.returncode == 0:
+            click.echo("   ✓ Angular build thành công")
+            return True
+        else:
+            click.echo(f"   ❌ Angular build thất bại: {result.stderr[:200]}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        click.echo("   ❌ Angular build timeout")
+        return False
+    except FileNotFoundError:
+        click.echo("   ❌ 'ng' command not found. Vui lòng cài đặt Angular CLI.")
+        click.echo("   💡 Cài đặt: npm install -g @angular/cli")
+        return False
+
+
+def _start_backend(
+    api_dir: Path,
+    runtime_dir: Path,
+    host: str = "localhost",
+    port: int = WEBGUI_BACKEND_PORT
+) -> Tuple[bool, Optional[int]]:
+    """
+    Start Backend FastAPI.
+
+    Args:
+        api_dir: Path đến folder api/
+        runtime_dir: Path đến .midicoder/runtime/
+        host: Host để start backend
+        port: Port để start backend
+
+    Returns:
+        Tuple (success, pid) - success là True nếu start thành công, pid là process ID
+    """
+    # Check uvicorn
+    if not _check_uvicorn_installed():
+        click.echo("")
+        click.echo("   ╔═══════════════════════════════════════════════════════════╗")
+        click.echo("   ║  UVICORN CHƯA ĐƯỢC CÀI ĐẶT                             ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Uvicorn là dependency BẮT BUỘC cho Backend FastAPI.      ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Cách cài đặt:                                            ║")
+        click.echo("   ║  pip install uvicorn                                      ║")
+        click.echo("   ╚═══════════════════════════════════════════════════════════╝")
+        click.echo("")
+        return False, None
+    
+    # Check port
+    if not _check_port_available(port):
+        click.echo("")
+        click.echo("   ╔═══════════════════════════════════════════════════════════╗")
+        click.echo("   ║  PORT {} ĐANG BỊ CHIẾM                                 ║".format(port))
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Vui lòng kill process đang chiếm port hoặc thay đổi port ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Windows: netstat -ano | findstr :{}                     ║".format(port))
+        click.echo("   ║  Unix: lsof -i :{}                                       ║".format(port))
+        click.echo("   ╚═══════════════════════════════════════════════════════════╝")
+        click.echo("")
+        return False, None
+    
+    # Start backend
+    click.echo("   ⏳ Đang start Backend FastAPI...")
+    
+    log_file = runtime_dir / "webgui-backend.log"
+    pid_file = runtime_dir / "backend.pid"
+    
+    try:
+        # Start uvicorn process
+        process = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", host, "--port", str(port)],
+            cwd=api_dir,
+            stdout=open(log_file, "a", encoding="utf-8"),
+            stderr=subprocess.STDOUT,
+            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+            start_new_session=True if sys.platform != "win32" else False
+        )
+        
+        # Save PID
+        _save_pid_to_file(pid_file, process.pid)
+        
+        # Wait for port to be available
+        if _wait_for_port(port, timeout=10):
+            click.echo(f"   ✓ Backend started (PID: {process.pid}, Port: {port})")
+            return True, process.pid
+        else:
+            click.echo("   ❌ Backend start timeout")
+            return False, None
+            
+    except Exception as e:
+        click.echo(f"   ❌ Backend start failed: {e}")
+        return False, None
+
+
+def _start_frontend(
+    webgui_dir: Path,
+    runtime_dir: Path,
+    port: int = WEBGUI_FRONTEND_PORT
+) -> Tuple[bool, Optional[int]]:
+    """
+    Start Frontend Angular.
+
+    Args:
+        webgui_dir: Path đến folder webgui/
+        runtime_dir: Path đến .midicoder/runtime/
+        port: Port để start frontend
+
+    Returns:
+        Tuple (success, pid) - success là True nếu start thành công, pid là process ID
+    """
+    # Check Node.js
+    if not _check_nodejs_installed():
+        click.echo("")
+        click.echo("   ╔═══════════════════════════════════════════════════════════╗")
+        click.echo("   ║  NODE.JS CHƯA ĐƯỢC CÀI ĐẶT                               ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Node.js là dependency BẮT BUỘC cho Frontend Angular.    ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Cách cài đặt:                                            ║")
+        click.echo("   ║  https://nodejs.org/                                      ║")
+        click.echo("   ╚═══════════════════════════════════════════════════════════╝")
+        click.echo("")
+        return False, None
+    
+    # Build Angular
+    if not _build_angular(webgui_dir):
+        return False, None
+    
+    # Check dist folder exists
+    dist_dir = webgui_dir / "dist" / "browser"
+    if not dist_dir.exists():
+        click.echo("   ❌ Angular build output not found. Vui lòng kiểm tra.")
+        return False, None
+    
+    # Check port
+    if not _check_port_available(port):
+        click.echo("")
+        click.echo("   ╔═══════════════════════════════════════════════════════════╗")
+        click.echo("   ║  PORT {} ĐANG BỊ CHIẾM                                 ║".format(port))
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Vui lòng kill process đang chiếm port hoặc thay đổi port ║")
+        click.echo("   ║                                                           ║")
+        click.echo("   ║  Windows: netstat -ano | findstr :{}                     ║".format(port))
+        click.echo("   ║  Unix: lsof -i :{}                                       ║".format(port))
+        click.echo("   ╚═══════════════════════════════════════════════════════════╝")
+        click.echo("")
+        return False, None
+    
+    # Start frontend using Python HTTP server
+    click.echo("   ⏳ Đang start Frontend Angular...")
+    
+    log_file = runtime_dir / "webgui-frontend.log"
+    pid_file = runtime_dir / "frontend.pid"
+    
+    # Create a script to serve static files
+    server_script = f'''
+import http.server
+import socketserver
+import os
+
+PORT = {port}
+DIRECTORY = r"{dist_dir}"
+
+os.chdir(DIRECTORY)
+
+Handler = http.server.SimpleHTTPRequestHandler
+Handler.extensions_map.update({{
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+}})
+
+with socketserver.TCPServer(("", PORT), Handler) as httpd:
+    print(f"Frontend server running on http://localhost:{{PORT}}")
+    httpd.serve_forever()
+'''
+    
+    try:
+        # Write server script
+        server_script_file = runtime_dir / "frontend_server.py"
+        server_script_file.write_text(server_script, encoding="utf-8")
+        
+        # Start Python HTTP server process
+        process = subprocess.Popen(
+            [sys.executable, str(server_script_file)],
+            stdout=open(log_file, "a", encoding="utf-8"),
+            stderr=subprocess.STDOUT,
+            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+            start_new_session=True if sys.platform != "win32" else False
+        )
+        
+        # Save PID
+        _save_pid_to_file(pid_file, process.pid)
+        
+        # Wait for port to be available
+        if _wait_for_port(port, timeout=15):
+            click.echo(f"   ✓ Frontend started (PID: {process.pid}, Port: {port})")
+            return True, process.pid
+        else:
+            click.echo("   ❌ Frontend start timeout")
+            return False, None
+            
+    except Exception as e:
+        click.echo(f"   ❌ Frontend start failed: {e}")
+        return False, None
+
+
+def _open_browser(url: str) -> None:
+    """
+    Mở browser đến URL.
+
+    Args:
+        url: URL để mở
+    """
+    click.echo("   ⏳ Đang mở browser...")
+    webbrowser.open(url)
+    click.echo(f"   ✓ Browser mở đến {url}")
+
+
+def _start_webgui(workspace_dir: Optional[Path] = None) -> None:
     """
     Khởi động WebGUI (FastAPI + Angular).
 
@@ -398,20 +793,67 @@ def _start_webgui() -> None:
     - Backend: FastAPI chạy trên port 6868
     - Frontend: Angular chạy trên port 7272
 
-    Hiện tại: Stub function, hiển thị hướng dẫn manual start.
+    Args:
+        workspace_dir: Path đến .midicoder/ (optional, mặc định là current directory)
     """
-    click.echo("   ⚠️  WebGUI chưa được start tự động.")
-    click.echo("   💡 Để start WebGUI thủ công:")
+    if workspace_dir is None:
+        workspace_dir = Path.cwd() / ".midicoder"
+    
+    runtime_dir = workspace_dir / "runtime"
+    
+    # Load config
+    config = get_config()
+    auto_start = config.get("webgui.auto_start", True)
+    open_browser = config.get("webgui.open_browser", True)
+    
+    if not auto_start:
+        click.echo("   ℹ️  WebGUI auto-start disabled trong config")
+        click.echo("   💡 Để start WebGUI thủ công, chạy 'midicoder webgui start'")
+        return
+    
+    # Check if already running
+    backend_pid_file = runtime_dir / "backend.pid"
+    frontend_pid_file = runtime_dir / "frontend.pid"
+    
+    backend_pid = _get_pid_from_file(backend_pid_file)
+    frontend_pid = _get_pid_from_file(frontend_pid_file)
+    
+    if backend_pid and _is_process_running(backend_pid):
+        click.echo("   ℹ️  Backend đã đang chạy (PID: {})".format(backend_pid))
+    else:
+        # Get api_dir từ current directory
+        api_dir = Path.cwd() / "api"
+        if not api_dir.exists():
+            click.echo("   ❌ Folder 'api/' không tồn tại. Không thể start Backend.")
+            return
+        
+        success, backend_pid = _start_backend(api_dir, runtime_dir)
+        if not success:
+            click.echo("   ⚠️  Backend start thất bại, tiếp tục với Frontend...")
+            return
+
+    # Start frontend
+    webgui_dir = Path.cwd() / "webgui"
+    if frontend_pid and _is_process_running(frontend_pid):
+        click.echo("   ℹ️  Frontend đã đang chạy (PID: {})".format(frontend_pid))
+    else:
+        if not webgui_dir.exists():
+            click.echo("   ❌ Folder 'webgui/' không tồn tại. Không thể start Frontend.")
+            return
+        
+        success, frontend_pid = _start_frontend(webgui_dir, runtime_dir)
+        if not success:
+            click.echo("   ⚠️  Frontend start thất bại")
+            return
+    
+    # Open browser
+    if open_browser and backend_pid and frontend_pid:
+        _open_browser("http://localhost:{}".format(WEBGUI_FRONTEND_PORT))
+    
     click.echo("")
-    click.echo("   Backend (FastAPI):")
-    click.echo("     cd webgui/backend")
-    click.echo("     uvicorn main:app --host 0.0.0.0 --port 6868 --reload")
-    click.echo("")
-    click.echo("   Frontend (Angular):")
-    click.echo("     cd webgui/frontend")
-    click.echo("     ng serve --port 7272")
-    click.echo("")
-    click.echo("   Sau đó mở browser: http://localhost:7272")
+    click.echo("   🌐 WebGUI URLs:")
+    click.echo("     - Backend: http://localhost:{}".format(WEBGUI_BACKEND_PORT))
+    click.echo("     - Frontend: http://localhost:{}".format(WEBGUI_FRONTEND_PORT))
 
 
 def run_init_interactive() -> None:
