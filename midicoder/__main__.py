@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from midicoder.cli import main
+# Import từ pipeline module (new CLI)
+from midicoder.pipeline.cli import main
 
 if __name__ == "__main__":
     raise SystemExit(main())
