@@ -124,6 +124,14 @@ class ErrorCode(str, Enum):
     LLM_RATE_LIMIT = "MDC-LLM-004"
     LLM_TIMEOUT = "MDC-LLM-005"
 
+    # =========================================================================
+    # Config Errors
+    # =========================================================================
+    CONFIG_READ_FAILED = "MDC-CONFIG-001"
+    CONFIG_WRITE_FAILED = "MDC-CONFIG-002"
+    CONFIG_FORMAT_INVALID = "MDC-CONFIG-003"
+    CONFIG_KEY_NOT_FOUND = "MDC-CONFIG-004"
+    CONFIG_VALUE_INVALID = "MDC-CONFIG-005"
 
 @dataclass
 class MidicoderError(RuntimeError):
@@ -280,6 +288,13 @@ class MidicoderErrorManager:
         ErrorCode.GENERATION_FAILED: "Code generation thất bại.",
         ErrorCode.TEMPLATE_RENDER_FAILED: "Template rendering thất bại.",
         ErrorCode.FILE_WRITE_FAILED: "Không thể ghi file output.",
+
+        # Config Errors
+        ErrorCode.CONFIG_READ_FAILED: "Không thể đọc config file.",
+        ErrorCode.CONFIG_WRITE_FAILED: "Không thể lưu config file.",
+        ErrorCode.CONFIG_FORMAT_INVALID: "Config file không đúng format.",
+        ErrorCode.CONFIG_KEY_NOT_FOUND: "Config key không tồn tại.",
+        ErrorCode.CONFIG_VALUE_INVALID: "Config value không hợp lệ.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {
@@ -322,6 +337,31 @@ class MidicoderErrorManager:
         ErrorCode.CAPABILITY_EXPAND_FAILED: [
             "Kiểm tra macro capability definition",
             "Đảm bảo core capabilities được reference tồn tại",
+        ],
+
+        # Config Errors
+        ErrorCode.CONFIG_READ_FAILED: [
+            "Kiểm tra đường dẫn config file",
+            "Đảm bảo file tồn tại trong filesystem",
+            "Kiểm tra quyền truy cập file",
+        ],
+        ErrorCode.CONFIG_WRITE_FAILED: [
+            "Kiểm tra quyền ghi vào thư mục config",
+            "Đảm bảo đủ dung lượng đĩa",
+            "Kiểm tra file không bị lock bởi process khác",
+        ],
+        ErrorCode.CONFIG_FORMAT_INVALID: [
+            "Kiểm tra JSON/YAML syntax",
+            "Sử dụng validator online để kiểm tra format",
+            "So sánh với schema mặc định",
+        ],
+        ErrorCode.CONFIG_KEY_NOT_FOUND: [
+            "Kiểm tra spelling của key (case-sensitive)",
+            "Xem danh sách config keys được hỗ trợ",
+        ],
+        ErrorCode.CONFIG_VALUE_INVALID: [
+            "Kiểm tra type của value (string, int, bool, etc.)",
+            "Xem documentation cho config value constraints",
         ],
     }
 
