@@ -632,6 +632,25 @@ class BriefsManager:
             )
             return [dict(row) for row in cursor.fetchall()]
 
+    def _convert_to_master(self, brief_id: str) -> bool:
+        """
+        Convert working-brief → master-brief.
+
+        Cập nhật type='master' và status='clarified'.
+
+        Args:
+            brief_id: Brief ID để convert
+
+        Returns:
+            True nếu thành công
+        """
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE briefs SET type = 'master', status = 'clarified', updated_at = datetime('now') WHERE brief_id = ?",
+                (brief_id,),
+            )
+            return True
+
     # Lineage method
     def record_lineage(
         self,
