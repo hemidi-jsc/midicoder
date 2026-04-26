@@ -112,31 +112,62 @@ def contract():
 
 
 @contract.command()
-def gen():
+@click.option("--force", is_flag=True, help="Ghi đè contracts nếu đã tồn tại (không hỏi)")
+@click.option("--interactive", is_flag=True, help="Review contracts trước khi lưu")
+def gen(force, interactive):
     """
     Generate DSL contracts từ brief analysis.
 
     Sử dụng LLM + DSL schema để tạo contracts hợp lệ.
+
+    OPTIONS:
+      --force         Ghi đè contracts nếu đã tồn tại (không hỏi confirmation)
+      --interactive   Review contracts trước khi lưu (mở editor)
+
+    EXAMPLES:
+      midicoder contract gen
+      midicoder contract gen --force
+      midicoder contract gen --interactive
     """
     from midicoder.pipeline.commands.contract import generate_contracts
-    generate_contracts()
+    generate_contracts(force=force, interactive=interactive)
 
 
 @contract.command()
-def check():
+@click.option("--auto-fix", is_flag=True, help="Tự động sửa errors bằng LLM nếu có")
+@click.option("--strict", is_flag=True, help="Coi warnings là errors (exit 1 nếu có warnings)")
+def check(auto_fix, strict):
     """
     Validate contracts với DSL schema.
+
+    Kiểm tra contracts đã tồn tại và report errors/warnings.
+
+    OPTIONS:
+      --auto-fix      Tự động chạy LLM để sửa errors nếu có
+      --strict        Coi warnings là errors (exit code 1 nếu có warnings)
+
+    EXAMPLES:
+      midicoder contract check
+      midicoder contract check --strict
+      midicoder contract check --auto-fix
     """
     from midicoder.pipeline.commands.contract import check_contracts
-    check_contracts()
+    check_contracts(auto_fix=auto_fix, strict=strict)
 
 
 @contract.command()
 def repair():
     """
     Sửa contracts có lỗi bằng LLM.
+
+    Tự động phát hiện và sửa validation errors trong contracts bằng LLM.
+    Retry tối đa 3 lần nếu LLM fix không valid.
+
+    EXAMPLES:
+      midicoder contract repair
     """
-    click.echo("Contract repair - coming soon")
+    from midicoder.pipeline.commands.contract import repair_contracts
+    repair_contracts()
 
 
 @cli.group()
