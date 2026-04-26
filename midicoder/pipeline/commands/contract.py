@@ -19,13 +19,12 @@ from typing import Any, Dict, List
 from midicoder.storage.sqlite import BriefsManager
 from midicoder.dsl.loader import load_projection_tree
 from midicoder.dsl.validator import validate_tree, ValidationStatus
-from midicoder.llm.client import (
+from litellm import APIError
+from midicoder.pipeline.llm.client import (
     LlmConfig,
-    LlmRequestError,
     call_llm,
     load_llm_config,
 )
-from midicoder.commands.base import MidicoderPaths
 
 
 def generate_contracts(force: bool = False):
@@ -501,23 +500,45 @@ def check_contracts(auto_fix: bool = False, strict: bool = False):
     # Final report
     click.echo("")
     
+    has_errors = report.status == ValidationStatus.ERRORS
+    has_warnings = report.status == ValidationStatus.WARNINGS
+    
     if report.status == ValidationStatus.VALID:
         click.echo("✅ Contracts validation passed!")
+        click.echo("")
+        click.echo("Tiếp theo:")
+        click.echo("  1. Chạy: midicoder ir build (build MIR from contracts)")
     elif report.status == ValidationStatus.WARNINGS:
         if strict:
             click.echo("⚠️  Warnings found (strict mode = error)")
-            return
-        click.echo("⚠️  Contracts valid with warnings")
-    elif report.status == ValidationStatus.ERRORS:
-        click.echo("❌ Contracts have errors")
-        return
+            click.echo("")
+            click.echo("Tiếp theo:")
+            click.echo("  1. Sửa warnings hoặc chạy: midicoder contract check --auto-fix")
+        else:
+            click.echo("⚠️  Contracts valid with warnings")
+            click.echo("")
+            click.echo("Tiếp theo:")
+            click.echo("  1. Chạy: midicoder contract check --strict (kiểm tra nghiêm ngặt)")
+            click.echo("  2. Hoặc: midicoder ir build (build MIR from contracts)")
+    elif has_errors:
+        click.echo("❌ Contracts có errors")
+        
+        # Nếu có --auto-fix, tự động gọi repair
+        if auto_fix:
+            click.echo("")
+            click.echo("🔧 Tự động repair với LLM...")
+            click.echo("")
+            repair_contracts()
+        else:
+            click.echo("")
+            click.echo("Tiếp theo:")
+            click.echo("  1. Sửa errors thủ công hoặc chạy: midicoder contract repair")
+            click.echo("  2. Hoặc: midicoder contract check --auto-fix (tự động sửa)")
     else:  # FATAL
         click.echo("❌ Fatal validation errors")
-        return
-    
-    click.echo("")
-    click.echo("Tiếp theo:")
-    click.echo("  1. Chạy: midicoder ir build (build MIR from contracts)")
+        click.echo("")
+        click.echo("Tiếp theo:")
+        click.echo("  1. Sửa errors nghiêm trọng hoặc chạy lại: midicoder contract gen")
 
 
 # Số lần thử tối đa để LLM fix contracts
@@ -624,7 +645,7 @@ def _try_fix_with_llm(
         
         return True, fixed_content
         
-    except LlmRequestError as e:
+    except APIError as e:
         click.echo(f"      ❌ LLM error: {e}")
         return False, None
     except yaml.YAMLError as e:
@@ -663,10 +684,9 @@ def repair_contracts():
     
     click.echo(f"   → Found {len(contract_files)} contract files")
     
-    # Load LLM config (sử dụng 'repair' tier cho cost optimization)
+    # Load LLM config
     try:
-        paths = MidicoderPaths(".")
-        config = load_llm_config(paths, tier="repair")
+        config = load_llm_config()
     except Exception as e:
         click.echo(f"❌ Không thể load LLM config: {e}")
         click.echo("💡 Kiểm tra ~/.midicoder/midicoder.json")

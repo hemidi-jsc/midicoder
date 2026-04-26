@@ -772,9 +772,8 @@ entities:
   - id: User
 """)
     
-    # Mock LLM error
-    from midicoder.llm.client import LlmRequestError
-    mock_call_llm.side_effect = LlmRequestError("LLM unavailable")
+    # Mock LLM error (use generic Exception for simplicity)
+    mock_call_llm.side_effect = Exception("LLM unavailable")
     
     mock_tree = MagicMock()
     mock_tree.node_count.return_value = 1
