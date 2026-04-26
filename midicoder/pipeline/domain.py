@@ -35,8 +35,9 @@ KNOWN_DOMAINS = [
     "generic",  # default khi không detect được
 ]
 
-# Default prompt path
-DEFAULT_PROMPT_PATH = Path(__file__).parent / "prompts" / "default-brief-analyze.md"
+# Default prompt paths
+DEFAULT_ANALYZE_PROMPT_PATH = Path(__file__).parent / "prompts" / "default-brief-analyze.md"
+DEFAULT_CLARIFY_PROMPT_PATH = Path(__file__).parent / "prompts" / "default-brief-clarify.md"
 
 # Domain detection prompt (nhỏ, nhanh)
 DOMAIN_DETECTION_PROMPT = """
@@ -104,60 +105,81 @@ def detect_domain(brief_content: str, llm_config: Optional[dict] = None) -> str:
         return "generic"
 
 
-def get_domain_prompt(domain: str, industry_path: Optional[Path] = None) -> str:
+def get_domain_prompt(
+    domain: str,
+    industry_path: Optional[Path] = None,
+    prompt_type: str = "analyze",
+) -> str:
     """
     Load prompt template cho domain.
 
+    Supports two prompt types:
+    - "analyze": brief-analyze.md (cho brief analyze)
+    - "clarify": brief-clarify.md (cho brief clarify)
+
     Priority:
-    1. industry/<domain>/prompts/brief-analyze.md (original domain name)
-    2. industry/<domain>/brief-analyze.md (original domain name)
-    3. industry/<normalized-domain>/prompts/brief-analyze.md (canonical name)
-    4. industry/<normalized-domain>/brief-analyze.md (canonical name)
-    5. Default prompt (midicoder/pipeline/prompts/default-brief-analyze.md)
+    1. industry/<domain>/prompts/brief-{type}.md (original domain name)
+    2. industry/<domain>/brief-{type}.md (original domain name)
+    3. industry/<normalized-domain>/prompts/brief-{type}.md (canonical name)
+    4. industry/<normalized-domain>/brief-{type}.md (canonical name)
+    5. Default prompt (midicoder/pipeline/prompts/default-brief-{type}.md)
 
     Ví dụ:
-    - Input: "ecommerce-d2c" → Check "industry/ecommerce-d2c/prompts/brief-analyze.md"
+    - Input: "ecommerce-d2c", prompt_type="analyze" → Check "industry/ecommerce-d2c/prompts/brief-analyze.md"
+    - Input: "ecommerce-d2c", prompt_type="clarify" → Check "industry/ecommerce-d2c/prompts/brief-clarify.md"
     - Input: "e-commerce" → normalize → "ecommerce" → Check "industry/ecommerce/prompts/brief-analyze.md"
 
     Args:
         domain: Domain name (original hoặc normalized)
         industry_path: Path đến industry folder (default: ./industry)
+        prompt_type: Loại prompt ("analyze" hoặc "clarify")
 
     Returns:
         Prompt template content
+
+    Raises:
+        FileNotFoundError: Khi không tìm thấy prompt file
     """
     if industry_path is None:
         industry_path = Path("industry")
 
+    # Xác định prompt filename dựa theo prompt_type
+    prompt_filename = f"brief-{prompt_type}.md"
+
     # Try original domain name first (preserves exact path like "ecommerce-d2c")
-    original_prompt_path = industry_path / domain / "prompts" / "brief-analyze.md"
+    original_prompt_path = industry_path / domain / "prompts" / prompt_filename
     if original_prompt_path.exists():
-        logger.info(f"Load domain prompt (original): {original_prompt_path}")
+        logger.info(f"Load domain prompt (original, {prompt_type}): {original_prompt_path}")
         return original_prompt_path.read_text(encoding="utf-8")
 
     # Try alternate path with original domain
-    alt_original_path = industry_path / domain / "brief-analyze.md"
+    alt_original_path = industry_path / domain / prompt_filename
     if alt_original_path.exists():
-        logger.info(f"Load alternate domain prompt (original): {alt_original_path}")
+        logger.info(f"Load alternate domain prompt (original, {prompt_type}): {alt_original_path}")
         return alt_original_path.read_text(encoding="utf-8")
 
     # Try normalized domain name (canonical)
     normalized_domain = normalize_domain(domain)
     if normalized_domain != domain:
-        normalized_prompt_path = industry_path / normalized_domain / "prompts" / "brief-analyze.md"
+        normalized_prompt_path = industry_path / normalized_domain / "prompts" / prompt_filename
         if normalized_prompt_path.exists():
-            logger.info(f"Load domain prompt (normalized): {normalized_prompt_path}")
+            logger.info(f"Load domain prompt (normalized, {prompt_type}): {normalized_prompt_path}")
             return normalized_prompt_path.read_text(encoding="utf-8")
 
         # Try alternate path with normalized domain
-        alt_normalized_path = industry_path / normalized_domain / "brief-analyze.md"
+        alt_normalized_path = industry_path / normalized_domain / prompt_filename
         if alt_normalized_path.exists():
-            logger.info(f"Load alternate domain prompt (normalized): {alt_normalized_path}")
+            logger.info(f"Load alternate domain prompt (normalized, {prompt_type}): {alt_normalized_path}")
             return alt_normalized_path.read_text(encoding="utf-8")
 
     # Fallback to default
-    logger.info(f"Dùng default prompt cho domain '{domain}'")
-    return DEFAULT_PROMPT_PATH.read_text(encoding="utf-8")
+    default_path = DEFAULT_CLARIFY_PROMPT_PATH if prompt_type == "clarify" else DEFAULT_ANALYZE_PROMPT_PATH
+    if not default_path.exists():
+        logger.error(f"Default prompt không tồn tại: {default_path}")
+        raise FileNotFoundError(f"Default prompt file not found: {default_path}")
+
+    logger.info(f"Dùng default prompt ({prompt_type}) cho domain '{domain}'")
+    return default_path.read_text(encoding="utf-8")
 
 
 def normalize_domain(domain: str) -> str:
