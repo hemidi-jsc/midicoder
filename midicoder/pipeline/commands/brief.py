@@ -31,6 +31,7 @@ from typing import Optional, Any
 from midicoder.storage.sqlite import (
     BriefsManager,
     ArtifactsManager,
+    ProvenanceManager,
 )
 from midicoder.pipeline.llm import load_llm_config, call_llm
 from midicoder.pipeline.domain import (
@@ -38,6 +39,7 @@ from midicoder.pipeline.domain import (
     get_domain_prompt,
     normalize_domain,
 )
+from midicoder.pipeline.config import get_config
 
 
 @dataclass
@@ -212,68 +214,68 @@ def brief():
 
 
 @brief.command()
-@click.argument("brief_path", type=click.Path(exists=True), required=False)
-@click.option(
-    "--file", "-f",
-    "file_path",
-    type=click.Path(exists=True),
-    help="Đường dẫn đến brief file (default: brief.md)"
-)
 @click.option(
     "--domain",
     type=str,
     help="Tên domain (optional)"
 )
-def analyze(brief_path, file_path, domain):
+def analyze(domain):
     """
     Phân tích brief để extract requirements.
 
     Sử dụng LLM để hiểu brief và tạo brief analysis.
     Lưu kết quả vào SQLite (working-brief).
 
-    ARGUMENTS:
-      brief_path  Đường dẫn đến brief file (optional)
+    Brief file luôn được đọc từ:
+    .midicoder/versions/{active_version}/brief.md
 
     OPTIONS:
-      -f, --file FILE    Đường dẫn đến brief file
       --domain DOMAIN    Tên domain (optional)
 
     EXAMPLES:
       midicoder brief analyze
-      midicoder brief analyze -f my-brief.md
-      midicoder brief analyze ./docs/requirements.md
+      midicoder brief analyze --domain ecommerce
     """
-    # Ưu tiên file_path từ --file option
-    if file_path:
-        brief_path = file_path
-    elif not brief_path:
-        brief_path = "brief.md"
-
-    _execute_analyze(brief_path, domain)
+    _execute_analyze(domain)
 
 
-def _execute_analyze(brief_path: str, domain: Optional[str] = None) -> None:
+def _execute_analyze(domain: Optional[str] = None) -> None:
     """
     Thực thi phân tích brief.
 
+    Brief file được đọc từ:
+    .midicoder/versions/{active_version}/brief.md
+
     Args:
-        brief_path: Đường dẫn đến brief file
         domain: Tên domain (optional)
 
     Raises:
-        FileNotFoundError: Nếu brief file không tồn tại
+        SystemExit: Nếu brief file không tồn tại hoặc không có active version
     """
     click.echo("📖 Đang phân tích brief...")
 
-    # Bước 1: Đọc brief
-    brief_file = Path(brief_path)
+    # Bước 1: Lấy active_version từ config
+    config = get_config()
+    active_version = config.get("active_version")
+    
+    if not active_version:
+        click.echo("❌ Không tìm thấy active_version trong config")
+        click.echo("💡 Chạy 'midicoder version create' hoặc 'midicoder init' trước")
+        raise SystemExit(1)
+
+    # Bước 2: Xác định đường dẫn brief file
+    versions_dir = Path(".midicoder/versions") / active_version
+    brief_file = versions_dir / "brief.md"
+    
     if not brief_file.exists():
-        click.echo(f"❌ File không tồn tại: {brief_path}")
-        click.echo("💡 Tạo brief.md hoặc chỉ định đường dẫn đúng")
+        click.echo(f"❌ File brief.md không tồn tại tại: {brief_file}")
+        click.echo(f"💡 Tạo file tại: {brief_file}")
+        click.echo(f"   Hoặc chạy 'midicoder version create' để tạo version mới")
         raise SystemExit(1)
 
     content = brief_file.read_text(encoding="utf-8")
     click.echo(f"   ✓ Đã đọc brief: {brief_file}")
+    click.echo(f"   → Version: {active_version}")
     click.echo(f"   → Kích thước: {len(content)} characters")
 
     # Bước 2: Kiểm tra đã có brief chưa
@@ -349,6 +351,27 @@ def _execute_analyze(brief_path: str, domain: Optional[str] = None) -> None:
         
         click.echo(f"   ✓ Analysis artifact đã lưu")
         
+        # Bước 5: Record provenance lineage
+        try:
+            provenance_manager = ProvenanceManager()
+            provenance_manager.init()
+            provenance_manager.record_lineage(
+                entity_id=f"analysis-{brief_id}",
+                entity_type="artifact",
+                source_id=brief_id,
+                source_type="brief",
+                relationship="generated_from",
+                metadata={
+                    "domain": analysis.domain,
+                    "confidence": analysis.confidence,
+                    "tokens_used": analysis.tokens_used,
+                    "latency_ms": analysis.latency_ms,
+                },
+            )
+            click.echo(f"   ✓ Provenance lineage đã record")
+        except Exception as e:
+            click.echo(f"⚠️  Không thể record provenance: {e}")
+        
         # Bước 6: Update status
         briefs_manager.update_status(brief_id, "analyzed")
         
@@ -401,9 +424,131 @@ def clarify(max_rounds):
     _execute_clarify(max_rounds)
 
 
+def _generate_clarification_question(
+    analysis_data: dict,
+    qa_history: list[dict],
+    llm_config,
+    domain: str,
+) -> tuple[bool, str]:
+    """
+    Gọi LLM để generate clarification question.
+
+    Sử dụng brief-clarify.md prompt template.
+
+    Args:
+        analysis_data: Analysis JSON từ brief analyze
+        qa_history: Lịch sử Q&A (list of {question, answer})
+        llm_config: LLM config
+        domain: Domain name
+
+    Returns:
+        (needs_more, question_text)
+        - needs_more=True: Còn cần hỏi thêm
+        - needs_more=False: Đã đủ rõ, kết thúc
+    """
+    # Load clarification prompt
+    try:
+        system_prompt = get_domain_prompt(domain, prompt_type="clarify")
+    except Exception:
+        click.echo("⚠️  Không load được domain prompt, dùng default")
+        system_prompt = get_domain_prompt("generic", prompt_type="clarify")
+
+    # Build user message với analysis + history
+    user_content = f"""## Brief Analysis:
+{json.dumps(analysis_data, indent=2, ensure_ascii=False)}
+
+## Q&A History:
+"""
+    if qa_history:
+        for i, qa in enumerate(qa_history, 1):
+            user_content += f"\nQ{i}: {qa['question']}\nA{i}: {qa['answer']}\n"
+    else:
+        user_content += "(Chưa có câu hỏi nào)"
+
+    try:
+        response = call_llm(
+            config=llm_config,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+        )
+
+        # Parse JSON response
+        content = response.content.strip()
+        if content.startswith("```json"):
+            content = content.removeprefix("```json").removesuffix("```")
+        elif content.startswith("```"):
+            content = content.removeprefix("```").removesuffix("```")
+
+        result = json.loads(content)
+        done = result.get("done", False)
+
+        if done:
+            return (False, "")
+        else:
+            return (True, result.get("question", ""))
+
+    except json.JSONDecodeError as e:
+        click.echo(f"⚠️  LLM response không phải JSON hợp lệ: {e}")
+        click.echo("Trả về done=True để kết thúc")
+        return (False, "")
+    except Exception as e:
+        click.echo(f"❌ LLM call failed: {e}")
+        raise
+
+
+def _save_clarification(
+    briefs_manager: BriefsManager,
+    brief_id: str,
+    round_num: int,
+    question: str,
+    answer: str,
+) -> None:
+    """
+    Lưu Q&A vào clarifications table.
+
+    Args:
+        briefs_manager: BriefsManager instance
+        brief_id: Brief ID
+        round_num: Round number
+        question: Câu hỏi
+        answer: Câu trả lời
+    """
+    briefs_manager.add_clarification(
+        brief_id=brief_id,
+        round_num=round_num,
+        question=question,
+        answer=answer,
+        is_memo=False,
+    )
+
+
+def _convert_to_master_brief(
+    briefs_manager: BriefsManager,
+    brief_id: str,
+) -> None:
+    """
+    Convert working-brief → master-brief.
+
+    Update type="master" và status="clarified".
+
+    Args:
+        briefs_manager: BriefsManager instance
+        brief_id: Brief ID
+    """
+    briefs_manager._convert_to_master(brief_id)
+
+
 def _execute_clarify(max_rounds: int = 10) -> None:
     """
-    Thực thi clarification session.
+    Thực thi clarification session với LLM Q&A loop.
+
+    Process:
+    1. Tìm active working-brief
+    2. Load analysis JSON từ artifacts
+    3. LLM generate questions iteratively
+    4. User answers each question
+    5. Save Q&A vào clarifications table
+    6. Convert to master-brief khi xong
 
     Args:
         max_rounds: Số vòng clarification tối đa
@@ -428,33 +573,141 @@ def _execute_clarify(max_rounds: int = 10) -> None:
         return
 
     brief_id = active_brief.get("brief_id")
+    domain = active_brief.get("domain", "generic")
     click.echo(f"   → Brief: {active_brief.get('title')}")
     click.echo(f"   → ID: {brief_id}")
+    click.echo(f"   → Domain: {domain}")
     click.echo(f"   → Max rounds: {max_rounds}")
     click.echo("")
 
-    # Bước 2: Interactive Q&A loop
-    # Placeholder - sẽ integrate với LLM client
-    click.echo("🤖 LLM clarification loop - sẽ integrate với LLM client")
-    click.echo("   ℹ️  Process:")
-    click.echo("   1. LLM generate question từ working-brief")
-    click.echo("   2. User answer (text)")
-    click.echo("   3. LLM evaluate nếu cần thêm question")
-    click.echo("   4. Loop cho đến khi không còn question hoặc đạt max_rounds")
-    click.echo("   5. Convert working-brief → master-brief")
+    # Bước 2: Load analysis JSON từ artifacts
+    try:
+        artifacts_manager = ArtifactsManager()
+        artifacts_manager.init()
+
+        analysis_artifact = None
+        for artifact in artifacts_manager.list(artifact_type="analysis", brief_id=brief_id):
+            analysis_artifact = artifact
+            break
+
+        if not analysis_artifact:
+            click.echo("⚠️  Không tìm thấy analysis artifact")
+            click.echo("💡 Chạy 'midicoder brief analyze' trước")
+            return
+
+        # Load analysis content
+        analysis_record = artifacts_manager.get(
+            artifact_id=f"analysis-{brief_id}"
+        )
+        if not analysis_record:
+            click.echo("❌ Không load được analysis")
+            return
+
+        analysis_data = json.loads(analysis_record.get("content", "{}"))
+        click.echo(f"✓ Đã load analysis: {len(analysis_data.get('entities', []))} entities")
+        click.echo("")
+
+    except Exception as e:
+        click.echo(f"❌ Lỗi khi load analysis: {e}")
+        return
+
+    # Bước 3: Load LLM config
+    try:
+        llm_config = load_llm_config()
+        click.echo(f"✓ LLM config: {llm_config.provider} / {llm_config.model}")
+        click.echo("")
+    except Exception as e:
+        click.echo(f"❌ Không thể load LLM config: {e}")
+        click.echo("💡 Cấu hình LLM tại ~/.midicoder/midicoder.json")
+        return
+
+    # Bước 4: Q&A Loop
+    qa_history = []
+    round_num = 0
+
+    try:
+        while round_num < max_rounds:
+            round_num += 1
+            click.echo(f"--- Round {round_num}/{max_rounds} ---")
+
+            # Generate question từ LLM
+            needs_more, question = _generate_clarification_question(
+                analysis_data=analysis_data,
+                qa_history=qa_history,
+                llm_config=llm_config,
+                domain=domain,
+            )
+
+            if not needs_more or not question:
+                click.echo("✓ LLM xác nhận brief đã đủ rõ")
+                break
+
+            # Display question
+            click.echo(f"\n🤖 Câu hỏi {round_num}:")
+            click.echo(f"   {question}")
+
+            # Get user answer
+            answer = click.prompt("Trả lời của bạn", default="")
+
+            if not answer.strip():
+                click.echo("⚠️  Câu trả lời trống, bỏ qua")
+                continue
+
+            # Save clarification
+            _save_clarification(
+                briefs_manager=briefs_manager,
+                brief_id=brief_id,
+                round_num=round_num,
+                question=question,
+                answer=answer,
+            )
+
+            qa_history.append({"question": question, "answer": answer})
+            click.echo(f"✓ Đã lưu câu trả lời")
+            click.echo("")
+
+    except KeyboardInterrupt:
+        click.echo("\n\n⚠️  Người dùng hủy bỏ (Ctrl+C)")
+        click.echo("Lưu các câu trả lời đã có và chuyển sang master-brief")
+
+    # Bước 5: Record provenance decisions cho mỗi Q&A
+    try:
+        provenance_manager = ProvenanceManager()
+        provenance_manager.init()
+        
+        for i, qa in enumerate(qa_history, 1):
+            provenance_manager.record_decision(
+                decision_id=f"clarify-{brief_id}-q{i}",
+                title=f"Clarification Q{i}: {qa['question'][:50]}...",
+                status="accepted",
+                description=qa['question'],
+                rationale=qa['answer'],
+                consequences="Brief đã được làm rõ",
+                decided_by="user",
+                related_brief_id=brief_id,
+                related_version=active_brief.get("version", "v1.0.0"),
+            )
+        
+        click.echo(f"✓ Đã record {len(qa_history)} provenance decisions")
+    except Exception as e:
+        click.echo(f"⚠️  Không thể record provenance: {e}")
+
+    # Bước 6: Convert to master-brief
     click.echo("")
+    click.echo("Đang convert thành master-brief...")
+    _convert_to_master_brief(briefs_manager, brief_id)
+    click.echo(f"✓ Brief đã chuyển sang: type=master, status=clarified")
 
-    # Demo: Lưu clarification record (placeholder)
-    # Trong real implementation, sẽ có Q&A loop với LLM
-    click.echo("💡 Để disable placeholder và implement thật, cần integrate LLM client")
-    click.echo("")
-
-    # Bước 3: Convert working-brief → master-brief
-    briefs_manager.update_status(brief_id, "clarified")
-    click.echo(f"   ✓ Brief đã chuyển sang status: clarified")
-
+    # Summary
     click.echo("")
     click.echo("✅ Clarification hoàn tất!")
+    click.echo("=" * 60)
+    click.echo(f"   → Rounds: {round_num}")
+    click.echo(f"   → Questions asked: {len(qa_history)}")
+    click.echo(f"   → Answers saved: {len(qa_history)}")
+    click.echo(f"   → Status: clarified")
+    click.echo("=" * 60)
+
     click.echo("")
     click.echo("Tiếp theo:")
     click.echo("  1. midicoder brief save - Lưu vào library (optional)")
