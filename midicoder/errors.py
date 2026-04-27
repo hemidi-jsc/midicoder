@@ -207,6 +207,18 @@ class ErrorCode(str, Enum):
     INDEX_PARSE_FAILED = "MDC-IDX-003"
     INDEX_EMBEDDING_FAILED = "MDC-IDX-004"
     INDEX_LOCKED = "MDC-IDX-005"
+    
+    # =========================================================================
+    # Utility Command Errors
+    # =========================================================================
+    UTIL_PROJECT_NOT_INITIALIZED = "MDC-UTIL-001"
+    UTIL_VERSION_NOT_FOUND = "MDC-UTIL-002"
+    UTIL_NO_ACTIVE_BRIEF = "MDC-UTIL-003"
+    UTIL_INVALID_FEEDBACK_TYPE = "MDC-UTIL-004"
+    UTIL_INVALID_CONFIG_KEY = "MDC-UTIL-005"
+    UTIL_CONFIG_WRITE_FAILED = "MDC-UTIL-006"
+    UTIL_NEO4J_CONNECTION_FAILED = "MDC-UTIL-007"
+    UTIL_PIPELINE_TRIGGER_FAILED = "MDC-UTIL-008"
 
 
 class ExitCode(Enum):
