@@ -114,8 +114,9 @@ class BackendNestJSEmitter:
         Process:
         1. Emit base files (main.ts, app.module.ts, config.ts, etc.)
         2. Emit entity files cho mỗi entity trong MIR metadata
-        3. Write files to output directory
-        4. Return list of GeneratedFile
+        3. Emit value object files cho mỗi value object trong MIR metadata
+        4. Write files to output directory
+        5. Return list of GeneratedFile
         
         Args:
             mir: MIR instance
@@ -133,6 +134,11 @@ class BackendNestJSEmitter:
         entities = mir.metadata.get("entities", [])
         for entity in entities:
             files.extend(self._emit_entity(entity, output_dir))
+        
+        # Emit value objects từ MIR metadata
+        value_objects = mir.metadata.get("value_objects", [])
+        for vo in value_objects:
+            files.extend(self._emit_value_object(vo, output_dir))
         
         return files
     
@@ -323,6 +329,56 @@ class BackendNestJSEmitter:
             filename=f"update.{entity_lower}.dto.ts",
             template="dto.ts.jinja2",
             context={"entity": entity},
+            capability="CP01",
+        ))
+        
+        return files
+    
+    def _emit_value_object(self, vo: dict[str, Any], output_dir: Path) -> list[GeneratedFile]:
+        """
+        Emit files cho một Value Object.
+        
+        Files được emit:
+        - src/domain/value-objects/{vo_id}.value-object.ts
+        - src/domain/value-objects/index.ts (nếu chưa tồn tại)
+        
+        Args:
+            vo: Value Object dict từ MIR metadata
+            output_dir: Output directory
+            
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+        
+        vo_id = vo.get("id", "ValueObject")
+        vo_lower = vo_id.lower()
+        
+        src_dir = output_dir / "src"
+        domain_dir = src_dir / "domain"
+        vo_dir = domain_dir / "value-objects"
+        
+        # Create value-objects directory
+        vo_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Emit index.ts for value-objects directory nếu chưa có
+        index_file = vo_dir / "index.ts"
+        if not index_file.exists():
+            index_content = """// Value Objects exports\n"""
+            index_file.write_text(index_content, encoding="utf-8")
+            files.append(GeneratedFile(
+                path=index_file.relative_to(output_dir),
+                content=index_content,
+                template="generated",
+                capability="CP01",
+            ))
+        
+        # Emit value object file (use domain/value-object.ts.jinja2 template - CP01)
+        files.append(self._write_file(
+            output_dir=vo_dir,
+            filename=f"{vo_lower}.value-object.ts",
+            template="domain/value-object.ts.jinja2",
+            context={"vo": vo},
             capability="CP01",
         ))
         
