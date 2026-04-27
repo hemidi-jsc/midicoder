@@ -203,6 +203,10 @@ cli.add_command(preview_group)
 from midicoder.pipeline.commands.version import version as version_group
 cli.add_command(version_group)
 
+# Import index command
+from midicoder.pipeline.commands.index import index_command
+cli.add_command(index_command)
+
 
 @cli.group()
 def config():
