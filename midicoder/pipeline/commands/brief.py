@@ -126,12 +126,14 @@ def _analyze_with_llm(
             brief_content=brief_content,
             domain=final_domain,
             model_name=llm_config.model,
+            system_prompt=system_prompt,  # Pass system prompt để tính total tokens
         )
         
         if context_result.warning:
             click.echo(f"   {context_result.warning}")
         elif context_result.context_items:
             click.echo(f"   ✓ Codebase context: {len(context_result.context_items)} items, {context_result.token_count} tokens")
+            click.echo(f"   → Total tokens: brief={context_result.brief_tokens}, system={context_result.system_tokens}, context={context_result.token_count}, total={context_result.total_tokens}")
         else:
             click.echo("   ⚠️ Không tìm thấy codebase context (chạy 'midicoder index' để index codebase)")
     except Exception as e:
