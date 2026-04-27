@@ -1,67 +1,194 @@
 """
-Base Model cho SQLAlchemy.
+Base Model cho SQLAlchemy với comprehensive features.
 
 Tất cả models phải kế thừa Base để có:
-- ID tự động
-- Timestamps (created_at, updated_at)
+- ID tự động (integer hoặc UUID)
+- Timestamps (created_at, updated_at, deleted_at)
+- Version tracking (optimistic locking)
 - JSON encoding/decoding
+- Soft delete support
+- Rich serialization methods
 
 CP08: Database & Data Access
 """
 
 from datetime import datetime
-from typing import Any
-from sqlalchemy import DateTime, Integer
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from typing import Any, Optional, Dict, List
+from uuid import UUID
+
+from sqlalchemy import DateTime, Integer, String, Boolean
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, DeclarativeMeta
 
 
 class Base(DeclarativeBase):
     """
     Base class cho tất cả SQLAlchemy models.
 
-    Cung cấp các attributes chung:
-    - id: Primary key tự tăng
+    Cung cấp các attributes và methods chung:
+    - id: Primary key (integer, autoincrement)
     - created_at: Thời điểm tạo (auto)
     - updated_at: Thời điểm cập nhật (auto)
+    - deleted_at: Thời điểm soft delete (nullable)
+    - version: Version cho optimistic locking
+
+    Methods:
+    - to_dict(): Serialize to dictionary
+    - from_dict(): Create instance from dictionary
+    - is_deleted(): Check soft delete status
+    - soft_delete(): Mark as deleted
+    - restore(): Restore from soft delete
+    - __repr__(): Debug representation
+
+    Usage:
+        class User(Base):
+            __tablename__ = "users"
+            name: Mapped[str] = mapped_column(String(255))
+
+        # Create
+        user = User(name="John")
+        
+        # Soft delete
+        user.soft_delete()
+        assert user.is_deleted()
+        
+        # Restore
+        user.restore()
+        assert not user.is_deleted()
     """
 
-    # Primary key - khóa chính tự tăng
+    # ========================================================================
+    # Primary Key (Default: Integer)
+    # ========================================================================
+
+    # ID - khóa chính tự tăng
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
         autoincrement=True,
         nullable=False,
         index=True,
+        comment="Primary key - Auto increment integer",
     )
 
-    # Created at - thời điểm tạo bản ghi
+    # ========================================================================
+    # Audit Fields (Auto-managed timestamps)
+    # ========================================================================
+
+    # Created at - thời điểm tạo bản ghi (immutable)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
         nullable=False,
         index=True,
+        comment="Timestamp when record was created",
     )
 
-    # Updated at - thời điểm cập nhật bản ghi
+    # Updated at - thời điểm cập nhật bản ghi (auto-update)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
         nullable=False,
         index=True,
+        comment="Timestamp when record was last updated",
     )
 
-    def to_dict(self) -> dict[str, Any]:
+    # ========================================================================
+    # Soft Delete Fields
+    # ========================================================================
+
+    # Deleted at - thời điểm soft delete (nullable = not deleted)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        index=True,
+        default=None,
+        comment="Timestamp when record was soft deleted (NULL = active)",
+    )
+
+    # ========================================================================
+    # Optimistic Locking
+    # ========================================================================
+
+    # Version - cho optimistic locking
+    version: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        comment="Version for optimistic locking",
+    )
+
+    # ========================================================================
+    # Soft Delete Methods
+    # ========================================================================
+
+    def is_deleted(self) -> bool:
+        """
+        Kiểm tra bản ghi đã soft delete chưa.
+
+        Returns:
+            True nếu bản ghi đã được soft delete (deleted_at is not None)
+        """
+        return self.deleted_at is not None
+
+    def soft_delete(self) -> None:
+        """
+        Soft delete bản ghi.
+
+        Set deleted_at = current timestamp thay vì xóa hẳn.
+        """
+        self.deleted_at = datetime.utcnow()
+
+    def restore(self) -> None:
+        """
+        Restore bản ghi từ soft delete.
+
+        Set deleted_at = None.
+        """
+        self.deleted_at = None
+
+    def is_active(self) -> bool:
+        """
+        Kiểm tra bản ghi còn active (không bị soft delete).
+
+        Returns:
+            True nếu bản ghi vẫn active
+        """
+        return not self.is_deleted()
+
+    # ========================================================================
+    # Serialization Methods
+    # ========================================================================
+
+    def to_dict(self, exclude: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Chuyển model thành dictionary.
+
+        Args:
+            exclude: List của field names để exclude (optional)
 
         Returns:
             Dictionary chứa tất cả attributes của model
         """
-        return {column.key: getattr(self, column.key) for column in self.__table__.columns}
+        exclude = exclude or []
+        result = {}
+
+        for column in self.__table__.columns:
+            if column.name not in exclude:
+                value = getattr(self, column.name)
+                # Handle datetime serialization
+                if isinstance(value, datetime):
+                    result[column.name] = value.isoformat()
+                # Handle UUID serialization
+                elif isinstance(value, UUID):
+                    result[column.name] = str(value)
+                else:
+                    result[column.name] = value
+
+        return result
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Base":
+    def from_dict(cls, data: Dict[str, Any]) -> "Base":
         """
         Tạo instance từ dictionary.
 
@@ -72,7 +199,166 @@ class Base(DeclarativeBase):
             Instance của model
         """
         instance = cls()
+
         for key, value in data.items():
             if hasattr(instance, key):
+                # Handle datetime parsing
+                if key in ["created_at", "updated_at", "deleted_at"] and isinstance(value, str):
+                    try:
+                        value = datetime.fromisoformat(value)
+                    except (ValueError, TypeError):
+                        pass  # Keep original value if parsing fails
+
                 setattr(instance, key, value)
+
         return instance
+
+    def to_json(self, exclude: Optional[List[str]] = None) -> str:
+        """
+        Chuyển model thành JSON string.
+
+        Args:
+            exclude: List của field names để exclude (optional)
+
+        Returns:
+            JSON string
+        """
+        import json
+        return json.dumps(self.to_dict(exclude=exclude), default=str, ensure_ascii=False)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "Base":
+        """
+        Tạo instance từ JSON string.
+
+        Args:
+            json_str: JSON string
+
+        Returns:
+            Instance của model
+        """
+        import json
+        data = json.loads(json_str)
+        return cls.from_dict(data)
+
+    # ========================================================================
+    # Comparison and Hash Methods
+    # ========================================================================
+
+    def __repr__(self) -> str:
+        """
+        String representation cho debugging.
+
+        Returns:
+            Formatted string với table name và ID
+        """
+        table_name = getattr(self, "__tablename__", "Unknown")
+        return f"<{table_name}(id={self.id}, deleted={self.is_deleted()})>"
+
+    def __str__(self) -> str:
+        """
+        User-friendly string representation.
+
+        Returns:
+            Formatted string với table name và ID
+        """
+        return self.__repr__()
+
+    def __eq__(self, other: Any) -> bool:
+        """
+        So sánh hai instances.
+
+        Args:
+            other: Instance để so sánh
+
+        Returns:
+            True nếu cùng bảng và cùng ID
+        """
+        if not isinstance(other, Base):
+            return False
+        return (
+            hasattr(self, "__tablename__") and
+            hasattr(other, "__tablename__") and
+            self.__tablename__ == other.__tablename__ and
+            self.id == other.id
+        )
+
+    def __hash__(self) -> int:
+        """
+        Hash function cho model.
+
+        Returns:
+            Hash của (table_name, id)
+        """
+        return hash((getattr(self, "__tablename__", "unknown"), self.id))
+
+    # ========================================================================
+    # Validation Helpers
+    # ========================================================================
+
+    def validate_required_fields(self, fields: List[str]) -> List[str]:
+        """
+        Validate các required fields.
+
+        Args:
+            fields: List của field names cần validate
+
+        Returns:
+            List của missing field names (empty = valid)
+        """
+        missing = []
+        for field in fields:
+            value = getattr(self, field, None)
+            if value is None:
+                missing.append(field)
+        return missing
+
+    def is_valid(self, required_fields: Optional[List[str]] = None) -> bool:
+        """
+        Kiểm tra model có valid không.
+
+        Args:
+            required_fields: List của required fields (optional)
+
+        Returns:
+            True nếu tất cả required fields đều có value
+        """
+        if not required_fields:
+            return True
+        return len(self.validate_required_fields(required_fields)) == 0
+
+    # ========================================================================
+    # Metadata Helpers
+    # ========================================================================
+
+    @classmethod
+    def get_table_name(cls) -> str:
+        """
+        Lấy table name của model.
+
+        Returns:
+            Table name string
+        """
+        return getattr(cls, "__tablename__", "unknown")
+
+    @classmethod
+    def get_columns(cls) -> List[str]:
+        """
+        Lấy list của tất cả column names.
+
+        Returns:
+            List của column names
+        """
+        return [column.name for column in cls.__table__.columns]
+
+    @classmethod
+    def get_primary_key(cls) -> str:
+        """
+        Lấy tên của primary key column.
+
+        Returns:
+            Primary key column name
+        """
+        for column in cls.__table__.primary_key:
+            return column.name
+        return "id"

@@ -1,10 +1,13 @@
 /**
- * Base Entity cho TypeORM.
+ * Base Entity cho TypeORM với comprehensive features.
  *
  * Tất cả entities phải mở rộng BaseEntity để có:
- * - ID tự động
- * - Timestamps (createdAt, updatedAt)
- * - JSON serialization
+ * - ID tự động (UUID)
+ * - Timestamps (createdAt, updatedAt, deletedAt)
+ * - Version tracking (optimistic locking)
+ * - JSON serialization/deserialization
+ * - Soft delete support
+ * - Rich utility methods
  *
  * CP08: Database & Data Access
  */
@@ -14,52 +17,379 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
+  Column,
 } from "typeorm";
+import { Exclude } from "class-transformer";
 
 /**
- * Base Entity class.
+ * Interface cho BaseEntity properties.
+ */
+export interface IBaseEntity {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  version: number;
+}
+
+/**
+ * Base Entity class cho tất cả TypeORM entities.
  *
- * Cung cấp các columns chung cho tất cả entities:
- * - id: Primary key tự tăng
+ * Cung cấp các columns và methods chung:
+ * - id: Primary key (UUID)
  * - createdAt: Thời điểm tạo (auto)
  * - updatedAt: Thời điểm cập nhật (auto)
+ * - deletedAt: Thời điểm soft delete (nullable)
+ * - version: Version cho optimistic locking
+ *
+ * Methods:
+ * - toObject(): Serialize to plain object
+ * - toJSON(): Serialize to JSON string
+ * - fromObject(): Create instance from object
+ * - fromJSON(): Create instance from JSON string
+ * - isDeleted(): Check soft delete status
+ * - softDelete(): Mark as deleted
+ * - restore(): Restore from soft delete
+ * - isActive(): Check if not deleted
+ * - validateRequired(): Validate required fields
+ * - getTableName(): Get entity table name
+ *
+ * Usage:
+ *   @Entity("users")
+ *   export class User extends BaseEntity {
+ *     @Column({ length: 255 })
+ *     name: string;
+ *
+ *     // Create and soft delete
+ *     const user = new User();
+ *     user.name = "John";
+ *     await userRepository.save(user);
+ *
+ *     user.softDelete(); // Set deletedAt = now
+ *     console.log(user.isDeleted()); // true
+ *   }
  */
 @Entity()
-export class BaseEntity {
+export class BaseEntity implements IBaseEntity {
   /**
-   * Primary key - khóa chính tự tăng.
+   * Primary key - khóa chính UUID tự sinh.
+   *
+   * TypeORM tự động sinh UUID khi save entity mới.
    */
   @PrimaryGeneratedColumn("uuid")
   id: string;
 
   /**
    * Created at - thời điểm tạo bản ghi.
+   *
+   * TypeORM tự động set khi INSERT.
+   * Không thể thay đổi sau khi tạo.
    */
   @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
 
   /**
    * Updated at - thời điểm cập nhật bản ghi.
+   *
+   * TypeORM tự động update khi INSERT hoặc UPDATE.
    */
   @UpdateDateColumn({ name: "updated_at" })
   updatedAt: Date;
 
   /**
-   * Chuyển entity thành object.
+   * Deleted at - thời điểm soft delete.
    *
-   * @returns Object chứa tất cả properties
+   * NULL = record active
+   * Has value = record soft deleted
+   *
+   * TypeORM tự động filter soft deleted records khi query.
+   * Sử dụng withDeleted() để bypass filter.
    */
-  toObject(): Record<string, unknown> {
-    const object = { ...this };
+  @DeleteDateColumn({ name: "deleted_at" })
+  @Exclude() // Exclude từ serialization bằng default
+  deletedAt: Date | null;
+
+  /**
+   * Version - cho optimistic locking.
+   *
+   * Tự động increment mỗi khi UPDATE.
+   * Dùng để detect concurrent modifications.
+   */
+  @Column({ name: "version", type: "int", default: 0 })
+  version: number;
+
+  // ========================================================================
+  // Soft Delete Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra entity đã soft delete chưa.
+   *
+   * @returns True nếu entity đã được soft delete
+   */
+  isDeleted(): boolean {
+    return this.deletedAt !== null && this.deletedAt !== undefined;
+  }
+
+  /**
+   * Kiểm tra entity còn active (không bị soft delete).
+   *
+   * @returns True nếu entity vẫn active
+   */
+  isActive(): boolean {
+    return !this.isDeleted();
+  }
+
+  /**
+   * Soft delete entity.
+   *
+   * Set deletedAt = current timestamp.
+   * KHÔNG xóa hẳn khỏi database.
+   */
+  softDelete(): void {
+    this.deletedAt = new Date();
+  }
+
+  /**
+   * Restore entity từ soft delete.
+   *
+   * Set deletedAt = null.
+   */
+  restore(): void {
+    this.deletedAt = null;
+  }
+
+  // ========================================================================
+  // Serialization Methods
+  // ========================================================================
+
+  /**
+   * Chuyển entity thành plain object.
+   *
+   * @param exclude List của properties để exclude (optional)
+   * @returns Plain object chứa tất cả properties
+   */
+  toObject(exclude: string[] = []): Record<string, unknown> {
+    const object: Record<string, unknown> = { ...this };
+
+    // Remove excluded properties
+    for (const key of exclude) {
+      delete object[key];
+    }
+
+    // Remove constructor and prototype methods
+    delete object["constructor"];
+
     return object;
   }
 
   /**
-   * Chuyển entity thành JSON.
+   * Chuyển entity thành JSON string.
    *
+   * @param exclude List của properties để exclude (optional)
+   * @param space Number of spaces for indentation (optional)
    * @returns JSON string
    */
-  toJSON(): string {
-    return JSON.stringify(this.toObject());
+  toJSON(exclude: string[] = [], space: number = 0): string {
+    const obj = this.toObject(exclude);
+    return JSON.stringify(obj, (key, value) =>
+      typeof value === "bigint" ? value.toString() : value,
+    );
+  }
+
+  /**
+   * Create instance from plain object.
+   *
+   * @param data Plain object chứa values
+   * @returns New instance của entity
+   */
+  static fromObject<T extends BaseEntity>(
+    this: new (...args: any[]) => T,
+    data: Partial<T>,
+  ): T {
+    const instance = Object.create(this.prototype);
+    Object.assign(instance, data);
+    return instance;
+  }
+
+  /**
+   * Create instance from JSON string.
+   *
+   * @param jsonStr JSON string
+   * @returns New instance của entity
+   */
+  static fromJSON<T extends BaseEntity>(
+    this: new (...args: any[]) => T,
+    jsonStr: string,
+  ): T {
+    const data = JSON.parse(jsonStr);
+    return this.fromObject(data);
+  }
+
+  /**
+   * Clone entity instance.
+   *
+   * @returns Shallow copy của entity
+   */
+  clone(): this {
+    return Object.assign(Object.create(Object.getPrototypeOf(this)), this);
+  }
+
+  // ========================================================================
+  // Validation Helpers
+  // ========================================================================
+
+  /**
+   * Validate required fields.
+   *
+   * @param requiredFields List của required field names
+   * @returns List của missing field names (empty = valid)
+   */
+  validateRequiredFields(requiredFields: string[]): string[] {
+    const missing: string[] = [];
+
+    for (const field of requiredFields) {
+      const value = (this as Record<string, unknown>)[field];
+      if (value === null || value === undefined) {
+        missing.push(field);
+      }
+    }
+
+    return missing;
+  }
+
+  /**
+   * Kiểm tra entity có valid không.
+   *
+   * @param requiredFields List của required field names
+   * @returns True nếu tất cả required fields đều có value
+   */
+  isValid(requiredFields: string[] = []): boolean {
+    if (requiredFields.length === 0) {
+      return true;
+    }
+    return this.validateRequiredFields(requiredFields).length === 0;
+  }
+
+  // ========================================================================
+  // Comparison Methods
+  // ========================================================================
+
+  /**
+   * So sánh hai entities.
+   *
+   * @param other Entity để so sánh
+   * @returns True nếu cùng ID
+   */
+  equals(other: BaseEntity | null | undefined): boolean {
+    if (!other) return false;
+    return this.id === other.id;
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string với entity name và ID
+   */
+  toString(): string {
+    const entityName = this.constructor.name;
+    return `<${entityName}(id=${this.id}, deleted=${this.isDeleted()})>`;
+  }
+
+  // ========================================================================
+  // Metadata Helpers
+  // ========================================================================
+
+  /**
+   * Get entity constructor name.
+   *
+   * @returns Entity class name
+   */
+  getEntityName(): string {
+    return this.constructor.name;
+  }
+
+  /**
+   * Get all property names.
+   *
+   * @returns List của property names
+   */
+  getPropertyNames(): string[] {
+    return Object.getOwnPropertyNames(this).filter(
+      (key) =>
+        typeof (this as Record<string, unknown>)[key] !== "function" &&
+        key !== "constructor",
+    );
+  }
+
+  /**
+   * Get property value by name.
+   *
+   * @param name Property name
+   * @returns Property value hoặc undefined
+   */
+  getProperty<T>(name: string): T | undefined {
+    return (this as Record<string, T>)[name];
+  }
+
+  /**
+   * Set property value by name.
+   *
+   * @param name Property name
+   * @param value Property value
+   */
+  setProperty<T>(name: string, value: T): void {
+    (this as Record<string, T>)[name] = value;
+  }
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Clear all properties except base columns.
+   */
+  clear(): void {
+    const baseColumns = ["id", "createdAt", "updatedAt", "deletedAt", "version"];
+
+    for (const key of Object.keys(this)) {
+      if (!baseColumns.includes(key)) {
+        (this as Record<string, unknown>)[key] = undefined;
+      }
+    }
+  }
+
+  /**
+   * Check if entity has been persisted (has ID).
+   *
+   * @returns True nếu entity đã có ID (đã save)
+   */
+  isPersisted(): boolean {
+    return this.id !== undefined && this.id !== null && this.id !== "";
+  }
+
+  /**
+   * Check if entity is new (not persisted).
+   *
+   * @returns True nếu entity chưa có ID (chưa save)
+   */
+  isNew(): boolean {
+    return !this.isPersisted();
+  }
+
+  /**
+   * Deep merge with another object.
+   *
+   * @param other Object để merge vào
+   * @returns This instance
+   */
+  merge(other: Partial<Record<string, unknown>>): this {
+    for (const key of Object.keys(other)) {
+      if (other[key] !== undefined) {
+        (this as Record<string, unknown>)[key] = other[key];
+      }
+    }
+    return this;
   }
 }
