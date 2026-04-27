@@ -570,6 +570,133 @@ class TestNestJSRepositoryHardening(TestCase):
         self.assertIn("validateBeforeUpdate", content)
 
 
+class TestFastAPIBaseModelComprehensive(TestCase):
+    """Test comprehensive features in FastAPI base_model."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/fastapi/templates/db/base_model.py.jinja2")
+
+    def test_template_has_soft_delete_fields(self):
+        """Test template có deleted_at field."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("deleted_at", content)
+        self.assertIn("Deleted at", content) or self.assertIn("soft delete", content)
+
+    def test_template_has_optimistic_locking(self):
+        """Test template có version field cho optimistic locking."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("version", content)
+        self.assertIn("Optimistic Locking", content) or self.assertIn("optimistic", content)
+
+    def test_template_has_soft_delete_methods(self):
+        """Test template có soft delete methods."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("soft_delete", content)
+        self.assertIn("restore", content)
+        self.assertIn("is_deleted", content)
+        self.assertIn("is_active", content)
+
+    def test_template_has_serialization_methods(self):
+        """Test template có serialization methods."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("to_dict", content)
+        self.assertIn("from_dict", content)
+        self.assertIn("to_json", content)
+        self.assertIn("from_json", content)
+
+    def test_template_has_comparison_methods(self):
+        """Test template có comparison methods."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("__repr__", content)
+        self.assertIn("__str__", content)
+        self.assertIn("__eq__", content)
+        self.assertIn("__hash__", content)
+
+    def test_template_has_validation_helpers(self):
+        """Test template có validation helpers."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("validate_required_fields", content)
+        self.assertIn("is_valid", content)
+
+    def test_template_has_metadata_helpers(self):
+        """Test template có metadata helpers."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("get_table_name", content)
+        self.assertIn("get_columns", content)
+        self.assertIn("get_primary_key", content)
+
+
+class TestNestJSBaseEntityComprehensive(TestCase):
+    """Test comprehensive features in NestJS base.entity."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/nestjs/templates/db/base.entity.ts.jinja2")
+
+    def test_template_has_soft_delete_fields(self):
+        """Test template có deletedAt field."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("deletedAt", content)
+        self.assertIn("DeleteDateColumn", content)
+
+    def test_template_has_optimistic_locking(self):
+        """Test template có version field cho optimistic locking."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("version", content)
+        self.assertIn("optimistic", content)
+
+    def test_template_has_soft_delete_methods(self):
+        """Test template có soft delete methods."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("softDelete", content)
+        self.assertIn("restore", content)
+        self.assertIn("isDeleted", content)
+        self.assertIn("isActive", content)
+
+    def test_template_has_serialization_methods(self):
+        """Test template có serialization methods."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("toObject", content)
+        self.assertIn("fromObject", content)
+        self.assertIn("toJSON", content)
+        self.assertIn("fromJSON", content)
+        self.assertIn("clone", content)
+
+    def test_template_has_validation_helpers(self):
+        """Test template có validation helpers."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("validateRequiredFields", content)
+        self.assertIn("isValid", content)
+
+    def test_template_has_comparison_methods(self):
+        """Test template có comparison methods."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("equals", content)
+        self.assertIn("toString", content)
+
+    def test_template_has_metadata_helpers(self):
+        """Test template có metadata helpers."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("getEntityName", content)
+        self.assertIn("getPropertyNames", content)
+        self.assertIn("getProperty", content)
+        self.assertIn("setProperty", content)
+
+    def test_template_has_utility_methods(self):
+        """Test template có utility methods."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("clear", content)
+        self.assertIn("isPersisted", content)
+        self.assertIn("isNew", content)
+        self.assertIn("merge", content)
+
+    def test_template_has_interface(self):
+        """Test template có IBaseEntity interface."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("IBaseEntity", content)
+
+
 # Run tests
 if __name__ == "__main__":
     import unittest
