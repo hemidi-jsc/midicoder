@@ -1,0 +1,121 @@
+/**
+ * Effects cho {{ command.id }}.
+ * 
+ * Thực thi effects (create_record, publish_event, etc.) cho {{ command.description }}.
+ * 
+ * @author Midicoder Auto-generated
+ */
+
+import { Injectable } from '@nestjs/common';
+import { {{ command.id }} } from './{{ command_snake }}';
+
+/**
+ * Effects cho {{ command.description }}.
+ * 
+ * Effects:
+{% if command.effects %}
+{% for effect in command.effects %}
+ * - {{ effect.type }}: {% if effect.entity %}entity={{ effect.entity }}{% endif %}{% if effect.event %}, event={{ effect.event }}{% endif %}
+{% endfor %}
+{% else %}
+ * - (No effects defined)
+{% endif %}
+ */
+@Injectable()
+export class {{ command.id }}Effects {
+    /**
+     * Thực thi effects.
+     * 
+     * Process:
+{% for effect in command.effects %}
+     * 1. {{ effect.type }}: {% if effect.entity %}{{ effect.entity }}{% endif %}{% if effect.event %}, {{ effect.event }}{% endif %}
+{% endfor %}
+     * 
+     * @param command Command instance
+     * @param userId User ID
+     * @param tenantId Tenant ID
+     * @returns Result object
+     */
+    async execute(
+        command: {{ command.id }},
+        userId?: string,
+        tenantId?: string,
+    ): Promise<Record<string, unknown>> {
+        const results: Record<string, unknown> = {};
+
+{% if command.effects %}
+{% for effect in command.effects %}
+        // Execute {{ effect.type }} effect
+{% if effect.type == 'create_record' %}
+        const recordId = await this._create{{ effect.entity }}(command, userId, tenantId);
+        results['{{ effect.entity|lower }}_id'] = recordId;
+{% elif effect.type == 'publish_event' %}
+        await this._publish{{ effect.event }}(command, userId, tenantId);
+        results['{{ effect.event|lower }}_published'] = true;
+{% endif %}
+{% endfor %}
+{% else %}
+        // No effects to execute
+{% endif %}
+        return results;
+    }
+
+{% if command.effects %}
+{% for effect in command.effects %}
+{% if effect.type == 'create_record' %}
+    /**
+     * Tạo {{ effect.entity }} record.
+     * 
+     * @param command Command instance
+     * @param userId User ID
+     * @param tenantId Tenant ID
+     * @returns Record ID
+     */
+    private async _create{{ effect.entity }}(
+        command: {{ command.id }},
+        userId?: string,
+        tenantId?: string,
+    ): Promise<string> {
+        // TODO: Integrate với repository
+        // const data = {
+        //     // Map command fields to entity fields
+        // };
+        // if (tenantId) {
+        //     data['tenant_id'] = tenantId;
+        // }
+        // if (userId) {
+        //     data['created_by'] = userId;
+        // }
+        // const record = await {{ effect.entity|lower }}Repo.create(data);
+        // return record.id.toString();
+        return 'generated-id';
+    }
+{% endif %}
+{% if effect.type == 'publish_event' %}
+    /**
+     * Publish {{ effect.event }} event.
+     * 
+     * @param command Command instance
+     * @param userId User ID
+     * @param tenantId Tenant ID
+     */
+    private async _publish{{ effect.event }}(
+        command: {{ command.id }},
+        userId?: string,
+        tenantId?: string,
+    ): Promise<void> {
+        // TODO: Integrate với event bus
+        // const event = {
+        //     type: '{{ effect.event }}',
+        //     payload: command.toObject(),
+        //     metadata: {
+        //         userId,
+        //         tenantId,
+        //     },
+        // };
+        // await eventBus.publish(event);
+    }
+{% endif %}
+{% endfor %}
+{% endif %}
+}

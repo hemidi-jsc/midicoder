@@ -1,0 +1,131 @@
+"""
+Effects cho {{ command.id }}.
+
+Thực thi effects (create_record, publish_event, etc.) cho {{ command.description }}.
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.commands.{{ command_id_lower }}.{{ command_id_lower }} import {{ command.id }}
+
+
+class {{ command.id }}Effects:
+    """
+    Effects cho {{ command.description }}.
+    
+    Effects:
+{% if command.effects %}
+{% for effect in command.effects %}
+        - {{ effect.type }}: {% if effect.entity %}entity={{ effect.entity }}{% endif %}{% if effect.event %}, event={{ effect.event }}{% endif %}
+{% endfor %}
+{% else %}
+        - (No effects defined)
+{% endif %}
+    """
+    
+    async def execute(self, command: {{ command.id }}, user_id: str | None = None, tenant_id: str | None = None) -> dict[str, Any]:
+        """
+        Thực thi effects.
+        
+        Process:
+{% for effect in command.effects %}
+        1. {{ effect.type }}: {% if effect.entity %}{{ effect.entity }}{% endif %}{% if effect.event %}, {{ effect.event }}{% endif %}
+{% endfor %}
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            tenant_id: Tenant ID
+            
+        Returns:
+            Result dict
+        """
+        results: dict[str, Any] = {}
+        
+{% if command.effects %}
+{% for effect in command.effects %}
+        # Execute {{ effect.type }} effect
+{% if effect.type == 'create_record' %}
+        record_id = await self._create_{{ effect.entity }}(command, user_id, tenant_id)
+        results["{{ effect.entity|lower }}_id"] = record_id
+
+{% elif effect.type == 'publish_event' %}
+        await self._publish_{{ effect.event }}(command, user_id, tenant_id)
+        results["{{ effect.event|lower }}_published"] = True
+
+{% endif %}
+{% endfor %}
+{% else %}
+        # No effects to execute
+        pass
+
+{% endif %}
+        return results
+    
+{% if command.effects %}
+{% for effect in command.effects %}
+{% if effect.type == 'create_record' %}
+    async def _create_{{ effect.entity }}(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> str:
+        """
+        Tạo {{ effect.entity }} record.
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            tenant_id: Tenant ID
+            
+        Returns:
+            Record ID
+        """
+        # TODO: Integrate với repository
+        # data = {
+        #     # Map command fields to entity fields
+        # }
+        # if tenant_id:
+        #     data["tenant_id"] = tenant_id
+        # if user_id:
+        #     data["created_by"] = user_id
+        # record = await {{ effect.entity|lower }}_repo.create(data)
+        # return str(record.id)
+        return "generated-id"
+
+{% endif %}
+{% if effect.type == 'publish_event' %}
+    async def _publish_{{ effect.event }}(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> None:
+        """
+        Publish {{ effect.event }} event.
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            tenant_id: Tenant ID
+        """
+        # TODO: Integrate với event bus
+        # event = {
+        #     "type": "{{ effect.event }}",
+        #     "payload": command.to_dict(),
+        #     "metadata": {
+        #         "user_id": user_id,
+        #         "tenant_id": tenant_id,
+        #     },
+        # }
+        # await event_bus.publish(event)
+        pass
+
+{% endif %}
+{% endfor %}
+{% endif %}

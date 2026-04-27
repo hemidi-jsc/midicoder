@@ -1,0 +1,105 @@
+"""
+Validator cho {{ command.id }}.
+
+Custom validation logic cho {{ command.description }}.
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from app.commands.{{ command_id_lower }}.{{ command_id_lower }} import {{ command.id }}
+{% if command.errors %}
+from app.commands.{{ command_id_lower }}.{{ command_id_lower }}_errors import (
+{% for error in command.errors %}
+    {{ error.code }}Error{% if not loop.last %},{% endif %}
+{% endfor %}
+)
+{% endif %}
+
+
+@dataclass
+class ValidationResult:
+    """
+    Kết quả validation.
+    
+    Attributes:
+        is_valid: Có hợp lệ không
+        error: Error instance nếu không hợp lệ
+        errors: Danh sách lỗi (nếu có nhiều)
+    """
+    is_valid: bool
+    error: Exception | None = None
+    errors: list[str] = None
+    
+    def __post_init__(self) -> None:
+        if self.errors is None:
+            self.errors = []
+
+
+class {{ command.id }}Validator:
+    """
+    Validator cho {{ command.description }}.
+    
+    Validation rules:
+{% for input_field in command.input %}
+        - {{ input_field.name }}: {% if input_field.required %}required{% else %}optional{% endif %}{% if input_field.pattern %}, pattern: {{ input_field.pattern }}{% endif %}{% if input_field.min_length %}, min_length: {{ input_field.min_length }}{% endif %}{% if input_field.max_length %}, max_length: {{ input_field.max_length }}{% endif %}
+{% endfor %}
+    """
+    
+    async def validate(self, command: {{ command.id }}) -> ValidationResult:
+        """
+        Validate command.
+        
+        Args:
+            command: Command instance
+            
+        Returns:
+            ValidationResult
+            
+        Raises:
+{% for error in command.errors %}
+            {{ error.code }}Error: {{ error.message }}
+{% endfor %}
+        """
+        errors: list[str] = []
+        
+        # Validate input fields
+{% for input_field in command.input %}
+        # Validate {{ input_field.name }}
+{% if input_field.required %}
+        if command.{{ input_field.name }} is None:
+            errors.append("{{ input_field.name }} là trường bắt buộc")
+{% endif %}
+{% if input_field.pattern %}
+        elif not re.match(r"{{ input_field.pattern }}", str(command.{{ input_field.name }})):
+            errors.append("{{ input_field.name }} không đúng định dạng")
+{% endif %}
+{% if input_field.min_length %}
+        elif len(str(command.{{ input_field.name }})) < {{ input_field.min_length }}:
+            errors.append("{{ input_field.name }} phải có ít nhất {{ input_field.min_length }} ký tự")
+{% endif %}
+{% if input_field.max_length %}
+        elif len(str(command.{{ input_field.name }})) > {{ input_field.max_length }}:
+            errors.append("{{ input_field.name }} phải có không quá {{ input_field.max_length }} ký tự")
+{% endif %}
+{% if input_field.min_items %}
+        elif len(command.{{ input_field.name }}) < {{ input_field.min_items }}:
+            errors.append("{{ input_field.name }} phải có ít nhất {{ input_field.min_items }} phần tử")
+{% endif %}
+
+{% endfor %}
+        # Return result
+        if errors:
+            # Map errors to specific error classes
+{% for error in command.errors %}
+            if "{{ error.message }}" in str(errors):
+                raise {{ error.code }}Error()
+{% endfor %}
+            # Default: return validation errors
+            return ValidationResult(is_valid=False, errors=errors)
+        
+        return ValidationResult(is_valid=True)

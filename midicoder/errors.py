@@ -247,6 +247,17 @@ class ErrorCode(str, Enum):
     CP01_VALUE_OBJECT_COMPARABLE_NO_HASH = "MDC-CP01-018"
     CP01_VALUE_OBJECT_IMMUTABLE_HAS_SETTER = "MDC-CP01-019"
     CP01_VALUE_OBJECT_INVALID_TAG = "MDC-CP01-020"
+    
+    # =========================================================================
+    # CP01: Command Emitter Errors
+    # =========================================================================
+    CP01_COMMAND_NOT_FOUND = "MDC-CP01-021"
+    CP01_COMMAND_INVALID_INPUT = "MDC-CP01-022"
+    CP01_COMMAND_GUARD_FAILED = "MDC-CP01-023"
+    CP01_COMMAND_EFFECT_FAILED = "MDC-CP01-024"
+    CP01_COMMAND_VALIDATION_FAILED = "MDC-CP01-025"
+    CP01_COMMAND_TEMPLATE_NOT_FOUND = "MDC-CP01-026"
+    CP01_COMMAND_EMIT_FAILED = "MDC-CP01-027"
 
 
 class ExitCode(Enum):

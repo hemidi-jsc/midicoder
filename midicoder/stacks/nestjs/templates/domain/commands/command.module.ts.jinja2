@@ -1,0 +1,35 @@
+/**
+ * NestJS Module cho {{ command.id }}.
+ * 
+ * Module định nghĩa providers và exports cho {{ command.description }}.
+ * 
+ * @author Midicoder Auto-generated
+ */
+
+import { Module } from '@nestjs/common';
+import { {{ command.id }}Handler } from './{{ command_snake }}.handler';
+import { {{ command.id }}Validator } from './{{ command_snake }}.validator';
+import { {{ command.id }}Guards } from './{{ command_snake }}.guards';
+import { {{ command.id }}Effects } from './{{ command_snake }}.effects';
+
+/**
+ * Module cho {{ command.description }}.
+ * 
+ * Providers:
+ * - {{ command.id }}Handler
+ * - {{ command.id }}Validator
+ * - {{ command.id }}Guards
+ * - {{ command.id }}Effects
+ */
+@Module({
+    providers: [
+        {{ command.id }}Handler,
+        {{ command.id }}Validator,
+        {{ command.id }}Guards,
+        {{ command.id }}Effects,
+    ],
+    exports: [
+        {{ command.id }}Handler,
+    ],
+})
+export class {{ command.id }}Module {}

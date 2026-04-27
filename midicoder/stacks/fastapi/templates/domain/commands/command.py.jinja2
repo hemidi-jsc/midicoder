@@ -1,0 +1,57 @@
+"""
+{{ command.description }}
+
+Command class cho {{ command.id }}.
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class {{ command.id }}:
+    """
+    Command class cho {{ command.description }}.
+    
+    Attributes:
+{% for input_field in command.input %}
+        {{ input_field.name }}: {{ input_field.type|capitalize }} - {{ input_field.name|replace('_', ' ') }}
+{% endfor %}
+    """
+{% for input_field in command.input %}
+    {{ input_field.name }}: Any = field(default=None, metadata={"required": {{ "true" if input_field.required else "false" }}})
+{% endfor %}
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Chuyển command sang dict.
+        
+        Returns:
+            Dict representation của command
+        """
+        return {
+{% for input_field in command.input %}
+            "{{ input_field.name }}": self.{{ input_field.name }},
+{% endfor %}
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> {{ command.id }}:
+        """
+        Tạo command từ dict.
+        
+        Args:
+            data: Dict chứa command data
+            
+        Returns:
+            {{ command.id }} instance
+        """
+        return cls(
+{% for input_field in command.input %}
+            {{ input_field.name }}=data.get("{{ input_field.name }}"),
+{% endfor %}
+        )

@@ -1,0 +1,37 @@
+/**
+ * Error classes cho {{ command.id }}.
+ * 
+ * Định nghĩa custom exceptions cho {{ command.description }}.
+ * 
+ * @author Midicoder Auto-generated
+ */
+
+/**
+ * Base error class cho {{ command.id }}.
+ */
+export abstract class {{ command.id }}Error extends Error {
+    readonly httpStatus: number;
+
+    constructor(message: string, httpStatus: number = 400) {
+        super(message);
+        this.message = message;
+        this.httpStatus = httpStatus;
+        this.name = this.constructor.name;
+    }
+}
+
+{% for error in command.errors %}
+/**
+ * {{ error.message }}.
+ * 
+ * HTTP Status: {{ error.http_status }}
+ * Error Code: {{ error.code }}
+ */
+export class {{ error.code }}Error extends {{ command.id }}Error {
+    constructor() {
+        super('{{ error.message }}', {{ error.http_status }});
+        this.name = '{{ error.code }}Error';
+    }
+}
+
+{% endfor %}

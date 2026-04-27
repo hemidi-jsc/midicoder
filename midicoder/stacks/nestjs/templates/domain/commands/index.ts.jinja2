@@ -1,0 +1,18 @@
+/**
+ * {{ command.id }} Command Module exports.
+ * 
+ * Exports cho {{ command.description }}.
+ * 
+ * @author Midicoder Auto-generated
+ */
+
+export { {{ command.id }} } from './{{ command_snake }}';
+export { {{ command.id }}Handler } from './{{ command_snake }}.handler';
+export { {{ command.id }}Validator } from './{{ command_snake }}.validator';
+export { {{ command.id }}Guards } from './{{ command_snake }}.guards';
+export { {{ command.id }}Effects } from './{{ command_snake }}.effects';
+export { {{ command.id }}Module } from './{{ command_snake }}.module';
+export { {{ command.id }}Error } from './{{ command_snake }}.errors';
+{% for error in command.errors %}
+export { {{ error.code }}Error } from './{{ command_snake }}.errors';
+{% endfor %}

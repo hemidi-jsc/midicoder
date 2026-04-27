@@ -1,0 +1,54 @@
+"""
+Error classes cho {{ command.id }}.
+
+Định nghĩa custom exceptions cho {{ command.description }}.
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from http import HTTPStatus
+
+
+class {{ command.id }}Error(Exception):
+    """
+    Base error class cho {{ command.id }}.
+    
+    Attributes:
+        message: Error message
+        http_status: HTTP status code
+    """
+    
+    def __init__(self, message: str, http_status: int = 400) -> None:
+        """
+        Khởi tạo error.
+        
+        Args:
+            message: Error message
+            http_status: HTTP status code
+        """
+        self.message = message
+        self.http_status = http_status
+        super().__init__(self.message)
+
+
+{% for error in command.errors %}
+{% set error_class_name = error.code|replace('_', '') %}
+class {{ error.code }}Error({{ command.id }}Error):
+    """
+    {{ error.message }}.
+    
+    HTTP Status: {{ error.http_status }}
+    Error Code: {{ error.code }}
+    """
+    
+    def __init__(self) -> None:
+        """Khởi tạo error."""
+        super().__init__(
+            message="{{ error.message }}",
+            http_status={{ error.http_status }},
+        )
+
+
+{% endfor %}

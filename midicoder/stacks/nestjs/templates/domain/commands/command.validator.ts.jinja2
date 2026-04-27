@@ -1,0 +1,82 @@
+/**
+ * Validator cho {{ command.id }}.
+ * 
+ * Custom validation logic cho {{ command.description }}.
+ * 
+ * @author Midicoder Auto-generated
+ */
+
+import { Injectable } from '@nestjs/common';
+import { {{ command.id }} } from './{{ command_snake }}';
+{% if command.errors %}
+{% for error in command.errors %}
+import { {{ error.code }}Error } from './{{ command_snake }}.errors';
+{% endfor %}
+{% endif %}
+
+/**
+ * Kết quả validation.
+ */
+export interface ValidationResult {
+    isValid: boolean;
+    error?: Error;
+    errors?: string[];
+}
+
+/**
+ * Validator cho {{ command.description }}.
+ * 
+ * Validation rules:
+{% for input_field in command.input %}
+ * - {{ input_field.name }}: {% if input_field.required %}required{% else %}optional{% endif %}
+{% endfor %}
+ */
+@Injectable()
+export class {{ command.id }}Validator {
+    /**
+     * Validate command.
+     * 
+     * @param command Command instance
+     * @returns ValidationResult
+     * @throws {{ command.errors[0].code }}Error {{ command.errors[0].message }}
+     */
+    async validate(command: {{ command.id }}): Promise<ValidationResult> {
+        const errors: string[] = [];
+
+{% for input_field in command.input %}
+        // Validate {{ input_field.name }}
+{% if input_field.required %}
+        if (!command.{{ input_field.name }}) {
+            errors.push('{{ input_field.name }} là trường bắt buộc');
+        }
+{% endif %}
+{% if input_field.min_length %}
+        else if (String(command.{{ input_field.name }}).length < {{ input_field.min_length }}) {
+            errors.push('{{ input_field.name }} phải có ít nhất {{ input_field.min_length }} ký tự');
+        }
+{% endif %}
+{% if input_field.max_length %}
+        else if (String(command.{{ input_field.name }}).length > {{ input_field.max_length }}) {
+            errors.push('{{ input_field.name }} phải có không quá {{ input_field.max_length }} ký tự');
+        }
+{% endif %}
+{% if input_field.min_items %}
+        else if (Array.isArray(command.{{ input_field.name }}) && command.{{ input_field.name }}.length < {{ input_field.min_items }}) {
+            errors.push('{{ input_field.name }} phải có ít nhất {{ input_field.min_items }} phần tử');
+        }
+{% endif %}
+
+{% endfor %}
+        // Return result
+        if (errors.length > 0) {
+{% for error in command.errors %}
+            if (errors.some((e) => e.includes('{{ error.message }}'))) {
+                throw new {{ error.code }}Error();
+            }
+{% endfor %}
+            return { isValid: false, errors };
+        }
+
+        return { isValid: true };
+    }
+}
