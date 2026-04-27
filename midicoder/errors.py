@@ -144,6 +144,15 @@ class ErrorCode(str, Enum):
     DB_FILE_CORRUPTED = "MDC-DB-006"
     DB_PERMISSION_DENIED = "MDC-DB-007"
 
+    # =========================================================================
+    # IR/MIR Build Errors
+    # =========================================================================
+    MIR_GRAPH_NOT_FOUND = "MDC-IR-001"
+    MIR_DSL_PARSE_FAILED = "MDC-IR-002"
+    MIR_BUILD_FAILED = "MDC-IR-003"
+    MIR_VALIDATION_FAILED = "MDC-IR-004"
+    MIR_SAVE_FAILED = "MDC-IR-005"
+
 
 class ExitCode(Enum):
     """
@@ -374,6 +383,13 @@ class MidicoderErrorManager:
         ErrorCode.DB_TIMEOUT: "Hết thời gian chờ database.",
         ErrorCode.DB_FILE_CORRUPTED: "File database bị hỏng.",
         ErrorCode.DB_PERMISSION_DENIED: "Không có quyền truy cập database.",
+
+        # IR/MIR Build Errors
+        ErrorCode.MIR_GRAPH_NOT_FOUND: "Không tìm thấy Capability Graph trong artifacts.",
+        ErrorCode.MIR_DSL_PARSE_FAILED: "DSL parsing thất bại.",
+        ErrorCode.MIR_BUILD_FAILED: "MIR build thất bại.",
+        ErrorCode.MIR_VALIDATION_FAILED: "MIR validation thất bại.",
+        ErrorCode.MIR_SAVE_FAILED: "Cannot save MIR to artifacts.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {
