@@ -616,8 +616,9 @@ def _execute_gen(target: str = "all", dry_run: bool = False) -> None:
     Process:
     1. Load plan từ SQLite artifacts table
     2. Generate code cho mỗi file trong plan
-    3. Lưu vào .midicoder/versions/{active_version}/src/
-    4. Hiển thị summary
+    3. Generate Docker Compose từ MIR
+    4. Lưu vào .midicoder/versions/{active_version}/src/
+    5. Hiển thị summary
     
     Args:
         target: Target để generate (backend|frontend|all)
@@ -646,7 +647,39 @@ def _execute_gen(target: str = "all", dry_run: bool = False) -> None:
         output_dir = Path("generated-dry-run")
         output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Bước 3: Generate files
+    # Bước 3: Load MIR từ SQLite để generate Docker Compose
+    mir_data = _load_mir_from_artifacts()
+    if mir_data is None:
+        click.echo("⚠️  MIR không tồn tại - Docker Compose generation bị skip")
+        mir = None
+    else:
+        try:
+            # Late import để tránh circular import
+            from midicoder.pipeline.mir import MIR as MIRClass
+            mir = MIRClass.from_dict(mir_data)
+            click.echo(f"   ✓ Đã load MIR: {len(mir.operations)} operations")
+        except Exception as e:
+            click.echo(f"⚠️  Không thể parse MIR: {e}")
+            mir = None
+    
+    # Bước 4: Generate Docker Compose từ MIR
+    docker_compose_path = output_dir / "docker-compose.yml"
+    if mir is not None:
+        try:
+            click.echo("   🐳 Đang generate Docker Compose từ MIR...")
+            # Late import để tránh circular import
+            from midicoder.infra.docker import DockerComposeGenerator as DCG
+            docker_generator = DCG()
+            infra_config = docker_generator.generate(mir, docker_compose_path)
+            click.echo(f"   ✓ Docker Compose generated với services: {', '.join(infra_config.services)}")
+        except Exception as e:
+            click.echo(f"⚠️  Docker Compose generation failed: {e}")
+            # Fallback: generate placeholder
+            docker_generator = None
+    else:
+        docker_generator = None
+    
+    # Bước 5: Generate files
     files_generated = []
     
     for file_plan in plan_data.get("backend_files", []):
@@ -661,10 +694,12 @@ def _execute_gen(target: str = "all", dry_run: bool = False) -> None:
             if generated:
                 files_generated.append(generated)
     
+    # Skip docker-compose.yml trong infra_files vì đã generate từ MIR
     for file_plan in plan_data.get("infra_files", []):
-        generated = _generate_file(file_plan, output_dir, dry_run)
-        if generated:
-            files_generated.append(generated)
+        if file_plan.get("path") != "docker-compose.yml":
+            generated = _generate_file(file_plan, output_dir, dry_run)
+            if generated:
+                files_generated.append(generated)
     
     click.echo(f"   ✓ Generated {len(files_generated)} files")
     
