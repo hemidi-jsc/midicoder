@@ -40,6 +40,10 @@ from midicoder.pipeline.domain import (
     normalize_domain,
 )
 from midicoder.pipeline.config import get_config
+from midicoder.pipeline.context_feed import (
+    get_brief_context,
+    get_clarify_context,
+)
 
 
 @dataclass
@@ -74,9 +78,10 @@ def _analyze_with_llm(
     Process:
     1. Xác định domain (user-provided hoặc auto-detect)
     2. Load domain prompt template
-    3. Call LLM với prompt + brief content
-    4. Parse JSON response
-    5. Tạo text summary từ JSON
+    3. Query codebase context (optional)
+    4. Call LLM với prompt + brief content (+ context)
+    5. Parse JSON response
+    6. Tạo text summary từ JSON
     
     Args:
         brief_content: Nội dung brief (Markdown)
@@ -114,6 +119,31 @@ def _analyze_with_llm(
         click.echo(f"⚠️  Lỗi load prompt: {e}, dùng default")
         system_prompt = get_domain_prompt("generic")
     
+    # Step 3.5: Query codebase context (optional enhancement)
+    click.echo("   → Đang query codebase context...")
+    try:
+        context_result = get_brief_context(
+            brief_content=brief_content,
+            domain=final_domain,
+            model_name=llm_config.model,
+        )
+        
+        if context_result.warning:
+            click.echo(f"   {context_result.warning}")
+        elif context_result.context_items:
+            click.echo(f"   ✓ Codebase context: {len(context_result.context_items)} items, {context_result.token_count} tokens")
+        else:
+            click.echo("   ⚠️ Không tìm thấy codebase context (chạy 'midicoder index' để index codebase)")
+    except Exception as e:
+        click.echo(f"   ⚠️ Không thể query codebase context: {e}")
+        context_result = None
+    
+    # Build user message với context (nếu có)
+    user_message_content = brief_content
+    if context_result and context_result.formatted_context:
+        # Inject context vào đầu user message
+        user_message_content = f"{context_result.formatted_context}\n\n## Brief Content:\n{brief_content}"
+    
     # Step 4: Call LLM
     click.echo("   → Đang gọi LLM...")
     start_time = time.time()
@@ -122,7 +152,7 @@ def _analyze_with_llm(
         response = call_llm(
             config=llm_config,
             system=system_prompt,
-            messages=[{"role": "user", "content": brief_content}],
+            messages=[{"role": "user", "content": user_message_content}],
         )
         
         latency_ms = int((time.time() - start_time) * 1000)
@@ -433,7 +463,7 @@ def _generate_clarification_question(
     """
     Gọi LLM để generate clarification question.
 
-    Sử dụng brief-clarify.md prompt template.
+    Sử dụng brief-clarify.md prompt template với narrower context focus.
 
     Args:
         analysis_data: Analysis JSON từ brief analyze
@@ -453,17 +483,43 @@ def _generate_clarification_question(
         click.echo("⚠️  Không load được domain prompt, dùng default")
         system_prompt = get_domain_prompt("generic", prompt_type="clarify")
 
-    # Build user message với analysis + history
-    user_content = f"""## Brief Analysis:
-{json.dumps(analysis_data, indent=2, ensure_ascii=False)}
+    # Query codebase context với narrower focus (dựa trên analysis + Q&A history)
+    try:
+        context_result = get_clarify_context(
+            analysis_data=analysis_data,
+            qa_history=qa_history,
+            model_name=llm_config.model,
+        )
+        
+        if context_result.warning:
+            click.echo(f"   {context_result.warning}")
+        elif context_result.context_items:
+            click.echo(f"   ✓ Clarify context: {len(context_result.context_items)} items")
+        else:
+            click.echo("   ⚠️ Không tìm thấy codebase context cho clarification")
+    except Exception as e:
+        click.echo(f"   ⚠️ Không thể query codebase context: {e}")
+        context_result = None
 
-## Q&A History:
-"""
+    # Build user message với context + analysis + history
+    user_content_parts = []
+    
+    # Inject context vào đầu (nếu có)
+    if context_result and context_result.formatted_context:
+        user_content_parts.append(context_result.formatted_context)
+    
+    # Thêm brief analysis
+    user_content_parts.append(f"## Brief Analysis:\n{json.dumps(analysis_data, indent=2, ensure_ascii=False)}")
+    
+    # Thêm Q&A history
+    user_content_parts.append("\n## Q&A History:")
     if qa_history:
         for i, qa in enumerate(qa_history, 1):
-            user_content += f"\nQ{i}: {qa['question']}\nA{i}: {qa['answer']}\n"
+            user_content_parts.append(f"\nQ{i}: {qa['question']}\nA{i}: {qa['answer']}")
     else:
-        user_content += "(Chưa có câu hỏi nào)"
+        user_content_parts.append("\n(Chưa có câu hỏi nào)")
+    
+    user_content = "\n".join(user_content_parts)
 
     try:
         response = call_llm(
