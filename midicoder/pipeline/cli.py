@@ -191,49 +191,9 @@ def build():
     build_mir()
 
 
-@cli.group()
-def code():
-    """
-    Code planning, generation, và application.
-
-    Plan: Tạo kế hoạch implementation
-    Gen: Generate code từ MIR + templates
-    Apply: Apply code vào target system
-    """
-    pass
-
-
-@code.command()
-def plan():
-    """
-    Generate implementation plan từ MIR.
-    """
-    from midicoder.pipeline.commands.code import create_plan
-    create_plan()
-
-
-@code.command()
-@click.option("--target", "-t", type=click.Choice(["backend", "frontend", "all"]),
-              default="all", help="Target to generate")
-def gen(target):
-    """
-    Generate code từ plan.
-
-    Supports: FastAPI, NestJS, Angular, React
-    """
-    from midicoder.pipeline.commands.code import generate_code
-    generate_code(target)
-
-
-@code.command()
-@click.option("--target-dir", "-d", type=click.Path(), default=".",
-              help="Target directory for code application")
-def apply(target_dir):
-    """
-    Apply generated code vào target.
-    """
-    from midicoder.pipeline.commands.code import apply_code
-    apply_code(target_dir)
+# Import code group từ code.py (với full CLI implementation)
+from midicoder.pipeline.commands.code import code as code_group
+cli.add_command(code_group)
 
 
 @cli.group()
