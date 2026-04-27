@@ -1,0 +1,59 @@
+"""
+Pydantic input schema cho {{ command.id }}.
+
+Schema validation cho {{ command.description }}.
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from typing import Any, Optional, List
+
+from pydantic import BaseModel, Field, field_validator
+from uuid import UUID
+
+
+class {{ command.id }}Input(BaseModel):
+    """
+    Input schema cho {{ command.description }}.
+    
+    Fields:
+{% for input_field in command.input %}
+        {{ input_field.name }}: {{ input_field.type|capitalize }}{% if input_field.required %} (required){% endif %}
+{% endfor %}
+    """
+{% for input_field in command.input %}
+{% set py_type = "str" %}
+{% if input_field.type == "uuid" %}
+{% set py_type = "UUID" %}
+{% elif input_field.type == "int" %}
+{% set py_type = "int" %}
+{% elif input_field.type == "float" %}
+{% set py_type = "float" %}
+{% elif input_field.type == "bool" %}
+{% set py_type = "bool" %}
+{% elif input_field.type == "array" %}
+{% set py_type = "List[str]" %}
+{% elif input_field.required == false %}
+{% set py_type = "Optional[" ~ py_type ~ "]" %}
+{% endif %}
+    {{ input_field.name }}: {{ py_type }} = Field(
+        default=None,
+        description="{{ input_field.name|replace('_', ' ') }}",
+{% if input_field.pattern %}
+        pattern="{{ input_field.pattern }}",
+{% endif %}
+{% if input_field.min_length %}
+        min_length={{ input_field.min_length }},
+{% endif %}
+{% if input_field.max_length %}
+        max_length={{ input_field.max_length }},
+{% endif %}
+    )
+{% endfor %}
+
+    class Config:
+        """Pydantic config."""
+        from_attributes = True
+        extra = "forbid"

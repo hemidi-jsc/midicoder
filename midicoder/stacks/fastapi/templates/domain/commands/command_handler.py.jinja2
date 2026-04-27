@@ -1,0 +1,85 @@
+"""
+Handler cho {{ command.id }}.
+
+Xử lý logic business cho {{ command.description }}.
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.commands.{{ command_id_lower }}.{{ command_id_lower }} import {{ command.id }}
+from app.commands.{{ command_id_lower }}.{{ command_id_lower }}_validator import {{ command.id }}Validator
+from app.commands.{{ command_id_lower }}.{{ command_id_lower }}_guards import {{ command.id }}Guards
+from app.commands.{{ command_id_lower }}.{{ command_id_lower }}_effects import {{ command.id }}Effects
+
+
+class {{ command.id }}Handler:
+    """
+    Handler cho {{ command.description }}.
+    
+    Dependencies:
+        - {{ command.id }}Validator: Validate input
+        - {{ command.id }}Guards: Check guards (auth, tenant)
+        - {{ command.id }}Effects: Execute effects (create_record, publish_event)
+    """
+    
+    def __init__(
+        self,
+        validator: {{ command.id }}Validator,
+        guards: {{ command.id }}Guards,
+        effects: {{ command.id }}Effects,
+    ) -> None:
+        """
+        Khởi tạo handler.
+        
+        Args:
+            validator: Validator instance
+            guards: Guards instance
+            effects: Effects instance
+        """
+        self._validator = validator
+        self._guards = guards
+        self._effects = effects
+    
+    async def handle(self, command: {{ command.id }}, user_id: str | None = None, tenant_id: str | None = None) -> dict[str, Any]:
+        """
+        Xử lý command.
+        
+        Process:
+        1. Validate input
+        2. Check guards
+        3. Execute effects
+        4. Return result
+        
+        Args:
+            command: Command instance
+            user_id: User ID (nếu có)
+            tenant_id: Tenant ID (nếu có)
+            
+        Returns:
+            Result dict
+            
+        Raises:
+            ValidationError: Nếu input không hợp lệ
+            PermissionError: Nếu không có quyền
+        """
+        # Bước 1: Validate input
+        validation_result = await self._validator.validate(command)
+        if not validation_result.is_valid:
+            raise validation_result.error
+        
+        # Bước 2: Check guards
+        await self._guards.check(command, user_id=user_id, tenant_id=tenant_id)
+        
+        # Bước 3: Execute effects
+        result = await self._effects.execute(command, user_id=user_id, tenant_id=tenant_id)
+        
+        # Bước 4: Return result
+        return {
+            "success": True,
+            "message": "Command executed successfully",
+            "data": result,
+        }

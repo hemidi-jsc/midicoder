@@ -1,0 +1,71 @@
+/**
+ * Handler cho {{ command.id }}.
+ * 
+ * Xử lý logic business cho {{ command.description }}.
+ * 
+ * @author Midicoder Auto-generated
+ */
+
+import { Injectable } from '@nestjs/common';
+import { {{ command.id }} } from './{{ command_snake }}';
+import { {{ command.id }}Validator } from './{{ command_snake }}.validator';
+import { {{ command.id }}Guards } from './{{ command_snake }}.guards';
+import { {{ command.id }}Effects } from './{{ command_snake }}.effects';
+
+/**
+ * Handler cho {{ command.description }}.
+ * 
+ * Dependencies:
+ * - {{ command.id }}Validator: Validate input
+ * - {{ command.id }}Guards: Check guards (auth, tenant)
+ * - {{ command.id }}Effects: Execute effects (create_record, publish_event)
+ */
+@Injectable()
+export class {{ command.id }}Handler {
+    constructor(
+        private readonly validator: {{ command.id }}Validator,
+        private readonly guards: {{ command.id }}Guards,
+        private readonly effects: {{ command.id }}Effects,
+    ) {}
+
+    /**
+     * Xử lý command.
+     * 
+     * Process:
+     * 1. Validate input
+     * 2. Check guards
+     * 3. Execute effects
+     * 4. Return result
+     * 
+     * @param command Command instance
+     * @param userId User ID (nếu có)
+     * @param tenantId Tenant ID (nếu có)
+     * @returns Result object
+     * @throws ValidationError Nếu input không hợp lệ
+     * @throws PermissionError Nếu không có quyền
+     */
+    async handle(
+        command: {{ command.id }},
+        userId?: string,
+        tenantId?: string,
+    ): Promise<{ success: boolean; message: string; data: Record<string, unknown> }> {
+        // Bước 1: Validate input
+        const validation = await this.validator.validate(command);
+        if (!validation.isValid) {
+            throw validation.error;
+        }
+
+        // Bước 2: Check guards
+        await this.guards.check(command, userId, tenantId);
+
+        // Bước 3: Execute effects
+        const result = await this.effects.execute(command, userId, tenantId);
+
+        // Bước 4: Return result
+        return {
+            success: true,
+            message: 'Command executed successfully',
+            data: result,
+        };
+    }
+}

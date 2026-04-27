@@ -1,0 +1,46 @@
+/**
+ * {{ command.description }}
+ * 
+ * Command class cho {{ command.id }}.
+ * 
+ * @author Midicoder Auto-generated
+ */
+
+export class {{ command.id }} {
+    /**
+     * Command class cho {{ command.description }}.
+     */
+{% for input_field in command.input %}
+    /** {{ input_field.name|replace('_', ' ') }} */
+    readonly {{ input_field.name }}: string | string[] | number | undefined;
+{% endfor %}
+
+    constructor(params: Partial<{{ command.id }}> = {}) {
+{% for input_field in command.input %}
+        this.{{ input_field.name }} = params.{{ input_field.name }};
+{% endfor %}
+    }
+
+    toObject(): Record<string, unknown> {
+        /**
+         * Chuyển command sang object.
+         * 
+         * @returns Object representation của command
+         */
+        return {
+{% for input_field in command.input %}
+            {{ input_field.name }}: this.{{ input_field.name }},
+{% endfor %}
+        };
+    }
+
+    static fromObject(data: Record<string, unknown>): {{ command.id }} {
+        /**
+         * Tạo command từ object.
+         * 
+         * @param data Object chứa command data
+         * @returns {{ command.id }} instance
+         */
+        return new {{ command.id }}(data as Partial<{{ command.id }}>);
+    }
+}
