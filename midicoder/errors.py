@@ -177,6 +177,15 @@ class ErrorCode(str, Enum):
     PREVIEW_STOP_FAILED = "MDC-PRV-007"
     PREVIEW_RESTART_FAILED = "MDC-PRV-008"
     PREVIEW_HEALTH_CHECK_TIMEOUT = "MDC-PRV-009"
+    
+    # =========================================================================
+    # Infrastructure Errors
+    # =========================================================================
+    INFRA_MIR_NOT_FOUND = "MDC-INFRA-001"
+    INFRA_TEMPLATE_NOT_FOUND = "MDC-INFRA-002"
+    INFRA_TEMPLATE_RENDER_FAILED = "MDC-INFRA-003"
+    INFRA_WRITE_FAILED = "MDC-INFRA-004"
+    INFRA_INVALID_CONFIG = "MDC-INFRA-005"
 class ExitCode(Enum):
     """
     Exit codes cho CLI commands.
@@ -434,6 +443,13 @@ class MidicoderErrorManager:
         ErrorCode.PREVIEW_STOP_FAILED: "Không thể stop preview services.",
         ErrorCode.PREVIEW_RESTART_FAILED: "Không thể restart preview services.",
         ErrorCode.PREVIEW_HEALTH_CHECK_TIMEOUT: "Timeout chờ services healthy. Vui lòng kiểm tra logs.",
+        
+        # Infrastructure Errors
+        ErrorCode.INFRA_MIR_NOT_FOUND: "Không tìm thấy MIR trong artifacts. Hãy chạy `midicoder ir build` trước.",
+        ErrorCode.INFRA_TEMPLATE_NOT_FOUND: "Không tìm thấy Docker Compose template.",
+        ErrorCode.INFRA_TEMPLATE_RENDER_FAILED: "Không thể render Docker Compose template.",
+        ErrorCode.INFRA_WRITE_FAILED: "Không thể ghi file docker-compose.yml.",
+        ErrorCode.INFRA_INVALID_CONFIG: "Infrastructure configuration không hợp lệ.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {
