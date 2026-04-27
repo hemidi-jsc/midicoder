@@ -169,12 +169,12 @@ class TerraformGenerator:
         Args:
             template_path: Custom template path (optional)
         """
-        # Template path mặc định
+        # Template path mặc định - sử dụng infrastructure/terraform
         if template_path:
             self.template_path = Path(template_path)
         else:
             self.template_path = (
-                Path(__file__).parent.parent.parent / "stacks" / "aws" / "terraform"
+                Path(__file__).parent.parent.parent / "stacks" / "infrastructure" / "terraform"
             )
 
     def extract_aws_infrastructure(
