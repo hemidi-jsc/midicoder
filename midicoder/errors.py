@@ -219,6 +219,20 @@ class ErrorCode(str, Enum):
     UTIL_CONFIG_WRITE_FAILED = "MDC-UTIL-006"
     UTIL_NEO4J_CONNECTION_FAILED = "MDC-UTIL-007"
     UTIL_PIPELINE_TRIGGER_FAILED = "MDC-UTIL-008"
+    
+    # =========================================================================
+    # CP01: Entity Model Emitter Errors
+    # =========================================================================
+    CP01_ENTITY_NOT_FOUND = "MDC-CP01-001"
+    CP01_INVALID_FIELD_TYPE = "MDC-CP01-002"
+    CP01_RELATIONSHIP_TARGET_NOT_FOUND = "MDC-CP01-003"
+    CP01_INVALID_LIFECYCLE_EVENT = "MDC-CP01-004"
+    CP01_TEMPLATE_NOT_FOUND = "MDC-CP01-005"
+    CP01_INVALID_CONSTRAINT = "MDC-CP01-006"
+    CP01_MODEL_EMIT_FAILED = "MDC-CP01-007"
+    CP01_RELATIONSHIP_EMIT_FAILED = "MDC-CP01-008"
+    CP01_HOOK_EMIT_FAILED = "MDC-CP01-009"
+    CP01_INVALID_ENUM_VALUE = "MDC-CP01-010"
 
 
 class ExitCode(Enum):

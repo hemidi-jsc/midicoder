@@ -278,20 +278,20 @@ class BackendFastAPIEmitter:
         
         app_dir = output_dir / "app"
         
-        # Emit model (use db model template pattern)
+        # Emit model (use db/model.py.jinja2 template - CP01)
         files.append(self._write_file(
             output_dir=app_dir / "models",
             filename=f"{entity_lower}.py",
-            template="model.py.jinja2",
+            template="db/model.py.jinja2",
             context={"entity": entity},
             capability="CP01",
         ))
         
-        # Emit repository (entity-specific)
+        # Emit repository (entity-specific - CP08)
         files.append(self._write_file(
             output_dir=app_dir / "repositories",
             filename=f"{entity_lower}_repo.py",
-            template="repository.py.jinja2",
+            template="db/repository.py.jinja2",
             context={"entity": entity},
             capability="CP08",
         ))
