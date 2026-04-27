@@ -195,42 +195,9 @@ def build():
 from midicoder.pipeline.commands.code import code as code_group
 cli.add_command(code_group)
 
-
-@cli.group()
-def preview():
-    """
-    Local preview với Docker Compose.
-
-    Start/Stop/Status của local development stack.
-    """
-    pass
-
-
-@preview.command()
-def start():
-    """
-    Start local preview stack.
-    """
-    from midicoder.pipeline.commands.preview import start_preview
-    start_preview()
-
-
-@preview.command()
-def stop():
-    """
-    Stop local preview stack.
-    """
-    from midicoder.pipeline.commands.preview import stop_preview
-    stop_preview()
-
-
-@preview.command()
-def status():
-    """
-    Show preview stack status.
-    """
-    from midicoder.pipeline.commands.preview import show_status
-    show_status()
+# Import preview group từ preview.py (với full CLI implementation)
+from midicoder.pipeline.commands.preview import preview as preview_group
+cli.add_command(preview_group)
 
 
 @cli.group()

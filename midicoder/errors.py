@@ -153,7 +153,30 @@ class ErrorCode(str, Enum):
     MIR_VALIDATION_FAILED = "MDC-IR-004"
     MIR_SAVE_FAILED = "MDC-IR-005"
 
+    # =========================================================================
+    # Code Generation Errors
+    # =========================================================================
+    CODE_MIR_NOT_FOUND = "MDC-CODE-001"
+    CODE_PLAN_NOT_FOUND = "MDC-CODE-002"
+    CODE_PLAN_CREATE_FAILED = "MDC-CODE-003"
+    CODE_GENERATION_FAILED = "MDC-CODE-004"
+    CODE_APPLY_FAILED = "MDC-CODE-005"
+    CODE_FILE_CONFLICT = "MDC-CODE-006"
+    CODE_TEMPLATE_NOT_FOUND = "MDC-CODE-007"
+    CODE_OUTPUT_DIR_ERROR = "MDC-CODE-008"
 
+    # =========================================================================
+    # Preview Errors
+    # =========================================================================
+    PREVIEW_DOCKER_NOT_INSTALLED = "MDC-PRV-001"
+    PREVIEW_DOCKER_NOT_RUNNING = "MDC-PRV-002"
+    PREVIEW_COMPOSE_FILE_NOT_FOUND = "MDC-PRV-003"
+    PREVIEW_ALREADY_RUNNING = "MDC-PRV-004"
+    PREVIEW_START_FAILED = "MDC-PRV-005"
+    PREVIEW_NOT_RUNNING = "MDC-PRV-006"
+    PREVIEW_STOP_FAILED = "MDC-PRV-007"
+    PREVIEW_RESTART_FAILED = "MDC-PRV-008"
+    PREVIEW_HEALTH_CHECK_TIMEOUT = "MDC-PRV-009"
 class ExitCode(Enum):
     """
     Exit codes cho CLI commands.
@@ -390,6 +413,27 @@ class MidicoderErrorManager:
         ErrorCode.MIR_BUILD_FAILED: "MIR build thất bại.",
         ErrorCode.MIR_VALIDATION_FAILED: "MIR validation thất bại.",
         ErrorCode.MIR_SAVE_FAILED: "Cannot save MIR to artifacts.",
+
+        # Code Generation Errors
+        ErrorCode.CODE_MIR_NOT_FOUND: "Không tìm thấy MIR trong artifacts. Hãy chạy `midicoder ir build` trước.",
+        ErrorCode.CODE_PLAN_NOT_FOUND: "Không tìm thấy implementation plan. Hãy chạy `midicoder code plan` trước.",
+        ErrorCode.CODE_PLAN_CREATE_FAILED: "Không thể tạo implementation plan từ MIR.",
+        ErrorCode.CODE_GENERATION_FAILED: "Code generation thất bại.",
+        ErrorCode.CODE_APPLY_FAILED: "Không thể apply code vào target directory.",
+        ErrorCode.CODE_FILE_CONFLICT: "File conflict khi apply code.",
+        ErrorCode.CODE_TEMPLATE_NOT_FOUND: "Không tìm thấy template cho code generation.",
+        ErrorCode.CODE_OUTPUT_DIR_ERROR: "Lỗi khi tạo output directory.",
+
+        # Preview Errors
+        ErrorCode.PREVIEW_DOCKER_NOT_INSTALLED: "Docker không được cài đặt. Vui lòng cài đặt Docker Desktop.",
+        ErrorCode.PREVIEW_DOCKER_NOT_RUNNING: "Docker daemon không chạy. Vui lòng start Docker Desktop.",
+        ErrorCode.PREVIEW_COMPOSE_FILE_NOT_FOUND: "File docker-compose.yml không tìm thấy. Hãy chạy `midicoder code gen` trước.",
+        ErrorCode.PREVIEW_ALREADY_RUNNING: "Preview đã đang chạy. Hãy `midicoder preview stop` trước hoặc dùng `restart`.",
+        ErrorCode.PREVIEW_START_FAILED: "Không thể start preview services.",
+        ErrorCode.PREVIEW_NOT_RUNNING: "Preview không đang chạy. Hãy chạy `midicoder preview start` trước.",
+        ErrorCode.PREVIEW_STOP_FAILED: "Không thể stop preview services.",
+        ErrorCode.PREVIEW_RESTART_FAILED: "Không thể restart preview services.",
+        ErrorCode.PREVIEW_HEALTH_CHECK_TIMEOUT: "Timeout chờ services healthy. Vui lòng kiểm tra logs.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {
