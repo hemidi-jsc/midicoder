@@ -221,12 +221,8 @@ def show():
     """
     Hiển thị current configuration.
     """
-    from midicoder.pipeline.config import get_config
-    cfg = get_config()
-    global_conf = cfg.load_global_config()
-    import json
-    click.echo("Global Config:")
-    click.echo(json.dumps(global_conf, indent=2))
+    from midicoder.pipeline.commands.util import run_config_show
+    run_config_show()
 
 
 @config.command()
@@ -234,14 +230,12 @@ def show():
 @click.argument("value")
 def set(key, value):
     """
-    Set configuration value.
+    Set configuration value với schema validation.
 
     Ví dụ: midicoder config set llm.model "gpt-4"
     """
-    from midicoder.pipeline.config import get_config
-    cfg = get_config()
-    cfg.set(key, value)
-    click.echo(f"Set {key} = {value}")
+    from midicoder.pipeline.commands.util import run_config_set
+    run_config_set(key, value)
 
 
 @config.command()
@@ -252,27 +246,46 @@ def reset(key):
 
     Nếu không có key, reset toàn bộ config.
     """
-    from midicoder.pipeline.config import get_config
-    cfg = get_config()
-    cfg.reset(key)
-    click.echo(f"Reset {'all' if key is None else key} to defaults")
+    from midicoder.pipeline.commands.util import run_config_reset
+    run_config_reset(key)
 
 
 @cli.command()
-def status():
+@click.option("--json", "json_output", is_flag=True, help="Output format JSON")
+def status(json_output):
     """
-    Hiển thị project status.
+    Hiển thị project status (detailed).
+
+    Hiển thị thông tin chi tiết về:
+    - Active version
+    - Pipeline progress (brief, contract, MIR, code)
+    - Artifacts count
+    - Last activity
+    - Neo4j status
+    - Versions list
     """
-    click.echo("Midicoder Project Status")
-    click.echo("=" * 40)
-    from midicoder.pipeline.config import get_config
-    cfg = get_config()
-    try:
-        project = cfg.load_project_config()
-        click.echo(f"Active Version: {project.get('active_version', 'N/A')}")
-        click.echo(f"Capabilities: {project.get('capabilities', {})}")
-    except Exception as e:
-        click.echo(f"Project not initialized: {e}")
+    from midicoder.pipeline.commands.util import run_status
+    run_status(json_output=json_output)
+
+
+@cli.command()
+@click.option("--type", "feedback_type", default="clarification", 
+              type=click.Choice(["bug", "enhancement", "clarification"]),
+              help="Loại feedback")
+@click.option("--message", "-m", type=str, help="Nội dung feedback")
+@click.option("--no-auto-apply", is_flag=True, help="Không tự động trigger pipeline")
+def feedback(feedback_type, message, no_auto_apply):
+    """
+    Thu thập feedback từ user.
+
+    Feedback được lưu vào SQLite và có thể trigger pipeline tự động.
+    """
+    from midicoder.pipeline.commands.util import run_feedback
+    run_feedback(
+        feedback_type=feedback_type,
+        message=message,
+        no_auto_apply=no_auto_apply
+    )
 
 
 @cli.command()
