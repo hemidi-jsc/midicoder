@@ -22,6 +22,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
+import litellm
+
 from midicoder.pipeline.indexer.query import (
     get_relevant_context,
     format_context_for_prompt,
@@ -50,6 +52,9 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
 # Tỷ lệ % context window dành cho codebase context
 CONTEXT_WINDOW_RATIO = 0.30  # 30%
 
+# Ngưỡng tối đa % context window được phép dùng (tránh overflow)
+MAX_CONTEXT_WINDOW_THRESHOLD = 0.85  # 85%
+
 # Timeout cho context query (giây)
 CONTEXT_QUERY_TIMEOUT_SECONDS = 5
 
@@ -62,15 +67,21 @@ class ContextFeedResult:
     Attributes:
         context_items: Danh sách ContextItem
         formatted_context: Formatted string cho prompt injection
-        token_count: Ước lượng số tokens của context
+        token_count: Số tokens của context
         query_time_ms: Thời gian query (ms)
         warning: Warning message (nếu có)
+        brief_tokens: Số tokens của brief (nếu có tính)
+        system_tokens: Số tokens của system prompt (nếu có tính)
+        total_tokens: Tổng tokens (brief + system + context)
     """
     context_items: list[ContextItem]
     formatted_context: str
     token_count: int
     query_time_ms: int
     warning: Optional[str] = None
+    brief_tokens: int = 0
+    system_tokens: int = 0
+    total_tokens: int = 0
 
 
 def calculate_adaptive_limit(model_name: Optional[str] = None) -> int:
@@ -116,10 +127,39 @@ def calculate_adaptive_limit(model_name: Optional[str] = None) -> int:
     return adaptive_limit
 
 
+def count_tokens_with_litellm(text: str, model: str = "gpt-4o-mini") -> int:
+    """
+    Đếm số tokens chính xác bằng litellm SDK.
+    
+    Sử dụng litellm.token_counter để đếm tokens chính xác theo model tokenizer.
+    
+    Args:
+        text: Text để đếm tokens
+        model: Model name để dùng tokenizer tương ứng
+    
+    Returns:
+        Số tokens chính xác
+    
+    Examples:
+        >>> count_tokens_with_litellm("Hello world", "gpt-4o-mini")
+        3
+    """
+    if not text:
+        return 0
+    
+    try:
+        # Sử dụng litellm's token_counter
+        return litellm.token_counter(model=model, text=text)
+    except Exception:
+        # Fallback: ~4 chars per token
+        return len(text) // 4
+
+
 def estimate_tokens(text: str) -> int:
     """
     Ước lượng số tokens của text.
     
+    Deprecated: Dùng count_tokens_with_litellm() thay vì hàm này.
     Simple estimation: ~4 characters per token (English average).
     
     Args:
@@ -138,6 +178,7 @@ def get_brief_context(
     domain: Optional[str] = None,
     model_name: Optional[str] = None,
     db_path: Optional[str] = None,
+    system_prompt: str = "",
 ) -> ContextFeedResult:
     """
     Lấy codebase context cho brief analyze.
@@ -145,11 +186,15 @@ def get_brief_context(
     Query context từ codebase dựa trên brief content và domain.
     Format context cho LLM prompt injection.
     
+    Lưu ý: Không inject context nếu total tokens (system + brief + context) 
+    vượt quá MAX_CONTEXT_WINDOW_THRESHOLD (85%) của model context window.
+    
     Args:
-        brief_content: Nội dung brief (Markdown)
+        brief_content: Nội dung brief (Markdown) - giữ nguyên, không compact
         domain: Domain name (optional)
         model_name: Model name để calculate adaptive limit
         db_path: Đường dẫn context.db (optional)
+        system_prompt: System prompt để tính total tokens
     
     Returns:
         ContextFeedResult với context items và formatted string
@@ -165,8 +210,34 @@ def get_brief_context(
     warning = None
     
     try:
-        # Calculate adaptive limit
-        adaptive_limit = calculate_adaptive_limit(model_name)
+        # Get model context window
+        context_window = _get_model_context_window(model_name)
+        max_allowed_tokens = int(context_window * MAX_CONTEXT_WINDOW_THRESHOLD)
+        
+        # Đếm tokens của brief và system prompt bằng litellm
+        brief_tokens = count_tokens_with_litellm(brief_content, model_name)
+        system_tokens = count_tokens_with_litellm(system_prompt, model_name)
+        used_tokens = brief_tokens + system_tokens
+        
+        # Kiểm tra còn space cho context không
+        available_for_context = max_allowed_tokens - used_tokens
+        
+        if available_for_context <= 0:
+            # Không còn space, không inject context
+            query_time_ms = int((time.time() - start_time) * 1000)
+            return ContextFeedResult(
+                context_items=[],
+                formatted_context="",
+                token_count=0,
+                query_time_ms=query_time_ms,
+                warning=f"⚠️ Không inject context: brief ({brief_tokens} tokens) + system ({system_tokens} tokens) đã chiếm {(used_tokens/context_window*100):.0f}% context window",
+            )
+        
+        # Calculate adaptive limit (không vượt available space)
+        adaptive_limit = min(
+            int(context_window * CONTEXT_WINDOW_RATIO),
+            available_for_context
+        )
         
         # Create Brief object cho query API
         brief = Brief(content=brief_content, domain=domain)
@@ -184,17 +255,17 @@ def get_brief_context(
         # Format context cho prompt
         formatted_context = format_context_for_prompt(context_items)
         
-        # Estimate token count và truncate nếu cần
-        token_count = estimate_tokens(formatted_context)
+        # Đếm token context chính xác bằng litellm
+        token_count = count_tokens_with_litellm(formatted_context, model_name)
         
+        # Truncate nếu vượt adaptive limit
         if token_count > adaptive_limit and context_items:
-            # Truncate context items từ relevance score thấp nhất
             context_items = _truncate_context_by_tokens(
-                context_items, 
-                max_tokens=adaptive_limit
+                context_items,
+                max_tokens=adaptive_limit,
             )
             formatted_context = format_context_for_prompt(context_items)
-            token_count = estimate_tokens(formatted_context)
+            token_count = count_tokens_with_litellm(formatted_context, model_name)
         
         query_time_ms = int((time.time() - start_time) * 1000)
         
@@ -204,6 +275,9 @@ def get_brief_context(
             token_count=token_count,
             query_time_ms=query_time_ms,
             warning=warning,
+            brief_tokens=brief_tokens,
+            system_tokens=system_tokens,
+            total_tokens=used_tokens + token_count,
         )
         
     except Exception as e:
@@ -424,7 +498,7 @@ def format_context_inject(
     """
     Format context result cho prompt injection.
     
-   Inject context vào user message (prepend trước brief content).
+    Inject context vào user message (prepend trước brief content).
     
     Args:
         context_result: ContextFeedResult từ get_brief_context hoặc get_clarify_context
@@ -442,6 +516,33 @@ def format_context_inject(
         return ""
     
     return context_result.formatted_context
+
+
+def _get_model_context_window(model_name: Optional[str] = None) -> int:
+    """
+    Lấy context window size của model.
+    
+    Args:
+        model_name: Tên model
+    
+    Returns:
+        Context window size (tokens)
+    """
+    if not model_name:
+        return MODEL_CONTEXT_WINDOWS["default"]
+    
+    normalized = model_name.lower().strip()
+    
+    # Try exact match
+    if normalized in MODEL_CONTEXT_WINDOWS:
+        return MODEL_CONTEXT_WINDOWS[normalized]
+    
+    # Try prefix match
+    for key, window in MODEL_CONTEXT_WINDOWS.items():
+        if key != "default" and normalized.startswith(key):
+            return window
+    
+    return MODEL_CONTEXT_WINDOWS["default"]
 
 
 def _find_context_db() -> Optional[str]:
@@ -471,6 +572,7 @@ __all__ = [
     "ContextFeedResult",
     "calculate_adaptive_limit",
     "estimate_tokens",
+    "count_tokens_with_litellm",
     "get_brief_context",
     "get_clarify_context",
     "format_context_inject",
