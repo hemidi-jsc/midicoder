@@ -114,8 +114,9 @@ class BackendFastAPIEmitter:
         Process:
         1. Emit base files (main.py, config.py, database.py, __init__.py files)
         2. Emit entity files cho mỗi entity trong MIR metadata
-        3. Write files to output directory
-        4. Return list of GeneratedFile
+        3. Emit value object files cho mỗi value object trong MIR metadata
+        4. Write files to output directory
+        5. Return list of GeneratedFile
         
         Args:
             mir: MIR instance
@@ -133,6 +134,11 @@ class BackendFastAPIEmitter:
         entities = mir.metadata.get("entities", [])
         for entity in entities:
             files.extend(self._emit_entity(entity, output_dir))
+        
+        # Emit value objects từ MIR metadata
+        value_objects = mir.metadata.get("value_objects", [])
+        for vo in value_objects:
+            files.extend(self._emit_value_object(vo, output_dir))
         
         return files
     
@@ -294,6 +300,55 @@ class BackendFastAPIEmitter:
             template="db/repository.py.jinja2",
             context={"entity": entity},
             capability="CP08",
+        ))
+        
+        return files
+    
+    def _emit_value_object(self, vo: dict[str, Any], output_dir: Path) -> list[GeneratedFile]:
+        """
+        Emit files cho một Value Object.
+        
+        Files được emit:
+        - app/domain/value_objects/{vo_id_lower}.py
+        - app/domain/value_objects/__init__.py (nếu chưa tồn tại)
+        
+        Args:
+            vo: Value Object dict từ MIR metadata
+            output_dir: Output directory
+            
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+        
+        vo_id = vo.get("id", "ValueObject")
+        vo_lower = vo_id.lower()
+        
+        app_dir = output_dir / "app"
+        domain_dir = app_dir / "domain"
+        vo_dir = domain_dir / "value_objects"
+        
+        # Create value_objects directory
+        vo_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Emit __init__.py for value_objects directory nếu chưa có
+        init_file = vo_dir / "__init__.py"
+        if not init_file.exists():
+            files.append(self._write_file(
+                output_dir=vo_dir,
+                filename="__init__.py",
+                template="__init__.py.jinja2",
+                context={"module_name": "value_objects"},
+                capability="CP01",
+            ))
+        
+        # Emit value object file (use domain/value_object.py.jinja2 template - CP01)
+        files.append(self._write_file(
+            output_dir=vo_dir,
+            filename=f"{vo_lower}.py",
+            template="domain/value_object.py.jinja2",
+            context={"vo": vo},
+            capability="CP01",
         ))
         
         return files
