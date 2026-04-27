@@ -494,6 +494,82 @@ class TestFastAPIRepositoryMethods(TestCase):
         self.assertIn("_validate_before_update", content)
 
 
+class TestNestJSRepositoryHardening(TestCase):
+    """Test hardened features in NestJS base.repository."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/nestjs/templates/db/base.repository.ts.jinja2")
+
+    def test_template_has_notfound_error(self):
+        """Test template có NotFoundError class."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("NotFoundError", content)
+
+    def test_template_has_tenant_isolation_error(self):
+        """Test template có TenantIsolationError class."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("TenantIsolationError", content)
+
+    def test_template_has_validation_error(self):
+        """Test template có ValidationError class."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("ValidationError", content)
+
+    def test_template_has_repository_error(self):
+        """Test template có RepositoryError base class."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("RepositoryError", content)
+
+    def test_template_has_tenant_isolation_check(self):
+        """Test template có tenant isolation check trong update."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("tenantId", content)
+        self.assertIn("TenantIsolationError", content)
+
+    def test_template_has_transaction_support(self):
+        """Test template có transaction wrapper."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("transaction", content)
+        self.assertIn("EntityManager", content)
+
+    def test_template_has_bulk_create(self):
+        """Test template có bulkCreate method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("bulkCreate", content)
+
+    def test_template_has_bulk_update(self):
+        """Test template có bulkUpdate method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("bulkUpdate", content)
+
+    def test_template_has_kpi_029_comments(self):
+        """Test template có KPI-029 comments."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("KPI-029", content)
+
+    def test_template_has_safety_limit(self):
+        """Test template có safety limit cho list."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("1000", content) or self.assertIn("Math.min", content)
+
+    def test_template_has_select_support(self):
+        """Test template có projection support (select)."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("select", content) or self.assertIn("FindOptionsSelect", content)
+
+    def test_template_has_order_support(self):
+        """Test template có order by support."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("order", content) or self.assertIn("FindOptionsOrder", content)
+
+    def test_template_has_validate_hooks(self):
+        """Test template có validation hooks."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("validateBeforeCreate", content)
+        self.assertIn("validateBeforeUpdate", content)
+
+
 # Run tests
 if __name__ == "__main__":
     import unittest
