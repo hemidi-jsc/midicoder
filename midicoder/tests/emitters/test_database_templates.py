@@ -403,6 +403,97 @@ class TestNestJsBaseRepository(TestCase):
         self.assertIn("/", content) or self.assertIn("*", content)
 
 
+class TestFastAPIRepositoryHardening(TestCase):
+    """Test hardened features in FastAPI base_repository."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/fastapi/templates/db/base_repository.py.jinja2")
+
+    def test_template_has_notfound_error(self):
+        """Test template có NotFoundError class."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("NotFoundError", content)
+
+    def test_template_has_tenant_isolation_error(self):
+        """Test template có TenantIsolationError class."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("TenantIsolationError", content)
+
+    def test_template_has_validation_error(self):
+        """Test template có ValidationError class."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("ValidationError", content)
+
+    def test_template_has_tenant_isolation_check(self):
+        """Test template có tenant isolation check trong update."""
+        content = self.template_path.read_text(encoding="utf-8")
+        # Check for tenant_id prevention in update
+        self.assertIn("tenant_id", content)
+        self.assertIn("TenantIsolationError", content)
+
+    def test_template_has_transaction_support(self):
+        """Test template có transaction wrapper."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("transaction", content)
+        self.assertIn("commit", content)
+        self.assertIn("rollback", content)
+
+    def test_template_has_bulk_create(self):
+        """Test template có bulk_create method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("bulk_create", content)
+
+    def test_template_has_bulk_update(self):
+        """Test template có bulk_update method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("bulk_update", content)
+
+    def test_template_has_kpi_029_comments(self):
+        """Test template có KPI-029 comments (tenant filter detection)."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("KPI-029", content) or self.assertIn("tenant filter", content)
+
+    def test_template_has_load_relations_support(self):
+        """Test template có eager loading support."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("load_relations", content) or self.assertIn("selectinload", content)
+
+    def test_template_has_safety_limit(self):
+        """Test template có safety limit cho list."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("1000", content) or self.assertIn("min(limit", content)
+
+
+class TestFastAPIRepositoryMethods(TestCase):
+    """Test specific method signatures in FastAPI base_repository."""
+
+    def setUp(self):
+        """Thiết lập test fixtures."""
+        self.template_path = Path("midicoder/stacks/fastapi/templates/db/base_repository.py.jinja2")
+
+    def test_get_raises_notfound(self):
+        """Test get method raises NotFoundError."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("raise NotFoundError", content)
+
+    def test_update_validates_tenant(self):
+        """Test update method validates tenant."""
+        content = self.template_path.read_text(encoding="utf-8")
+        # Should have tenant verification
+        self.assertIn("tenant_id", content)
+
+    def test_validate_before_create_exists(self):
+        """Test _validate_before_create method exists."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("_validate_before_create", content)
+
+    def test_validate_before_update_exists(self):
+        """Test _validate_before_update method exists."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("_validate_before_update", content)
+
+
 # Run tests
 if __name__ == "__main__":
     import unittest
