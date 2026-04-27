@@ -205,7 +205,7 @@ def _build_mir_from_projection_tree(tree: ProjectionTree) -> MIR:
         _process_guard_to_mir(builder, guard)
 
     # Process Roles → Boundaries
-    for role in tree.get_roles():
+    for role in tree.get_nodes_by_kind(NodeKind.ROLE):
         _process_role_to_mir(builder, role)
 
     # Process Workflows → Boundaries (transaction)
