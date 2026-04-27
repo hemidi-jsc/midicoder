@@ -186,6 +186,20 @@ class ErrorCode(str, Enum):
     INFRA_TEMPLATE_RENDER_FAILED = "MDC-INFRA-003"
     INFRA_WRITE_FAILED = "MDC-INFRA-004"
     INFRA_INVALID_CONFIG = "MDC-INFRA-005"
+    
+    # =========================================================================
+    # Version Management Errors
+    # =========================================================================
+    VERSION_NOT_FOUND = "MDC-VER-001"
+    VERSION_INVALID_NAME = "MDC-VER-002"
+    VERSION_DELETE_ACTIVE = "MDC-VER-003"
+    VERSION_CREATE_FAILED = "MDC-VER-004"
+    VERSION_SWITCH_FAILED = "MDC-VER-005"
+    VERSION_CLEANUP_FAILED = "MDC-VER-006"
+    VERSION_METADATA_INVALID = "MDC-VER-007"
+    VERSION_ALREADY_EXISTS = "MDC-VER-008"
+
+
 class ExitCode(Enum):
     """
     Exit codes cho CLI commands.
@@ -450,6 +464,16 @@ class MidicoderErrorManager:
         ErrorCode.INFRA_TEMPLATE_RENDER_FAILED: "Không thể render Docker Compose template.",
         ErrorCode.INFRA_WRITE_FAILED: "Không thể ghi file docker-compose.yml.",
         ErrorCode.INFRA_INVALID_CONFIG: "Infrastructure configuration không hợp lệ.",
+        
+        # Version Management Errors
+        ErrorCode.VERSION_NOT_FOUND: "Version không tồn tại. Vui lòng kiểm tra tên version.",
+        ErrorCode.VERSION_INVALID_NAME: "Tên version không hợp lệ. Sử dụng SemVer format (ví dụ: v1.0.0, v1.0.1-alpha).",
+        ErrorCode.VERSION_DELETE_ACTIVE: "Không thể xóa active version. Hãy switch sang version khác trước hoặc dùng --force.",
+        ErrorCode.VERSION_CREATE_FAILED: "Tạo version thất bại.",
+        ErrorCode.VERSION_SWITCH_FAILED: "Switch version thất bại.",
+        ErrorCode.VERSION_CLEANUP_FAILED: "Auto-cleanup version thất bại.",
+        ErrorCode.VERSION_METADATA_INVALID: "Version metadata không hợp lệ.",
+        ErrorCode.VERSION_ALREADY_EXISTS: "Version đã tồn tại. Vui lòng chọn tên khác.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {

@@ -199,6 +199,10 @@ cli.add_command(code_group)
 from midicoder.pipeline.commands.preview import preview as preview_group
 cli.add_command(preview_group)
 
+# Import version group từ version.py (với full CLI implementation)
+from midicoder.pipeline.commands.version import version as version_group
+cli.add_command(version_group)
+
 
 @cli.group()
 def config():
