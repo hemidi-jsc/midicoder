@@ -188,6 +188,11 @@ def _build_mir_from_projection_tree(tree: ProjectionTree) -> MIR:
     """
     builder = MIRBuilder().with_version("1.0.0").with_source("DSL ProjectionTree")
 
+    # Lưu entities vào metadata cho emitter sử dụng
+    _store_entities_in_metadata(builder, tree)
+    _store_commands_in_metadata(builder, tree)
+    _store_queries_in_metadata(builder, tree)
+
     # Process Commands → Operations
     for command in tree.get_commands():
         _process_command_to_mir(builder, command)
@@ -418,3 +423,67 @@ def _process_workflow_to_mir(builder: MIRBuilder, workflow: ProjectionNode) -> N
         enclosing_ops=state_ops,
         config={"workflow_id": workflow_id}
     )
+
+
+# ============================================================================
+# Helper Functions for Metadata Storage
+# ============================================================================
+
+def _store_entities_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
+    """
+    Lưu entities vào MIR metadata cho emitter sử dụng.
+
+    Args:
+        builder: MIRBuilder
+        tree: ProjectionTree
+    """
+    entities = []
+    for entity in tree.get_entities():
+        entities.append({
+            "id": entity.params.get("id", "Entity"),
+            "description": entity.params.get("description", ""),
+            "fields": entity.params.get("fields", []),
+            "tenant_scope": entity.params.get("tenant_scope", "global"),
+            "primary_key": entity.params.get("primary_key", "id"),
+        })
+    builder.mir.metadata["entities"] = entities
+
+
+def _store_commands_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
+    """
+    Lưu commands vào MIR metadata cho emitter sử dụng.
+
+    Args:
+        builder: MIRBuilder
+        tree: ProjectionTree
+    """
+    commands = []
+    for command in tree.get_commands():
+        commands.append({
+            "id": command.params.get("id", "Command"),
+            "description": command.params.get("description", ""),
+            "input": command.params.get("input", []),
+            "writes_to": command.params.get("writes_to", []),
+            "category": command.params.get("category", "custom"),
+        })
+    builder.mir.metadata["commands"] = commands
+
+
+def _store_queries_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
+    """
+    Lưu queries vào MIR metadata cho emitter sử dụng.
+
+    Args:
+        builder: MIRBuilder
+        tree: ProjectionTree
+    """
+    queries = []
+    for query in tree.get_queries():
+        queries.append({
+            "id": query.params.get("id", "Query"),
+            "description": query.params.get("description", ""),
+            "input": query.params.get("input", []),
+            "reads_from": query.params.get("reads_from", []),
+            "category": query.params.get("category", "list"),
+        })
+    builder.mir.metadata["queries"] = queries
