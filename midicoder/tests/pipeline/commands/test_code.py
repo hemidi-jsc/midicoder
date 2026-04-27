@@ -151,35 +151,45 @@ class TestPlanCreation:
 
     def test_create_implementation_plan_empty_mir(self):
         """Test create plan từ empty MIR."""
+        from midicoder.pipeline.plan import ImplementationPlan
+        
         mir = {"entities": [], "commands": [], "queries": []}
         plan = _create_implementation_plan(mir, target="all")
         
-        assert "meta" in plan
-        assert "backend_files" in plan
-        assert "frontend_files" in plan
-        assert "infra_files" in plan
+        assert isinstance(plan, ImplementationPlan)
+        assert "version" in plan.meta
+        assert "created_at" in plan.meta
+        assert "target" in plan.meta
+        
+        # Check modules by type
+        file_counts = plan.count_files()
         
         # Core backend files luôn có
-        assert len(plan["backend_files"]) >= 3  # main, config, database
+        assert file_counts["backend"] >= 3  # main, config, database
         
         # Frontend core files
-        assert len(plan["frontend_files"]) >= 2  # app.module, app.component
+        assert file_counts["frontend"] >= 2  # app.module, app.component
         
         # Infra files
-        assert len(plan["infra_files"]) == 3  # docker-compose, Dockerfile, .env.example
+        assert file_counts["infra"] == 3  # docker-compose, Dockerfile, .env.example
 
     def test_create_implementation_plan_with_entities(self, sample_mir):
         """Test create plan từ MIR với entities."""
+        from midicoder.pipeline.plan import ImplementationPlan
+        
         plan = _create_implementation_plan(sample_mir, target="all")
         
-        # Count backend files
-        backend_files = plan["backend_files"]
+        assert isinstance(plan, ImplementationPlan)
+        
+        # Count backend files using typed method
+        file_counts = plan.count_files()
         
         # Should have core files + entity files
-        assert len(backend_files) > 3
+        assert file_counts["backend"] > 3
         
-        # Check for entity-specific files
-        file_paths = [f["path"] for f in backend_files]
+        # Check for entity-specific files using get_files_by_type
+        all_files = plan.get_files_by_type("model") + plan.get_files_by_type("route")
+        file_paths = [f.path for f in all_files]
         assert any("customer" in p for p in file_paths)
         assert any("order" in p for p in file_paths)
 
@@ -229,16 +239,23 @@ class TestPlanCreation:
 
     def test_plan_target_filtering(self, sample_mir):
         """Test plan filtering by target."""
+        from midicoder.pipeline.plan import ImplementationPlan
+        
         plan_backend = _create_implementation_plan(sample_mir, target="backend")
         plan_frontend = _create_implementation_plan(sample_mir, target="frontend")
         
-        # Backend-only plan should have no frontend files
-        assert len(plan_backend["backend_files"]) > 0
-        assert len(plan_backend["frontend_files"]) == 0
+        assert isinstance(plan_backend, ImplementationPlan)
+        assert isinstance(plan_frontend, ImplementationPlan)
         
-        # Frontend-only plan should have no backend files
-        assert len(plan_frontend["frontend_files"]) > 0
-        assert len(plan_frontend["backend_files"]) == 0
+        # Backend-only plan should have backend modules, no frontend modules
+        backend_counts = plan_backend.count_files()
+        assert backend_counts["backend"] > 0
+        assert backend_counts["frontend"] == 0
+        
+        # Frontend-only plan should have frontend modules, no backend modules
+        frontend_counts = plan_frontend.count_files()
+        assert frontend_counts["frontend"] > 0
+        assert frontend_counts["backend"] == 0
 
 
 # ============================================================================
@@ -300,7 +317,8 @@ class TestCodePlanIntegration:
         assert result.exit_code == 0
         assert "Đang tạo implementation plan" in result.output
         assert "Plan Summary" in result.output
-        assert "backend_files" in result.output.lower() or "Backend files" in result.output
+        # New format: "Backend modules" instead of "Backend files"
+        assert "backend modules" in result.output.lower() or "Backend modules" in result.output
 
     @patch("midicoder.pipeline.commands.code._load_mir_from_artifacts")
     def test_execute_plan_no_mir(self, mock_load_mir, runner):
