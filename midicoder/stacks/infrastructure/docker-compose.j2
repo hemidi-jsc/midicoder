@@ -1,0 +1,128 @@
+# Docker Compose - Midicoder Generated
+# Tự động generate từ MIR, không sửa tay
+#
+# Services included:
+{% for service in services %}
+#   - {{ service }}
+{% endfor %}
+
+version: "3.8"
+
+services:
+{% if has_backend %}
+  # Backend Service
+  backend:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+    ports:
+      - "{{ backend_port }}:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:{{ postgres_password }}@postgres:5432/{{ postgres_database }}
+      - REDIS_URL=redis://redis:6379/0
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD={{ neo4j_password }}
+      - JWT_SECRET={{ jwt_secret }}
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - postgres
+      - redis
+      - neo4j
+    networks:
+      - midicoder-network
+    volumes:
+      - ./src/backend:/app
+    restart: unless-stopped
+
+{% endif %}
+{% if has_frontend %}
+  # Frontend Service
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "{{ frontend_port }}:4200"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - NGINX_HOST=localhost
+      - NGINX_PORT=4200
+    depends_on:
+      - backend
+    networks:
+      - midicoder-network
+    volumes:
+      - ./src/frontend:/app
+    restart: unless-stopped
+
+{% endif %}
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD={{ postgres_password }}
+      - POSTGRES_DB={{ postgres_database }}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - midicoder-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - midicoder-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - "7474:7474"   # Browser UI
+      - "7687:7687"   # Bolt protocol
+    environment:
+      - NEO4J_AUTH={{ neo4j_user }}/{{ neo4j_password }}
+      - NEO4J_dbms_memory_heap_initial__size=256m
+      - NEO4J_dbms_memory_heap_max__size=512m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    networks:
+      - midicoder-network
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+# Networks
+networks:
+  midicoder-network:
+    driver: bridge
+
+# Volumes
+volumes:
+  postgres_data:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:
