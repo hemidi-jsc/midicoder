@@ -274,13 +274,22 @@ class BackendNestJSEmitter:
         entity_dir.mkdir(parents=True, exist_ok=True)
         dto_dir.mkdir(parents=True, exist_ok=True)
         
-        # Emit entity file
+        # Emit entity file (from db/entity.ts.jinja2)
         files.append(self._write_file(
             output_dir=entity_dir,
             filename=f"{entity_lower}.entity.ts",
-            template="entity.ts.jinja2",
+            template="db/entity.ts.jinja2",
             context={"entity": entity},
             capability="CP01",
+        ))
+        
+        # Emit repository file (from db/repository.ts.jinja2)
+        files.append(self._write_file(
+            output_dir=entity_dir,
+            filename=f"{entity_lower}.repository.ts",
+            template="db/repository.ts.jinja2",
+            context={"entity": entity},
+            capability="CP08",
         ))
         
         # Emit controller
