@@ -1,0 +1,111 @@
+"""
+Guards cho {{ command.id }}.
+
+Kiểm tra authorization và tenant scope cho {{ command.description }}.
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.commands.{{ command_id_lower }}.{{ command_id_lower }} import {{ command.id }}
+
+
+class {{ command.id }}Guards:
+    """
+    Guards cho {{ command.description }}.
+    
+    Guards:
+{% if command.guards %}
+{% for guard in command.guards %}
+        - {{ guard.type }}: {% if guard.permission %}permission={{ guard.permission }}{% endif %}{% if guard.mode %}, mode={{ guard.mode }}{% endif %}
+{% endfor %}
+{% else %}
+        - (No guards defined)
+{% endif %}
+    """
+    
+    async def check(self, command: {{ command.id }}, user_id: str | None = None, tenant_id: str | None = None) -> None:
+        """
+        Kiểm tra guards.
+        
+        Process:
+        1. Auth guard: Kiểm tra user có permission không
+        2. Tenant guard: Kiểm tra tenant scope
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            tenant_id: Tenant ID
+            
+        Raises:
+            PermissionError: Nếu không có quyền
+            TenantScopeError: Nếu vi phạm tenant scope
+        """
+{% if command.guards %}
+{% for guard in command.guards %}
+        # Check {{ guard.type }} guard
+        if "{{ guard.type }}" == "auth":
+            await self._check_auth_guard(command, user_id)
+            
+        if "{{ guard.type }}" == "tenant_scope":
+            await self._check_tenant_guard(command, tenant_id)
+
+{% endfor %}
+{% else %}
+        # No guards to check
+        pass
+
+{% endif %}
+
+{% if command.guards %}
+{% for guard in command.guards %}
+{% if guard.type == 'auth' %}
+    async def _check_auth_guard(self, command: {{ command.id }}, user_id: str | None = None) -> None:
+        """
+        Kiểm tra auth guard.
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            
+        Raises:
+            PermissionError: Nếu không có permission: {{ guard.permission }}
+        """
+        if user_id is None:
+            raise PermissionError("User không được xác thực")
+        
+        # TODO: Integrate với auth service
+        # has_permission = await auth_service.check_permission(user_id, "{{ guard.permission }}")
+        # if not has_permission:
+        #     raise PermissionError(f"User không có permission: {{ guard.permission }}")
+        pass
+
+{% endif %}
+{% if guard.type == 'tenant_scope' %}
+    async def _check_tenant_guard(self, command: {{ command.id }}, tenant_id: str | None = None) -> None:
+        """
+        Kiểm tra tenant scope guard.
+        
+        Args:
+            command: Command instance
+            tenant_id: Tenant ID
+            
+        Raises:
+            TenantScopeError: Nếu vi phạm tenant scope: {{ guard.mode }}
+        """
+        if tenant_id is None:
+            raise ValueError("Tenant ID không được xác định")
+        
+        # TODO: Integrate với tenant service
+        # if "{{ guard.mode }}" == "tenant_isolated":
+        #     # Check command data belongs to tenant
+        #     if not await tenant_service.belongs_to_tenant(command, tenant_id):
+        #         raise TenantScopeError("Data không thuộc tenant")
+        pass
+
+{% endif %}
+{% endfor %}
+{% endif %}

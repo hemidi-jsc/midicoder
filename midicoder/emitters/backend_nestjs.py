@@ -384,6 +384,137 @@ class BackendNestJSEmitter:
         
         return files
     
+    def _emit_command(self, command: dict[str, Any], output_dir: Path) -> list[GeneratedFile]:
+        """
+        Emit files cho một Command (Full DDD pattern).
+        
+        Files được emit:
+        - src/commands/{command_id_lower}/{command_id}.ts
+        - src/commands/{command_id_lower}/{command_id}.handler.ts
+        - src/commands/{command_id_lower}/{command_id}.validator.ts
+        - src/commands/{command_id_lower}/{command_id}.guards.ts
+        - src/commands/{command_id_lower}/{command_id}.effects.ts
+        - src/commands/{command_id_lower}/{command_id}.errors.ts
+        - src/commands/{command_id_lower}/{command_id}.module.ts
+        - src/commands/{command_id_lower}/index.ts
+        - src/schemas/commands/{command_id}.dto.ts
+        
+        Args:
+            command: Command dict từ MIR metadata
+            output_dir: Output directory
+            
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+        
+        command_id = command.get("id", "Command")
+        command_snake = self._to_snake_case(command_id)
+        
+        src_dir = output_dir / "src"
+        commands_dir = src_dir / "commands" / command_snake
+        schemas_dir = src_dir / "schemas" / "commands"
+        
+        # Create directories
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        schemas_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Template context
+        context = {
+            "command": command,
+            "command_snake": command_snake,
+        }
+        
+        # Emit command files
+        files.append(self._write_file(
+            output_dir=commands_dir,
+            filename=f"{command_snake}.ts",
+            template="domain/commands/command.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=commands_dir,
+            filename=f"{command_snake}.handler.ts",
+            template="domain/commands/command.handler.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=commands_dir,
+            filename=f"{command_snake}.validator.ts",
+            template="domain/commands/command.validator.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=commands_dir,
+            filename=f"{command_snake}.guards.ts",
+            template="domain/commands/command.guards.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=commands_dir,
+            filename=f"{command_snake}.effects.ts",
+            template="domain/commands/command.effects.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=commands_dir,
+            filename=f"{command_snake}.errors.ts",
+            template="domain/commands/command.errors.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=commands_dir,
+            filename=f"{command_snake}.module.ts",
+            template="domain/commands/command.module.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=commands_dir,
+            filename="index.ts",
+            template="domain/commands/index.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        # Emit input DTO
+        files.append(self._write_file(
+            output_dir=schemas_dir,
+            filename=f"{command_snake}.dto.ts",
+            template="domain/commands/command.dto.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        return files
+    
+    def _to_snake_case(self, name: str) -> str:
+        """
+        Chuyển string sang snake_case.
+        
+        Args:
+            name: Tên cần chuyển
+            
+        Returns:
+            Snake case string
+        """
+        import re
+        s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+        return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+    
     def _write_file(
         self,
         output_dir: Path,

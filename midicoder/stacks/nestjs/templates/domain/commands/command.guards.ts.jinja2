@@ -1,0 +1,102 @@
+/**
+ * Guards cho {{ command.id }}.
+ * 
+ * Kiểm tra authorization và tenant scope cho {{ command.description }}.
+ * 
+ * @author Midicoder Auto-generated
+ */
+
+import { Injectable } from '@nestjs/common';
+import { {{ command.id }} } from './{{ command_snake }}';
+
+/**
+ * Guards cho {{ command.description }}.
+ * 
+ * Guards:
+{% if command.guards %}
+{% for guard in command.guards %}
+ * - {{ guard.type }}: {% if guard.permission %}permission={{ guard.permission }}{% endif %}{% if guard.mode %}, mode={{ guard.mode }}{% endif %}
+{% endfor %}
+{% else %}
+ * - (No guards defined)
+{% endif %}
+ */
+@Injectable()
+export class {{ command.id }}Guards {
+    /**
+     * Kiểm tra guards.
+     * 
+     * Process:
+     * 1. Auth guard: Kiểm tra user có permission không
+     * 2. Tenant guard: Kiểm tra tenant scope
+     * 
+     * @param command Command instance
+     * @param userId User ID
+     * @param tenantId Tenant ID
+     * @throws PermissionError Nếu không có quyền
+     * @throws TenantScopeError Nếu vi phạm tenant scope
+     */
+    async check(command: {{ command.id }}, userId?: string, tenantId?: string): Promise<void> {
+{% if command.guards %}
+{% for guard in command.guards %}
+        // Check {{ guard.type }} guard
+        if ('{{ guard.type }}' === 'auth') {
+            await this._checkAuthGuard(command, userId);
+        }
+
+        if ('{{ guard.type }}' === 'tenant_scope') {
+            await this._checkTenantGuard(command, tenantId);
+        }
+{% endfor %}
+{% else %}
+        // No guards to check
+        return;
+{% endif %}
+    }
+
+{% if command.guards %}
+{% for guard in command.guards %}
+{% if guard.type == 'auth' %}
+    /**
+     * Kiểm tra auth guard.
+     * 
+     * @param command Command instance
+     * @param userId User ID
+     * @throws PermissionError Nếu không có permission: {{ guard.permission }}
+     */
+    private async _checkAuthGuard(command: {{ command.id }}, userId?: string): Promise<void> {
+        if (!userId) {
+            throw new Error('User không được xác thực');
+        }
+
+        // TODO: Integrate với auth service
+        // const hasPermission = await authService.checkPermission(userId, '{{ guard.permission }}');
+        // if (!hasPermission) {
+        //     throw new PermissionError(`User không có permission: {{ guard.permission }}`);
+        // }
+    }
+{% endif %}
+{% if guard.type == 'tenant_scope' %}
+    /**
+     * Kiểm tra tenant scope guard.
+     * 
+     * @param command Command instance
+     * @param tenantId Tenant ID
+     * @throws TenantScopeError Nếu vi phạm tenant scope: {{ guard.mode }}
+     */
+    private async _checkTenantGuard(command: {{ command.id }}, tenantId?: string): Promise<void> {
+        if (!tenantId) {
+            throw new Error('Tenant ID không được xác định');
+        }
+
+        // TODO: Integrate với tenant service
+        // if ('{{ guard.mode }}' === 'tenant_isolated') {
+        //     if (!await tenantService.belongsToTenant(command, tenantId)) {
+        //         throw new TenantScopeError('Data không thuộc tenant');
+        //     }
+        // }
+    }
+{% endif %}
+{% endfor %}
+{% endif %}
+}
