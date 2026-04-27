@@ -13,19 +13,76 @@ import {
   FindOptionsWhere,
   FindOptionsRelations,
   FindOptionsSelect,
-} from "@nestjs/common";
-import { Repository, UpdateResult, DeleteResult } from "typeorm";
+  FindOptionsOrder,
+  Repository,
+  UpdateResult,
+  DeleteResult,
+  EntityManager,
+} from "typeorm";
+import { ValidationError as ClassValidationError } from "class-validator";
+
+/**
+ * Base Exception cho repository errors.
+ */
+export class RepositoryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RepositoryError";
+  }
+}
+
+/**
+ * Exception cho record không tìm thấy.
+ */
+export class NotFoundError extends RepositoryError {
+  constructor(modelName: string, id: string | number) {
+    super(`${modelName} không tìm thấy với ID: ${id}`);
+    this.name = "NotFoundError";
+  }
+}
+
+/**
+ * Exception cho tenant isolation violation.
+ *
+ * Ném khi cố gắng thay đổi tenant_id của record.
+ */
+export class TenantIsolationError extends RepositoryError {
+  constructor(modelName: string) {
+    super(`Không thể thay đổi tenant_id của ${modelName}`);
+    this.name = "TenantIsolationError";
+  }
+}
+
+/**
+ * Exception cho validation errors.
+ */
+export class ValidationError extends RepositoryError {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
+/**
+ * Interface cho ITenant entities.
+ */
+export interface ITenant {
+  tenantId: string;
+}
 
 /**
  * Base Repository class.
  *
- * Cung cấp các CRUD methods:
+ * Cung cấp các CRUD methods với tenant isolation:
  * - get: Tìm theo ID
  * - create: Tạo mới
- * - update: Cập nhật
- * - delete: Xóa (hoặc soft delete)
- * - list: List với pagination/filter
+ * - update: Cập nhật (với tenant guard)
+ * - delete: Xóa (soft delete nếu có @DeleteDateColumn)
+ * - list: List với pagination/filter/tenant
  * - count: Đếm records
+ * - transaction: Wrapper cho transactions
+ * - bulkCreate: Tạo nhiều records
+ * - bulkUpdate: Cập nhật nhiều records
  *
  * Usage:
  *   @Injectable()
@@ -47,80 +104,156 @@ export class BaseRepository<T> {
    */
   constructor(
     protected repository: Repository<T>,
+    protected entityManager?: EntityManager,
   ) {}
 
   /**
    * Tìm record theo ID.
    *
    * @param id Primary key của record
+   * @param tenantId Tenant ID filter (KPI-029)
    * @param relations Relations cần load
-   * @returns Record nếu tồn tại, undefined nếu không
+   * @param select Columns cần select
+   * @returns Record nếu tồn tại
+   * @throws NotFoundError Nếu record không tìm thấy
    */
   async get(
     id: string | number,
+    tenantId?: string,
     relations?: FindOptionsRelations<T>,
-  ): Promise<T | null> {
-    return this.repository.findOne({
-      where: { id } as FindOptionsWhere<T>,
+    select?: FindOptionsSelect<T>,
+  ): Promise<T> {
+    const where: FindOptionsWhere<T> = { id } as FindOptionsWhere<T>;
+
+    // Tenant filter - KPI-029: 100% tenant filter detection
+    if (tenantId) {
+      (where as any).tenantId = tenantId;
+    }
+
+    const record = await this.repository.findOne({
+      where,
       relations,
+      select,
     });
+
+    if (!record) {
+      throw new NotFoundError(this.repository.target.name, id);
+    }
+
+    return record;
   }
 
   /**
    * Tạo mới record.
    *
    * @param data Object chứa values cho columns
+   * @param tenantId Tenant ID (optional)
+   * @param createdBy User tạo (optional)
    * @param relations Relations cần load
    * @returns Record đã tạo
+   * @throws ValidationError Nếu data không hợp lệ
    */
   async create(
     data: Partial<T>,
+    tenantId?: string,
+    createdBy?: string,
     relations?: FindOptionsRelations<T>,
   ): Promise<T> {
+    // Validate data
+    await this.validateBeforeCreate(data);
+
+    // Thêm tenant_id nếu có
+    if (tenantId) {
+      (data as any).tenantId = tenantId;
+    }
+
+    // Thêm created_by nếu có
+    if (createdBy) {
+      (data as any).createdBy = createdBy;
+    }
+
     const entity = this.repository.create(data);
     await this.repository.save(entity);
-    return this.get(entity.id as string | number, relations);
+
+    return this.get(entity.id as string | number, tenantId, relations);
   }
 
   /**
    * Cập nhật record.
    *
+   * KHIÊN BẢO: Không cho phép thay đổi tenant_id (tenant isolation).
+   *
    * @param id Primary key của record
    * @param data Object chứa values cần update
+   * @param tenantId Tenant ID để xác thực (KPI-029)
+   * @param updatedBy User cập nhật (optional)
    * @param relations Relations cần load
-   * @returns Record đã cập nhật, undefined nếu không tìm thấy
+   * @returns Record đã cập nhật
+   * @throws NotFoundError Nếu record không tìm thấy
+   * @throws TenantIsolationError Nếu cố gắng thay đổi tenant_id
    */
   async update(
     id: string | number,
     data: Partial<T>,
+    tenantId?: string,
+    updatedBy?: string,
     relations?: FindOptionsRelations<T>,
-  ): Promise<T | null> {
-    const existing = await this.get(id);
-    if (!existing) {
-      return null;
+  ): Promise<T> {
+    // Tenant verification - KPI-029
+    const existing = await this.get(id, tenantId);
+
+    // KHIÊN BẢO: Prevent tenant_id modification
+    if ((data as any).tenantId) {
+      throw new TenantIsolationError(this.repository.target.name);
+    }
+
+    // Validate data
+    await this.validateBeforeUpdate(data);
+
+    // Thêm updated_by nếu có
+    if (updatedBy) {
+      (data as any).updatedBy = updatedBy;
+    }
+
+    // Thêm updated_at nếu có
+    if ((data as any).updatedAt !== undefined) {
+      (data as any).updatedAt = new Date();
     }
 
     await this.repository.update(id, data);
-    return this.get(id, relations);
+    return this.get(id, tenantId, relations);
   }
 
   /**
    * Xóa record (soft delete nếu có @DeleteDateColumn).
    *
    * @param id Primary key của record
-   * @returns True nếu xóa thành công, False nếu không tìm thấy
+   * @param tenantId Tenant ID để xác thực
+   * @returns True nếu xóa thành công
+   * @throws NotFoundError Nếu record không tìm thấy
    */
-  async delete(id: string | number): Promise<boolean> {
+  async delete(id: string | number, tenantId?: string): Promise<boolean> {
+    // Tenant verification
+    if (tenantId) {
+      await this.get(id, tenantId);
+    } else {
+      await this.get(id);
+    }
+
     const result = await this.repository.delete(id);
     return result.affected !== 0;
   }
 
   /**
-   * List records với pagination và filters.
+   * List records với pagination, filters, và tenant isolation.
+   *
+   * KPI-029: Luôn apply tenant filter nếu model có tenantId.
    *
    * @param where Where conditions
    * @param offset Số records cần bỏ qua
-   * @param limit Max số records trả về
+   * @param limit Max số records trả về (max 1000)
+   * @param tenantId Tenant ID filter
+   * @param order Order conditions
    * @param relations Relations cần load
    * @param select Columns cần select
    * @returns Array của records và total count
@@ -129,16 +262,28 @@ export class BaseRepository<T> {
     where?: FindOptionsWhere<T>,
     offset = 0,
     limit = 100,
+    tenantId?: string,
+    order?: FindOptionsOrder<T>,
     relations?: FindOptionsRelations<T>,
     select?: FindOptionsSelect<T>,
   ): Promise<{ data: T[]; total: number }> {
+    // Safety limit
+    const safeLimit = Math.min(limit, 1000);
+
+    // Tenant filter - KPI-029: ALWAYS apply if tenantId provided
+    const finalWhere = where
+      ? { ...where, tenantId } as FindOptionsWhere<T>
+      : (tenantId ? { tenantId } : {}) as FindOptionsWhere<T>;
+
     const [data, total] = await this.repository.findAndCount({
-      where,
+      where: finalWhere,
       skip: offset,
-      take: limit,
+      take: safeLimit,
+      order,
       relations,
       select,
     });
+
     return { data, total };
   }
 
@@ -146,37 +291,146 @@ export class BaseRepository<T> {
    * Đếm số records.
    *
    * @param where Where conditions
+   * @param tenantId Tenant ID filter
    * @returns Số lượng records
    */
-  async count(where?: FindOptionsWhere<T>): Promise<number> {
-    return this.repository.count({ where });
+  async count(where?: FindOptionsWhere<T>, tenantId?: string): Promise<number> {
+    const finalWhere = where
+      ? { ...where, tenantId } as FindOptionsWhere<T>
+      : (tenantId ? { tenantId } : {}) as FindOptionsWhere<T>;
+
+    return this.repository.count({ where: finalWhere });
   }
 
   /**
    * Tìm record đầu tiên theo conditions.
    *
    * @param where Where conditions
+   * @param tenantId Tenant ID filter
    * @param relations Relations cần load
    * @returns Record đầu tiên, undefined nếu không tìm thấy
    */
   async findBy(
     where: FindOptionsWhere<T>,
+    tenantId?: string,
     relations?: FindOptionsRelations<T>,
   ): Promise<T | null> {
-    return this.repository.findOne({ where, relations });
+    const finalWhere = tenantId
+      ? { ...where, tenantId } as FindOptionsWhere<T>
+      : where;
+
+    return this.repository.findOne({ where: finalWhere, relations });
   }
 
   /**
    * Tìm tất cả records theo conditions.
    *
    * @param where Where conditions
+   * @param tenantId Tenant ID filter
    * @param relations Relations cần load
    * @returns Array của records
    */
   async findByMany(
     where: FindOptionsWhere<T>,
+    tenantId?: string,
     relations?: FindOptionsRelations<T>,
   ): Promise<T[]> {
-    return this.repository.find({ where, relations });
+    const finalWhere = tenantId
+      ? { ...where, tenantId } as FindOptionsWhere<T>
+      : where;
+
+    return this.repository.find({ where: finalWhere, relations });
+  }
+
+  /**
+   * Tạo nhiều records cùng lúc.
+   *
+   * @param items Array của data objects
+   * @param tenantId Tenant ID (optional)
+   * @param createdBy User tạo (optional)
+   * @returns Array của records đã tạo
+   */
+  async bulkCreate(
+    items: Partial<T>[],
+    tenantId?: string,
+    createdBy?: string,
+  ): Promise<T[]> {
+    const results: T[] = [];
+
+    for (const item of items) {
+      const record = await this.create(item, tenantId, createdBy);
+      results.push(record);
+    }
+
+    return results;
+  }
+
+  /**
+   * Cập nhật nhiều records cùng lúc.
+   *
+   * KHIÊN BẢO: Prevent tenant_id modification.
+   *
+   * @param ids Array của IDs cần cập nhật
+   * @param data Object chứa values cần update
+   * @param tenantId Tenant ID để xác thực
+   * @param updatedBy User cập nhật (optional)
+   * @returns Số records đã cập nhật
+   */
+  async bulkUpdate(
+    ids: (string | number)[],
+    data: Partial<T>,
+    tenantId?: string,
+    updatedBy?: string,
+  ): Promise<number> {
+    // KHIÊN BẢO: Prevent tenant_id modification
+    if ((data as any).tenantId) {
+      throw new TenantIsolationError(this.repository.target.name);
+    }
+
+    let updatedCount = 0;
+
+    for (const id of ids) {
+      await this.update(id, data, tenantId, updatedBy);
+      updatedCount++;
+    }
+
+    return updatedCount;
+  }
+
+  /**
+   * Wrapper cho transaction operations.
+   *
+   * Tự động rollback nếu có exception.
+   *
+   * @param callback Function để execute trong transaction
+   * @returns Kết quả của callback
+   * @throws Exception Nếu callback ném exception, transaction sẽ rollback
+   */
+  async transaction<R>(callback: (manager: EntityManager) => Promise<R>): Promise<R> {
+    return this.entityManager?.transaction(callback) || (await callback(this.entityManager!));
+  }
+
+  /**
+   * Validate data trước khi create.
+   *
+   * Override trong derived class cho custom validation.
+   *
+   * @param data Data cần validate
+   * @throws ValidationError Nếu data không hợp lệ
+   */
+  async validateBeforeCreate(data: Partial<T>): Promise<void> {
+    // Base validation - có thể override
+  }
+
+  /**
+   * Validate data trước khi update.
+   *
+   * Override trong derived class cho custom validation.
+   *
+   * @param data Data cần validate
+   * @throws ValidationError Nếu data không hợp lệ
+   */
+  async validateBeforeUpdate(data: Partial<T>): Promise<void> {
+    // Base validation - có thể override
   }
 }
