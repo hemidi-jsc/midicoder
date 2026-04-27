@@ -22,6 +22,7 @@ from typing import Optional, List, Dict, Any
 
 from midicoder.storage.sqlite import ArtifactsManager, ProvenanceManager
 from midicoder.pipeline.config import get_config
+from midicoder.pipeline.plan import ImplementationPlan, ModuleSpec, FileSpec
 
 
 # ============================================================================
@@ -229,7 +230,10 @@ def _execute_plan(target: str = "all", verbose: bool = False) -> None:
     artifacts_manager = ArtifactsManager()
     artifacts_manager.init()
     
-    plan_json = json.dumps(plan, indent=2, ensure_ascii=False)
+    # Serialize plan to JSON using typed methods
+    plan_json = plan.to_json()
+    file_counts = plan.count_files()
+    
     artifacts_manager.create(
         artifact_id=f"plan-{active_version}",
         artifact_type="plan",
@@ -238,9 +242,10 @@ def _execute_plan(target: str = "all", verbose: bool = False) -> None:
         content=plan_json,
         metadata={
             "target": target,
-            "backend_files_count": len(plan["backend_files"]),
-            "frontend_files_count": len(plan["frontend_files"]),
-            "infra_files_count": len(plan["infra_files"]),
+            "backend_files_count": file_counts.get("backend", 0),
+            "frontend_files_count": file_counts.get("frontend", 0),
+            "infra_files_count": file_counts.get("infra", 0),
+            "plan_hash": plan.compute_hash(),
         },
     )
     click.echo(f"   ✓ Plan đã lưu vào artifacts: plan-{active_version}")
@@ -266,21 +271,20 @@ def _execute_plan(target: str = "all", verbose: bool = False) -> None:
     click.echo("📊 Plan Summary:")
     click.echo("=" * 60)
     click.echo(f"   Target: {target}")
-    click.echo(f"   Backend files: {len(plan['backend_files'])}")
-    click.echo(f"   Frontend files: {len(plan['frontend_files'])}")
-    click.echo(f"   Infra files: {len(plan['infra_files'])}")
+    click.echo(f"   Backend modules: {len(plan.get_modules_by_type('backend'))}")
+    click.echo(f"   Frontend modules: {len(plan.get_modules_by_type('frontend'))}")
+    click.echo(f"   Infra modules: {len(plan.get_modules_by_type('infra'))}")
+    click.echo(f"   Plan hash: {plan.compute_hash()[:16]}...")
     click.echo("=" * 60)
     
     if verbose:
         click.echo("")
-        click.echo("📄 Chi tiết files:")
+        click.echo("📄 Chi tiết modules:")
         click.echo("-" * 40)
-        for file_info in plan["backend_files"]:
-            click.echo(f"   • {file_info['path']} ({file_info['type']})")
-        for file_info in plan["frontend_files"]:
-            click.echo(f"   • {file_info['path']} ({file_info['type']})")
-        for file_info in plan["infra_files"]:
-            click.echo(f"   • {file_info['path']} ({file_info['type']})")
+        for module in plan.modules:
+            click.echo(f"   • {module.name} ({module.module_type}): {len(module.files)} files")
+            for file_spec in module.files:
+                click.echo(f"     - {file_spec.path} ({file_spec.file_type})")
     
     click.echo("")
     click.echo("✅ Plan tạo thành công!")
@@ -316,7 +320,7 @@ def _load_mir_from_artifacts() -> Optional[dict]:
         return None
 
 
-def _create_implementation_plan(mir: dict, target: str) -> dict:
+def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
     """
     Tạo implementation plan từ MIR.
     
@@ -325,27 +329,104 @@ def _create_implementation_plan(mir: dict, target: str) -> dict:
         target: Target để generate
     
     Returns:
-        Implementation plan dictionary
+        ImplementationPlan typed instance
     """
-    plan = {
-        "meta": {
+    plan = ImplementationPlan(
+        meta={
             "version": "1.0.0",
             "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "target": target,
-        },
-        "backend_files": [],
-        "frontend_files": [],
-        "infra_files": [],
-    }
+        }
+    )
     
+    # Tạo backend modules
     if target in ["backend", "all"]:
-        plan["backend_files"] = _plan_backend_files(mir)
+        backend_files = _plan_backend_files(mir)
+        
+        # Nhóm files theo module
+        core_files = [f for f in backend_files if f["type"] in ["main", "config", "database"]]
+        model_files = [f for f in backend_files if f["type"] == "model"]
+        schema_files = [f for f in backend_files if f["type"] == "schema"]
+        route_files = [f for f in backend_files if f["type"] == "route"]
+        
+        # Core module
+        if core_files:
+            core_specs = [FileSpec(
+                path=f["path"],
+                file_type=f["type"],
+                template=f["template"],
+                context=f.get("context", {}),
+                dependencies=[],
+                metadata={}
+            ) for f in core_files]
+            plan.add_module(ModuleSpec(
+                name="core",
+                module_type="backend",
+                files=core_specs,
+                dependencies=[]
+            ))
+        
+        # Entity modules (models, schemas, routes per entity)
+        for entity in mir.get("entities", []):
+            entity_name = entity.get("id", "").lower()
+            entity_files = [
+                f for f in backend_files 
+                if entity_name in f["path"] or f["type"] in ["model", "schema", "route", "repository"]
+            ]
+            
+            if entity_files:
+                entity_specs = [FileSpec(
+                    path=f["path"],
+                    file_type=f["type"],
+                    template=f["template"],
+                    context=f.get("context", {}),
+                    dependencies=[],
+                    metadata={}
+                ) for f in entity_files]
+                plan.add_module(ModuleSpec(
+                    name=entity_name,
+                    module_type="backend",
+                    files=entity_specs,
+                    dependencies=["core"]
+                ))
     
+    # Tạo frontend modules
     if target in ["frontend", "all"]:
-        plan["frontend_files"] = _plan_frontend_files(mir)
+        frontend_files = _plan_frontend_files(mir)
+        
+        frontend_specs = [FileSpec(
+            path=f["path"],
+            file_type=f["type"],
+            template=f["template"],
+            context=f.get("context", {}),
+            dependencies=[],
+            metadata={}
+        ) for f in frontend_files]
+        
+        plan.add_module(ModuleSpec(
+            name="frontend",
+            module_type="frontend",
+            files=frontend_specs,
+            dependencies=[]
+        ))
     
-    # Infrastructure files luôn generate
-    plan["infra_files"] = _plan_infra_files()
+    # Infrastructure module
+    infra_files = _plan_infra_files()
+    infra_specs = [FileSpec(
+        path=f["path"],
+        file_type=f["type"],
+        template=f["template"],
+        context=f.get("context", {}),
+        dependencies=[],
+        metadata={}
+    ) for f in infra_files]
+    
+    plan.add_module(ModuleSpec(
+        name="infra",
+        module_type="infra",
+        files=infra_specs,
+        dependencies=[]
+    ))
     
     return plan
 
