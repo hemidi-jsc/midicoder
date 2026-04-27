@@ -198,6 +198,15 @@ class ErrorCode(str, Enum):
     VERSION_CLEANUP_FAILED = "MDC-VER-006"
     VERSION_METADATA_INVALID = "MDC-VER-007"
     VERSION_ALREADY_EXISTS = "MDC-VER-008"
+    
+    # =========================================================================
+    # Index Command Errors
+    # =========================================================================
+    INDEX_PROJECT_NOT_FOUND = "MDC-IDX-001"
+    INDEX_NEO4J_CONNECTION_FAILED = "MDC-IDX-002"
+    INDEX_PARSE_FAILED = "MDC-IDX-003"
+    INDEX_EMBEDDING_FAILED = "MDC-IDX-004"
+    INDEX_LOCKED = "MDC-IDX-005"
 
 
 class ExitCode(Enum):
@@ -474,6 +483,13 @@ class MidicoderErrorManager:
         ErrorCode.VERSION_CLEANUP_FAILED: "Auto-cleanup version thất bại.",
         ErrorCode.VERSION_METADATA_INVALID: "Version metadata không hợp lệ.",
         ErrorCode.VERSION_ALREADY_EXISTS: "Version đã tồn tại. Vui lòng chọn tên khác.",
+        
+        # Index Command Errors
+        ErrorCode.INDEX_PROJECT_NOT_FOUND: "Không tìm thấy project directory. Hãy chạy `midicoder init` trước.",
+        ErrorCode.INDEX_NEO4J_CONNECTION_FAILED: "Không thể kết nối đến Neo4j. Vui lòng kiểm tra Neo4j Docker container đang chạy.",
+        ErrorCode.INDEX_PARSE_FAILED: "Lỗi khi parse file source code.",
+        ErrorCode.INDEX_EMBEDDING_FAILED: "Không thể generate embedding cho symbol.",
+        ErrorCode.INDEX_LOCKED: "Index đang bị lock bởi một quá trình khác. Vui lòng thử lại sau.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {
