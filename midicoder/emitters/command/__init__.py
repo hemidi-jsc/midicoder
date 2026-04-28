@@ -25,7 +25,7 @@ from .models import (
 )
 from .fastapi import FastAPICommandEmitter
 from .nestjs import NestJSCommandEmitter
-from .transaction import TransactionManager
+from .transaction import TransactionManagerSQL
 from .validator import CommandValidator
 from .guards import CommandGuards
 from .effects import CommandEffects
@@ -43,7 +43,7 @@ __all__ = [
     # Core
     "FastAPICommandEmitter",
     "NestJSCommandEmitter",
-    "TransactionManager",
+    "TransactionManagerSQL",
     "CommandValidator",
     "CommandGuards",
     "CommandEffects",

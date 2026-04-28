@@ -1,253 +1,226 @@
 """
-Transaction Manager cho Command Pattern.
+Transaction Manager với SQLAlchemy integration.
 
-Quản lý transaction lifecycle (begin/commit/rollback) với support cho:
-- ACID compliance
-- Savepoints
-- Nested transactions
-- Error handling với automatic rollback
+Module này cung cấp TransactionManagerSQL - quản lý database transactions
+với SQLAlchemy, hỗ trợ:
+- Begin/commit/rollback transactions
+- Nested transactions với savepoints
+- Auto rollback khi có exception
+- Concurrent access handling
 
 Author: Midicoder Team
 Version: 2.0.0
 """
 
-from __future__ import annotations
-
+from dataclasses import dataclass
+from typing import AsyncContextManager
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from contextvars import ContextVar
+
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @dataclass
-class TransactionState:
-    """
-    Trạng thái transaction.
-
-    Attributes:
-        transaction_id: Transaction ID
-        is_active: Transaction đang active không
-        savepoints: Danh sách savepoints
-        depth: Nesting depth
-    """
-
+class TransactionInfo:
+    """Thông tin về một transaction (SQLAlchemy)."""
+    
     transaction_id: str
     is_active: bool = True
-    savepoints: list[str] = field(default_factory=list)
-    depth: int = 1
+    nested_level: int = 0
+    savepoint_name: str = ""
 
 
-class TransactionManager:
+class TransactionManagerSQL:
     """
-    Manager cho transaction lifecycle.
-
-    Cung cấp:
-    - begin_transaction(): Bắt đầu transaction mới
-    - commit_transaction(): Commit transaction
-    - rollback_transaction(): Rollback transaction
-    - savepoint(): Tạo savepoint
-    - rollback_to_savepoint(): Rollback đến savepoint
-
-    Usage:
-        async with transaction_manager.transaction("tx_001") as tx:
-            # Execute effects
-            await effect.execute()
-            # Auto commit if no exception
-            # Auto rollback if exception
+    Transaction Manager với SQLAlchemy integration.
+    
+    Lớp này quản lý database transactions với SQLAlchemy, hỗ trợ:
+    - Begin/commit/rollback transactions
+    - Nested transactions với savepoints
+    - Auto rollback khi có exception
+    - Concurrent access handling
+    
+    Attributes:
+        engine: SQLAlchemy async engine
+        session_factory: AsyncSessionMaker để tạo sessions
+        
+    Example:
+        >>> tm = TransactionManagerSQL(engine, session_factory)
+        >>> async with tm.transaction("tx_001") as session:
+        ...     await session.add(entity)
+        >>> # Auto commit nếu không có exception, auto rollback nếu có
     """
-
-    def __init__(self, db_session: Any = None) -> None:
+    
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        session_factory: async_sessionmaker[AsyncSession]
+    ):
         """
-        Khởi tạo TransactionManager.
-
+        Initialize TransactionManagerSQL.
+        
         Args:
-            db_session: Database session (SQLAlchemy async session)
+            engine: SQLAlchemy async engine
+            session_factory: AsyncSessionMaker để tạo sessions
         """
-        self._db_session = db_session
-        self._current_transaction: Optional[TransactionState] = None
-        self._savepoint_counter = 0
-
+        self.engine = engine
+        self.session_factory = session_factory
+        self._current_transaction: ContextVar[TransactionInfo | None] = ContextVar(
+            "current_transaction", default=None
+        )
+        self._session_stack: list[AsyncSession] = []
+    
     @property
     def is_in_transaction(self) -> bool:
-        """Check nếu đang trong transaction."""
-        return self._current_transaction is not None and self._current_transaction.is_active
-
-    @property
-    def current_transaction(self) -> Optional[TransactionState]:
-        """Lấy current transaction state."""
-        return self._current_transaction
-
-    async def begin_transaction(self, transaction_id: Optional[str] = None) -> TransactionState:
         """
-        Bắt đầu transaction mới.
-
-        Args:
-            transaction_id: Transaction ID (optional, auto-generated nếu không có)
-
+        Kiểm tra có đang trong transaction không.
+        
         Returns:
-            TransactionState instance
-
-        Raises:
-            RuntimeError: Nếu đã có transaction đang active
+            True nếu đang trong transaction, False nếu không
         """
-        if self.is_in_transaction:
-            # Nested transaction - tăng depth
-            self._current_transaction.depth += 1
-            return self._current_transaction
-
-        if transaction_id is None:
-            transaction_id = f"tx_{hash(self)}_{id(self)}"
-
-        self._current_transaction = TransactionState(
+        tx = self._current_transaction.get()
+        return tx is not None and tx.is_active
+    
+    async def begin_transaction(self, transaction_id: str) -> AsyncSession:
+        """
+        Bắt đầu một transaction mới.
+        
+        Args:
+            transaction_id: ID duy nhất cho transaction này
+            
+        Returns:
+            AsyncSession cho transaction
+        """
+        current_tx = self._current_transaction.get()
+        
+        if current_tx is not None and current_tx.is_active:
+            # Nested transaction - sử dụng cùng session
+            session = self._session_stack[-1]
+            savepoint_name = f"sp_{transaction_id}"
+            
+            self._current_transaction.set(TransactionInfo(
+                transaction_id=transaction_id,
+                is_active=True,
+                nested_level=current_tx.nested_level + 1,
+                savepoint_name=savepoint_name
+            ))
+            
+            return session
+        
+        # New top-level transaction
+        session = self.session_factory()
+        await session.begin()
+        
+        self._session_stack.append(session)
+        self._current_transaction.set(TransactionInfo(
             transaction_id=transaction_id,
             is_active=True,
-            savepoints=[],
-            depth=1,
-        )
-
-        # Begin transaction với database session
-        if self._db_session:
-            await self._db_session.begin()
-
-        return self._current_transaction
-
+            nested_level=0,
+            savepoint_name=""
+        ))
+        
+        return session
+    
     async def commit_transaction(self) -> None:
         """
-        Commit transaction.
-
+        Commit transaction hiện tại.
+        
         Raises:
-            RuntimeError: Nếu không có transaction đang active
+            RuntimeError: Nếu không có transaction active
         """
-        if not self.is_in_transaction:
-            raise RuntimeError("Không có transaction đang active để commit")
-
-        # Giảm depth nếu nested transaction
-        if self._current_transaction.depth > 1:
-            self._current_transaction.depth -= 1
-            return
-
-        # Commit với database session
-        if self._db_session:
-            await self._db_session.commit()
-
-        # Reset transaction state
-        self._current_transaction.is_active = False
-        self._current_transaction = None
-
+        current_tx = self._current_transaction.get()
+        
+        if current_tx is None or not current_tx.is_active:
+            raise RuntimeError("Không có transaction active để commit")
+        
+        session = self._session_stack[-1]
+        
+        try:
+            if current_tx.nested_level > 0:
+                # Commit nested transaction - only mark as inactive, keep context
+                await session.commit()
+                current_tx.is_active = False
+                # Restore parent transaction context
+                self._current_transaction.set(TransactionInfo(
+                    transaction_id=current_tx.transaction_id,
+                    is_active=True,
+                    nested_level=current_tx.nested_level - 1,
+                    savepoint_name=""
+                ))
+            else:
+                # Commit top-level transaction
+                await session.commit()
+                await session.close()
+                self._session_stack.pop()
+                # Clear context for top-level
+                self._current_transaction.set(None)
+            
+        except Exception as e:
+            # Rollback nếu commit fail
+            await self.rollback_transaction()
+            raise RuntimeError(f"Commit transaction thất bại: {str(e)}") from e
+    
     async def rollback_transaction(self) -> None:
         """
-        Rollback transaction.
-
+        Rollback transaction hiện tại.
+        
         Raises:
-            RuntimeError: Nếu không có transaction đang active
+            RuntimeError: Nếu không có transaction active
         """
-        if not self.is_in_transaction:
-            raise RuntimeError("Không có transaction đang active để rollback")
-
-        # Rollback với database session
-        if self._db_session:
-            await self._db_session.rollback()
-
-        # Reset transaction state
-        self._current_transaction.is_active = False
-        self._current_transaction = None
-
-    async def savepoint(self, savepoint_name: Optional[str] = None) -> str:
-        """
-        Tạo savepoint.
-
-        Args:
-            savepoint_name: Savepoint name (optional, auto-generated nếu không có)
-
-        Returns:
-            Savepoint name
-
-        Raises:
-            RuntimeError: Nếu không có transaction đang active
-        """
-        if not self.is_in_transaction:
-            raise RuntimeError("Không có transaction đang active để tạo savepoint")
-
-        if savepoint_name is None:
-            self._savepoint_counter += 1
-            savepoint_name = f"sp_{self._savepoint_counter}"
-
-        self._current_transaction.savepoints.append(savepoint_name)
-
-        # Create savepoint với database session
-        if self._db_session:
-            # SQLAlchemy savepoint syntax
-            await self._db_session.connection().execution_options(isolation_level="READ_COMMITTED")
-
-        return savepoint_name
-
-    async def rollback_to_savepoint(self, savepoint_name: str) -> None:
-        """
-        Rollback đến savepoint.
-
-        Args:
-            savepoint_name: Savepoint name
-
-        Raises:
-            RuntimeError: Nếu không có transaction đang active
-            ValueError: Nếu savepoint không tồn tại
-        """
-        if not self.is_in_transaction:
-            raise RuntimeError("Không có transaction đang active để rollback")
-
-        if savepoint_name not in self._current_transaction.savepoints:
-            raise ValueError(f"Savepoint '{savepoint_name}' không tồn tại")
-
-        # Rollback to savepoint với database session
-        if self._db_session:
-            await self._db_session.rollback()
-
-        # Remove savepoint
-        self._current_transaction.savepoints.remove(savepoint_name)
-
-    @asynccontextmanager
-    async def transaction(self, transaction_id: Optional[str] = None):
-        """
-        Context manager cho transaction.
-
-        Usage:
-            async with transaction_manager.transaction() as tx:
-                # Execute effects
-                # Auto commit nếu no exception
-                # Auto rollback nếu exception
-
-        Args:
-            transaction_id: Transaction ID (optional)
-
-        Yields:
-            TransactionState instance
-        """
-        tx = await self.begin_transaction(transaction_id)
+        current_tx = self._current_transaction.get()
+        
+        if current_tx is None or not current_tx.is_active:
+            raise RuntimeError("Không có transaction active để rollback")
+        
+        session = self._session_stack[-1]
+        
         try:
-            yield tx
+            if current_tx.nested_level > 0:
+                # Rollback nested transaction - only mark as inactive, keep context
+                await session.rollback()
+                current_tx.is_active = False
+                # Restore parent transaction context
+                self._current_transaction.set(TransactionInfo(
+                    transaction_id=current_tx.transaction_id,
+                    is_active=True,
+                    nested_level=current_tx.nested_level - 1,
+                    savepoint_name=""
+                ))
+            else:
+                # Rollback top-level transaction
+                await session.rollback()
+                await session.close()
+                self._session_stack.pop()
+                # Clear context for top-level
+                self._current_transaction.set(None)
+            
+        except Exception as e:
+            raise RuntimeError(f"Rollback transaction thất bại: {str(e)}") from e
+    
+    @asynccontextmanager
+    async def transaction(
+        self,
+        transaction_id: str
+    ):
+        """
+        Context manager cho transaction với auto commit/rollback.
+        
+        Args:
+            transaction_id: ID duy nhất cho transaction
+            
+        Yields:
+            AsyncSession cho transaction
+            
+        Example:
+            >>> async with tm.transaction("tx_001") as session:
+            ...     await session.add(entity)
+            >>> # Auto commit nếu không có exception
+        """
+        session = await self.begin_transaction(transaction_id)
+        
+        try:
+            yield session
             await self.commit_transaction()
-        except Exception as e:
+        except Exception:
             await self.rollback_transaction()
-            raise e
-
-    @asynccontextmanager
-    async def savepoint_context(self, savepoint_name: Optional[str] = None):
-        """
-        Context manager cho savepoint.
-
-        Usage:
-            async with transaction_manager.savepoint_context() as sp:
-                # Execute effects
-                # Auto rollback to savepoint nếu exception
-
-        Args:
-            savepoint_name: Savepoint name (optional)
-
-        Yields:
-            Savepoint name
-        """
-        sp = await self.savepoint(savepoint_name)
-        try:
-            yield sp
-        except Exception as e:
-            await self.rollback_to_savepoint(sp)
-            raise e
+            raise

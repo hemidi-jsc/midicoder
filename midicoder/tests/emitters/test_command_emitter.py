@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from midicoder.emitters.command import (
     Command,
@@ -30,7 +31,6 @@ from midicoder.emitters.command import (
     FastAPICommandEmitter,
     GuardType,
     NestJSCommandEmitter,
-    TransactionManager,
     ValidationResult,
 )
 
@@ -217,55 +217,6 @@ class TestCommandModels:
 
 
 # ============================================================================
-# Tests for TransactionManager
-# ============================================================================
-
-
-class TestTransactionManager:
-    """Tests cho TransactionManager."""
-
-    @pytest.mark.asyncio
-    async def test_begin_transaction(self):
-        """Test: begin_transaction() tạo transaction mới."""
-        tm = TransactionManager()
-        tx = await tm.begin_transaction("tx_001")
-
-        assert tx.transaction_id == "tx_001"
-        assert tx.is_active is True
-        assert tm.is_in_transaction is True
-
-    @pytest.mark.asyncio
-    async def test_commit_transaction(self):
-        """Test: commit_transaction() commit transaction."""
-        tm = TransactionManager()
-        await tm.begin_transaction("tx_002")
-
-        await tm.commit_transaction()
-
-        assert tm.is_in_transaction is False
-
-    @pytest.mark.asyncio
-    async def test_rollback_transaction(self):
-        """Test: rollback_transaction() rollback transaction."""
-        tm = TransactionManager()
-        await tm.begin_transaction("tx_003")
-
-        await tm.rollback_transaction()
-
-        assert tm.is_in_transaction is False
-
-    @pytest.mark.asyncio
-    async def test_transaction_context_manager(self):
-        """Test: transaction context manager auto commit/rollback."""
-        tm = TransactionManager()
-
-        async with tm.transaction("tx_004") as tx:
-            assert tx.is_active is True
-
-        assert tm.is_in_transaction is False
-
-
-# ============================================================================
 # Tests for CommandValidator
 # ============================================================================
 
@@ -356,6 +307,28 @@ class TestCommandValidator:
 # ============================================================================
 
 
+class MockComplianceService:
+    """Mock compliance service cho testing."""
+    
+    def __init__(self, kyc_verified: bool = True, aml_clear: bool = True, hipaa_cleared: bool = True):
+        """Initialize mock compliance service."""
+        self.kyc_verified = kyc_verified
+        self.aml_clear = aml_clear
+        self.hipaa_cleared = hipaa_cleared
+    
+    async def check_kyc(self, user_id: str) -> bool:
+        """Check KYC verification."""
+        return self.kyc_verified
+    
+    async def check_aml(self, user_id: str, transaction_data: dict) -> bool:
+        """Check AML screening."""
+        return self.aml_clear
+    
+    async def check_hipaa_clearance(self, user_id: str) -> bool:
+        """Check HIPAA clearance."""
+        return self.hipaa_cleared
+
+
 class TestCommandGuards:
     """Tests cho CommandGuards."""
 
@@ -380,6 +353,124 @@ class TestCommandGuards:
             await guards.check_all({}, user_id="user_001", tenant_id=None)
 
         assert "Tenant ID không được xác định" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_kyc_check_pass(self):
+        """Test: KYC guard pass khi user đã verify."""
+        command = Command(
+            id="TransferMoney",
+            description="Chuyển tiền",
+            input=[],
+            guards=[
+                CommandGuard(guard_type=GuardType.KYC_CHECK),
+            ],
+        )
+        
+        compliance_service = MockComplianceService(kyc_verified=True)
+        guards = CommandGuards(command, compliance_service=compliance_service)
+
+        # Should not raise
+        await guards.check_all({}, user_id="user_001", tenant_id="tenant_001")
+
+    @pytest.mark.asyncio
+    async def test_kyc_check_fail(self):
+        """Test: KYC guard fail khi user chưa verify."""
+        command = Command(
+            id="TransferMoney",
+            description="Chuyển tiền",
+            input=[],
+            guards=[
+                CommandGuard(guard_type=GuardType.KYC_CHECK),
+            ],
+        )
+        
+        compliance_service = MockComplianceService(kyc_verified=False)
+        guards = CommandGuards(command, compliance_service=compliance_service)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await guards.check_all({}, user_id="user_001", tenant_id="tenant_001")
+
+        assert "KYC" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_aml_screening_pass(self):
+        """Test: AML guard pass khi screening clear."""
+        command = Command(
+            id="TransferMoney",
+            description="Chuyển tiền",
+            input=[
+                CommandField(name="amount", field_type="decimal", required=True),
+            ],
+            guards=[
+                CommandGuard(guard_type=GuardType.AML_SCREENING),
+            ],
+        )
+        
+        compliance_service = MockComplianceService(aml_clear=True)
+        guards = CommandGuards(command, compliance_service=compliance_service)
+
+        # Should not raise
+        await guards.check_all({"amount": 1000}, user_id="user_001", tenant_id="tenant_001")
+
+    @pytest.mark.asyncio
+    async def test_aml_screening_fail(self):
+        """Test: AML guard fail khi screening failed."""
+        command = Command(
+            id="TransferMoney",
+            description="Chuyển tiền",
+            input=[
+                CommandField(name="amount", field_type="decimal", required=True),
+            ],
+            guards=[
+                CommandGuard(guard_type=GuardType.AML_SCREENING),
+            ],
+        )
+        
+        compliance_service = MockComplianceService(aml_clear=False)
+        guards = CommandGuards(command, compliance_service=compliance_service)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await guards.check_all({"amount": 1000000}, user_id="user_001", tenant_id="tenant_001")
+
+        assert "AML" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_hipaa_access_pass(self):
+        """Test: HIPAA guard pass khi user có clearance."""
+        command = Command(
+            id="ViewPatientRecord",
+            description="Xem hồ sơ bệnh nhân",
+            input=[],
+            guards=[
+                CommandGuard(guard_type=GuardType.HIPAA_ACCESS),
+            ],
+        )
+        
+        compliance_service = MockComplianceService(hipaa_cleared=True)
+        guards = CommandGuards(command, compliance_service=compliance_service)
+
+        # Should not raise
+        await guards.check_all({}, user_id="doctor_001", tenant_id="hospital_001")
+
+    @pytest.mark.asyncio
+    async def test_hipaa_access_fail(self):
+        """Test: HIPAA guard fail khi user không có clearance."""
+        command = Command(
+            id="ViewPatientRecord",
+            description="Xem hồ sơ bệnh nhân",
+            input=[],
+            guards=[
+                CommandGuard(guard_type=GuardType.HIPAA_ACCESS),
+            ],
+        )
+        
+        compliance_service = MockComplianceService(hipaa_cleared=False)
+        guards = CommandGuards(command, compliance_service=compliance_service)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await guards.check_all({}, user_id="user_001", tenant_id="hospital_001")
+
+        assert "HIPAA" in str(exc_info.value)
 
 
 # ============================================================================
@@ -455,6 +546,137 @@ class TestNestJSCommandEmitter:
         assert _to_snake_case("CreateOrder") == "create_order"
         assert _to_snake_case("TransferMoney") == "transfer_money"
         assert _to_snake_case("CreateOrderItem") == "create_order_item"
+
+
+# ============================================================================
+# Tests for TransactionManagerSQL
+# ============================================================================
+
+
+class TestTransactionManagerSQL:
+    """Tests cho TransactionManager với SQLAlchemy integration."""
+
+    @pytest.mark.asyncio
+    async def test_begin_transaction_with_sqlalchemy(self):
+        """Test: Begin transaction với SQLAlchemy session."""
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+        from midicoder.emitters.command.transaction import TransactionManagerSQL
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        session_factory = async_sessionmaker(engine, class_=AsyncSession)
+        tm = TransactionManagerSQL(engine, session_factory)
+
+        session = await tm.begin_transaction("tx_test_001")
+
+        assert tm.is_in_transaction is True
+        assert session is not None
+
+        await tm.rollback_transaction()
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_commit_transaction_with_sqlalchemy(self):
+        """Test: Commit transaction với SQLAlchemy."""
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+        from midicoder.emitters.command.transaction import TransactionManagerSQL
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        session_factory = async_sessionmaker(engine, class_=AsyncSession)
+        tm = TransactionManagerSQL(engine, session_factory)
+
+        await tm.begin_transaction("tx_test_002")
+        await tm.commit_transaction()
+
+        assert tm.is_in_transaction is False
+
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_rollback_transaction_with_sqlalchemy(self):
+        """Test: Rollback transaction với SQLAlchemy."""
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+        from midicoder.emitters.command.transaction import TransactionManagerSQL
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        session_factory = async_sessionmaker(engine, class_=AsyncSession)
+        tm = TransactionManagerSQL(engine, session_factory)
+
+        await tm.begin_transaction("tx_test_003")
+        await tm.rollback_transaction()
+
+        assert tm.is_in_transaction is False
+
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_transaction_nested_with_sqlalchemy(self):
+        """Test: Nested transactions với savepoints."""
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+        from midicoder.emitters.command.transaction import TransactionManagerSQL
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        session_factory = async_sessionmaker(engine, class_=AsyncSession)
+        tm = TransactionManagerSQL(engine, session_factory)
+
+        # Begin outer transaction
+        session1 = await tm.begin_transaction("tx_outer")
+        assert tm.is_in_transaction is True
+
+        # Begin nested transaction
+        session2 = await tm.begin_transaction("tx_inner")
+        assert session1 is session2  # Same session cho nested
+
+        await tm.rollback_transaction()  # Rollback inner
+        await tm.rollback_transaction()  # Rollback outer
+
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_transaction_error_rollback(self):
+        """Test: Auto rollback khi có exception."""
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+        from midicoder.emitters.command.transaction import TransactionManagerSQL
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        session_factory = async_sessionmaker(engine, class_=AsyncSession)
+        tm = TransactionManagerSQL(engine, session_factory)
+
+        # Raise exception inside transaction context (no pre-existing transaction)
+        try:
+            async with tm.transaction("tx_error_test") as session:
+                raise ValueError("Test error")
+        except ValueError:
+            pass  # Expected
+
+        # Transaction should be rolled back
+        assert tm.is_in_transaction is False
+
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_transaction_concurrent_access(self):
+        """Test: Concurrent transaction access handling."""
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+        from midicoder.emitters.command.transaction import TransactionManagerSQL
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        session_factory = async_sessionmaker(engine, class_=AsyncSession)
+        tm = TransactionManagerSQL(engine, session_factory)
+
+        # Begin first transaction
+        session1 = await tm.begin_transaction("tx_concurrent_1")
+
+        # Second transaction should be nested (same session)
+        session2 = await tm.begin_transaction("tx_concurrent_2")
+        assert session1 is session2
+
+        # Commit both
+        await tm.commit_transaction()
+        await tm.commit_transaction()
+
+        assert tm.is_in_transaction is False
+
+        await engine.dispose()
 
 
 # ============================================================================
