@@ -40,6 +40,14 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
 from midicoder.emitters.value_object import FastAPIValueObjectEmitter
+from midicoder.emitters.command import (
+    FastAPICommandEmitter,
+    Command,
+    TransactionManager,
+    CommandValidator,
+    CommandGuards,
+    CommandEffects,
+)
 from midicoder.pipeline.mir import MIR
 
 
@@ -492,15 +500,16 @@ class BackendFastAPIEmitter:
         """
         Emit files cho một Command (Full DDD pattern).
         
+        Sử dụng FastAPICommandEmitter để generate code.
+        
         Files được emit:
-        - app/commands/{command_id_lower}/{command_id}.py
-        - app/commands/{command_id_lower}/{command_id}_handler.py
-        - app/commands/{command_id_lower}/{command_id}_validator.py
-        - app/commands/{command_id_lower}/{command_id}_guards.py
-        - app/commands/{command_id_lower}/{command_id}_effects.py
-        - app/commands/{command_id_lower}/{command_id}_errors.py
-        - app/commands/{command_id_lower}/__init__.py
-        - app/schemas/commands/{command_id}_input.py
+        - app/commands/{command_snake}/{command_snake}.py
+        - app/commands/{command_snake}/{command_snake}_handler.py
+        - app/commands/{command_snake}/{command_snake}_validator.py
+        - app/commands/{command_snake}/{command_snake}_guards.py
+        - app/commands/{command_snake}/{command_snake}_effects.py
+        - app/commands/{command_snake}/{command_snake}_errors.py
+        - app/commands/{command_snake}/__init__.py
         
         Args:
             command: Command dict từ MIR metadata
@@ -512,89 +521,106 @@ class BackendFastAPIEmitter:
         files: list[GeneratedFile] = []
         
         command_id = command.get("id", "Command")
-        command_lower = command_id.lower()
         command_snake = self._to_snake_case(command_id)
         
         app_dir = output_dir / "app"
         commands_dir = app_dir / "commands" / command_snake
-        schemas_dir = app_dir / "schemas" / "commands"
         
-        # Create directories
+        # Create commands directory
         commands_dir.mkdir(parents=True, exist_ok=True)
-        schemas_dir.mkdir(parents=True, exist_ok=True)
         
-        # Template context
-        context = {
-            "command": command,
-            "command_id_lower": command_lower,
-            "command_snake": command_snake,
-        }
-        
-        # Emit command files
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}.py",
-            template="domain/commands/command.py.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}_handler.py",
-            template="domain/commands/command_handler.py.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}_validator.py",
-            template="domain/commands/command_validator.py.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}_guards.py",
-            template="domain/commands/command_guards.py.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}_effects.py",
-            template="domain/commands/command_effects.py.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}_errors.py",
-            template="domain/commands/command_errors.py.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename="__init__.py",
-            template="domain/commands/__init__.py.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        # Emit input schema
-        files.append(self._write_file(
-            output_dir=schemas_dir,
-            filename=f"{command_snake}_input.py",
-            template="domain/commands/command_input.py.jinja2",
-            context=context,
-            capability="CP01",
-        ))
+        try:
+            # Sử dụng FastAPICommandEmitter để generate command files
+            from midicoder.dsl.kernel import ProjectionNode
+            
+            # Build Command object từ dict
+            projection_node = ProjectionNode.from_dict(command)
+            command_obj = Command.from_projection_node(projection_node)
+            
+            # Tạo emitter và emit files
+            command_emitter = FastAPICommandEmitter(stack_dir=self.stack_dir)
+            emitted_files = command_emitter.emit(command_obj, commands_dir)
+            
+            # Chuyển đổi sang GeneratedFile
+            for filename, content in emitted_files.items():
+                file_path = commands_dir / filename
+                file_path.write_text(content, encoding="utf-8")
+                
+                files.append(GeneratedFile(
+                    path=file_path.relative_to(output_dir),
+                    content=content,
+                    template=f"command_emitter/{filename}",
+                    capability="CP01",
+                ))
+                
+        except Exception as e:
+            # Fallback: Use old template-based approach nếu có lỗi
+            import logging
+            logging.warning(f"FastAPICommandEmitter failed, using fallback: {e}")
+            
+            # Template context
+            context = {
+                "command": command,
+                "command_id": command_id,
+                "command_snake": command_snake,
+            }
+            
+            # Emit command files (fallback)
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}.py",
+                template="domain/commands/command.py.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}_handler.py",
+                template="domain/commands/command_handler.py.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}_validator.py",
+                template="domain/commands/command_validator.py.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}_guards.py",
+                template="domain/commands/command_guards.py.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}_effects.py",
+                template="domain/commands/command_effects.py.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}_errors.py",
+                template="domain/commands/command_errors.py.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename="__init__.py",
+                template="domain/commands/__init__.py.jinja2",
+                context=context,
+                capability="CP01",
+            ))
         
         return files
     

@@ -1,7 +1,11 @@
 /**
  * Handler cho {{ command.id }}.
  * 
- * Xử lý logic business cho {{ command.description }}.
+ * Xử lý logic business cho {{ command.description }} với đầy đủ support:
+ * - Transaction management (ACID compliance)
+ * - Guards integration (auth, tenant, compliance)
+ * - Effects execution (19+ effect types)
+ * - Error handling with rollback
  * 
  * @author Midicoder Auto-generated
  */
@@ -11,14 +15,25 @@ import { {{ command.id }} } from './{{ command_snake }}';
 import { {{ command.id }}Validator } from './{{ command_snake }}.validator';
 import { {{ command.id }}Guards } from './{{ command_snake }}.guards';
 import { {{ command.id }}Effects } from './{{ command_snake }}.effects';
+import { TransactionManager } from '@midicoder/core/transaction';
 
 /**
  * Handler cho {{ command.description }}.
  * 
- * Dependencies:
- * - {{ command.id }}Validator: Validate input
- * - {{ command.id }}Guards: Check guards (auth, tenant)
- * - {{ command.id }}Effects: Execute effects (create_record, publish_event)
+ * Features:
+ * - {{ command.id }}Validator: Validate input (cross-field, business rules)
+ * - {{ command.id }}Guards: Check guards (auth, tenant, KYC, AML, HIPAA)
+ * - {{ command.id }}Effects: Execute effects (19+ types)
+ * - TransactionManager: ACID transaction support
+ * 
+ * Transaction Support:
+{% if transaction_required %}
+ * - BEGIN_TRANSACTION: Start atomic transaction
+ * - COMMIT_TRANSACTION: Commit on success
+ * - ROLLBACK_TRANSACTION: Rollback on error
+{% else %}
+ * - No transaction required
+{% endif %}
  */
 @Injectable()
 export class {{ command.id }}Handler {
@@ -26,39 +41,85 @@ export class {{ command.id }}Handler {
         private readonly validator: {{ command.id }}Validator,
         private readonly guards: {{ command.id }}Guards,
         private readonly effects: {{ command.id }}Effects,
+        private readonly transactionManager: TransactionManager,
     ) {}
 
     /**
-     * Xử lý command.
+     * Xử lý command với transaction support.
      * 
      * Process:
-     * 1. Validate input
-     * 2. Check guards
-     * 3. Execute effects
-     * 4. Return result
+     * 1. Validate input (cross-field, business rules)
+     * 2. Check guards (auth, tenant, KYC, AML, HIPAA)
+     * 3. Begin transaction (nếu cần)
+     * 4. Execute effects (19+ types)
+     * 5. Commit/rollback transaction
+     * 6. Return result
+     * 
+     * Transaction Flow:
+{% if transaction_required %}
+     * 1. BEGIN_TRANSACTION (atomic start)
+     * 2. Execute all effects
+     * 3. On success: COMMIT_TRANSACTION
+     * 4. On error: ROLLBACK_TRANSACTION
+{% else %}
+     * No transaction - effects execute directly
+{% endif %}
      * 
      * @param command Command instance
      * @param userId User ID (nếu có)
      * @param tenantId Tenant ID (nếu có)
-     * @returns Result object
-     * @throws ValidationError Nếu input không hợp lệ
-     * @throws PermissionError Nếu không có quyền
+     * @returns Result object with success status and data
+     * @throws ValidationError Nếu input không hợp lệ (cross-field validation failed)
+     * @throws PermissionError Nếu không có quyền (auth guard failed)
+     * @throws ValueError Nếu vi phạm tenant isolation
+     * @throws RuntimeError Nếu compliance check failed (KYC/AML/HIPAA)
      */
     async handle(
         command: {{ command.id }},
         userId?: string,
         tenantId?: string,
     ): Promise<{ success: boolean; message: string; data: Record<string, unknown> }> {
-        // Bước 1: Validate input
+        // Bước 1: Validate input (cross-field, business rules)
         const validation = await this.validator.validate(command);
         if (!validation.isValid) {
             throw validation.error;
         }
 
-        // Bước 2: Check guards
+        // Bước 2: Check guards (auth, tenant, KYC, AML, HIPAA)
         await this.guards.check(command, userId, tenantId);
 
-        // Bước 3: Execute effects
+{% if transaction_required %}
+        // Bước 3: Execute với transaction support (ACID)
+        try {
+            // Begin transaction
+            await this.transactionManager.beginTransaction();
+
+            try {
+                // Execute effects
+                const result = await this.effects.execute(command, userId, tenantId);
+
+                // Commit transaction (all effects succeeded)
+                await this.transactionManager.commitTransaction();
+
+                return {
+                    success: true,
+                    message: 'Command executed successfully',
+                    data: result,
+                };
+            } catch (error) {
+                // Rollback on any error
+                await this.transactionManager.rollbackTransaction();
+                throw error;
+            }
+        } catch (error) {
+            // Ensure rollback if not already done
+            if (this.transactionManager.isInTransaction) {
+                await this.transactionManager.rollbackTransaction();
+            }
+            throw error;
+        }
+{% else %}
+        // Bước 3: Execute effects (no transaction)
         const result = await this.effects.execute(command, userId, tenantId);
 
         // Bước 4: Return result
@@ -67,5 +128,6 @@ export class {{ command.id }}Handler {
             message: 'Command executed successfully',
             data: result,
         };
+{% endif %}
     }
 }

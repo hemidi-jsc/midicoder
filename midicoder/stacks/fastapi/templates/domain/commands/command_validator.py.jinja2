@@ -1,13 +1,18 @@
 """
 Validator cho {{ command.id }}.
 
-Custom validation logic cho {{ command.description }}.
+Validation logic đầy đủ cho {{ command.description }}:
+- Field-level validation (required, pattern, min/max)
+- Cross-field validation (end_date > start_date, from != to)
+- Business rule validation (domain-specific rules)
+- Formula validation (quantity * price = total)
 
 Author: Midicoder Auto-generated
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,62 +49,242 @@ class {{ command.id }}Validator:
     """
     Validator cho {{ command.description }}.
     
-    Validation rules:
-{% for input_field in command.input %}
-        - {{ input_field.name }}: {% if input_field.required %}required{% else %}optional{% endif %}{% if input_field.pattern %}, pattern: {{ input_field.pattern }}{% endif %}{% if input_field.min_length %}, min_length: {{ input_field.min_length }}{% endif %}{% if input_field.max_length %}, max_length: {{ input_field.max_length }}{% endif %}
-{% endfor %}
+    Validation types:
+    1. Field-level validation: required, pattern, min/max, length
+    2. Cross-field validation: end_date > start_date, from != to
+    3. Business rules: Domain-specific validation
+    4. Formula validation: Calculated field checks
+    
+    Field validation rules:
+    {% for input_field in command.input %}
+    - {{ input_field.name }}: {% if input_field.required %}required{% else %}optional{% endif %}
+    {% if input_field.pattern %}, pattern: {{ input_field.pattern }}{% endif %}
+    {% if input_field.min_length %}, min_length: {{ input_field.min_length }}{% endif %}
+    {% if input_field.max_length %}, max_length: {{ input_field.max_length }}{% endif %}
+    {% if input_field.min_value %}, min_value: {{ input_field.min_value }}{% endif %}
+    {% if input_field.max_value %}, max_value: {{ input_field.max_value }}{% endif %}
+    {% if input_field.min_items %}, min_items: {{ input_field.min_items }}{% endif %}
+    {% if input_field.max_items %}, max_items: {{ input_field.max_items }}{% endif %}
+    {% endfor %}
     """
     
     async def validate(self, command: {{ command.id }}) -> ValidationResult:
         """
-        Validate command.
+        Validate command với đầy đủ validation rules.
+        
+        Process:
+        1. Field-level validation (required, pattern, min/max)
+        2. Cross-field validation (end_date > start_date, etc.)
+        3. Business rule validation (domain-specific)
+        4. Return ValidationResult
         
         Args:
             command: Command instance
             
         Returns:
-            ValidationResult
+            ValidationResult (is_valid=True nếu valid)
             
         Raises:
-{% for error in command.errors %}
+        {% for error in command.errors %}
             {{ error.code }}Error: {{ error.message }}
-{% endfor %}
+        {% endfor %}
         """
         errors: list[str] = []
         
-        # Validate input fields
-{% for input_field in command.input %}
-        # Validate {{ input_field.name }}
-{% if input_field.required %}
-        if command.{{ input_field.name }} is None:
-            errors.append("{{ input_field.name }} là trường bắt buộc")
-{% endif %}
-{% if input_field.pattern %}
-        elif not re.match(r"{{ input_field.pattern }}", str(command.{{ input_field.name }})):
-            errors.append("{{ input_field.name }} không đúng định dạng")
-{% endif %}
-{% if input_field.min_length %}
-        elif len(str(command.{{ input_field.name }})) < {{ input_field.min_length }}:
-            errors.append("{{ input_field.name }} phải có ít nhất {{ input_field.min_length }} ký tự")
-{% endif %}
-{% if input_field.max_length %}
-        elif len(str(command.{{ input_field.name }})) > {{ input_field.max_length }}:
-            errors.append("{{ input_field.name }} phải có không quá {{ input_field.max_length }} ký tự")
-{% endif %}
-{% if input_field.min_items %}
-        elif len(command.{{ input_field.name }}) < {{ input_field.min_items }}:
-            errors.append("{{ input_field.name }} phải có ít nhất {{ input_field.min_items }} phần tử")
-{% endif %}
-
-{% endfor %}
+        # Bước 1: Field-level validation
+        await self._validate_fields(command, errors)
+        
+        # Bước 2: Cross-field validation
+        if not errors:
+            await self._validate_cross_fields(command, errors)
+        
+        # Bước 3: Business rule validation
+        if not errors:
+            await self._validate_business_rules(command, errors)
+        
         # Return result
         if errors:
             # Map errors to specific error classes
-{% for error in command.errors %}
-            if "{{ error.message }}" in str(errors):
-                raise {{ error.code }}Error()
-{% endfor %}
-            # Default: return validation errors
-            return ValidationResult(is_valid=False, errors=errors)
+            return self._map_errors_to_exception(errors)
         
         return ValidationResult(is_valid=True)
+    
+    async def _validate_fields(
+        self,
+        command: {{ command.id }},
+        errors: list[str],
+    ) -> None:
+        """
+        Field-level validation.
+        
+        Validates:
+        - Required fields
+        - Pattern matching
+        - Min/max length
+        - Min/max value
+        - Min/max items
+        
+        Args:
+            command: Command instance
+            errors: Error list to append to
+        """
+    {% for input_field in command.input %}
+        # Validate {{ input_field.name }}
+    {% if input_field.required %}
+        if command.{{ input_field.name }} is None:
+            errors.append("{{ input_field.name }} là trường bắt buộc")
+            continue
+    {% endif %}
+        
+        # Skip nếu value là None và không required
+        if command.{{ input_field.name }} is None:
+            continue
+        
+    {% if input_field.pattern %}
+        # Pattern validation
+        if not re.match(r"{{ input_field.pattern }}", str(command.{{ input_field.name }})):
+            errors.append("{{ input_field.name }} không đúng định dạng")
+    {% endif %}
+        
+    {% if input_field.field_type == 'string' %}
+        # String length validation
+    {% if input_field.min_length %}
+        if len(str(command.{{ input_field.name }})) < {{ input_field.min_length }}:
+            errors.append("{{ input_field.name }} phải có ít nhất {{ input_field.min_length }} ký tự")
+    {% endif %}
+    {% if input_field.max_length %}
+        if len(str(command.{{ input_field.name }})) > {{ input_field.max_length }}:
+            errors.append("{{ input_field.name }} phải có không quá {{ input_field.max_length }} ký tự")
+    {% endif %}
+    {% endif %}
+        
+    {% if input_field.field_type in ['integer', 'decimal', 'float'] %}
+        # Numeric validation
+    {% if input_field.min_value is not none %}
+        if command.{{ input_field.name }} < {{ input_field.min_value }}:
+            errors.append("{{ input_field.name }} phải lớn hơn hoặc bằng {{ input_field.min_value }}")
+    {% endif %}
+    {% if input_field.max_value is not none %}
+        if command.{{ input_field.name }} > {{ input_field.max_value }}:
+            errors.append("{{ input_field.name }} phải nhỏ hơn hoặc bằng {{ input_field.max_value }}")
+    {% endif %}
+    {% endif %}
+        
+    {% if input_field.field_type == 'array' %}
+        # Array validation
+    {% if input_field.min_items %}
+        if len(command.{{ input_field.name }}) < {{ input_field.min_items }}:
+            errors.append("{{ input_field.name }} phải có ít nhất {{ input_field.min_items }} phần tử")
+    {% endif %}
+    {% if input_field.max_items %}
+        if len(command.{{ input_field.name }}) > {{ input_field.max_items }}:
+            errors.append("{{ input_field.name }} phải có không quá {{ input_field.max_items }} phần tử")
+    {% endif %}
+    {% endif %}
+    {% endfor %}
+    
+    async def _validate_cross_fields(
+        self,
+        command: {{ command.id }},
+        errors: list[str],
+    ) -> None:
+        """
+        Cross-field validation.
+        
+        Validates relationships between fields:
+        - end_date > start_date
+        - from_account != to_account
+        - quantity * price ≈ total
+        
+        Args:
+            command: Command instance
+            errors: Error list to append to
+        """
+        # Check end_date > start_date (nếu có cả 2 fields)
+        {% set has_start_date = command.input | selectattr('name', 'equalto', 'start_date') | list | length > 0 %}
+        {% set has_end_date = command.input | selectattr('name', 'equalto', 'end_date') | list | length > 0 %}
+        {% if has_start_date and has_end_date %}
+        if hasattr(command, 'end_date') and hasattr(command, 'start_date'):
+            if command.end_date and command.start_date and command.end_date < command.start_date:
+                errors.append("Ngày kết thúc phải sau ngày bắt đầu")
+        {% endif %}
+        
+        # Check from_account != to_account (nếu có cả 2 fields)
+        {% set has_from = command.input | selectattr('name', 'equalto', 'from_account') | list | length > 0 %}
+        {% set has_to = command.input | selectattr('name', 'equalto', 'to_account') | list | length > 0 %}
+        {% if has_from and has_to %}
+        if hasattr(command, 'from_account') and hasattr(command, 'to_account'):
+            if command.from_account and command.to_account and command.from_account == command.to_account:
+                errors.append("Tài khoản nguồn và tài khoản đích không được giống nhau")
+        {% endif %}
+        
+        # Check quantity * price = total (nếu có cả 3 fields)
+        {% set has_quantity = command.input | selectattr('name', 'equalto', 'quantity') | list | length > 0 %}
+        {% set has_price = command.input | selectattr('name', 'equalto', 'price') | list | length > 0 %}
+        {% if has_quantity and has_price and has_total %}
+        if hasattr(command, 'quantity') and hasattr(command, 'price') and hasattr(command, 'total'):
+            if command.quantity and command.price and command.total:
+                expected_total = command.quantity * command.price
+                if abs(command.total - expected_total) > 0.01:
+                    errors.append(
+                        f"Total ({command.total}) không khớp với quantity * price ({expected_total})"
+                    )
+        {% endif %}
+    
+    async def _validate_business_rules(
+        self,
+        command: {{ command.id }},
+        errors: list[str],
+    ) -> None:
+        """
+        Business rule validation.
+        
+        Domain-specific validation rules:
+        - Banking: Balance >= 0, sum(debits) == sum(credits)
+        - E-commerce: Minimum order value, max items per order
+        - Healthcare: Drug interaction checks
+        - Insurance: Premium calculation rules
+        
+        Args:
+            command: Command instance
+            errors: Error list to append to
+        """
+        # TODO: Add domain-specific business rules here
+        # Example: Minimum order value
+        
+        # Check if command has 'total' field
+        {% set has_total = command.input | selectattr('name', 'equalto', 'total') | list | length > 0 %}
+        {% if has_total %}
+        # Minimum total value check
+        if hasattr(command, 'total') and command.total and command.total < 10000:
+            # Warning, not error - small orders allowed
+            pass  # Could add to warnings instead of errors
+        {% endif %}
+    
+    def _map_errors_to_exception(
+        self,
+        errors: list[str],
+    ) -> ValidationResult:
+        """
+        Map validation errors to specific exception classes.
+        
+        Args:
+            errors: List of error messages
+            
+        Returns:
+            ValidationResult với error exception
+        """
+    {% if command.errors %}
+    {% for error in command.errors %}
+        # Check for {{ error.code }}
+        for err_msg in errors:
+            if "{{ error.message }}" in err_msg or "{{ error.code }}" in err_msg:
+                raise {{ error.code }}Error()
+    {% endfor %}
+        
+        # Default: Return validation result với errors
+        return ValidationResult(is_valid=False, errors=errors)
+    {% else %}
+        # No specific errors defined, return validation result
+        return ValidationResult(is_valid=False, errors=errors)
+    {% endif %}

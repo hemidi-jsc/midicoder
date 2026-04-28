@@ -1,7 +1,15 @@
 """
 Guards cho {{ command.id }}.
 
-Kiểm tra authorization và tenant scope cho {{ command.description }}.
+Kiểm tra authorization, tenant scope, và compliance cho {{ command.description }}.
+
+Features:
+- AUTH guard: Permission checking (RBAC)
+- TENANT_SCOPE guard: Tenant isolation enforcement
+- RATE_LIMIT guard: Rate limiting
+- KYC_CHECK guard: KYC compliance (RX03)
+- AML_SCREENING guard: AML screening (RX03)
+- HIPAA_ACCESS guard: HIPAA compliance (RX04)
 
 Author: Midicoder Auto-generated
 """
@@ -11,101 +19,288 @@ from __future__ import annotations
 from typing import Any
 
 from app.commands.{{ command_id_lower }}.{{ command_id_lower }} import {{ command.id }}
+from app.services.auth import AuthService
+from app.services.tenant import TenantService
+from app.services.compliance import ComplianceService
 
 
 class {{ command.id }}Guards:
     """
     Guards cho {{ command.description }}.
     
-    Guards:
-{% if command.guards %}
-{% for guard in command.guards %}
-        - {{ guard.type }}: {% if guard.permission %}permission={{ guard.permission }}{% endif %}{% if guard.mode %}, mode={{ guard.mode }}{% endif %}
-{% endfor %}
-{% else %}
-        - (No guards defined)
-{% endif %}
+    Guards defined:
+    {% if command.guards %}
+    {% for guard in command.guards %}
+    - {{ guard.guard_type.value }}{% if guard.permission %} (permission: {{ guard.permission }}){% endif %}{% if guard.mode %} (mode: {{ guard.mode }}){% endif %}
+    {% endfor %}
+    {% else %}
+    - (No guards defined)
+    {% endif %}
+    
+    Services:
+        - AuthService: Permission checking (auth guard)
+        - TenantService: Tenant isolation (tenant_scope guard)
+        - ComplianceService: KYC/AML/HIPAA checks (compliance guards)
     """
     
-    async def check(self, command: {{ command.id }}, user_id: str | None = None, tenant_id: str | None = None) -> None:
+    def __init__(
+        self,
+        auth_service: AuthService,
+        tenant_service: TenantService,
+        compliance_service: ComplianceService,
+    ) -> None:
         """
-        Kiểm tra guards.
+        Khởi tạo guards với service dependencies.
         
-        Process:
-        1. Auth guard: Kiểm tra user có permission không
-        2. Tenant guard: Kiểm tra tenant scope
+        Args:
+            auth_service: AuthService cho permission checking
+            tenant_service: TenantService cho tenant isolation
+            compliance_service: ComplianceService cho KYC/AML/HIPAA
+        """
+        self._auth_service = auth_service
+        self._tenant_service = tenant_service
+        self._compliance_service = compliance_service
+    
+    async def check(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+        ip_address: str | None = None,
+    ) -> None:
+        """
+        Kiểm tra tất cả guards theo thứ tự ưu tiên.
+        
+        Order:
+        1. AUTH guard (permission check - RBAC)
+        2. TENANT_SCOPE guard (tenant isolation)
+        3. RATE_LIMIT guard (rate limiting)
+        4. Compliance guards (KYC, AML, HIPAA)
         
         Args:
             command: Command instance
             user_id: User ID
             tenant_id: Tenant ID
+            ip_address: Client IP address (cho rate limiting)
             
         Raises:
-            PermissionError: Nếu không có quyền
-            TenantScopeError: Nếu vi phạm tenant scope
+            PermissionError: Nếu không có permission (auth guard failed)
+            ValueError: Nếu vi phạm tenant isolation (tenant_scope guard failed)
+            RuntimeError: Nếu vượt rate limit hoặc compliance check failed
         """
-{% if command.guards %}
-{% for guard in command.guards %}
-        # Check {{ guard.type }} guard
-        if "{{ guard.type }}" == "auth":
-            await self._check_auth_guard(command, user_id)
-            
-        if "{{ guard.type }}" == "tenant_scope":
-            await self._check_tenant_guard(command, tenant_id)
-
-{% endfor %}
-{% else %}
+    {% if command.guards %}
+    {% for guard in command.guards %}
+        {% if guard.guard_type.value == 'auth' %}
+        # Check AUTH guard (permission)
+        await self._check_auth_guard(command, user_id)
+        
+        {% elif guard.guard_type.value == 'tenant_scope' %}
+        # Check TENANT_SCOPE guard (tenant isolation)
+        await self._check_tenant_guard(command, tenant_id)
+        
+        {% elif guard.guard_type.value == 'rate_limit' %}
+        # Check RATE_LIMIT guard
+        await self._check_rate_limit_guard(user_id, ip_address)
+        
+        {% elif guard.guard_type.value == 'kyc_check' %}
+        # Check KYC compliance guard (RX03)
+        await self._check_kyc_guard(user_id)
+        
+        {% elif guard.guard_type.value == 'aml_screening' %}
+        # Check AML screening guard (RX03)
+        await self._check_aml_guard(command, user_id)
+        
+        {% elif guard.guard_type.value == 'hipaa_access' %}
+        # Check HIPAA access guard (RX04)
+        await self._check_hipaa_guard(user_id)
+        
+        {% endif %}
+    {% endfor %}
+    {% else %}
         # No guards to check
         pass
+    {% endif %}
 
-{% endif %}
-
-{% if command.guards %}
-{% for guard in command.guards %}
-{% if guard.type == 'auth' %}
-    async def _check_auth_guard(self, command: {{ command.id }}, user_id: str | None = None) -> None:
+    {% if command.guards %}
+    {% for guard in command.guards %}
+        {% if guard.guard_type.value == 'auth' %}
+    async def _check_auth_guard(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+    ) -> None:
         """
-        Kiểm tra auth guard.
+        Kiểm tra AUTH guard (permission checking - RBAC).
         
         Args:
             command: Command instance
             user_id: User ID
             
         Raises:
-            PermissionError: Nếu không có permission: {{ guard.permission }}
+            PermissionError: Nếu user không được xác thực hoặc không có permission
         """
         if user_id is None:
             raise PermissionError("User không được xác thực")
         
-        # TODO: Integrate với auth service
-        # has_permission = await auth_service.check_permission(user_id, "{{ guard.permission }}")
-        # if not has_permission:
-        #     raise PermissionError(f"User không có permission: {{ guard.permission }}")
-        pass
+        {% if guard.permission %}
+        # Check permission với AuthService
+        has_permission = await self._auth_service.check_permission(
+            user_id=user_id,
+            permission="{{ guard.permission }}",
+        )
+        if not has_permission:
+            raise PermissionError(
+                f"User không có permission: {{ guard.permission }}"
+            )
+        {% endif %}
 
-{% endif %}
-{% if guard.type == 'tenant_scope' %}
-    async def _check_tenant_guard(self, command: {{ command.id }}, tenant_id: str | None = None) -> None:
+        {% elif guard.guard_type.value == 'tenant_scope' %}
+    async def _check_tenant_guard(
+        self,
+        command: {{ command.id }},
+        tenant_id: str | None = None,
+    ) -> None:
         """
-        Kiểm tra tenant scope guard.
+        Kiểm tra TENANT_SCOPE guard (tenant isolation).
+        
+        Mode: "{{ guard.mode or 'tenant_isolated' }}"
+        - tenant_isolated: Data phải thuộc tenant
+        - tenant_shared: Cho phép cross-tenant với permission
+        - global: Super admin mode
         
         Args:
             command: Command instance
             tenant_id: Tenant ID
             
         Raises:
-            TenantScopeError: Nếu vi phạm tenant scope: {{ guard.mode }}
+            ValueError: Nếu tenant_id None hoặc data không thuộc tenant
         """
         if tenant_id is None:
             raise ValueError("Tenant ID không được xác định")
         
-        # TODO: Integrate với tenant service
-        # if "{{ guard.mode }}" == "tenant_isolated":
-        #     # Check command data belongs to tenant
-        #     if not await tenant_service.belongs_to_tenant(command, tenant_id):
-        #         raise TenantScopeError("Data không thuộc tenant")
-        pass
+        mode = "{{ guard.mode or 'tenant_isolated' }}"
+        
+        if mode == "tenant_isolated":
+            # Check command data belongs to tenant
+            is_belong = await self._tenant_service.belongs_to_tenant(
+                data=command.to_dict(),
+                tenant_id=tenant_id,
+            )
+            if not is_belong:
+                raise ValueError("Data không thuộc tenant")
+        
+        elif mode == "tenant_shared":
+            # Shared mode - check permission for cross-tenant access
+            pass
+        
+        elif mode == "global":
+            # Global mode - super admin, no check needed
+            pass
 
-{% endif %}
-{% endfor %}
-{% endif %}
+        {% elif guard.guard_type.value == 'rate_limit' %}
+    async def _check_rate_limit_guard(
+        self,
+        user_id: str | None = None,
+        ip_address: str | None = None,
+    ) -> None:
+        """
+        Kiểm tra RATE_LIMIT guard.
+        
+        Limit: {{ guard.limit or 100 }} requests/{{ guard.window or '60s' }}
+        
+        Args:
+            user_id: User ID
+            ip_address: IP address
+            
+        Raises:
+            RuntimeError: Nếu vượt quá rate limit
+        """
+        limit = {{ guard.limit or 100 }}
+        window = "{{ guard.window or '60s' }}"
+        
+        is_limited = await self._auth_service.check_rate_limit(
+            user_id=user_id,
+            ip_address=ip_address,
+            limit=limit,
+            window=window,
+        )
+        if is_limited:
+            raise RuntimeError(
+                f"Vượt quá giới hạn {{ limit }} requests/{{ window }}"
+            )
+
+        {% elif guard.guard_type.value == 'kyc_check' %}
+    async def _check_kyc_guard(self, user_id: str | None = None) -> None:
+        """
+        Kiểm tra KYC compliance guard (RX03).
+        
+        Yêu cầu: User phải có KYC verification trước khi thực hiện command.
+        
+        Args:
+            user_id: User ID
+            
+        Raises:
+            RuntimeError: Nếu user không được xác thực hoặc KYC chưa verified
+        """
+        if user_id is None:
+            raise RuntimeError("User không được xác thực")
+        
+        is_kyc_verified = await self._compliance_service.check_kyc(user_id=user_id)
+        if not is_kyc_verified:
+            raise RuntimeError("KYC chưa được xác minh")
+
+        {% elif guard.guard_type.value == 'aml_screening' %}
+    async def _check_aml_guard(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+    ) -> None:
+        """
+        Kiểm tra AML screening guard (RX03).
+        
+        Yêu cầu: Transaction data phải qua AML screening.
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            
+        Raises:
+            RuntimeError: Nếu AML screening failed
+        """
+        if user_id is None:
+            raise RuntimeError("User không được xác thực")
+        
+        is_aml_clear = await self._compliance_service.check_aml(
+            user_id=user_id,
+            transaction_data=command.to_dict(),
+        )
+        if not is_aml_clear:
+            raise RuntimeError("AML screening failed - giao dịch bị từ chối")
+
+        {% elif guard.guard_type.value == 'hipaa_access' %}
+    async def _check_hipaa_guard(self, user_id: str | None = None) -> None:
+        """
+        Kiểm tra HIPAA access guard (RX04).
+        
+        Yêu cầu: User phải có HIPAA clearance để truy cập dữ liệu y tế.
+        
+        Args:
+            user_id: User ID
+            
+        Raises:
+            RuntimeError: Nếu không có HIPAA clearance
+        """
+        if user_id is None:
+            raise RuntimeError("User không được xác thực")
+        
+        has_hipaa_clearance = await self._compliance_service.check_hipaa_clearance(
+            user_id=user_id,
+        )
+        if not has_hipaa_clearance:
+            raise RuntimeError(
+                "Không có HIPAA clearance để truy cập dữ liệu y tế"
+            )
+
+        {% endif %}
+    {% endfor %}
+    {% endif %}
