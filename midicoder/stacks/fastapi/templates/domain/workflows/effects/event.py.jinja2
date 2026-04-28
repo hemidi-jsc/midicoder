@@ -1,0 +1,34 @@
+"""
+Mô-đun Event Effect.
+
+Cung cấp:
+- EventEffect: Effect cho domain event publishing
+"""
+
+from typing import Any
+
+
+class EventEffect:
+    """
+    Effect executor cho event publishing.
+    
+    Publish domain events khi transition fire.
+    """
+
+    async def execute(
+        self,
+        event_name: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Execute event publishing effect.
+        
+        Args:
+            event_name: Event name để publish
+            payload: Event payload
+            
+        Returns:
+            Result với publish status
+        """
+        # TODO: Integrate với CP05 Event Bus
+        return {"status": "published", "event": event_name}

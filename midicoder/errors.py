@@ -270,6 +270,20 @@ class ErrorCode(str, Enum):
     CP01_QUERY_EMIT_FAILED = "MDC-CP01-033"
     CP01_QUERY_HANDLER_INVALID = "MDC-CP01-034"
     CP01_QUERY_SCHEMA_INVALID = "MDC-CP01-035"
+    
+    # =========================================================================
+    # CP01: Workflow Emitter Errors
+    # =========================================================================
+    CP01_WORKFLOW_NOT_FOUND = "MDC-CP01-036"
+    CP01_WORKFLOW_INVALID_STATE = "MDC-CP01-037"
+    CP01_WORKFLOW_INVALID_TRANSITION = "MDC-CP01-038"
+    CP01_WORKFLOW_GUARD_FAILED = "MDC-CP01-039"
+    CP01_WORKFLOW_EFFECT_FAILED = "MDC-CP01-040"
+    CP01_WORKFLOW_ALREADY_IN_STATE = "MDC-CP01-041"
+    CP01_WORKFLOW_INVALID_EVENT = "MDC-CP01-042"
+    CP01_WORKFLOW_COMPENSATION_FAILED = "MDC-CP01-043"
+    CP01_WORKFLOW_EVENT_STORE_ERROR = "MDC-CP01-044"
+    CP01_WORKFLOW_SYNC_FAILED = "MDC-CP01-045"
 
 
 class ExitCode(Enum):

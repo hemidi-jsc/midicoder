@@ -1,0 +1,41 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { WorkflowEntity } from './workflows.entity';
+
+export class TransitionResult {
+    success: boolean;
+    fromState: string;
+    toState: string | null;
+    transitionId: string;
+    error?: string;
+}
+
+@Injectable()
+export class WorkflowEngine {
+    constructor(
+        @InjectRepository(WorkflowEntity)
+        private readonly workflowRepo: Repository<WorkflowEntity>,
+    ) {}
+
+    async transition(
+        instanceId: string,
+        eventName: string,
+        userId?: string,
+        tenantId?: string,
+    ): Promise<TransitionResult> {
+        // TODO: Implement transition logic
+        return {
+            success: false,
+            fromState: '',
+            toState: null,
+            transitionId: '',
+            error: 'Not implemented',
+        };
+    }
+
+    async getState(instanceId: string): Promise<string> {
+        // TODO: Implement
+        return '';
+    }
+}
