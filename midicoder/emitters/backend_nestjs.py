@@ -43,10 +43,15 @@ from midicoder.emitters.value_object import NestJSValueObjectEmitter
 from midicoder.emitters.command import (
     NestJSCommandEmitter,
     Command,
-    TransactionManager,
-    CommandValidator,
-    CommandGuards,
-    CommandEffects,
+)
+from midicoder.emitters.query import (
+    NestJSQueryEmitter,
+    Query,
+    AggregationQuery,
+    QueryGuard,
+    QueryEffect,
+    QueryGuardType,
+    QueryEffectType,
 )
 from midicoder.pipeline.mir import MIR
 
@@ -443,13 +448,16 @@ class BackendNestJSEmitter:
         """
         Emit files cho một Query (CP01-Part4).
         
+        Sử dụng NestJSQueryEmitter để generate code.
+        
         Files được emit:
-        - src/queries/{query_snake}/index.ts
-        - src/queries/{query_snake}/{query_snake}.query.ts
+        - src/queries/{query_snake}/{query_snake}.ts
         - src/queries/{query_snake}/{query_snake}.handler.ts
         - src/queries/{query_snake}/{query_snake}.validator.ts
         - src/queries/{query_snake}/{query_snake}.guards.ts
+        - src/queries/{query_snake}/{query_snake}.effects.ts
         - src/queries/{query_snake}/{query_snake}.output.ts
+        - src/queries/{query_snake}/index.ts
         
         Args:
             query: Query dict từ MIR metadata
@@ -469,70 +477,197 @@ class BackendNestJSEmitter:
         # Create queries directory
         queries_dir.mkdir(parents=True, exist_ok=True)
         
-        # Template context
-        context = {
-            "query": query,
-            "query_id": query_id,
-            "query_snake": query_snake,
-            "query_description": query.get("description", ""),
-            "query_input": query.get("input", []),
-            "query_output": query.get("returns", []),
-            "entity_id": query.get("reads_from", ["Entity"])[0] if query.get("reads_from") else "Entity",
-            "entity_lower": (query.get("reads_from", ["entity"])[0] if query.get("reads_from") else "entity").lower(),
-            "required_permissions": query.get("required_permissions", ["entity.read"]),
-            "required_roles": query.get("required_roles", ["user"]),
-        }
-        
-        # Emit query files (CP01-Part4)
-        files.append(self._write_file(
-            output_dir=queries_dir,
-            filename=f"{query_snake}.query.ts",
-            template="domain/queries/query.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=queries_dir,
-            filename=f"{query_snake}.handler.ts",
-            template="domain/queries/query.handler.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=queries_dir,
-            filename=f"{query_snake}.validator.ts",
-            template="domain/queries/query.validator.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=queries_dir,
-            filename=f"{query_snake}.guards.ts",
-            template="domain/queries/query.guards.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=queries_dir,
-            filename=f"{query_snake}.output.ts",
-            template="domain/queries/query.output.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=queries_dir,
-            filename="index.ts",
-            template="domain/queries/index.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
+        try:
+            # Build Query object từ dict
+            query_obj = self._build_query_from_dict(query)
+            
+            # Tạo emitter và emit files
+            query_emitter = NestJSQueryEmitter(stack_dir=self.stack_dir)
+            
+            # Kiểm tra aggregation query
+            if query_obj.get("aggregation"):
+                emitted_files = query_emitter.emit_aggregation(
+                    query_obj["aggregation"], 
+                    queries_dir
+                )
+            else:
+                emitted_files = query_emitter.emit(query_obj["query"], queries_dir)
+            
+            # Chuyển đổi sang GeneratedFile
+            for filename, content in emitted_files.items():
+                file_path = queries_dir / filename
+                file_path.write_text(content, encoding="utf-8")
+                
+                files.append(GeneratedFile(
+                    path=file_path.relative_to(output_dir),
+                    content=content,
+                    template=f"query_emitter/{filename}",
+                    capability="CP01",
+                ))
+                
+        except Exception as e:
+            # Fallback: Use old template-based approach nếu có lỗi
+            import logging
+            logging.warning(f"NestJSQueryEmitter failed, using fallback: {e}")
+            
+            # Template context (old style)
+            context = {
+                "query": query,
+                "query_id": query_id,
+                "query_snake": query_snake,
+                "query_description": query.get("description", ""),
+                "query_input": query.get("input", []),
+                "query_output": query.get("returns", []),
+                "entity_id": query.get("reads_from", ["Entity"])[0] if query.get("reads_from") else "Entity",
+                "entity_lower": (query.get("reads_from", ["entity"])[0] if query.get("reads_from") else "entity").lower(),
+            }
+            
+            # Emit query files (fallback)
+            files.append(self._write_file(
+                output_dir=queries_dir,
+                filename=f"{query_snake}.query.ts",
+                template="domain/queries/query.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=queries_dir,
+                filename=f"{query_snake}.handler.ts",
+                template="domain/queries/query.handler.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=queries_dir,
+                filename=f"{query_snake}.validator.ts",
+                template="domain/queries/query.validator.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=queries_dir,
+                filename=f"{query_snake}.guards.ts",
+                template="domain/queries/query.guards.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=queries_dir,
+                filename=f"{query_snake}.output.ts",
+                template="domain/queries/query.output.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=queries_dir,
+                filename="index.ts",
+                template="domain/queries/index.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
         
         return files
+    
+    def _build_query_from_dict(self, query: dict[str, Any]) -> dict[str, Any]:
+        """
+        Build Query object từ dict (từ MIR metadata).
+        
+        Args:
+            query: Query dict từ MIR metadata
+            
+        Returns:
+            Dictionary với Query hoặc AggregationQuery instance
+        """
+        from midicoder.emitters.query import (
+            QueryField, FilterExpression, FilterOp,
+            PaginationConfig, PaginationType, ProjectionConfig,
+            SortExpression, SortDirection,
+        )
+        
+        # Parse input fields
+        input_fields = [
+            QueryField(
+                name=f.get("name", ""),
+                field_type=f.get("type", "str"),
+                required=f.get("required", False),
+            )
+            for f in query.get("input", [])
+        ]
+        
+        # Parse filters
+        filters = [
+            FilterExpression(
+                field=f.get("field", ""),
+                operator=FilterOp(f.get("operator", "eq")),
+                value=f.get("value"),
+            )
+            for f in query.get("filters", [])
+        ]
+        
+        # Parse pagination
+        pagination_data = query.get("pagination", {})
+        pagination = PaginationConfig(
+            type=PaginationType(pagination_data.get("type", "offset")),
+            page_size=pagination_data.get("page_size", 20),
+            page=pagination_data.get("page", 1),
+        )
+        
+        # Parse projection
+        projection_data = query.get("projection", {})
+        projection = ProjectionConfig(
+            include=projection_data.get("include", []),
+            exclude=projection_data.get("exclude", []),
+        )
+        
+        # Parse sort
+        sort = [
+            SortExpression(
+                field=s.get("field", ""),
+                direction=SortDirection(s.get("direction", "asc")),
+            )
+            for s in query.get("sort", [])
+        ]
+        
+        # Parse guards
+        guards = [
+            QueryGuard(
+                guard_type=QueryGuardType(g.get("type", "auth")),
+                permission=g.get("permission"),
+                mode=g.get("mode", "tenant_isolated"),
+            )
+            for g in query.get("guards", [])
+        ]
+        
+        # Parse effects
+        effects = [
+            QueryEffect(
+                effect_type=QueryEffectType(e.get("type", "write_audit_log")),
+                audit_action=e.get("audit_action"),
+                metric_name=e.get("metric_name"),
+            )
+            for e in query.get("effects", [])
+        ]
+        
+        # Build Query object
+        query_obj = Query(
+            id=query.get("id", "Query"),
+            description=query.get("description", ""),
+            reads_from=query.get("reads_from", "Entity"),
+            input=input_fields,
+            filters=filters,
+            pagination=pagination,
+            projection=projection,
+            sort=sort,
+            guards=guards,
+            effects=effects,
+        )
+        
+        return {"query": query_obj}
     
     def _emit_command(self, command: dict[str, Any], output_dir: Path) -> list[GeneratedFile]:
         """

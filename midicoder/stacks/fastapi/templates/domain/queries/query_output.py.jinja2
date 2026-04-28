@@ -18,12 +18,13 @@ from pydantic import BaseModel, Field
 
 class {{ query_id }}Output(BaseModel):
     """
-    Output schema cho single {{ entity_id.lower() }} item.
+    Output schema cho single {{ reads_from.lower() }} item.
     
     Attributes:
-{% for output_field in query_output %}
-        {{ output_field.name }}: {{ output_field.description|default(output_field.type) }}
-{% endfor %}
+        id: Unique identifier
+        tenant_id: Tenant ID (KPI-029)
+        created_at: Created timestamp
+        updated_at: Updated timestamp
     """
     
     # Standard fields
@@ -31,14 +32,6 @@ class {{ query_id }}Output(BaseModel):
     tenant_id: str = Field(..., description="Tenant ID (KPI-029)")
     created_at: datetime = Field(..., description="Created timestamp")
     updated_at: datetime = Field(..., description="Updated timestamp")
-
-    # Entity-specific fields
-{% for output_field in query_output %}
-    {{ output_field.name }}: {{ output_field.type }} = Field(
-        default={{ output_field.default|default('None') }},
-        description="{{ output_field.description|default(output_field.name) }}"
-    )
-{% endfor %}
 
     class Config:
         """Pydantic config."""
@@ -66,7 +59,7 @@ class {{ query_id }}OutputPage(BaseModel):
     Support cả offset-based và cursor-based pagination.
     
     Attributes:
-        items: Danh sách {{ entity_id }} items
+        items: Danh sách {{ reads_from }} items
         total: Total count (cho offset pagination)
         page: Current page number (cho offset pagination)
         page_size: Items per page (cho offset pagination)
@@ -78,7 +71,7 @@ class {{ query_id }}OutputPage(BaseModel):
     """
     
     # Items
-    items: list[{{ query_id }}Output] = Field(..., description="List of {{ entity_id.lower() }} items")
+    items: list[{{ query_id }}Output] = Field(..., description="List of {{ reads_from.lower() }} items")
     
     # Offset-based pagination fields
     total: int | None = Field(default=None, description="Total count (offset pagination)")
@@ -103,9 +96,6 @@ class {{ query_id }}OutputPage(BaseModel):
                         "tenant_id": "tenant-001",
                         "created_at": "2024-01-01T00:00:00Z",
                         "updated_at": "2024-01-01T00:00:00Z",
-{% for output_field in query_output %}
-                        "{{ output_field.name }}": "...",
-{% endfor %}
                     }
                 ],
                 "total": 100,
