@@ -13,7 +13,7 @@ import { IsString, IsInt, IsBoolean, IsOptional, IsDate, Min } from 'class-valid
 
 export class {{ query_id }}Output {
   /**
-   * Output schema cho single {{ entity_id.lower() }} item.
+   * Output schema cho single {{ reads_from.lower() }} item.
    */
 
   @ApiProperty({ description: 'Unique identifier' })
@@ -31,16 +31,6 @@ export class {{ query_id }}Output {
   @ApiProperty({ description: 'Updated timestamp' })
   @IsDate()
   updated_at: Date;
-
-  // Entity-specific fields
-{% for output_field in query_output %}
-  @ApiProperty({
-    required: {{ 'true' if output_field.required|default(false) else 'false' }},
-    description: '{{ output_field.description|default(output_field.name) }}',
-  })
-  @IsOptional()
-  {{ output_field.name }}: any;
-{% endfor %}
 }
 
 export class {{ query_id }}OutputPage {
@@ -51,7 +41,7 @@ export class {{ query_id }}OutputPage {
    */
 
   @ApiProperty({
-    description: 'List of {{ entity_id.lower() }} items',
+    description: 'List of {{ reads_from.lower() }} items',
     type: [{{ query_id }}Output],
   })
   items: {{ query_id }}Output[];
