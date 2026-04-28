@@ -284,6 +284,16 @@ class ErrorCode(str, Enum):
     CP01_WORKFLOW_COMPENSATION_FAILED = "MDC-CP01-043"
     CP01_WORKFLOW_EVENT_STORE_ERROR = "MDC-CP01-044"
     CP01_WORKFLOW_SYNC_FAILED = "MDC-CP01-045"
+    
+    # =========================================================================
+    # CP01: Entity Emitter Errors (Extended DSL)
+    # =========================================================================
+    CP01_ENTITY_PARSER_ERROR = "MDC-CP01-046"
+    CP01_ENTITY_INVALID_FIELD = "MDC-CP01-047"
+    CP01_ENTITY_INVALID_RELATIONSHIP = "MDC-CP01-048"
+    CP01_ENTITY_INVALID_CONSTRAINT = "MDC-CP01-049"
+    CP01_ENTITY_INVALID_LIFECYCLE = "MDC-CP01-050"
+    CP01_ENTITY_EMIT_FAILED = "MDC-CP01-051"
 
 
 class ExitCode(Enum):
