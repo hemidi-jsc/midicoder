@@ -24,9 +24,11 @@ from midicoder.emitters.query import (
     AggregationQuery,
     AggFunction,
     FilterExpression,
+    FilterGroup,
     FilterOp,
     PaginationConfig,
     PaginationType,
+    PHIMaskingConfig,
     ProjectionConfig,
     Query,
     QueryEffect,
@@ -416,6 +418,183 @@ class TestNestJSQueryEmitter:
         assert "count_orders.ts" in files
         assert "count_orders.handler.ts" in files
         assert "count_orders.guards.ts" in files
+
+
+# ============================================================================
+# Tests for FilterGroup (Complex Filters)
+# ============================================================================
+
+
+class TestFilterGroup:
+    """Tests cho FilterGroup với AND/OR nested logic."""
+
+    def test_and_group_filter(self):
+        """Test: AND group filter kết hợp nhiều conditions."""
+        and_group = FilterGroup(
+            operator="and",
+            filters=[
+                FilterExpression("status", FilterOp.EQ, "active"),
+                FilterExpression("created_at", FilterOp.GTE, "2026-01-01"),
+            ]
+        )
+
+        condition = and_group.to_sqlalchemy()
+        assert condition is not None
+
+    def test_or_group_filter(self):
+        """Test: OR group filter kết hợp nhiều conditions."""
+        or_group = FilterGroup(
+            operator="or",
+            filters=[
+                FilterExpression("status", FilterOp.EQ, "active"),
+                FilterExpression("status", FilterOp.EQ, "pending"),
+            ]
+        )
+
+        condition = or_group.to_sqlalchemy()
+        assert condition is not None
+
+    def test_nested_group_filter(self):
+        """Test: Nested filter groups (AND inside OR)."""
+        nested_group = FilterGroup(
+            operator="or",
+            filters=[
+                FilterGroup(
+                    operator="and",
+                    filters=[
+                        FilterExpression("status", FilterOp.EQ, "active"),
+                        FilterExpression("created_at", FilterOp.GT, "2026-01-01"),
+                    ]
+                ),
+                FilterExpression("tenant_id", FilterOp.EQ, "abc"),
+            ]
+        )
+
+        condition = nested_group.to_sqlalchemy()
+        assert condition is not None
+
+    def test_empty_group_filter(self):
+        """Test: Empty filter group returns true (no filter)."""
+        empty_group = FilterGroup(
+            operator="and",
+            filters=[]
+        )
+
+        condition = empty_group.to_sqlalchemy()
+        assert condition is not None
+
+
+# ============================================================================
+# Tests for PHIMaskingConfig
+# ============================================================================
+
+
+class TestPHIMasking:
+    """Tests cho PHIMaskingConfig (HIPAA compliance)."""
+
+    def test_phi_masking_enabled(self):
+        """Test: PHI masking active khi enabled=True."""
+        config = PHIMaskingConfig(
+            enabled=True,
+            default_mask_value="[REDACTED]"
+        )
+
+        # SSN field should be masked
+        assert config.should_mask("ssn") is True
+        assert config.mask_value("ssn", "123-45-6789") == "[REDACTED]"
+
+        # Regular field should not be masked
+        assert config.should_mask("patient_name") is False
+        assert config.mask_value("patient_name", "John Doe") == "John Doe"
+
+    def test_phi_masking_disabled(self):
+        """Test: PHI masking disabled khi enabled=False."""
+        config = PHIMaskingConfig(
+            enabled=False,
+            default_mask_value="[REDACTED]"
+        )
+
+        # SSN field should NOT be masked when disabled
+        assert config.should_mask("ssn") is False
+        assert config.mask_value("ssn", "123-45-6789") == "123-45-6789"
+
+    def test_phi_masking_with_allowed_fields(self):
+        """Test: PHI masking respect allowed_fields."""
+        config = PHIMaskingConfig(
+            enabled=True,
+            allowed_fields=["patient_id"],
+            default_mask_value="[REDACTED]"
+        )
+
+        # patient_id is allowed, should not mask
+        assert config.should_mask("patient_id") is False
+        assert config.mask_value("patient_id", "P12345") == "P12345"
+
+    def test_phi_masking_with_patterns(self):
+        """Test: PHI masking with regex patterns."""
+        config = PHIMaskingConfig(
+            enabled=True,
+            mask_patterns=["^custom_id"],
+            default_mask_value="***"
+        )
+
+        # custom_id matches pattern
+        assert config.should_mask("custom_id") is True
+        assert config.mask_value("custom_id", "CID123") == "***"
+
+        # regular_id does not match pattern
+        assert config.should_mask("regular_id") is False
+
+
+# ============================================================================
+# Tests for SQLAlchemy Filter Integration
+# ============================================================================
+
+
+class TestSQLAlchemyFilters:
+    """Tests cho SQLAlchemy filter integration."""
+
+    def test_eq_filter_sqlalchemy(self):
+        """Test: EQ filter to SQLAlchemy."""
+        flt = FilterExpression("name", FilterOp.EQ, "John")
+        condition = flt.to_sqlalchemy()
+        assert condition is not None
+
+    def test_in_filter_sqlalchemy(self):
+        """Test: IN filter to SQLAlchemy."""
+        flt = FilterExpression("status", FilterOp.IN, ["active", "pending"])
+        condition = flt.to_sqlalchemy()
+        assert condition is not None
+
+    def test_between_filter_sqlalchemy(self):
+        """Test: BETWEEN filter to SQLAlchemy."""
+        flt = FilterExpression("amount", FilterOp.BETWEEN, (100, 1000))
+        condition = flt.to_sqlalchemy()
+        assert condition is not None
+
+    def test_like_filter_sqlalchemy(self):
+        """Test: LIKE filter to SQLAlchemy."""
+        flt = FilterExpression("email", FilterOp.LIKE, "%@gmail.com")
+        condition = flt.to_sqlalchemy()
+        assert condition is not None
+
+    def test_is_null_filter_sqlalchemy(self):
+        """Test: IS_NULL filter to SQLAlchemy."""
+        flt = FilterExpression("deleted_at", FilterOp.IS_NULL, None)
+        condition = flt.to_sqlalchemy()
+        assert condition is not None
+
+    def test_combined_filters_sqlalchemy(self):
+        """Test: Combined filters with FilterGroup."""
+        combined = FilterGroup(
+            operator="and",
+            filters=[
+                FilterExpression("tenant_id", FilterOp.EQ, "tenant_001"),
+                FilterExpression("status", FilterOp.IN, ["active", "pending"]),
+            ]
+        )
+        condition = combined.to_sqlalchemy()
+        assert condition is not None
 
 
 # ============================================================================
