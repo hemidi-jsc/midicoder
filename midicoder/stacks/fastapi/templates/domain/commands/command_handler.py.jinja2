@@ -1,7 +1,11 @@
 """
 Handler cho {{ command.id }}.
 
-Xử lý logic business cho {{ command.description }}.
+Xử lý logic business cho {{ command.description }} với đầy đủ support:
+- Transaction management (ACID compliance)
+- Guards integration (auth, tenant, compliance)
+- Effects execution (19+ effect types)
+- Error handling with rollback
 
 Author: Midicoder Auto-generated
 """
@@ -14,16 +18,27 @@ from app.commands.{{ command_id_lower }}.{{ command_id_lower }} import {{ comman
 from app.commands.{{ command_id_lower }}.{{ command_id_lower }}_validator import {{ command.id }}Validator
 from app.commands.{{ command_id_lower }}.{{ command_id_lower }}_guards import {{ command.id }}Guards
 from app.commands.{{ command_id_lower }}.{{ command_id_lower }}_effects import {{ command.id }}Effects
+from app.infrastructure.transaction import TransactionManager
 
 
 class {{ command.id }}Handler:
     """
     Handler cho {{ command.description }}.
     
-    Dependencies:
-        - {{ command.id }}Validator: Validate input
-        - {{ command.id }}Guards: Check guards (auth, tenant)
-        - {{ command.id }}Effects: Execute effects (create_record, publish_event)
+    Features:
+        - {{ command.id }}Validator: Validate input (cross-field, business rules)
+        - {{ command.id }}Guards: Check guards (auth, tenant, KYC, AML, HIPAA)
+        - {{ command.id }}Effects: Execute effects (19+ types)
+        - TransactionManager: ACID transaction support
+    
+    Transaction Support:
+        {% if transaction_required %}
+        - BEGIN_TRANSACTION: Start atomic transaction
+        - COMMIT_TRANSACTION: Commit on success
+        - ROLLBACK_TRANSACTION: Rollback on error
+        {% else %}
+        - No transaction required
+        {% endif %}
     """
     
     def __init__(
@@ -31,6 +46,7 @@ class {{ command.id }}Handler:
         validator: {{ command.id }}Validator,
         guards: {{ command.id }}Guards,
         effects: {{ command.id }}Effects,
+        transaction_manager: TransactionManager,
     ) -> None:
         """
         Khởi tạo handler.
@@ -39,20 +55,39 @@ class {{ command.id }}Handler:
             validator: Validator instance
             guards: Guards instance
             effects: Effects instance
+            transaction_manager: Transaction manager for ACID operations
         """
         self._validator = validator
         self._guards = guards
         self._effects = effects
+        self._transaction_manager = transaction_manager
     
-    async def handle(self, command: {{ command.id }}, user_id: str | None = None, tenant_id: str | None = None) -> dict[str, Any]:
+    async def handle(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
         """
-        Xử lý command.
+        Xử lý command với transaction support.
         
         Process:
-        1. Validate input
-        2. Check guards
-        3. Execute effects
-        4. Return result
+        1. Validate input (cross-field, business rules)
+        2. Check guards (auth, tenant, KYC, AML, HIPAA)
+        3. Begin transaction (nếu cần)
+        4. Execute effects (19+ types)
+        5. Commit/rollback transaction
+        6. Return result
+        
+        Transaction Flow:
+        {% if transaction_required %}
+        1. BEGIN_TRANSACTION (atomic start)
+        2. Execute all effects
+        3. On success: COMMIT_TRANSACTION
+        4. On error: ROLLBACK_TRANSACTION
+        {% else %}
+        No transaction - effects execute directly
+        {% endif %}
         
         Args:
             command: Command instance
@@ -60,22 +95,63 @@ class {{ command.id }}Handler:
             tenant_id: Tenant ID (nếu có)
             
         Returns:
-            Result dict
+            Result dict with success status and data
             
         Raises:
-            ValidationError: Nếu input không hợp lệ
-            PermissionError: Nếu không có quyền
+            ValidationError: Nếu input không hợp lệ (cross-field validation failed)
+            PermissionError: Nếu không có quyền (auth guard failed)
+            ValueError: Nếu vi phạm tenant isolation
+            RuntimeError: Nếu compliance check failed (KYC/AML/HIPAA)
         """
-        # Bước 1: Validate input
+        # Bước 1: Validate input (cross-field, business rules)
         validation_result = await self._validator.validate(command)
         if not validation_result.is_valid:
             raise validation_result.error
         
-        # Bước 2: Check guards
+        # Bước 2: Check guards (auth, tenant, KYC, AML, HIPAA)
         await self._guards.check(command, user_id=user_id, tenant_id=tenant_id)
         
-        # Bước 3: Execute effects
-        result = await self._effects.execute(command, user_id=user_id, tenant_id=tenant_id)
+        {% if transaction_required %}
+        # Bước 3: Execute với transaction support (ACID)
+        try:
+            # Begin transaction
+            await self._transaction_manager.begin_transaction()
+            
+            try:
+                # Execute effects
+                result = await self._effects.execute(
+                    command,
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                )
+                
+                # Commit transaction (all effects succeeded)
+                await self._transaction_manager.commit_transaction()
+                
+                return {
+                    "success": True,
+                    "message": "Command executed successfully",
+                    "data": result,
+                }
+                
+            except Exception as e:
+                # Rollback on any error
+                await self._transaction_manager.rollback_transaction()
+                raise e
+                
+        except Exception as e:
+            # Ensure rollback if not already done
+            if self._transaction_manager.is_in_transaction:
+                await self._transaction_manager.rollback_transaction()
+            raise e
+            
+        {% else %}
+        # Bước 3: Execute effects (no transaction)
+        result = await self._effects.execute(
+            command,
+            user_id=user_id,
+            tenant_id=tenant_id,
+        )
         
         # Bước 4: Return result
         return {
@@ -83,3 +159,4 @@ class {{ command.id }}Handler:
             "message": "Command executed successfully",
             "data": result,
         }
+        {% endif %}

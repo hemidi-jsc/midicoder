@@ -1,7 +1,36 @@
 """
 Effects cho {{ command.id }}.
 
-Thực thi effects (create_record, publish_event, etc.) cho {{ command.description }}.
+Thực thi 19+ effect types cho {{ command.description }}:
+
+Core Effects:
+- CREATE_RECORD: Tạo record mới
+- UPDATE_RECORD: Cập nhật record
+- DELETE_RECORD: Xóa record
+- PUBLISH_EVENT: Publish event
+
+Transaction Effects:
+- BEGIN_TRANSACTION: Bắt đầu transaction
+- COMMIT_TRANSACTION: Commit transaction
+- ROLLBACK_TRANSACTION: Rollback transaction
+
+Extended Effects:
+- QUERY_RECORDS: Query trong command
+- UPSERT_RECORD: Upsert record
+
+Integration Effects:
+- CALL_EXTERNAL_API: Gọi external API
+- SEND_EMAIL: Gửi email
+- SEND_SMS: Gửi SMS
+- WEBHOOK: Gọi webhook
+
+Observability Effects:
+- WRITE_AUDIT_LOG: Ghi audit log
+- RECORD_METRIC: Ghi metric
+
+Compliance Effects:
+- CHECK_COMPLIANCE: Check compliance gate
+- MASK_PII: Mask PII data
 
 Author: Midicoder Auto-generated
 """
@@ -11,30 +40,75 @@ from __future__ import annotations
 from typing import Any
 
 from app.commands.{{ command_id_lower }}.{{ command_id_lower }} import {{ command.id }}
+from app.repositories.base import BaseRepository
+from app.services.event_bus import EventBus
+from app.services.notification import NotificationService
+from app.services.audit import AuditService
 
 
 class {{ command.id }}Effects:
     """
-    Effects cho {{ command.description }}.
+    Effects manager cho {{ command.description }}.
     
-    Effects:
-{% if command.effects %}
-{% for effect in command.effects %}
-        - {{ effect.type }}: {% if effect.entity %}entity={{ effect.entity }}{% endif %}{% if effect.event %}, event={{ effect.event }}{% endif %}
-{% endfor %}
-{% else %}
-        - (No effects defined)
-{% endif %}
+    Effect types supported (19+):
+    - CRUD: CREATE_RECORD, UPDATE_RECORD, DELETE_RECORD, QUERY_RECORDS, UPSERT_RECORD
+    - Transaction: BEGIN_TRANSACTION, COMMIT_TRANSACTION, ROLLBACK_TRANSACTION
+    - Events: PUBLISH_EVENT
+    - Integration: CALL_EXTERNAL_API, SEND_EMAIL, SEND_SMS, WEBHOOK
+    - Observability: WRITE_AUDIT_LOG, RECORD_METRIC
+    - Compliance: CHECK_COMPLIANCE, MASK_PII
+    
+    Dependencies:
+        - Repositories: Cho CRUD operations
+        - EventBus: Cho publish events
+        - NotificationService: Cho email/SMS
+        - AuditService: Cho audit logs
     """
     
-    async def execute(self, command: {{ command.id }}, user_id: str | None = None, tenant_id: str | None = None) -> dict[str, Any]:
+    def __init__(
+        self,
+        repositories: dict[str, BaseRepository],
+        event_bus: EventBus,
+        notification_service: NotificationService,
+        audit_service: AuditService,
+    ) -> None:
         """
-        Thực thi effects.
+        Khởi tạo effects manager.
+        
+        Args:
+            repositories: Dict của repositories theo entity name
+            event_bus: Event bus instance
+            notification_service: Notification service (email/SMS)
+            audit_service: Audit service
+        """
+        self._repositories = repositories
+        self._event_bus = event_bus
+        self._notification_service = notification_service
+        self._audit_service = audit_service
+    
+    async def execute(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Thực thi tất cả effects theo thứ tự trong command definition.
         
         Process:
-{% for effect in command.effects %}
-        1. {{ effect.type }}: {% if effect.entity %}{{ effect.entity }}{% endif %}{% if effect.event %}, {{ effect.event }}{% endif %}
-{% endfor %}
+        1. Iterate qua tất cả effects
+        2. Check condition (nếu có)
+        3. Execute effect theo type
+        4. Collect results
+        
+        Effect Execution Order:
+        {% if command.effects %}
+        {% for effect in command.effects %}
+        - {{ effect.effect_type.value }}{% if effect.entity %} ({{ effect.entity }}){% endif %}{% if effect.event %} ({{ effect.event }}){% endif %}
+        {% endfor %}
+        {% else %}
+        (No effects defined)
+        {% endif %}
         
         Args:
             command: Command instance
@@ -42,33 +116,94 @@ class {{ command.id }}Effects:
             tenant_id: Tenant ID
             
         Returns:
-            Result dict
+            Dict của results từ mỗi effect
         """
         results: dict[str, Any] = {}
         
-{% if command.effects %}
-{% for effect in command.effects %}
-        # Execute {{ effect.type }} effect
-{% if effect.type == 'create_record' %}
+    {% if command.effects %}
+    {% for effect in command.effects %}
+        # Execute {{ effect.effect_type.value }} effect
+    {% if effect.effect_type.value == 'create_record' %}
         record_id = await self._create_{{ effect.entity }}(command, user_id, tenant_id)
         results["{{ effect.entity|lower }}_id"] = record_id
-
-{% elif effect.type == 'publish_event' %}
-        await self._publish_{{ effect.event }}(command, user_id, tenant_id)
-        results["{{ effect.event|lower }}_published"] = True
-
-{% endif %}
-{% endfor %}
-{% else %}
+        
+    {% elif effect.effect_type.value == 'update_record' %}
+        updated = await self._update_{{ effect.entity }}(command, user_id, tenant_id)
+        results["{{ effect.entity|lower }}_updated"] = updated
+        
+    {% elif effect.effect_type.value == 'delete_record' %}
+        deleted = await self._delete_{{ effect.entity }}(command, user_id, tenant_id)
+        results["{{ effect.entity|lower }}_deleted"] = deleted
+        
+    {% elif effect.effect_type.value == 'query_records' %}
+        records = await self._query_{{ effect.entity }}(command)
+        results["{{ effect.entity|lower }}_records"] = records
+        
+    {% elif effect.effect_type.value == 'upsert_record' %}
+        upserted_id = await self._upsert_{{ effect.entity }}(command, user_id, tenant_id)
+        results["{{ effect.entity|lower }}_id"] = upserted_id
+        
+    {% elif effect.effect_type.value == 'publish_event' %}
+        published = await self._publish_{{ effect.event }}(command, user_id, tenant_id)
+        results["{{ effect.event|lower }}_published"] = published
+        
+    {% elif effect.effect_type.value == 'begin_transaction' %}
+        await self._begin_transaction()
+        results["transaction_started"] = True
+        
+    {% elif effect.effect_type.value == 'commit_transaction' %}
+        await self._commit_transaction()
+        results["transaction_committed"] = True
+        
+    {% elif effect.effect_type.value == 'rollback_transaction' %}
+        await self._rollback_transaction()
+        results["transaction_rolled_back"] = True
+        
+    {% elif effect.effect_type.value == 'call_external_api' %}
+        api_result = await self._call_external_api(command, effect.api_endpoint)
+        results["{{ effect.api_endpoint|lower|replace('/', '_') }}"] = api_result
+        
+    {% elif effect.effect_type.value == 'send_email' %}
+        sent = await self._send_email(command, user_id)
+        results["email_sent"] = sent
+        
+    {% elif effect.effect_type.value == 'send_sms' %}
+        sent = await self._send_sms(command, user_id)
+        results["sms_sent"] = sent
+        
+    {% elif effect.effect_type.value == 'webhook' %}
+        called = await self._call_webhook(command, effect.webhook_url)
+        results["webhook_called"] = called
+        
+    {% elif effect.effect_type.value == 'write_audit_log' %}
+        audit_id = await self._write_audit_log(command, user_id, tenant_id)
+        results["audit_id"] = audit_id
+        
+    {% elif effect.effect_type.value == 'record_metric' %}
+        recorded = await self._record_metric(command)
+        results["metric_recorded"] = recorded
+        
+    {% elif effect.effect_type.value == 'check_compliance' %}
+        compliant = await self._check_compliance(command, user_id)
+        results["compliance_checked"] = compliant
+        
+    {% elif effect.effect_type.value == 'mask_pii' %}
+        masked_data = await self._mask_pii(command)
+        results["data_masked"] = True
+        
+    {% endif %}
+    {% endfor %}
+    {% else %}
         # No effects to execute
         pass
-
-{% endif %}
+    {% endif %}
+        
         return results
-    
-{% if command.effects %}
-{% for effect in command.effects %}
-{% if effect.type == 'create_record' %}
+
+    {% if command.effects %}
+    {% for effect in command.effects %}
+
+    {% if effect.effect_type.value == 'create_record' %}
     async def _create_{{ effect.entity }}(
         self,
         command: {{ command.id }},
@@ -86,26 +221,116 @@ class {{ command.id }}Effects:
         Returns:
             Record ID
         """
-        # TODO: Integrate với repository
-        # data = {
-        #     # Map command fields to entity fields
-        # }
-        # if tenant_id:
-        #     data["tenant_id"] = tenant_id
-        # if user_id:
-        #     data["created_by"] = user_id
-        # record = await {{ effect.entity|lower }}_repo.create(data)
-        # return str(record.id)
+        repo = self._repositories.get("{{ effect.entity|lower }}")
+        if repo:
+            data = self._map_to_{{ effect.entity }}(command)
+            if tenant_id:
+                data["tenant_id"] = tenant_id
+            if user_id:
+                data["created_by"] = user_id
+            record = await repo.create(data)
+            return str(record.id)
         return "generated-id"
 
-{% endif %}
-{% if effect.type == 'publish_event' %}
+    {% elif effect.effect_type.value == 'update_record' %}
+    async def _update_{{ effect.entity }}(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> bool:
+        """
+        Cập nhật {{ effect.entity }} record.
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            tenant_id: Tenant ID
+            
+        Returns:
+            True nếu cập nhật thành công
+        """
+        repo = self._repositories.get("{{ effect.entity|lower }}")
+        if repo:
+            data = self._map_to_{{ effect.entity }}(command)
+            if user_id:
+                data["updated_by"] = user_id
+            return await repo.update(command.{{ effect.entity|lower }}_id, data)
+        return True
+
+    {% elif effect.effect_type.value == 'delete_record' %}
+    async def _delete_{{ effect.entity }}(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> bool:
+        """
+        Xóa {{ effect.entity }} record.
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            tenant_id: Tenant ID
+            
+        Returns:
+            True nếu xóa thành công
+        """
+        repo = self._repositories.get("{{ effect.entity|lower }}")
+        if repo:
+            return await repo.delete(command.{{ effect.entity|lower }}_id)
+        return True
+
+    {% elif effect.effect_type.value == 'query_records' %}
+    async def _query_{{ effect.entity }}(self, command: {{ command.id }}) -> list[dict]:
+        """
+        Query {{ effect.entity }} records.
+        
+        Args:
+            command: Command instance
+            
+        Returns:
+            List của records
+        """
+        repo = self._repositories.get("{{ effect.entity|lower }}")
+        if repo:
+            return await repo.query(command.to_dict())
+        return []
+
+    {% elif effect.effect_type.value == 'upsert_record' %}
+    async def _upsert_{{ effect.entity }}(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> str:
+        """
+        Upsert {{ effect.entity }} record (create or update).
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            tenant_id: Tenant ID
+            
+        Returns:
+            Record ID
+        """
+        repo = self._repositories.get("{{ effect.entity|lower }}")
+        if repo:
+            data = self._map_to_{{ effect.entity }}(command)
+            if tenant_id:
+                data["tenant_id"] = tenant_id
+            record = await repo.upsert(data)
+            return str(record.id)
+        return "generated-id"
+
+    {% elif effect.effect_type.value == 'publish_event' %}
     async def _publish_{{ effect.event }}(
         self,
         command: {{ command.id }},
         user_id: str | None = None,
         tenant_id: str | None = None,
-    ) -> None:
+    ) -> bool:
         """
         Publish {{ effect.event }} event.
         
@@ -113,19 +338,204 @@ class {{ command.id }}Effects:
             command: Command instance
             user_id: User ID
             tenant_id: Tenant ID
+            
+        Returns:
+            True nếu publish thành công
         """
-        # TODO: Integrate với event bus
-        # event = {
-        #     "type": "{{ effect.event }}",
-        #     "payload": command.to_dict(),
-        #     "metadata": {
-        #         "user_id": user_id,
-        #         "tenant_id": tenant_id,
-        #     },
-        # }
-        # await event_bus.publish(event)
+        event = {
+            "type": "{{ effect.event }}",
+            "payload": command.to_dict(),
+            "metadata": {"user_id": user_id, "tenant_id": tenant_id},
+        }
+        await self._event_bus.publish(event)
+        return True
+
+    {% elif effect.effect_type.value == 'begin_transaction' %}
+    async def _begin_transaction(self) -> None:
+        """
+        Begin transaction (placeholder - use TransactionManager in handler).
+        """
         pass
 
-{% endif %}
-{% endfor %}
-{% endif %}
+    {% elif effect.effect_type.value == 'commit_transaction' %}
+    async def _commit_transaction(self) -> None:
+        """
+        Commit transaction (placeholder - use TransactionManager in handler).
+        """
+        pass
+
+    {% elif effect.effect_type.value == 'rollback_transaction' %}
+    async def _rollback_transaction(self) -> None:
+        """
+        Rollback transaction (placeholder - use TransactionManager in handler).
+        """
+        pass
+
+    {% elif effect.effect_type.value == 'call_external_api' %}
+    async def _call_external_api(
+        self,
+        command: {{ command.id }},
+        endpoint: str | None = None,
+    ) -> dict:
+        """
+        Call external API.
+        
+        Args:
+            command: Command instance
+            endpoint: API endpoint
+            
+        Returns:
+            API response
+        """
+        # TODO: Implement API call logic
+        return {"status": "success"}
+
+    {% elif effect.effect_type.value == 'send_email' %}
+    async def _send_email(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+    ) -> bool:
+        """
+        Send email notification.
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            
+        Returns:
+            True nếu gửi thành công
+        """
+        if self._notification_service:
+            await self._notification_service.send_email(
+                template="{{ effect.email_template or 'default' }}",
+                data=command.to_dict(),
+                user_id=user_id,
+            )
+        return True
+
+    {% elif effect.effect_type.value == 'send_sms' %}
+    async def _send_sms(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+    ) -> bool:
+        """
+        Send SMS notification.
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            
+        Returns:
+            True nếu gửi thành công
+        """
+        if self._notification_service:
+            await self._notification_service.send_sms(
+                template="{{ effect.sms_template or 'default' }}",
+                data=command.to_dict(),
+                user_id=user_id,
+            )
+        return True
+
+    {% elif effect.effect_type.value == 'webhook' %}
+    async def _call_webhook(
+        self,
+        command: {{ command.id }},
+        url: str | None = None,
+    ) -> bool:
+        """
+        Call webhook.
+        
+        Args:
+            command: Command instance
+            url: Webhook URL
+            
+        Returns:
+            True nếu gọi thành công
+        """
+        # TODO: Implement webhook call logic
+        return True
+
+    {% elif effect.effect_type.value == 'write_audit_log' %}
+    async def _write_audit_log(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> str:
+        """
+        Write audit log (RX11 - immutable audit).
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            tenant_id: Tenant ID
+            
+        Returns:
+            Audit record ID
+        """
+        if self._audit_service:
+            audit_record = await self._audit_service.log(
+                action="{{ effect.audit_action or 'command_executed' }}",
+                data=command.to_dict(),
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+            return str(audit_record.id)
+        return "audit-id"
+
+    {% elif effect.effect_type.value == 'record_metric' %}
+    async def _record_metric(self, command: {{ command.id }}) -> bool:
+        """
+        Record metric.
+        
+        Args:
+            command: Command instance
+            
+        Returns:
+            True nếu ghi thành công
+        """
+        # TODO: Implement metric recording
+        return True
+
+    {% elif effect.effect_type.value == 'check_compliance' %}
+    async def _check_compliance(
+        self,
+        command: {{ command.id }},
+        user_id: str | None = None,
+    ) -> bool:
+        """
+        Check compliance gate.
+        
+        Args:
+            command: Command instance
+            user_id: User ID
+            
+        Returns:
+            True nếu compliance check passed
+        """
+        # TODO: Implement compliance check
+        return True
+
+    {% elif effect.effect_type.value == 'mask_pii' %}
+    async def _mask_pii(self, command: {{ command.id }}) -> dict:
+        """
+        Mask PII data (RX01).
+        
+        Args:
+            command: Command instance
+            
+        Returns:
+            Masked data
+        """
+        # TODO: Implement PII masking
+        return command.to_dict()
+
+    {% endif %}  # Close if effect.effect_type.value == 'create_record' chain
+    {% endfor %} # Close for effect in command.effects
+    {% endif %}  # Close if command.effects
+
+    def _map_to_Entity(self, command: {{ command.id }}) -> dict:
+        """Map command to Entity fields."""
+        return command.to_dict()

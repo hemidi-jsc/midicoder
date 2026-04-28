@@ -1,52 +1,100 @@
 /**
  * Guards cho {{ command.id }}.
  * 
- * Kiểm tra authorization và tenant scope cho {{ command.description }}.
+ * Kiểm tra authorization, tenant scope, và compliance cho {{ command.description }}.
+ * 
+ * Features:
+ * - AUTH guard: Permission checking (RBAC)
+ * - TENANT_SCOPE guard: Tenant isolation enforcement
+ * - RATE_LIMIT guard: Rate limiting
+ * - KYC_CHECK guard: KYC compliance (RX03)
+ * - AML_SCREENING guard: AML screening (RX03)
+ * - HIPAA_ACCESS guard: HIPAA compliance (RX04)
  * 
  * @author Midicoder Auto-generated
  */
 
 import { Injectable } from '@nestjs/common';
 import { {{ command.id }} } from './{{ command_snake }}';
+import { AuthService } from '@midicoder/services/auth';
+import { TenantService } from '@midicoder/services/tenant';
+import { ComplianceService } from '@midicoder/services/compliance';
 
 /**
  * Guards cho {{ command.description }}.
  * 
- * Guards:
+ * Guards defined:
 {% if command.guards %}
 {% for guard in command.guards %}
- * - {{ guard.type }}: {% if guard.permission %}permission={{ guard.permission }}{% endif %}{% if guard.mode %}, mode={{ guard.mode }}{% endif %}
+ * - {{ guard.type }}{% if guard.permission %} (permission: {{ guard.permission }}){% endif %}{% if guard.mode %} (mode: {{ guard.mode }}){% endif %}
 {% endfor %}
 {% else %}
  * - (No guards defined)
 {% endif %}
+ * 
+ * Services:
+ * - AuthService: Permission checking (auth guard)
+ * - TenantService: Tenant isolation (tenant_scope guard)
+ * - ComplianceService: KYC/AML/HIPAA checks (compliance guards)
  */
 @Injectable()
 export class {{ command.id }}Guards {
+    constructor(
+        private readonly authService: AuthService,
+        private readonly tenantService: TenantService,
+        private readonly complianceService: ComplianceService,
+    ) {}
+
     /**
-     * Kiểm tra guards.
+     * Kiểm tra tất cả guards theo thứ tự ưu tiên.
      * 
-     * Process:
-     * 1. Auth guard: Kiểm tra user có permission không
-     * 2. Tenant guard: Kiểm tra tenant scope
+     * Order:
+     * 1. AUTH guard (permission check - RBAC)
+     * 2. TENANT_SCOPE guard (tenant isolation)
+     * 3. RATE_LIMIT guard (rate limiting)
+     * 4. Compliance guards (KYC, AML, HIPAA)
      * 
      * @param command Command instance
      * @param userId User ID
      * @param tenantId Tenant ID
-     * @throws PermissionError Nếu không có quyền
-     * @throws TenantScopeError Nếu vi phạm tenant scope
+     * @param ipAddress Client IP address (cho rate limiting)
+     * @throws PermissionError Nếu không có permission (auth guard failed)
+     * @throws ValueError Nếu vi phạm tenant isolation (tenant_scope guard failed)
+     * @throws RuntimeError Nếu vượt rate limit hoặc compliance check failed
      */
-    async check(command: {{ command.id }}, userId?: string, tenantId?: string): Promise<void> {
+    async check(
+        command: {{ command.id }},
+        userId?: string,
+        tenantId?: string,
+        ipAddress?: string,
+    ): Promise<void> {
 {% if command.guards %}
 {% for guard in command.guards %}
-        // Check {{ guard.type }} guard
-        if ('{{ guard.type }}' === 'auth') {
-            await this._checkAuthGuard(command, userId);
-        }
+{% if guard.type == 'auth' %}
+        // Check AUTH guard (permission)
+        await this._checkAuthGuard(command, userId);
 
-        if ('{{ guard.type }}' === 'tenant_scope') {
-            await this._checkTenantGuard(command, tenantId);
-        }
+{% elif guard.type == 'tenant_scope' %}
+        // Check TENANT_SCOPE guard (tenant isolation)
+        await this._checkTenantGuard(command, tenantId);
+
+{% elif guard.type == 'rate_limit' %}
+        // Check RATE_LIMIT guard
+        await this._checkRateLimitGuard(userId, ipAddress);
+
+{% elif guard.type == 'kyc_check' %}
+        // Check KYC compliance guard (RX03)
+        await this._checkKycGuard(userId);
+
+{% elif guard.type == 'aml_screening' %}
+        // Check AML screening guard (RX03)
+        await this._checkAmlGuard(command, userId);
+
+{% elif guard.type == 'hipaa_access' %}
+        // Check HIPAA access guard (RX04)
+        await this._checkHipaaGuard(userId);
+
+{% endif %}
 {% endfor %}
 {% else %}
         // No guards to check
@@ -58,44 +106,154 @@ export class {{ command.id }}Guards {
 {% for guard in command.guards %}
 {% if guard.type == 'auth' %}
     /**
-     * Kiểm tra auth guard.
+     * Kiểm tra AUTH guard (permission checking - RBAC).
      * 
      * @param command Command instance
      * @param userId User ID
-     * @throws PermissionError Nếu không có permission: {{ guard.permission }}
+     * @throws PermissionError Nếu user không được xác thực hoặc không có permission
      */
     private async _checkAuthGuard(command: {{ command.id }}, userId?: string): Promise<void> {
         if (!userId) {
-            throw new Error('User không được xác thực');
+            throw new PermissionError('User không được xác thực');
         }
 
-        // TODO: Integrate với auth service
-        // const hasPermission = await authService.checkPermission(userId, '{{ guard.permission }}');
-        // if (!hasPermission) {
-        //     throw new PermissionError(`User không có permission: {{ guard.permission }}`);
-        // }
-    }
+{% if guard.permission %}
+        // Check permission với AuthService
+        const hasPermission = await this.authService.checkPermission({
+            userId,
+            permission: '{{ guard.permission }}',
+        });
+        if (!hasPermission) {
+            throw new PermissionError(`User không có permission: {{ guard.permission }}`);
+        }
 {% endif %}
-{% if guard.type == 'tenant_scope' %}
+    }
+
+{% elif guard.type == 'tenant_scope' %}
     /**
-     * Kiểm tra tenant scope guard.
+     * Kiểm tra TENANT_SCOPE guard (tenant isolation).
+     * 
+     * Mode: "{{ guard.mode or 'tenant_isolated' }}"
+     * - tenant_isolated: Data phải thuộc tenant
+     * - tenant_shared: Cho phép cross-tenant với permission
+     * - global: Super admin mode
      * 
      * @param command Command instance
      * @param tenantId Tenant ID
-     * @throws TenantScopeError Nếu vi phạm tenant scope: {{ guard.mode }}
+     * @throws ValueError Nếu tenant_id None hoặc data không thuộc tenant
      */
     private async _checkTenantGuard(command: {{ command.id }}, tenantId?: string): Promise<void> {
         if (!tenantId) {
-            throw new Error('Tenant ID không được xác định');
+            throw new ValueError('Tenant ID không được xác định');
         }
 
-        // TODO: Integrate với tenant service
-        // if ('{{ guard.mode }}' === 'tenant_isolated') {
-        //     if (!await tenantService.belongsToTenant(command, tenantId)) {
-        //         throw new TenantScopeError('Data không thuộc tenant');
-        //     }
-        // }
+        const mode: 'tenant_isolated' | 'tenant_shared' | 'global' = '{{ guard.mode or 'tenant_isolated' }}';
+
+        if (mode === 'tenant_isolated') {
+            // Check command data belongs to tenant
+            const isBelong = await this.tenantService.belongsToTenant({
+                data: command,
+                tenantId,
+            });
+            if (!isBelong) {
+                throw new ValueError('Data không thuộc tenant');
+            }
+        } else if (mode === 'tenant_shared') {
+            // Shared mode - check permission for cross-tenant access
+        } else if (mode === 'global') {
+            // Global mode - super admin, no check needed
+        }
     }
+
+{% elif guard.type == 'rate_limit' %}
+    /**
+     * Kiểm tra RATE_LIMIT guard.
+     * 
+     * Limit: {{ guard.limit or 100 }} requests/{{ guard.window or '60s' }}
+     * 
+     * @param userId User ID
+     * @param ipAddress IP address
+     * @throws RuntimeError Nếu vượt quá rate limit
+     */
+    private async _checkRateLimitGuard(userId?: string, ipAddress?: string): Promise<void> {
+        const limit = {{ guard.limit or 100 }};
+        const window = '{{ guard.window or '60s' }}';
+
+        const isLimited = await this.authService.checkRateLimit({
+            userId,
+            ipAddress,
+            limit,
+            window,
+        });
+        if (isLimited) {
+            throw new RuntimeError(`Vượt quá giới hạn ${limit} requests/${window}`);
+        }
+    }
+
+{% elif guard.type == 'kyc_check' %}
+    /**
+     * Kiểm tra KYC compliance guard (RX03).
+     * 
+     * Yêu cầu: User phải có KYC verification trước khi thực hiện command.
+     * 
+     * @param userId User ID
+     * @throws RuntimeError Nếu user không được xác thực hoặc KYC chưa verified
+     */
+    private async _checkKycGuard(userId?: string): Promise<void> {
+        if (!userId) {
+            throw new RuntimeError('User không được xác thực');
+        }
+
+        const isKycVerified = await this.complianceService.checkKyc({ userId });
+        if (!isKycVerified) {
+            throw new RuntimeError('KYC chưa được xác minh');
+        }
+    }
+
+{% elif guard.type == 'aml_screening' %}
+    /**
+     * Kiểm tra AML screening guard (RX03).
+     * 
+     * Yêu cầu: Transaction data phải qua AML screening.
+     * 
+     * @param command Command instance
+     * @param userId User ID
+     * @throws RuntimeError Nếu AML screening failed
+     */
+    private async _checkAmlGuard(command: {{ command.id }}, userId?: string): Promise<void> {
+        if (!userId) {
+            throw new RuntimeError('User không được xác thực');
+        }
+
+        const isAmlClear = await this.complianceService.checkAml({
+            userId,
+            transactionData: command,
+        });
+        if (!isAmlClear) {
+            throw new RuntimeError('AML screening failed - giao dịch bị từ chối');
+        }
+    }
+
+{% elif guard.type == 'hipaa_access' %}
+    /**
+     * Kiểm tra HIPAA access guard (RX04).
+     * 
+     * Yêu cầu: User phải có HIPAA clearance để truy cập dữ liệu y tế.
+     * 
+     * @param userId User ID
+     * @throws RuntimeError Nếu không có HIPAA clearance
+     */
+    private async _checkHipaaGuard(userId?: string): Promise<void> {
+        if (!userId) {
+            throw new RuntimeError('User không được xác thực');
+        }
+
+        const hasHipaaClearance = await this.complianceService.checkHipaaClearance({ userId });
+        if (!hasHipaaClearance) {
+            throw new RuntimeError('Không có HIPAA clearance để truy cập dữ liệu y tế');
+        }
+    }
+
 {% endif %}
 {% endfor %}
 {% endif %}
