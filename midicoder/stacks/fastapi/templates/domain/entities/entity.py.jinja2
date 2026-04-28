@@ -1,0 +1,79 @@
+{#
+Jinja2 template cho Entity model FastAPI/SQLAlchemy.
+
+Tự động generate SQLAlchemy model code từ Entity DSL.
+
+Usage:
+    context = {
+        "entity": Entity object,
+        "table_name": "users",
+        "imports": {...},
+        "enum_classes": [...],
+        "field_definitions": [...],
+        "relationship_definitions": [...],
+        "table_args": "...",
+        "lifecycle_hooks": "...",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+{{ entity.id }} Entity Model
+
+Tự động generate từ Entity DSL.
+{% if entity.description %}
+{{ entity.description }}
+{% endif %}
+"""
+
+from __future__ import annotations
+
+{% for imp in imports.typing %}
+{{ imp }}
+{% endfor %}
+
+{% for imp in imports.standard %}
+{{ imp }}
+{% endfor %}
+
+{% for imp in imports.sqlalchemy %}
+{{ imp }}
+{% endfor %}
+
+{% if enum_classes %}
+{# Render enum classes #}
+{% for enum_class in enum_classes %}
+{{ enum_class }}
+{% endfor %}
+{% endif %}
+
+
+class {{ entity.id }}(Base):
+    """{{ entity.id }} entity model.
+    {% if entity.description %}
+    
+    {{ entity.description }}
+    {% endif %}
+    """
+    
+    __tablename__ = "{{ table_name }}"
+    
+{# Render field definitions #}
+{% for field_def in field_definitions %}
+{{ field_def }}
+{% endfor %}
+
+{# Render relationship definitions #}
+{% for rel_def in relationship_definitions %}
+{{ rel_def }}
+{% endfor %}
+
+{# Render table args (constraints, indexes) #}
+{{ table_args }}
+
+
+{# Render lifecycle hooks #}
+{{ lifecycle_hooks }}
