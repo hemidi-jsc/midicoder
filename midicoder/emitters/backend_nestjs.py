@@ -140,6 +140,11 @@ class BackendNestJSEmitter:
         for vo in value_objects:
             files.extend(self._emit_value_object(vo, output_dir))
         
+        # Emit queries từ MIR metadata (CP01-Part4)
+        queries = mir.metadata.get("queries", [])
+        for query in queries:
+            files.extend(self._emit_query(query, output_dir))
+        
         return files
     
     def _emit_base_files(self, output_dir: Path) -> list[GeneratedFile]:
@@ -379,6 +384,101 @@ class BackendNestJSEmitter:
             filename=f"{vo_lower}.value-object.ts",
             template="domain/value-object.ts.jinja2",
             context={"vo": vo},
+            capability="CP01",
+        ))
+        
+        return files
+    
+    def _emit_query(self, query: dict[str, Any], output_dir: Path) -> list[GeneratedFile]:
+        """
+        Emit files cho một Query (CP01-Part4).
+        
+        Files được emit:
+        - src/queries/{query_snake}/index.ts
+        - src/queries/{query_snake}/{query_snake}.query.ts
+        - src/queries/{query_snake}/{query_snake}.handler.ts
+        - src/queries/{query_snake}/{query_snake}.validator.ts
+        - src/queries/{query_snake}/{query_snake}.guards.ts
+        - src/queries/{query_snake}/{query_snake}.output.ts
+        
+        Args:
+            query: Query dict từ MIR metadata
+            output_dir: Output directory
+            
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+        
+        query_id = query.get("id", "Query")
+        query_snake = self._to_snake_case(query_id)
+        
+        src_dir = output_dir / "src"
+        queries_dir = src_dir / "queries" / query_snake
+        
+        # Create queries directory
+        queries_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Template context
+        context = {
+            "query": query,
+            "query_id": query_id,
+            "query_snake": query_snake,
+            "query_description": query.get("description", ""),
+            "query_input": query.get("input", []),
+            "query_output": query.get("returns", []),
+            "entity_id": query.get("reads_from", ["Entity"])[0] if query.get("reads_from") else "Entity",
+            "entity_lower": (query.get("reads_from", ["entity"])[0] if query.get("reads_from") else "entity").lower(),
+            "required_permissions": query.get("required_permissions", ["entity.read"]),
+            "required_roles": query.get("required_roles", ["user"]),
+        }
+        
+        # Emit query files (CP01-Part4)
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}.query.ts",
+            template="domain/queries/query.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}.handler.ts",
+            template="domain/queries/query.handler.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}.validator.ts",
+            template="domain/queries/query.validator.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}.guards.ts",
+            template="domain/queries/query.guards.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}.output.ts",
+            template="domain/queries/query.output.ts.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename="index.ts",
+            template="domain/queries/index.ts.jinja2",
+            context=context,
             capability="CP01",
         ))
         

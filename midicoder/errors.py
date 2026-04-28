@@ -258,6 +258,18 @@ class ErrorCode(str, Enum):
     CP01_COMMAND_VALIDATION_FAILED = "MDC-CP01-025"
     CP01_COMMAND_TEMPLATE_NOT_FOUND = "MDC-CP01-026"
     CP01_COMMAND_EMIT_FAILED = "MDC-CP01-027"
+    
+    # =========================================================================
+    # CP01: Query Emitter Errors
+    # =========================================================================
+    CP01_QUERY_NOT_FOUND = "MDC-CP01-028"
+    CP01_QUERY_INVALID_FILTER = "MDC-CP01-029"
+    CP01_QUERY_INVALID_PAGINATION = "MDC-CP01-030"
+    CP01_QUERY_INVALID_PROJECTION = "MDC-CP01-031"
+    CP01_QUERY_TEMPLATE_NOT_FOUND = "MDC-CP01-032"
+    CP01_QUERY_EMIT_FAILED = "MDC-CP01-033"
+    CP01_QUERY_HANDLER_INVALID = "MDC-CP01-034"
+    CP01_QUERY_SCHEMA_INVALID = "MDC-CP01-035"
 
 
 class ExitCode(Enum):

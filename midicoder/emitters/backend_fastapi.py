@@ -140,6 +140,11 @@ class BackendFastAPIEmitter:
         for vo in value_objects:
             files.extend(self._emit_value_object(vo, output_dir))
         
+        # Emit queries từ MIR metadata (CP01-Part4)
+        queries = mir.metadata.get("queries", [])
+        for query in queries:
+            files.extend(self._emit_query(query, output_dir))
+        
         return files
     
     def _emit_base_files(self, output_dir: Path) -> list[GeneratedFile]:
@@ -348,6 +353,103 @@ class BackendFastAPIEmitter:
             filename=f"{vo_lower}.py",
             template="domain/value_object.py.jinja2",
             context={"vo": vo},
+            capability="CP01",
+        ))
+        
+        return files
+    
+    def _emit_query(self, query: dict[str, Any], output_dir: Path) -> list[GeneratedFile]:
+        """
+        Emit files cho một Query (CP01-Part4).
+        
+        Files được emit:
+        - app/queries/{query_id_lower}/{query_id}.py
+        - app/queries/{query_id_lower}/{query_id}_handler.py
+        - app/queries/{query_id_lower}/{query_id}_validator.py
+        - app/queries/{query_id_lower}/{query_id}_guards.py
+        - app/queries/{query_id_lower}/{query_id}_output.py
+        - app/queries/{query_id_lower}/__init__.py
+        
+        Args:
+            query: Query dict từ MIR metadata
+            output_dir: Output directory
+            
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+        
+        query_id = query.get("id", "Query")
+        query_lower = query_id.lower()
+        query_snake = self._to_snake_case(query_id)
+        
+        app_dir = output_dir / "app"
+        queries_dir = app_dir / "queries" / query_snake
+        
+        # Create queries directory
+        queries_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Template context
+        context = {
+            "query": query,
+            "query_id": query_id,
+            "query_snake": query_snake,
+            "query_id_lower": query_lower,
+            "query_description": query.get("description", ""),
+            "query_input": query.get("input", []),
+            "query_output": query.get("returns", []),
+            "entity_id": query.get("reads_from", ["Entity"])[0] if query.get("reads_from") else "Entity",
+            "entity_lower": (query.get("reads_from", ["entity"])[0] if query.get("reads_from") else "entity").lower(),
+            "required_permissions": query.get("required_permissions", ["entity.read"]),
+            "required_roles": query.get("required_roles", ["user"]),
+        }
+        
+        # Emit query files (CP01-Part4)
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}.py",
+            template="domain/queries/query.py.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}_handler.py",
+            template="domain/queries/query_handler.py.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}_validator.py",
+            template="domain/queries/query_validator.py.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}_guards.py",
+            template="domain/queries/query_guards.py.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename=f"{query_snake}_output.py",
+            template="domain/queries/query_output.py.jinja2",
+            context=context,
+            capability="CP01",
+        ))
+        
+        files.append(self._write_file(
+            output_dir=queries_dir,
+            filename="__init__.py",
+            template="domain/queries/__init__.py.jinja2",
+            context=context,
             capability="CP01",
         ))
         
