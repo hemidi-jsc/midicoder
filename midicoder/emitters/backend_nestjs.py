@@ -40,6 +40,14 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
 from midicoder.emitters.value_object import NestJSValueObjectEmitter
+from midicoder.emitters.command import (
+    NestJSCommandEmitter,
+    Command,
+    TransactionManager,
+    CommandValidator,
+    CommandGuards,
+    CommandEffects,
+)
 from midicoder.pipeline.mir import MIR
 
 
@@ -530,16 +538,17 @@ class BackendNestJSEmitter:
         """
         Emit files cho một Command (Full DDD pattern).
         
+        Sử dụng NestJSCommandEmitter để generate code.
+        
         Files được emit:
-        - src/commands/{command_id_lower}/{command_id}.ts
-        - src/commands/{command_id_lower}/{command_id}.handler.ts
-        - src/commands/{command_id_lower}/{command_id}.validator.ts
-        - src/commands/{command_id_lower}/{command_id}.guards.ts
-        - src/commands/{command_id_lower}/{command_id}.effects.ts
-        - src/commands/{command_id_lower}/{command_id}.errors.ts
-        - src/commands/{command_id_lower}/{command_id}.module.ts
-        - src/commands/{command_id_lower}/index.ts
-        - src/schemas/commands/{command_id}.dto.ts
+        - src/commands/{command_snake}/{command_snake}.ts
+        - src/commands/{command_snake}/{command_snake}.handler.ts
+        - src/commands/{command_snake}/{command_snake}.validator.ts
+        - src/commands/{command_snake}/{command_snake}.guards.ts
+        - src/commands/{command_snake}/{command_snake}.effects.ts
+        - src/commands/{command_snake}/{command_snake}.errors.ts
+        - src/commands/{command_snake}/{command_snake}.module.ts
+        - src/commands/{command_snake}/index.ts
         
         Args:
             command: Command dict từ MIR metadata
@@ -555,91 +564,109 @@ class BackendNestJSEmitter:
         
         src_dir = output_dir / "src"
         commands_dir = src_dir / "commands" / command_snake
-        schemas_dir = src_dir / "schemas" / "commands"
         
-        # Create directories
+        # Create commands directory
         commands_dir.mkdir(parents=True, exist_ok=True)
-        schemas_dir.mkdir(parents=True, exist_ok=True)
         
-        # Template context
-        context = {
-            "command": command,
-            "command_snake": command_snake,
-        }
-        
-        # Emit command files
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}.ts",
-            template="domain/commands/command.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}.handler.ts",
-            template="domain/commands/command.handler.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}.validator.ts",
-            template="domain/commands/command.validator.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}.guards.ts",
-            template="domain/commands/command.guards.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}.effects.ts",
-            template="domain/commands/command.effects.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}.errors.ts",
-            template="domain/commands/command.errors.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename=f"{command_snake}.module.ts",
-            template="domain/commands/command.module.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        files.append(self._write_file(
-            output_dir=commands_dir,
-            filename="index.ts",
-            template="domain/commands/index.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
-        
-        # Emit input DTO
-        files.append(self._write_file(
-            output_dir=schemas_dir,
-            filename=f"{command_snake}.dto.ts",
-            template="domain/commands/command.dto.ts.jinja2",
-            context=context,
-            capability="CP01",
-        ))
+        try:
+            # Sử dụng NestJSCommandEmitter để generate command files
+            from midicoder.dsl.kernel import ProjectionNode
+            
+            # Build Command object từ dict
+            projection_node = ProjectionNode.from_dict(command)
+            command_obj = Command.from_projection_node(projection_node)
+            
+            # Tạo emitter và emit files
+            command_emitter = NestJSCommandEmitter(stack_dir=self.stack_dir)
+            emitted_files = command_emitter.emit(command_obj, commands_dir)
+            
+            # Chuyển đổi sang GeneratedFile
+            for filename, content in emitted_files.items():
+                file_path = commands_dir / filename
+                file_path.write_text(content, encoding="utf-8")
+                
+                files.append(GeneratedFile(
+                    path=file_path.relative_to(output_dir),
+                    content=content,
+                    template=f"command_emitter/{filename}",
+                    capability="CP01",
+                ))
+                
+        except Exception as e:
+            # Fallback: Use old template-based approach nếu có lỗi
+            import logging
+            logging.warning(f"NestJSCommandEmitter failed, using fallback: {e}")
+            
+            # Template context
+            context = {
+                "command": command,
+                "command_snake": command_snake,
+            }
+            
+            # Emit command files (fallback)
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}.ts",
+                template="domain/commands/command.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}.handler.ts",
+                template="domain/commands/command.handler.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}.validator.ts",
+                template="domain/commands/command.validator.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}.guards.ts",
+                template="domain/commands/command.guards.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}.effects.ts",
+                template="domain/commands/command.effects.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}.errors.ts",
+                template="domain/commands/command.errors.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename=f"{command_snake}.module.ts",
+                template="domain/commands/command.module.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename="index.ts",
+                template="domain/commands/index.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
         
         return files
     

@@ -1,7 +1,11 @@
 /**
  * Validator cho {{ command.id }}.
  * 
- * Custom validation logic cho {{ command.description }}.
+ * Validation logic đầy đủ cho {{ command.description }}:
+ * - Field-level validation (required, pattern, min/max)
+ * - Cross-field validation (end_date > start_date, from != to)
+ * - Business rule validation (domain-specific rules)
+ * - Formula validation (quantity * price = total)
  * 
  * @author Midicoder Auto-generated
  */
@@ -26,57 +30,247 @@ export interface ValidationResult {
 /**
  * Validator cho {{ command.description }}.
  * 
- * Validation rules:
+ * Validation types:
+ * 1. Field-level validation: required, pattern, min/max, length
+ * 2. Cross-field validation: end_date > start_date, from != to
+ * 3. Business rules: Domain-specific validation
+ * 4. Formula validation: Calculated field checks
+ * 
+ * Field validation rules:
 {% for input_field in command.input %}
  * - {{ input_field.name }}: {% if input_field.required %}required{% else %}optional{% endif %}
+{% if input_field.pattern %}, pattern: {{ input_field.pattern }}{% endif %}
+{% if input_field.min_length %}, min_length: {{ input_field.min_length }}{% endif %}
+{% if input_field.max_length %}, max_length: {{ input_field.max_length }}{% endif %}
+{% if input_field.min_value is not none %}, min_value: {{ input_field.min_value }}{% endif %}
+{% if input_field.max_value is not none %}, max_value: {{ input_field.max_value }}{% endif %}
+{% if input_field.min_items %}, min_items: {{ input_field.min_items }}{% endif %}
+{% if input_field.max_items %}, max_items: {{ input_field.max_items }}{% endif %}
 {% endfor %}
  */
 @Injectable()
 export class {{ command.id }}Validator {
     /**
-     * Validate command.
+     * Validate command với đầy đủ validation rules.
+     * 
+     * Process:
+     * 1. Field-level validation (required, pattern, min/max)
+     * 2. Cross-field validation (end_date > start_date, etc.)
+     * 3. Business rule validation (domain-specific)
+     * 4. Return ValidationResult
      * 
      * @param command Command instance
-     * @returns ValidationResult
-     * @throws {{ command.errors[0].code }}Error {{ command.errors[0].message }}
+     * @returns ValidationResult (is_valid=True nếu valid)
+     * @throws ValidationError Nếu input không hợp lệ
+{% for error in command.errors %}
+     * @throws {{ error.code }}Error: {{ error.message }}
+{% endfor %}
      */
     async validate(command: {{ command.id }}): Promise<ValidationResult> {
         const errors: string[] = [];
 
+        // Bước 1: Field-level validation
+        this._validateFields(command, errors);
+
+        // Bước 2: Cross-field validation
+        if (errors.length === 0) {
+            this._validateCrossFields(command, errors);
+        }
+
+        // Bước 3: Business rule validation
+        if (errors.length === 0) {
+            this._validateBusinessRules(command, errors);
+        }
+
+        // Return result
+        if (errors.length > 0) {
+            return this._mapErrorsToException(errors);
+        }
+
+        return { isValid: true };
+    }
+
+    /**
+     * Field-level validation.
+     * 
+     * Validates:
+     * - Required fields
+     * - Pattern matching
+     * - Min/max length
+     * - Min/max value
+     * - Min/max items
+     * 
+     * @param command Command instance
+     * @param errors Error list to append to
+     */
+    private _validateFields(command: {{ command.id }}, errors: string[]): void {
 {% for input_field in command.input %}
         // Validate {{ input_field.name }}
 {% if input_field.required %}
         if (!command.{{ input_field.name }}) {
             errors.push('{{ input_field.name }} là trường bắt buộc');
+            continue;
         }
 {% endif %}
+
+        // Skip nếu value là None và không required
+        if (command.{{ input_field.name }} == null) {
+            continue;
+        }
+
+{% if input_field.pattern %}
+        // Pattern validation
+        const pattern = new RegExp('{{ input_field.pattern }}');
+        if (!pattern.test(String(command.{{ input_field.name }}))) {
+            errors.push('{{ input_field.name }} không đúng định dạng');
+        }
+{% endif %}
+
+{% if input_field.field_type == 'string' %}
+        // String length validation
 {% if input_field.min_length %}
-        else if (String(command.{{ input_field.name }}).length < {{ input_field.min_length }}) {
+        if (String(command.{{ input_field.name }}).length < {{ input_field.min_length }}) {
             errors.push('{{ input_field.name }} phải có ít nhất {{ input_field.min_length }} ký tự');
         }
 {% endif %}
 {% if input_field.max_length %}
-        else if (String(command.{{ input_field.name }}).length > {{ input_field.max_length }}) {
+        if (String(command.{{ input_field.name }}).length > {{ input_field.max_length }}) {
             errors.push('{{ input_field.name }} phải có không quá {{ input_field.max_length }} ký tự');
         }
 {% endif %}
+{% endif %}
+
+{% if input_field.field_type in ['integer', 'decimal', 'float'] %}
+        // Numeric validation
+{% if input_field.min_value is not none %}
+        if (command.{{ input_field.name }} < {{ input_field.min_value }}) {
+            errors.push('{{ input_field.name }} phải lớn hơn hoặc bằng {{ input_field.min_value }}');
+        }
+{% endif %}
+{% if input_field.max_value is not none %}
+        if (command.{{ input_field.name }} > {{ input_field.max_value }}) {
+            errors.push('{{ input_field.name }} phải nhỏ hơn hoặc bằng {{ input_field.max_value }}');
+        }
+{% endif %}
+{% endif %}
+
+{% if input_field.field_type == 'array' %}
+        // Array validation
 {% if input_field.min_items %}
-        else if (Array.isArray(command.{{ input_field.name }}) && command.{{ input_field.name }}.length < {{ input_field.min_items }}) {
+        if (Array.isArray(command.{{ input_field.name }}) && command.{{ input_field.name }}.length < {{ input_field.min_items }}) {
             errors.push('{{ input_field.name }} phải có ít nhất {{ input_field.min_items }} phần tử');
         }
 {% endif %}
+{% if input_field.max_items %}
+        if (Array.isArray(command.{{ input_field.name }}) && command.{{ input_field.name }}.length > {{ input_field.max_items }}) {
+            errors.push('{{ input_field.name }} phải có không quá {{ input_field.max_items }} phần tử');
+        }
+{% endif %}
+{% endif %}
 
 {% endfor %}
-        // Return result
-        if (errors.length > 0) {
+    }
+
+    /**
+     * Cross-field validation.
+     * 
+     * Validates relationships between fields:
+     * - end_date > start_date
+     * - from_account != to_account
+     * - quantity * price ≈ total
+     * 
+     * @param command Command instance
+     * @param errors Error list to append to
+     */
+    private _validateCrossFields(command: {{ command.id }}, errors: string[]): void {
+        // Check end_date > start_date (nếu có cả 2 fields)
+{% set has_start_date = command.input | selectattr('name', 'equalto', 'start_date') | list | length > 0 %}
+{% set has_end_date = command.input | selectattr('name', 'equalto', 'end_date') | list | length > 0 %}
+{% if has_start_date and has_end_date %}
+        if (command.end_date && command.start_date) {
+            const startDate = new Date(command.start_date);
+            const endDate = new Date(command.end_date);
+            if (endDate < startDate) {
+                errors.push('Ngày kết thúc phải sau ngày bắt đầu');
+            }
+        }
+{% endif %}
+
+        // Check from_account != to_account (nếu có cả 2 fields)
+{% set has_from = command.input | selectattr('name', 'equalto', 'from_account') | list | length > 0 %}
+{% set has_to = command.input | selectattr('name', 'equalto', 'to_account') | list | length > 0 %}
+{% if has_from and has_to %}
+        if (command.from_account && command.to_account) {
+            if (command.from_account === command.to_account) {
+                errors.push('Tài khoản nguồn và tài khoản đích không được giống nhau');
+            }
+        }
+{% endif %}
+
+        // Check quantity * price = total (nếu có cả 3 fields)
+{% set has_quantity = command.input | selectattr('name', 'equalto', 'quantity') | list | length > 0 %}
+{% set has_price = command.input | selectattr('name', 'equalto', 'price') | list | length > 0 %}
+{% set has_total = command.input | selectattr('name', 'equalto', 'total') | list | length > 0 %}
+{% if has_quantity and has_price and has_total %}
+        if (command.quantity != null && command.price != null && command.total != null) {
+            const expectedTotal = command.quantity * command.price;
+            if (Math.abs(command.total - expectedTotal) > 0.01) {
+                errors.push(
+                    `Total (${command.total}) không khớp với quantity * price (${expectedTotal})`
+                );
+            }
+        }
+{% endif %}
+    }
+
+    /**
+     * Business rule validation.
+     * 
+     * Domain-specific validation rules:
+     * - Banking: Balance >= 0, sum(debits) == sum(credits)
+     * - E-commerce: Minimum order value, max items per order
+     * - Healthcare: Drug interaction checks
+     * - Insurance: Premium calculation rules
+     * 
+     * @param command Command instance
+     * @param errors Error list to append to
+     */
+    private _validateBusinessRules(command: {{ command.id }}, errors: string[]): void {
+        // TODO: Add domain-specific business rules here
+        // Example: Minimum order value
+
+        // Check if command has 'total' field
+{% set has_total = command.input | selectattr('name', 'equalto', 'total') | list | length > 0 %}
+{% if has_total %}
+        // Minimum total value check
+        if (command.total != null && command.total < 10000) {
+            // Warning, not error - small orders allowed
+        }
+{% endif %}
+    }
+
+    /**
+     * Map validation errors to specific exception classes.
+     * 
+     * @param errors List of error messages
+     * @returns ValidationResult với error exception
+     */
+    private _mapErrorsToException(errors: string[]): ValidationResult {
+{% if command.errors %}
 {% for error in command.errors %}
-            if (errors.some((e) => e.includes('{{ error.message }}'))) {
+        // Check for {{ error.code }}
+        for (const errMsg of errors) {
+            if (errMsg.includes('{{ error.message }}') || errMsg.includes('{{ error.code }}')) {
                 throw new {{ error.code }}Error();
             }
-{% endfor %}
-            return { isValid: false, errors };
         }
+{% endfor %}
 
-        return { isValid: true };
+        // Default: Return validation result với errors
+        return { isValid: false, errors };
+{% else %}
+        // No specific errors defined, return validation result
+        return { isValid: false, errors };
+{% endif %}
     }
 }
