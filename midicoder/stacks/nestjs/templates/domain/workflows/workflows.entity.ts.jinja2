@@ -1,0 +1,28 @@
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+
+@Entity('workflow_instances')
+export class WorkflowEntity {
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
+
+    @Column({ type: 'varchar', length: 255 })
+    workflowName: string;
+
+    @Column({ type: 'varchar', length: 255 })
+    entityType: string;
+
+    @Column({ type: 'uuid' })
+    entityId: string;
+
+    @Column({ type: 'varchar', length: 255 })
+    currentState: string;
+
+    @Column({ type: 'uuid' })
+    tenantId: string;
+
+    @CreateDateColumn()
+    createdAt: Date;
+
+    @UpdateDateColumn()
+    updatedAt: Date;
+}

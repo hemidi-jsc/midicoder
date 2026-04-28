@@ -1,0 +1,9 @@
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+
+@Injectable()
+export class WorkflowGuard implements CanActivate {
+    canActivate(context: ExecutionContext): boolean {
+        // TODO: Implement workflow guard logic
+        return true;
+    }
+}

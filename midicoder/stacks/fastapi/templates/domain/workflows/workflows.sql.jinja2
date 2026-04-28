@@ -1,0 +1,53 @@
+-- Migration file cho workflows
+-- Created by Midicoder Workflow Emitter
+
+-- Table: workflow_instances
+CREATE TABLE IF NOT EXISTS workflow_instances (
+    id UUID PRIMARY KEY,
+    workflow_name VARCHAR(255) NOT NULL,
+    entity_type VARCHAR(255) NOT NULL,
+    entity_id UUID NOT NULL,
+    current_state VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id UUID NOT NULL
+);
+
+CREATE INDEX idx_workflow_instances_workflow ON workflow_instances(workflow_name);
+CREATE INDEX idx_workflow_instances_entity ON workflow_instances(entity_type, entity_id);
+CREATE INDEX idx_workflow_instances_tenant ON workflow_instances(tenant_id);
+CREATE UNIQUE INDEX idx_workflow_instances_unique ON workflow_instances(workflow_name, entity_type, entity_id, tenant_id);
+
+-- Table: workflow_events
+CREATE TABLE IF NOT EXISTS workflow_events (
+    id UUID PRIMARY KEY,
+    instance_id UUID REFERENCES workflow_instances(id) ON DELETE CASCADE,
+    event_name VARCHAR(255) NOT NULL,
+    from_state VARCHAR(255),
+    to_state VARCHAR(255) NOT NULL,
+    transition_id VARCHAR(255),
+    payload JSONB DEFAULT '{}',
+    occurred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id UUID NOT NULL
+);
+
+CREATE INDEX idx_workflow_events_instance ON workflow_events(instance_id);
+CREATE INDEX idx_workflow_events_transition ON workflow_events(transition_id);
+
+-- Table: workflow_transitions_log
+CREATE TABLE IF NOT EXISTS workflow_transitions_log (
+    id UUID PRIMARY KEY,
+    instance_id UUID REFERENCES workflow_instances(id) ON DELETE CASCADE,
+    transition_id VARCHAR(255) NOT NULL,
+    event_name VARCHAR(255) NOT NULL,
+    triggered_by UUID,
+    guard_results JSONB DEFAULT '{}',
+    effects_executed JSONB DEFAULT '[]',
+    status VARCHAR(50) NOT NULL,
+    error_message TEXT,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id UUID NOT NULL
+);
+
+CREATE INDEX idx_transition_log_instance ON workflow_transitions_log(instance_id);
+CREATE INDEX idx_transition_log_transition ON workflow_transitions_log(transition_id);
