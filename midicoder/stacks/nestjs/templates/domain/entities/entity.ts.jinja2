@@ -1,0 +1,49 @@
+{#
+Jinja2 template cho Entity NestJS/TypeORM.
+
+Tự động generate TypeORM entity code từ Entity DSL.
+
+Usage:
+    context = {
+        "entity": Entity object,
+        "table_name": "users",
+        "imports": {...},
+        "property_definitions": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * {{ entity.id }} Entity
+ * 
+ * Tự động generate từ Entity DSL.
+ {% if entity.description %}
+ * {{ entity.description }}
+ {% endif %}
+ */
+
+import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+{% if imports.typeorm | length > 1 %}
+{{ imports.typeorm[1] }}
+{% endif %}
+{% for imp in imports.common %}
+{{ imp }}
+{% endfor %}
+
+@Entity('{{ table_name }}')
+export class {{ entity.id }} {
+    /** {{ entity.id }} entity model.
+    {% if entity.description %}
+    
+     * {{ entity.description }}
+    {% endif %}
+     */
+    
+{# Render property definitions #}
+{% for prop_def in property_definitions %}
+{{ prop_def }}
+{% endfor %}
+}
