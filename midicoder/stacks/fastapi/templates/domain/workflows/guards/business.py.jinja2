@@ -1,0 +1,36 @@
+"""
+Mô-đun Business Guard.
+
+Cung cấp:
+- BusinessGuard: Guard cho business rule validation
+"""
+
+from typing import Any
+import ast
+
+
+class BusinessGuard:
+    """
+    Guard evaluator cho business rule guards.
+    
+    Evaluate business conditions để đảm bảo transition hợp lệ theo business logic.
+    """
+
+    async def evaluate(
+        self,
+        condition: str,
+        context: dict[str, Any],
+    ) -> bool:
+        """
+        Evaluate business rule guard.
+        
+        Args:
+            condition: Business condition expression
+            context: Transition context với data
+            
+        Returns:
+            True nếu condition pass, False nếu fail
+        """
+        # TODO: Implement safe expression evaluation
+        # Example: "items.length > 0" → evaluate against context
+        return True

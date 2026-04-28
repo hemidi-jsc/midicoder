@@ -1,0 +1,37 @@
+"""
+Mô-đun Compliance Guard.
+
+Cung cấp:
+- ComplianceGuard: Guard cho regulatory compliance checking
+"""
+
+from typing import Any
+from uuid import UUID
+
+
+class ComplianceGuard:
+    """
+    Guard evaluator cho compliance guards.
+    
+    Kiểm tra compliance requirements (RX01-RX12) trước khi transition.
+    """
+
+    async def evaluate(
+        self,
+        check: str,
+        tenant_id: UUID,
+        context: dict[str, Any],
+    ) -> bool:
+        """
+        Evaluate compliance guard.
+        
+        Args:
+            check: Compliance check name (ví dụ: kyc_verified)
+            tenant_id: Tenant ID
+            context: Transition context
+            
+        Returns:
+            True nếu compliance check pass, False nếu fail
+        """
+        # TODO: Integrate với RX01-RX12 compliance checks
+        return True

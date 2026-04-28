@@ -1,0 +1,39 @@
+"""
+Mô-đun Permission Guard.
+
+Cung cấp:
+- PermissionGuard: Guard cho permission checking
+"""
+
+from typing import Any
+from uuid import UUID
+
+
+class PermissionGuard:
+    """
+    Guard evaluator cho permission-based guards.
+    
+    Kiểm tra user có permission cần thiết không trước khi transition.
+    """
+
+    async def evaluate(
+        self,
+        permission: str,
+        user_id: UUID,
+        resource: str,
+        context: dict[str, Any],
+    ) -> bool:
+        """
+        Evaluate permission guard.
+        
+        Args:
+            permission: Permission string cần kiểm tra
+            user_id: User ID
+            resource: Resource string (entity_type:entity_id)
+            context: Transition context
+            
+        Returns:
+            True nếu user có permission, False nếu không
+        """
+        # TODO: Integrate với CP03/CP04 Auth system
+        return True

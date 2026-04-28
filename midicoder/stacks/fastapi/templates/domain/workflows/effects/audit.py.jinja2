@@ -1,0 +1,41 @@
+"""
+Mô-đun Audit Effect.
+
+Cung cấp:
+- AuditEffect: Effect cho audit logging
+"""
+
+from typing import Any
+from uuid import UUID
+
+
+class AuditEffect:
+    """
+    Effect executor cho audit logging.
+    
+    Log audit trail khi transition fire.
+    """
+
+    async def execute(
+        self,
+        action: str,
+        user_id: UUID | None,
+        entity_type: str,
+        entity_id: UUID,
+        details: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Execute audit logging effect.
+        
+        Args:
+            action: Audit action name
+            user_id: User ID (optional)
+            entity_type: Entity type
+            entity_id: Entity ID
+            details: Additional details
+            
+        Returns:
+            Result với log status
+        """
+        # TODO: Integrate với CP14 Audit (RX11 compliance)
+        return {"status": "logged", "action": action}

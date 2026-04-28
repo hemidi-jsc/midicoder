@@ -1,0 +1,34 @@
+"""
+Mô-đun Command Effect.
+
+Cung cấp:
+- CommandEffect: Effect cho command execution
+"""
+
+from typing import Any
+
+
+class CommandEffect:
+    """
+    Effect executor cho command execution.
+    
+    Execute commands khi transition fire.
+    """
+
+    async def execute(
+        self,
+        command_name: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Execute command effect.
+        
+        Args:
+            command_name: Command name để execute
+            payload: Command payload
+            
+        Returns:
+            Result với execution status
+        """
+        # TODO: Integrate với CP01 Commands
+        return {"status": "executed", "command": command_name}

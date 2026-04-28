@@ -1,0 +1,11 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { WorkflowEntity } from './workflows.entity';
+import { WorkflowEngine } from './workflow.engine';
+
+@Module({
+    imports: [TypeOrmModule.forFeature([WorkflowEntity])],
+    providers: [WorkflowEngine],
+    exports: [WorkflowEngine],
+})
+export class WorkflowsModule {}

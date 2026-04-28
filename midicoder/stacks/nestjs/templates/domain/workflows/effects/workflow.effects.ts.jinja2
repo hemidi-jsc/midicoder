@@ -1,0 +1,39 @@
+import { Injectable } from '@nestjs/common';
+
+export interface TransitionContext {
+    workflowName: string;
+    instanceId: string;
+    entityType: string;
+    entityId: string;
+    fromState: string;
+    toState: string;
+    userId?: string;
+    tenantId?: string;
+}
+
+@Injectable()
+export class WorkflowEffects {
+    async publishEvent(context: TransitionContext, eventName: string): Promise<void> {
+        // TODO: Integrate with Event Bus
+        console.log(`Published event: ${eventName}`);
+    }
+
+    async executeCommand(context: TransitionContext, commandName: string): Promise<void> {
+        // TODO: Execute command
+        console.log(`Executed command: ${commandName}`);
+    }
+
+    async sendNotification(
+        context: TransitionContext,
+        channel: string,
+        template: string,
+    ): Promise<void> {
+        // TODO: Send notification
+        console.log(`Sent notification via ${channel}: ${template}`);
+    }
+
+    async logAudit(context: TransitionContext, action: string): Promise<void> {
+        // TODO: Log audit
+        console.log(`Logged audit: ${action}`);
+    }
+}

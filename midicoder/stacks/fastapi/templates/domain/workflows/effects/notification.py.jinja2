@@ -1,0 +1,38 @@
+"""
+Mô-đun Notification Effect.
+
+Cung cấp:
+- NotificationEffect: Effect cho sending notifications
+"""
+
+from typing import Any
+
+
+class NotificationEffect:
+    """
+    Effect executor cho notifications.
+    
+    Send notifications (email, sms, push) khi transition fire.
+    """
+
+    async def execute(
+        self,
+        channel: str,
+        template: str,
+        recipient: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Execute notification effect.
+        
+        Args:
+            channel: Notification channel (email, sms, push)
+            template: Template name
+            recipient: Recipient address
+            payload: Template payload
+            
+        Returns:
+            Result với send status
+        """
+        # TODO: Integrate với CP12 Notification
+        return {"status": "sent", "channel": channel, "template": template}
