@@ -537,6 +537,18 @@ class MidicoderErrorManager:
         ErrorCode.INFRA_WRITE_FAILED: "Không thể ghi file docker-compose.yml.",
         ErrorCode.INFRA_INVALID_CONFIG: "Infrastructure configuration không hợp lệ.",
         
+        # CP01 Value Object Errors
+        ErrorCode.CP01_VALUE_OBJECT_NOT_FOUND: "Value Object không tìm thấy trong DSL.",
+        ErrorCode.CP01_VALUE_OBJECT_INVALID_FIELD_TYPE: "Field type không hợp lệ cho Value Object.",
+        ErrorCode.CP01_VALUE_OBJECT_INVALID_VALIDATION_RULE: "Validation rule không hợp lệ.",
+        ErrorCode.CP01_VALUE_OBJECT_TEMPLATE_NOT_FOUND: "Template cho Value Object không tìm thấy.",
+        ErrorCode.CP01_VALUE_OBJECT_EMIT_FAILED: "Không thể emit Value Object code.",
+        ErrorCode.CP01_VALUE_OBJECT_NESTED_REF_NOT_FOUND: "Nested reference không tìm thấy.",
+        ErrorCode.CP01_VALUE_OBJECT_METHOD_SIGNATURE_INVALID: "Method signature không hợp lệ.",
+        ErrorCode.CP01_VALUE_OBJECT_COMPARABLE_NO_HASH: "Comparable Value Object cần __hash__ method.",
+        ErrorCode.CP01_VALUE_OBJECT_IMMUTABLE_HAS_SETTER: "Immutable Value Object không thể có setter.",
+        ErrorCode.CP01_VALUE_OBJECT_INVALID_TAG: "Tag không hợp lệ cho Value Object.",
+        
         # Version Management Errors
         ErrorCode.VERSION_NOT_FOUND: "Version không tồn tại. Vui lòng kiểm tra tên version.",
         ErrorCode.VERSION_INVALID_NAME: "Tên version không hợp lệ. Sử dụng SemVer format (ví dụ: v1.0.0, v1.0.1-alpha).",
