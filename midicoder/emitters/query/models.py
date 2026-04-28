@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 
 # ============================================================================
@@ -231,6 +231,145 @@ class FilterExpression:
             return col.isnot(None)
         else:
             raise ValueError(f"Unsupported operator: {self.operator}")
+
+
+@dataclass
+class FilterGroup:
+    """
+    Nhóm filters với AND/OR logic (nested support).
+    
+    Theo clarification: Cần support complex filters với AND/OR nested.
+    
+    Attributes:
+        operator: Operator nhóm ("and" hoặc "or")
+        filters: Danh sách FilterExpression hoặc FilterGroup con (nested)
+    
+    Example:
+        # (status = 'active' AND created_at > '2026-01-01') OR tenant_id = 'abc'
+        FilterGroup(
+            operator="or",
+            filters=[
+                FilterGroup(
+                    operator="and",
+                    filters=[
+                        FilterExpression("status", FilterOp.EQ, "active"),
+                        FilterExpression("created_at", FilterOp.GT, "2026-01-01"),
+                    ]
+                ),
+                FilterExpression("tenant_id", FilterOp.EQ, "abc"),
+            ]
+        )
+    """
+    operator: Literal["and", "or"]
+    filters: list[FilterExpression | "FilterGroup"]
+
+    def to_sqlalchemy(self) -> Any:
+        """
+        Chuyển filter group sang SQLAlchemy condition.
+        
+        Returns:
+            SQLAlchemy condition expression với AND/OR logic
+        """
+        if not self.filters:
+            # Empty group returns True (no filter)
+            from sqlalchemy import true
+            return true()
+
+        # Convert first filter to start the condition
+        first_filter = self.filters[0]
+        if isinstance(first_filter, FilterGroup):
+            result = first_filter.to_sqlalchemy()
+        else:
+            result = first_filter.to_sqlalchemy()
+
+        # Combine remaining filters with AND/OR
+        for flt in self.filters[1:]:
+            if isinstance(flt, FilterGroup):
+                condition = flt.to_sqlalchemy()
+            else:
+                condition = flt.to_sqlalchemy()
+
+            if self.operator == "and":
+                result = result & condition
+            else:  # "or"
+                result = result | condition
+
+        return result
+
+
+@dataclass
+class PHIMaskingConfig:
+    """
+    Configuration cho PHI (Protected Health Information) masking.
+    
+    Theo RX04 HIPAA compliance: Cần mask sensitive healthcare data.
+    
+    Attributes:
+        enabled: Có bật PHI masking không
+        mask_patterns: Danh sách patterns để mask (regex)
+        allowed_fields: Danh sách fields được phép expose không mask
+        default_mask_value: Giá trị mặc định để thay thế (default: "***")
+    
+    Example:
+        config = PHIMaskingConfig(
+            enabled=True,
+            mask_patterns=["^SSN$", "^medicaid_id"],
+            allowed_fields=["patient_name", "diagnosis"],
+            default_mask_value="[REDACTED]"
+        )
+    """
+    enabled: bool = True
+    mask_patterns: list[str] = field(default_factory=list)
+    allowed_fields: list[str] = field(default_factory=list)
+    default_mask_value: str = "***"
+
+    def should_mask(self, field_name: str) -> bool:
+        """
+        Kiểm tra field có cần mask không.
+        
+        Args:
+            field_name: Tên field cần kiểm tra
+            
+        Returns:
+            True nếu field cần được mask
+        """
+        if not self.enabled:
+            return False
+
+        # Allowed fields are not masked
+        if field_name in self.allowed_fields:
+            return False
+
+        # Check if field matches any mask pattern
+        import re
+        for pattern in self.mask_patterns:
+            if re.match(pattern, field_name, re.IGNORECASE):
+                return True
+
+        # Check common PHI fields
+        phi_fields = [
+            "ssn", "social_security", "medicaid_id", "medicare_id",
+            "patient_id", "mrn", "medical_record_number"
+        ]
+        if field_name.lower() in phi_fields:
+            return True
+
+        return False
+
+    def mask_value(self, field_name: str, value: str) -> str:
+        """
+        Mask giá trị của field nếu cần.
+        
+        Args:
+            field_name: Tên field
+            value: Giá trị gốc
+            
+        Returns:
+            Giá trị đã mask hoặc gốc
+        """
+        if self.should_mask(field_name):
+            return self.default_mask_value
+        return value
 
 
 @dataclass
@@ -669,6 +808,8 @@ __all__ = [
     "QueryGuard",
     "QueryEffect",
     "FilterExpression",
+    "FilterGroup",
+    "PHIMaskingConfig",
     "SortExpression",
     "PaginationConfig",
     "ProjectionConfig",
