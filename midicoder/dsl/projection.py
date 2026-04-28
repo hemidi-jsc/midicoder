@@ -67,29 +67,200 @@ class EntityParams(TypedDict, total=False):
     source: str
 
 
-class ValueObjectParams(TypedDict, total=False):
+# ============================================================================
+# Extended Value Object DSL
+# ============================================================================
+# Extensions cho Value Object để support 100 industries với:
+# - Complex field types (object, array, map, ref)
+# - Computed/derived fields
+# - Inheritance hierarchy
+# - Behavior/methods
+# - Validation rules
+# - Compliance tags
+
+
+class FieldDefinition(TypedDict, total=False):
     """
-    Tham số cho Value Object nodes.
-
-    Value Object là các đối tượng được xác định bởi giá trị, không có identity.
-    Thường được dùng cho money, email, address, etc.
-
+    Định nghĩa một field trong Value Object.
+    
+    Support cả basic types và complex types.
+    
+    Basic Types:
+        - string, integer, decimal, boolean, datetime, uuid, enum
+    
+    Complex Types:
+        - object: Nested object với fields
+        - array: Mảng với item_type hoặc item_fields
+        - map: Dictionary với key_type và value_type
+        - ref: Reference đến Entity hoặc Value Object khác
+    
+    Computed Fields:
+        - computed: True để đánh dấu field là computed
+        - formula: Công thức tính toán
+        - depends_on: Danh sách fields mà computed field phụ thuộc
+    
+    Validation:
+        - required: Có bắt buộc không
+        - default: Giá trị mặc định
+        - min, max: Range validation (number/decimal)
+        - min_length, max_length: String length validation
+        - pattern: Regex pattern cho string
+        - precision, scale: Decimal precision/scale
+    
     Fields:
-        id: Định danh của value object
-        description: Mô tả value object
-        fields: Danh sách các trường
-        immutable: Có bất biến không (mặc định: True)
+        name: Tên field
+        type: Loại dữ liệu
+        required: Có bắt buộc không
+        default: Giá trị mặc định
+        description: Mô tả field
+        
+        # Type-specific
+        precision: int  # decimal precision
+        scale: int  # decimal scale
+        min_length: int  # string min length
+        max_length: int  # string max length
+        pattern: str  # string regex pattern
+        min: Any  # number min value
+        max: Any  # number max value
+        enum_values: list[str]  # enum values
+        enum_class: str  # enum class reference
+        
+        # Complex types
+        fields: list["FieldDefinition"]  # object type fields
+        key_type: str  # map key type
+        value_type: str  # map value type
+        item_type: str  # array item type (simple)
+        item_fields: list["FieldDefinition"]  # array item fields (complex)
+        
+        # References
+        ref_type: str  # "entity" or "value_object"
+        ref_to: str  # ID of referenced entity/VO
+        
+        # Computed
+        computed: bool  # Is computed field
+        formula: str  # Computation formula
+        depends_on: list[str]  # Dependent field names
+    """
+    
+    name: str
+    type: str
+    required: bool
+    default: Any
+    description: str
+    
+    # Type-specific
+    precision: int
+    scale: int
+    min_length: int
+    max_length: int
+    length: int  # alias for max_length
+    pattern: str
+    min: Any
+    max: Any
+    enum_values: list[str]
+    enum_class: str
+    
+    # Complex types
+    fields: list["FieldDefinition"]
+    key_type: str
+    value_type: str
+    item_type: str
+    item_fields: list["FieldDefinition"]
+    
+    # References
+    ref_type: str
+    ref_to: str
+    
+    # Computed
+    computed: bool
+    formula: str
+    depends_on: list[str]
+
+
+class MethodDefinition(TypedDict, total=False):
+    """
+    Định nghĩa một method trong Value Object.
+    
+    Methods cho phép Value Object có behavior với business logic.
+    
+    Ví dụ:
+        Money.add(other: Money) -> Money
+        Money.convert_to(currency: str) -> Money
+    
+    Fields:
+        name: Tên method
+        description: Mô tả method
+        params: Danh sách parameters
+        returns: Return type
+        logic: Mô tả business logic
+        side_effects: Danh sách side effects (optional)
+        async_: Có phải async method không
+    """
+    
+    name: str
+    description: str
+    params: list[FieldDefinition]
+    returns: str
+    logic: str
+    side_effects: list[str]
+    async_: bool
+
+
+class ValidationRule(TypedDict, total=False):
+    """
+    Validation rule cho Value Object.
+    
+    Support cross-field validation với error codes chuẩn.
+    
+    Fields:
+        name: Tên rule
+        condition: Điều kiện validation (expression)
+        error_code: Error code chuẩn (MDC-VO-XXX-XXX)
+        error_message: Message hiển thị (tiếng Việt)
+        severity: Mức độ (warning, error)
+    """
+    
+    name: str
+    condition: str
+    error_code: str
+    error_message: str
+    severity: str
+
+
+class ExtendedValueObjectParams(TypedDict, total=False):
+    """
+    Extended Value Object DSL cho 100 industries.
+    
+    Mở rộng ValueObjectParams với:
+    - Inheritance (extends)
+    - Methods
+    - Validation rules
+    - Compliance
+    
+    Fields:
+        id: Định danh VO
+        description: Mô tả VO
+        extends: Parent VO ID (cho inheritance)
+        fields: Danh sách FieldDefinition
+        methods: Danh sách MethodDefinition
+        validation_rules: Danh sách ValidationRule
+        immutable: Có bất biến không
         comparable: Có thể so sánh không
-        tags: Danh sách tags
+        tags: Danh sách tags (pii, healthcare, etc.)
+        compliance: Danh sách compliance requirements
         source: Nguồn định nghĩa
     """
-
+    
     id: str
     description: str
-    fields: list[dict[str, Any]]
+    extends: str  # Parent VO ID for inheritance
+    fields: list[FieldDefinition]
+    methods: list[MethodDefinition]
+    validation_rules: list[ValidationRule]
     immutable: bool
     comparable: bool
     tags: list[str]
+    compliance: list[dict[str, Any]]
     source: str
 
 
@@ -3393,7 +3564,7 @@ class ConsulHealthCheckParams(TypedDict, total=False):
 NodeParams = (
     # Domain Layer
     EntityParams
-    | ValueObjectParams
+    | ExtendedValueObjectParams  # VO với complex fields
     | AggregateParams
     | EnumParams
     | ErrorParams

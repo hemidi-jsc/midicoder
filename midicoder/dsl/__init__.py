@@ -124,9 +124,12 @@ from .projection import (
     # T03-001: Lazy Loading
     LazyProjectionTree,
     LazyNodeLoader,
-    # Layer 2: Domain Layer Params
+    # Layer 2: Domain Layer Params (VO Extensions)
     EntityParams,
-    ValueObjectParams,
+    ExtendedValueObjectParams,  # Value Object với complex fields, methods, validation
+    FieldDefinition,  # Extended field definitions
+    MethodDefinition,  # Value Object methods
+    ValidationRule,  # Cross-field validation
     EnumParams,
     ErrorParams,
     EventParams,
@@ -201,6 +204,70 @@ from .projection import (
     DeprecationNoticeParams,
     # Aggregate (bonus node type)
     AggregateParams,
+    # P2: E-commerce Domain Params
+    ShoppingCartParams,
+    ProductCatalogParams,
+    PaymentGatewayParams,
+    OrderFulfillmentParams,
+    # P2: Finance Domain Params
+    GeneralLedgerParams,
+    FinancialInstrumentParams,
+    CurrencyExchangeParams,
+    TaxRuleParams,
+    # P2: Healthcare Domain Params
+    PatientRecordParams,
+    ClinicalWorkflowParams,
+    MedicationParams,
+    # P2: Education Domain Params
+    CourseParams,
+    GradebookParams,
+    # P2: Trading Domain Params
+    OrderBookParams,
+    TradingSessionParams,
+    FIXProtocolParams,
+    # P2: Logistics Domain Params
+    WarehouseZoneParams,
+    RouteOptimizationParams,
+    # P2: Advanced - Caching & Performance Params
+    CacheStrategyParams,
+    RateLimiterParams,
+    # P2: Advanced - Testing & Quality Params
+    TestSuiteParams,
+    QualityGateParams,
+    # P2: Advanced - Data Management Params
+    DataMigrationParams,
+    BatchJobParams,
+    # P2: Advanced - Messaging Params
+    MessageSchemaParams,
+    DeadLetterQueueParams,
+    # P2: Advanced - Security Params
+    EncryptionKeyParams,
+    SecurityPolicyParams,
+    # P1/P3: Enhanced Rule & Scoring Params
+    RuleScoringParams,
+    RuleMatcherParams,
+    # P2/P3: Enhanced Integration & Protocol Params
+    DeviceIntegrationParams,
+    HL7FHIRSchemaParams,
+    FIXMessageTypesParams,
+    VideoConferencingIntegrationParams,
+    # P3: Advanced Pattern Params
+    ExternalServiceParams,
+    LocalizationParams,
+    CircuitBreakerParams,
+    CalendarScheduleParams,
+    SubledgerParams,
+    # CP06: Kong Gateway Params
+    KongGatewayParams,
+    KongServiceParams,
+    KongRouteParams,
+    KongUpstreamParams,
+    KongPluginParams,
+    # CP06: Consul Service Mesh Params
+    ConsulServiceMeshParams,
+    ConsulServiceParams,
+    ConsulConnectParams,
+    ConsulHealthCheckParams,
 )
 
 from .constraints import (
@@ -374,7 +441,10 @@ __all__ = [
     "LazyNodeLoader",
     # Layer 2: Domain Layer Params
     "EntityParams",
-    "ValueObjectParams",
+    "ExtendedValueObjectParams",  # VO với complex fields
+    "FieldDefinition",  # Extended field definitions
+    "MethodDefinition",  # VO methods
+    "ValidationRule",  # Cross-field validation
     "EnumParams",
     "ErrorParams",
     "EventParams",
@@ -449,59 +519,11 @@ __all__ = [
     "DeprecationNoticeParams",
     # Aggregate (bonus node type)
     "AggregateParams",
-    # P2: E-commerce Domain Params
-    "ShoppingCartParams",
-    "ProductCatalogParams",
-    "PaymentGatewayParams",
-    "OrderFulfillmentParams",
-    # P2: Finance Domain Params
-    "GeneralLedgerParams",
-    "FinancialInstrumentParams",
-    "CurrencyExchangeParams",
-    "TaxRuleParams",
-    # P2: Healthcare Domain Params
-    "PatientRecordParams",
-    "ClinicalWorkflowParams",
-    "MedicationParams",
-    # P2: Education Domain Params
-    "CourseParams",
-    "GradebookParams",
-    # P2: Trading Domain Params
-    "OrderBookParams",
-    "TradingSessionParams",
-    "FIXProtocolParams",
-    # P2: Logistics Domain Params
-    "WarehouseZoneParams",
-    "RouteOptimizationParams",
-    # P2: Advanced - Caching & Performance Params
-    "CacheStrategyParams",
-    "RateLimiterParams",
-    # P2: Advanced - Testing & Quality Params
-    "TestSuiteParams",
-    "QualityGateParams",
-    # P2: Advanced - Data Management Params
-    "DataMigrationParams",
-    "BatchJobParams",
-    # P2: Advanced - Messaging Params
-    "MessageSchemaParams",
-    "DeadLetterQueueParams",
-    # P2: Advanced - Security Params
-    "EncryptionKeyParams",
-    "SecurityPolicyParams",
-    # P1/P3: Enhanced Rule & Scoring Params
-    "RuleScoringParams",
-    "RuleMatcherParams",
-    # P2/P3: Enhanced Integration & Protocol Params
-    "DeviceIntegrationParams",
-    "HL7FHIRSchemaParams",
-    "FIXMessageTypesParams",
-    "VideoConferencingIntegrationParams",
-    # P3: Advanced Pattern Params
-    "ExternalServiceParams",
-    "LocalizationParams",
-    "CircuitBreakerParams",
-    "CalendarScheduleParams",
-    "SubledgerParams",
+    # v2.0: Value Object Extensions
+    "FieldDefinition",
+    "MethodDefinition",
+    "ValidationRule",
+    "ExtendedValueObjectParams",
     # Loader
     "load_yaml",
     "load_projection_tree",
