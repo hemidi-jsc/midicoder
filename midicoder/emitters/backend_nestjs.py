@@ -39,6 +39,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
+from midicoder.emitters.value_object import NestJSValueObjectEmitter
 from midicoder.pipeline.mir import MIR
 
 
@@ -138,7 +139,7 @@ class BackendNestJSEmitter:
         # Emit value objects từ MIR metadata
         value_objects = mir.metadata.get("value_objects", [])
         for vo in value_objects:
-            files.extend(self._emit_value_object(vo, output_dir))
+            files.extend(self._emit_value_object(vo, output_dir, all_value_objects=value_objects))
         
         # Emit queries từ MIR metadata (CP01-Part4)
         queries = mir.metadata.get("queries", [])
@@ -339,17 +340,23 @@ class BackendNestJSEmitter:
         
         return files
     
-    def _emit_value_object(self, vo: dict[str, Any], output_dir: Path) -> list[GeneratedFile]:
+    def _emit_value_object(
+        self,
+        vo: dict[str, Any],
+        output_dir: Path,
+        all_value_objects: list[dict[str, Any]] = None
+    ) -> list[GeneratedFile]:
         """
-        Emit files cho một Value Object.
+        Emit files cho một Value Object sử dụng NestJSValueObjectEmitter mới.
         
         Files được emit:
-        - src/domain/value-objects/{vo_id}.value-object.ts
+        - src/domain/value-objects/{vo_id_lower}.value-object.ts
         - src/domain/value-objects/index.ts (nếu chưa tồn tại)
         
         Args:
             vo: Value Object dict từ MIR metadata
             output_dir: Output directory
+            all_value_objects: Danh sách tất cả value objects (cho inheritance resolution)
             
         Returns:
             List of GeneratedFile
@@ -378,14 +385,49 @@ class BackendNestJSEmitter:
                 capability="CP01",
             ))
         
-        # Emit value object file (use domain/value-object.ts.jinja2 template - CP01)
-        files.append(self._write_file(
-            output_dir=vo_dir,
-            filename=f"{vo_lower}.value-object.ts",
-            template="domain/value-object.ts.jinja2",
-            context={"vo": vo},
-            capability="CP01",
-        ))
+        # Sử dụng NestJSValueObjectEmitter mới để generate code
+        try:
+            # Tạo emitter
+            vo_emitter = NestJSValueObjectEmitter(stack_dir=self.stack_dir)
+            
+            # Build vo_map cho inheritance resolution
+            vo_map = {}
+            if all_value_objects:
+                for v in all_value_objects:
+                    vo_map[v.get("id", "")] = v
+            
+            # Emit VO với inheritance support
+            emitted_vo = vo_emitter.emit(vo, parent_vo_map=vo_map)
+            
+            # Render template với context đầy đủ
+            context = vo_emitter._build_template_context(emitted_vo)
+            rendered_content = vo_emitter.render_value_object(emitted_vo)
+            
+            # Write file
+            file_path = vo_dir / f"{vo_lower}.value-object.ts"
+            file_path.write_text(rendered_content, encoding="utf-8")
+            
+            files.append(GeneratedFile(
+                path=file_path.relative_to(output_dir),
+                content=rendered_content,
+                template="domain/value-objects/value-object.ts.jinja2",
+                capability="CP01",
+            ))
+            
+        except Exception:
+            # Fallback: Use emitter's fallback method
+            vo_emitter = NestJSValueObjectEmitter(stack_dir=self.stack_dir)
+            emitted_vo = vo_emitter.emit(vo)
+            
+            file_path = vo_dir / f"{vo_lower}.value-object.ts"
+            file_path.write_text(emitted_vo.full_content, encoding="utf-8")
+            
+            files.append(GeneratedFile(
+                path=file_path.relative_to(output_dir),
+                content=emitted_vo.full_content,
+                template="value_object_emitter_fallback",
+                capability="CP01",
+            ))
         
         return files
     
