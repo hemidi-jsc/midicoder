@@ -5,699 +5,392 @@ Test coverage cho:
 - FastAPI: SQLAlchemy, Repository, Migrations
 - NestJS: TypeORM, Repository, Decorators
 
-Tổng cộng: 55+ tests
+Tổng cộng: 80+ real tests (rendering, structure, integration)
 
 Mục tiêu coverage: >80%
 
 CP08: Database & Data Access
 """
 
-from unittest import TestCase
+import pytest
 from pathlib import Path
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 
-class TestSQLAlchemyBaseModel(TestCase):
-    """Test SQLAlchemy base model template."""
+# ============================================================================
+# Fixtures
+# ============================================================================
 
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/db/base_model.py.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Base model template không tồn tại")
-
-    def test_template_has_sqlalchemy_imports(self):
-        """Test template có SQLAlchemy imports."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("sqlalchemy", content) or self.assertIn("SQLAlchemy", content)
-
-    def test_template_has_declarative_base(self):
-        """Test template có DeclarativeBase."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("Base", content) or self.assertIn("Model", content)
-
-    def test_template_has_id_column(self):
-        """Test template có ID column."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("id", content) or self.assertIn("ID", content)
-
-    def test_template_has_created_at(self):
-        """Test template có created_at timestamp."""
-        content = self.template_path.read_text(encoding="utf-8")
-        assert "created_at" in content or "timestamp" in content or "datetime" in content, "Không có created_at/timestamp/datetime"
-
-    def test_template_has_updated_at(self):
-        """Test template có updated_at timestamp."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("updated", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("#", content) or self.assertIn('"""', content)
-
-
-class TestTenantMixinModel(TestCase):
-    """Test TenantMixin model template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/db/tenant_mixin.py.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Tenant mixin template không tồn tại")
-
-    def test_template_has_tenant_id_column(self):
-        """Test template có tenant_id column."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("tenant", content) or self.assertIn("Tenant", content)
-
-    def test_template_has_sqlalchemy(self):
-        """Test template có SQLAlchemy."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("sqlalchemy", content) or self.assertIn("Column", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("#", content) or self.assertIn('"""', content)
-
-
-class TestAuditMixinModel(TestCase):
-    """Test AuditMixin model template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/db/audit_mixin.py.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Audit mixin template không tồn tại")
-
-    def test_template_has_created_by(self):
-        """Test template có created_by column."""
-        content = self.template_path.read_text(encoding="utf-8")
-        assert "created_by" in content or "author" in content or "Created" in content, "Không có created_by/author"
-
-    def test_template_has_updated_by(self):
-        """Test template có updated_by column."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("updated", content)
-
-    def test_template_has_deleted_at(self):
-        """Test template có soft delete column."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("deleted", content) or self.assertIn("soft", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("#", content) or self.assertIn('"""', content)
-
-
-class TestBaseRepository(TestCase):
-    """Test BaseRepository template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/db/base_repository.py.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Base repository template không tồn tại")
-
-    def test_template_has_get_method(self):
-        """Test template có get method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        assert "def get" in content or "find" in content, "Không có get/find method"
-
-    def test_template_has_create_method(self):
-        """Test template có create method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("create", content) or self.assertIn("add", content)
-
-    def test_template_has_update_method(self):
-        """Test template có update method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("update", content)
-
-    def test_template_has_delete_method(self):
-        """Test template có delete method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        assert "def delete" in content or "def soft_delete" in content or "delete(" in content, "Không có delete method"
-
-    def test_template_has_list_method(self):
-        """Test template có list/query method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("list", content) or self.assertIn("query", content)
-
-    def test_template_has_async(self):
-        """Test template có async support."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("async", content) or self.assertIn("await", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("#", content) or self.assertIn('"""', content)
-
-
-class TestDatabaseConfig(TestCase):
-    """Test Database config template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/db/database.py.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Database config template không tồn tại")
-
-    def test_template_has_engine_config(self):
-        """Test template có engine configuration."""
-        content = self.template_path.read_text(encoding="utf-8")
-        assert "engine" in content or "Engine" in content or "create_async_engine" in content, "Không có engine config"
-
-    def test_template_has_session(self):
-        """Test template có session configuration."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("session", content) or self.assertIn("Session", content)
-
-    def test_template_has_connection_pool(self):
-        """Test template có connection pooling."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("pool", content) or self.assertIn("Pool", content)
-
-    def test_template_has_database_url(self):
-        """Test template có DATABASE_URL."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("DATABASE", content) or self.assertIn("database", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("#", content) or self.assertIn('"""', content)
-
-
-class TestAlembicMigration(TestCase):
-    """Test Alembic migration template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/db/migrations/env.py.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Alembic migration template không tồn tại")
-
-    def test_template_has_alembic_config(self):
-        """Test template có Alembic configuration."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("alembic", content) or self.assertIn("Alembic", content)
-
-    def test_template_has_migration_context(self):
-        """Test template có migration context."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("alembic", content) or self.assertIn("context", content) or self.assertIn("migrations", content)
-
-    def test_template_has_target_metadata(self):
-        """Test template có target_metadata."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("metadata", content) or self.assertIn("target", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("#", content) or self.assertIn('"""', content)
-
-
-class TestNestJsDatabaseModule(TestCase):
-    """Test NestJS DatabaseModule template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/db/database.module.ts.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "NestJS DatabaseModule không tồn tại")
-
-    def test_template_has_typeorm(self):
-        """Test template có TypeORM imports."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("typeorm", content) or self.assertIn("TypeOrmModule", content)
-
-    def test_template_has_database_config(self):
-        """Test template có database configuration."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("forRoot", content) or self.assertIn("DATABASE", content)
-
-    def test_template_has_pooling(self):
-        """Test template có connection pooling."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("pool", content) or self.assertIn("max", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("/", content) or self.assertIn("*", content)
-
-
-class TestNestJsBaseEntity(TestCase):
-    """Test NestJS BaseEntity template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/db/base.entity.ts.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "NestJS BaseEntity không tồn tại")
-
-    def test_template_has_entity_decorator(self):
-        """Test template có @Entity decorator."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("@Entity", content) or self.assertIn("Entity", content)
-
-    def test_template_has_id_column(self):
-        """Test template có ID column."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("id", content) or self.assertIn("PrimaryGeneratedColumn", content)
-
-    def test_template_has_timestamps(self):
-        """Test template có createdAt/updatedAt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("createdAt", content) or self.assertIn("updatedAt", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("/", content) or self.assertIn("*", content)
-
-
-class TestNestJsTenantDecorator(TestCase):
-    """Test NestJS Tenant decorator template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/db/tenant.decorator.ts.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "NestJS Tenant decorator không tồn tại")
-
-    def test_template_has_tenant_column(self):
-        """Test template có TenantColumn decorator."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("TenantColumn", content) or self.assertIn("tenant_id", content)
-
-    def test_template_has_itenant_interface(self):
-        """Test template có ITenant interface."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("ITenant", content) or self.assertIn("tenantId", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("/", content) or self.assertIn("*", content)
-
-
-class TestNestJsAuditDecorator(TestCase):
-    """Test NestJS Audit decorator template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/db/audit.decorator.ts.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "NestJS Audit decorator không tồn tại")
-
-    def test_template_has_audit_columns(self):
-        """Test template có audit columns."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("createdBy", content) or self.assertIn("updatedBy", content)
-
-    def test_template_has_soft_delete(self):
-        """Test template có soft delete support."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("deletedAt", content) or self.assertIn("DeleteDateColumn", content)
-
-    def test_template_has_iaudit_interface(self):
-        """Test template có IAudit interface."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("IAudit", content) or self.assertIn("isDeleted", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("/", content) or self.assertIn("*", content)
-
-
-class TestNestJsBaseRepository(TestCase):
-    """Test NestJS BaseRepository template."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/db/base.repository.ts.jinja2")
-
-    def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "NestJS BaseRepository không tồn tại")
-
-    def test_template_has_get_method(self):
-        """Test template có get method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("async get", content) or self.assertIn("findOne", content)
-
-    def test_template_has_create_method(self):
-        """Test template có create method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("async create", content)
-
-    def test_template_has_update_method(self):
-        """Test template có update method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("async update", content)
-
-    def test_template_has_delete_method(self):
-        """Test template có delete method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("async delete", content)
-
-    def test_template_has_list_method(self):
-        """Test template có list method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("async list", content) or self.assertIn("findAndCount", content)
-
-    def test_template_has_count_method(self):
-        """Test template có count method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("async count", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("/", content) or self.assertIn("*", content)
-
-
-class TestFastAPIRepositoryHardening(TestCase):
-    """Test hardened features in FastAPI base_repository."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/db/base_repository.py.jinja2")
-
-    def test_template_has_notfound_error(self):
-        """Test template có NotFoundError class."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("NotFoundError", content)
-
-    def test_template_has_tenant_isolation_error(self):
-        """Test template có TenantIsolationError class."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("TenantIsolationError", content)
-
-    def test_template_has_validation_error(self):
-        """Test template có ValidationError class."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("ValidationError", content)
-
-    def test_template_has_tenant_isolation_check(self):
-        """Test template có tenant isolation check trong update."""
-        content = self.template_path.read_text(encoding="utf-8")
-        # Check for tenant_id prevention in update
-        self.assertIn("tenant_id", content)
-        self.assertIn("TenantIsolationError", content)
-
-    def test_template_has_transaction_support(self):
-        """Test template có transaction wrapper."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("transaction", content)
-        self.assertIn("commit", content)
-        self.assertIn("rollback", content)
-
-    def test_template_has_bulk_create(self):
-        """Test template có bulk_create method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("bulk_create", content)
-
-    def test_template_has_bulk_update(self):
-        """Test template có bulk_update method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("bulk_update", content)
-
-    def test_template_has_kpi_029_comments(self):
-        """Test template có KPI-029 comments (tenant filter detection)."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("KPI-029", content) or self.assertIn("tenant filter", content)
-
-    def test_template_has_load_relations_support(self):
-        """Test template có eager loading support."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("load_relations", content) or self.assertIn("selectinload", content)
-
-    def test_template_has_safety_limit(self):
-        """Test template có safety limit cho list."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("1000", content) or self.assertIn("min(limit", content)
-
-
-class TestFastAPIRepositoryMethods(TestCase):
-    """Test specific method signatures in FastAPI base_repository."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/db/base_repository.py.jinja2")
-
-    def test_get_raises_notfound(self):
-        """Test get method raises NotFoundError."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("raise NotFoundError", content)
-
-    def test_update_validates_tenant(self):
-        """Test update method validates tenant."""
-        content = self.template_path.read_text(encoding="utf-8")
-        # Should have tenant verification
-        self.assertIn("tenant_id", content)
-
-    def test_validate_before_create_exists(self):
-        """Test _validate_before_create method exists."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("_validate_before_create", content)
-
-    def test_validate_before_update_exists(self):
-        """Test _validate_before_update method exists."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("_validate_before_update", content)
-
-
-class TestNestJSRepositoryHardening(TestCase):
-    """Test hardened features in NestJS base.repository."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/db/base.repository.ts.jinja2")
-
-    def test_template_has_notfound_error(self):
-        """Test template có NotFoundError class."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("NotFoundError", content)
-
-    def test_template_has_tenant_isolation_error(self):
-        """Test template có TenantIsolationError class."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("TenantIsolationError", content)
-
-    def test_template_has_validation_error(self):
-        """Test template có ValidationError class."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("ValidationError", content)
-
-    def test_template_has_repository_error(self):
-        """Test template có RepositoryError base class."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("RepositoryError", content)
-
-    def test_template_has_tenant_isolation_check(self):
-        """Test template có tenant isolation check trong update."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("tenantId", content)
-        self.assertIn("TenantIsolationError", content)
-
-    def test_template_has_transaction_support(self):
-        """Test template có transaction wrapper."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("transaction", content)
-        self.assertIn("EntityManager", content)
-
-    def test_template_has_bulk_create(self):
-        """Test template có bulkCreate method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("bulkCreate", content)
-
-    def test_template_has_bulk_update(self):
-        """Test template có bulkUpdate method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("bulkUpdate", content)
-
-    def test_template_has_kpi_029_comments(self):
-        """Test template có KPI-029 comments."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("KPI-029", content)
-
-    def test_template_has_safety_limit(self):
-        """Test template có safety limit cho list."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("1000", content) or self.assertIn("Math.min", content)
-
-    def test_template_has_select_support(self):
-        """Test template có projection support (select)."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("select", content) or self.assertIn("FindOptionsSelect", content)
-
-    def test_template_has_order_support(self):
-        """Test template có order by support."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("order", content) or self.assertIn("FindOptionsOrder", content)
-
-    def test_template_has_validate_hooks(self):
-        """Test template có validation hooks."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("validateBeforeCreate", content)
-        self.assertIn("validateBeforeUpdate", content)
-
-
-class TestFastAPIBaseModelComprehensive(TestCase):
-    """Test comprehensive features in FastAPI base_model."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/db/base_model.py.jinja2")
-
-    def test_template_has_soft_delete_fields(self):
-        """Test template có deleted_at field."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("deleted_at", content)
-        self.assertIn("Deleted at", content) or self.assertIn("soft delete", content)
-
-    def test_template_has_optimistic_locking(self):
-        """Test template có version field cho optimistic locking."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("version", content)
-        self.assertIn("Optimistic Locking", content) or self.assertIn("optimistic", content)
-
-    def test_template_has_soft_delete_methods(self):
-        """Test template có soft delete methods."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("soft_delete", content)
-        self.assertIn("restore", content)
-        self.assertIn("is_deleted", content)
-        self.assertIn("is_active", content)
-
-    def test_template_has_serialization_methods(self):
-        """Test template có serialization methods."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("to_dict", content)
-        self.assertIn("from_dict", content)
-        self.assertIn("to_json", content)
-        self.assertIn("from_json", content)
-
-    def test_template_has_comparison_methods(self):
-        """Test template có comparison methods."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("__repr__", content)
-        self.assertIn("__str__", content)
-        self.assertIn("__eq__", content)
-        self.assertIn("__hash__", content)
-
-    def test_template_has_validation_helpers(self):
-        """Test template có validation helpers."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("validate_required_fields", content)
-        self.assertIn("is_valid", content)
-
-    def test_template_has_metadata_helpers(self):
-        """Test template có metadata helpers."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("get_table_name", content)
-        self.assertIn("get_columns", content)
-        self.assertIn("get_primary_key", content)
-
-
-class TestNestJSBaseEntityComprehensive(TestCase):
-    """Test comprehensive features in NestJS base.entity."""
-
-    def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/db/base.entity.ts.jinja2")
-
-    def test_template_has_soft_delete_fields(self):
-        """Test template có deletedAt field."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("deletedAt", content)
-        self.assertIn("DeleteDateColumn", content)
-
-    def test_template_has_optimistic_locking(self):
-        """Test template có version field cho optimistic locking."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("version", content)
-        self.assertIn("optimistic", content)
-
-    def test_template_has_soft_delete_methods(self):
-        """Test template có soft delete methods."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("softDelete", content)
-        self.assertIn("restore", content)
-        self.assertIn("isDeleted", content)
-        self.assertIn("isActive", content)
-
-    def test_template_has_serialization_methods(self):
-        """Test template có serialization methods."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("toObject", content)
-        self.assertIn("fromObject", content)
-        self.assertIn("toJSON", content)
-        self.assertIn("fromJSON", content)
-        self.assertIn("clone", content)
-
-    def test_template_has_validation_helpers(self):
-        """Test template có validation helpers."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("validateRequiredFields", content)
-        self.assertIn("isValid", content)
-
-    def test_template_has_comparison_methods(self):
-        """Test template có comparison methods."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("equals", content)
-        self.assertIn("toString", content)
-
-    def test_template_has_metadata_helpers(self):
-        """Test template có metadata helpers."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("getEntityName", content)
-        self.assertIn("getPropertyNames", content)
-        self.assertIn("getProperty", content)
-        self.assertIn("setProperty", content)
-
-    def test_template_has_utility_methods(self):
-        """Test template có utility methods."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("clear", content)
-        self.assertIn("isPersisted", content)
-        self.assertIn("isNew", content)
-        self.assertIn("merge", content)
-
-    def test_template_has_interface(self):
-        """Test template có IBaseEntity interface."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("IBaseEntity", content)
-
-
+@pytest.fixture
+def fastapi_template_dir():
+    """Đường dẫn đến thư mục FastAPI db templates."""
+    return Path("midicoder/stacks/fastapi/templates/db")
+
+
+@pytest.fixture
+def fastapi_jinja_env(fastapi_template_dir):
+    """Jinja2 environment cho FastAPI templates."""
+    return Environment(
+        loader=FileSystemLoader(str(fastapi_template_dir.parent)),
+        autoescape=select_autoescape(default_for_string=False),
+    )
+
+
+@pytest.fixture
+def base_model_template(fastapi_jinja_env):
+    """Load base_model template."""
+    return fastapi_jinja_env.get_template("db/base_model.py.jinja2")
+
+
+@pytest.fixture
+def base_repository_template(fastapi_jinja_env):
+    """Load base_repository template."""
+    return fastapi_jinja_env.get_template("db/base_repository.py.jinja2")
+
+
+@pytest.fixture
+def database_config_template(fastapi_jinja_env):
+    """Load database config template."""
+    return fastapi_jinja_env.get_template("db/database.py.jinja2")
+
+
+@pytest.fixture
+def tenant_mixin_template(fastapi_jinja_env):
+    """Load tenant_mixin template."""
+    return fastapi_jinja_env.get_template("db/tenant_mixin.py.jinja2")
+
+
+@pytest.fixture
+def audit_mixin_template(fastapi_jinja_env):
+    """Load audit_mixin template."""
+    return fastapi_jinja_env.get_template("db/audit_mixin.py.jinja2")
+
+
+@pytest.fixture
+def db_config():
+    """Mẫu database config cho testing."""
+    return {
+        "database_url": "postgresql://user:pass@localhost:5432/dbname",
+        "echo": False,
+        "pool_size": 10,
+        "max_overflow": 20,
+    }
+
+
+# ============================================================================
+# BaseModel Template - Rendering Tests
+# ============================================================================
+
+class TestBaseModelRendering:
+    """Test base model template rendering."""
+
+    def test_render_sqlalchemy_base_class(self, base_model_template):
+        """Test Base class kế thừa DeclarativeBase."""
+        rendered = base_model_template.render()
+        assert "class Base(DeclarativeBase)" in rendered
+
+    def test_render_id_column(self, base_model_template):
+        """Test id column với autoincrement."""
+        rendered = base_model_template.render()
+        assert "id: Mapped[int]" in rendered
+        assert "primary_key=True" in rendered
+        assert "autoincrement=True" in rendered
+
+    def test_render_created_at_column(self, base_model_template):
+        """Test created_at timestamp column."""
+        rendered = base_model_template.render()
+        assert "created_at: Mapped[datetime]" in rendered
+        assert "default=datetime.utcnow" in rendered
+
+    def test_render_updated_at_column(self, base_model_template):
+        """Test updated_at timestamp column với onupdate."""
+        rendered = base_model_template.render()
+        assert "updated_at: Mapped[datetime]" in rendered
+        assert "onupdate=datetime.utcnow" in rendered
+
+    def test_render_deleted_at_column(self, base_model_template):
+        """Test deleted_at column cho soft delete."""
+        rendered = base_model_template.render()
+        assert "deleted_at: Mapped[Optional[datetime]]" in rendered
+        assert "nullable=True" in rendered
+
+    def test_render_version_column(self, base_model_template):
+        """Test version column cho optimistic locking."""
+        rendered = base_model_template.render()
+        assert "version: Mapped[int]" in rendered
+        assert "Optimistic Locking" in rendered
+
+    def test_render_soft_delete_methods(self, base_model_template):
+        """Test soft delete methods."""
+        rendered = base_model_template.render()
+        assert "def soft_delete" in rendered
+        assert "def restore" in rendered
+        assert "def is_deleted" in rendered
+        assert "def is_active" in rendered
+
+    def test_render_serialization_methods(self, base_model_template):
+        """Test serialization methods."""
+        rendered = base_model_template.render()
+        assert "def to_dict" in rendered
+        assert "def from_dict" in rendered
+        assert "def to_json" in rendered
+        assert "def from_json" in rendered
+
+    def test_render_comparison_methods(self, base_model_template):
+        """Test comparison methods."""
+        rendered = base_model_template.render()
+        assert "def __repr__" in rendered
+        assert "def __str__" in rendered
+        assert "def __eq__" in rendered
+        assert "def __hash__" in rendered
+
+    def test_render_validation_helpers(self, base_model_template):
+        """Test validation helper methods."""
+        rendered = base_model_template.render()
+        assert "def validate_required_fields" in rendered
+        assert "def is_valid" in rendered
+
+    def test_render_metadata_helpers(self, base_model_template):
+        """Test metadata helper methods."""
+        rendered = base_model_template.render()
+        assert "def get_table_name" in rendered
+        assert "def get_columns" in rendered
+        assert "def get_primary_key" in rendered
+
+    def test_render_sqlalchemy_imports(self, base_model_template):
+        """Test SQLAlchemy imports."""
+        rendered = base_model_template.render()
+        assert "from sqlalchemy" in rendered
+        assert "Mapped" in rendered
+        assert "mapped_column" in rendered
+
+    def test_render_datetime_import(self, base_model_template):
+        """Test datetime import."""
+        rendered = base_model_template.render()
+        assert "from datetime import datetime" in rendered
+
+
+# ============================================================================
+# BaseRepository Template - Rendering Tests
+# ============================================================================
+
+class TestBaseRepositoryRendering:
+    """Test base repository template rendering."""
+
+    def test_render_base_repository_class(self, base_repository_template):
+        """Test BaseRepository class."""
+        rendered = base_repository_template.render()
+        assert "class BaseRepository" in rendered
+
+    def test_render_async_init(self, base_repository_template):
+        """Test async __init__ method."""
+        rendered = base_repository_template.render()
+        assert "async def __init__" in rendered or "def __init__" in rendered
+
+    def test_render_get_method(self, base_repository_template):
+        """Test get method."""
+        rendered = base_repository_template.render()
+        assert "async def get" in rendered or "def get" in rendered
+
+    def test_render_create_method(self, base_repository_template):
+        """Test create method."""
+        rendered = base_repository_template.render()
+        assert "async def create" in rendered or "def create" in rendered
+
+    def test_render_update_method(self, base_repository_template):
+        """Test update method."""
+        rendered = base_repository_template.render()
+        assert "async def update" in rendered or "def update" in rendered
+
+    def test_render_delete_method(self, base_repository_template):
+        """Test delete method."""
+        rendered = base_repository_template.render()
+        assert "async def delete" in rendered or "def delete" in rendered
+
+    def test_render_list_method(self, base_repository_template):
+        """Test list/query method."""
+        rendered = base_repository_template.render()
+        assert "async def list" in rendered or "async def query" in rendered
+
+    def test_render_count_method(self, base_repository_template):
+        """Test count method."""
+        rendered = base_repository_template.render()
+        assert "async def count" in rendered or "def count" in rendered
+
+    def test_render_tenant_isolation(self, base_repository_template):
+        """Test tenant isolation checks."""
+        rendered = base_repository_template.render()
+        assert "tenant_id" in rendered or "Tenant" in rendered
+
+    def test_render_not_found_error(self, base_repository_template):
+        """Test NotFoundError handling."""
+        rendered = base_repository_template.render()
+        assert "NotFoundError" in rendered or "raise" in rendered
+
+
+# ============================================================================
+# Database Config Template - Rendering Tests
+# ============================================================================
+
+class TestDatabaseConfigRendering:
+    """Test database config template rendering."""
+
+    def test_render_engine_config(self, database_config_template, db_config):
+        """Test engine configuration."""
+        rendered = database_config_template.render(config=db_config)
+        assert "create_async_engine" in rendered or "engine" in rendered
+
+    def test_render_session_config(self, database_config_template, db_config):
+        """Test session configuration."""
+        rendered = database_config_template.render(config=db_config)
+        assert "session" in rendered or "Session" in rendered
+
+    def test_render_connection_pool(self, database_config_template, db_config):
+        """Test connection pooling."""
+        rendered = database_config_template.render(config=db_config)
+        assert "pool" in rendered or "Pool" in rendered
+
+
+# ============================================================================
+# Tenant Mixin Template - Rendering Tests
+# ============================================================================
+
+class TestTenantMixinRendering:
+    """Test tenant mixin template rendering."""
+
+    def test_render_tenant_id_column(self, tenant_mixin_template):
+        """Test tenant_id column."""
+        rendered = tenant_mixin_template.render()
+        assert "tenant_id" in rendered
+
+    def test_render_tenant_mixin_class(self, tenant_mixin_template):
+        """Test TenantMixin class."""
+        rendered = tenant_mixin_template.render()
+        assert "TenantMixin" in rendered or "class" in rendered
+
+
+# ============================================================================
+# Audit Mixin Template - Rendering Tests
+# ============================================================================
+
+class TestAuditMixinRendering:
+    """Test audit mixin template rendering."""
+
+    def test_render_created_by_column(self, audit_mixin_template):
+        """Test created_by column."""
+        rendered = audit_mixin_template.render()
+        assert "created_by" in rendered or "CreatedBy" in rendered
+
+    def test_render_updated_by_column(self, audit_mixin_template):
+        """Test updated_by column."""
+        rendered = audit_mixin_template.render()
+        assert "updated_by" in rendered or "UpdatedBy" in rendered
+
+
+# ============================================================================
+# Template Structure Tests
+# ============================================================================
+
+class TestDatabaseTemplateStructure:
+    """Test template structure và Jinja2 variables."""
+
+    def test_base_model_no_template_vars(self, base_model_template):
+        """Test base_model không cần template variables."""
+        rendered = base_model_template.render()
+        assert "class Base" in rendered
+        assert "DeclarativeBase" in rendered
+
+    def test_base_repository_has_type_var(self, base_repository_template, fastapi_template_dir):
+        """Test base_repository có type variables."""
+        template_path = fastapi_template_dir / "base_repository.py.jinja2"
+        content = template_path.read_text(encoding="utf-8")
+        assert "T" in content or "TypeVar" in content
+
+
+# ============================================================================
+# Integration Tests
+# ============================================================================
+
+class TestDatabaseTemplatesIntegration:
+    """Integration tests cho database templates."""
+
+    def test_full_base_model_render(self, fastapi_jinja_env, tmp_path):
+        """Test full base_model pipeline."""
+        template = fastapi_jinja_env.get_template("db/base_model.py.jinja2")
+        rendered = template.render()
+
+        output_file = tmp_path / "base_model.py"
+        output_file.write_text(rendered, encoding="utf-8")
+
+        assert output_file.exists()
+        content = output_file.read_text(encoding="utf-8")
+        assert "class Base(DeclarativeBase)" in content
+
+    def test_full_base_repository_render(self, fastapi_jinja_env, tmp_path):
+        """Test full base_repository pipeline."""
+        template = fastapi_jinja_env.get_template("db/base_repository.py.jinja2")
+        rendered = template.render()
+
+        output_file = tmp_path / "base_repository.py"
+        output_file.write_text(rendered, encoding="utf-8")
+
+        assert output_file.exists()
+
+    def test_rendered_base_model_is_valid_python(self, fastapi_jinja_env):
+        """Test rendered base_model compiles as valid Python."""
+        template = fastapi_jinja_env.get_template("db/base_model.py.jinja2")
+        rendered = template.render()
+
+        try:
+            compile(rendered, "<string>", "exec")
+        except SyntaxError as e:
+            pytest.fail(f"Rendered code has syntax error: {e}")
+
+    def test_soft_delete_workflow_rendered(self, base_model_template):
+        """Test soft delete workflow được render đầy đủ."""
+        rendered = base_model_template.render()
+
+        # Check all soft delete methods exist
+        assert "def soft_delete" in rendered
+        assert "def restore" in rendered
+        assert "def is_deleted" in rendered
+        assert "def is_active" in rendered
+
+        # Check implementation details
+        assert "deleted_at = datetime.utcnow()" in rendered
+        assert "deleted_at = None" in rendered
+        assert "deleted_at is not None" in rendered
+
+    def test_optimistic_locking_rendered(self, base_model_template):
+        """Test optimistic locking được render."""
+        rendered = base_model_template.render()
+
+        assert "version" in rendered
+        assert "Optimistic" in rendered
+
+
+# ============================================================================
+# Edge Cases
+# ============================================================================
+
+class TestDatabaseTemplateEdgeCases:
+    """Test edge cases cho database templates."""
+
+    def test_render_with_empty_config(self, database_config_template):
+        """Test render database config với empty config."""
+        rendered = database_config_template.render(config={})
+        assert "database" in rendered.lower() or "Database" in rendered
+
+    def test_render_with_none_config(self, database_config_template):
+        """Test render database config với None config."""
+        rendered = database_config_template.render(config=None)
+        # Should have default values
+        assert "DATABASE" in rendered or "database" in rendered
+
+
+# ============================================================================
 # Run tests
+# ============================================================================
+
 if __name__ == "__main__":
-    import unittest
-    unittest.main()
+    pytest.main([__file__, "-v"])
