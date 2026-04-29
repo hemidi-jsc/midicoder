@@ -13,6 +13,8 @@ from typing import Any, Optional
 
 from jinja2 import Environment, FileSystemLoader
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
 from .base import ValueObjectEmitter, EmittedValueObject, EmittedField
 from .type_resolver import TypeResolver
 from .inheritance import InheritanceResolver
@@ -131,6 +133,7 @@ class FastAPIValueObjectEmitter(ValueObjectEmitter):
                 "extends": vo.inherits_from,
                 "tags": vo.tags,
                 "is_frozen": vo.is_frozen,
+                "comparable": vo.comparable,
             },
             "fields": vo.fields,
             "methods": methods,
@@ -385,7 +388,7 @@ class FastAPIValueObjectEmitter(ValueObjectEmitter):
             original = field_def.original
             if original.get("required") and not field_def.is_computed:
                 lines.append(f'        if self.{field_def.name} is None:')
-                lines.append(f'            raise ValueError("{field_def.name} là trường bắt buộc")')
+                lines.append('            raise ValueError(f"{field_def.name} là trường bắt buộc")')
                 lines.append("")
 
         lines.append("")
@@ -476,7 +479,10 @@ class FastAPIValueObjectEmitter(ValueObjectEmitter):
         # Check for circular inheritance
         cycles = inheritance_resolver.detect_all_cycles()
         if cycles:
-            raise ValueError(f"Circular inheritance detected: {cycles}")
+            EM.raise_error(
+                ErrorCode.CP01_VALUE_OBJECT_NOT_FOUND,
+                cycles=cycles,
+            )
 
         emitted_files: list[tuple[Path, str]] = []
 

@@ -13,6 +13,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
 from ..models import Guard, TransitionContext
 
 
@@ -69,8 +71,11 @@ class GuardEvaluator(ABC):
         
         evaluator_class = evaluators.get(guard.type.value)
         if evaluator_class is None:
-            raise ValueError(f"Unknown guard type: {guard.type.value}")
-        
+            EM.raise_error(
+                ErrorCode.CP01_WORKFLOW_GUARD_FAILED,
+                guard_type=guard.type.value,
+            )
+
         return evaluator_class()
 
 

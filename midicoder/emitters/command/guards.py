@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
 from .models import Command, CommandGuard, GuardType
 
 
@@ -111,7 +113,7 @@ class CommandGuards:
             user_id: User ID
 
         Raises:
-            PermissionError: Nếu không có permission
+            PermissionError: Nếu user không được xác thực hoặc không có permission
         """
         if user_id is None:
             raise PermissionError("User không được xác thực")
@@ -126,13 +128,8 @@ class CommandGuards:
                 permission=guard.permission,
             )
             if not has_permission:
-                raise PermissionError(
-                    f"User không có permission: {guard.permission}"
-                )
-        else:
-            # Fallback: TODO stub for generated code
-            # In generated code, this will be replaced with actual auth service call
-            pass
+                raise PermissionError(f"User không có permission: {guard.permission}")
+        # Fallback: Generated code will have auth service
 
     async def _check_tenant(
         self,
@@ -149,10 +146,12 @@ class CommandGuards:
             tenant_id: Tenant ID
 
         Raises:
-            ValueError: Nếu vi phạm tenant scope
+            MidicoderError: Nếu tenant ID thiếu hoặc vi phạm tenant scope
         """
         if tenant_id is None:
-            raise ValueError("Tenant ID không được xác định")
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_TENANT_MISSING,
+            )
 
         mode = guard.mode or "tenant_isolated"
 
@@ -164,7 +163,10 @@ class CommandGuards:
                     tenant_id=tenant_id,
                 )
                 if not is_belong:
-                    raise ValueError("Data không thuộc tenant")
+                    EM.raise_error(
+                        ErrorCode.CP01_GUARD_TENANT_VIOLATION,
+                        tenant_id=tenant_id,
+                    )
             # Fallback: Generated code will have tenant check in effects
 
         elif mode == "tenant_shared":
@@ -190,7 +192,7 @@ class CommandGuards:
             ip_address: IP address
 
         Raises:
-            RuntimeError: Nếu vượt quá rate limit
+            MidicoderError: Nếu vượt quá rate limit
         """
         limit = guard.limit or 100
         window = guard.window or "60s"
@@ -205,8 +207,12 @@ class CommandGuards:
                 window=window,
             )
             if is_limited:
-                raise RuntimeError(
-                    f"Vượt quá giới hạn {limit} requests/{window}"
+                EM.raise_error(
+                    ErrorCode.CP01_GUARD_RATE_LIMIT_EXCEEDED,
+                    limit=limit,
+                    window=window,
+                    user_id=user_id,
+                    ip_address=ip_address,
                 )
 
     async def _check_kyc(
@@ -222,17 +228,22 @@ class CommandGuards:
             user_id: User ID
 
         Raises:
-            RuntimeError: Nếu KYC chưa hoàn thành
+            MidicoderError: Nếu user không được xác thực hoặc KYC chưa hoàn thành
         """
         if user_id is None:
-            raise RuntimeError("User không được xác thực")
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_USER_NOT_AUTHENTICATED,
+            )
 
         if self._compliance_service:
             is_kyc_verified = await self._compliance_service.check_kyc(
                 user_id=user_id,
             )
             if not is_kyc_verified:
-                raise RuntimeError("KYC chưa được xác minh")
+                EM.raise_error(
+                    ErrorCode.CP01_GUARD_KYC_NOT_VERIFIED,
+                    user_id=user_id,
+                )
 
     async def _check_aml(
         self,
@@ -249,10 +260,12 @@ class CommandGuards:
             user_id: User ID
 
         Raises:
-            RuntimeError: Nếu AML screening failed
+            MidicoderError: Nếu user không được xác thực hoặc AML screening failed
         """
         if user_id is None:
-            raise RuntimeError("User không được xác thực")
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_USER_NOT_AUTHENTICATED,
+            )
 
         if self._compliance_service:
             is_aml_clear = await self._compliance_service.check_aml(
@@ -260,7 +273,10 @@ class CommandGuards:
                 transaction_data=data,
             )
             if not is_aml_clear:
-                raise RuntimeError("AML screening failed - giao dịch bị từ chối")
+                EM.raise_error(
+                    ErrorCode.CP01_GUARD_AML_SCREENING_FAILED,
+                    user_id=user_id,
+                )
 
     async def _check_hipaa(
         self,
@@ -275,14 +291,19 @@ class CommandGuards:
             user_id: User ID
 
         Raises:
-            RuntimeError: Nếu không có HIPAA clearance
+            MidicoderError: Nếu user không được xác thực hoặc không có HIPAA clearance
         """
         if user_id is None:
-            raise RuntimeError("User không được xác thực")
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_USER_NOT_AUTHENTICATED,
+            )
 
         if self._compliance_service:
             has_hipaa_clearance = (
                 await self._compliance_service.check_hipaa_clearance(user_id=user_id)
             )
             if not has_hipaa_clearance:
-                raise RuntimeError("Không có HIPAA clearance để truy cập dữ liệu y tế")
+                EM.raise_error(
+                    ErrorCode.CP01_GUARD_HIPAA_NO_CLEARANCE,
+                    user_id=user_id,
+                )

@@ -11,6 +11,7 @@ Version: 2.0.0
 from dataclasses import dataclass, field
 from typing import Optional
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 from midicoder.dsl.projection import (
     FieldDefinition,
     MethodDefinition,
@@ -95,8 +96,9 @@ class InheritanceResolver:
         while current_id:
             # Check circular
             if current_id in visited:
-                raise ValueError(
-                    f"Circular inheritance detected: {' → '.join(chain)} → {current_id}"
+                EM.raise_error(
+                    ErrorCode.CP01_VALUE_OBJECT_NOT_FOUND,
+                    cycle=f"{' → '.join(chain)} → {current_id}",
                 )
 
             visited.add(current_id)
@@ -104,7 +106,10 @@ class InheritanceResolver:
 
             # Get parent
             if current_id not in self.vo_map:
-                raise KeyError(f"Value Object '{current_id}' không tìm thấy")
+                EM.raise_error(
+                    ErrorCode.CP01_VALUE_OBJECT_NOT_FOUND,
+                    vo_id=current_id,
+                )
 
             vo_params = self.vo_map[current_id]
             current_id = vo_params.get("extends")

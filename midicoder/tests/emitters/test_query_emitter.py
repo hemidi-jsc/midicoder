@@ -210,12 +210,14 @@ class TestQueryGuards:
     @pytest.mark.asyncio
     async def test_check_tenant_no_tenant_id(self, sample_get_order_query: Query):
         """Test: TENANT guard fail khi khong co tenant_id."""
+        from midicoder.errors import MidicoderError
+
         guards = QueryGuards(sample_get_order_query)
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(MidicoderError) as exc_info:
             await guards.check_all({}, user_id="user_001", tenant_id=None)
 
-        assert "Tenant ID không được xác định" in str(exc_info.value)
+        assert exc_info.value.code.value == "MDC-CP01-052"
 
     @pytest.mark.asyncio
     async def test_check_all_pass(self, sample_get_order_query: Query):

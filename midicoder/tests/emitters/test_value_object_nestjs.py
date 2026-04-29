@@ -583,10 +583,12 @@ class TestNestJSEmitterIntegration:
             },
         }
 
-        with pytest.raises(ValueError) as exc_info:
+        from midicoder.errors import MidicoderError
+
+        with pytest.raises(MidicoderError) as exc_info:
             emitter.emit_all(vo_map, output_dir=vo_dir)
 
-        assert "Circular inheritance" in str(exc_info.value)
+        assert exc_info.value.code.value == "MDC-CP01-011"
 
 
 # ============================================================================

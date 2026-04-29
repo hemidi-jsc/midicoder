@@ -385,10 +385,12 @@ class TestInheritanceResolver:
 
         resolver = InheritanceResolver(vo_map)
 
-        with pytest.raises(ValueError) as exc_info:
+        from midicoder.errors import MidicoderError
+
+        with pytest.raises(MidicoderError) as exc_info:
             resolver.resolve_chain("A")
 
-        assert "Circular inheritance" in str(exc_info.value)
+        assert exc_info.value.code.value == "MDC-CP01-011"
 
     def test_merge_fields_from_parent(self):
         """Test merge fields từ parent."""
