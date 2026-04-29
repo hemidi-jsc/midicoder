@@ -294,6 +294,29 @@ class ErrorCode(str, Enum):
     CP01_ENTITY_INVALID_CONSTRAINT = "MDC-CP01-049"
     CP01_ENTITY_INVALID_LIFECYCLE = "MDC-CP01-050"
     CP01_ENTITY_EMIT_FAILED = "MDC-CP01-051"
+    
+    # =========================================================================
+    # CP01: Command Guard Errors
+    # =========================================================================
+    CP01_GUARD_TENANT_MISSING = "MDC-CP01-052"
+    CP01_GUARD_TENANT_VIOLATION = "MDC-CP01-053"
+    CP01_GUARD_USER_NOT_AUTHENTICATED = "MDC-CP01-054"
+    CP01_GUARD_PERMISSION_DENIED = "MDC-CP01-055"
+    CP01_GUARD_RATE_LIMIT_EXCEEDED = "MDC-CP01-056"
+    CP01_GUARD_KYC_NOT_VERIFIED = "MDC-CP01-057"
+    CP01_GUARD_AML_SCREENING_FAILED = "MDC-CP01-058"
+    CP01_GUARD_HIPAA_NO_CLEARANCE = "MDC-CP01-059"
+    CP01_GUARD_GDPR_NO_CONSENT = "MDC-CP01-060"
+    CP01_GUARD_PCI_RESTRICTED = "MDC-CP01-061"
+    
+    # =========================================================================
+    # CP01: Transaction Errors
+    # =========================================================================
+    CP01_TRANSACTION_NOT_ACTIVE = "MDC-CP01-062"
+    CP01_TRANSACTION_COMMIT_FAILED = "MDC-CP01-063"
+    CP01_TRANSACTION_ROLLBACK_FAILED = "MDC-CP01-064"
+    CP01_TRANSACTION_ALREADY_COMMITTED = "MDC-CP01-065"
+    CP01_TRANSACTION_ALREADY_ROLLED_BACK = "MDC-CP01-066"
 
 
 class ExitCode(Enum):
