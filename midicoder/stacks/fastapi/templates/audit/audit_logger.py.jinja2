@@ -1,0 +1,250 @@
+"""
+Audit Logger - Audit logging cho API.
+
+Module này cung cấp:
+- AuditLogger class cho audit logging
+- AuditEvent enum cho event types
+- Audit record structure
+- Integration với database
+
+CP14: Audit & Compliance
+"""
+
+import logging
+from datetime import datetime
+from enum import Enum
+from typing import Any, Optional
+from dataclasses import dataclass, asdict
+
+logger = logging.getLogger(__name__)
+
+
+class AuditEvent(str, Enum):
+    """
+    Audit event types.
+
+    Types:
+        USER_LOGIN: User login
+        USER_LOGOUT: User logout
+        PASSWORD_CHANGE: Password change
+        DATA_CREATE: Data creation
+        DATA_UPDATE: Data update
+        DATA_DELETE: Data deletion
+        PERMISSION_CHANGE: Permission change
+        CONFIG_CHANGE: Configuration change
+        EXPORT: Data export
+        IMPORT: Data import
+    """
+    USER_LOGIN = "user_login"
+    USER_LOGOUT = "user_logout"
+    PASSWORD_CHANGE = "password_change"
+    DATA_CREATE = "data_create"
+    DATA_UPDATE = "data_update"
+    DATA_DELETE = "data_delete"
+    PERMISSION_CHANGE = "permission_change"
+    CONFIG_CHANGE = "config_change"
+    EXPORT = "export"
+    IMPORT = "import"
+
+
+@dataclass
+class AuditRecord:
+    """
+    Audit record structure.
+
+    Attributes:
+        event: Audit event type
+        user_id: User ID (nullable cho system events)
+        tenant_id: Tenant ID
+        resource_type: Resource type (entity name)
+        resource_id: Resource ID (nullable)
+        action: Action performed
+        old_value: Old value (cho updates)
+        new_value: New value (cho updates)
+        metadata: Additional metadata
+        ip_address: Client IP address
+        user_agent: User agent string
+        timestamp: Event timestamp
+    """
+    event: AuditEvent
+    user_id: Optional[str]
+    tenant_id: str
+    resource_type: str
+    resource_id: Optional[str]
+    action: str
+    old_value: Optional[dict[str, Any]] = None
+    new_value: Optional[dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    timestamp: datetime = None
+
+    def __post_init__(self) -> None:
+        """Set timestamp nếu chưa có."""
+        if self.timestamp is None:
+            self.timestamp = datetime.utcnow()
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Chuyển AuditRecord sang dictionary.
+
+        Returns:
+            Dictionary representation của AuditRecord
+        """
+        data = asdict(self)
+        data["event"] = self.event.value
+        data["timestamp"] = self.timestamp.isoformat()
+        return data
+
+
+class AuditLogger:
+    """
+    Audit Logger - Audit logging cho API.
+
+    Class này:
+    1. Log audit events
+    2. Store audit records vào database
+    3. Support multi-tenant audit logging
+    4. Mask sensitive data
+
+    Usage:
+        audit_logger = AuditLogger(db_session)
+        audit_logger.log(AuditEvent.DATA_CREATE, user_id, tenant_id, "Order", order_id)
+    """
+
+    def __init__(self, db_session=None) -> None:
+        """
+        Khởi tạo AuditLogger.
+
+        Args:
+            db_session: Database session (optional)
+        """
+        self._db_session = db_session
+        self._sensitive_fields = {"password", "secret", "token", "credit_card", "ssn"}
+
+    async def log(
+        self,
+        event: AuditEvent,
+        user_id: Optional[str],
+        tenant_id: str,
+        resource_type: str,
+        resource_id: Optional[str] = None,
+        action: str = "",
+        old_value: Optional[dict[str, Any]] = None,
+        new_value: Optional[dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> str:
+        """
+        Log audit event.
+
+        Args:
+            event: Audit event type
+            user_id: User ID
+            tenant_id: Tenant ID
+            resource_type: Resource type
+            resource_id: Resource ID
+            action: Action description
+            old_value: Old value (cho updates)
+            new_value: New value (cho updates)
+            metadata: Additional metadata
+            ip_address: Client IP
+            user_agent: User agent
+
+        Returns:
+            Audit record ID
+        """
+        # Mask sensitive data
+        if old_value:
+            old_value = self._mask_sensitive_data(old_value)
+        if new_value:
+            new_value = self._mask_sensitive_data(new_value)
+
+        # Create audit record
+        record = AuditRecord(
+            event=event,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            action=action,
+            old_value=old_value,
+            new_value=new_value,
+            metadata=metadata,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        # Store to database
+        if self._db_session:
+            # TODO: Store to database
+            # audit_table = await self._db_session.execute(...)
+            pass
+
+        # Log to logger
+        logger.info(
+            f"Audit: {event.value} | "
+            f"User: {user_id} | "
+            f"Tenant: {tenant_id} | "
+            f"Resource: {resource_type}:{resource_id} | "
+            f"Action: {action}"
+        )
+
+        return f"audit_{datetime.utcnow().timestamp()}"
+
+    def _mask_sensitive_data(self, data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Mask sensitive data trong dictionary.
+
+        Args:
+            data: Dictionary cần mask
+
+        Returns:
+            Dictionary đã mask
+        """
+        if not data:
+            return data
+
+        masked = data.copy()
+        for key, value in masked.items():
+            if any(sensitive in key.lower() for sensitive in self._sensitive_fields):
+                masked[key] = "***MASKED***"
+            elif isinstance(value, dict):
+                masked[key] = self._mask_sensitive_data(value)
+            elif isinstance(value, list):
+                masked[key] = [
+                    self._mask_sensitive_data(v) if isinstance(v, dict) else v
+                    for v in value
+                ]
+
+        return masked
+
+    async def query(
+        self,
+        tenant_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        event_type: Optional[AuditEvent] = None,
+        user_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[AuditRecord]:
+        """
+        Query audit records.
+
+        Args:
+            tenant_id: Tenant ID
+            start_time: Start time
+            end_time: End time
+            event_type: Event type filter
+            user_id: User ID filter
+            limit: Max records
+
+        Returns:
+            List of AuditRecord
+        """
+        if self._db_session:
+            # TODO: Query from database
+            pass
+
+        return []

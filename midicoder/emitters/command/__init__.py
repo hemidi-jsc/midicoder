@@ -13,31 +13,55 @@ Author: Midicoder Team
 Version: 2.0.0
 """
 
-# New simplified models for DSL parsing
+# Import models
 from .models import (
     Command,
-    Field,
+    CommandEffect,
+    CommandError as CommandErrorModel,
+    CommandGuard,
+    EffectType,
+    GuardType,
+    Field as CommandField,
     FieldType,
+    ValidationResult,
 )
 
-# Import existing components (will need to fix imports later)
+# Import validators và managers
+from .validator import CommandValidator
+from .transaction import TransactionManagerSQL
+from .guards import CommandGuards
+from .effects import CommandEffects
+
+# Import emitters
 try:
     from .fastapi import FastAPICommandEmitter
-    from .transaction import TransactionManagerSQL
-    from .validator import CommandValidator
-except ImportError:
-    # Models exist but emitters may have compatibility issues
+    from .nestjs import NestJSCommandEmitter
+except ImportError as e:
     FastAPICommandEmitter = None
-    TransactionManagerSQL = None
-    CommandValidator = None
+    NestJSCommandEmitter = None
+
+# CommandError alias (use model for tests compatibility)
+CommandError = CommandErrorModel
 
 __all__ = [
-    # New simplified models
+    # Models
     "Command",
-    "Field",
+    "CommandField",
     "FieldType",
-    # Existing components (may be None)
-    "FastAPICommandEmitter",
-    "TransactionManagerSQL",
+    "ValidationResult",
+    # EffectType and GuardType
+    "EffectType",
+    "GuardType",
+    # Guard and Effect dataclasses
+    "CommandGuard",
+    "CommandEffect",
+    "CommandError",
+    # Managers và Validators
     "CommandValidator",
+    "TransactionManagerSQL",
+    "CommandGuards",
+    "CommandEffects",
+    # Emitters
+    "FastAPICommandEmitter",
+    "NestJSCommandEmitter",
 ]

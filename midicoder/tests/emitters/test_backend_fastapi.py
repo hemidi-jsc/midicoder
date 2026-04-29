@@ -143,17 +143,33 @@ from sqlalchemy.ext.asyncio import create_async_engine
 DATABASE_URL = "postgresql+asyncpg://localhost/app"
 engine = create_async_engine(DATABASE_URL)
 """)
-    (db_dir / "base_model.py.jinja2").write_text("""# Base Model
+    (db_dir / "base_model.py.jinja2").write_text("""# {{ entity['id'] if entity else 'Base' }} Model
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import Column, String, Float
 
+{% if entity %}
+class {{ entity['id'] }}(Base):
+    __tablename__ = '{{ entity['id'].lower() }}s'
+    {% for field in entity['fields'] %}
+    {{ field['name'] }} = Column(String)
+    {% endfor %}
+{% else %}
 class Base(DeclarativeBase):
     pass
+{% endif %}
 """)
     (db_dir / "base_repository.py.jinja2").write_text("""# Base Repository
 from abc import ABC
 
 class BaseRepository(ABC):
     pass
+""")
+    (db_dir / "repository.py.jinja2").write_text("""# {{ entity['id'] }} Repository
+from .base_repository import BaseRepository
+from .models.{{ entity['id'] | lower }} import {{ entity['id'] }}
+
+class {{ entity['id'] }}Repository(BaseRepository[{{ entity['id'] }}]):
+    model = {{ entity['id'] }}
 """)
     
     return BackendFastAPIEmitter(stack_dir)
@@ -448,8 +464,17 @@ class TestIntegration:
         db_dir = stack_dir / "db"
         db_dir.mkdir(parents=True)
         (db_dir / "database.py.jinja2").write_text("# Database")
-        (db_dir / "base_model.py.jinja2").write_text("# Base Model")
+        (db_dir / "base_model.py.jinja2").write_text("""# {{ entity['id'] if entity else 'Base' }} Model
+{% if entity %}
+class {{ entity['id'] }}(Base):
+    __tablename__ = '{{ entity['id'].lower() }}s'
+{% else %}
+class Base:
+    pass
+{% endif %}
+""")
         (db_dir / "base_repository.py.jinja2").write_text("# Base Repository")
+        (db_dir / "repository.py.jinja2").write_text("# {{ entity['id'] }} Repository")
         
         output_dir = tmp_path / "output" / "api"
         

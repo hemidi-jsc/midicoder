@@ -19,6 +19,9 @@ from contextvars import ContextVar
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from midicoder.errors import MidicoderErrorManager as EM
+from midicoder.errors import ErrorCode
+
 
 @dataclass
 class TransactionInfo:
@@ -126,12 +129,12 @@ class TransactionManagerSQL:
         Commit transaction hiện tại.
         
         Raises:
-            RuntimeError: Nếu không có transaction active
+            MidicoderError: Nếu không có transaction active hoặc commit thất bại
         """
         current_tx = self._current_transaction.get()
         
         if current_tx is None or not current_tx.is_active:
-            raise RuntimeError("Không có transaction active để commit")
+            EM.raise_error(ErrorCode.CP01_TRANSACTION_NOT_ACTIVE)
         
         session = self._session_stack[-1]
         
@@ -158,19 +161,23 @@ class TransactionManagerSQL:
         except Exception as e:
             # Rollback nếu commit fail
             await self.rollback_transaction()
-            raise RuntimeError(f"Commit transaction thất bại: {str(e)}") from e
+            EM.raise_error(
+                ErrorCode.CP01_TRANSACTION_COMMIT_FAILED,
+                transaction_id=current_tx.transaction_id,
+                original_error=str(e),
+            )
     
     async def rollback_transaction(self) -> None:
         """
         Rollback transaction hiện tại.
         
         Raises:
-            RuntimeError: Nếu không có transaction active
+            MidicoderError: Nếu không có transaction active hoặc rollback thất bại
         """
         current_tx = self._current_transaction.get()
         
         if current_tx is None or not current_tx.is_active:
-            raise RuntimeError("Không có transaction active để rollback")
+            EM.raise_error(ErrorCode.CP01_TRANSACTION_NOT_ACTIVE)
         
         session = self._session_stack[-1]
         
@@ -195,7 +202,11 @@ class TransactionManagerSQL:
                 self._current_transaction.set(None)
             
         except Exception as e:
-            raise RuntimeError(f"Rollback transaction thất bại: {str(e)}") from e
+            EM.raise_error(
+                ErrorCode.CP01_TRANSACTION_ROLLBACK_FAILED,
+                transaction_id=current_tx.transaction_id,
+                original_error=str(e),
+            )
     
     @asynccontextmanager
     async def transaction(
