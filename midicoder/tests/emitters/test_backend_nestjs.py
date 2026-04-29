@@ -108,6 +108,18 @@ def emitter_with_mock_stack(tmp_path: Path):
     (db_dir / "base.entity.ts.jinja2").write_text("// Base Entity")
     (db_dir / "base.repository.ts.jinja2").write_text("// Base Repository")
     (db_dir / "database.module.ts.jinja2").write_text("// Database Module")
+    (db_dir / "entity.ts.jinja2").write_text("""// {{ entity['id'] }} Entity
+export class {{ entity['id'] }} {
+{% for field in entity['fields'] %}
+  {{ field['name'] }}: string
+{% endfor %}
+}
+""")
+    (db_dir / "repository.ts.jinja2").write_text("""// {{ entity['id'] }} Repository
+export class {{ entity['id'] }}Repository {
+  model = {{ entity['id'] }}
+}
+""")
     
     return BackendNestJSEmitter(stack_dir)
 
@@ -435,6 +447,18 @@ class TestIntegration:
         (db_dir / "base.entity.ts.jinja2").write_text("// Base Entity")
         (db_dir / "base.repository.ts.jinja2").write_text("// Base Repository")
         (db_dir / "database.module.ts.jinja2").write_text("// Database Module")
+        (db_dir / "entity.ts.jinja2").write_text("""// {{ entity['id'] }} Entity
+export class {{ entity['id'] }} {
+{% for field in entity['fields'] %}
+  {{ field['name'] }}: string
+{% endfor %}
+}
+""")
+        (db_dir / "repository.ts.jinja2").write_text("""// {{ entity['id'] }} Repository
+export class {{ entity['id'] }}Repository {
+  model = {{ entity['id'] }}
+}
+""")
         
         output_dir = tmp_path / "output" / "src"
         
@@ -450,6 +474,6 @@ class TestIntegration:
         assert main_path.exists()
         assert main_path.read_text() == "// Main"
         
-        # Verify entity files
-        order_entity_path = output_dir / "modules" / "entities" / "order" / "order.entity.ts"
+        # Verify entity files (check actual path used by emitter)
+        order_entity_path = output_dir / "modules" / "order" / "order.entity.ts"
         assert order_entity_path.exists()

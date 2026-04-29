@@ -137,7 +137,7 @@ class CommandParser:
             required_roles=cmd_def.get("required_roles", []),
             required_permissions=cmd_def.get("required_permissions", []),
             writes_to=cmd_def.get("writes_to", []),
-            transaction=bool(cmd_def.get("transaction", False)),
+            transaction_required=bool(cmd_def.get("transaction", False)),
             tenant_scope=cmd_def.get("tenant_scope", "global"),
         )
 

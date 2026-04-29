@@ -136,9 +136,9 @@ class {{ vo.id }}{% if vo.extends %}({{ vo.extends }}){% endif %}:
         """Debug representation."""
         return f"{{ vo.id }}(**self.to_dict())"
 
-    {% if vo.get('is_frozen') %}
+    {% if vo.get('comparable') %}
     def __hash__(self) -> int:
-        """Hash cho frozen Value Object."""
+        """Hash cho comparable Value Object."""
         hash_values = (
         {% for f in fields %}
             self.{{ f.name }},
