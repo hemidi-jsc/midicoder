@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
 from .models import Query, QueryGuardType
 
 
@@ -132,12 +134,12 @@ class QueryGuards:
             tenant_id: Tenant ID từ context
             
         Raises:
-            ValueError: Nếu tenant_id không được xác định hoặc cross-tenant không được phép
+            MidicoderError: Nếu tenant_id không được xác định hoặc cross-tenant không được phép
         """
         # Check tenant_id is defined
         if tenant_id is None:
-            raise ValueError(
-                "Tenant ID không được xác định. Query yêu cầu tenant scope."
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_TENANT_MISSING,
             )
 
         # Check tenant isolation mode

@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 from midicoder.dsl.projection import (
     FieldDefinition,
     MethodDefinition,
@@ -117,6 +118,7 @@ class EmittedValueObject:
     inherits_from: Optional[str] = None
     tags: list[str] = field(default_factory=list)
     is_frozen: bool = True
+    comparable: bool = True
     full_content: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -240,8 +242,9 @@ class ValueObjectEmitter(ABC):
             if parent_params:
                 parent_fields = parent_params.get("fields", [])
             else:
-                raise ValueError(
-                    f"Parent Value Object '{inherits_from}' không tìm thấy"
+                EM.raise_error(
+                    ErrorCode.CP01_VALUE_OBJECT_NOT_FOUND,
+                    vo_id=inherits_from,
                 )
 
         # Step 2: Merge fields (child fields override parent)
@@ -274,6 +277,7 @@ class ValueObjectEmitter(ABC):
             inherits_from=inherits_from,
             tags=vo_params.get("tags", []),
             is_frozen=vo_params.get("immutable", True),
+            comparable=vo_params.get("comparable", True),
         )
 
         # Step 7: Render final code

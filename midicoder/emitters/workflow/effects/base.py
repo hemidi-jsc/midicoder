@@ -15,6 +15,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
 from ..models import Effect, TransitionContext
 
 
@@ -91,8 +93,11 @@ class EffectExecutor(ABC):
         
         executor_class = executors.get(effect.type.value)
         if executor_class is None:
-            raise ValueError(f"Unknown effect type: {effect.type.value}")
-        
+            EM.raise_error(
+                ErrorCode.CP01_WORKFLOW_EFFECT_FAILED,
+                effect_type=effect.type.value,
+            )
+
         return executor_class()
 
     @staticmethod

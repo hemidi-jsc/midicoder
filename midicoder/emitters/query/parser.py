@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
 from .models import (
     FilterExpression,
     FilterOp,
@@ -75,9 +77,11 @@ def parse_filters(filters: dict[str, Any]) -> list[FilterExpression]:
         
         for operator, value in conditions.items():
             if operator not in VALID_OPERATORS:
-                raise ValueError(
-                    f"Invalid operator '{operator}' for field '{field}'. "
-                    f"Valid operators: {', '.join(sorted(VALID_OPERATORS))}"
+                EM.raise_error(
+                    ErrorCode.CP01_QUERY_INVALID_FILTER,
+                    field=field,
+                    operator=operator,
+                    valid_operators=list(VALID_OPERATORS),
                 )
             
             result.append(FilterExpression(
@@ -115,15 +119,18 @@ def parse_pagination(pagination: dict[str, Any]) -> PaginationConfig:
     ptype = pagination.get("type", "offset")
     
     if ptype not in ("offset", "cursor"):
-        raise ValueError(
-            f"Invalid pagination type '{ptype}'. "
-            f"Valid types: 'offset', 'cursor'"
+        EM.raise_error(
+            ErrorCode.CP01_QUERY_INVALID_PAGINATION,
+            pagination_type=ptype,
         )
     
     if ptype == "offset":
         page_size = pagination.get("page_size", 20)
         if page_size < 0:
-            raise ValueError(f"page_size cannot be negative: {page_size}")
+            EM.raise_error(
+                ErrorCode.CP01_QUERY_INVALID_PAGINATION,
+                page_size=page_size,
+            )
         
         page = pagination.get("page", 1)
         offset = pagination.get("offset", 0)
@@ -138,7 +145,10 @@ def parse_pagination(pagination: dict[str, Any]) -> PaginationConfig:
     else:  # cursor
         limit = pagination.get("limit", 20)
         if limit < 0:
-            raise ValueError(f"limit cannot be negative: {limit}")
+            EM.raise_error(
+                ErrorCode.CP01_QUERY_INVALID_PAGINATION,
+                limit=limit,
+            )
         
         cursor = pagination.get("cursor")
         

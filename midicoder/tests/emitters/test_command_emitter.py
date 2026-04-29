@@ -347,12 +347,14 @@ class TestCommandGuards:
         self, sample_create_order_command: Command
     ):
         """Test: TENANT guard fail khi không có tenant_id."""
+        from midicoder.errors import MidicoderError
+
         guards = CommandGuards(sample_create_order_command)
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(MidicoderError) as exc_info:
             await guards.check_all({}, user_id="user_001", tenant_id=None)
 
-        assert "Tenant ID không được xác định" in str(exc_info.value)
+        assert exc_info.value.code.value == "MDC-CP01-052"
 
     @pytest.mark.asyncio
     async def test_kyc_check_pass(self):
@@ -375,6 +377,8 @@ class TestCommandGuards:
     @pytest.mark.asyncio
     async def test_kyc_check_fail(self):
         """Test: KYC guard fail khi user chưa verify."""
+        from midicoder.errors import MidicoderError
+
         command = Command(
             id="TransferMoney",
             description="Chuyển tiền",
@@ -387,10 +391,10 @@ class TestCommandGuards:
         compliance_service = MockComplianceService(kyc_verified=False)
         guards = CommandGuards(command, compliance_service=compliance_service)
 
-        with pytest.raises(RuntimeError) as exc_info:
+        with pytest.raises(MidicoderError) as exc_info:
             await guards.check_all({}, user_id="user_001", tenant_id="tenant_001")
 
-        assert "KYC" in str(exc_info.value)
+        assert exc_info.value.code.value == "MDC-CP01-057"
 
     @pytest.mark.asyncio
     async def test_aml_screening_pass(self):
@@ -415,6 +419,8 @@ class TestCommandGuards:
     @pytest.mark.asyncio
     async def test_aml_screening_fail(self):
         """Test: AML guard fail khi screening failed."""
+        from midicoder.errors import MidicoderError
+
         command = Command(
             id="TransferMoney",
             description="Chuyển tiền",
@@ -429,10 +435,10 @@ class TestCommandGuards:
         compliance_service = MockComplianceService(aml_clear=False)
         guards = CommandGuards(command, compliance_service=compliance_service)
 
-        with pytest.raises(RuntimeError) as exc_info:
+        with pytest.raises(MidicoderError) as exc_info:
             await guards.check_all({"amount": 1000000}, user_id="user_001", tenant_id="tenant_001")
 
-        assert "AML" in str(exc_info.value)
+        assert exc_info.value.code.value == "MDC-CP01-058"
 
     @pytest.mark.asyncio
     async def test_hipaa_access_pass(self):
@@ -455,6 +461,8 @@ class TestCommandGuards:
     @pytest.mark.asyncio
     async def test_hipaa_access_fail(self):
         """Test: HIPAA guard fail khi user không có clearance."""
+        from midicoder.errors import MidicoderError
+
         command = Command(
             id="ViewPatientRecord",
             description="Xem hồ sơ bệnh nhân",
@@ -467,10 +475,10 @@ class TestCommandGuards:
         compliance_service = MockComplianceService(hipaa_cleared=False)
         guards = CommandGuards(command, compliance_service=compliance_service)
 
-        with pytest.raises(RuntimeError) as exc_info:
+        with pytest.raises(MidicoderError) as exc_info:
             await guards.check_all({}, user_id="user_001", tenant_id="hospital_001")
 
-        assert "HIPAA" in str(exc_info.value)
+        assert exc_info.value.code.value == "MDC-CP01-059"
 
 
 # ============================================================================

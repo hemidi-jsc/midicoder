@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
 
 # ============================================================================
 # Enums
@@ -230,7 +232,10 @@ class FilterExpression:
         elif self.operator == FilterOp.IS_NOT_NULL:
             return col.isnot(None)
         else:
-            raise ValueError(f"Unsupported operator: {self.operator}")
+            EM.raise_error(
+                ErrorCode.CP01_QUERY_INVALID_FILTER,
+                operator=self.operator.value,
+            )
 
 
 @dataclass

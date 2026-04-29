@@ -13,6 +13,8 @@ from typing import Any, Optional
 
 from jinja2 import Environment, FileSystemLoader
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
 from .base import ValueObjectEmitter, EmittedValueObject, EmittedField
 from .type_resolver import TypeResolver
 from .inheritance import InheritanceResolver
@@ -360,6 +362,12 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
         Returns:
             Generated TypeScript code
         """
+        # Check if we need Decimal import
+        needs_decimal = any(
+            f.original.get("type") == "decimal"
+            for f in vo.fields
+        )
+
         lines = [
             '"""',
             f"{vo.id} Value Object.",
@@ -370,13 +378,18 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
             "",
             'import { IsOptional, IsString, IsNumber, IsBoolean, IsDate } from "class-validator";',
             'import { Type } from "class-transformer";',
-            "",
-            "",
-            "export class " + vo.name + "{",
-            '  /**',
-            f'   * {vo.description or vo.id}',
-            '   */',
         ]
+
+        if needs_decimal:
+            lines.append('import { Decimal } from "decimal.js";')
+
+        lines.append("")
+        lines.append("")
+        lines.append("export class " + vo.name + "{")
+        lines.append('  /**')
+        lines.append(f'   * {vo.description or vo.id}')
+        lines.append('   */')
+        lines.append("")
 
         # Generate fields with validators
         for field_def in vo.fields:
@@ -384,6 +397,7 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
             field_type = original.get("type", "string")
             required = original.get("required", True)
             is_computed = field_def.is_computed
+            is_frozen = vo.is_frozen
 
             if is_computed:
                 # Computed field as getter
@@ -413,7 +427,9 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
             elif field_type == "datetime":
                 lines.append("  @IsDate()")
 
-            lines.append(f"  {field_def.name}: {field_def.type_annotation};")
+            # Add readonly modifier for frozen/immutable VO
+            readonly_prefix = "readonly " if is_frozen else ""
+            lines.append(f"  {readonly_prefix}{field_def.name}: {field_def.type_annotation};")
             lines.append("")
 
         # Add toDict method
@@ -424,21 +440,33 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
         lines.append("    };")
         lines.append("  }")
 
-        # Add fromDict static method
-        lines.append("")
-        lines.append("  static fromDict(data: Record<string, any>): " + vo.name + " {")
-        lines.append("    const instance = new this();")
+        # Build field assignments for static methods
+        field_assignments = []
         for field_def in vo.fields:
             if not field_def.is_computed:
                 original = field_def.original
                 field_type = original.get("type", "string")
                 if field_type == "decimal":
-                    lines.append(f"    instance.{field_def.name} = parseFloat(data['{field_def.name}']);")
+                    field_assignments.append(f"instance.{field_def.name} = parseFloat(data['{field_def.name}']);")
                 elif field_type == "datetime":
-                    lines.append(f"    instance.{field_def.name} = new Date(data['{field_def.name}']);")
+                    field_assignments.append(f"instance.{field_def.name} = new Date(data['{field_def.name}']);")
                 else:
-                    lines.append(f"    instance.{field_def.name} = data['{field_def.name}'];")
+                    field_assignments.append(f"instance.{field_def.name} = data['{field_def.name}'];")
+
+        # Add fromDict static method
+        lines.append("")
+        lines.append("  static fromDict(data: Record<string, any>): " + vo.name + " {")
+        lines.append("    const instance = new this();")
+        for assignment in field_assignments:
+            lines.append(f"    {assignment}")
         lines.append("    return instance;")
+        lines.append("  }")
+
+        # Add create static method (alias for fromDict)
+        lines.append("")
+        lines.append(f"  /** Tạo instance mới từ data */")
+        lines.append("  static create(data: Record<string, any>): " + vo.name + " {")
+        lines.append("    return this.fromDict(data);")
         lines.append("  }")
 
         lines.append("")
@@ -471,7 +499,10 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
         # Check for circular inheritance
         cycles = inheritance_resolver.detect_all_cycles()
         if cycles:
-            raise ValueError(f"Circular inheritance detected: {cycles}")
+            EM.raise_error(
+                ErrorCode.CP01_VALUE_OBJECT_NOT_FOUND,
+                cycles=cycles,
+            )
 
         emitted_files: list[tuple[Path, str]] = []
 
