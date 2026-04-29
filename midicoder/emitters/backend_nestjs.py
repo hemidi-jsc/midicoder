@@ -306,16 +306,48 @@ class BackendNestJSEmitter:
             # Sử dụng NestJSEntityEmitter mới để generate entity
             entity_emitter = NestJSEntityEmitter(stack_dir=self.stack_dir)
             
+            # Convert Python type names to EntityParser expected format
+            def convert_entity_type(field: dict) -> None:
+                """Convert Python type to EntityParser type."""
+                type_mapping = {
+                    "str": "string",
+                    "int": "integer",
+                    "float": "float",
+                    "bool": "boolean",
+                    "datetime": "datetime",
+                }
+                if "type" in field and isinstance(field["type"], str):
+                    field["type"] = type_mapping.get(field["type"], field["type"])
+            
             # Parse entity DSL từ dict (convert dict to YAML format then parse)
             import yaml
-            entities_yaml = {"entities": [entity] if isinstance(entity, dict) else entity}
+            import copy
+            
+            # Deep copy entity to avoid modifying original
+            entity_copy = copy.deepcopy(entity) if isinstance(entity, dict) else entity
+            
+            # Convert field types
+            if isinstance(entity_copy, dict) and "fields" in entity_copy:
+                for field in entity_copy["fields"]:
+                    convert_entity_type(field)
+            
+            entities_yaml = {"entities": [entity_copy] if isinstance(entity_copy, dict) else entity_copy}
             yaml_content = yaml.safe_dump(entities_yaml)
             parsed_entities = EntityParser().parse(yaml_content)
             
             # Convert all_entities dict list to yaml and parse
             all_parsed_entities = []
             if all_entities:
-                all_entities_yaml = {"entities": all_entities}
+                # Deep copy all_entities to avoid modifying original
+                all_entities_copy = copy.deepcopy(all_entities)
+                
+                # Convert field types for all entities
+                for ent in all_entities_copy:
+                    if isinstance(ent, dict) and "fields" in ent:
+                        for field in ent["fields"]:
+                            convert_entity_type(field)
+                
+                all_entities_yaml = {"entities": all_entities_copy}
                 all_yaml_content = yaml.safe_dump(all_entities_yaml)
                 all_parsed_entities = EntityParser().parse(all_yaml_content)
             
