@@ -1,461 +1,282 @@
 """
-Command DSL Models.
+Command Models Module.
 
-Định nghĩa các models cho Command pattern với đầy đủ support cho 100 industries.
+Module này định nghĩa các models cho Command DSL:
+- Command: Định nghĩa command với input, output, guards, effects
+- Field: Định nghĩa field trong input/output
+- FieldType: Enum cho field types
 
 Author: Midicoder Team
-Version: 2.0.0
+Version: 1.0.0
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
-class EffectType(str, Enum):
+# ============================================================================
+# FieldType Enum
+# ============================================================================
+
+class FieldType(Enum):
     """
-    Loại effects được hỗ trợ.
+    Enum cho các field types trong Command/Query.
 
-    P0 - Core Effects:
-    - CREATE_RECORD: Tạo record mới
-    - UPDATE_RECORD: Cập nhật record
-    - DELETE_RECORD: Xóa record
-    - PUBLISH_EVENT: Publish event
-
-    P0 - Transaction Effects:
-    - BEGIN_TRANSACTION: Bắt đầu transaction
-    - COMMIT_TRANSACTION: Commit transaction
-    - ROLLBACK_TRANSACTION: Rollback transaction
-
-    P1 - Extended Effects:
-    - QUERY_RECORDS: Query trong command
-    - UPSERT_RECORD: Upsert record
-    - BATCH_CREATE: Batch create
-    - BATCH_UPDATE: Batch update
-
-    P1 - Integration Effects:
-    - CALL_EXTERNAL_API: Gọi external API
-    - SEND_EMAIL: Gửi email
-    - SEND_SMS: Gửi SMS
-    - PUSH_NOTIFICATION: Gửi push notification
-    - WEBHOOK: Gọi webhook
-
-    P1 - Observability Effects:
-    - WRITE_AUDIT_LOG: Ghi audit log
-    - RECORD_METRIC: Ghi metric
-
-    P1 - Compliance Effects:
-    - CHECK_COMPLIANCE: Check compliance gate
-    - MASK_PII: Mask PII data
-
-    P2 - Advanced Effects:
-    - SCHEDULE_JOB: Schedule background job
-    - BEGIN_SAGA: Begin SAGA pattern
-    - COMPENSATE: Compensation action
+    Types:
+        STRING: String type (varchar)
+        INTEGER: Integer type (int)
+        FLOAT: Float type (float)
+        BOOLEAN: Boolean type (bool)
+        DATETIME: DateTime type (timestamp)
+        TEXT: Text type (text)
+        UUID: UUID type (uuid)
+        JSON: JSON type (json/jsonb)
+        DECIMAL: Decimal type (decimal)
+        ENUM: Enum type (custom enum)
+        LARGE_BINARY: Large binary type (blob)
+        ARRAY: Array type (array)
+        OBJECT: Object type (nested object)
     """
 
-    # Core
-    CREATE_RECORD = "create_record"
-    UPDATE_RECORD = "update_record"
-    DELETE_RECORD = "delete_record"
-    PUBLISH_EVENT = "publish_event"
-
-    # Transaction
-    BEGIN_TRANSACTION = "begin_transaction"
-    COMMIT_TRANSACTION = "commit_transaction"
-    ROLLBACK_TRANSACTION = "rollback_transaction"
-
-    # Extended
-    QUERY_RECORDS = "query_records"
-    UPSERT_RECORD = "upsert_record"
-    BATCH_CREATE = "batch_create"
-    BATCH_UPDATE = "batch_update"
-
-    # Integration
-    CALL_EXTERNAL_API = "call_external_api"
-    SEND_EMAIL = "send_email"
-    SEND_SMS = "send_sms"
-    PUSH_NOTIFICATION = "push_notification"
-    WEBHOOK = "webhook"
-
-    # Observability
-    WRITE_AUDIT_LOG = "write_audit_log"
-    RECORD_METRIC = "record_metric"
-
-    # Compliance
-    CHECK_COMPLIANCE = "check_compliance"
-    MASK_PII = "mask_pii"
-
-    # Advanced
-    SCHEDULE_JOB = "schedule_job"
-    BEGIN_SAGA = "begin_saga"
-    COMPENSATE = "compensate"
+    STRING = "string"
+    INTEGER = "integer"
+    FLOAT = "float"
+    BOOLEAN = "boolean"
+    DATETIME = "datetime"
+    TEXT = "text"
+    UUID = "uuid"
+    JSON = "json"
+    DECIMAL = "decimal"
+    ENUM = "enum"
+    LARGE_BINARY = "large_binary"
+    ARRAY = "array"
+    OBJECT = "object"
 
 
-class GuardType(str, Enum):
-    """
-    Loại guards được hỗ trợ.
-
-    P0 - Core Guards:
-    - AUTH: Auth guard (permission check)
-    - TENANT_SCOPE: Tenant isolation guard
-
-    P1 - Extended Guards:
-    - RATE_LIMIT: Rate limiting guard
-    - IP_WHITELIST: IP whitelist guard
-    - TIME_WINDOW: Time window guard
-
-    P1 - Compliance Guards:
-    - KYC_CHECK: KYC compliance guard
-    - AML_SCREENING: AML screening guard
-    - HIPAA_ACCESS: HIPAA access guard
-
-    P2 - Advanced Guards:
-    - POLICY_EVAL: Policy evaluation guard (ABAC)
-    - CONCURRENT_LOCK: Concurrent lock guard
-    """
-
-    # Core
-    AUTH = "auth"
-    TENANT_SCOPE = "tenant_scope"
-
-    # Extended
-    RATE_LIMIT = "rate_limit"
-    IP_WHITELIST = "ip_whitelist"
-    TIME_WINDOW = "time_window"
-
-    # Compliance
-    KYC_CHECK = "kyc_check"
-    AML_SCREENING = "aml_screening"
-    HIPAA_ACCESS = "hipaa_access"
-
-    # Advanced
-    POLICY_EVAL = "policy_eval"
-    CONCURRENT_LOCK = "concurrent_lock"
-
+# ============================================================================
+# Field Model
+# ============================================================================
 
 @dataclass
-class CommandField:
+class Field:
     """
-    Field definition cho Command.
+    Field definition trong Command/Query input/output.
 
     Attributes:
         name: Tên field
-        field_type: Type của field (string, integer, uuid, etc.)
+        field_type: Loại dữ liệu (FieldType enum)
         required: Có bắt buộc không
-        pattern: Regex pattern validation
-        min_length: Min length cho string
-        max_length: Max length cho string
-        min_value: Min value cho number
-        max_value: Max value cho number
-        min_items: Min items cho array
-        max_items: Max items cho array
-        default: Default value
+        default: Giá trị mặc định
         description: Mô tả field
+        nullable: Có thể null không
+        unique: Có unique constraint không
+        primary_key: Có phải primary key không
+        index: Có index không
+        server_default: Server default value
+        length: Max length (cho string)
+        precision: Precision (cho decimal)
+        scale: Scale (cho decimal)
+        enum_values: Enum values (cho enum type)
+
+    Example:
+        >>> f = Field(
+        ...     name="order_id",
+        ...     field_type=FieldType.STRING,
+        ...     required=True
+        ... )
     """
 
     name: str
-    field_type: str
-    required: bool = True
-    pattern: Optional[str] = None
-    min_length: Optional[int] = None
-    max_length: Optional[int] = None
-    min_value: Optional[float] = None
-    max_value: Optional[float] = None
-    min_items: Optional[int] = None
-    max_items: Optional[int] = None
+    field_type: FieldType
+    required: bool = False
     default: Any = None
     description: str = ""
+    nullable: bool = True
+    unique: bool = False
+    primary_key: bool = False
+    index: bool = False
+    server_default: str = ""
+    length: int | None = None
+    precision: int | None = None
+    scale: int | None = None
+    enum_values: list[str] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Chuyển Field sang dictionary.
+
+        Returns:
+            Dictionary representation của Field
+        """
+        return {
+            "name": self.name,
+            "type": self.field_type.value,
+            "required": self.required,
+            "default": self.default,
+            "description": self.description,
+            "nullable": self.nullable,
+            "unique": self.unique,
+            "primary_key": self.primary_key,
+            "index": self.index,
+            "server_default": self.server_default,
+            "length": self.length,
+            "precision": self.precision,
+            "scale": self.scale,
+            "enum_values": self.enum_values,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Field":
+        """
+        Tạo Field từ dictionary.
+
+        Args:
+            data: Dictionary chứa field data
+
+        Returns:
+            Field instance
+        """
+        type_str = data.get("type", "string")
+        field_type = FieldType(type_str) if isinstance(type_str, str) else type_str
+
+        return cls(
+            name=data.get("name", ""),
+            field_type=field_type,
+            required=bool(data.get("required", False)),
+            default=data.get("default"),
+            description=data.get("description", ""),
+            nullable=bool(data.get("nullable", True)),
+            unique=bool(data.get("unique", False)),
+            primary_key=bool(data.get("primary_key", False)),
+            index=bool(data.get("index", False)),
+            server_default=data.get("server_default", ""),
+            length=data.get("length"),
+            precision=data.get("precision"),
+            scale=data.get("scale"),
+            enum_values=data.get("enum_values"),
+        )
 
 
-@dataclass
-class CommandGuard:
-    """
-    Guard definition cho Command.
-
-    Attributes:
-        guard_type: Loại guard
-        permission: Permission required (cho AUTH guard)
-        mode: Mode (cho TENANT_SCOPE guard)
-        limit: Limit (cho RATE_LIMIT guard)
-        window: Time window (cho RATE_LIMIT guard)
-        roles: Required roles
-        policy: Policy expression (cho POLICY_EVAL guard)
-        description: Mô tả guard
-    """
-
-    guard_type: GuardType
-    permission: Optional[str] = None
-    mode: Optional[str] = None
-    limit: Optional[int] = None
-    window: Optional[str] = None
-    roles: list[str] = field(default_factory=list)
-    policy: Optional[str] = None
-    description: str = ""
-
-
-@dataclass
-class CommandEffect:
-    """
-    Effect definition cho Command.
-
-    Attributes:
-        effect_type: Loại effect
-        entity: Entity name (cho CRUD effects)
-        event: Event name (cho publish_event)
-        api_endpoint: API endpoint (cho call_external_api)
-        email_template: Email template (cho send_email)
-        sms_template: SMS template (cho send_sms)
-        webhook_url: Webhook URL
-        audit_action: Audit action
-        metric_name: Metric name
-        compliance_rule: Compliance rule
-        job_name: Job name (cho schedule_job)
-        condition: Condition để execute effect
-        description: Mô tả effect
-    """
-
-    effect_type: EffectType
-    entity: Optional[str] = None
-    event: Optional[str] = None
-    api_endpoint: Optional[str] = None
-    email_template: Optional[str] = None
-    sms_template: Optional[str] = None
-    webhook_url: Optional[str] = None
-    audit_action: Optional[str] = None
-    metric_name: Optional[str] = None
-    compliance_rule: Optional[str] = None
-    job_name: Optional[str] = None
-    condition: Optional[str] = None
-    description: str = ""
-
-
-@dataclass
-class CommandError:
-    """
-    Error definition cho Command.
-
-    Attributes:
-        code: Error code
-        message: Error message (Vietnamese)
-        http_status: HTTP status code
-        retryable: Có retry được không
-        max_retries: Max retry attempts
-        backoff_seconds: Backoff time
-        description: Mô tả error
-    """
-
-    code: str
-    message: str
-    http_status: int = 400
-    retryable: bool = False
-    max_retries: int = 0
-    backoff_seconds: float = 0.0
-    description: str = ""
-
-
-@dataclass
-class ValidationResult:
-    """
-    Kết quả validation.
-
-    Attributes:
-        is_valid: Có hợp lệ không
-        errors: Danh sách lỗi
-        warnings: Danh sách warnings
-    """
-
-    is_valid: bool
-    errors: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-
-    def add_error(self, error: str) -> None:
-        """Thêm error vào danh sách."""
-        self.errors.append(error)
-        self.is_valid = False
-
-    def add_warning(self, warning: str) -> None:
-        """Thêm warning vào danh sách."""
-        self.warnings.append(warning)
-
+# ============================================================================
+# Command Model
+# ============================================================================
 
 @dataclass
 class Command:
     """
-    Command definition cho CP01 Domain Model.
+    Command definition trong DSL.
 
-    Command representation cho business operations với đầy đủ:
-    - Input validation
-    - Guards (auth, tenant, compliance)
-    - Effects (CRUD, transaction, integration, observability)
-    - Error handling
+    Command đại diện cho một write operation trong hệ thống.
+    Mỗi command có input, guards, effects, và errors.
 
     Attributes:
-        id: Command ID (PascalCase, e.g., "CreateOrder")
-        description: Mô tả command (Vietnamese)
-        input: Danh sách input fields
-        guards: Danh sách guards
-        effects: Danh sách effects
-        errors: Danh sách custom errors
-        transaction_required: Cần transaction không
-        on_error: Error handler (rollback, compensate, etc.)
-        idempotency_key: Idempotency key field
-        timeout_seconds: Timeout cho command
+        id: Định danh duy nhất của command
         description: Mô tả command
+        input: Danh sách input fields
+        fetches: Danh sách entities cần load trước khi execute
+        guards: Danh sách guards cần check
+        effects: Danh sách effects sau khi execute
+        errors: Danh sách errors có thể phát sinh
+        returns: Danh sách return fields
+        category: Phân loại command (create, update, delete, custom)
+        emits: Danh sách events sẽ emit
+        required_roles: Roles cần thiết để execute
+        required_permissions: Permissions cần thiết
+        writes_to: Danh sách entities sẽ được modify
+        transaction: Có cần transaction không
+        tenant_scope: Phạm vi multi-tenancy
+
+    Example:
+        >>> cmd = Command(
+        ...     id="CreateOrder",
+        ...     description="Tạo đơn hàng mới",
+        ...     input=[Field(name="order_data", field_type=FieldType.OBJECT)],
+        ...     writes_to=["Order", "OrderItem"],
+        ...     category="create",
+        ...     transaction=True
+        ... )
     """
 
     id: str
-    description: str
-    input: list[CommandField] = field(default_factory=list)
-    guards: list[CommandGuard] = field(default_factory=list)
-    effects: list[CommandEffect] = field(default_factory=list)
-    errors: list[CommandError] = field(default_factory=list)
-    transaction_required: bool = False
-    on_error: Optional[str] = None
-    idempotency_key: Optional[str] = None
-    timeout_seconds: Optional[int] = None
-
-    def has_auth_guard(self) -> bool:
-        """Check nếu có AUTH guard."""
-        return any(g.guard_type == GuardType.AUTH for g in self.guards)
-
-    def has_tenant_guard(self) -> bool:
-        """Check nếu có TENANT_SCOPE guard."""
-        return any(g.guard_type == GuardType.TENANT_SCOPE for g in self.guards)
-
-    def has_transaction_effects(self) -> bool:
-        """Check nếu có transaction effects."""
-        return any(
-            e.effect_type in [
-                EffectType.BEGIN_TRANSACTION,
-                EffectType.COMMIT_TRANSACTION,
-                EffectType.ROLLBACK_TRANSACTION,
-            ]
-            for e in self.effects
-        )
-
-    def get_required_permissions(self) -> list[str]:
-        """Lấy danh sách required permissions."""
-        return [
-            g.permission
-            for g in self.guards
-            if g.guard_type == GuardType.AUTH and g.permission
-        ]
-
-    def get_create_effects(self) -> list[CommandEffect]:
-        """Lấy danh sách create effects."""
-        return [e for e in self.effects if e.effect_type == EffectType.CREATE_RECORD]
-
-    def get_update_effects(self) -> list[CommandEffect]:
-        """Lấy danh sách update effects."""
-        return [e for e in self.effects if e.effect_type == EffectType.UPDATE_RECORD]
-
-    def get_delete_effects(self) -> list[CommandEffect]:
-        """Lấy danh sách delete effects."""
-        return [e for e in self.effects if e.effect_type == EffectType.DELETE_RECORD]
-
-    def get_event_effects(self) -> list[CommandEffect]:
-        """Lấy danh sách event effects."""
-        return [e for e in self.effects if e.effect_type == EffectType.PUBLISH_EVENT]
+    description: str = ""
+    input: list[Field] = field(default_factory=list)
+    fetches: list[str] = field(default_factory=list)
+    guards: list[str] = field(default_factory=list)
+    effects: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    returns: list[Field] = field(default_factory=list)
+    category: str = "custom"
+    emits: list[str] = field(default_factory=list)
+    required_roles: list[str] = field(default_factory=list)
+    required_permissions: list[str] = field(default_factory=list)
+    writes_to: list[str] = field(default_factory=list)
+    transaction: bool = False
+    tenant_scope: str = "global"
 
     def to_dict(self) -> dict[str, Any]:
         """
-        Chuyển Command sang dict.
+        Chuyển Command sang dictionary.
 
         Returns:
-            Dict representation của Command
+            Dictionary representation của Command
         """
         return {
             "id": self.id,
             "description": self.description,
-            "input": [
-                {
-                    "name": f.name,
-                    "field_type": f.field_type,
-                    "required": f.required,
-                    "pattern": f.pattern,
-                    "min_length": f.min_length,
-                    "max_length": f.max_length,
-                    "min_value": f.min_value,
-                    "max_value": f.max_value,
-                    "min_items": f.min_items,
-                    "max_items": f.max_items,
-                    "default": f.default,
-                    "description": f.description,
-                }
-                for f in self.input
-            ],
-            "guards": [
-                {
-                    "guard_type": g.guard_type.value,
-                    "permission": g.permission,
-                    "mode": g.mode,
-                    "limit": g.limit,
-                    "window": g.window,
-                    "roles": g.roles,
-                    "policy": g.policy,
-                    "description": g.description,
-                }
-                for g in self.guards
-            ],
-            "effects": [
-                {
-                    "effect_type": e.effect_type.value,
-                    "entity": e.entity,
-                    "event": e.event,
-                    "api_endpoint": e.api_endpoint,
-                    "email_template": e.email_template,
-                    "sms_template": e.sms_template,
-                    "webhook_url": e.webhook_url,
-                    "audit_action": e.audit_action,
-                    "metric_name": e.metric_name,
-                    "compliance_rule": e.compliance_rule,
-                    "job_name": e.job_name,
-                    "condition": e.condition,
-                    "description": e.description,
-                }
-                for e in self.effects
-            ],
-            "errors": [
-                {
-                    "code": err.code,
-                    "message": err.message,
-                    "http_status": err.http_status,
-                    "retryable": err.retryable,
-                    "max_retries": err.max_retries,
-                    "backoff_seconds": err.backoff_seconds,
-                    "description": err.description,
-                }
-                for err in self.errors
-            ],
-            "transaction_required": self.transaction_required,
-            "on_error": self.on_error,
-            "idempotency_key": self.idempotency_key,
-            "timeout_seconds": self.timeout_seconds,
+            "input": [f.to_dict() for f in self.input],
+            "fetches": self.fetches,
+            "guards": self.guards,
+            "effects": self.effects,
+            "errors": self.errors,
+            "returns": [r.to_dict() for r in self.returns],
+            "category": self.category,
+            "emits": self.emits,
+            "required_roles": self.required_roles,
+            "required_permissions": self.required_permissions,
+            "writes_to": self.writes_to,
+            "transaction": self.transaction,
+            "tenant_scope": self.tenant_scope,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Command:
+    def from_dict(cls, data: dict[str, Any]) -> "Command":
         """
-        Tạo Command từ dict.
+        Tạo Command từ dictionary.
 
         Args:
-            data: Dict chứa Command data
+            data: Dictionary chứa command data
 
         Returns:
             Command instance
         """
         return cls(
-            id=data["id"],
-            description=data["description"],
-            input=[CommandField(**f) for f in data.get("input", [])],
-            guards=[CommandGuard(**g) for g in data.get("guards", [])],
-            effects=[CommandEffect(**e) for e in data.get("effects", [])],
-            errors=[CommandError(**e) for e in data.get("errors", [])],
-            transaction_required=data.get("transaction_required", False),
-            on_error=data.get("on_error"),
-            idempotency_key=data.get("idempotency_key"),
-            timeout_seconds=data.get("timeout_seconds"),
+            id=data.get("id", ""),
+            description=data.get("description", ""),
+            input=[Field.from_dict(f) for f in data.get("input", [])],
+            fetches=data.get("fetches", []),
+            guards=data.get("guards", []),
+            effects=data.get("effects", []),
+            errors=data.get("errors", []),
+            returns=[Field.from_dict(r) for r in data.get("returns", [])],
+            category=data.get("category", "custom"),
+            emits=data.get("emits", []),
+            required_roles=data.get("required_roles", []),
+            required_permissions=data.get("required_permissions", []),
+            writes_to=data.get("writes_to", []),
+            transaction=bool(data.get("transaction", False)),
+            tenant_scope=data.get("tenant_scope", "global"),
         )
+
+
+# ============================================================================
+# Exports
+# ============================================================================
+
+__all__ = [
+    "FieldType",
+    "Field",
+    "Command",
+]
