@@ -30,6 +30,7 @@ from midicoder.pipeline.mir import (
 )
 from midicoder.dsl.projection import ProjectionNode, ProjectionTree, NodeKind
 from midicoder.dsl.validator import Validator
+from midicoder.pipeline.dsl_parser import DSLParser
 
 
 def build_mir(verbose: bool = False) -> MIR:
@@ -138,6 +139,8 @@ def _dict_to_projection_tree(data: dict[str, Any]) -> ProjectionTree:
     """
     Chuyển dict từ SQLite sang ProjectionTree.
 
+    Deprecated: Sử dụng DSLParser.parse_directory() thay thế.
+
     Args:
         data: Dictionary chứa capability graph data
 
@@ -166,6 +169,47 @@ def _dict_to_projection_tree(data: dict[str, Any]) -> ProjectionTree:
         tree.add_node(node)
 
     return tree
+
+
+def _build_mir_from_contracts_directory(contracts_dir: str) -> MIR:
+    """
+    Build MIR từ contracts directory sử dụng DSLParser.
+
+    Đây là preferred method để build MIR từ YAML contracts.
+
+    Args:
+        contracts_dir: Path đến contracts directory
+
+    Returns:
+        MIR instance
+    """
+    click.echo(f"📁 Parsing contracts từ: {contracts_dir}")
+
+    # Parse YAML files → ProjectionTree
+    dsl_parser = DSLParser()
+    tree = dsl_parser.parse_directory(contracts_dir)
+
+    click.echo(f"   → ProjectionTree: {tree.node_count()} nodes")
+
+    # Validate ProjectionTree
+    validator = Validator()
+    validation_result = validator.validate(tree)
+    if validation_result.errors:
+        click.echo("❌ Validation errors:")
+        for error in validation_result.errors:
+            click.echo(f"   - {error}")
+        EM.raise_error(ErrorCode.MIR_VALIDATION_FAILED, errors=len(validation_result.errors))
+
+    click.echo(f"   ✓ Validation passed ({len(validation_result.warnings)} warnings)")
+
+    # Build MIR từ ProjectionTree
+    mir = _build_mir_from_projection_tree(tree)
+    click.echo(f"   → MIR: {len(mir.operations)} operations, "
+               f"{len(mir.data_flows)} data flows, "
+               f"{len(mir.effect_flows)} effect flows, "
+               f"{len(mir.boundaries)} boundaries")
+
+    return mir
 
 
 def _build_mir_from_projection_tree(tree: ProjectionTree) -> MIR:
