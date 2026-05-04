@@ -17,7 +17,7 @@ Compliance:
     KPI-029: Multi-currency support & tenant isolation
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Optional
 
@@ -50,6 +50,12 @@ class Money:
     amount: Decimal
     currency: str
     metadata: Optional[dict] = None
+
+    # KPI-029: Tenant ID cho multi-tenant isolation
+    # - Optional field, default=None cho backward compatibility
+    # - repr=False: Không hiển thị trong __repr__
+    # - compare=False: Không ảnh hưởng đến __eq__ và __hash__
+    tenant_id: Optional[str] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Validate fields sau khi init."""
@@ -172,12 +178,28 @@ class Money:
 
     def get_tenant_id(self) -> str | None:
         """
-        KPI-029: Lấy tenant_id nếu VO có tenant context.
+        KPI-029: Lấy tenant ID từ Money.
         
         Returns:
             Tenant ID nếu có, None nếu không
         """
-        return None
+        return self.tenant_id
+
+    def with_tenant(self, tenant_id: str) -> "Money":
+        """
+        KPI-029: Tạo copy của Money với tenant_id mới.
+        
+        Đây là phương pháp functional cho tenant context propagation.
+        Original VO không thay đổi (frozen=True).
+        
+        Args:
+            tenant_id: Tenant ID để set vào copy
+            
+        Returns:
+            Copy của Money với tenant_id mới, giữ nguyên các fields khác
+        """
+        from dataclasses import replace
+        return replace(self, tenant_id=tenant_id)
 
     def to_dict(self) -> dict:
         """Chuyển thành dictionary."""
@@ -189,11 +211,23 @@ class Money:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Money":
-        """Tạo Money từ dictionary."""
+        """
+        Tạo Money từ dictionary.
+        
+        KPI-029: Bao gồm việc parse tenant_id từ dict (optional).
+        
+        Args:
+            data: Dictionary chứa values cho các fields và tenant_id (optional)
+            
+        Returns:
+            Money instance
+        """
         return cls(
             amount=Decimal(str(data["amount"])),
             currency=data["currency"],
             metadata=data.get("metadata"),
+            # KPI-029: tenant_id là optional, default=None
+            tenant_id=data.get("tenant_id"),
         )
 
     def __str__(self) -> str:
