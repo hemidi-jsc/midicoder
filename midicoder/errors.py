@@ -310,6 +310,17 @@ class ErrorCode(str, Enum):
     CP01_GUARD_PCI_RESTRICTED = "MDC-CP01-061"
     
     # =========================================================================
+    # CP01: Compliance & Domain Guards Errors (RX02-RX04)
+    # =========================================================================
+    CP01_GUARD_COMPLIANCE_LOG_FAILED = "MDC-CP01-068"  # Audit log write failed
+    CP01_GUARD_EXTERNAL_API_TIMEOUT = "MDC-CP01-069"   # External API timeout
+    CP01_GUARD_CLAIMS_VALIDATION_FAILED = "MDC-CP01-070"  # Claims validation failed
+    CP01_GUARD_UNDERWRITING_FAILED = "MDC-CP01-071"     # Underwriting check failed
+    CP01_GUARD_DOUBLE_ENTRY_IMBALANCE = "MDC-CP01-072"  # Double-entry debit != credit
+    CP01_GUARD_PHI_NOT_ENCRYPTED = "MDC-CP01-073"       # PHI field not encrypted
+    CP01_GUARD_MINIMUM_NECESSARY_VIOLATION = "MDC-CP01-074"  # Excessive PHI access
+    
+    # =========================================================================
     # CP01: Transaction Errors
     # =========================================================================
     CP01_TRANSACTION_NOT_ACTIVE = "MDC-CP01-062"

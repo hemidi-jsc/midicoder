@@ -198,15 +198,19 @@ class CommandValidator:
         self,
         data: dict[str, Any],
         result: ValidationResult,
+        tenant_id: str | None = None,
     ) -> None:
         """
         Business rule validation.
 
         Rules are determined by command type and industry.
 
+        KPI-029: Tenant-aware validation.
+
         Args:
             data: Command data
             result: ValidationResult
+            tenant_id: Tenant ID cho multi-tenant validation
         """
         command_id = self._command.id
 
@@ -221,6 +225,327 @@ class CommandValidator:
             # Minimum order value
             if "total" in data and data["total"] and data["total"] < 10000:
                 result.add_warning("Đơn hàng có giá trị dưới 10,000đ - có thể miễn phí vận chuyển")
+
+    # -------------------------------------------------------------------------
+    # RX02: Financial Integrity Validation (Banking - DP11)
+    # -------------------------------------------------------------------------
+
+    async def validate_rx02(
+        self,
+        data: dict[str, Any],
+        tenant_id: str | None = None,
+    ) -> ValidationResult:
+        """
+        Validate RX02 Financial Integrity requirements.
+
+        RX02 Obligations:
+        - double_entry_required: Mọi giao dịch phải có debit = credit
+        - transaction_immutability: Transactions immutable sau commit
+        - reconciliation_mandatory: Daily reconciliation required
+
+        KPI-029: Tenant-aware validation.
+
+        Args:
+            data: Command data
+            tenant_id: Tenant ID
+
+        Returns:
+            ValidationResult với errors nếu vi phạm RX02
+        """
+        result = ValidationResult(is_valid=True)
+
+        # RX02-01: Double-entry validation (debit = credit)
+        await self._validate_double_entry(data, result, tenant_id)
+
+        # RX02-02: Transaction immutability check
+        await self._validate_transaction_immutability(data, result, tenant_id)
+
+        return result
+
+    async def _validate_double_entry(
+        self,
+        data: dict[str, Any],
+        result: ValidationResult,
+        tenant_id: str | None = None,
+    ) -> None:
+        """
+        Validate double-entry bookkeeping rule.
+
+        Rule: Debit tổng phải bằng Credit tổng.
+
+        Args:
+            data: Command data với debit/credit fields
+            result: ValidationResult
+            tenant_id: Tenant ID
+        """
+        debit = data.get("debit") or 0
+        credit = data.get("credit") or 0
+
+        if debit > 0 or credit > 0:
+            if abs(debit - credit) > 0.01:  # Allow 0.01 tolerance cho rounding
+                result.add_error(
+                    f"Vi phạm double-entry rule: Debit ({debit}) != Credit ({credit})"
+                )
+
+    async def _validate_transaction_immutability(
+        self,
+        data: dict[str, Any],
+        result: ValidationResult,
+        tenant_id: str | None = None,
+    ) -> None:
+        """
+        Validate transaction immutability.
+
+        Rule: Transaction đã commit không thể sửa đổi.
+
+        Args:
+            data: Command data
+            result: ValidationResult
+            tenant_id: Tenant ID
+        """
+        # Check nếu đây là update transaction đã commit
+        if data.get("status") == "completed" and data.get("is_update"):
+            result.add_error("Không thể sửa giao dịch đã hoàn thành (transaction immutability)")
+
+    # -------------------------------------------------------------------------
+    # RX03: AML/KYC Validation (Banking - DP11)
+    # -------------------------------------------------------------------------
+
+    async def validate_rx03(
+        self,
+        data: dict[str, Any],
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> ValidationResult:
+        """
+        Validate RX03 AML/KYC requirements.
+
+        RX03 Obligations:
+        - kyc_verification_required: User phải KYC verified
+        - aml_screening_required: Transactions phải qua AML screening
+        - suspicious_activity_reporting: Flag transactions > threshold
+
+        KPI-029: Tenant-aware validation.
+
+        Args:
+            data: Command data
+            user_id: User ID
+            tenant_id: Tenant ID
+
+        Returns:
+            ValidationResult với errors nếu vi phạm RX03
+        """
+        result = ValidationResult(is_valid=True)
+
+        # RX03-01: KYC verification check
+        await self._validate_kyc_verification(data, user_id, result, tenant_id)
+
+        # RX03-02: AML screening check
+        await self._validate_aml_screening(data, user_id, result, tenant_id)
+
+        # RX03-03: Suspicious activity threshold check
+        await self._validate_suspicious_activity(data, result, tenant_id)
+
+        return result
+
+    async def _validate_kyc_verification(
+        self,
+        data: dict[str, Any],
+        user_id: str | None,
+        result: ValidationResult,
+        tenant_id: str | None = None,
+    ) -> None:
+        """
+        Validate KYC verification status.
+
+        Rule: User phải có KYC verified trước khi thực hiện financial transactions.
+
+        Args:
+            data: Command data
+            user_id: User ID
+            result: ValidationResult
+            tenant_id: Tenant ID
+        """
+        is_kyc_verified = data.get("kyc_verified", False)
+
+        if not is_kyc_verified and user_id:
+            result.add_error(
+                f"User {user_id} chưa được KYC verify (tenant: {tenant_id})"
+            )
+
+    async def _validate_aml_screening(
+        self,
+        data: dict[str, Any],
+        user_id: str | None,
+        result: ValidationResult,
+        tenant_id: str | None = None,
+    ) -> None:
+        """
+        Validate AML screening status.
+
+        Rule: Transaction phải qua AML screening.
+
+        Args:
+            data: Command data
+            user_id: User ID
+            result: ValidationResult
+            tenant_id: Tenant ID
+        """
+        is_aml_cleared = data.get("aml_cleared", False)
+        amount = data.get("amount", 0)
+
+        if not is_aml_cleared and amount > 0:
+            result.add_error(
+                f"Transaction {amount}đ chưa qua AML screening (tenant: {tenant_id})"
+            )
+
+    async def _validate_suspicious_activity(
+        self,
+        data: dict[str, Any],
+        result: ValidationResult,
+        tenant_id: str | None = None,
+    ) -> None:
+        """
+        Validate suspicious activity threshold.
+
+        Rule: Transactions > threshold phải được flag cho SAR.
+
+        Args:
+            data: Command data
+            result: ValidationResult
+            tenant_id: Tenant ID
+        """
+        amount = data.get("amount", 0)
+        threshold = 100000000  # 100 triệu VND threshold
+
+        if amount and amount > threshold:
+            result.add_warning(
+                f"Giao dịch {amount}đ vượt quá threshold {threshold}đ - cần báo cáo SAR (tenant: {tenant_id})"
+            )
+
+    # -------------------------------------------------------------------------
+    # RX04: HIPAA Compliance Validation (Healthcare - DP09/DP10)
+    # -------------------------------------------------------------------------
+
+    async def validate_rx04(
+        self,
+        data: dict[str, Any],
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> ValidationResult:
+        """
+        Validate RX04 HIPAA compliance requirements.
+
+        RX04 Obligations:
+        - hipaa_compliance_required: PHI data handling phải comply HIPAA
+        - clinical_audit_trail: All PHI access phải được log
+        - phii_encryption_required: PHI fields phải encrypted at rest
+        - minimum_necessary_access: Users chỉ access necessary PHI fields
+
+        KPI-029: Tenant-aware validation.
+
+        Args:
+            data: Command data
+            user_id: User ID
+            tenant_id: Tenant ID
+
+        Returns:
+            ValidationResult với errors nếu vi phạm RX04
+        """
+        result = ValidationResult(is_valid=True)
+
+        # RX04-01: PHI encryption check
+        await self._validate_phi_encryption(data, result, tenant_id)
+
+        # RX04-02: Minimum necessary access check
+        await self._validate_minimum_necessary_access(data, user_id, result, tenant_id)
+
+        # RX04-03: Audit trail check
+        await self._validate_audit_trail(data, user_id, result, tenant_id)
+
+        return result
+
+    async def _validate_phi_encryption(
+        self,
+        data: dict[str, Any],
+        result: ValidationResult,
+        tenant_id: str | None = None,
+    ) -> None:
+        """
+        Validate PHI encryption status.
+
+        Rule: PHI fields phải được encrypted at rest.
+
+        Args:
+            data: Command data
+            result: ValidationResult
+            tenant_id: Tenant ID
+        """
+        phi_fields = ["ssn", "full_name", "date_of_birth", "medical_history", "note_text"]
+
+        for field in phi_fields:
+            if field in data and data[field]:
+                is_encrypted = data.get(f"{field}_encrypted", False)
+                if not is_encrypted:
+                    result.add_error(
+                        f"PHI field '{field}' không được encrypt (tenant: {tenant_id})"
+                    )
+
+    async def _validate_minimum_necessary_access(
+        self,
+        data: dict[str, Any],
+        user_id: str | None,
+        result: ValidationResult,
+        tenant_id: str | None = None,
+    ) -> None:
+        """
+        Validate minimum necessary access principle.
+
+        Rule: Users chỉ có thể access PHI fields cần thiết cho công việc.
+
+        Args:
+            data: Command data
+            user_id: User ID
+            result: ValidationResult
+            tenant_id: Tenant ID
+        """
+        requested_fields = data.get("requested_phi_fields", [])
+        allowed_fields = data.get("user_allowed_fields", [])
+
+        excess_access = set(requested_fields) - set(allowed_fields)
+
+        if excess_access:
+            result.add_error(
+                f"User {user_id} cố gắng truy cập PHI fields không được phép: {excess_access} (tenant: {tenant_id})"
+            )
+
+    async def _validate_audit_trail(
+        self,
+        data: dict[str, Any],
+        user_id: str | None,
+        result: ValidationResult,
+        tenant_id: str | None = None,
+    ) -> None:
+        """
+        Validate clinical audit trail.
+
+        Rule: Tất cả PHI access phải được log.
+
+        Args:
+            data: Command data
+            user_id: User ID
+            result: ValidationResult
+            tenant_id: Tenant ID
+        """
+        has_audit_log = data.get("audit_log_written", False)
+        phi_accessed = any(
+            field in data for field in ["ssn", "full_name", "medical_history", "note_text"]
+        )
+
+        if phi_accessed and not has_audit_log:
+            result.add_error(
+                f"PHI access không được ghi vào audit trail (user: {user_id}, tenant: {tenant_id})"
+            )
 
     async def _validate_custom(
         self,

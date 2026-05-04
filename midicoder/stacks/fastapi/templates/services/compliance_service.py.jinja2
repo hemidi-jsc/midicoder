@@ -1,0 +1,658 @@
+"""
+Compliance Service - Regulatory Compliance Service cho FastAPI.
+
+Module này cung cấp Compliance service cho:
+- KYC verification (Know Your Customer - RX03)
+- AML screening (Anti-Money Laundering - RX03)
+- HIPAA clearance (Healthcare Privacy - RX04)
+- Compliance audit logging (RX02, RX03, RX04)
+
+CP01: Domain Guards with Compliance Support
+KPI-029: Tenant Isolation - tenant-scoped compliance checks và audit logs
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from app.core.db.repository import ComplianceRepository
+from app.core.logging import audit_logger
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+
+# ============================================================================
+# Compliance Service
+# ============================================================================
+
+
+class ComplianceService:
+    """
+    Compliance Service - Service cho regulatory compliance checks.
+
+    Service này cung cấp methods cho:
+    - KYC verification (RX03)
+    - AML screening (RX03)
+    - HIPAA clearance (RX04)
+    - Compliance audit logging
+
+    KPI-029: Support tenant-scoped compliance checks và tenant-specific audit logs.
+
+    RX02 (Financial Integrity):
+    - Double-entry validation
+    - Transaction immutability
+    - Daily reconciliation
+
+    RX03 (AML/KYC):
+    - KYC verification required
+    - AML screening required
+    - Suspicious activity reporting
+
+    RX04 (HIPAA):
+    - PHI encryption required
+    - Clinical audit trail
+    - Minimum necessary access
+    """
+
+    def __init__(
+        self,
+        compliance_repo: ComplianceRepository,
+        external_aml_api_url: Optional[str] = None,
+        external_kyc_api_url: Optional[str] = None,
+    ):
+        """
+        Initialize ComplianceService.
+
+        Args:
+            compliance_repo: Repository cho compliance data storage
+            external_aml_api_url: URL cho external AML screening API (optional)
+            external_kyc_api_url: URL cho external KYC verification API (optional)
+        """
+        self._compliance_repo = compliance_repo
+        self._external_aml_api_url = external_aml_api_url
+        self._external_kyc_api_url = external_kyc_api_url
+
+    # -------------------------------------------------------------------------
+    # KYC Verification (RX03)
+    # -------------------------------------------------------------------------
+
+    async def check_kyc(
+        self,
+        user_id: str,
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Check KYC verification status của user.
+
+        KPI-029: Support tenant-scoped KYC verification.
+        RX03: kyc_verification_required - User phải được KYC verify trước khi thực hiện financial transactions.
+
+        Args:
+            user_id: User ID để check
+            tenant_id: KPI-029: Tenant ID cho tenant-scoped KYC check
+
+        Returns:
+            True nếu user đã được KYC verify, False nếu chưa
+
+        Raises:
+            MidicoderError: Nếu có lỗi khi check KYC
+        """
+        try:
+            # KPI-029: Check tenant-scoped KYC verification
+            kyc_status = await self._compliance_repo.get_kyc_status(user_id, tenant_id)
+
+            if kyc_status is None:
+                # User chưa có KYC record - check external API
+                if self._external_kyc_api_url:
+                    return await self._check_external_kyc(user_id, tenant_id)
+
+                # No external API - return False (not verified)
+                return False
+
+            # Check nếu KYC đã được verify
+            return kyc_status.verified and not kyc_status.expired
+
+        except Exception as e:
+            audit_logger.error(
+                "Error checking KYC status",
+                extra={
+                    "user_id": user_id,
+                    "tenant_id": tenant_id,
+                    "error": str(e),
+                },
+            )
+            # On error, default to not verified (fail-safe)
+            return False
+
+    async def _check_external_kyc(
+        self,
+        user_id: str,
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Check external KYC verification API.
+
+        Args:
+            user_id: User ID
+            tenant_id: Tenant ID
+
+        Returns:
+            True nếu KYC verified từ external API
+        """
+        # TODO: Implement external KYC API call
+        # For now, return False (not verified)
+        audit_logger.info(
+            "External KYC check requested",
+            extra={
+                "user_id": user_id,
+                "tenant_id": tenant_id,
+                "api_url": self._external_kyc_api_url,
+            },
+        )
+        return False
+
+    # -------------------------------------------------------------------------
+    # AML Screening (RX03)
+    # -------------------------------------------------------------------------
+
+    async def check_aml(
+        self,
+        user_id: str,
+        transaction_data: dict[str, Any],
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Check AML screening cho transaction.
+
+        KPI-029: Support tenant-scoped AML screening.
+        RX03: aml_screening_required - Transactions phải qua AML screening.
+
+        Args:
+            user_id: User ID thực hiện transaction
+            transaction_data: Transaction data để screening
+            tenant_id: KPI-029: Tenant ID cho tenant-scoped AML check
+
+        Returns:
+            True nếu transaction AML cleared, False nếu failed
+
+        Raises:
+            MidicoderError: Nếu có lỗi khi check AML
+        """
+        try:
+            amount = transaction_data.get("amount", 0)
+            transaction_id = transaction_data.get("transaction_id", "")
+
+            # KPI-029: Check tenant-scoped AML rules
+            aml_result = await self._compliance_repo.get_aml_screening_result(
+                user_id, tenant_id
+            )
+
+            if aml_result is None:
+                # User chưa có AML screening record - check external API
+                if self._external_aml_api_url:
+                    return await self._check_external_aml(user_id, transaction_data, tenant_id)
+
+                # No external API and no record - assume cleared for small amounts
+                threshold = self._get_aml_threshold(tenant_id)
+                return amount < threshold
+
+            # Check nếu AML đã cleared
+            return aml_result.cleared and not aml_result.expired
+
+        except Exception as e:
+            audit_logger.error(
+                "Error checking AML status",
+                extra={
+                    "user_id": user_id,
+                    "tenant_id": tenant_id,
+                    "amount": transaction_data.get("amount"),
+                    "error": str(e),
+                },
+            )
+            # On error, default to not cleared (fail-safe)
+            return False
+
+    async def _check_external_aml(
+        self,
+        user_id: str,
+        transaction_data: dict[str, Any],
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Check external AML screening API.
+
+        Args:
+            user_id: User ID
+            transaction_data: Transaction data
+            tenant_id: Tenant ID
+
+        Returns:
+            True nếu AML cleared từ external API
+        """
+        # TODO: Implement external AML API call
+        amount = transaction_data.get("amount", 0)
+        threshold = self._get_aml_threshold(tenant_id)
+
+        audit_logger.info(
+            "External AML check requested",
+            extra={
+                "user_id": user_id,
+                "tenant_id": tenant_id,
+                "amount": amount,
+                "api_url": self._external_aml_api_url,
+            },
+        )
+
+        # Default: amounts below threshold are cleared
+        return amount < threshold
+
+    def _get_aml_threshold(self, tenant_id: Optional[str] = None) -> float:
+        """
+        Get AML screening threshold.
+
+        KPI-029: Support tenant-specific thresholds.
+
+        Args:
+            tenant_id: Tenant ID
+
+        Returns:
+            AML threshold amount
+        """
+        # Default threshold: 100 triệu VND
+        threshold = 100000000.0
+
+        # TODO: Load tenant-specific threshold from config
+        # if tenant_id:
+        #     threshold = await self._load_tenant_threshold(tenant_id)
+
+        return threshold
+
+    # -------------------------------------------------------------------------
+    # HIPAA Clearance (RX04)
+    # -------------------------------------------------------------------------
+
+    async def check_hipaa_clearance(
+        self,
+        user_id: str,
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Check HIPAA clearance của user.
+
+        KPI-029: Support tenant-scoped HIPAA clearance.
+        RX04: hipaa_compliance_required - Users phải có HIPAA clearance để truy cập PHI data.
+
+        Args:
+            user_id: User ID để check
+            tenant_id: KPI-029: Tenant ID cho tenant-scoped HIPAA check
+
+        Returns:
+            True nếu user có HIPAA clearance, False nếu không
+
+        Raises:
+            MidicoderError: Nếu có lỗi khi check HIPAA
+        """
+        try:
+            # KPI-029: Check tenant-scoped HIPAA clearance
+            clearance = await self._compliance_repo.get_hipaa_clearance(user_id, tenant_id)
+
+            if clearance is None:
+                # User chưa có HIPAA clearance record
+                return False
+
+            # Check nếu clearance còn valid
+            return clearance.active and not clearance.expired
+
+        except Exception as e:
+            audit_logger.error(
+                "Error checking HIPAA clearance",
+                extra={
+                    "user_id": user_id,
+                    "tenant_id": tenant_id,
+                    "error": str(e),
+                },
+            )
+            # On error, default to no clearance (fail-safe)
+            return False
+
+    # -------------------------------------------------------------------------
+    # Compliance Audit Logging (RX02, RX03, RX04)
+    # -------------------------------------------------------------------------
+
+    async def log_compliance_check(
+        self,
+        audit_record: dict[str, Any],
+    ) -> None:
+        """
+        Log compliance check vào audit trail.
+
+        KPI-029: Audit log bao gồm tenant_id cho multi-tenant compliance tracking.
+        RX04: clinical_audit_trail - All PHI access phải được log.
+
+        Audit record format:
+        {
+            "timestamp": "2026-05-04T22:30:00Z",
+            "guard_type": "kyc_check" | "aml_screening" | "hipaa_access",
+            "user_id": "user_123",
+            "tenant_id": "tenant_456",
+            "result": "passed" | "failed" | "skipped",
+            "command_id": "TransferFunds",
+            "details": {...}
+        }
+
+        Args:
+            audit_record: Audit record để log
+
+        Raises:
+            MidicoderError: Nếu ghi audit log thất bại
+        """
+        try:
+            # Add timestamp nếu chưa có
+            if "timestamp" not in audit_record:
+                audit_record["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+            # KPI-029: Ensure tenant_id is present
+            tenant_id = audit_record.get("tenant_id")
+            if tenant_id is None:
+                audit_record["tenant_id"] = "global"
+
+            # Save to audit log repository
+            await self._compliance_repo.save_compliance_audit(audit_record)
+
+            # Also log to application logs
+            result = audit_record.get("result", "unknown")
+            guard_type = audit_record.get("guard_type", "unknown")
+            user_id = audit_record.get("user_id", "unknown")
+
+            if result == "passed":
+                audit_logger.info(
+                    f"Compliance check passed",
+                    extra={
+                        "guard_type": guard_type,
+                        "user_id": user_id,
+                        "tenant_id": tenant_id,
+                        **audit_record.get("details", {}),
+                    },
+                )
+            elif result == "failed":
+                audit_logger.warning(
+                    f"Compliance check failed",
+                    extra={
+                        "guard_type": guard_type,
+                        "user_id": user_id,
+                        "tenant_id": tenant_id,
+                        **audit_record.get("details", {}),
+                    },
+                )
+            else:
+                audit_logger.debug(
+                    f"Compliance check skipped",
+                    extra={
+                        "guard_type": guard_type,
+                        "user_id": user_id,
+                        "tenant_id": tenant_id,
+                        **audit_record.get("details", {}),
+                    },
+                )
+
+        except Exception as e:
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_COMPLIANCE_LOG_FAILED,
+                guard_type=audit_record.get("guard_type"),
+                user_id=audit_record.get("user_id"),
+                tenant_id=audit_record.get("tenant_id"),
+                error=str(e),
+            )
+
+    # -------------------------------------------------------------------------
+    # RX02: Financial Integrity Validation Helpers
+    # -------------------------------------------------------------------------
+
+    async def validate_double_entry(
+        self,
+        debit: float,
+        credit: float,
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Validate double-entry bookkeeping rule (RX02).
+
+        Rule: Debit tổng phải bằng Credit tổng.
+
+        Args:
+            debit: Tổng debit
+            credit: Tổng credit
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu debit == credit (within tolerance)
+        """
+        # Allow 0.01 tolerance for rounding
+        return abs(debit - credit) <= 0.01
+
+    async def check_transaction_immutability(
+        self,
+        transaction_id: str,
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Check nếu transaction đã được commit (immutable).
+
+        RX02: transaction_immutability - Transactions immutable sau commit.
+
+        Args:
+            transaction_id: Transaction ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu transaction đã immutable (committed)
+        """
+        # TODO: Check transaction status from repository
+        return False
+
+    # -------------------------------------------------------------------------
+    # RX03: Suspicious Activity Detection
+    # -------------------------------------------------------------------------
+
+    async def check_suspicious_activity(
+        self,
+        user_id: str,
+        transaction_data: dict[str, Any],
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Check nếu transaction có suspicious activity patterns.
+
+        RX03: suspicious_activity_reporting - Flag transactions > threshold.
+
+        Args:
+            user_id: User ID
+            transaction_data: Transaction data
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu có suspicious activity (needs SAR)
+        """
+        amount = transaction_data.get("amount", 0)
+        threshold = self._get_aml_threshold(tenant_id)
+
+        # Flag if amount exceeds threshold
+        if amount > threshold:
+            await self.log_compliance_check(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "guard_type": "suspicious_activity",
+                    "user_id": user_id,
+                    "tenant_id": tenant_id,
+                    "result": "flagged",
+                    "command_id": transaction_data.get("command_id", ""),
+                    "details": {
+                        "amount": amount,
+                        "threshold": threshold,
+                        "reason": "Amount exceeds AML threshold",
+                    },
+                }
+            )
+            return True
+
+        return False
+
+    # -------------------------------------------------------------------------
+    # RX04: PHI Access Control
+    # -------------------------------------------------------------------------
+
+    async def check_phi_access_allowed(
+        self,
+        user_id: str,
+        phi_fields: list[str],
+        user_allowed_fields: list[str],
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Check nếu user có quyền access các PHI fields.
+
+        RX04: minimum_necessary_access - Users chỉ access necessary PHI fields.
+
+        Args:
+            user_id: User ID
+            phi_fields: PHI fields user đang request
+            user_allowed_fields: PHI fields user được phép access
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu user có quyền access tất cả requested fields
+        """
+        requested_set = set(phi_fields)
+        allowed_set = set(user_allowed_fields)
+
+        # Check nếu tất cả requested fields đều trong allowed set
+        excess_access = requested_set - allowed_set
+
+        if excess_access:
+            await self.log_compliance_check(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "guard_type": "minimum_necessary_violation",
+                    "user_id": user_id,
+                    "tenant_id": tenant_id,
+                    "result": "failed",
+                    "command_id": "",
+                    "details": {
+                        "excess_fields": list(excess_access),
+                        "reason": "User attempted to access PHI fields without permission",
+                    },
+                }
+            )
+            return False
+
+        return True
+
+    # -------------------------------------------------------------------------
+    # Compliance Status Management
+    # -------------------------------------------------------------------------
+
+    async def update_kyc_status(
+        self,
+        user_id: str,
+        verified: bool,
+        tenant_id: Optional[str] = None,
+        expiry_date: Optional[datetime] = None,
+    ) -> None:
+        """
+        Update KYC verification status.
+
+        Args:
+            user_id: User ID
+            verified: KYC verified status
+            tenant_id: KPI-029: Tenant ID
+            expiry_date: KYC expiry date
+        """
+        await self._compliance_repo.update_kyc_status(
+            user_id, verified, tenant_id, expiry_date
+        )
+
+    async def update_aml_status(
+        self,
+        user_id: str,
+        cleared: bool,
+        tenant_id: Optional[str] = None,
+        expiry_date: Optional[datetime] = None,
+    ) -> None:
+        """
+        Update AML screening status.
+
+        Args:
+            user_id: User ID
+            cleared: AML cleared status
+            tenant_id: KPI-029: Tenant ID
+            expiry_date: AML expiry date
+        """
+        await self._compliance_repo.update_aml_status(
+            user_id, cleared, tenant_id, expiry_date
+        )
+
+    async def update_hipaa_clearance(
+        self,
+        user_id: str,
+        active: bool,
+        tenant_id: Optional[str] = None,
+        expiry_date: Optional[datetime] = None,
+    ) -> None:
+        """
+        Update HIPAA clearance status.
+
+        Args:
+            user_id: User ID
+            active: HIPAA clearance active status
+            tenant_id: KPI-029: Tenant ID
+            expiry_date: Clearance expiry date
+        """
+        await self._compliance_repo.update_hipaa_clearance(
+            user_id, active, tenant_id, expiry_date
+        )
+
+
+# ============================================================================
+# Global Compliance Service Instance
+# ============================================================================
+
+_compliance_service: Optional[ComplianceService] = None
+
+
+def init_compliance_service(
+    compliance_repo: ComplianceRepository,
+    external_aml_api_url: Optional[str] = None,
+    external_kyc_api_url: Optional[str] = None,
+) -> None:
+    """
+    Initialize global compliance service.
+
+    Called during application startup.
+
+    Args:
+        compliance_repo: Compliance repository instance
+        external_aml_api_url: External AML API URL
+        external_kyc_api_url: External KYC API URL
+    """
+    global _compliance_service
+    _compliance_service = ComplianceService(
+        compliance_repo, external_aml_api_url, external_kyc_api_url
+    )
+
+
+async def get_compliance_service() -> ComplianceService:
+    """
+    Dependency để get compliance service.
+
+    Returns:
+        ComplianceService instance
+
+    Raises:
+        RuntimeError: Nếu compliance service chưa được initialize
+    """
+    if _compliance_service is None:
+        raise RuntimeError("ComplianceService chưa được initialize")
+
+    return _compliance_service
