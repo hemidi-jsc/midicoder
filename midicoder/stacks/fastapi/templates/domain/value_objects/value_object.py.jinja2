@@ -15,6 +15,10 @@ KPI-029: Tenant Isolation - Value Objects are tenant-scoped when used in tenant 
 {% endfor %}
 {% for import_group in imports.typing %}{{ import_group }}
 {% endfor %}
+
+# KPI-029: Imports cho tenant isolation
+from dataclasses import field
+from typing import Optional
 {% for import_group in imports.domain %}{{ import_group }}
 {% endfor %}
 
@@ -31,10 +35,17 @@ class {{ vo.id }}{% if vo.extends %}({{ vo.extends }}){% endif %}:
 
     {% if vo.description %}{{ vo.description }}{% else %}Value Object: {{ vo.id }}{% endif %}
 
+    KPI-029: Tenant Isolation
+    - Value Object này hỗ trợ tenant context qua tenant_id field
+    - tenant_id là optional, default=None
+    - tenant_id không ảnh hưởng đến equality (compare=False)
+    - tenant_id không hiển thị trong repr (repr=False)
+
     Attributes:
     {% for f in fields %}
         {{ f.name }}: {{ f.original.get('description', f.name) }}{% if f.is_computed %} (computed){% endif %}
     {% endfor %}
+        tenant_id: KPI-029: Tenant ID cho multi-tenant isolation (optional)
 
     Raises:
         ValueError: Nếu validation thất bại
@@ -45,6 +56,12 @@ class {{ vo.id }}{% if vo.extends %}({{ vo.extends }}){% endif %}:
     {{ f.name }}: {{ f.type_annotation }}{% if not f.is_required and not f.is_computed %} = None{% endif %}
     {% endif %}
     {% endfor %}
+
+    # KPI-029: Tenant ID cho multi-tenant isolation
+    # - Optional field, default=None cho backward compatibility
+    # - repr=False: Không hiển thị trong __repr__
+    # - compare=False: Không ảnh hưởng đến __eq__ và __hash__
+    tenant_id: Optional[str] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Validate fields sau khi init."""
@@ -115,18 +132,48 @@ class {{ vo.id }}{% if vo.extends %}({{ vo.extends }}){% endif %}:
 
     def get_tenant_id(self) -> str | None:
         """
-        KPI-029: Lấy tenant_id nếu VO có tenant context.
+        KPI-029: Lấy tenant ID từ Value Object.
         
         Returns:
             Tenant ID nếu có, None nếu không
         """
-        # KPI-029: Value Objects thường không có tenant_id trực tiếp
-        # nhưng có thể được sử dụng trong tenant context
-        return None
+        return self.tenant_id
+
+    def with_tenant(self, tenant_id: str) -> '{{ vo.id }}':
+        """
+        KPI-029: Tạo copy của Value Object với tenant_id mới.
+        
+        Đây là phương pháp functional cho tenant context propagation.
+        Original VO không thay đổi (frozen=True).
+        
+        Args:
+            tenant_id: Tenant ID để set vào copy
+            
+        Returns:
+            Copy của VO với tenant_id mới, giữ nguyên các fields khác
+            
+        Example:
+            money = Money(amount=100, currency="USD")
+            money_tenant_a = money.with_tenant("tenant-a")
+            money_tenant_b = money.with_tenant("tenant-b")
+            assert money.tenant_id is None  # Original không đổi
+        """
+        from dataclasses import replace
+        return replace(self, tenant_id=tenant_id)
 
     @classmethod
     def from_dict(cls, data: dict) -> '{{ vo.id }}':
-        """Tạo {{ vo.id }} từ dictionary."""
+        """
+        Tạo {{ vo.id }} từ dictionary.
+        
+        KPI-029: Bao gồm việc parse tenant_id từ dict (optional).
+        
+        Args:
+            data: Dictionary chứa values cho các fields và tenant_id (optional)
+            
+        Returns:
+            {{ vo.id }} instance
+        """
         return cls(
         {% for f in fields %}
         {% if not f.is_computed %}
@@ -142,6 +189,8 @@ class {{ vo.id }}{% if vo.extends %}({{ vo.extends }}){% endif %}:
         {% endif %}
         {% endif %}
         {% endfor %}
+            # KPI-029: tenant_id là optional, default=None
+            tenant_id=data.get('tenant_id'),
         )
 
     def __str__(self) -> str:

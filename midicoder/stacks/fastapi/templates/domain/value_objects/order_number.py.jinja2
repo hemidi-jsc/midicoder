@@ -11,7 +11,8 @@ Tags:
     domain, order, dp04
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional
 import re
 from datetime import datetime
 
@@ -29,7 +30,13 @@ class OrderNumber:
     """
     
     order_number: str
-    
+
+    # KPI-029: Tenant ID cho multi-tenant isolation
+    # - Optional field, default=None cho backward compatibility
+    # - repr=False: Không hiển thị trong __repr__
+    # - compare=False: Không ảnh hưởng đến __eq__ và __hash__
+    tenant_id: Optional[str] = field(default=None, repr=False, compare=False)
+
     def __post_init__(self) -> None:
         """Validate fields sau khi init."""
         # Validate order_number format
@@ -57,12 +64,28 @@ class OrderNumber:
     
     def get_tenant_id(self) -> str | None:
         """
-        KPI-029: Lấy tenant_id nếu VO có tenant context.
+        KPI-029: Lấy tenant ID từ OrderNumber.
         
         Returns:
             Tenant ID nếu có, None nếu không
         """
-        return None
+        return self.tenant_id
+
+    def with_tenant(self, tenant_id: str) -> "OrderNumber":
+        """
+        KPI-029: Tạo copy của OrderNumber với tenant_id mới.
+        
+        Đây là phương pháp functional cho tenant context propagation.
+        Original VO không thay đổi (frozen=True).
+        
+        Args:
+            tenant_id: Tenant ID để set vào copy
+            
+        Returns:
+            Copy của OrderNumber với tenant_id mới, giữ nguyên các fields khác
+        """
+        from dataclasses import replace
+        return replace(self, tenant_id=tenant_id)
 
     def to_dict(self) -> dict:
         """Chuyển thành dictionary."""
@@ -73,8 +96,22 @@ class OrderNumber:
     
     @classmethod
     def from_dict(cls, data: dict) -> "OrderNumber":
-        """Tạo OrderNumber từ dictionary."""
-        return cls(order_number=data.get("order_number", data.get("normalized")))
+        """
+        Tạo OrderNumber từ dictionary.
+        
+        KPI-029: Bao gồm việc parse tenant_id từ dict (optional).
+        
+        Args:
+            data: Dictionary chứa values cho các fields và tenant_id (optional)
+            
+        Returns:
+            OrderNumber instance
+        """
+        return cls(
+            order_number=data.get("order_number", data.get("normalized")),
+            # KPI-029: tenant_id là optional, default=None
+            tenant_id=data.get("tenant_id"),
+        )
     
     @classmethod
     def generate(cls, prefix: str = "ORD") -> "OrderNumber":
