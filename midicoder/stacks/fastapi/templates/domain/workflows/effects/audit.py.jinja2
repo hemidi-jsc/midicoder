@@ -7,8 +7,7 @@ Cung cấp:
 KPI-029: Tenant Isolation - tenant_id được log trong audit record
 """
 
-from typing import Any
-from uuid import UUID
+from typing import Any, Optional
 
 
 class AuditEffect:
@@ -22,11 +21,11 @@ class AuditEffect:
     async def execute(
         self,
         action: str,
-        user_id: UUID | None,
-        entity_type: str,
-        entity_id: UUID,
-        details: dict[str, Any],
-        tenant_id: UUID | None = None,  # KPI-029: Tenant isolation
+        user_id: str | None = None,
+        entity_type: str = "",
+        entity_id: str | None = None,
+        details: dict[str, Any] | None = None,
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
     ) -> dict[str, Any]:
         """
         Execute audit logging effect.
@@ -49,5 +48,5 @@ class AuditEffect:
         return {
             "status": "logged",
             "action": action,
-            "tenant_id": str(tenant_id) if tenant_id else None,  # KPI-029
+            "tenant_id": tenant_id,  # KPI-029: String format
         }

@@ -6,7 +6,6 @@ Guard này check user có permission cần thiết trước khi cho phép transi
 
 from abc import ABC, abstractmethod
 from typing import Optional
-from uuid import UUID
 
 
 class PermissionChecker(ABC):
@@ -15,9 +14,9 @@ class PermissionChecker(ABC):
     @abstractmethod
     async def check_permission(
         self,
-        user_id: UUID,
+        user_id: str,
         permission: str,
-        tenant_id: Optional[UUID] = None,
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
     ) -> bool:
         """
         Check user có permission.
@@ -25,7 +24,7 @@ class PermissionChecker(ABC):
         Args:
             user_id: User ID
             permission: Permission string
-            tenant_id: Tenant ID (optional)
+            tenant_id: KPI-029: Tenant ID (optional, string format)
             
         Returns:
             True nếu user có permission
@@ -38,6 +37,7 @@ class PermissionGuard:
     Permission Guard implementation.
     
     Guards transitions dựa trên user permissions.
+    KPI-029: Tenant-aware permission checking.
     """
     
     def __init__(self, checker: PermissionChecker):
@@ -49,14 +49,21 @@ class PermissionGuard:
         """
         self.checker = checker
     
-    async def evaluate(self, user_id: UUID, permission: str, tenant_id: Optional[UUID] = None) -> bool:
+    async def evaluate(
+        self,
+        user_id: str,
+        permission: str,
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
+    ) -> bool:
         """
         Evaluate guard.
+        
+        KPI-029: tenant_id được truyền vào cho tenant-aware permission check.
         
         Args:
             user_id: User ID
             permission: Permission cần thiết
-            tenant_id: Tenant ID
+            tenant_id: KPI-029: Tenant ID (string format)
             
         Returns:
             True nếu user có permission
