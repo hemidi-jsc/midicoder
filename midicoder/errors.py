@@ -317,7 +317,37 @@ class ErrorCode(str, Enum):
     CP01_TRANSACTION_ROLLBACK_FAILED = "MDC-CP01-064"
     CP01_TRANSACTION_ALREADY_COMMITTED = "MDC-CP01-065"
     CP01_TRANSACTION_ALREADY_ROLLED_BACK = "MDC-CP01-066"
-
+    
+    # =========================================================================
+    # CP02: Multi-Tenant Architecture Errors
+    # =========================================================================
+    CP02_TENANT_MODE_INVALID = "MDC-CP02-001"
+    CP02_TENANT_ID_MISSING = "MDC-CP02-002"
+    CP02_TENANT_MISMATCH = "MDC-CP02-003"
+    CP02_TENANT_CONTEXT_NOT_SET = "MDC-CP02-004"
+    CP02_TENANT_FILTER_MISSING = "MDC-CP02-005"
+    
+    # =========================================================================
+    # CP03: Authentication & Authorization Errors
+    # =========================================================================
+    CP03_AUTH_PROVIDER_NOT_FOUND = "MDC-CP03-001"
+    CP03_TOKEN_EXPIRED = "MDC-CP03-002"
+    CP03_TOKEN_INVALID = "MDC-CP03-003"
+    CP03_CREDENTIALS_INVALID = "MDC-CP03-004"
+    CP03_AUTH_CONFIG_INVALID = "MDC-CP03-005"
+    CP03_JWT_SECRET_MISSING = "MDC-CP03-006"
+    
+    # =========================================================================
+    # CP04: RBAC & Policy Engine Errors
+    # =========================================================================
+    CP04_ROLE_NOT_FOUND = "MDC-CP04-001"
+    CP04_PERMISSION_NOT_FOUND = "MDC-CP04-002"
+    CP04_POLICY_NOT_FOUND = "MDC-CP04-003"
+    CP04_ROLE_BINDING_INVALID = "MDC-CP04-004"
+    CP04_POLICY_EVALUATION_FAILED = "MDC-CP04-005"
+    CP04_PERMISSION_DENIED = "MDC-CP04-006"
+    CP04_POLICY_SYNTAX_ERROR = "MDC-CP04-007"
+    CP04_ROLE_CYCLE_DETECTED = "MDC-CP04-008"
 
 class ExitCode(Enum):
     """
