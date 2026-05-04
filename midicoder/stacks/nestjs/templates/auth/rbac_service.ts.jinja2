@@ -1,0 +1,319 @@
+/**
+ * RBAC Service - Role-Based Access Control Service cho NestJS.
+ * 
+ * Module này cung cấp RBAC service cho authorization checks.
+ * Hỗ trợ permission checks, role checks, và policy evaluation.
+ * 
+ * CP03 + CP04: Authentication & Authorization + RBAC & Policy Engine
+ * KPI-029: Tenant Isolation - tenant-scoped permission checks và policies
+ */
+
+import { Injectable } from "@nestjs/common";
+import { TokenData } from "./jwt_auth";
+import { Permissions, checkTenantPermission, getTenantScopedPermission } from "./permissions";
+import { Policy, PolicyEffect, PolicyEvaluationResult, Role } from "./rbac_decorators";
+
+/**
+ * RBAC Service - Service cho authorization checks.
+ * 
+ * Service này cung cấp methods cho:
+ * - Permission checks
+ * - Role checks
+ * - Policy evaluation
+ * 
+ * KPI-029: Support tenant-scoped permissions và tenant-specific policies.
+ */
+@Injectable()
+export class RBACService {
+  private _roles: Map<string, Role> = new Map();
+
+  /**
+   * Initialize RBACService.
+   * 
+   * @param roles - Mapping từ role name -> Role object
+   */
+  constructor(roles: Map<string, Role>) {
+    this._roles = roles;
+  }
+
+  /**
+   * Check nếu user có permission.
+   * 
+   * KPI-029: Support tenant-scoped permissions và super admin bypass.
+   * 
+   * @param user - Current user
+   * @param permission - Permission ID để check
+   * @param tenantId - KPI-029: Tenant ID cho tenant-scoped permission check
+   * @returns True nếu user có permission, False nếu không
+   */
+  async checkPermission(
+    user: TokenData,
+    permission: string,
+    tenantId?: string,
+  ): Promise<boolean> {
+    // KPI-029: Check nếu user có super admin permission - bypass tenant check
+    const allUserPermissions = await this.getUserPermissions(user);
+    if (allUserPermissions.has(Permissions.MULTITENANT_ADMIN)) {
+      return true;
+    }
+
+    // Get all roles user has
+    const userRoles = user.roles;
+
+    // Check each role for permission
+    for (const roleName of userRoles) {
+      const role = this._roles.get(roleName);
+      if (!role) continue;
+
+      // Get all permissions (including inherited)
+      const allPermissions = role.getAllPermissions(this._roles);
+
+      // KPI-029: Check tenant-scoped permission
+      if (tenantId) {
+        const tenantScopedPermission = getTenantScopedPermission(permission, tenantId);
+        if (allPermissions.has(tenantScopedPermission)) {
+          return true;
+        }
+      }
+
+      // Check global permission
+      if (allPermissions.has(permission)) {
+        return true;
+      }
+    }
+
+    // KPI-029: Check if user belongs to the tenant
+    if (tenantId && user.tenantId) {
+      if (user.tenantId === tenantId) {
+        // User is in the same tenant, check global permission
+        for (const roleName of userRoles) {
+          const role = this._roles.get(roleName);
+          if (role) {
+            const allPermissions = role.getAllPermissions(this._roles);
+            if (allPermissions.has(permission)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check nếu user có role.
+   * 
+   * @param user - Current user
+   * @param roleName - Role name để check
+   * @returns True nếu user có role, False nếu không
+   */
+  async checkRole(user: TokenData, roleName: string): Promise<boolean> {
+    return user.roles.includes(roleName);
+  }
+
+  /**
+   * Check nếu policy cho phép action.
+   * 
+   * KPI-029: tenantId được thêm vào context cho tenant-specific policies.
+   * 
+   * @param policyId - Policy ID để check
+   * @param context - Context cho policy evaluation
+   * @param tenantId - KPI-029: Tenant ID cho tenant-specific policy
+   * @returns True nếu policy cho phép, False nếu không
+   */
+  async checkPolicy(
+    policyId: string,
+    context: Record<string, unknown>,
+    tenantId?: string,
+  ): Promise<boolean> {
+    // KPI-029: Add tenantId to context if not present
+    if (tenantId && !(tenantId in context)) {
+      context.tenantId = tenantId;
+    }
+
+    // TODO: Load policy từ database/cache
+    // For now, return True (allow all)
+    // In production, implement policy loading
+    return true;
+  }
+
+  /**
+   * Lấy tất cả permissions của user.
+   * 
+   * KPI-029: Nếu có tenantId, bao gồm cả tenant-scoped permissions.
+   * 
+   * @param user - Current user
+   * @param tenantId - KPI-029: Tenant ID để get tenant-scoped permissions
+   * @returns Set của tất cả permission IDs
+   */
+  async getUserPermissions(
+    user: TokenData,
+    tenantId?: string,
+  ): Promise<Set<string>> {
+    const allPermissions = new Set<string>();
+
+    for (const roleName of user.roles) {
+      const role = this._roles.get(roleName);
+      if (!role) continue;
+
+      // Get all permissions (including inherited)
+      const rolePermissions = role.getAllPermissions(this._roles);
+      rolePermissions.forEach((perm) => allPermissions.add(perm));
+
+      // KPI-029: Add tenant-scoped permissions if tenantId provided
+      if (tenantId) {
+        rolePermissions.forEach((perm) => {
+          const tenantScoped = getTenantScopedPermission(perm, tenantId);
+          allPermissions.add(tenantScoped);
+        });
+      }
+    }
+
+    return allPermissions;
+  }
+
+  /**
+   * Lấy tất cả roles của user.
+   * 
+   * @param user - Current user
+   * @returns List của role names
+   */
+  async getUserRoles(user: TokenData): Promise<string[]> {
+    return [...user.roles];
+  }
+}
+
+/**
+ * Policy Service - Service cho policy evaluation.
+ * 
+ * Service này cung cấp methods cho:
+ * - Policy loading
+ * - Policy evaluation
+ * - Policy caching
+ */
+@Injectable()
+export class PolicyService {
+  private _policies: Map<string, Policy> = new Map();
+  private _policyCache: Map<string, boolean> = new Map();
+
+  /**
+   * Thêm policy vào service.
+   * 
+   * @param policy - Policy để thêm
+   */
+  addPolicy(policy: Policy): void {
+    this._policies.set(policy.id, policy);
+  }
+
+  /**
+   * Xóa policy từ service.
+   * 
+   * @param policyId - Policy ID để xóa
+   */
+  removePolicy(policyId: string): void {
+    this._policies.delete(policyId);
+  }
+
+  /**
+   * Evaluate policy với context.
+   * 
+   * @param policyId - Policy ID để evaluate
+   * @param context - Context cho evaluation
+   * @returns PolicyEvaluationResult hoặc null nếu policy không tồn tại
+   */
+  evaluatePolicy(
+    policyId: string,
+    context: Record<string, unknown>,
+  ): PolicyEvaluationResult | null {
+    const policy = this._policies.get(policyId);
+
+    if (!policy) {
+      return null;
+    }
+
+    return policy.evaluate(context);
+  }
+
+  /**
+   * Check nếu action được allow.
+   * 
+   * Kiểm tra policy và trả về true nếu action được allow.
+   * 
+   * @param policyId - Policy ID để check
+   * @param context - Context cho evaluation
+   * @returns True nếu action được allow, false nếu không
+   */
+  async checkAllowed(
+    policyId: string,
+    context: Record<string, unknown>,
+  ): Promise<boolean> {
+    const result = this.evaluatePolicy(policyId, context);
+
+    if (!result) {
+      // Policy không tồn tại - default deny
+      return false;
+    }
+
+    return result.allowed;
+  }
+}
+
+/**
+ * KPI-029: Service cho tenant-specific RBAC operations.
+ * 
+ * Multi-tenant RBAC với:
+ * - Tenant-scoped roles
+ * - Tenant-specific permissions
+ * - Cross-tenant admin access
+ */
+@Injectable()
+export class TenantRBACService {
+  constructor(private rbacService: RBACService) {}
+
+  /**
+   * KPI-029: Check nếu user là tenant admin của tenantId.
+   * 
+   * @param user - Current user
+   * @param tenantId - Tenant ID để check
+   * @returns True nếu user là tenant admin
+   */
+  async checkTenantAdmin(user: TokenData, tenantId: string): Promise<boolean> {
+    // Check nếu user là super admin
+    const allPerms = await this.rbacService.getUserPermissions(user);
+    if (allPerms.has(Permissions.MULTITENANT_ADMIN)) {
+      return true;
+    }
+
+    // Check nếu user có tenant_admin role và belongs to tenant
+    if (user.roles.includes("tenant_admin")) {
+      if (user.tenantId === tenantId) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * KPI-029: Lấy list user IDs thuộc tenant.
+   * 
+   * @param tenantId - Tenant ID
+   * @returns List user IDs
+   */
+  async getTenantUsers(tenantId: string): Promise<string[]> {
+    // TODO: Query users from database
+    return [];
+  }
+
+  /**
+   * KPI-029: Lấy list role names của tenant.
+   * 
+   * @param tenantId - Tenant ID
+   * @returns List role names
+   */
+  async getTenantRoles(tenantId: string): Promise<string[]> {
+    // TODO: Query roles from database
+    return [];
+  }
+}

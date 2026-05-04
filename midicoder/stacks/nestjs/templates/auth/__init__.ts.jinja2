@@ -1,0 +1,34 @@
+/**
+ * Auth Module Exports - NestJS Authentication & Authorization.
+ * 
+ * Module này xuất các components:
+ * - JWT authentication guard
+ * - RBAC service
+ * - Permissions module
+ * - Policy engine
+ * - Tenant context
+ * 
+ * CP02: Multi-Tenant Architecture
+ * CP03: Authentication & Authorization
+ * CP04: RBAC & Policy Engine
+ * 
+ * KPI-028: Missing permission detection
+ * KPI-029: Missing tenant filter detection
+ * KPI-030: Invalid role binding detection
+ * KPI-031: Invalid policy detection
+ */
+
+// JWT Auth
+export * from "./jwt-auth.guard";
+
+// RBAC
+export * from "./rbac.service";
+
+// Permissions Module
+export * from "./permissions.module";
+
+// Policy Engine
+export * from "./policy_engine";
+
+// Tenant Context
+export * from "./tenant_context";

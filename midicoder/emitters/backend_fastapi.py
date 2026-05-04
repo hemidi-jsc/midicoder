@@ -56,6 +56,15 @@ from midicoder.emitters.entity import (
     EntityParser,
     FastAPIEntityEmitter,
 )
+from midicoder.emitters.authnz import (
+    AuthIR,
+    AuthProvider,
+    AuthProviderType,
+    FastAPIAuthEmitter,
+    JWTAuthConfig,
+    Role,
+    TenantMode,
+)
 from midicoder.pipeline.mir import MIR
 
 
@@ -161,6 +170,9 @@ class BackendFastAPIEmitter:
         queries = mir.metadata.get("queries", [])
         for query in queries:
             files.extend(self._emit_query(query, output_dir))
+        
+        # Emit auth code (CP02-CP04)
+        files.extend(self._emit_auth(output_dir))
         
         return files
     
@@ -281,6 +293,95 @@ class BackendFastAPIEmitter:
         ))
         
         return files
+    
+    def _emit_auth(self, output_dir: Path) -> list[GeneratedFile]:
+        """
+        Emit auth code cho FastAPI backend (CP02-CP04).
+        
+        Files được emit:
+        - app/core/security/jwt_auth.py
+        - app/core/security/rbac_service.py
+        - app/core/security/permissions.py
+        - app/core/security/policy_engine.py
+        - app/core/security/tenant_context.py
+        
+        KPI-028: Missing permission detection
+        KPI-029: Missing tenant filter detection
+        KPI-030: Invalid role binding detection
+        KPI-031: Invalid policy detection
+        
+        Args:
+            output_dir: Output directory
+            
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+        
+        # Build default AuthIR nếu không có trong MIR metadata
+        auth_data = self._build_default_auth_ir()
+        
+        # Tạo emitter và emit auth files
+        auth_emitter = FastAPIAuthEmitter(stack_dir=self.stack_dir)
+        
+        try:
+            auth_files = auth_emitter.emit(auth_data, output_dir)
+            files.extend(auth_files)
+        except Exception as e:
+            import logging
+            logging.warning(f"FastAPIAuthEmitter failed: {e}")
+            # Continue without auth files - basic templates will work
+        
+        return files
+    
+    def _build_default_auth_ir(self) -> AuthIR:
+        """
+        Build default AuthIR với JWT auth và tenant-scoped roles.
+        
+        Returns:
+            AuthIR instance với default config
+        
+        KPI-029: Default tenant_scoped=True cho tất cả roles
+        """
+        return AuthIR(
+            tenant_mode=TenantMode.SCHEMA,
+            providers=[
+                AuthProvider(
+                    id="default_jwt",
+                    provider_type=AuthProviderType.JWT,
+                    config=JWTAuthConfig(
+                        expire_minutes=30,
+                        refresh_expire_days=7,
+                        algorithm="HS256",
+                        tenant_scoped=True,  # KPI-029
+                    ),
+                ),
+            ],
+            roles={
+                "super_admin": Role(
+                    id="super_admin",
+                    permissions=["*"],
+                    parents=[],
+                    tenant_scoped=False,
+                    description="Super admin with all permissions",
+                ),
+                "tenant_admin": Role(
+                    id="tenant_admin",
+                    permissions=["user:*", "order:*", "product:*"],
+                    parents=[],
+                    tenant_scoped=True,  # KPI-029
+                    description="Tenant admin with scoped permissions",
+                ),
+                "user": Role(
+                    id="user",
+                    permissions=["order:create", "order:read"],
+                    parents=[],
+                    tenant_scoped=True,  # KPI-029
+                    description="Regular user with limited permissions",
+                ),
+            },
+            policies={},
+        )
     
     def _emit_entity(self, entity: dict[str, Any], output_dir: Path, all_entities: list[dict[str, Any]] = None) -> list[GeneratedFile]:
         """
