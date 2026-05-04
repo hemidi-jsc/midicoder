@@ -1,47 +1,64 @@
 """
-Mô-đun Permission Guard.
+Permission Guard - Kiểm tra user permissions.
 
-Cung cấp:
-- PermissionGuard: Guard cho permission checking
-
-KPI-029: Tenant Isolation - tenant_id trong permission check
+Guard này check user có permission cần thiết trước khi cho phép transition.
 """
 
-from typing import Any
+from abc import ABC, abstractmethod
+from typing import Optional
 from uuid import UUID
+
+
+class PermissionChecker(ABC):
+    """Abstract Permission Checker interface."""
+    
+    @abstractmethod
+    async def check_permission(
+        self,
+        user_id: UUID,
+        permission: str,
+        tenant_id: Optional[UUID] = None,
+    ) -> bool:
+        """
+        Check user có permission.
+        
+        Args:
+            user_id: User ID
+            permission: Permission string
+            tenant_id: Tenant ID (optional)
+            
+        Returns:
+            True nếu user có permission
+        """
+        pass
 
 
 class PermissionGuard:
     """
-    Guard evaluator cho permission-based guards.
+    Permission Guard implementation.
     
-    Kiểm tra user có permission cần thiết không trước khi transition.
-    KPI-029: tenant_id được dùng để enforce tenant boundary.
+    Guards transitions dựa trên user permissions.
     """
-
-    async def evaluate(
-        self,
-        permission: str,
-        user_id: UUID,
-        resource: str,
-        context: dict[str, Any],
-        tenant_id: UUID | None = None,  # KPI-029: Tenant isolation
-    ) -> bool:
+    
+    def __init__(self, checker: PermissionChecker):
         """
-        Evaluate permission guard.
-        
-        KPI-029: tenant_id được dùng để verify user belongs to same tenant as resource.
+        Khởi tạo guard.
         
         Args:
-            permission: Permission string cần kiểm tra
+            checker: PermissionChecker instance
+        """
+        self.checker = checker
+    
+    async def evaluate(self, user_id: UUID, permission: str, tenant_id: Optional[UUID] = None) -> bool:
+        """
+        Evaluate guard.
+        
+        Args:
             user_id: User ID
-            resource: Resource string (entity_type:entity_id)
-            context: Transition context
-            tenant_id: KPI-029: Tenant ID cho tenant boundary check
+            permission: Permission cần thiết
+            tenant_id: Tenant ID
             
         Returns:
-            True nếu user có permission, False nếu không
+            True nếu user có permission
         """
-        # KPI-029: Check nếu user có quyền access resource của tenant này
-        # TODO: Integrate với CP03/CP04 Auth system
-        return True
+        return await self.checker.check_permission(user_id, permission, tenant_id)

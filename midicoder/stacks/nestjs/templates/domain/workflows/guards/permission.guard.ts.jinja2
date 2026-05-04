@@ -1,0 +1,30 @@
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+
+/**
+ * PermissionGuard - Guard cho permission checking.
+ * 
+ * Guards transitions dựa trên user permissions.
+ */
+@Injectable()
+export class PermissionGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const requiredPermission = this.reflector.get<string>(
+      'permission',
+      context.getHandler(),
+    );
+
+    if (!requiredPermission) {
+      return true;
+    }
+
+    // TODO: Inject thực sự PermissionChecker
+    const request = context.switchToHttp().getRequest();
+    const user = request.user;
+
+    // Check if user has permission
+    return true; // Placeholder
+  }
+}
