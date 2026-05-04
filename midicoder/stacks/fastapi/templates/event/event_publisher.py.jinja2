@@ -5,6 +5,7 @@ Module này cung cấp EventPublisher để publish events.
 Có thể mở rộng để publish sang Kafka, RabbitMQ, SQS, v.v.
 
 CP05: Event-Driven Architecture
+KPI-029: Tenant Isolation - Multi-tenant event publishing
 """
 
 from typing import Any, Optional
@@ -30,15 +31,19 @@ class EventPublisher:
     EventPublisher cung cấp interface để publish events.
     Có thể tích hợp với Kafka, RabbitMQ, SQS, v.v.
 
+    KPI-029: Tenant Isolation - EventPublisher hỗ trợ tenant_id để enforce tenant boundaries.
+
     Attributes:
         bus_name: Tên của event bus
         topic: Topic để publish events
         event_bus: EventBus instance để publish
+        tenant_id: Tenant ID mặc định cho events (KPI-029, optional)
     """
 
     bus_name: str
     topic: str
     event_bus: EventBus = None  # type: ignore
+    tenant_id: Optional[str] = None  # KPI-029: Tenant Isolation
 
     def __post_init__(self):
         """Khởi tạo event bus nếu chưa có."""
@@ -49,20 +54,27 @@ class EventPublisher:
         """
         Publish event message đến event bus.
 
+        KPI-029: Tenant Isolation - Tự động set tenant_id nếu message chưa có.
+
         Args:
             message: EventMessage cần publish
 
         Returns:
-            EventMessage đã được publish (có thể có topic được set)
+            EventMessage đã được publish (có thể có topic và tenant_id được set)
         """
         # Set topic cho message
         message.topic = self.topic
 
+        # KPI-029: Set tenant_id nếu message chưa có và publisher có default tenant_id
+        if message.tenant_id is None and self.tenant_id is not None:
+            message.tenant_id = self.tenant_id
+
         # Publish đến event bus
         self.event_bus.publish(message)
 
+        tenant_info = f" (tenant: {message.tenant_id})" if message.tenant_id else ""
         logger.info(
-            f"Event '{message.event_id}' đã publish đến topic '{self.topic}'"
+            f"Event '{message.event_id}' đã publish đến topic '{self.topic}'{tenant_info}"
         )
 
         return message
@@ -72,15 +84,19 @@ class EventPublisher:
         event_id: str,
         payload: dict[str, Any],
         correlation_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant Isolation
         metadata: Optional[dict[str, Any]] = None,
     ) -> EventMessage:
         """
         Publish event với event_id và payload.
 
+        KPI-029: Tenant Isolation - Hỗ trợ tenant_id parameter.
+
         Args:
             event_id: ID của event type (ví dụ: "order.created")
             payload: Dữ liệu event
             correlation_id: ID để trace event (optional, auto-generate nếu không có)
+            tenant_id: Tenant ID để enforce tenant isolation (KPI-029, optional)
             metadata: Metadata bổ sung (optional)
 
         Returns:
@@ -90,10 +106,14 @@ class EventPublisher:
         if correlation_id is None:
             correlation_id = str(uuid.uuid4())
 
+        # KPI-029: Sử dụng tenant_id từ parameter hoặc default từ publisher
+        effective_tenant_id = tenant_id if tenant_id is not None else self.tenant_id
+
         message = EventMessage(
             event_id=event_id,
             payload=payload,
             correlation_id=correlation_id,
+            tenant_id=effective_tenant_id,  # KPI-029: Include tenant_id
             metadata=metadata,
             topic=self.topic,
         )
@@ -109,20 +129,24 @@ class EventPublisher:
 def create_publisher(
     bus_name: str = "default",
     topic: str = "events",
+    tenant_id: Optional[str] = None,  # KPI-029: Tenant Isolation
 ) -> EventPublisher:
     """
     Tạo EventPublisher mới.
+
+    KPI-029: Tenant Isolation - Factory function với tenant_id support.
 
     Factory function để tạo EventPublisher với config.
 
     Args:
         bus_name: Tên của event bus
         topic: Topic để publish events
+        tenant_id: Tenant ID mặc định cho publisher (KPI-029, optional)
 
     Returns:
         EventPublisher instance
     """
-    return EventPublisher(bus_name=bus_name, topic=topic)
+    return EventPublisher(bus_name=bus_name, topic=topic, tenant_id=tenant_id)
 
 
 # ============================================================================

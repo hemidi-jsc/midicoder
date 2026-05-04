@@ -5,6 +5,8 @@
  * - WRITE_AUDIT_LOG: Ghi audit log (RX11: Immutable Audit Evidence)
  * - RECORD_METRIC: Ghi metric (CP15: Observability)
  * 
+ * KPI-029: Tenant Isolation - Effects include tenant_id in context
+ * 
  * Theo SoT, Query có 2 effects:
  * - WRITE_AUDIT_LOG: Audit trail
  * - RECORD_METRIC: Metrics for observability
@@ -17,6 +19,7 @@ import { Injectable } from '@nestjs/common';
 export interface QueryExecutionContext {
   queryId: string;
   userId: string;
+  // KPI-029: Tenant ID cho tenant isolation
   tenantId: string;
   resultCount: number;
   durationMs: number;
@@ -46,7 +49,7 @@ export async function executeQueryEffects(context: QueryExecutionContext): Promi
  */
 async function writeAuditLog(context: QueryExecutionContext): Promise<void> {
   // Placeholder: Audit log sẽ được write vào immutable storage
-  // context chứa: query_id, user_id, tenant_id, result_count, timestamp
+  // context chứa: query_id, user_id, tenant_id (KPI-029), result_count, timestamp
 }
 
 /**

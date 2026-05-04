@@ -1,6 +1,7 @@
 # NestJS Dockerfile - Build image cho API Gateway
 # Dockerfile cho NestJS application
 # CP06-Phase5: Infrastructure
+# KPI-029: Tenant Isolation - Support tenant-specific environment variables
 
 # Stage 1: Build stage - build Node.js application
 FROM node:20-alpine as builder
@@ -34,6 +35,12 @@ LABEL description="NestJS Gateway Service Production"
 # ENV environment variables - biến môi trường
 ENV NODE_ENV=production
 ENV APP_HOME=/app
+
+# KPI-029: Tenant isolation environment variables
+ENV TENANT_ISOLATION_ENABLED=true
+ENV DEFAULT_TENANT_ID=default
+ENV TENANT_CACHE_PREFIX=tenant
+ENV TENANT_QUEUE_PREFIX=tenant
 
 # Set WORKDIR
 WORKDIR /app

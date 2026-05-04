@@ -3,8 +3,10 @@
  *
  * Tự động cache HTTP responses với TTL.
  * Hỗ trợ cache invalidation.
+ * KPI-029: Tenant Isolation - Cache keys được prefix với tenantId.
  *
  * CP09: Caching & Performance
+ * KPI-029: Tenant Isolation - Multi-tenant cache support
  */
 
 import {
@@ -120,9 +122,13 @@ export class CacheInterceptor implements NestInterceptor {
       [context.getHandler(), context.getClass()],
     );
 
-    // Generate cache key
+    // KPI-029: Tenant Isolation - Lấy tenantId từ request context
     const request = context.switchToHttp().getRequest();
-    const key = customKey || this.generateKey(request);
+    
+    // Get tenantId from request headers or context
+    const tenantId = request.headers['x-tenant-id'] || request.tenantId || 'default';
+    
+    const key = customKey || this.generateKey(request, tenantId);
 
     // Try get from cache
     return this.redis.get(key).then((cached) => {
@@ -149,15 +155,20 @@ export class CacheInterceptor implements NestInterceptor {
   }
 
   /**
-   * Generate cache key từ request.
+   * Generate cache key từ request với tenant prefix.
+   *
+   * KPI-029: Tenant Isolation - Cache key format: `{tenantId}:{method}:{path}`
+   * Điều này đảm bảo cache của tenant A không bị share với tenant B.
    *
    * @param request - HTTP request
-   * @returns Cache key string
+   * @param tenantId - Tenant ID để tạo tenant-specific cache key
+   * @returns Cache key string với tenant prefix
    */
-  private generateKey(request: Request): string {
+  private generateKey(request: Request, tenantId: string): string {
     const method = request.method || "GET";
     const path = request.url || "/";
-    return `${method}:${path}`;
+    // KPI-029: Prefix với tenantId để isolate cache theo tenant
+    return `${tenantId}:${method}:${path}`;
   }
 
   /**

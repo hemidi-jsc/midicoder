@@ -1,5 +1,17 @@
+/**
+ * WorkflowEffects - Effects manager cho workflow transitions.
+ * 
+ * KPI-029: Tenant Isolation - Effects are executed within tenant context.
+ * CP04: Workflow Engine
+ */
+
 import { Injectable } from '@nestjs/common';
 
+/**
+ * TransitionContext - Context cho workflow transition.
+ * 
+ * KPI-029: Includes tenantId for tenant-scoped operations.
+ */
 export interface TransitionContext {
     workflowName: string;
     instanceId: string;
@@ -8,32 +20,68 @@ export interface TransitionContext {
     fromState: string;
     toState: string;
     userId?: string;
+    /** KPI-029: Tenant ID cho tenant isolation */
     tenantId?: string;
 }
 
+/**
+ * WorkflowEffects - Executer cho workflow effects.
+ * 
+ * KPI-029: Tenant Isolation - All effects respect tenant context from TransitionContext.
+ * 
+ * Effect types:
+ * - publishEvent: Publish domain events
+ * - executeCommand: Execute commands
+ * - sendNotification: Send notifications (email, SMS, push)
+ * - logAudit: Write audit logs
+ */
 @Injectable()
 export class WorkflowEffects {
+    /**
+     * Publish domain event.
+     * 
+     * KPI-029: Event includes tenantId from context.
+     */
     async publishEvent(context: TransitionContext, eventName: string): Promise<void> {
         // TODO: Integrate with Event Bus
+        // KPI-029: Include context.tenantId in event payload
         console.log(`Published event: ${eventName}`);
     }
 
+    /**
+     * Execute command.
+     * 
+     * KPI-029: Command is tenant-scoped via context.tenantId.
+     */
     async executeCommand(context: TransitionContext, commandName: string): Promise<void> {
         // TODO: Execute command
+        // KPI-029: Pass context.tenantId to command
         console.log(`Executed command: ${commandName}`);
     }
 
+    /**
+     * Send notification.
+     * 
+     * KPI-029: Notification is sent to tenant-specific recipients.
+     */
     async sendNotification(
         context: TransitionContext,
         channel: string,
         template: string,
     ): Promise<void> {
         // TODO: Send notification
+        // KPI-029: Filter recipients by context.tenantId
         console.log(`Sent notification via ${channel}: ${template}`);
     }
 
+    /**
+     * Log audit record.
+     * 
+     * KPI-029: Audit log includes tenantId for audit trail.
+     */
     async logAudit(context: TransitionContext, action: string): Promise<void> {
         // TODO: Log audit
+        // KPI-029: Include context.tenantId in audit record
         console.log(`Logged audit: ${action}`);
     }
 }

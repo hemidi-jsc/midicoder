@@ -5,6 +5,7 @@ Module này cung cấp event bus cho publish/subscribe pattern.
 Có thể mở rộng để tích hợp với Kafka, RabbitMQ, SQS, v.v.
 
 CP05: Event-Driven Architecture
+KPI-029: Tenant Isolation - Multi-tenant event support
 """
 
 from typing import Any, Callable, Optional
@@ -26,7 +27,9 @@ class EventMessage:
     Đại diện cho một event message trong hệ thống.
 
     EventMessage là đơn vị cơ bản được truyền qua event bus.
-    Mỗi message có event_id, payload, và metadata.
+    Mỗi message có event_id, payload, tenant_id, và metadata.
+
+    KPI-029: Tenant Isolation - Event messages phải có tenant_id để enforce tenant boundaries.
 
     Attributes:
         event_id: Định danh duy nhất của event type (ví dụ: "order.created")
@@ -34,7 +37,8 @@ class EventMessage:
         version: Version của event schema
         timestamp: Thời điểm event được tạo
         correlation_id: ID để trace event qua nhiều services
-        metadata: Metadata bổ sung (tenant_id, source, v.v.)
+        tenant_id: Tenant ID để enforce tenant isolation (KPI-029)
+        metadata: Metadata bổ sung (source, v.v.)
         topic: Topic để route event
     """
 
@@ -43,6 +47,7 @@ class EventMessage:
     version: str = "1.0"
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     correlation_id: Optional[str] = None
+    tenant_id: Optional[str] = None  # KPI-029: Tenant Isolation
     metadata: Optional[dict[str, Any]] = None
     topic: Optional[str] = None
 
@@ -51,7 +56,7 @@ class EventMessage:
         Chuyển EventMessage thành dict.
 
         Returns:
-            Dict representation của EventMessage
+            Dict representation của EventMessage với tenant_id (KPI-029)
         """
         return {
             "event_id": self.event_id,
@@ -59,6 +64,7 @@ class EventMessage:
             "version": self.version,
             "timestamp": self.timestamp.isoformat(),
             "correlation_id": self.correlation_id,
+            "tenant_id": self.tenant_id,  # KPI-029: Include tenant_id
             "metadata": self.metadata,
             "topic": self.topic,
         }
@@ -110,34 +116,48 @@ class EventBus:
         self,
         topic: str,
         handler: Callable[[EventMessage], Any],
+        tenant_id: Optional[str] = None,
     ) -> None:
         """
         Subscribe handler đến topic.
 
+        KPI-029: Tenant Isolation - Có thể subscribe với tenant_id filter.
+        Nếu tenant_id được set, handler chỉ nhận events của tenant đó.
+
         Args:
             topic: Topic để subscribe (ví dụ: "orders", "payments")
             handler: Function để handle events (async hoặc sync)
+            tenant_id: Tenant ID để filter events (KPI-029, optional)
         """
         if topic not in self._subscribers:
             self._subscribers[topic] = []
-        self._subscribers[topic].append(handler)
-        logger.debug(f"Handler đã subscribe đến topic '{topic}'")
+        # Store handler với tenant_id filter
+        self._subscribers[topic].append((handler, tenant_id))
+        filter_info = f" cho tenant '{tenant_id}'" if tenant_id else ""
+        logger.debug(f"Handler đã subscribe đến topic '{topic}'{filter_info}")
 
     def unsubscribe(
         self,
         topic: str,
         handler: Callable[[EventMessage], Any],
+        tenant_id: Optional[str] = None,
     ) -> None:
         """
         Unsubscribe handler từ topic.
 
+        KPI-029: Tenant Isolation - Unsubscribe với tenant_id filter.
+
         Args:
             topic: Topic để unsubscribe
             handler: Handler cần remove
+            tenant_id: Tenant ID filter (KPI-029, optional)
         """
         if topic in self._subscribers:
             try:
-                self._subscribers[topic].remove(handler)
+                self._subscribers[topic] = [
+                    (h, t) for h, t in self._subscribers[topic]
+                    if not (h == handler and t == tenant_id)
+                ]
                 logger.debug(f"Handler đã unsubscribe khỏi topic '{topic}'")
             except ValueError:
                 logger.warning(f"Handler không tìm thấy trong topic '{topic}'")
@@ -145,6 +165,8 @@ class EventBus:
     def publish(self, message: EventMessage) -> None:
         """
         Publish event message đến tất cả subscribers.
+
+        KPI-029: Tenant Isolation - Chỉ gửi events đến subscribers của cùng tenant.
 
         Args:
             message: EventMessage cần publish
@@ -155,10 +177,23 @@ class EventBus:
             logger.debug(f"Không có subscriber cho topic '{topic}'")
             return
 
-        logger.info(f"Publishing event '{message.event_id}' đến topic '{topic}'")
+        logger.info(
+            f"Publishing event '{message.event_id}' đến topic '{topic}'"
+            f"{f' (tenant: {message.tenant_id})' if message.tenant_id else ''}"
+        )
 
-        # Call all handlers cho topic này
-        for handler in self._subscribers[topic]:
+        # KPI-029: Call handlers với tenant filtering
+        for handler_entry in self._subscribers[topic]:
+            # Handle cả old format (handler only) và new format (handler, tenant_id)
+            if isinstance(handler_entry, tuple):
+                handler, subscriber_tenant_id = handler_entry
+            else:
+                handler, subscriber_tenant_id = handler_entry, None
+
+            # KPI-029: Tenant isolation - Skip nếu tenant không match
+            if subscriber_tenant_id and message.tenant_id != subscriber_tenant_id:
+                continue
+
             try:
                 # Support cả async và sync handlers
                 import asyncio
@@ -180,10 +215,13 @@ class EventBus:
         event_id: str,
         payload: dict[str, Any],
         correlation_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant Isolation
         metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """
         Publish event đến specific topic.
+
+        KPI-029: Tenant Isolation - Helper method với tenant_id support.
 
         Đây là helper method để tạo và publish event nhanh chóng.
 
@@ -192,12 +230,14 @@ class EventBus:
             event_id: ID của event type (ví dụ: "order.created")
             payload: Dữ liệu event
             correlation_id: ID để trace event (optional)
+            tenant_id: Tenant ID để enforce tenant isolation (KPI-029, optional)
             metadata: Metadata bổ sung (optional)
         """
         message = EventMessage(
             event_id=event_id,
             payload=payload,
             correlation_id=correlation_id,
+            tenant_id=tenant_id,  # KPI-029: Include tenant_id
             metadata=metadata,
             topic=topic,
         )

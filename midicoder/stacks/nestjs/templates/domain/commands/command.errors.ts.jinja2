@@ -3,6 +3,8 @@
  * 
  * Định nghĩa custom exceptions cho {{ command.description }}.
  * 
+ * KPI-029: Tenant Isolation - error classes cho tenant violations.
+ * 
  * @author Midicoder Auto-generated
  */
 
@@ -17,6 +19,58 @@ export abstract class {{ command.id }}Error extends Error {
         this.message = message;
         this.httpStatus = httpStatus;
         this.name = this.constructor.name;
+    }
+}
+
+// KPI-029: Tenant Isolation Errors
+
+/**
+ * TenantIsolationError - KPI-029: Vi phạm tenant isolation.
+ * 
+ * HTTP Status: 403
+ * Error Code: TENANT_ISOLATION_VIOLATION
+ */
+export class TenantIsolationError extends {{ command.id }}Error {
+    readonly tenantId: string;
+
+    constructor(tenantId: string) {
+        super('KPI-029: Vi phạm tenant isolation', 403);
+        this.name = 'TenantIsolationError';
+        this.tenantId = tenantId;
+    }
+}
+
+/**
+ * TenantNotFoundError - KPI-029: Tenant không tồn tại.
+ * 
+ * HTTP Status: 404
+ * Error Code: TENANT_NOT_FOUND
+ */
+export class TenantNotFoundError extends {{ command.id }}Error {
+    readonly tenantId: string;
+
+    constructor(tenantId: string) {
+        super(`KPI-029: Tenant không tìm thấy: ${tenantId}`, 404);
+        this.name = 'TenantNotFoundError';
+        this.tenantId = tenantId;
+    }
+}
+
+/**
+ * TenantPermissionError - KPI-029: Không có quyền truy cập tenant.
+ * 
+ * HTTP Status: 403
+ * Error Code: TENANT_PERMISSION_DENIED
+ */
+export class TenantPermissionError extends {{ command.id }}Error {
+    readonly tenantId: string;
+    readonly userId: string;
+
+    constructor(tenantId: string, userId: string) {
+        super(`KPI-029: Người dùng ${userId} không có quyền truy cập tenant ${tenantId}`, 403);
+        this.name = 'TenantPermissionError';
+        this.tenantId = tenantId;
+        this.userId = userId;
     }
 }
 

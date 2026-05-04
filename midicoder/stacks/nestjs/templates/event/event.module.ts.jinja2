@@ -4,6 +4,7 @@
  * Module này cung cấp event publishing/subscribing cho NestJS application.
  * Hỗ trợ in-memory event bus với khả năng mở rộng sang Kafka/RabbitMQ.
  * 
+ * KPI-029: Tenant Isolation - Event module hỗ trợ tenant-specific event routing
  * CP05: Event-Driven Architecture
  */
 
@@ -15,14 +16,19 @@ import { EventSubscriberService } from './event-subscriber.service';
 /**
  * Event module - Global module cho event bus.
  * 
+ * KPI-029: Event module hỗ trợ tenant isolation qua:
+ * - EventBusService với tenant-specific subscriptions
+ * - EventPublisherService với tenant_id trong events
+ * - EventSubscriberService với tenant-based filtering
+ * 
  * Import module này vào AppModule để sử dụng event bus trong toàn app.
  */
 @Global()
 @Module({
   providers: [
-    EventBusService,
-    EventPublisherService,
-    EventSubscriberService,
+    EventBusService,  // KPI-029: Tenant-specific event routing
+    EventPublisherService,  // KPI-029: Publish events với tenant_id
+    EventSubscriberService,  // KPI-029: Tenant-based event filtering
   ],
   exports: [
     EventBusService,

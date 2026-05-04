@@ -3,9 +3,12 @@ Mô-đun Notification Effect.
 
 Cung cấp:
 - NotificationEffect: Effect cho sending notifications
+
+KPI-029: Tenant Isolation - tenant_id được dùng cho notification filtering
 """
 
 from typing import Any
+from uuid import UUID
 
 
 class NotificationEffect:
@@ -13,6 +16,7 @@ class NotificationEffect:
     Effect executor cho notifications.
     
     Send notifications (email, sms, push) khi transition fire.
+    KPI-029: tenant_id được thêm vào notification payload.
     """
 
     async def execute(
@@ -21,18 +25,31 @@ class NotificationEffect:
         template: str,
         recipient: str,
         payload: dict[str, Any],
+        tenant_id: UUID | None = None,  # KPI-029: Tenant isolation
     ) -> dict[str, Any]:
         """
         Execute notification effect.
+        
+        KPI-029: tenant_id được thêm vào payload cho tenant-specific notifications.
         
         Args:
             channel: Notification channel (email, sms, push)
             template: Template name
             recipient: Recipient address
             payload: Template payload
+            tenant_id: KPI-029: Tenant ID cho notification
             
         Returns:
             Result với send status
         """
+        # KPI-029: Thêm tenant_id vào payload
+        if tenant_id and "tenant_id" not in payload:
+            payload["tenant_id"] = str(tenant_id)
+        
         # TODO: Integrate với CP12 Notification
-        return {"status": "sent", "channel": channel, "template": template}
+        return {
+            "status": "sent",
+            "channel": channel,
+            "template": template,
+            "tenant_id": str(tenant_id) if tenant_id else None,  # KPI-029
+        }

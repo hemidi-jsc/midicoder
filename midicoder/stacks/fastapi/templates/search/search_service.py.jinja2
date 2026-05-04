@@ -6,14 +6,16 @@ Cung cấp:
 - Filtering & sorting
 - Pagination
 - Highlighting
+- KPI-029: Tenant-specific search filtering
 
+KPI-029: Tenant Isolation - Hỗ trợ tenant filtering trong search operations
 CP10: Search & Indexing
 """
 
 import json
 from typing import Any, Dict, List, Optional
 
-from .elasticsearch import get_elasticsearch
+from .elasticsearch import get_elasticsearch, get_tenant_elasticsearch, get_tenant_index_name
 
 
 class SearchService:
@@ -25,16 +27,20 @@ class SearchService:
     - Filtered search
     - Aggregations
     - Highlighting
+
+    KPI-029: Hỗ trợ tenant filtering để isolate search results theo tenant.
     """
 
-    def __init__(self, index: str = "documents") -> None:
+    def __init__(self, index: str = "documents", tenant_id: Optional[str] = None) -> None:
         """
         Khởi tạo search service.
 
         Args:
             index: Default index name
+            tenant_id: KPI-029: Tenant ID cho tenant-specific search
         """
         self.index = index
+        self.tenant_id = tenant_id  # KPI-029: Tenant context
 
     async def search(
         self,
@@ -45,6 +51,7 @@ class SearchService:
         size: int = 20,
         from_page: int = 0,
         highlight: bool = False,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Thực hiện full-text search.
@@ -57,12 +64,16 @@ class SearchService:
             size: Số lượng kết quả trả về
             from_page: Pagination offset
             highlight: Enable highlighting
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Search results dictionary
         """
-        client = get_elasticsearch()
-        target_index = index or self.index
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
 
         # Build query
         search_body = {
@@ -77,8 +88,24 @@ class SearchService:
             "from": from_page,
         }
 
-        # Add filters
-        if filters:
+        # KPI-029: Add tenant_id filter if not in custom filters
+        if effective_tenant_id:
+            tenant_filter = {"term": {"tenant_id": effective_tenant_id}}
+            if filters:
+                search_body["query"] = {
+                    "bool": {
+                        "must": [search_body["query"]],
+                        "filter": [{"term": {k: v}} for k, v in filters.items()] + [tenant_filter],
+                    }
+                }
+            else:
+                search_body["query"] = {
+                    "bool": {
+                        "must": [search_body["query"]],
+                        "filter": [tenant_filter],
+                    }
+                }
+        elif filters:
             search_body["query"] = {
                 "bool": {
                     "must": [search_body["query"]],
@@ -107,11 +134,72 @@ class SearchService:
             "took": response["took"],
         }
 
+    async def search_multi_tenant(
+        self,
+        query: str,
+        tenant_ids: List[str],
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        size: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        KPI-029: Search qua multiple tenants.
+
+        Dùng cho admin users cần search qua nhiều tenants.
+
+        Args:
+            query: Search query string
+            tenant_ids: Danh sách tenant IDs để search
+            index: Index name (override default)
+            filters: Additional filters
+            size: Số lượng kết quả trả về
+
+        Returns:
+            Search results dictionary với tenant info
+        """
+        client = get_elasticsearch()
+        target_index = index or self.index
+
+        search_body = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {
+                            "multi_match": {
+                                "query": query,
+                                "fields": ["*"],
+                                "fuzziness": "AUTO",
+                            }
+                        },
+                    ],
+                    "filter": [
+                        {"terms": {"tenant_id": tenant_ids}},
+                    ],
+                }
+            },
+            "size": size,
+        }
+
+        if filters:
+            search_body["query"]["bool"]["filter"].extend(
+                [{"term": {k: v}} for k, v in filters.items()]
+            )
+
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "hits": response["hits"]["hits"],
+            "total": response["hits"]["total"]["value"],
+            "took": response["took"],
+            "tenant_ids": tenant_ids,
+        }
+
     async def index_document(
         self,
         doc_id: str,
         document: Dict[str, Any],
         index: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Index một document vào Elasticsearch.
@@ -120,17 +208,26 @@ class SearchService:
             doc_id: Document ID
             document: Document data
             index: Index name (override default)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Index response
         """
-        client = get_elasticsearch()
-        target_index = index or self.index
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # KPI-029: Add tenant_id to document if not present
+        doc_with_tenant = {**document}
+        if effective_tenant_id and "tenant_id" not in doc_with_tenant:
+            doc_with_tenant["tenant_id"] = effective_tenant_id
 
         response = await client.index(
             index=target_index,
             id=doc_id,
-            body=document,
+            body=doc_with_tenant,
             refresh=True,
         )
 
@@ -140,6 +237,7 @@ class SearchService:
         self,
         doc_id: str,
         index: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Xóa document từ Elasticsearch.
@@ -147,16 +245,50 @@ class SearchService:
         Args:
             doc_id: Document ID
             index: Index name (override default)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Delete response
         """
-        client = get_elasticsearch()
-        target_index = index or self.index
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
 
         response = await client.delete(
             index=target_index,
             id=doc_id,
+            refresh=True,
+        )
+
+        return response
+
+    async def delete_tenant_documents(
+        self,
+        tenant_id: str,
+        index: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        KPI-029: Xóa tất cả documents của tenant.
+
+        Dùng khi tenant bị xóa để cleanup tenant data.
+
+        Args:
+            tenant_id: ID của tenant
+            index: Index name (override default)
+
+        Returns:
+            Delete response
+        """
+        target_index = get_tenant_index_name(index or self.index, tenant_id)
+        client = get_tenant_elasticsearch(tenant_id)
+
+        response = await client.delete_by_query(
+            index=target_index,
+            body={
+                "query": {"term": {"tenant_id": tenant_id}},
+            },
             refresh=True,
         )
 
@@ -167,6 +299,7 @@ class SearchService:
         doc_id: str,
         updates: Dict[str, Any],
         index: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Cập nhật document trong Elasticsearch.
@@ -175,12 +308,16 @@ class SearchService:
             doc_id: Document ID
             updates: Fields to update
             index: Index name (override default)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Update response
         """
-        client = get_elasticsearch()
-        target_index = index or self.index
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
 
         response = await client.update(
             index=target_index,
@@ -195,6 +332,7 @@ class SearchService:
         self,
         documents: List[Dict[str, Any]],
         index: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Bulk index nhiều documents.
@@ -202,24 +340,34 @@ class SearchService:
         Args:
             documents: List của documents với doc_id
             index: Index name (override default)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Bulk response
         """
-        client = get_elasticsearch()
-        target_index = index or self.index
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
 
         actions = []
         for doc in documents:
             doc_id = doc.pop("doc_id", None)
+            
+            # KPI-029: Add tenant_id to document if not present
+            doc_with_tenant = {**doc}
+            if effective_tenant_id and "tenant_id" not in doc_with_tenant:
+                doc_with_tenant["tenant_id"] = effective_tenant_id
+
             if doc_id:
                 actions.append(
                     {"index": {"_index": target_index, "_id": doc_id}}
                 )
-                actions.append(doc)
+                actions.append(doc_with_tenant)
             else:
                 actions.append({"index": {"_index": target_index}})
-                actions.append(doc)
+                actions.append(doc_with_tenant)
 
         response = await client.bulk(body=actions)
         return response

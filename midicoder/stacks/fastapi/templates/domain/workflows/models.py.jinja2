@@ -5,6 +5,8 @@ Cung cấp:
 - WorkflowInstance: Snapshot của current state
 - WorkflowEvent: Event log cho audit trail
 - WorkflowTransitionLog: Log chi tiết transition execution
+
+KPI-029: Tenant Isolation - All models include tenant_id column
 """
 
 from sqlalchemy import Column, String, UUID, Text, ForeignKey, Index
@@ -39,6 +41,9 @@ class WorkflowInstance(Base, AsyncAttrs):
     )
     tenant_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     
+    # KPI-029: Tenant isolation
+    tenant_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    
     # Relationships
     events = relationship("WorkflowEvent", back_populates="instance", lazy="dynamic")
     transition_logs = relationship(
@@ -68,10 +73,12 @@ class WorkflowEvent(Base, AsyncAttrs):
     transition_id = Column(String(255), index=True)
     payload = Column(JSONB, default=dict)
     occurred_at = Column(datetime, default=datetime.utcnow, nullable=False)
+    
+    # KPI-029: Tenant isolation
     tenant_id = Column(UUID(as_uuid=True), nullable=False)
     
     # Relationships
-    instance = relationship("WorkflowInstance", back_populates="events")
+    instance = relationship("WorkflowEvent", back_populates="instance")
     
     __table_args__ = (
         Index("idx_workflow_event_instance", "instance_id"),
@@ -96,6 +103,8 @@ class WorkflowTransitionLog(Base, AsyncAttrs):
     status = Column(String(50), nullable=False)  # success, failed, rolled_back
     error_message = Column(Text)
     executed_at = Column(datetime, default=datetime.utcnow, nullable=False)
+    
+    # KPI-029: Tenant isolation
     tenant_id = Column(UUID(as_uuid=True), nullable=False)
     
     # Relationships

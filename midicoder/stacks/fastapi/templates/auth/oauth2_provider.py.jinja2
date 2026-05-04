@@ -5,6 +5,7 @@ Module này cung cấp OAuth2 authorization code flow cho FastAPI.
 Hỗ trợ Google, GitHub, và custom OAuth2 providers.
 
 CP03: Authentication & Authorization
+KPI-029: Tenant Isolation - tenant_id được attach khi user login qua OAuth2
 """
 
 from typing import Any, Optional
@@ -58,12 +59,18 @@ class OAuth2Token(BaseModel):
 
 
 class OAuth2UserInfo(BaseModel):
-    """OAuth2 user information."""
+    """
+    OAuth2 user information.
+    
+    KPI-029: tenant_id có thể được extract từ OAuth2 provider (nếu supported).
+    """
 
     sub: str  # Subject (user ID)
     name: Optional[str] = None
     email: Optional[str] = None
     picture: Optional[str] = None
+    # KPI-029: Tenant isolation
+    tenant_id: Optional[str] = None  # KPI-029: Tenant ID from OAuth2 or assigned
     # Provider-specific fields
     provider: str
     provider_user_id: str
@@ -198,15 +205,20 @@ class OAuth2ProviderService:
                 scope=token_data.get("scope"),
             )
 
-    async def get_user_info(self, access_token: str) -> OAuth2UserInfo:
+    async def get_user_info(
+        self, access_token: str, tenant_id: Optional[str] = None
+    ) -> OAuth2UserInfo:
         """
         Get user information từ OAuth2 provider.
 
+        KPI-029: tenant_id có thể được extract từ provider hoặc assign.
+
         Args:
             access_token: OAuth2 access token
+            tenant_id: KPI-029: Tenant ID (from token or assignment)
 
         Returns:
-            OAuth2UserInfo
+            OAuth2UserInfo với tenant_id
 
         Raises:
             HTTPException: Nếu fetch user info failed
@@ -227,11 +239,15 @@ class OAuth2ProviderService:
 
             user_data = response.json()
 
+            # KPI-029: Extract tenant_id from provider if available
+            provider_tenant_id = user_data.get("tenant_id")
+
             return OAuth2UserInfo(
                 sub=user_data.get("sub") or user_data.get("id"),
                 name=user_data.get("name"),
                 email=user_data.get("email"),
                 picture=user_data.get("picture") or user_data.get("avatar_url"),
+                tenant_id=provider_tenant_id or tenant_id,  # KPI-029
                 provider=self.name,
                 provider_user_id=user_data.get("sub") or user_data.get("id"),
                 extra=user_data,

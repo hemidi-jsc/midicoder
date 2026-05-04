@@ -5,16 +5,23 @@ Cung cấp:
 - File upload handling
 - Validation
 - Storage integration
+- KPI-029: Tenant-specific file storage
 
+KPI-029: Tenant Isolation - Hỗ trợ tenant-specific folder prefix
 CP11: File Storage & Media
 """
 
 import uuid
+import os
 from typing import Optional
 from fastapi import UploadFile, HTTPException
 from fastapi.responses import Response
 
 from .s3 import upload_file, download_file, delete_file, get_presigned_url
+
+# KPI-029: Tenant folder prefix settings
+STORAGE_TENANT_PREFIX = os.getenv("STORAGE_TENANT_PREFIX", "tenant")
+STORAGE_TENANT_ISOLATION = os.getenv("STORAGE_TENANT_ISOLATION", "true").lower() == "true"
 
 # Allowed file types
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -35,21 +42,42 @@ class FileUploadService:
     - Upload images, videos, documents
     - Validation
     - Storage integration
+
+    KPI-029: Hỗ trợ tenant-specific folder prefix để isolate files theo tenant.
     """
 
-    def __init__(self, bucket: Optional[str] = None) -> None:
+    def __init__(self, bucket: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
         """
         Khởi tạo file upload service.
 
         Args:
             bucket: S3 bucket name
+            tenant_id: KPI-029: Tenant ID cho tenant-specific storage
         """
         self.bucket = bucket
+        self.tenant_id = tenant_id  # KPI-029: Tenant context
+
+    def _get_tenant_folder(self, folder: str, tenant_id: Optional[str] = None) -> str:
+        """
+        KPI-029: Tạo folder path với tenant prefix.
+
+        Args:
+            folder: Folder gốc
+            tenant_id: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Folder path với tenant prefix
+        """
+        effective_tenant_id = tenant_id or self.tenant_id
+        if STORAGE_TENANT_ISOLATION and effective_tenant_id:
+            return f"{STORAGE_TENANT_PREFIX}/{effective_tenant_id}/{folder}"
+        return folder
 
     async def upload_image(
         self,
         file: UploadFile,
         folder: str = "images",
+        tenant_id: Optional[str] = None,
     ) -> dict:
         """
         Upload image file.
@@ -57,6 +85,7 @@ class FileUploadService:
         Args:
             file: UploadFile
             folder: Storage folder
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Upload result
@@ -76,9 +105,12 @@ class FileUploadService:
                 detail=f"Image too large. Max size: {MAX_IMAGE_SIZE / 1024 / 1024:.0f}MB",
             )
 
+        # KPI-029: Generate tenant-specific folder
+        tenant_folder = self._get_tenant_folder(folder, tenant_id)
+
         # Generate key
         file_ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
-        key = f"{folder}/{uuid.uuid4()}.{file_ext}"
+        key = f"{tenant_folder}/{uuid.uuid4()}.{file_ext}"
 
         # Upload to S3
         result = upload_file(content, key, self.bucket, file.content_type)
@@ -89,12 +121,14 @@ class FileUploadService:
             "key": key,
             "size": len(content),
             "type": file.content_type,
+            "tenant_id": tenant_id or self.tenant_id,  # KPI-029: Return tenant_id
         }
 
     async def upload_video(
         self,
         file: UploadFile,
         folder: str = "videos",
+        tenant_id: Optional[str] = None,
     ) -> dict:
         """
         Upload video file.
@@ -102,6 +136,7 @@ class FileUploadService:
         Args:
             file: UploadFile
             folder: Storage folder
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Upload result
@@ -121,9 +156,12 @@ class FileUploadService:
                 detail=f"Video too large. Max size: {MAX_VIDEO_SIZE / 1024 / 1024:.0f}MB",
             )
 
+        # KPI-029: Generate tenant-specific folder
+        tenant_folder = self._get_tenant_folder(folder, tenant_id)
+
         # Generate key
         file_ext = file.filename.split(".")[-1] if "." in file.filename else "mp4"
-        key = f"{folder}/{uuid.uuid4()}.{file_ext}"
+        key = f"{tenant_folder}/{uuid.uuid4()}.{file_ext}"
 
         # Upload to S3
         result = upload_file(content, key, self.bucket, file.content_type)
@@ -134,12 +172,14 @@ class FileUploadService:
             "key": key,
             "size": len(content),
             "type": file.content_type,
+            "tenant_id": tenant_id or self.tenant_id,  # KPI-029: Return tenant_id
         }
 
     async def upload_document(
         self,
         file: UploadFile,
         folder: str = "documents",
+        tenant_id: Optional[str] = None,
     ) -> dict:
         """
         Upload document file.
@@ -147,6 +187,7 @@ class FileUploadService:
         Args:
             file: UploadFile
             folder: Storage folder
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Upload result
@@ -166,9 +207,12 @@ class FileUploadService:
                 detail=f"Document too large. Max size: {MAX_DOCUMENT_SIZE / 1024 / 1024:.0f}MB",
             )
 
+        # KPI-029: Generate tenant-specific folder
+        tenant_folder = self._get_tenant_folder(folder, tenant_id)
+
         # Generate key
         file_ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
-        key = f"{folder}/{uuid.uuid4()}.{file_ext}"
+        key = f"{tenant_folder}/{uuid.uuid4()}.{file_ext}"
 
         # Upload to S3
         result = upload_file(content, key, self.bucket, file.content_type)
@@ -179,30 +223,53 @@ class FileUploadService:
             "key": key,
             "size": len(content),
             "type": file.content_type,
+            "tenant_id": tenant_id or self.tenant_id,  # KPI-029: Return tenant_id
         }
 
-    async def delete_file(self, key: str) -> bool:
+    async def delete_file(
+        self,
+        key: str,
+        tenant_id: Optional[str] = None,
+    ) -> bool:
         """
         Xóa file từ storage.
 
+        KPI-029: Nếu key không có tenant prefix, sẽ thêm tenant prefix.
+
         Args:
             key: File key
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             True nếu xóa thành công
         """
+        # KPI-029: Add tenant prefix if not present
+        effective_tenant_id = tenant_id or self.tenant_id
+        if STORAGE_TENANT_ISOLATION and effective_tenant_id and not key.startswith(f"{STORAGE_TENANT_PREFIX}/"):
+            key = f"{STORAGE_TENANT_PREFIX}/{effective_tenant_id}/{key}"
         return delete_file(key, self.bucket)
 
-    async def get_file(self, key: str) -> Response:
+    async def get_file(
+        self,
+        key: str,
+        tenant_id: Optional[str] = None,
+    ) -> Response:
         """
         Download file.
 
+        KPI-029: Nếu key không có tenant prefix, sẽ thêm tenant prefix.
+
         Args:
             key: File key
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             File response
         """
+        # KPI-029: Add tenant prefix if not present
+        effective_tenant_id = tenant_id or self.tenant_id
+        if STORAGE_TENANT_ISOLATION and effective_tenant_id and not key.startswith(f"{STORAGE_TENANT_PREFIX}/"):
+            key = f"{STORAGE_TENANT_PREFIX}/{effective_tenant_id}/{key}"
         content = download_file(key, self.bucket)
         return Response(content=content, media_type="application/octet-stream")
 
@@ -210,15 +277,52 @@ class FileUploadService:
         self,
         key: str,
         expiration: int = 3600,
+        tenant_id: Optional[str] = None,
     ) -> str:
         """
         Get presigned URL cho file.
 
+        KPI-029: Nếu key không có tenant prefix, sẽ thêm tenant prefix.
+
         Args:
             key: File key
             expiration: URL validity (seconds)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Presigned URL
         """
+        # KPI-029: Add tenant prefix if not present
+        effective_tenant_id = tenant_id or self.tenant_id
+        if STORAGE_TENANT_ISOLATION and effective_tenant_id and not key.startswith(f"{STORAGE_TENANT_PREFIX}/"):
+            key = f"{STORAGE_TENANT_PREFIX}/{effective_tenant_id}/{key}"
         return get_presigned_url(key, self.bucket, expiration)
+
+    async def delete_tenant_files(
+        self,
+        tenant_id: str,
+        folder: Optional[str] = None,
+    ) -> dict:
+        """
+        KPI-029: Xóa tất cả files của tenant.
+
+        Dùng khi tenant bị xóa để cleanup tenant files.
+
+        Args:
+            tenant_id: ID của tenant
+            folder: Folder cụ thể để xóa (nếu None thì xóa tất cả folders)
+
+        Returns:
+            Deletion result
+        """
+        tenant_prefix = f"{STORAGE_TENANT_PREFIX}/{tenant_id}"
+        if folder:
+            tenant_prefix = f"{tenant_prefix}/{folder}"
+
+        # TODO: Implement bulk delete with S3 list_objects and delete_objects
+        # This is a placeholder implementation
+        return {
+            "tenant_id": tenant_id,
+            "prefix": tenant_prefix,
+            "status": "pending_implementation",
+        }

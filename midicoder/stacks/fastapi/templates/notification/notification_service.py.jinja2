@@ -5,7 +5,9 @@ Cung cấp:
 - Multi-channel notifications (email, SMS, push)
 - Notification templates
 - Notification preferences
+- KPI-029: Tenant-specific notifications
 
+KPI-029: Tenant Isolation - Hỗ trợ tenant_id trong notifications
 CP12: Notification & Communication
 """
 
@@ -43,11 +45,18 @@ class NotificationService:
     - SMS notifications
     - Push notifications
     - In-app notifications
+
+    KPI-029: Hỗ trợ tenant_id để isolate notifications theo tenant.
     """
 
-    def __init__(self) -> None:
-        """Khởi tạo notification service."""
+    def __init__(self, tenant_id: Optional[str] = None) -> None:
+        """Khởi tạo notification service.
+
+        Args:
+            tenant_id: KPI-029: Tenant ID cho tenant-specific notifications
+        """
         self.email_service = EmailService()
+        self.tenant_id = tenant_id  # KPI-029: Tenant context
 
     async def notify(
         self,
@@ -55,6 +64,7 @@ class NotificationService:
         notification_type: NotificationType,
         channel: NotificationChannel,
         data: Dict[str, Any],
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
         template: Optional[str] = None,
     ) -> bool:
         """
@@ -65,19 +75,25 @@ class NotificationService:
             notification_type: Loại notification
             channel: Channel để gửi
             data: Notification data
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
             template: Template name (optional)
 
         Returns:
             True nếu gửi thành công
         """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        # Thêm tenant_id vào data cho các services
+        data_with_tenant = {**data, "tenant_id": effective_tenant_id}
+
         if channel == NotificationChannel.EMAIL:
-            return await self.send_email_notification(user_id, notification_type, data, template)
+            return await self.send_email_notification(user_id, notification_type, data_with_tenant, template)
         elif channel == NotificationChannel.SMS:
-            return await self.send_sms_notification(user_id, notification_type, data, template)
+            return await self.send_sms_notification(user_id, notification_type, data_with_tenant, template)
         elif channel == NotificationChannel.PUSH:
-            return await self.send_push_notification(user_id, notification_type, data)
+            return await self.send_push_notification(user_id, notification_type, data_with_tenant)
         elif channel == NotificationChannel.IN_APP:
-            return await self.create_in_app_notification(user_id, notification_type, data)
+            return await self.create_in_app_notification(user_id, notification_type, data_with_tenant)
 
         return False
 
@@ -94,7 +110,7 @@ class NotificationService:
         Args:
             user_id: User ID
             notification_type: Notification type
-            data: Notification data
+            data: Notification data (bao gồm tenant_id - KPI-029)
             template: Email template name
 
         Returns:
@@ -105,6 +121,9 @@ class NotificationService:
         if not email:
             return False
 
+        # KPI-029: Get tenant_id từ data
+        tenant_id = data.get("tenant_id")
+
         # Use template or default
         template_name = template or f"notifications/{notification_type.value}"
 
@@ -112,6 +131,7 @@ class NotificationService:
             to=email,
             template_name=template_name,
             context={**data, "user_id": user_id},
+            tenant_id=tenant_id,  # KPI-029: Pass tenant_id
         )
 
     async def send_sms_notification(
@@ -127,7 +147,7 @@ class NotificationService:
         Args:
             user_id: User ID
             notification_type: Notification type
-            data: Notification data
+            data: Notification data (bao gồm tenant_id - KPI-029)
             template: SMS template name
 
         Returns:
@@ -137,16 +157,20 @@ class NotificationService:
         if not phone:
             return False
 
+        # KPI-029: Get tenant_id từ data
+        tenant_id = data.get("tenant_id")
+        tenant_context = f" [Tenant: {tenant_id}]" if tenant_id else ""
+
         # Get message from template or default
         message = self._get_sms_message(notification_type, data, template)
 
         # Send SMS (placeholder - integrate with Twilio, etc.)
         try:
-            # TODO: Integrate with SMS provider
-            print(f"Sending SMS to {phone}: {message}")
+            # TODO: Integrate with SMS provider với tenant context
+            print(f"Sending SMS to {phone}: {message}{tenant_context}")
             return True
         except Exception as e:
-            print(f"Failed to send SMS: {e}")
+            print(f"Failed to send SMS{tenant_context}: {e}")
             return False
 
     async def send_push_notification(
@@ -161,7 +185,7 @@ class NotificationService:
         Args:
             user_id: User ID
             notification_type: Notification type
-            data: Notification data
+            data: Notification data (bao gồm tenant_id - KPI-029)
 
         Returns:
             True nếu gửi thành công
@@ -171,17 +195,21 @@ class NotificationService:
         if not device_token:
             return False
 
+        # KPI-029: Get tenant_id từ data
+        tenant_id = data.get("tenant_id")
+        tenant_context = f" [Tenant: {tenant_id}]" if tenant_id else ""
+
         # Build push notification
         title = self._get_push_title(notification_type)
         body = self._get_push_body(notification_type, data)
 
         # Send push (placeholder - integrate with FCM/APNS)
         try:
-            # TODO: Integrate with FCM/APNS
-            print(f"Sending push to {device_token}: {title} - {body}")
+            # TODO: Integrate with FCM/APNS với tenant context
+            print(f"Sending push to {device_token}: {title} - {body}{tenant_context}")
             return True
         except Exception as e:
-            print(f"Failed to send push: {e}")
+            print(f"Failed to send push{tenant_context}: {e}")
             return False
 
     async def create_in_app_notification(
@@ -196,13 +224,17 @@ class NotificationService:
         Args:
             user_id: User ID
             notification_type: Notification type
-            data: Notification data
+            data: Notification data (bao gồm tenant_id - KPI-029)
 
         Returns:
             True nếu tạo thành công
         """
-        # TODO: Save to database
-        print(f"Creating in-app notification for {user_id}: {notification_type.value}")
+        # KPI-029: Get tenant_id từ data
+        tenant_id = data.get("tenant_id")
+        tenant_context = f" for tenant '{tenant_id}'" if tenant_id else ""
+
+        # TODO: Save to database với tenant_id
+        print(f"Creating in-app notification for {user_id}: {notification_type.value}{tenant_context}")
         return True
 
     async def notify_all_channels(
@@ -211,6 +243,7 @@ class NotificationService:
         notification_type: NotificationType,
         data: Dict[str, Any],
         channels: Optional[List[NotificationChannel]] = None,
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
     ) -> Dict[str, bool]:
         """
         Gửi notification qua multiple channels.
@@ -220,6 +253,7 @@ class NotificationService:
             notification_type: Notification type
             data: Notification data
             channels: Channels to use (default: all)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Results by channel
@@ -229,7 +263,7 @@ class NotificationService:
 
         results = {}
         for channel in channels:
-            success = await self.notify(user_id, notification_type, channel, data)
+            success = await self.notify(user_id, notification_type, channel, data, tenant_id)
             results[channel.value] = success
 
         return results

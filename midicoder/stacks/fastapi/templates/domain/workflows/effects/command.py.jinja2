@@ -3,9 +3,12 @@ Mô-đun Command Effect.
 
 Cung cấp:
 - CommandEffect: Effect cho command execution
+
+KPI-029: Tenant Isolation - tenant_id được truyền vào command
 """
 
 from typing import Any
+from uuid import UUID
 
 
 class CommandEffect:
@@ -13,22 +16,35 @@ class CommandEffect:
     Effect executor cho command execution.
     
     Execute commands khi transition fire.
+    KPI-029: tenant_id được thêm vào command payload.
     """
 
     async def execute(
         self,
         command_name: str,
         payload: dict[str, Any],
+        tenant_id: UUID | None = None,  # KPI-029: Tenant isolation
     ) -> dict[str, Any]:
         """
         Execute command effect.
         
+        KPI-029: tenant_id được thêm vào payload để command execution respect tenant boundary.
+        
         Args:
             command_name: Command name để execute
             payload: Command payload
+            tenant_id: KPI-029: Tenant ID cho command
             
         Returns:
             Result với execution status
         """
+        # KPI-029: Thêm tenant_id vào payload nếu chưa có
+        if tenant_id and "tenant_id" not in payload:
+            payload["tenant_id"] = str(tenant_id)
+        
         # TODO: Integrate với CP01 Commands
-        return {"status": "executed", "command": command_name}
+        return {
+            "status": "executed",
+            "command": command_name,
+            "tenant_id": str(tenant_id) if tenant_id else None,  # KPI-029
+        }

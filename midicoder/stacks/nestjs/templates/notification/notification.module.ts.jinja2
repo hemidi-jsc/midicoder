@@ -6,6 +6,7 @@
  * - SMS service
  * - Push notification service
  *
+ * KPI-029: Tenant Isolation - Support tenant-specific notification configuration
  * CP12: Notification & Communication
  */
 
@@ -17,6 +18,9 @@ config();
 
 /**
  * Email Service Factory.
+ *
+ * KPI-029: Shared email transporter cho tất cả tenants.
+ * Tenant-specific logic được xử lý ở EmailService layer.
  */
 export const emailServiceFactory = {
   provide: "EMAIL_SERVICE",
@@ -41,13 +45,79 @@ export const emailServiceFactory = {
 };
 
 /**
+ * KPI-029: Email service factory với tenant context.
+ *
+ * Tạo EmailService với tenant_id option.
+ */
+export const emailServiceInjectableFactory = {
+  provide: "EMAIL_SERVICE_INJECTABLE",
+  useFactory: (transporter: ReturnType<typeof emailServiceFactory["useFactory"]>) => {
+    const { EmailService } = require("./email.service");
+    
+    // KPI-029: EmailService được tạo không có tenant_id mặc định
+    // Tenant context được pass vào qua method parameters
+    return new EmailService(transporter);
+  },
+  inject: ["EMAIL_SERVICE"],
+};
+
+/**
+ * KPI-029: Tenant-specific email service factory.
+ *
+ * Tạo EmailService với tenant_id cụ thể.
+ *
+ * @param tenantId - Tenant ID
+ * @returns Email service factory
+ */
+export const tenantEmailServiceFactory = (tenantId: string) => ({
+  provide: `TENANT_EMAIL_SERVICE_${tenantId}`,
+  useFactory: (transporter: ReturnType<typeof emailServiceFactory["useFactory"]>) => {
+    const { EmailService } = require("./email.service");
+    
+    // KPI-029: Tạo EmailService với tenant_id cụ thể
+    return new EmailService(transporter, tenantId);
+  },
+  inject: ["EMAIL_SERVICE"],
+});
+
+/**
  * Notification Module.
+ *
+ * KPI-029: Module cung cấp:
+ * - Email transporter (shared cho tất cả tenants)
+ * - EmailService với tenant context support
+ * - Tenant-specific email services (optional)
  *
  * Global module cung cấp notification services.
  */
 @Global()
 @Module({
-  providers: [emailServiceFactory],
-  exports: [emailServiceFactory],
+  providers: [
+    emailServiceFactory,
+    emailServiceInjectableFactory,  // KPI-029: Default email service
+  ],
+  exports: [
+    emailServiceFactory,
+    emailServiceInjectableFactory,  // KPI-029: Export email service
+  ],
 })
-export class NotificationModule {}
+export class NotificationModule {
+  /**
+   * KPI-029: Tạo module cho tenant cụ thể.
+   *
+   * @param tenantId - ID của tenant
+   * @returns Module config cho tenant-specific email service
+   */
+  static forTenant(tenantId: string) {
+    return {
+      module: NotificationModule,
+      global: false,
+      providers: [
+        tenantEmailServiceFactory(tenantId),
+      ],
+      exports: [
+        tenantEmailServiceFactory(tenantId),
+      ],
+    };
+  }
+}

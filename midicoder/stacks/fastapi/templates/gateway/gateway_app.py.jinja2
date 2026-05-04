@@ -11,13 +11,14 @@ Application này cung cấp:
 - Middleware (CORS, logging, auth)
 
 CP06: API Gateway & Service Mesh
+KPI-029: Tenant Isolation - Tenant-aware routing và tenant context propagation
 """
 
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -28,8 +29,11 @@ import uvicorn
 from gateway_router import router
 from gateway_service import GatewayService
 from route_config import RouteConfigManager
-from rate_limiter import RateLimiter, RateLimitExceeded
-from circuit_breaker import CircuitBreaker, CircuitBreakerOpen
+from rate_limiter import RateLimiter, RateLimitExceeded, TenantRateLimiter
+from circuit_breaker import CircuitBreaker, CircuitBreakerOpen, CircuitBreakerRegistry, TenantCircuitBreaker
+
+# Import tenant context
+from tenant.tenant_context import get_tenant_id, set_tenant_id
 
 # {{ config }} template variable - FastAPI app config
 # Jinja2 template: {{ config.project_name }}
@@ -122,11 +126,61 @@ app.add_middleware(
 # lifespan startup handler
 
 
+# Tenant extraction middleware
+@app.middleware("http")
+async def extract_tenant_middleware(request: Request, call_next):
+    """
+    KPI-029: Middleware để extract tenant_id từ request.
+    
+    Tenant ID được extract từ:
+    1. X-Tenant-Id header
+    2. Subdomain (tenant.domain.com)
+    3. Path parameter (/api/{tenant_id}/...)
+    
+    Args:
+        request: HTTP request object
+        call_next: Next middleware handler
+        
+    Returns:
+        HTTP response với tenant context
+    """
+    # KPI-029: Extract tenant_id từ header
+    tenant_id = request.headers.get("X-Tenant-Id")
+    
+    # KPI-029: Extract từ subdomain nếu không có trong header
+    if not tenant_id:
+        host = request.headers.get("host", "")
+        parts = host.split(".")
+        if len(parts) > 2 and parts[0] not in ["www", "api"]:
+            tenant_id = parts[0]
+    
+    # KPI-029: Extract từ path nếu vẫn chưa có
+    if not tenant_id:
+        path_parts = request.url.path.strip("/").split("/")
+        if path_parts and path_parts[0] not in ["api", "health", "metrics"]:
+            tenant_id = path_parts[0]
+    
+    # KPI-029: Set tenant context nếu có
+    if tenant_id:
+        request.state.tenant_id = tenant_id
+        logger.info(f"Request from tenant: {tenant_id}")
+    
+    response = await call_next(request)
+    
+    # KPI-029: Add tenant_id to response headers
+    if hasattr(request.state, 'tenant_id'):
+        response.headers["X-Tenant-Id"] = request.state.tenant_id
+    
+    return response
+
+
 # Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """
     Middleware ghi log cho mỗi request.
+    
+    KPI-029: Include tenant_id trong log.
     
     Args:
         request: HTTP request object
@@ -135,13 +189,16 @@ async def log_requests(request: Request, call_next):
     Returns:
         HTTP response
     """
-    logger.info(f"Incoming request: {request.method} {request.url.path}")
+    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_str = f" [tenant: {tenant_id}]" if tenant_id else ""
+    
+    logger.info(f"Incoming request: {request.method} {request.url.path}{tenant_str}")
     
     response = await call_next(request)
     
     logger.info(
         f"Outgoing response: {request.method} {request.url.path} - "
-        f"Status: {response.status_code}"
+        f"Status: {response.status_code}{tenant_str}"
     )
     
     return response
@@ -230,14 +287,26 @@ app.include_router(
 
 # Health check endpoints
 @app.get("/health", tags=["health"])
-async def health_check():
+async def health_check(tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id")):
     """
     Health check endpoint.
     
+    KPI-029: Support tenant-specific health check.
+    
+    Args:
+        tenant_id: KPI-029: Tenant ID cho tenant-specific health
+        
     Returns:
         Health status object
     """
-    return {"status": "healthy", "service": "api-gateway"}
+    result = {"status": "healthy", "service": "api-gateway"}
+    
+    # KPI-029: Add tenant-specific health info
+    if tenant_id:
+        result["tenant_id"] = tenant_id
+        # TODO: Get tenant-specific health metrics
+    
+    return result
 
 
 @app.get("/ping", tags=["health"])
@@ -253,19 +322,73 @@ async def ping():
 
 # Metrics endpoint
 @app.get("/metrics", tags=["metrics"])
-async def get_metrics():
+async def get_metrics(tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id")):
     """
     Metrics endpoint cho Prometheus.
     
+    KPI-029: Support tenant-specific metrics.
+    
+    Args:
+        tenant_id: KPI-029: Tenant ID (optional)
+        
     Returns:
-        Metrics data
+        Metrics data (global hoặc tenant-specific)
     """
-    # Placeholder for get_metrics() call
+    if hasattr(app.state, 'gateway_service'):
+        return app.state.gateway_service.get_metrics(tenant_id=tenant_id)
+    
     return {
         "gateway_requests_total": 0,
         "gateway_requests_success": 0,
         "gateway_requests_failed": 0,
     }
+
+
+# KPI-029: Tenant management endpoints
+@app.get("/tenants", tags=["tenants"])
+async def list_tenants():
+    """
+    KPI-029: List tất cả tenants (admin only).
+    
+    Returns:
+        List tenant information
+    """
+    # TODO: Implement tenant listing
+    return {"tenants": [], "total": 0}
+
+
+@app.get("/tenants/{tenant_id}", tags=["tenants"])
+async def get_tenant(tenant_id: str):
+    """
+    KPI-029: Get tenant information.
+    
+    Args:
+        tenant_id: Tenant ID
+        
+    Returns:
+        Tenant information
+    """
+    # TODO: Implement tenant info retrieval
+    return {"tenant_id": tenant_id, "status": "active"}
+
+
+@app.post("/tenants/{tenant_id}/rate-limit", tags=["tenants"])
+async def set_tenant_rate_limit(tenant_id: str, limit: int):
+    """
+    KPI-029: Set rate limit cho tenant.
+    
+    Args:
+        tenant_id: Tenant ID
+        limit: New rate limit
+        
+    Returns:
+        Updated rate limit
+    """
+    if hasattr(app.state, 'rate_limiter'):
+        if isinstance(app.state.rate_limiter, TenantRateLimiter):
+            app.state.rate_limiter.set_tenant_limit(tenant_id, limit)
+    
+    return {"tenant_id": tenant_id, "rate_limit": limit}
 
 
 # Main entry point

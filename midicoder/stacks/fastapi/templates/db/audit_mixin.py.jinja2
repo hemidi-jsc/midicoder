@@ -4,6 +4,7 @@ Audit Mixin cho Audit Trail.
 Tất cả models cần audit trail phải kế thừa AuditMixin.
 Lưu created_by, updated_by, deleted_at (soft delete).
 
+KPI-029: Tenant Isolation - Audit trail includes tenant_id context
 CP08: Database & Data Access
 """
 
@@ -16,13 +17,15 @@ class AuditMixin:
     """
     Mixin cho audit trail support.
 
+    KPI-029: Tenant Isolation - Audit entries track which tenant the record belongs to.
+
     Cung cấp:
     - created_by: User tạo bản ghi
     - updated_by: User cập nhật bản ghi
     - deleted_at: Thời điểm soft delete (nullable)
 
     Usage:
-        class Order(Base, AuditMixin):
+        class Order(Base, AuditMixin, TenantMixin):
             __tablename__ = "orders"
             ...
     """

@@ -4,6 +4,7 @@ Event Subscriber - Subscribe và handle events.
 Module này cung cấp EventSubscriber để subscribe và handle events.
 Hỗ trợ filter, retry policies, và error handling.
 
+KPI-029: Tenant Isolation - Hỗ trợ tenant-specific event filtering
 CP05: Event-Driven Architecture
 """
 
@@ -30,11 +31,14 @@ class EventSubscriber:
     EventSubscriber đăng ký handler để xử lý events.
     Có thể có filter và retry policies.
 
+    KPI-029: Hỗ trợ tenant-specific subscriptions để isolate events theo tenant.
+
     Attributes:
         bus_name: Tên của event bus
         topic: Topic để subscribe
         handler: Function để handle events
         filter: Optional filter để filter events
+        tenant_id: KPI-029: Tenant ID để filter events (optional)
         retry_policy: Retry configuration
         event_bus: EventBus instance để subscribe
     """
@@ -43,6 +47,7 @@ class EventSubscriber:
     topic: str
     handler: Callable[[EventMessage], Any]
     filter: Optional[Callable[[EventMessage], bool]] = None
+    tenant_id: Optional[str] = None  # KPI-029: Tenant filtering
     retry_policy: Optional[dict[str, Any]] = field(default_factory=lambda: {
         "max_retries": 3,
         "backoff_ms": 1000,
@@ -54,13 +59,41 @@ class EventSubscriber:
         if self.event_bus is None:
             self.event_bus = EventBus(name=self.bus_name)
         
+        # KPI-029: Nếu có tenant_id, tạo combined filter
+        if self.tenant_id:
+            existing_filter = self.filter
+            if existing_filter:
+                # Kết hợp tenant filter với existing filter
+                tenant_filter = self._create_tenant_filter(self.tenant_id)
+                self.filter = lambda msg: tenant_filter(msg) and existing_filter(msg)
+            else:
+                self.filter = self._create_tenant_filter(self.tenant_id)
+        
         # Subscribe handler đến topic
         self.event_bus.subscribe(self.topic, self.handle_with_retry)
-        logger.info(f"EventSubscriber đã subscribe đến topic '{self.topic}'")
+        
+        tenant_context = f" cho tenant '{self.tenant_id}'" if self.tenant_id else ""
+        logger.info(f"EventSubscriber đã subscribe đến topic '{self.topic}'{tenant_context}")
+    
+    def _create_tenant_filter(self, tenant_id: str):
+        """
+        KPI-029: Tạo filter function để filter theo tenant_id.
+        
+        Args:
+            tenant_id: ID của tenant để filter
+        
+        Returns:
+            Filter function
+        """
+        def tenant_filter(message: EventMessage) -> bool:
+            return message.tenant_id == tenant_id
+        return tenant_filter
 
     def should_handle(self, message: EventMessage) -> bool:
         """
         Kiểm tra xem subscriber có nên handle message không.
+
+        KPI-029: Bao gồm tenant filtering nếu có.
 
         Args:
             message: EventMessage cần kiểm tra
@@ -68,6 +101,13 @@ class EventSubscriber:
         Returns:
             True nếu nên handle, False nếu không
         """
+        # KPI-029: Kiểm tra tenant_id trước
+        if self.tenant_id and message.tenant_id != self.tenant_id:
+            logger.debug(
+                f"Event '{message.event_id}' bị filter: tenant '{message.tenant_id}' != '{self.tenant_id}'"
+            )
+            return False
+        
         if self.filter is None:
             return True
         return self.filter(message)
@@ -88,7 +128,8 @@ class EventSubscriber:
             )
             return None
 
-        logger.info(f"Handling event '{message.event_id}'")
+        tenant_context = f" cho tenant '{self.tenant_id}'" if self.tenant_id else ""
+        logger.info(f"Handling event '{message.event_id}'{tenant_context}")
 
         try:
             # Support cả async và sync handlers
@@ -98,7 +139,7 @@ class EventSubscriber:
                 return self.handler(message)
         except Exception as e:
             logger.error(
-                f"Error xử lý event '{message.event_id}': {str(e)}",
+                f"Error xử lý event '{message.event_id}'{tenant_context}: {str(e)}",
                 exc_info=True,
             )
             raise
@@ -241,5 +282,51 @@ def filter_by_payload_field(field: str, value: Any):
 
     def filter_func(message: EventMessage) -> bool:
         return message.payload.get(field) == value
+
+    return filter_func
+
+
+# ============================================================================
+# KPI-029: Tenant Filter Helpers
+# ============================================================================
+
+
+def filter_by_tenant_id(tenant_id: str):
+    """
+    KPI-029: Tạo filter function để filter theo tenant_id.
+
+    Args:
+        tenant_id: ID của tenant để filter
+
+    Returns:
+        Filter function
+    """
+
+    def filter_func(message: EventMessage) -> bool:
+        # Nếu message không có tenant_id, không match (trừ khi tenant_id là None)
+        if message.tenant_id is None:
+            return tenant_id is None
+        return message.tenant_id == tenant_id
+
+    return filter_func
+
+
+def filter_by_multi_tenant(tenant_ids: list[str]):
+    """
+    KPI-029: Tạo filter function để filter theo danh sách tenant_ids.
+
+    Cho phép subscriber nhận events từ multiple tenants.
+
+    Args:
+        tenant_ids: Danh sách tenant_ids để filter
+
+    Returns:
+        Filter function
+    """
+
+    def filter_func(message: EventMessage) -> bool:
+        if message.tenant_id is None:
+            return False
+        return message.tenant_id in tenant_ids
 
     return filter_func

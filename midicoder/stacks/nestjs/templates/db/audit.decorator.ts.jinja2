@@ -4,11 +4,13 @@
  * Thêm audit columns vào entities cần audit trail:
  * - createdBy, updatedBy
  * - deletedAt (soft delete)
+ * - tenantId (KPI-029: tenant isolation)
  *
+ * KPI-029: Tenant Isolation - Capture tenant_id trong audit trail
  * CP08: Database & Data Access
  */
 
-import { Column, DeleteDateColumn, Index } from "typeorm";
+import { Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, Index } from "typeorm";
 
 /**
  * CreatedBy Column decorator.
@@ -68,9 +70,69 @@ export function DeletedAtColumn(): PropertyDecorator {
 }
 
 /**
+ * TenantId Column decorator (KPI-029: tenant isolation).
+ *
+ * Thêm tenant_id column vào entity để support multi-tenant.
+ * Column này được dùng để filter data theo tenant.
+ *
+ * Usage:
+ *   @TenantIdColumn()
+ *   tenantId: string;
+ */
+export function TenantIdColumn(): PropertyDecorator {
+  return (target: object, propertyName: string | symbol) => {
+    Column({
+      name: "tenant_id",
+      type: "uuid",
+      nullable: true,  // KPI-029: Optional cho shared resources
+      default: null,
+    })(target, propertyName);
+
+    Index()(target, [propertyName as string]);
+  };
+}
+
+/**
+ * CreatedAt Column decorator.
+ *
+ * Thêm created_at column tự động vào entity.
+ *
+ * Usage:
+ *   @CreatedAtColumn()
+ *   createdAt: Date;
+ */
+export function CreatedAtColumn(): PropertyDecorator {
+  return CreateDateColumn({
+    name: "created_at",
+    type: "timestamp with time zone",
+    default: () => "CURRENT_TIMESTAMP",
+  });
+}
+
+/**
+ * UpdatedAt Column decorator.
+ *
+ * Thêm updated_at column tự động vào entity.
+ *
+ * Usage:
+ *   @UpdatedAtColumn()
+ *   updatedAt: Date;
+ */
+export function UpdatedAtColumn(): PropertyDecorator {
+  return UpdateDateColumn({
+    name: "updated_at",
+    type: "timestamp with time zone",
+    default: () => "CURRENT_TIMESTAMP",
+    onUpdate: "CURRENT_TIMESTAMP",
+  });
+}
+
+/**
  * Audit Interface.
  *
  * Interface cho tất cả audit-aware entities.
+ * 
+ * KPI-029: Bao gồm tenant_id để support multi-tenant isolation.
  */
 export interface IAudit {
   /**
@@ -89,9 +151,22 @@ export interface IAudit {
   deletedAt?: Date;
 
   /**
+   * KPI-029: Tenant ID để isolate data theo tenant.
+   */
+  tenantId?: string;
+
+  /**
    * Kiểm tra bản ghi đã soft delete.
    *
    * @returns True nếu đã soft delete
    */
   isDeleted(): boolean;
+
+  /**
+   * KPI-029: Kiểm tra bản ghi thuộc tenant nào.
+   *
+   * @param tenantId - ID của tenant cần kiểm tra
+   * @returns True nếu bản ghi thuộc tenant này
+   */
+  belongsToTenant(tenantId: string): boolean;
 }

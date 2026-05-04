@@ -3,6 +3,7 @@
  *
  * Cấu hình Elasticsearch client và search services.
  *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant-specific index configuration
  * CP10: Search & Indexing
  */
 
@@ -16,6 +17,9 @@ config();
  * Elasticsearch Client Factory.
  *
  * Tạo Elasticsearch client singleton.
+ *
+ * KPI-029: Client này được dùng cho tất cả tenants.
+ * Tenant-specific logic được xử lý ở service layer.
  */
 export const elasticsearchFactory = {
   provide: "ELASTICSEARCH_CLIENT",
@@ -43,12 +47,79 @@ export const elasticsearchFactory = {
 };
 
 /**
+ * KPI-029: Search service factory với tenant context.
+ *
+ * Tạo SearchService với tenant_id option.
+ */
+export const searchServiceFactory = {
+  provide: "SEARCH_SERVICE",
+  useFactory: (
+    client: ReturnType<typeof elasticsearchFactory["useFactory"]>,
+  ) => {
+    const { SearchService } = require("./search.service");
+    
+    // KPI-029: SearchService được tạo không có tenant_id mặc định
+    // Tenant context được pass vào qua method parameters
+    return new SearchService(client);
+  },
+  inject: ["ELASTICSEARCH_CLIENT"],
+};
+
+/**
+ * KPI-029: Tenant-specific search service factory.
+ *
+ * Tạo SearchService với tenant_id cụ thể.
+ */
+export const tenantSearchServiceFactory = (tenantId: string) => ({
+  provide: `TENANT_SEARCH_SERVICE_${tenantId}`,
+  useFactory: (
+    client: ReturnType<typeof elasticsearchFactory["useFactory"]>,
+  ) => {
+    const { SearchService } = require("./search.service");
+    
+    // KPI-029: Tạo service với tenant_id cụ thể
+    return new SearchService(client, tenantId);
+  },
+  inject: ["ELASTICSEARCH_CLIENT"],
+});
+
+/**
  * Search Module.
+ *
+ * KPI-029: Module cung cấp:
+ * - Elasticsearch client (shared cho tất cả tenants)
+ * - SearchService với tenant context support
+ * - Tenant-specific search services (optional)
  *
  * Cung cấp Elasticsearch client và search service cho toàn application.
  */
 @Module({
-  providers: [elasticsearchFactory],
-  exports: [elasticsearchFactory],
+  providers: [
+    elasticsearchFactory,
+    searchServiceFactory,  // KPI-029: Default search service
+  ],
+  exports: [
+    elasticsearchFactory,
+    searchServiceFactory,  // KPI-029: Export search service
+  ],
 })
-export class SearchModule {}
+export class SearchModule {
+  /**
+   * KPI-029: Tạo module cho tenant cụ thể.
+   *
+   * @param tenantId - ID của tenant
+   * @returns Module config cho tenant-specific search service
+   */
+  static forTenant(tenantId: string) {
+    return {
+      module: SearchModule,
+      global: false,
+      providers: [
+        tenantSearchServiceFactory(tenantId),
+      ],
+      exports: [
+        tenantSearchServiceFactory(tenantId),
+      ],
+    };
+  }
+}

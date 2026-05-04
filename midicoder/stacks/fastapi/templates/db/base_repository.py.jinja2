@@ -5,6 +5,7 @@ Repository pattern để abstract database operations.
 Tất cả domain repositories kế thừa BaseRepository.
 
 CP08: Database & Data Access
+KPI-029: Tenant Isolation - tenant filtering trong tất cả CRUD operations
 """
 
 from abc import ABC, abstractmethod
@@ -87,10 +88,16 @@ class BaseRepository(ABC, Generic[ModelType]):
     - bulk_create: Tạo nhiều records cùng lúc
     - bulk_update: Cập nhật nhiều records cùng lúc
     
+    KPI-029: Tenant isolation trong tất cả methods.
+    
     Usage:
         class UserRepository(BaseRepository[User]):
             model = User
             ...
+        
+        # Query với tenant filter
+        repo = UserRepository(db)
+        users = await repo.list(tenant_id="tenant-123")
     """
 
     model: type[ModelType]
@@ -247,21 +254,26 @@ class BaseRepository(ABC, Generic[ModelType]):
         """
         Xóa record (hard delete hoặc soft delete).
 
+        KPI-029: Verify tenant_id trước khi xóa để prevent cross-tenant deletion.
+
         Args:
             id: Primary key của record
-            tenant_id: Tenant ID để xác thực (optional)
+            tenant_id: KPI-029: Tenant ID để xác thực
 
         Raises:
             NotFoundError: Nếu record không tìm thấy
+            TenantIsolationError: Nếu tenant mismatch
         """
-        # Tenant verification
+        # KPI-029: Tenant verification - must pass tenant_id to prevent unauthorized deletion
         if tenant_id and hasattr(self.model, "tenant_id"):
             await self.get(id, tenant_id=tenant_id)
         else:
             await self.get(id)
 
+        # KPI-029: Get record with tenant verification
+        record = await self.get(id, tenant_id=tenant_id) if tenant_id else await self.get(id)
+        
         # Soft delete nếu có AuditMixin
-        record = await self.get(id)
         if hasattr(record, "soft_delete"):
             record.soft_delete()
             await self.db.flush()

@@ -7,9 +7,11 @@
  * - Version tracking (optimistic locking)
  * - JSON serialization/deserialization
  * - Soft delete support
+ * - Tenant isolation (KPI-029)
  * - Rich utility methods
  *
  * CP08: Database & Data Access
+ * KPI-029: Tenant Isolation - Multi-tenant support
  */
 
 import {
@@ -118,6 +120,22 @@ export class BaseEntity implements IBaseEntity {
    */
   @Column({ name: "version", type: "int", default: 0 })
   version: number;
+  
+  // ============================================================================
+  // KPI-029: Tenant Isolation
+  // ============================================================================
+  
+  /**
+   * Tenant ID - cách ly dữ liệu theo tenant.
+   *
+   * KPI-029: Tenant Isolation
+   * Mỗi tenant chỉ được truy cập data của tenant mình.
+   * Tenant ID được tự động set bởi TenantGuard từ request context.
+   *
+   * NOTE: Override column này trong child entity với @TenantRow decorator.
+   */
+  @Column({ name: "tenant_id", type: "uuid", nullable: true })
+  tenantId?: string;
 
   // ========================================================================
   // Soft Delete Methods

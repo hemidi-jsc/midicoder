@@ -5,7 +5,9 @@
  * - Bull queue setup
  * - Redis connection
  * - Multiple queues
+ * - KPI-029: Tenant-specific job isolation
  *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant context trong background jobs
  * CP13: Background Job & Workflow
  */
 
@@ -29,9 +31,45 @@ export enum QueueName {
 }
 
 /**
+ * KPI-029: Interface cho job data với tenant context.
+ * 
+ * Tất cả jobs nên implement interface này để support tenant isolation.
+ */
+export interface TenantJobData<T = any> {
+  /** KPI-029: Tenant ID để isolate job */
+  tenant_id?: string;
+  /** Dữ liệu chính của job */
+  data: T;
+  /** Optional: Additional metadata */
+  metadata?: Record<string, any>;
+}
+
+/**
+ * KPI-029: Tạo queue name cho tenant cụ thể.
+ * 
+ * @param queueName - Tên queue gốc
+ * @param tenantId - ID của tenant
+ * @returns Tenant-specific queue name
+ */
+export function getTenantQueueName(queueName: QueueName, tenantId: string): string {
+  return `${queueName}:tenant:${tenantId}`;
+}
+
+/**
+ * KPI-029: Kiểm tra xem có dùng tenant-specific queues không.
+ * 
+ * @returns True nếu bật tenant-specific queues
+ */
+export function useTenantSpecificQueues(): boolean {
+  return process.env.QUEUE_TENANT_ISOLATION === "true";
+}
+
+/**
  * Queue Module.
  *
  * Global module cung cấp Bull queues.
+ * 
+ * KPI-029: Hỗ trợ tenant-specific queues để isolate jobs theo tenant.
  */
 @Global()
 @Module({
@@ -43,6 +81,8 @@ export enum QueueName {
         password: process.env.REDIS_PASSWORD || undefined,
         db: parseInt(process.env.REDIS_DB || "0", 10),
       },
+      // KPI-029: Prefix cho tenant-specific queues
+      keyPrefix: process.env.QUEUE_KEY_PREFIX || "bull:",
     }),
     // Email queue
     BullModule.registerQueue({
@@ -101,4 +141,47 @@ export enum QueueName {
   ],
   exports: [BullModule],
 })
-export class QueueModule {}
+export class QueueModule {
+  /**
+   * KPI-029: Tạo tenant-specific queue.
+   * 
+   * @param tenantId - ID của tenant
+   * @param queueName - Tên queue
+   * @returns BullModule config cho tenant queue
+   */
+  static createTenantQueue(
+    tenantId: string,
+    queueName: QueueName,
+    defaultJobOptions?: any,
+  ) {
+    const tenantQueueName = getTenantQueueName(queueName, tenantId);
+    
+    return BullModule.registerQueue({
+      name: tenantQueueName,
+      defaultJobOptions: {
+        // Default options với tenant_id trong metadata
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 10000,
+        },
+        removeOnComplete: 100,
+        removeOnFail: 1000,
+        // KPI-029: Thêm tenant_id vào metadata
+        ...defaultJobOptions,
+      },
+    });
+  }
+
+  /**
+   * KPI-029: Tạo tất cả tenant-specific queues cho tenant.
+   * 
+   * @param tenantId - ID của tenant
+   * @returns Array của BullModule configs
+   */
+  static createAllTenantQueues(tenantId: string) {
+    return Object.values(QueueName).map((queueName) => 
+      this.createTenantQueue(tenantId, queueName),
+    );
+  }
+}

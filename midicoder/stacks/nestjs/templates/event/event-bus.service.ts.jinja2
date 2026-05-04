@@ -4,6 +4,7 @@
  * Module này cung cấp event bus cho publish/subscribe pattern.
  * Có thể mở rộng để tích hợp với Kafka, RabbitMQ, SQS, v.v.
  * 
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant_id trong events
  * CP05: Event-Driven Architecture
  */
 
@@ -13,10 +14,21 @@ import { Injectable, Logger } from '@nestjs/common';
  * Event Message interface.
  * 
  * Đại diện cho một event message trong hệ thống.
+ * 
+ * Attributes:
+ *     event_id: ID của event type (ví dụ: "order.created")
+ *     payload: Dữ liệu chính của event
+ *     tenant_id: ID của tenant (cho tenant isolation)
+ *     version: Version của event schema
+ *     timestamp: Thời điểm event được tạo
+ *     correlation_id: ID để trace event qua multiple services
+ *     metadata: Metadata bổ sung
+ *     topic: Topic để route event
  */
 export interface EventMessage {
   event_id: string;
   payload: Record<string, any>;
+  tenant_id?: string;  // KPI-029: Tenant isolation
   version?: string;
   timestamp?: Date;
   correlation_id?: string;
@@ -35,11 +47,17 @@ export type EventHandler = (message: EventMessage) => void | Promise<void>;
  * EventBusService - In-memory event bus.
  * 
  * EventBus quản lý subscribers và route events đến handlers.
+ * Hỗ trợ tenant-based filtering để isolate events theo tenant.
+ * 
+ * Attributes:
+ *     subscribers: Map chứa handlers cho mỗi topic
+ *     tenantSubscribers: Map chứa tenant-specific handlers
  */
 @Injectable()
 export class EventBusService {
   private readonly logger = new Logger(EventBusService.name);
   private subscribers: Map<string, EventHandler[]> = new Map();
+  private tenantSubscribers: Map<string, Map<string, EventHandler[]>> = new Map();  // KPI-029: tenant -> topic -> handlers
 
   constructor() {
     this.logger.log('EventBusService đã được khởi tạo');
@@ -60,7 +78,7 @@ export class EventBusService {
   }
 
   /**
-   * Subscribe handler đến topic.
+   * Subscribe handler đến topic (global - nhận events từ tất cả tenants).
    * 
    * @param topic - Topic để subscribe (ví dụ: "orders", "payments")
    * @param handler - Function để handle events
@@ -71,11 +89,34 @@ export class EventBusService {
     }
 
     this.subscribers.get(topic)?.push(handler);
-    this.logger.debug(`Handler đã subscribe đến topic '${topic}'`);
+    this.logger.debug(`Handler đã subscribe đến topic '${topic}' (global)`);
   }
 
   /**
-   * Unsubscribe handler từ topic.
+   * Subscribe handler đến topic với tenant-specific filtering.
+   * 
+   * KPI-029: Cho phép handler chỉ nhận events từ tenant cụ thể.
+   * 
+   * @param tenant_id - ID của tenant để filter
+   * @param topic - Topic để subscribe
+   * @param handler - Function để handle events
+   */
+  subscribeForTenant(tenant_id: string, topic: string, handler: EventHandler): void {
+    if (!this.tenantSubscribers.has(tenant_id)) {
+      this.tenantSubscribers.set(tenant_id, new Map());
+    }
+
+    const tenantTopics = this.tenantSubscribers.get(tenant_id)!;
+    if (!tenantTopics.has(topic)) {
+      tenantTopics.set(topic, []);
+    }
+
+    tenantTopics.get(topic)?.push(handler);
+    this.logger.debug(`Handler đã subscribe đến topic '${topic}' cho tenant '${tenant_id}'`);
+  }
+
+  /**
+   * Unsubscribe handler từ topic (global).
    * 
    * @param topic - Topic để unsubscribe
    * @param handler - Handler cần remove
@@ -86,7 +127,7 @@ export class EventBusService {
       const index = handlers.indexOf(handler);
       if (index > -1) {
         handlers.splice(index, 1);
-        this.logger.debug(`Handler đã unsubscribe khỏi topic '${topic}'`);
+        this.logger.debug(`Handler đã unsubscribe khỏi topic '${topic}' (global)`);
       } else {
         this.logger.warning(`Handler không tìm thấy trong topic '${topic}'`);
       }
@@ -94,30 +135,75 @@ export class EventBusService {
   }
 
   /**
+   * Unsubscribe handler từ tenant-specific topic.
+   * 
+   * @param tenant_id - ID của tenant
+   * @param topic - Topic để unsubscribe
+   * @param handler - Handler cần remove
+   */
+  unsubscribeForTenant(tenant_id: string, topic: string, handler: EventHandler): void {
+    const tenantTopics = this.tenantSubscribers.get(tenant_id);
+    if (!tenantTopics) {
+      this.logger.warning(`Không có subscriber cho tenant '${tenant_id}'`);
+      return;
+    }
+
+    const handlers = tenantTopics.get(topic);
+    if (handlers) {
+      const index = handlers.indexOf(handler);
+      if (index > -1) {
+        handlers.splice(index, 1);
+        this.logger.debug(`Handler đã unsubscribe khỏi topic '${topic}' cho tenant '${tenant_id}'`);
+      }
+    }
+  }
+
+  /**
    * Publish event message đến tất cả subscribers.
+   * 
+   * KPI-029: Event sẽ được route đến:
+   * 1. Global subscribers (nhận events từ tất cả tenants)
+   * 2. Tenant-specific subscribers (nếu event có tenant_id)
    * 
    * @param message - EventMessage cần publish
    */
   async publish(message: EventMessage): Promise<void> {
     const topic = message.topic || 'default';
 
-    if (!this.subscribers.has(topic)) {
-      this.logger.debug(`Không có subscriber cho topic '${topic}'`);
-      return;
+    // Publish đến global subscribers
+    if (this.subscribers.has(topic)) {
+      this.logger.info(`Publishing event '${message.event_id}' đến topic '${topic}' (global)`);
+      
+      const handlers = this.subscribers.get(topic)!;
+      for (const handler of handlers) {
+        try {
+          await handler(message);
+        } catch (error) {
+          this.logger.error(
+            `Error xử lý event '${message.event_id}': ${error.message}`,
+            error.stack,
+          );
+        }
+      }
     }
 
-    this.logger.info(`Publishing event '${message.event_id}' đến topic '${topic}'`);
-
-    const handlers = this.subscribers.get(topic)!;
-    for (const handler of handlers) {
-      try {
-        await handler(message);
-      } catch (error) {
-        this.logger.error(
-          `Error xử lý event '${message.event_id}': ${error.message}`,
-          error.stack,
-        );
-        // Trong production, cần có error handling và retry logic
+    // KPI-029: Publish đến tenant-specific subscribers
+    if (message.tenant_id) {
+      const tenantTopics = this.tenantSubscribers.get(message.tenant_id);
+      if (tenantTopics && tenantTopics.has(topic)) {
+        this.logger.info(`Publishing event '${message.event_id}' đến topic '${topic}' cho tenant '${message.tenant_id}'`);
+        
+        const handlers = tenantTopics.get(topic)!;
+        for (const handler of handlers) {
+          try {
+            await handler(message);
+          } catch (error) {
+            this.logger.error(
+              `Error xử lý event '${message.event_id}' cho tenant '${message.tenant_id}': ${error.message}`,
+              error.stack,
+            );
+          }
+        }
       }
     }
   }
@@ -130,6 +216,7 @@ export class EventBusService {
    * @param topic - Topic để publish
    * @param event_id - ID của event type (ví dụ: "order.created")
    * @param payload - Dữ liệu event
+   * @param tenant_id - ID của tenant (KPI-029: tenant isolation)
    * @param correlation_id - ID để trace event (optional)
    * @param metadata - Metadata bổ sung (optional)
    */
@@ -137,12 +224,14 @@ export class EventBusService {
     topic: string,
     event_id: string,
     payload: Record<string, any>,
+    tenant_id?: string,  // KPI-029: Tenant isolation
     correlation_id?: string,
     metadata?: Record<string, any>,
   ): void {
     const message: EventMessage = {
       event_id,
       payload,
+      tenant_id,  // KPI-029: Tenant isolation
       correlation_id,
       metadata,
       topic,
@@ -159,6 +248,31 @@ export class EventBusService {
    */
   clear(): void {
     this.subscribers.clear();
+    this.tenantSubscribers.clear();
     this.logger.info('Tất cả subscribers đã được clear');
+  }
+
+  /**
+   * Clear tenant-specific subscribers.
+   * 
+   * KPI-029: Xóa tất cả subscribers cho tenant cụ thể (ví dụ: khi tenant bị xóa).
+   * 
+   * @param tenant_id - ID của tenant cần clear
+   */
+  clearTenant(tenant_id: string): void {
+    if (this.tenantSubscribers.has(tenant_id)) {
+      this.tenantSubscribers.delete(tenant_id);
+      this.logger.info(`Subscribers cho tenant '${tenant_id}' đã được clear`);
+    }
+  }
+
+  /**
+   * Kiểm tra xem có tenant-specific subscribers không.
+   * 
+   * @param tenant_id - ID của tenant
+   * @returns True nếu có subscribers cho tenant
+   */
+  hasTenantSubscribers(tenant_id: string): boolean {
+    return this.tenantSubscribers.has(tenant_id) && this.tenantSubscribers.get(tenant_id)!.size > 0;
   }
 }

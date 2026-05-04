@@ -9,13 +9,14 @@ Module này cung cấp:
 - Manual control
 
 CP06: API Gateway & Service Mesh
+KPI-029: Tenant Isolation - Per-tenant circuit breakers và tenant-specific metrics
 """
 
 import asyncio
 import logging
 import time
 from typing import Callable, Optional, Dict, Any, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -51,12 +52,17 @@ class CircuitBreakerConfig:
 
 @dataclass
 class CircuitBreakerMetrics:
-    """Metrics cho circuit breaker."""
+    """
+    Metrics cho circuit breaker.
+    
+    KPI-029: tenant_id cho tenant-specific metrics.
+    """
     total_calls: int = 0
     successful_calls: int = 0
     failed_calls: int = 0
     rejected_calls: int = 0
     state_changes: int = 0
+    tenant_id: Optional[str] = None  # KPI-029: Tenant ID
 
 
 class CircuitBreakerOpen(Exception):
@@ -88,6 +94,8 @@ class CircuitBreaker:
     4. Metrics & events
     5. Manual control (force open/close)
     
+    KPI-029: Support tenant-specific circuit breakers.
+    
     Attributes:
         config: CircuitBreakerConfig
         metrics: CircuitBreakerMetrics
@@ -98,16 +106,21 @@ class CircuitBreaker:
         self,
         config: Optional[CircuitBreakerConfig] = None,
         max_concurrent: int = 10,
+        tenant_id: Optional[str] = None,  # KPI-029
     ):
         """
         Khởi tạo CircuitBreaker.
         
+        KPI-029: Support tenant-specific circuit breaker.
+        
         Args:
             config: CircuitBreakerConfig
             max_concurrent: Max concurrent connections
+            tenant_id: KPI-029: Tenant ID cho tenant-specific CB
         """
         self.config = config or CircuitBreakerConfig()
         self.max_concurrent = max_concurrent
+        self.tenant_id = tenant_id  # KPI-029: Store tenant_id
         
         # State tracking
         self._state = CircuitState.CLOSED
@@ -117,7 +130,7 @@ class CircuitBreaker:
         self._opened_at: Optional[float] = None
         
         # Metrics
-        self.metrics = CircuitBreakerMetrics()
+        self.metrics = CircuitBreakerMetrics(tenant_id=tenant_id)  # KPI-029
         
         # Fallback function
         self._fallback: Optional[Callable] = None
@@ -301,10 +314,12 @@ class CircuitBreaker:
         """
         Get health report.
         
+        KPI-029: Include tenant_id in report.
+        
         Returns:
             Health report dictionary
         """
-        return {
+        report = {
             "state": self.state.value,
             "failure_count": self._failure_count,
             "success_count": self._success_count,
@@ -315,6 +330,10 @@ class CircuitBreaker:
                 "rejected_calls": self.metrics.rejected_calls,
             },
         }
+        # KPI-029: Add tenant_id if present
+        if self.tenant_id:
+            report["tenant_id"] = self.tenant_id
+        return report
     
     def get_metrics(self) -> CircuitBreakerMetrics:
         """
@@ -365,15 +384,126 @@ class CircuitBreakerRegistry:
     CircuitBreakerRegistry - Registry cho circuit breakers.
     
     Track multiple circuit breakers.
+    KPI-029: Support tenant-specific circuit breakers.
     """
     
     def __init__(self):
         """Khởi tạo CircuitBreakerRegistry."""
         self.breakers: Dict[str, CircuitBreaker] = {}
+        self.tenant_breakers: Dict[str, Dict[str, CircuitBreaker]] = {}  # KPI-029
     
-    def get(self, backend_id: str) -> CircuitBreaker:
+    def get(self, backend_id: str, tenant_id: Optional[str] = None) -> CircuitBreaker:
         """
         Get circuit breaker cho backend.
+        
+        KPI-029: Support tenant-specific circuit breakers.
+        
+        Args:
+            backend_id: Backend ID
+            tenant_id: KPI-029: Tenant ID cho tenant-specific CB
+            
+        Returns:
+            CircuitBreaker
+        """
+        # KPI-029: Get tenant-specific breaker if tenant_id provided
+        if tenant_id:
+            if tenant_id not in self.tenant_breakers:
+                self.tenant_breakers[tenant_id] = {}
+            
+            if backend_id not in self.tenant_breakers[tenant_id]:
+                self.tenant_breakers[tenant_id][backend_id] = CircuitBreaker(tenant_id=tenant_id)
+            return self.tenant_breakers[tenant_id][backend_id]
+        
+        # Global breaker (non-tenant-specific)
+        if backend_id not in self.breakers:
+            self.breakers[backend_id] = CircuitBreaker()
+        return self.breakers[backend_id]
+    
+    def get_all_states(self, tenant_id: Optional[str] = None) -> Dict[str, str]:
+        """
+        Get tất cả circuit breaker states.
+        
+        KPI-029: Support tenant-specific states.
+        
+        Args:
+            tenant_id: KPI-029: Tenant ID (optional)
+            
+        Returns:
+            State dictionary
+        """
+        if tenant_id:
+            # KPI-029: Get tenant-specific states
+            if tenant_id in self.tenant_breakers:
+                return {
+                    backend_id: cb.state.value
+                    for backend_id, cb in self.tenant_breakers[tenant_id].items()
+                }
+            return {}
+        
+        return {
+            backend_id: cb.state.value
+            for backend_id, cb in self.breakers.items()
+        }
+    
+    def get_health_report(self, tenant_id: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Get health report cho tất cả breakers.
+        
+        KPI-029: Support tenant-specific reports.
+        
+        Args:
+            tenant_id: KPI-029: Tenant ID (optional)
+            
+        Returns:
+            Health report dictionary
+        """
+        if tenant_id:
+            # KPI-029: Get tenant-specific health report
+            if tenant_id in self.tenant_breakers:
+                return {
+                    backend_id: cb.get_health_report()
+                    for backend_id, cb in self.tenant_breakers[tenant_id].items()
+                }
+            return {}
+        
+        return {
+            backend_id: cb.get_health_report()
+            for backend_id, cb in self.breakers.items()
+        }
+
+
+# KPI-029: Tenant-specific circuit breaker
+class TenantCircuitBreaker:
+    """
+    KPI-029: Circuit breaker với tenant-specific features.
+    
+    Multi-tenant circuit breaking với:
+    - Per-tenant breakers
+    - Tenant-specific configs
+    - Cross-tenant admin bypass
+    """
+    
+    def __init__(
+        self,
+        registry: CircuitBreakerRegistry,
+        tenant_id: str,
+        config: Optional[CircuitBreakerConfig] = None,
+    ):
+        """
+        Khởi tạo TenantCircuitBreaker.
+        
+        Args:
+            registry: CircuitBreakerRegistry
+            tenant_id: Tenant ID
+            config: CircuitBreakerConfig (optional, per-tenant)
+        """
+        self.registry = registry
+        self.tenant_id = tenant_id
+        self.config = config or CircuitBreakerConfig()
+    
+    def get_breaker(self, backend_id: str) -> CircuitBreaker:
+        """
+        KPI-029: Get circuit breaker cho backend với tenant context.
         
         Args:
             backend_id: Backend ID
@@ -381,30 +511,22 @@ class CircuitBreakerRegistry:
         Returns:
             CircuitBreaker
         """
-        if backend_id not in self.breakers:
-            self.breakers[backend_id] = CircuitBreaker()
-        return self.breakers[backend_id]
+        return self.registry.get(backend_id, tenant_id=self.tenant_id)
     
     def get_all_states(self) -> Dict[str, str]:
         """
-        Get tất cả circuit breaker states.
+        KPI-029: Get tất cả states cho tenant.
         
         Returns:
             State dictionary
         """
-        return {
-            backend_id: cb.state.value
-            for backend_id, cb in self.breakers.items()
-        }
+        return self.registry.get_all_states(tenant_id=self.tenant_id)
     
     def get_health_report(self) -> Dict[str, Dict[str, Any]]:
         """
-        Get health report cho tất cả breakers.
+        KPI-029: Get health report cho tenant.
         
         Returns:
             Health report dictionary
         """
-        return {
-            backend_id: cb.get_health_report()
-            for backend_id, cb in self.breakers.items()
-        }
+        return self.registry.get_health_report(tenant_id=self.tenant_id)

@@ -8,6 +8,7 @@
  * - Metrics endpoints
  * - Error handling
  * 
+ * KPI-029: Tenant Isolation - Extract tenant_id từ request headers và propagate đến backend
  * CP06: API Gateway & Service Mesh
  */
 
@@ -103,16 +104,19 @@ export class GatewayController {
   /**
    * Metrics Endpoint.
    * 
+   * KPI-029: Support tenant-specific metrics với X-Tenant-Id header.
+   * 
    * Prometheus metrics scraping endpoint.
    * 
+   * @param tenantId KPI-029: Tenant ID từ header (optional)
    * @returns Metrics data
    * 
    * GET /metrics
    */
   @Get('metrics')
   @HttpCode(200)
-  async getMetrics(): Promise<any> {
-    return this.gatewayService.getMetrics();
+  async getMetrics(@Headers('x-tenant-id') tenantId?: string): Promise<any> {
+    return this.gatewayService.getMetrics(tenantId);
   }
 
   /**
@@ -237,19 +241,23 @@ export class GatewayController {
   /**
    * Reverse Proxy - Catch-all Route.
    * 
+   * KPI-029: Extract tenant_id từ X-Tenant-Id header và propagate đến backend.
+   * 
    * Proxy tất cả requests đến backend services.
    * 
    * 1. Match request với route config
    * 2. Resolve backend URL
    * 3. Apply rate limiting
    * 4. Apply circuit breaker
-   * 5. Forward request
-   * 6. Transform response
-   * 7. Handle errors
+   * 5. KPI-029: Extract và propagate tenant_id
+   * 6. Forward request
+   * 7. Transform response
+   * 8. Handle errors
    * 
    * @param req HTTP request
    * @param res HTTP response
    * @param next Next middleware
+   * @param tenantId KPI-029: Tenant ID từ header
    * @returns Observable<void>
    * 
    * ALL /*
@@ -260,6 +268,7 @@ export class GatewayController {
     @Req() req: Request,
     @Res() res: Response,
     @NextHttpResponse() next: NextHttpResponse,
+    @Headers('x-tenant-id') tenantId?: string,  // KPI-029: Extract tenant_id từ header
   ): Promise<void> {
     try {
       // Extract request metadata
@@ -268,6 +277,9 @@ export class GatewayController {
       const requestHeaders = req.headers as Record<string, string>;
       const requestQuery = req.query as Record<string, string>;
       const requestBody = req.body;
+      
+      // KPI-029: Store tenant_id cho propagation
+      const requestTenantId = tenantId || requestHeaders['x-tenant-id'];
 
       // Match route & resolve backend
       const routeConfig = await this.routeConfigService.findRoute({
@@ -306,15 +318,16 @@ export class GatewayController {
       );
       const targetUrl = `${backendUrl}${targetPath}`;
 
-      // Forward request với circuit breaker
-      const response = await this.gatewayService.forwardRequest({
-        method: requestMethod,
-        url: targetUrl,
-        headers: requestHeaders,
-        query: requestQuery,
-        body: requestBody,
-        routeConfig,
-      });
+       // KPI-029: Forward request với tenant context
+       const response = await this.gatewayService.forwardRequest({
+         method: requestMethod,
+         url: targetUrl,
+         headers: requestHeaders,
+         query: requestQuery,
+         body: requestBody,
+         routeConfig,
+         tenantId: requestTenantId,  // KPI-029: Propagate tenant_id
+       });
 
       // Transform response
       const transformedResponse = this.gatewayService.transformResponse(

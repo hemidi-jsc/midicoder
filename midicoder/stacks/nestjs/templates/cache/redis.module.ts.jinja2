@@ -3,6 +3,7 @@
  *
  * Cấu hình Redis connection với caching support.
  *
+ * KPI-029: Tenant Isolation - Hỗ trợ per-tenant key prefix để isolate cache
  * CP09: Caching & Performance
  */
 
@@ -17,10 +18,15 @@ config();
  * Redis Factory - tạo Redis connection.
  *
  * Sử dụng ioredis cho better performance và cluster support.
+ * 
+ * KPI-029: Key prefix có thể bao gồm tenant_id để isolate cache theo tenant.
  */
 export const redisFactory = {
   provide: "REDIS_CLIENT",
   useFactory: () => {
+    // KPI-029: Base prefix (có thể thêm tenant prefix sau)
+    const basePrefix = process.env.REDIS_KEY_PREFIX || "cache:";
+    
     return new Redis({
       // Redis URL từ environment
       host: process.env.REDIS_HOST || "localhost",
@@ -38,11 +44,79 @@ export const redisFactory = {
         return delay;
       },
 
-      // Key prefix
-      keyPrefix: process.env.REDIS_KEY_PREFIX || "cache:",
+      // Key prefix - base prefix, tenant prefix sẽ được thêm trong service
+      keyPrefix: basePrefix,
     });
   },
 };
+
+/**
+ * KPI-029: Tạo Redis connection cho tenant cụ thể.
+ * 
+ * Mỗi tenant có key prefix riêng để isolate cache.
+ * 
+ * @param tenantId - ID của tenant
+ * @returns Redis config cho tenant
+ */
+export const tenantRedisFactory = (tenantId: string) => ({
+  provide: `TENANT_REDIS_CLIENT_${tenantId}`,
+  useFactory: () => {
+    // KPI-029: Tenant-specific prefix để isolate cache
+    const tenantPrefix = process.env.REDIS_TENANT_PREFIX 
+      ? `${process.env.REDIS_TENANT_PREFIX}${tenantId}:`
+      : `tenant:${tenantId}:`;
+    
+    return new Redis({
+      host: process.env.REDIS_HOST || "localhost",
+      port: parseInt(process.env.REDIS_PORT || "6379", 10),
+      password: process.env.REDIS_PASSWORD || undefined,
+      db: parseInt(process.env.REDIS_DB || "0", 10),
+      maxRetriesPerRequest: 3,
+      connectTimeout: parseInt(process.env.REDIS_TIMEOUT || "10000", 10),
+      retryStrategy: (times: number) => {
+        const delay = Math.min(times * 50, 2000);
+        return delay;
+      },
+      // KPI-029: Tenant-specific key prefix
+      keyPrefix: tenantPrefix,
+    });
+  },
+});
+
+/**
+ * KPI-029: Helper function để tạo key với tenant prefix.
+ * 
+ * @param tenantId - ID của tenant (optional, nếu không có thì không thêm tenant prefix)
+ * @param key - Key gốc
+ * @returns Key với tenant prefix
+ */
+export function getTenantKey(tenantId: string | undefined, key: string): string {
+  if (!tenantId) {
+    return key;
+  }
+  const prefix = process.env.REDIS_TENANT_PREFIX 
+    ? `${process.env.REDIS_TENANT_PREFIX}${tenantId}:`
+    : `tenant:${tenantId}:`;
+  return `${prefix}${key}`;
+}
+
+/**
+ * KPI-029: Helper function để xóa tất cả cache của tenant.
+ * 
+ * @param redis - Redis client
+ * @param tenantId - ID của tenant cần xóa cache
+ */
+export async function clearTenantCache(redis: Redis, tenantId: string): Promise<void> {
+  const prefix = process.env.REDIS_TENANT_PREFIX 
+    ? `${process.env.REDIS_TENANT_PREFIX}${tenantId}:`
+    : `tenant:${tenantId}:`;
+  
+  // Scan và xóa tất cả keys với tenant prefix
+  const keys = await redis.keys(`${prefix}*`);
+  if (keys.length > 0) {
+    await redis.del(...keys);
+  }
+}
 
 /**
  * Redis Module.

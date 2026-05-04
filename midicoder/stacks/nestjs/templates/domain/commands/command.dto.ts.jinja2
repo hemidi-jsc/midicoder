@@ -3,6 +3,8 @@
  * 
  * DTO validation cho {{ command.description }}.
  * 
+ * KPI-029: Tenant Isolation - tenantId trong DTO.
+ * 
  * @author Midicoder Auto-generated
  */
 
@@ -10,6 +12,8 @@ import { IsOptional, IsString, IsUUID, IsArray, IsNotEmpty, MinLength, MaxLength
 
 /**
  * Input DTO cho {{ command.description }}.
+ * 
+ * KPI-029: Bao gồm tenantId cho multi-tenant support.
  */
 export class {{ command.id }}Dto {
 {% for input_field in command.input %}
@@ -36,4 +40,16 @@ export class {{ command.id }}Dto {
     {{ input_field.name }}: string | string[] | number | undefined;
 
 {% endfor %}
+    // KPI-029: Tenant isolation field
+    /**
+     * KPI-029: Tenant ID cho multi-tenant isolation.
+     * 
+     * Nếu không có trong request body, sẽ được extract từ request context (header, token).
+     */
+    @IsOptional()
+    @IsString()
+    @IsUUID('4', {
+        message: 'tenantId phải là UUID hợp lệ',
+    })
+    tenantId?: string;  // KPI-029: Tenant ID cho multi-tenant
 }

@@ -5,6 +5,7 @@ Module này cung cấp decorators và dependencies cho RBAC trong FastAPI.
 Hỗ trợ @require_permission, @require_role, và policy evaluation.
 
 CP03 + CP04: Authentication & Authorization + RBAC & Policy Engine
+KPI-029: Tenant Isolation - tenant_id được pass vào permission checks
 """
 
 from functools import wraps
@@ -14,6 +15,7 @@ from fastapi import Depends, HTTPException, status
 
 from app.core.security.jwt_auth import TokenData, get_current_user
 from app.core.security.rbac_service import RBACService, get_rbac_service
+from app.core.security.tenant_context import get_tenant_id
 
 
 # ============================================================================
@@ -29,6 +31,8 @@ async def require_permission(
     """
     Dependency để require permission cụ thể.
 
+    KPI-029: tenant_id được extract từ current_user để check tenant-scoped permission.
+
     Args:
         permission: Permission ID để require (ví dụ: "order.create")
         current_user: Current user từ JWT token
@@ -40,7 +44,10 @@ async def require_permission(
     Raises:
         HTTPException: Nếu user không có permission
     """
-    if not await rbac.check_permission(current_user, permission):
+    # KPI-029: Get tenant_id from current_user
+    tenant_id = current_user.tenant_id
+
+    if not await rbac.check_permission(current_user, permission, tenant_id=tenant_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Không có permission: {permission}",
@@ -108,6 +115,8 @@ async def require_all_roles(
     """
     Dependency để require tất cả roles.
 
+    KPI-029: Nếu có tenant-specific roles, verify tenant match.
+
     Args:
         roles: Danh sách role names cần có tất cả
         current_user: Current user từ JWT token
@@ -126,6 +135,17 @@ async def require_all_roles(
             detail=f"Thiếu roles: {', '.join(missing_roles)}",
         )
 
+    # KPI-029: Check tenant-specific roles
+    # Example: if "tenant_admin:tenant-123" is required, verify tenant match
+    for role in roles:
+        if ":" in role:
+            role_tenant_id = role.split(":")[1]
+            if current_user.tenant_id and current_user.tenant_id != role_tenant_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Role {role} không áp dụng cho tenant này",
+                )
+
     return current_user
 
 
@@ -143,6 +163,8 @@ async def require_policy(
     """
     Dependency để require policy evaluation.
 
+    KPI-029: tenant_id được thêm vào context cho policy evaluation.
+
     Args:
         policy_id: Policy ID để evaluate
         context: Context cho policy evaluation
@@ -159,6 +181,8 @@ async def require_policy(
     context.update({
         "user_id": current_user.user_id,
         "roles": current_user.roles,
+        # KPI-029: Add tenant_id to context
+        "tenant_id": current_user.tenant_id,
     })
 
     if not await rbac.check_policy(policy_id, context):
@@ -292,3 +316,61 @@ def get_required_roles(role: str) -> list[str]:
         return [r.strip() for r in role.split(",")]
 
     return [role]
+
+
+# ============================================================================
+# KPI-029: Tenant-Specific RBAC
+# ============================================================================
+
+
+async def require_tenant_admin(
+    current_user: TokenData = Depends(get_current_user),
+) -> TokenData:
+    """
+    KPI-029: Dependency để require tenant admin role.
+
+    Verify user là admin của tenant hiện tại.
+
+    Args:
+        current_user: Current user từ JWT token
+
+    Returns:
+        TokenData nếu user là tenant admin
+
+    Raises:
+        HTTPException: Nếu user không phải tenant admin
+    """
+    # Check if user has tenant_admin role or is super admin
+    if "tenant_admin" not in current_user.roles and "super_admin" not in current_user.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cần tenant admin hoặc super admin permission",
+        )
+
+    return current_user
+
+
+async def require_super_admin(
+    current_user: TokenData = Depends(get_current_user),
+) -> TokenData:
+    """
+    KPI-029: Dependency để require super admin (multitenant admin).
+
+    Super admin có thể access tất cả tenants.
+
+    Args:
+        current_user: Current user từ JWT token
+
+    Returns:
+        TokenData nếu user là super admin
+
+    Raises:
+        HTTPException: Nếu user không phải super admin
+    """
+    if "super_admin" not in current_user.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cần super admin permission",
+        )
+
+    return current_user

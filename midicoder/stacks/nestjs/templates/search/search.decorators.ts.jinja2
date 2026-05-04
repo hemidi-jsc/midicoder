@@ -7,6 +7,7 @@
  * - @SearchKeyword: Field không phân tích
  * - @SearchText: Field full-text
  *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant-specific index configuration
  * CP10: Search & Indexing
  */
 
@@ -23,17 +24,21 @@ export const SEARCH_TEXT = "searchText";
  *
  * Chỉ định Elasticsearch index configuration cho entity.
  *
+ * KPI-029: Hỗ trợ tenant-specific index với tenantPrefix option.
+ *
  * Usage:
  *   @SearchIndex({
  *     index: 'users',
+ *     tenantPrefix: 'tenant', // KPI-029: Prefix cho tenant-specific index
  *     settings: { number_of_shards: 1 }
  *   })
  *   export class User { ... }
  *
- * @param config - Index configuration
+ * @param config - Index configuration với tenantPrefix (KPI-029)
  */
 export function SearchIndex(config: {
   index: string;
+  tenantPrefix?: string;  // KPI-029: Tenant-specific index prefix
   settings?: Record<string, any>;
   mappings?: Record<string, any>;
 }) {
@@ -190,4 +195,39 @@ export function SearchNested() {
  */
 export function SearchObject() {
   return SetMetadata(SEARCH_FIELD, { type: "object" as const });
+}
+
+/**
+ * KPI-029: Search TenantId Decorator.
+ *
+ * Field tenant_id cho multi-tenant entities.
+ * Tự động thêm mapping cho tenant_id field.
+ *
+ * Usage:
+ *   @SearchTenantId()
+ *   tenantId: string;
+ */
+export function SearchTenantId() {
+  return SetMetadata(SEARCH_FIELD, {
+    type: "keyword" as const,
+    // KPI-029: tenant_id phải là keyword để support exact match filtering
+    doc_values: true,
+  });
+}
+
+/**
+ * KPI-029: Metadata key cho tenant-specific search configuration.
+ */
+export const SEARCH_TENANT_ID = "searchTenantId";
+
+/**
+ * KPI-029: Decorator để mark entity như multi-tenant.
+ *
+ * Usage:
+ *   @MultiTenantEntity()
+ *   @SearchIndex({ index: 'orders', tenantPrefix: 'tenant' })
+ *   export class Order { ... }
+ */
+export function MultiTenantEntity() {
+  return SetMetadata(SEARCH_TENANT_ID, true);
 }

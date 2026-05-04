@@ -7,6 +7,8 @@ Validation logic đầy đủ cho {{ command.description }}:
 - Business rule validation (domain-specific rules)
 - Formula validation (quantity * price = total)
 
+KPI-029: Tenant Isolation - Validates tenant_id for tenant-specific commands
+
 Author: Midicoder Auto-generated
 """
 
@@ -48,6 +50,8 @@ class ValidationResult:
 class {{ command.id }}Validator:
     """
     Validator cho {{ command.description }}.
+    
+    KPI-029: Tenant Isolation - Validates that tenant_id is present and valid.
     
     Validation types:
     1. Field-level validation: required, pattern, min/max, length
@@ -239,6 +243,8 @@ class {{ command.id }}Validator:
         """
         Business rule validation.
         
+        KPI-029: Validates tenant_id if command has tenant isolation.
+        
         Domain-specific validation rules:
         - Banking: Balance >= 0, sum(debits) == sum(credits)
         - E-commerce: Minimum order value, max items per order
@@ -249,6 +255,15 @@ class {{ command.id }}Validator:
             command: Command instance
             errors: Error list to append to
         """
+        # KPI-029: Validate tenant_id if command has tenant_id field
+        if hasattr(command, 'tenant_id'):
+            if command.tenant_id is None:
+                errors.append("tenant_id là trường bắt buộc cho tenant-specific commands")
+            elif not command.tenant_id.strip():
+                errors.append("tenant_id không được để trống")
+            elif not re.match(r'^[a-zA-Z0-9_-]+$', command.tenant_id):
+                errors.append("tenant_id chỉ chứa chữ, số, gạch ngang và gạch dưới")
+        
         # TODO: Add domain-specific business rules here
         # Example: Minimum order value
         

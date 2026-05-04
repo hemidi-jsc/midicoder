@@ -5,11 +5,17 @@ Module này cung cấp RBAC service cho authorization checks.
 Hỗ trợ permission checks, role checks, và policy evaluation.
 
 CP03 + CP04: Authentication & Authorization + RBAC & Policy Engine
+KPI-029: Tenant Isolation - tenant-scoped permission checks và policies
 """
 
 from typing import Any, Optional
 
 from app.core.security.jwt_auth import TokenData
+from app.core.security.permissions import (
+    check_tenant_permission,
+    get_tenant_scoped_permission,
+    Permissions,
+)
 from midicoder.contracts.rbac_models import (
     Policy,
     PolicyEffect,
@@ -31,6 +37,8 @@ class RBACService:
     - Permission checks
     - Role checks
     - Policy evaluation
+
+    KPI-029: Support tenant-scoped permissions và tenant-specific policies.
     """
 
     def __init__(self, roles: dict[str, Role]):
@@ -43,20 +51,28 @@ class RBACService:
         self._roles = roles
 
     async def check_permission(
-        self, user: TokenData, permission: str
+        self, user: TokenData, permission: str, tenant_id: Optional[str] = None
     ) -> bool:
         """
         Check nếu user có permission.
+
+        KPI-029: Support tenant-scoped permissions và super admin bypass.
 
         Kiểm tra qua user roles và role permissions (bao gồm inheritance).
 
         Args:
             user: Current user
             permission: Permission ID để check
+            tenant_id: KPI-029: Tenant ID cho tenant-scoped permission check
 
         Returns:
             True nếu user có permission, False nếu không
         """
+        # KPI-029: Check nếu user có super admin permission - bypass tenant check
+        all_user_permissions = await self.get_user_permissions(user)
+        if Permissions.MULTITENANT_ADMIN in all_user_permissions:
+            return True
+
         # Get all roles user has
         user_roles = user.roles
 
@@ -68,8 +84,25 @@ class RBACService:
                 # Get all permissions (including inherited)
                 all_permissions = role.get_all_permissions(self._roles)
 
+                # KPI-029: Check tenant-scoped permission
+                if tenant_id:
+                    tenant_scoped_permission = get_tenant_scoped_permission(permission, tenant_id)
+                    if tenant_scoped_permission in all_permissions:
+                        return True
+
+                # Check global permission
                 if permission in all_permissions:
                     return True
+
+        # KPI-029: Check if user belongs to the tenant
+        if tenant_id and user.tenant_id:
+            if user.tenant_id == tenant_id:
+                # User is in the same tenant, check global permission
+                for role_name in user_roles:
+                    if role_name in self._roles:
+                        all_permissions = self._roles[role_name].get_all_permissions(self._roles)
+                        if permission in all_permissions:
+                            return True
 
         return False
 
@@ -87,29 +120,39 @@ class RBACService:
         return role_name in user.roles
 
     async def check_policy(
-        self, policy_id: str, context: dict[str, Any]
+        self, policy_id: str, context: dict[str, Any], tenant_id: Optional[str] = None
     ) -> bool:
         """
         Check nếu policy cho phép action.
 
+        KPI-029: tenant_id được thêm vào context cho tenant-specific policies.
+
         Args:
             policy_id: Policy ID để check
             context: Context cho policy evaluation
+            tenant_id: KPI-029: Tenant ID cho tenant-specific policy
 
         Returns:
             True nếu policy cho phép, False nếu không
         """
+        # KPI-029: Add tenant_id to context if not present
+        if tenant_id and "tenant_id" not in context:
+            context["tenant_id"] = tenant_id
+
         # TODO: Load policy từ database/cache
         # For now, return True (allow all)
         # In production, implement policy loading
         return True
 
-    async def get_user_permissions(self, user: TokenData) -> set[str]:
+    async def get_user_permissions(self, user: TokenData, tenant_id: Optional[str] = None) -> set[str]:
         """
         Lấy tất cả permissions của user.
 
+        KPI-029: Nếu có tenant_id, bao gồm cả tenant-scoped permissions.
+
         Args:
             user: Current user
+            tenant_id: KPI-029: Tenant ID để get tenant-scoped permissions
 
         Returns:
             Set của tất cả permission IDs
@@ -123,6 +166,12 @@ class RBACService:
                 # Get all permissions (including inherited)
                 role_permissions = role.get_all_permissions(self._roles)
                 all_permissions.update(role_permissions)
+
+                # KPI-029: Add tenant-scoped permissions if tenant_id provided
+                if tenant_id:
+                    for perm in list(role_permissions):
+                        tenant_scoped = get_tenant_scoped_permission(perm, tenant_id)
+                        all_permissions.add(tenant_scoped)
 
         return all_permissions
 
@@ -298,3 +347,79 @@ async def get_policy_service() -> PolicyService:
         raise RuntimeError("PolicyService chưa được initialize")
 
     return _policy_service
+
+
+# ============================================================================
+# KPI-029: Tenant-Specific RBAC
+# ============================================================================
+
+
+class TenantRBACService:
+    """
+    KPI-029: Service cho tenant-specific RBAC operations.
+
+    Multi-tenant RBAC với:
+    - Tenant-scoped roles
+    - Tenant-specific permissions
+    - Cross-tenant admin access
+    """
+
+    def __init__(self, rbac_service: RBACService):
+        """
+        Initialize TenantRBACService.
+
+        Args:
+            rbac_service: Base RBAC service
+        """
+        self._rbac = rbac_service
+
+    async def check_tenant_admin(
+        self, user: TokenData, tenant_id: str
+    ) -> bool:
+        """
+        KPI-029: Check nếu user là tenant admin của tenant_id.
+
+        Args:
+            user: Current user
+            tenant_id: Tenant ID để check
+
+        Returns:
+            True nếu user là tenant admin
+        """
+        # Check nếu user là super admin
+        all_perms = await self._rbac.get_user_permissions(user)
+        if Permissions.MULTITENANT_ADMIN in all_perms:
+            return True
+
+        # Check nếu user có tenant_admin role và belongs to tenant
+        if "tenant_admin" in user.roles:
+            if user.tenant_id == tenant_id:
+                return True
+
+        return False
+
+    async def get_tenant_users(self, tenant_id: str) -> list[str]:
+        """
+        KPI-029: Lấy list user IDs thuộc tenant.
+
+        Args:
+            tenant_id: Tenant ID
+
+        Returns:
+            List user IDs
+        """
+        # TODO: Query users from database
+        return []
+
+    async def get_tenant_roles(self, tenant_id: str) -> list[str]:
+        """
+        KPI-029: Lấy list role names của tenant.
+
+        Args:
+            tenant_id: Tenant ID
+
+        Returns:
+            List role names
+        """
+        # TODO: Query roles from database
+        return []

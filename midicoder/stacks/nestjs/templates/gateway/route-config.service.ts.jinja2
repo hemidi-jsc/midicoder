@@ -7,6 +7,7 @@
  * - Dynamic route updates
  * - Backend service registry
  * 
+ * KPI-029: Tenant Isolation - Support tenant-specific routes và backends
  * CP06: API Gateway & Service Mesh
  */
 
@@ -58,6 +59,8 @@ export interface IRouteConfig {
   query?: Record<string, string>;
   /** Response transformation rules */
   transformResponse?: any;
+  /** KPI-029: Tenant IDs cho tenant-specific routing (None = global) */
+  tenant_ids?: string[];
 }
 
 /**
@@ -92,6 +95,8 @@ export interface BackendConfig {
   weight?: number;
   /** Enable/disable backend */
   enabled?: boolean;
+  /** KPI-029: Tenant IDs cho tenant-specific backend */
+  tenant_ids?: string[];
 }
 
 /**
@@ -345,12 +350,15 @@ export class RouteConfigService implements OnModuleInit {
   /**
    * Find Route.
    * 
+   * KPI-029: Support tenant-specific route matching.
+   * 
    * Find matching route cho request.
    * 
    * @param match Route matching criteria
+   * @param tenantId KPI-029: Tenant ID cho tenant-specific routing
    * @returns Matching route config (RouteConfig) hoặc undefined
    */
-  async findRoute(match: RouteMatch): Promise<IRouteConfig | undefined> {
+  async findRoute(match: RouteMatch, tenantId?: string): Promise<IRouteConfig | undefined> {
     // Check cache first
     const cacheKey = `route-match:${match.method}:${match.path}`;
     const cached = await this.cache.get(cacheKey);
@@ -358,22 +366,47 @@ export class RouteConfigService implements OnModuleInit {
       return cached as IRouteConfig;
     }
 
-    // Find matching route
-    let matchedRoute: IRouteConfig | undefined;
+     // KPI-029: First, try tenant-specific routes if tenant_id provided
+     let matchedRoute: IRouteConfig | undefined;
 
-    // Check exact paths first
-    for (const path of match.path.split('/').slice(0, -1).map((p, i) => '/' + match.path.split('/').slice(0, i + 1).join('/'))) {
-      const routes = this.routeIndex.get(path);
-      if (routes) {
-        for (const route of routes) {
-          if (this.matchRoute(route, match)) {
-            matchedRoute = route;
-            break;
-          }
-        }
-      }
-      if (matchedRoute) break;
-    }
+     if (tenantId) {
+       // Check exact paths first with tenant filter
+       for (const path of match.path.split('/').slice(0, -1).map((p, i) => '/' + match.path.split('/').slice(0, i + 1).join('/'))) {
+         const routes = this.routeIndex.get(path);
+         if (routes) {
+           for (const route of routes) {
+             // KPI-029: Check tenant-specific routes first
+             if (route.tenant_ids && route.tenant_ids.includes(tenantId)) {
+               if (this.matchRoute(route, match)) {
+                 matchedRoute = route;
+                 break;
+               }
+             }
+           }
+         }
+         if (matchedRoute) break;
+       }
+     }
+
+     // Check exact paths first (global routes)
+     if (!matchedRoute) {
+       for (const path of match.path.split('/').slice(0, -1).map((p, i) => '/' + match.path.split('/').slice(0, i + 1).join('/'))) {
+         const routes = this.routeIndex.get(path);
+         if (routes) {
+           for (const route of routes) {
+             // KPI-029: Skip tenant-specific routes if tenant_id provided
+             if (tenantId && route.tenant_ids && !route.tenant_ids.includes(tenantId)) {
+               continue;
+             }
+             if (this.matchRoute(route, match)) {
+               matchedRoute = route;
+               break;
+             }
+           }
+         }
+         if (matchedRoute) break;
+       }
+     }
 
     // Check wildcard paths
     if (!matchedRoute) {
@@ -440,13 +473,68 @@ export class RouteConfigService implements OnModuleInit {
   /**
    * Get Backends.
    * 
+   * KPI-029: Support tenant-specific backend resolution.
+   * 
    * Get backends cho backend ID.
    * 
    * @param backendId Backend ID
+   * @param tenantId KPI-029: Tenant ID cho tenant-specific backend
    * @returns Array of backends
    */
-  async getBackends(backendId: string): Promise<BackendConfig[]> {
-    return this.backends.filter((b) => b.id === backendId && b.enabled);
+  async getBackends(backendId: string, tenantId?: string): Promise<BackendConfig[]> {
+    // KPI-029: First, try tenant-specific backend if tenant_id provided
+    if (tenantId) {
+      const tenantBackends = this.backends.filter(
+        (b) => b.id === backendId && b.enabled && b.tenant_ids?.includes(tenantId),
+      );
+      if (tenantBackends.length > 0) {
+        return tenantBackends;
+      }
+    }
+    
+    // Return global backend
+    return this.backends.filter((b) => b.id === backendId && b.enabled && !b.tenant_ids);
+  }
+
+  /**
+   * KPI-029: Get backend cho tenant cụ thể.
+   * 
+   * @param backendId Backend ID
+   * @param tenantId Tenant ID
+   * @returns Backend config hoặc undefined
+   */
+  async getBackendForTenant(backendId: string, tenantId: string): Promise<BackendConfig | undefined> {
+    return this.backends.find(
+      (b) => b.id === backendId && b.enabled && b.tenant_ids?.includes(tenantId),
+    );
+  }
+
+  /**
+   * KPI-029: Add tenant-specific backend.
+   * 
+   * @param backendId Backend ID
+   * @param tenantId Tenant ID
+   * @param url Backend URL
+   */
+  async addTenantBackend(backendId: string, tenantId: string, url: string): Promise<void> {
+    const existing = this.backends.find(
+      (b) => b.id === backendId && b.tenant_ids?.includes(tenantId),
+    );
+    
+    if (existing) {
+      existing.url = url;
+    } else {
+      this.backends.push({
+        id: backendId,
+        name: `Backend ${backendId} for tenant ${tenantId}`,
+        url,
+        healthPath: '/health',
+        enabled: true,
+        tenant_ids: [tenantId],
+      });
+    }
+    
+    this.logger.log(`Added/updated tenant backend: ${backendId} for ${tenantId}`);
   }
 
   /**

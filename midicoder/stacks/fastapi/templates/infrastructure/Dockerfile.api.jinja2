@@ -1,6 +1,7 @@
 # FastAPI Dockerfile - Build image cho API Gateway
 # Dockerfile cho FastAPI application
 # CP06-Phase5: Infrastructure
+# KPI-029: Tenant Isolation - Multi-tenant support trong container
 
 # Stage 1: Build stage - build application
 FROM python:3.11-slim as builder
@@ -35,6 +36,10 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/root/.local/bin:$PATH"
 ENV APP_HOME=/app
+# KPI-029: Tenant Isolation environment variables
+ENV TENANT_ISOLATION_ENABLED=true
+ENV TENANT_ID_HEADER=X-Tenant-Id
+ENV MULTI_TENANT_MODE=true
 
 # Set WORKDIR
 WORKDIR /app
@@ -55,6 +60,10 @@ USER appuser
 # HEALTHCHECK - health check cho container
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
+
+# KPI-029: Additional health checks cho tenant services
+# HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+#     CMD curl -f http://localhost:8000/health?check=tenant || exit 1
 
 # CMD command - command chạy ứng dụng
 CMD ["uvicorn", "gateway_app:app", "--host", "0.0.0.0", "--port", "8000"]

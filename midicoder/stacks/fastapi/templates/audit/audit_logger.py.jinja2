@@ -6,8 +6,10 @@ Module này cung cấp:
 - AuditEvent enum cho event types
 - Audit record structure
 - Integration với database
+- Multi-tenant audit logging (KPI-029)
 
 CP14: Audit & Compliance
+KPI-029: Tenant Isolation - Multi-tenant audit logging
 """
 
 import logging
@@ -104,8 +106,10 @@ class AuditLogger:
     Class này:
     1. Log audit events
     2. Store audit records vào database
-    3. Support multi-tenant audit logging
+    3. Support multi-tenant audit logging (KPI-029)
     4. Mask sensitive data
+
+    KPI-029: Tenant Isolation - Tất cả audit logs đều có tenant_id để enforce tenant boundaries.
 
     Usage:
         audit_logger = AuditLogger(db_session)

@@ -3,9 +3,12 @@ Mô-đun Event Effect.
 
 Cung cấp:
 - EventEffect: Effect cho domain event publishing
+
+KPI-029: Tenant Isolation - tenant_id được thêm vào event payload
 """
 
 from typing import Any
+from uuid import UUID
 
 
 class EventEffect:
@@ -13,22 +16,35 @@ class EventEffect:
     Effect executor cho event publishing.
     
     Publish domain events khi transition fire.
+    KPI-029: tenant_id được thêm vào event payload.
     """
 
     async def execute(
         self,
         event_name: str,
         payload: dict[str, Any],
+        tenant_id: UUID | None = None,  # KPI-029: Tenant isolation
     ) -> dict[str, Any]:
         """
         Execute event publishing effect.
         
+        KPI-029: tenant_id được thêm vào payload để event filtering theo tenant.
+        
         Args:
             event_name: Event name để publish
             payload: Event payload
+            tenant_id: KPI-029: Tenant ID cho event
             
         Returns:
             Result với publish status
         """
+        # KPI-029: Thêm tenant_id vào payload nếu chưa có
+        if tenant_id and "tenant_id" not in payload:
+            payload["tenant_id"] = str(tenant_id)
+        
         # TODO: Integrate với CP05 Event Bus
-        return {"status": "published", "event": event_name}
+        return {
+            "status": "published",
+            "event": event_name,
+            "tenant_id": str(tenant_id) if tenant_id else None,  # KPI-029
+        }

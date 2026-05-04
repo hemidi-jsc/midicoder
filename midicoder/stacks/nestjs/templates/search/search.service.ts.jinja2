@@ -6,6 +6,7 @@
  * - Document indexing
  * - Bulk operations
  *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant filtering trong search operations
  * CP10: Search & Indexing
  */
 
@@ -28,6 +29,8 @@ export interface SearchResult<T> {
 /**
  * Search Service.
  *
+ * KPI-029: Hỗ trợ tenant filtering để isolate search results theo tenant.
+ *
  * Cung cấp các search operations cho Elasticsearch.
  */
 @Injectable()
@@ -36,18 +39,22 @@ export class SearchService {
    * Constructor.
    *
    * @param client - Elasticsearch client
+   * @param tenantId KPI-029: Tenant ID cho tenant-specific operations
    */
   constructor(
     @Inject("ELASTICSEARCH_CLIENT")
     private readonly client: Client,
+    private readonly tenantId?: string,
   ) {}
 
   /**
    * Thực hiện full-text search.
    *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
    * @param index - Index name
    * @param query - Search query
-   * @param options - Search options
+   * @param options - Search options với tenant_id
    * @returns Search results
    */
   async search<T = any>(
@@ -59,10 +66,12 @@ export class SearchService {
       filters?: Record<string, any>;
       sort?: Array<{ field: string; order?: "asc" | "desc" }>;
       highlight?: boolean;
+      tenantId?: string;  // KPI-029: Tenant filtering
     },
   ): Promise<SearchResult<T>> {
     const size = options?.size ?? 20;
     const from = options?.from ?? 0;
+    const effectiveTenantId = options?.tenantId ?? this.tenantId;  // KPI-029: Tenant context
 
     // Build query
     const searchBody: any = {
@@ -77,14 +86,29 @@ export class SearchService {
       from,
     };
 
-    // Add filters
+    // KPI-029: Build filter array
+    const filterConditions: any[] = [];
+
+    // Add tenant filter if tenant_id provided (KPI-029)
+    if (effectiveTenantId) {
+      filterConditions.push({ term: { tenant_id: effectiveTenantId } });
+    }
+
+    // Add custom filters
     if (options?.filters) {
+      filterConditions.push(
+        ...Object.entries(options.filters).map(([k, v]) => ({
+          term: { [k]: v },
+        })),
+      );
+    }
+
+    // Apply filters if any
+    if (filterConditions.length > 0) {
       searchBody.query = {
         bool: {
           must: [searchBody.query],
-          filter: Object.entries(options.filters).map(([k, v]) => ({
-            term: { [k]: v },
-          })),
+          filter: filterConditions,
         },
       };
     }
@@ -125,20 +149,31 @@ export class SearchService {
   /**
    * Index một document.
    *
+   * KPI-029: Tự động thêm tenant_id vào document nếu có.
+   *
    * @param index - Index name
    * @param id - Document ID
    * @param document - Document data
+   * @param tenantId KPI-029: Tenant ID (optional)
    * @returns Index response
    */
   async index<T = any>(
     index: string,
     id: string,
     document: T,
+    tenantId?: string,
   ): Promise<{ result: string; _id: string }> {
+    // KPI-029: Add tenant_id to document if not present
+    const effectiveTenantId = tenantId ?? this.tenantId;
+    const docWithTenant = {
+      ...document,
+      ...(effectiveTenantId && !("tenant_id" in document) ? { tenant_id: effectiveTenantId } : {}),
+    };
+
     const response = await this.client.index({
       index,
       id,
-      body: document,
+      body: docWithTenant,
       refresh: true,
     });
 
@@ -191,23 +226,34 @@ export class SearchService {
   /**
    * Bulk index nhiều documents.
    *
+   * KPI-029: Tự động thêm tenant_id vào documents nếu có.
+   *
    * @param index - Index name
    * @param documents - List of documents
+   * @param tenantId KPI-029: Tenant ID (optional)
    * @returns Bulk response
    */
   async bulkIndex<T = any>(
     index: string,
     documents: Array<{ id?: string; data: T }>,
+    tenantId?: string,
   ): Promise<{ errors: boolean; items: any[] }> {
     const actions: any[] = [];
+    const effectiveTenantId = tenantId ?? this.tenantId;
 
     for (const doc of documents) {
+      // KPI-029: Add tenant_id if not present
+      const dataWithTenant = {
+        ...doc.data,
+        ...(effectiveTenantId && !("tenant_id" in doc.data) ? { tenant_id: effectiveTenantId } : {}),
+      };
+
       if (doc.id) {
         actions.push({ index: { _index: index, _id: doc.id } });
-        actions.push(doc.data);
+        actions.push(dataWithTenant);
       } else {
         actions.push({ index: { _index: index } });
-        actions.push(doc.data);
+        actions.push(dataWithTenant);
       }
     }
 
@@ -218,6 +264,34 @@ export class SearchService {
     return {
       errors: response.body.errors,
       items: response.body.items,
+    };
+  }
+
+  /**
+   * KPI-029: Delete all documents for a tenant.
+   *
+   * @param index - Index name
+   * @param tenantId - Tenant ID
+   * @returns Delete response
+   */
+  async deleteTenantDocuments<T = any>(
+    index: string,
+    tenantId: string,
+  ): Promise<{ deleted: number }> {
+    const response = await this.client.deleteByQuery({
+      index,
+      body: {
+        query: {
+          term: {
+            tenant_id: tenantId,
+          },
+        },
+      },
+      refresh: true,
+    });
+
+    return {
+      deleted: response.body.deleted,
     };
   }
 }

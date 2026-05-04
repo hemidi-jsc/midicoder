@@ -6,8 +6,10 @@ Cung cấp decorators cho:
 - @cache_read: Read-through cache
 - @cache_write: Write-through cache
 - @cache_invalidate: Cache invalidation
+- Tenant-aware cache keys (KPI-029)
 
 CP09: Caching & Performance
+KPI-029: Tenant Isolation cho cache
 """
 
 import asyncio
@@ -16,7 +18,7 @@ import hashlib
 import json
 from typing import Any, Callable, Optional, TypeVar
 
-from .redis import get_redis
+from .redis import get_redis, get_key_with_tenant
 
 # Type variable cho return types
 T = TypeVar("T")
@@ -48,18 +50,29 @@ def _generate_key(prefix: str, func_name: str, *args, **kwargs) -> str:
     return f"{prefix}{func_name}:{key_hash}"
 
 
-def cached(ttl: int = DEFAULT_TTL, prefix: str = DEFAULT_PREFIX) -> Callable[[Callable[..., T]], Callable[..., T]]:
+def cached(
+    ttl: int = DEFAULT_TTL,
+    prefix: str = DEFAULT_PREFIX,
+    tenant_id: Optional[str] = None,
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Cache decorator cho async functions.
 
     Cache kết quả với TTL (time-to-live).
+    KPI-029: Tenant Isolation - mỗi tenant có cache riêng.
 
     Args:
         ttl: Time-to-live (giây), default 300 (5 phút)
         prefix: Cache key prefix
+        tenant_id: Tenant ID cho tenant isolation (optional)
 
     Usage:
         @cached(ttl=600)
+        async def get_user(user_id: int) -> User:
+            ...
+        
+        # With tenant isolation
+        @cached(ttl=600, tenant_id="tenant-123")
         async def get_user(user_id: int) -> User:
             ...
     """
@@ -67,8 +80,9 @@ def cached(ttl: int = DEFAULT_TTL, prefix: str = DEFAULT_PREFIX) -> Callable[[Ca
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> T:
-            # Generate cache key
-            key = _generate_key(prefix, func.__name__, *args, **kwargs)
+            # Generate cache key với tenant prefix
+            base_key = _generate_key(prefix, func.__name__, *args, **kwargs)
+            key = get_key_with_tenant(base_key, tenant_id)
 
             # Get Redis client
             redis = get_redis()
@@ -93,17 +107,27 @@ def cached(ttl: int = DEFAULT_TTL, prefix: str = DEFAULT_PREFIX) -> Callable[[Ca
     return decorator
 
 
-def cache_invalidate(prefix: str = DEFAULT_PREFIX) -> Callable[[Callable[..., T]], Callable[..., T]]:
+def cache_invalidate(
+    prefix: str = DEFAULT_PREFIX,
+    tenant_id: Optional[str] = None,
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator cho cache invalidation.
 
     Xóa cached values khi function được gọi.
+    KPI-029: Tenant Isolation - chỉ xóa cache của tenant tương ứng.
 
     Args:
         prefix: Cache key prefix
+        tenant_id: Tenant ID cho tenant-specific invalidation (optional)
 
     Usage:
         @cache_invalidate(prefix="user:")
+        async def update_user(user_id: int, data: dict) -> User:
+            ...
+        
+        # Tenant-specific invalidation
+        @cache_invalidate(prefix="user:", tenant_id="tenant-123")
         async def update_user(user_id: int, data: dict) -> User:
             ...
     """
@@ -114,11 +138,12 @@ def cache_invalidate(prefix: str = DEFAULT_PREFIX) -> Callable[[Callable[..., T]
             # Call function first
             result = await func(*args, **kwargs)
 
-            # Invalidate cache patterns
+            # Invalidate cache patterns với tenant prefix
             redis = get_redis()
-            key_pattern = f"{prefix}{func.__name__}:*"
+            base_pattern = f"{prefix}{func.__name__}:*"
+            key_pattern = get_key_with_tenant(base_pattern, tenant_id) if tenant_id else base_pattern
 
-            # Scan and delete matching keys
+            # Scan và delete matching keys
             async for key in redis.scan_iter(match=key_pattern):
                 await redis.delete(key)
 
@@ -129,21 +154,34 @@ def cache_invalidate(prefix: str = DEFAULT_PREFIX) -> Callable[[Callable[..., T]
     return decorator
 
 
-async def clear_cache(pattern: str = "*") -> int:
+async def clear_cache(pattern: str = "*", tenant_id: Optional[str] = None) -> int:
     """
     Xóa cached values theo pattern.
 
+    KPI-029: Tenant Isolation - có thể xóa cache theo tenant.
+
     Args:
         pattern: Glob pattern để match keys
+        tenant_id: Tenant ID để filter cache (optional)
 
     Returns:
         Số lượng keys đã xóa
+
+    Usage:
+        # Clear all cache
+        await clear_cache("*")
+        
+        # Clear tenant-specific cache
+        await clear_cache("*", tenant_id="tenant-123")
     """
     redis = get_redis()
     keys = []
 
+    # Apply tenant prefix nếu có
+    search_pattern = get_key_with_tenant(pattern, tenant_id) if tenant_id else pattern
+
     # Scan matching keys
-    async for key in redis.scan_iter(match=pattern):
+    async for key in redis.scan_iter(match=search_pattern):
         keys.append(key)
 
     # Delete all keys

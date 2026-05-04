@@ -3,6 +3,8 @@ Pydantic input schema cho {{ command.id }}.
 
 Schema validation cho {{ command.description }}.
 
+KPI-029: Tenant Isolation - Bao gồm tenant_id validation.
+
 Author: Midicoder Auto-generated
 """
 
@@ -18,10 +20,13 @@ class {{ command.id }}Input(BaseModel):
     """
     Input schema cho {{ command.description }}.
     
+    KPI-029: Tenant Isolation - tenant_id là required để đảm bảo cách ly dữ liệu.
+    
     Fields:
 {% for input_field in command.input %}
         {{ input_field.name }}: {{ input_field.type|capitalize }}{% if input_field.required %} (required){% endif %}
 {% endfor %}
+        tenant_id: UUID (required) - Tenant ID để isolate data (KPI-029)
     """
 {% for input_field in command.input %}
 {% set py_type = "str" %}
@@ -52,6 +57,33 @@ class {{ command.id }}Input(BaseModel):
 {% endif %}
     )
 {% endfor %}
+    
+    # KPI-029: Tenant ID để isolate data giữa các tenant (multi-tenant)
+    tenant_id: UUID = Field(
+        ...,
+        description="Tenant ID để cách ly dữ liệu (KPI-029)",
+    )
+
+    @field_validator("tenant_id")
+    @classmethod
+    def validate_tenant_id(cls, v: UUID) -> UUID:
+        """
+        Validate tenant_id.
+        
+        KPI-029: Đảm bảo tenant_id không được None và là UUID hợp lệ.
+        
+        Args:
+            v: Tenant ID cần validate
+            
+        Returns:
+            UUID đã validate
+            
+        Raises:
+            ValueError: Nếu tenant_id không hợp lệ
+        """
+        if v is None:
+            raise ValueError("Tenant ID không được để trống (KPI-029)")
+        return v
 
     class Config:
         """Pydantic config."""

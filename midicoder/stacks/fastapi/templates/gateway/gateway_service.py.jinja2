@@ -9,12 +9,13 @@ Service này xử lý:
 - Error handling
 
 CP06: API Gateway & Service Mesh
+KPI-029: Tenant Isolation - Tenant-specific routing và tenant context propagation
 """
 
 import asyncio
 import logging
 from typing import Any, Dict, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 from httpx import AsyncClient
@@ -26,20 +27,30 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ProxyRequest:
-    """Request object cho proxy."""
+    """
+    Request object cho proxy.
+    
+    KPI-029: tenant_id cho tenant context propagation.
+    """
     method: str
     url: str
     headers: Dict[str, str]
     query: Optional[Dict[str, str]] = None
     body: Optional[Any] = None
+    tenant_id: Optional[str] = None  # KPI-029: Tenant ID
 
 
 @dataclass
 class ProxyResponse:
-    """Response object từ proxy."""
+    """
+    Response object từ proxy.
+    
+    KPI-029: tenant_id từ response context.
+    """
     status: int
     headers: Dict[str, str]
     body: Any
+    tenant_id: Optional[str] = None  # KPI-029: Tenant ID
 
 
 class GatewayService:
@@ -52,6 +63,8 @@ class GatewayService:
     3. Retry logic với exponential backoff
     4. Metrics tracking
     5. Telemetry & distributed tracing
+    
+    KPI-029: Tenant-specific routing và tenant context propagation.
     
     Attributes:
         client: httpx AsyncClient
@@ -66,6 +79,8 @@ class GatewayService:
     ):
         """
         Khởi tạo GatewayService.
+        
+        KPI-029: Initialize tenant-specific stats.
         
         Args:
             timeout: Timeout (ms) cho HTTP requests
@@ -82,7 +97,7 @@ class GatewayService:
             headers={"User-Agent": "API-Gateway/1.0"},
         )
         
-        # Request stats
+        # Request stats - global và tenant-specific
         self.request_stats = {
             "total_requests": 0,
             "successful_requests": 0,
@@ -90,24 +105,36 @@ class GatewayService:
             "avg_response_time": 0,
         }
         
+        # KPI-029: Tenant-specific stats
+        self.tenant_stats: Dict[str, Dict[str, int]] = {}
+        
         # Circuit breaker states
         self.circuit_breakers = {}
+        
+        # KPI-029: Tenant-specific backends
+        self.tenant_backends: Dict[str, Dict[str, str]] = {}
     
     async def proxy(self, request: ProxyRequest) -> ProxyResponse:
         """
         Proxy method - Forward request đến backend.
         
+        KPI-029: Propagate tenant context to backend.
+        
         Args:
-            request: Proxy request object
+            request: Proxy request object với tenant_id
             
         Returns:
-            ProxyResponse object
+            ProxyResponse object với tenant_id
             
         Raises:
             HTTPException: Nếu backend không khả dụng
         """
         start_time = datetime.now()
         last_error = None
+        
+        # KPI-029: Propagate tenant_id in headers if present
+        if request.tenant_id and "X-Tenant-Id" not in request.headers:
+            request.headers["X-Tenant-Id"] = request.tenant_id
         
         # Retry logic
         for attempt in range(self.max_retries + 1):
@@ -117,8 +144,13 @@ class GatewayService:
                 
                 response = await self._do_forward(request)
                 
-                # Update stats
+                # KPI-029: Extract tenant_id from response headers
+                response.tenant_id = response.headers.get("X-Tenant-Id")
+                
+                # Update stats - global và tenant-specific
                 self._update_stats(True, datetime.now() - start_time)
+                if request.tenant_id:
+                    self._update_tenant_stats(request.tenant_id, True, datetime.now() - start_time)
                 
                 return response
                 
@@ -128,6 +160,9 @@ class GatewayService:
         
         # All retries failed
         self._update_stats(False, datetime.now() - start_time)
+        if request.tenant_id:
+            self._update_tenant_stats(request.tenant_id, False, datetime.now() - start_time)
+        
         raise HTTPException(
             status_code=502,
             detail="Bad Gateway - Backend không khả dụng",
@@ -176,7 +211,7 @@ class GatewayService:
     
     def _update_stats(self, success: bool, response_time: datetime):
         """
-        Update request statistics.
+        Update global request statistics.
         
         Args:
             success: Request success status
@@ -189,16 +224,47 @@ class GatewayService:
         else:
             self.request_stats["failed_requests"] += 1
     
-    async def resolve_backend(self, backend_id: str) -> str:
+    def _update_tenant_stats(self, tenant_id: str, success: bool, response_time: datetime):
+        """
+        KPI-029: Update tenant-specific request statistics.
+        
+        Args:
+            tenant_id: Tenant ID
+            success: Request success status
+            response_time: Response time delta
+        """
+        if tenant_id not in self.tenant_stats:
+            self.tenant_stats[tenant_id] = {
+                "total_requests": 0,
+                "successful_requests": 0,
+                "failed_requests": 0,
+            }
+        
+        self.tenant_stats[tenant_id]["total_requests"] += 1
+        
+        if success:
+            self.tenant_stats[tenant_id]["successful_requests"] += 1
+        else:
+            self.tenant_stats[tenant_id]["failed_requests"] += 1
+    
+    async def resolve_backend(self, backend_id: str, tenant_id: Optional[str] = None) -> str:
         """
         Resolve backend URL từ backend ID.
         
+        KPI-029: Support tenant-specific backends.
+        
         Args:
             backend_id: Backend service ID
+            tenant_id: KPI-029: Tenant ID cho tenant-specific backend
             
         Returns:
             Backend URL
         """
+        # KPI-029: Check tenant-specific backend first
+        if tenant_id and tenant_id in self.tenant_backends:
+            if backend_id in self.tenant_backends[tenant_id]:
+                return self.tenant_backends[tenant_id][backend_id]
+        
         # Simple resolution - should use service discovery
         backends = {
             "api": "http://localhost:3000",
@@ -206,6 +272,21 @@ class GatewayService:
             "ws": "ws://localhost:5000",
         }
         return backends.get(backend_id, f"http://localhost:8080")
+    
+    def set_tenant_backend(self, tenant_id: str, backend_id: str, url: str):
+        """
+        KPI-029: Set tenant-specific backend URL.
+        
+        Args:
+            tenant_id: Tenant ID
+            backend_id: Backend service ID
+            url: Backend URL
+        """
+        if tenant_id not in self.tenant_backends:
+            self.tenant_backends[tenant_id] = {}
+        
+        self.tenant_backends[tenant_id][backend_id] = url
+        logger.info(f"Set tenant {tenant_id} backend {backend_id} to {url}")
     
     def transform_response(self, response: ProxyResponse) -> ProxyResponse:
         """
@@ -367,14 +448,37 @@ class GatewayService:
         response = await self.proxy(request)
         return response.body
     
-    def get_metrics(self) -> Dict[str, int]:
+    def get_metrics(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get metrics.
         
+        KPI-029: Support tenant-specific metrics.
+        
+        Args:
+            tenant_id: KPI-029: Tenant ID (optional)
+            
         Returns:
             Metrics data
         """
-        return self.request_stats.copy()
+        if tenant_id:
+            # KPI-029: Return tenant-specific metrics
+            return {
+                "tenant_id": tenant_id,
+                "stats": self.tenant_stats.get(tenant_id, {
+                    "total_requests": 0,
+                    "successful_requests": 0,
+                    "failed_requests": 0,
+                }),
+            }
+        
+        # Return global metrics with tenant summary
+        return {
+            "global": self.request_stats.copy(),
+            "tenants": {
+                tid: stats.copy()
+                for tid, stats in self.tenant_stats.items()
+            },
+        }
     
     async def close(self):
         """

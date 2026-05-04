@@ -10,13 +10,14 @@ Tất cả models phải kế thừa Base để có:
 - Rich serialization methods
 
 CP08: Database & Data Access
+KPI-029: Tenant Isolation - tenant_id column cho multi-tenant support
 """
 
 from datetime import datetime
 from typing import Any, Optional, Dict, List
 from uuid import UUID
 
-from sqlalchemy import DateTime, Integer, String, Boolean
+from sqlalchemy import DateTime, Integer, String, Boolean, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, DeclarativeMeta
 
 
@@ -30,6 +31,7 @@ class Base(DeclarativeBase):
     - updated_at: Thời điểm cập nhật (auto)
     - deleted_at: Thời điểm soft delete (nullable)
     - version: Version cho optimistic locking
+    - tenant_id: KPI-029: Tenant ID cho multi-tenant isolation
 
     Methods:
     - to_dict(): Serialize to dictionary
@@ -37,6 +39,7 @@ class Base(DeclarativeBase):
     - is_deleted(): Check soft delete status
     - soft_delete(): Mark as deleted
     - restore(): Restore from soft delete
+    - get_tenant_id(): KPI-029: Get tenant ID
     - __repr__(): Debug representation
 
     Usage:
@@ -45,7 +48,7 @@ class Base(DeclarativeBase):
             name: Mapped[str] = mapped_column(String(255))
 
         # Create
-        user = User(name="John")
+        user = User(name="John", tenant_id="tenant-123")
         
         # Soft delete
         user.soft_delete()
@@ -91,6 +94,19 @@ class Base(DeclarativeBase):
         nullable=False,
         index=True,
         comment="Timestamp when record was last updated",
+    )
+
+    # ========================================================================
+    # KPI-029: Tenant Isolation Fields
+    # ========================================================================
+
+    # Tenant ID - KPI-029: Multi-tenant isolation
+    tenant_id: Mapped[Optional[str]] = mapped_column(
+        String(36),  # UUID length
+        nullable=True,
+        index=True,
+        default=None,
+        comment="KPI-029: Tenant ID for multi-tenant isolation",
     )
 
     # ========================================================================
@@ -155,6 +171,40 @@ class Base(DeclarativeBase):
             True nếu bản ghi vẫn active
         """
         return not self.is_deleted()
+
+    # ========================================================================
+    # KPI-029: Tenant Methods
+    # ========================================================================
+
+    def get_tenant_id(self) -> Optional[str]:
+        """
+        KPI-029: Lấy tenant ID của bản ghi.
+
+        Returns:
+            Tenant ID nếu có, None nếu không
+        """
+        return self.tenant_id
+
+    def set_tenant_id(self, tenant_id: str) -> None:
+        """
+        KPI-029: Set tenant ID cho bản ghi.
+
+        Args:
+            tenant_id: Tenant ID để set
+        """
+        self.tenant_id = tenant_id
+
+    def belongs_to_tenant(self, tenant_id: str) -> bool:
+        """
+        KPI-029: Kiểm tra bản ghi thuộc tenant nào.
+
+        Args:
+            tenant_id: Tenant ID để check
+
+        Returns:
+            True nếu bản ghi thuộc tenant này
+        """
+        return self.tenant_id == tenant_id
 
     # ========================================================================
     # Serialization Methods

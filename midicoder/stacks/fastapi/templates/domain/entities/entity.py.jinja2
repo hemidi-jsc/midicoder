@@ -51,12 +51,25 @@ from __future__ import annotations
 {% endif %}
 
 
-class {{ entity.id }}(Base):
+class {{ entity.id }}(Base, TenantRowMixin):
     """{{ entity.id }} entity model.
     {% if entity.description %}
     
     {{ entity.description }}
     {% endif %}
+    
+    Tenant Isolation:
+    - Kế thừa TenantRowMixin cho row-level isolation
+    - tenant_id column tự động thêm vào table
+    - Tất cả queries phải filter by tenant_id
+    
+    Usage:
+        # Create with tenant
+        user = User(tenant_id="tenant-123", name="John")
+        
+        # Check tenant ownership
+        if user.is_tenant_owner("tenant-123"):
+            print("User belongs to this tenant")
     """
     
     __tablename__ = "{{ table_name }}"

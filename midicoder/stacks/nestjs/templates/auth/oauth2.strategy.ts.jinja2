@@ -3,6 +3,7 @@
  * 
  * Module này cung cấp OAuth2 strategies cho Google, GitHub, và custom providers.
  * 
+ * KPI-029: Tenant Isolation - Support tenant_id trong OAuth2 user info
  * CP03: Authentication & Authorization
  */
 
@@ -13,6 +14,8 @@ import { Strategy as GithubStrategy, Profile as GithubProfile } from 'passport-g
 
 /**
  * OAuth2 User Info interface.
+ * 
+ * KPI-029: Bao gồm tenant_id để support multi-tenant authentication.
  */
 export interface OAuth2UserInfo {
   /** Provider name (google, github) */
@@ -25,6 +28,8 @@ export interface OAuth2UserInfo {
   name?: string;
   /** Profile picture URL */
   picture?: string;
+  /** KPI-029: Tenant ID từ OAuth2 state parameter hoặc tenant lookup */
+  tenantId?: string;
   /** Raw profile data */
   profile: any;
 }
@@ -32,10 +37,12 @@ export interface OAuth2UserInfo {
 /**
  * Google OAuth2 Strategy.
  * 
+ * KPI-029: Support tenant_id extraction từ state parameter trong OAuth2 flow.
+ * 
  * Usage:
  * 1. Register Google OAuth2 app tại https://console.developers.google.com
  * 2. Set CLIENT_ID và CLIENT_SECRET trong environment
- * 3. Configure redirect URL
+ * 3. Configure redirect URL với state parameter cho tenant_id
  */
 @Injectable()
 export class GoogleOAuthStrategy extends PassportStrategy(Strategy, 'google') {
@@ -45,10 +52,13 @@ export class GoogleOAuthStrategy extends PassportStrategy(Strategy, 'google') {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
       callbackURL: '/auth/google/callback',
       scope: ['email', 'profile'],
+      // KPI-029: Pass tenant_id qua state parameter
+      passReqToCallback: true,
     });
   }
 
   async validate(
+    request: any,
     accessToken: string,
     refreshToken: string,
     profile: any,
@@ -57,12 +67,16 @@ export class GoogleOAuthStrategy extends PassportStrategy(Strategy, 'google') {
     try {
       const { id, displayName, emails, photos } = profile;
 
+      // KPI-029: Extract tenant_id từ state parameter trong callback
+      const tenantId = request?.query?.state;
+
       const user: OAuth2UserInfo = {
         provider: 'google',
         providerUserId: id,
         email: emails?.[0]?.value,
         name: displayName,
         picture: photos?.[0]?.value,
+        tenantId,  // KPI-029: Include tenant_id
         profile,
       };
 
@@ -76,10 +90,12 @@ export class GoogleOAuthStrategy extends PassportStrategy(Strategy, 'google') {
 /**
  * GitHub OAuth2 Strategy.
  * 
+ * KPI-029: Support tenant_id extraction từ state parameter trong OAuth2 flow.
+ * 
  * Usage:
  * 1. Register GitHub OAuth2 app tại https://github.com/settings/developers
  * 2. Set CLIENT_ID và CLIENT_SECRET trong environment
- * 3. Configure redirect URL
+ * 3. Configure redirect URL với state parameter cho tenant_id
  */
 @Injectable()
 export class GithubOAuthStrategy extends PassportStrategy(GithubStrategy, 'github') {
@@ -89,10 +105,13 @@ export class GithubOAuthStrategy extends PassportStrategy(GithubStrategy, 'githu
       clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
       callbackURL: '/auth/github/callback',
       scope: ['user:email'],
+      // KPI-029: Pass tenant_id qua state parameter
+      passReqToCallback: true,
     });
   }
 
   async validate(
+    request: any,
     accessToken: string,
     refreshToken: string,
     profile: GithubProfile,
@@ -101,12 +120,16 @@ export class GithubOAuthStrategy extends PassportStrategy(GithubStrategy, 'githu
     try {
       const { id, displayName, emails, photos } = profile;
 
+      // KPI-029: Extract tenant_id từ state parameter trong callback
+      const tenantId = request?.query?.state;
+
       const user: OAuth2UserInfo = {
         provider: 'github',
         providerUserId: id,
         email: emails?.[0]?.value,
         name: displayName,
         picture: photos?.[0]?.value,
+        tenantId,  // KPI-029: Include tenant_id
         profile,
       };
 

@@ -1,6 +1,7 @@
 # Docker Compose - Infrastructure cho API Gateway
 # # Docker Compose file cho deployment local development
 # CP06-Phase5: Infrastructure
+# KPI-029: Tenant Isolation - Multi-tenant support trong infrastructure
 
 version: "3.8"
 
@@ -31,6 +32,10 @@ services:
       - CONSUL_URL=http://consul:8500
       - KONG_URL=http://kong:8000
       - DEBUG={{ config.debug or 'false' }}
+      # KPI-029: Tenant Isolation environment variables
+      - TENANT_ISOLATION_ENABLED=true
+      - TENANT_ID_HEADER=X-Tenant-Id
+      - MULTI_TENANT_MODE=true
     depends_on:
       db:
         condition: service_healthy
@@ -106,6 +111,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # KPI-029: Tenant-specific init scripts
+      - ./init_tenant.sql:/docker-entrypoint-initdb.d/init_tenant.sql:ro
     networks:
       - gateway-network
     restart: unless-stopped
@@ -132,6 +139,27 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # KPI-029: Tenant-specific services (optional)
+  # Uncomment khi cần tenant-specific isolated services
+  
+  # tenant-admin:
+  #   build:
+  #     context: .
+  #     dockerfile: infrastructure/Dockerfile.tenant-admin
+  #   image: tenant-admin:latest
+  #   container_name: tenant-admin
+  #   ports:
+  #     - "8001:8001"
+  #   environment:
+  #     - DATABASE_URL=postgresql://postgres:postgres@db:5432/tenant_admin
+  #     - TENANT_ADMIN_MODE=true
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   networks:
+  #     - gateway-network
+  #   restart: unless-stopped
 
 # Networks configuration - mạng nội bộ
 networks:

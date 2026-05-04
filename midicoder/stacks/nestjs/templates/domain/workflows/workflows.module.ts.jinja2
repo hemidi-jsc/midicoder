@@ -1,8 +1,20 @@
+/**
+ * Workflows Module for NestJS.
+ * 
+ * KPI-029: Tenant Isolation - Workflow instances are tenant-scoped
+ * CP04: Workflow Engine
+ */
+
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkflowEntity } from './workflows.entity';
 import { WorkflowEngine } from './workflow.engine';
 
+/**
+ * Workflows Module.
+ * 
+ * KPI-029: WorkflowEngine supports tenant_id filtering for tenant isolation.
+ */
 @Module({
     imports: [TypeOrmModule.forFeature([WorkflowEntity])],
     providers: [WorkflowEngine],

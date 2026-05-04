@@ -5,7 +5,9 @@ Cung cấp:
 - Async Elasticsearch client
 - Index management
 - Search operations
+- KPI-029: Tenant-specific index prefix
 
+KPI-029: Tenant Isolation - Hỗ trợ tenant-specific index prefix
 CP10: Search & Indexing
 """
 
@@ -29,9 +31,16 @@ ES_SNIFF_ON_START = os.getenv("ES_SNIFF_ON_START", "false").lower() == "true"
 DEFAULT_INDEX = os.getenv("ES_DEFAULT_INDEX", "documents")
 DEFAULT_REFRESH_INTERVAL = os.getenv("ES_REFRESH_INTERVAL", "1s")
 
+# KPI-029: Tenant index prefix settings
+ES_TENANT_INDEX_PREFIX = os.getenv("ES_TENANT_INDEX_PREFIX", "tenant")
+ES_TENANT_ISOLATION = os.getenv("ES_TENANT_ISOLATION", "true").lower() == "true"
+
 
 # Async Elasticsearch client - client async cho operations
 _es_client: Optional[AsyncElasticsearch] = None
+
+# KPI-029: Tenant-specific clients cache
+_tenant_es_clients: dict[str, AsyncElasticsearch] = {}
 
 
 def get_elasticsearch() -> AsyncElasticsearch:
@@ -53,6 +62,66 @@ def get_elasticsearch() -> AsyncElasticsearch:
         )
 
     return _es_client
+
+
+def get_tenant_elasticsearch(tenant_id: str) -> AsyncElasticsearch:
+    """
+    KPI-029: Tạo hoặc trả về async Elasticsearch client cho tenant.
+
+    Mỗi tenant có thể có dedicated connection hoặc dùng shared connection
+    với index prefix riêng.
+
+    Args:
+        tenant_id: ID của tenant
+
+    Returns:
+        AsyncElasticsearch client cho tenant
+    """
+    global _tenant_es_clients
+
+    if tenant_id not in _tenant_es_clients:
+        _tenant_es_clients[tenant_id] = AsyncElasticsearch(
+            hosts=[ELASTICSEARCH_URL],
+            max_retries=ES_MAX_RETRIES,
+            retry_on_timeout=True,
+            timeout=ES_TIMEOUT,
+            sniff_on_start=ES_SNIFF_ON_START,
+        )
+
+    return _tenant_es_clients[tenant_id]
+
+
+def get_tenant_index_name(base_index: str, tenant_id: Optional[str] = None) -> str:
+    """
+    KPI-029: Tạo index name với tenant prefix.
+
+    Args:
+        base_index: Tên index gốc (ví dụ: "documents")
+        tenant_id: ID của tenant (optional)
+
+    Returns:
+        Index name với tenant prefix nếu có tenant_id
+    """
+    if not ES_TENANT_ISOLATION or not tenant_id:
+        return base_index
+
+    return f"{ES_TENANT_INDEX_PREFIX}_{tenant_id}_{base_index}"
+
+
+def get_tenant_index_pattern(base_index: str) -> str:
+    """
+    KPI-029: Tạo index pattern để search qua tất cả tenant indices.
+
+    Args:
+        base_index: Tên index gốc
+
+    Returns:
+        Index pattern (ví dụ: "tenant_*_documents")
+    """
+    if not ES_TENANT_ISOLATION:
+        return base_index
+
+    return f"{ES_TENANT_INDEX_PREFIX}_*_{base_index}"
 
 
 async def es_health_check() -> bool:
@@ -81,3 +150,30 @@ async def close_elasticsearch() -> None:
     if _es_client:
         await _es_client.close()
         _es_client = None
+
+
+async def close_tenant_elasticsearch(tenant_id: str) -> None:
+    """
+    KPI-029: Đóng Elasticsearch connection cho tenant.
+
+    Args:
+        tenant_id: ID của tenant
+    """
+    global _tenant_es_clients
+
+    if tenant_id in _tenant_es_clients:
+        await _tenant_es_clients[tenant_id].close()
+        del _tenant_es_clients[tenant_id]
+
+
+async def close_all_elasticsearch() -> None:
+    """
+    KPI-029: Đóng tất cả Elasticsearch connections.
+
+    Gọi khi shutdown application.
+    """
+    await close_elasticsearch()
+
+    global _tenant_es_clients
+    for tenant_id, client in list(_tenant_es_clients.items()):
+        await close_tenant_elasticsearch(tenant_id)
