@@ -7,8 +7,7 @@ Cung cấp:
 KPI-029: Tenant Isolation - tenant_id được thêm vào event payload
 """
 
-from typing import Any
-from uuid import UUID
+from typing import Any, Optional
 
 
 class EventEffect:
@@ -22,8 +21,8 @@ class EventEffect:
     async def execute(
         self,
         event_name: str,
-        payload: dict[str, Any],
-        tenant_id: UUID | None = None,  # KPI-029: Tenant isolation
+        payload: dict[str, Any] | None = None,
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
     ) -> dict[str, Any]:
         """
         Execute event publishing effect.
@@ -32,19 +31,22 @@ class EventEffect:
         
         Args:
             event_name: Event name để publish
-            payload: Event payload
+            payload: Event payload (optional)
             tenant_id: KPI-029: Tenant ID cho event
             
         Returns:
             Result với publish status
         """
         # KPI-029: Thêm tenant_id vào payload nếu chưa có
-        if tenant_id and "tenant_id" not in payload:
-            payload["tenant_id"] = str(tenant_id)
+        if tenant_id:
+            if payload is None:
+                payload = {}
+            if "tenant_id" not in payload:
+                payload["tenant_id"] = tenant_id
         
         # TODO: Integrate với CP05 Event Bus
         return {
             "status": "published",
             "event": event_name,
-            "tenant_id": str(tenant_id) if tenant_id else None,  # KPI-029
+            "tenant_id": tenant_id,  # KPI-029: String format
         }

@@ -7,8 +7,7 @@ Cung cấp:
 KPI-029: Tenant Isolation - tenant_id được dùng để check tenant-specific compliance
 """
 
-from typing import Any
-from uuid import UUID
+from typing import Any, Optional
 
 
 class ComplianceGuard:
@@ -22,8 +21,8 @@ class ComplianceGuard:
     async def evaluate(
         self,
         check: str,
-        tenant_id: UUID,  # KPI-029: Tenant isolation
-        context: dict[str, Any],
+        context: dict[str, Any] | None = None,
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
     ) -> bool:
         """
         Evaluate compliance guard.
@@ -32,8 +31,8 @@ class ComplianceGuard:
         
         Args:
             check: Compliance check name (ví dụ: kyc_verified)
+            context: Transition context (optional)
             tenant_id: KPI-029: Tenant ID cho tenant-specific compliance
-            context: Transition context
             
         Returns:
             True nếu compliance check pass, False nếu fail

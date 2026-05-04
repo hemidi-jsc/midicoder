@@ -7,8 +7,7 @@ Cung cấp:
 KPI-029: Tenant Isolation - tenant_id được dùng cho notification filtering
 """
 
-from typing import Any
-from uuid import UUID
+from typing import Any, Optional
 
 
 class NotificationEffect:
@@ -24,8 +23,8 @@ class NotificationEffect:
         channel: str,
         template: str,
         recipient: str,
-        payload: dict[str, Any],
-        tenant_id: UUID | None = None,  # KPI-029: Tenant isolation
+        payload: dict[str, Any] | None = None,
+        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
     ) -> dict[str, Any]:
         """
         Execute notification effect.
@@ -36,20 +35,23 @@ class NotificationEffect:
             channel: Notification channel (email, sms, push)
             template: Template name
             recipient: Recipient address
-            payload: Template payload
+            payload: Template payload (optional)
             tenant_id: KPI-029: Tenant ID cho notification
             
         Returns:
             Result với send status
         """
         # KPI-029: Thêm tenant_id vào payload
-        if tenant_id and "tenant_id" not in payload:
-            payload["tenant_id"] = str(tenant_id)
+        if tenant_id:
+            if payload is None:
+                payload = {}
+            if "tenant_id" not in payload:
+                payload["tenant_id"] = tenant_id
         
         # TODO: Integrate với CP12 Notification
         return {
             "status": "sent",
             "channel": channel,
             "template": template,
-            "tenant_id": str(tenant_id) if tenant_id else None,  # KPI-029
+            "tenant_id": tenant_id,  # KPI-029: String format
         }
