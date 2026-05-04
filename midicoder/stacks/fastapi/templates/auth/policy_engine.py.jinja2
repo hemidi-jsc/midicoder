@@ -1,0 +1,326 @@
+"""
+Policy Engine - OPA-compatible policy evaluation cho FastAPI.
+
+Module này cung cấp policy engine để evaluate policies với conditions
+và return allow/deny decisions.
+
+KPI-031: Invalid policy detection tại compile-time.
+CP04: RBAC & Policy Engine
+"""
+
+from dataclasses import dataclass
+from typing import Any, Optional
+
+
+# ============================================================================
+# Policy Models
+# ============================================================================
+
+
+class PolicyEffect:
+    """Policy Effect enum."""
+    ALLOW = "allow"
+    DENY = "deny"
+
+
+@dataclass
+class PolicyCondition:
+    """Policy Condition."""
+    expression: str
+    description: Optional[str] = None
+
+
+@dataclass
+class Policy:
+    """Policy Definition."""
+    id: str
+    effect: str
+    conditions: list[PolicyCondition]
+    description: Optional[str] = None
+
+
+@dataclass
+class PolicyResult:
+    """Policy Evaluation Result."""
+    allowed: bool
+    policy_id: Optional[str] = None
+    reason: Optional[str] = None
+
+
+# ============================================================================
+# Policy Engine
+# ============================================================================
+
+
+class PolicyEngine:
+    """
+    Policy Engine Service - Evaluate policies và return allow/deny decisions.
+
+    Service này evaluate policies với conditions và return decisions.
+
+    KPI-031: Policy validation tại compile-time.
+    """
+
+    def __init__(self):
+        """Initialize PolicyEngine."""
+        self._policies: dict[str, Policy] = {}
+
+    def register_policy(self, policy: Policy) -> None:
+        """
+        Đăng ký policy.
+
+        Args:
+            policy: Policy definition
+        """
+        self._policies[policy.id] = policy
+
+    def evaluate(
+        self,
+        user_id: str,
+        user_roles: list[str],
+        resource_id: str,
+        resource_type: str,
+        action: str,
+        user_tenant_id: Optional[str] = None,
+        resource_tenant_id: Optional[str] = None,
+        request_context: Optional[dict[str, Any]] = None,
+    ) -> PolicyResult:
+        """
+        Evaluate policy với context.
+
+        Args:
+            user_id: User ID
+            user_roles: User roles
+            resource_id: Resource ID
+            resource_type: Resource type
+            action: Action being performed
+            user_tenant_id: User tenant ID (KPI-029)
+            resource_tenant_id: Resource tenant ID (KPI-029)
+            request_context: Additional request context
+
+        Returns:
+            Policy result
+        """
+        # Build context
+        context = {
+            "user": {
+                "id": user_id,
+                "roles": user_roles,
+                "tenant_id": user_tenant_id,
+            },
+            "resource": {
+                "id": resource_id,
+                "type": resource_type,
+                "tenant_id": resource_tenant_id,
+            },
+            "action": action,
+            "request": request_context or {},
+        }
+
+        # Check each policy
+        for policy_id, policy in self._policies.items():
+            result = self._evaluate_policy(policy, context)
+
+            if result.allowed is not None:
+                return PolicyResult(
+                    allowed=result.allowed,
+                    policy_id=policy_id,
+                    reason=result.reason,
+                )
+
+        # Default: allow if no policy matches
+        return PolicyResult(
+            allowed=True,
+            reason="No policy matched - default allow",
+        )
+
+    def _evaluate_policy(
+        self, policy: Policy, context: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Evaluate single policy.
+
+        Args:
+            policy: Policy to evaluate
+            context: Evaluation context
+
+        Returns:
+            Result với allowed (None = no match)
+        """
+        # Check all conditions
+        all_conditions_met = True
+
+        for condition in policy.conditions:
+            result = self._evaluate_condition(condition.expression, context)
+
+            if not result:
+                all_conditions_met = False
+                break
+
+        if not all_conditions_met:
+            return {"allowed": None}
+
+        # All conditions met, return policy effect
+        return {
+            "allowed": policy.effect == PolicyEffect.ALLOW,
+            "reason": policy.description or f"Policy {policy.id} matched",
+        }
+
+    def _evaluate_condition(self, expression: str, context: dict[str, Any]) -> bool:
+        """
+        Evaluate condition expression.
+
+        Basic expression evaluation:
+        - user.id == resource.owner_id
+        - user.tenant_id == resource.tenant_id
+        - user.roles includes "admin"
+
+        KPI-031: Syntax validation happens at compile-time.
+
+        Args:
+            expression: Expression string
+            context: Evaluation context
+
+        Returns:
+            True nếu condition met
+        """
+        try:
+            # Parse expression: left operator right
+            operators = ["==", "!=", ">=", "<=", ">", "<"]
+            matched_operator: Optional[str] = None
+            operator_index = -1
+
+            for op in operators:
+                operator_index = expression.find(op)
+                if operator_index != -1:
+                    matched_operator = op
+                    break
+
+            if not matched_operator or operator_index == -1:
+                return False
+
+            left = expression[:operator_index].strip()
+            right = expression[operator_index + len(matched_operator):].strip()
+
+            left_value = self._resolve_value(left, context)
+            right_value = self._resolve_value(right, context)
+
+            return self._compare(left_value, right_value, matched_operator)
+        except Exception:
+            # Expression evaluation error - log and deny
+            return False
+
+    def _resolve_value(self, path: str, context: dict[str, Any]) -> Any:
+        """
+        Resolve value từ expression path.
+
+        Args:
+            path: Path string (ví dụ: "user.id", "resource.tenant_id")
+            context: Evaluation context
+
+        Returns:
+            Resolved value
+        """
+        parts = path.split(".")
+
+        value = context
+        for part in parts:
+            if isinstance(value, dict) and part in value:
+                value = value[part]
+            else:
+                return None
+
+        return value
+
+    def _compare(self, left: Any, right: Any, operator: str) -> bool:
+        """
+        Compare two values với operator.
+
+        Args:
+            left: Left value
+            right: Right value
+            operator: Comparison operator
+
+        Returns:
+            Comparison result
+        """
+        if operator == "==":
+            return left == right
+        elif operator == "!=":
+            return left != right
+        elif operator == ">":
+            return left > right
+        elif operator == "<":
+            return left < right
+        elif operator == ">=":
+            return left >= right
+        elif operator == "<=":
+            return left <= right
+        return False
+
+
+# ============================================================================
+# Global Policy Engine Instance
+# ============================================================================
+
+_policy_engine: Optional[PolicyEngine] = None
+
+
+def init_policy_engine() -> PolicyEngine:
+    """
+    Initialize global policy engine.
+
+    Returns:
+        PolicyEngine instance
+    """
+    global _policy_engine
+    if _policy_engine is None:
+        _policy_engine = PolicyEngine()
+    return _policy_engine
+
+
+def get_policy_engine() -> PolicyEngine:
+    """
+    Dependency để get policy engine.
+
+    Returns:
+        PolicyEngine instance
+    """
+    if _policy_engine is None:
+        raise RuntimeError("PolicyEngine chưa được initialize")
+    return _policy_engine
+
+
+def evaluate_policy(
+    policy_id: str,
+    user_id: str,
+    user_roles: list[str],
+    resource_id: str,
+    resource_type: str,
+    action: str,
+    **kwargs,
+) -> PolicyResult:
+    """
+    Evaluate specific policy.
+
+    Args:
+        policy_id: Policy ID
+        user_id: User ID
+        user_roles: User roles
+        resource_id: Resource ID
+        resource_type: Resource type
+        action: Action
+        **kwargs: Additional context
+
+    Returns:
+        PolicyResult
+    """
+    engine = get_policy_engine()
+    return engine.evaluate(
+        user_id=user_id,
+        user_roles=user_roles,
+        resource_id=resource_id,
+        resource_type=resource_type,
+        action=action,
+        **kwargs,
+    )

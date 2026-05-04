@@ -1,0 +1,155 @@
+"""
+Tenant Context - Multi-tenant context propagation cho FastAPI.
+
+Module này quản lý tenant context cho multi-tenant isolation.
+
+KPI-029: Missing tenant filter detection.
+CP02: Multi-Tenant Architecture
+"""
+
+from contextvars import ContextVar
+from typing import Optional
+
+
+# ============================================================================
+# Tenant Mode
+# ============================================================================
+
+
+class TenantMode:
+    """Tenant Mode enum."""
+    DATABASE = "database"
+    SCHEMA = "schema"
+    ROW = "row"
+    HYBRID = "hybrid"
+
+
+# ============================================================================
+# Tenant Context Data
+# ============================================================================
+
+
+class TenantContext:
+    """Tenant Context data."""
+
+    def __init__(
+        self,
+        tenant_id: str,
+        tenant_name: Optional[str] = None,
+        mode: Optional[str] = None,
+    ):
+        """
+        Initialize TenantContext.
+
+        Args:
+            tenant_id: Tenant ID
+            tenant_name: Tenant name (optional)
+            mode: Tenant mode (optional)
+        """
+        self.tenant_id = tenant_id
+        self.tenant_name = tenant_name
+        self.mode = mode or TenantMode.ROW
+
+
+# ============================================================================
+# Context Storage
+# ============================================================================
+
+
+_tenant_context: ContextVar[Optional[TenantContext]] = ContextVar(
+    "tenant_context", default=None
+)
+
+
+def set_tenant_context(tenant_context: TenantContext) -> None:
+    """
+    Set tenant context cho current request.
+
+    KPI-029: Tenant-scoped operations.
+
+    Args:
+        tenant_context: Tenant context data
+    """
+    _tenant_context.set(tenant_context)
+
+
+def get_tenant_context() -> Optional[TenantContext]:
+    """
+    Get tenant context từ current request.
+
+    KPI-029: Tenant filter cho queries.
+
+    Returns:
+        Tenant context data hoặc None
+    """
+    return _tenant_context.get()
+
+
+def get_tenant_id() -> Optional[str]:
+    """
+    Get tenant ID từ current request.
+
+    KPI-029: Tenant filter cho queries.
+
+    Returns:
+        Tenant ID hoặc None
+    """
+    context = get_tenant_context()
+    return context.tenant_id if context else None
+
+
+def clear_tenant_context() -> None:
+    """
+    Clear tenant context.
+
+    Called at end of request to clean up context.
+    """
+    _tenant_context.set(None)
+
+
+# ============================================================================
+# Tenant Guard
+# ============================================================================
+
+
+class TenantGuard:
+    """
+    Tenant Guard Interface.
+
+    Guard này validate tenant context cho mỗi request.
+
+    KPI-029: Tenant isolation enforcement.
+    """
+
+    async def validate_tenant(self, tenant_id: str) -> bool:
+        """
+        Validate tenant ID.
+
+        Args:
+            tenant_id: Tenant ID to validate
+
+        Returns:
+            True nếu tenant valid
+        """
+        # Basic validation: tenant ID must not be empty
+        if not tenant_id or tenant_id.strip() == "":
+            return False
+
+        # TODO: Add tenant existence check từ database
+        return True
+
+
+_default_tenant_guard = TenantGuard()
+
+
+async def validate_tenant(tenant_id: str) -> bool:
+    """
+    Validate tenant ID.
+
+    Args:
+        tenant_id: Tenant ID to validate
+
+    Returns:
+        True nếu tenant valid
+    """
+    return await _default_tenant_guard.validate_tenant(tenant_id)
