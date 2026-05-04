@@ -15,6 +15,7 @@ Version: 2.0.0
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Optional
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
@@ -24,17 +25,22 @@ from .models import Command, CommandGuard, GuardType
 
 class CommandGuards:
     """
-    Guards manager cho Command.
+    Guards manager cho Command với tenant-aware support.
 
     Cung cấp:
     - check_all(): Check tất cả guards
     - check_auth(): Check permission
-    - check_tenant(): Check tenant isolation
+    - check_tenant(): Check tenant isolation (KPI-029)
     - check_rate_limit(): Check rate limiting
-    - check_compliance(): Check compliance gates
+    - check_compliance(): Check compliance gates (RX02-RX04)
+
+    Tenant Support (KPI-029):
+    - Tất cả compliance checks đều tenant-aware
+    - Audit log ghi tenant_id cho multi-tenant compliance
+    - KYC/AML/HIPAA checks enforce tenant isolation
 
     Usage:
-        guards = CommandGuards(command, auth_service, tenant_service)
+        guards = CommandGuards(command, auth_service, tenant_service, compliance_service)
         await guards.check_all(command_data, user_id, tenant_id)
     """
 
@@ -282,13 +288,17 @@ class CommandGuards:
         self,
         guard: CommandGuard,
         user_id: Optional[str],
+        tenant_id: Optional[str] = None,
     ) -> None:
         """
         Check HIPAA access guard (RX04).
 
+        Tenant-aware (KPI-029): Audit log ghi tenant_id.
+
         Args:
             guard: Guard definition
             user_id: User ID
+            tenant_id: Tenant ID cho audit logging
 
         Raises:
             MidicoderError: Nếu user không được xác thực hoặc không có HIPAA clearance
@@ -300,10 +310,236 @@ class CommandGuards:
 
         if self._compliance_service:
             has_hipaa_clearance = (
-                await self._compliance_service.check_hipaa_clearance(user_id=user_id)
+                await self._compliance_service.check_hipaa_clearance(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                )
             )
             if not has_hipaa_clearance:
                 EM.raise_error(
                     ErrorCode.CP01_GUARD_HIPAA_NO_CLEARANCE,
                     user_id=user_id,
+                    tenant_id=tenant_id,
                 )
+
+    # -------------------------------------------------------------------------
+    # Audit Logging (KPI-029: Tenant Isolation)
+    # -------------------------------------------------------------------------
+
+    async def _log_compliance_check(
+        self,
+        guard_type: GuardType,
+        user_id: str,
+        tenant_id: Optional[str],
+        result: str,
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """
+        Log compliance check vào audit trail.
+
+        KPI-029: Tất cả compliance checks đều tenant-aware.
+        Audit log bao gồm tenant_id cho multi-tenant compliance tracking.
+
+        Args:
+            guard_type: Loại guard (KYC_CHECK, AML_SCREENING, HIPAA_ACCESS)
+            user_id: User ID thực hiện check
+            tenant_id: Tenant ID (KPI-029)
+            result: Kết quả (passed, failed, skipped)
+            details: Thông tin thêm (optional)
+        
+        Raises:
+            MidicoderError: Nếu ghi audit log thất bại
+        """
+        if self._compliance_service is None:
+            return  # No compliance service, skip logging
+
+        audit_record = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "guard_type": guard_type.value,
+            "user_id": user_id,
+            "tenant_id": tenant_id,
+            "result": result,
+            "command_id": self._command.id,
+            "details": details or {},
+        }
+
+        try:
+            await self._compliance_service.log_compliance_check(audit_record)
+        except Exception as e:
+            # Log warning but don't fail the check
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_COMPLIANCE_LOG_FAILED,
+                guard_type=guard_type.value,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                error=str(e),
+            )
+
+    # -------------------------------------------------------------------------
+    # Updated Compliance Methods with Audit Logging
+    # -------------------------------------------------------------------------
+
+    async def _check_kyc_with_audit(
+        self,
+        guard: CommandGuard,
+        user_id: Optional[str],
+        tenant_id: Optional[str],
+    ) -> None:
+        """
+        Check KYC compliance guard với audit logging (RX03).
+
+        KPI-029: Tenant-aware KYC check với audit trail.
+
+        Args:
+            guard: Guard definition
+            user_id: User ID
+            tenant_id: Tenant ID (KPI-029)
+
+        Raises:
+            MidicoderError: Nếu user không được xác thực hoặc KYC chưa hoàn thành
+        """
+        if user_id is None:
+            await self._log_compliance_check(
+                GuardType.KYC_CHECK, user_id, tenant_id, "failed",
+                {"reason": "user_not_authenticated"}
+            )
+            EM.raise_error(ErrorCode.CP01_GUARD_USER_NOT_AUTHENTICATED)
+
+        if self._compliance_service is None:
+            await self._log_compliance_check(
+                GuardType.KYC_CHECK, user_id, tenant_id, "skipped",
+                {"reason": "no_compliance_service"}
+            )
+            return
+
+        is_kyc_verified = await self._compliance_service.check_kyc(
+            user_id=user_id,
+            tenant_id=tenant_id,  # KPI-029
+        )
+
+        if not is_kyc_verified:
+            await self._log_compliance_check(
+                GuardType.KYC_CHECK, user_id, tenant_id, "failed",
+                {"reason": "kyc_not_verified"}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_KYC_NOT_VERIFIED,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+
+        await self._log_compliance_check(
+            GuardType.KYC_CHECK, user_id, tenant_id, "passed",
+            {"tenant_id": tenant_id}
+        )
+
+    async def _check_aml_with_audit(
+        self,
+        guard: CommandGuard,
+        data: dict[str, Any],
+        user_id: Optional[str],
+        tenant_id: Optional[str],
+    ) -> None:
+        """
+        Check AML screening guard với audit logging (RX03).
+
+        KPI-029: Tenant-aware AML check với audit trail.
+
+        Args:
+            guard: Guard definition
+            data: Command data
+            user_id: User ID
+            tenant_id: Tenant ID (KPI-029)
+
+        Raises:
+            MidicoderError: Nếu user không được xác thực hoặc AML screening failed
+        """
+        if user_id is None:
+            await self._log_compliance_check(
+                GuardType.AML_SCREENING, user_id, tenant_id, "failed",
+                {"reason": "user_not_authenticated"}
+            )
+            EM.raise_error(ErrorCode.CP01_GUARD_USER_NOT_AUTHENTICATED)
+
+        if self._compliance_service is None:
+            await self._log_compliance_check(
+                GuardType.AML_SCREENING, user_id, tenant_id, "skipped",
+                {"reason": "no_compliance_service"}
+            )
+            return
+
+        is_aml_clear = await self._compliance_service.check_aml(
+            user_id=user_id,
+            transaction_data=data,
+            tenant_id=tenant_id,  # KPI-029
+        )
+
+        if not is_aml_clear:
+            await self._log_compliance_check(
+                GuardType.AML_SCREENING, user_id, tenant_id, "failed",
+                {"reason": "aml_screening_failed"}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_AML_SCREENING_FAILED,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+
+        await self._log_compliance_check(
+            GuardType.AML_SCREENING, user_id, tenant_id, "passed",
+            {"tenant_id": tenant_id}
+        )
+
+    async def _check_hipaa_with_audit(
+        self,
+        guard: CommandGuard,
+        user_id: Optional[str],
+        tenant_id: Optional[str],
+    ) -> None:
+        """
+        Check HIPAA access guard với audit logging (RX04).
+
+        KPI-029: Tenant-aware HIPAA check với audit trail.
+
+        Args:
+            guard: Guard definition
+            user_id: User ID
+            tenant_id: Tenant ID (KPI-029)
+
+        Raises:
+            MidicoderError: Nếu user không được xác thực hoặc không có HIPAA clearance
+        """
+        if user_id is None:
+            await self._log_compliance_check(
+                GuardType.HIPAA_ACCESS, user_id, tenant_id, "failed",
+                {"reason": "user_not_authenticated"}
+            )
+            EM.raise_error(ErrorCode.CP01_GUARD_USER_NOT_AUTHENTICATED)
+
+        if self._compliance_service is None:
+            await self._log_compliance_check(
+                GuardType.HIPAA_ACCESS, user_id, tenant_id, "skipped",
+                {"reason": "no_compliance_service"}
+            )
+            return
+
+        has_hipaa_clearance = await self._compliance_service.check_hipaa_clearance(
+            user_id=user_id,
+            tenant_id=tenant_id,  # KPI-029
+        )
+
+        if not has_hipaa_clearance:
+            await self._log_compliance_check(
+                GuardType.HIPAA_ACCESS, user_id, tenant_id, "failed",
+                {"reason": "no_hipaa_clearance"}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_HIPAA_NO_CLEARANCE,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+
+        await self._log_compliance_check(
+            GuardType.HIPAA_ACCESS, user_id, tenant_id, "passed",
+            {"tenant_id": tenant_id}
+        )
