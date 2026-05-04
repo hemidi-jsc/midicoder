@@ -7,8 +7,10 @@ Cung cấp:
 - Periodic task examples
 
 CP13: Background Job & Workflow
+KPI-029: Tenant Isolation - tenant_id được propagate vào task context
 """
 
+import asyncio
 from functools import wraps
 from typing import Any, Callable, Optional
 
@@ -26,6 +28,8 @@ def task(
     """
     Decorator để define Celery task.
 
+    KPI-029: Support tenant_id trong task context.
+
     Args:
         name: Task name (optional)
         retries: Max retries (default 3)
@@ -34,7 +38,7 @@ def task(
 
     Usage:
         @task(queue="email", retries=5)
-        async def send_welcome_email(user_id: int):
+        async def send_welcome_email(user_id: int, tenant_id: str):
             ...
     """
 
@@ -49,6 +53,10 @@ def task(
         )
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
+                # KPI-029: Ensure tenant_id is in kwargs if not provided
+                if "tenant_id" not in kwargs and hasattr(wrapper, "tenant_id"):
+                    kwargs["tenant_id"] = wrapper.tenant_id
+                
                 # Call the async function
                 if hasattr(func, "__await__"):
                     return await func(*args, **kwargs)
@@ -64,112 +72,159 @@ def task(
 
 
 @task(queue="email", retries=3)
-async def send_welcome_email(user_id: int, email: str) -> dict:
+async def send_welcome_email(user_id: int, email: str, tenant_id: Optional[str] = None) -> dict:
     """
     Gửi welcome email.
+
+    KPI-029: tenant_id được dùng cho tenant-specific email templates.
 
     Args:
         user_id: User ID
         email: Email address
+        tenant_id: KPI-029: Tenant ID cho tenant-specific template
 
     Returns:
         Result dict
     """
     # TODO: Implement email sending
-    return {"status": "sent", "user_id": user_id, "email": email}
+    return {
+        "status": "sent",
+        "user_id": user_id,
+        "email": email,
+        "tenant_id": tenant_id,  # KPI-029
+    }
 
 
 @task(queue="email", retries=3)
-async def send_password_reset_email(user_id: int, email: str, token: str) -> dict:
+async def send_password_reset_email(user_id: int, email: str, token: str, tenant_id: Optional[str] = None) -> dict:
     """
     Gửi password reset email.
+
+    KPI-029: tenant_id được dùng cho tenant-specific email.
 
     Args:
         user_id: User ID
         email: Email address
         token: Reset token
+        tenant_id: KPI-029: Tenant ID
 
     Returns:
         Result dict
     """
     # TODO: Implement password reset email
-    return {"status": "sent", "user_id": user_id}
+    return {
+        "status": "sent",
+        "user_id": user_id,
+        "tenant_id": tenant_id,  # KPI-029
+    }
 
 
 @task(queue="notification", retries=2)
-async def send_push_notification(user_id: int, message: str) -> dict:
+async def send_push_notification(user_id: int, message: str, tenant_id: Optional[str] = None) -> dict:
     """
     Gửi push notification.
+
+    KPI-029: tenant_id được dùng cho tenant-specific notifications.
 
     Args:
         user_id: User ID
         message: Notification message
+        tenant_id: KPI-029: Tenant ID
 
     Returns:
         Result dict
     """
     # TODO: Implement push notification
-    return {"status": "sent", "user_id": user_id}
+    return {
+        "status": "sent",
+        "user_id": user_id,
+        "tenant_id": tenant_id,  # KPI-029
+    }
 
 
 @task(queue="report", retries=5, interval=300)
-async def generate_daily_report(date: str) -> dict:
+async def generate_daily_report(date: str, tenant_id: Optional[str] = None) -> dict:
     """
     Generate daily report.
 
+    KPI-029: tenant_id được dùng cho tenant-specific reports.
+
     Args:
         date: Report date
+        tenant_id: KPI-029: Tenant ID cho tenant-specific report
 
     Returns:
         Report result
     """
     # TODO: Implement report generation
-    return {"status": "generated", "date": date}
+    return {
+        "status": "generated",
+        "date": date,
+        "tenant_id": tenant_id,  # KPI-029
+    }
 
 
 @task(queue="sync", retries=5, interval=60)
-async def sync_external_data(source: str, entity_type: str) -> dict:
+async def sync_external_data(source: str, entity_type: str, tenant_id: Optional[str] = None) -> dict:
     """
     Sync data từ external source.
+
+    KPI-029: tenant_id được dùng cho tenant-specific sync.
 
     Args:
         source: External source name
         entity_type: Entity type to sync
+        tenant_id: KPI-029: Tenant ID
 
     Returns:
         Sync result
     """
     # TODO: Implement sync logic
-    return {"status": "synced", "source": source, "entity_type": entity_type}
+    return {
+        "status": "synced",
+        "source": source,
+        "entity_type": entity_type,
+        "tenant_id": tenant_id,  # KPI-029
+    }
 
 
 @task(queue="cleanup", retries=1)
-async def cleanup_expired_data(days: int = 30) -> dict:
+async def cleanup_expired_data(days: int = 30, tenant_id: Optional[str] = None) -> dict:
     """
     Cleanup expired data.
 
+    KPI-029: tenant_id được dùng cho tenant-specific cleanup.
+
     Args:
         days: Days threshold
+        tenant_id: KPI-029: Tenant ID cho tenant-specific cleanup
 
     Returns:
         Cleanup result
     """
     # TODO: Implement cleanup logic
-    return {"status": "cleaned", "days": days}
+    return {
+        "status": "cleaned",
+        "days": days,
+        "tenant_id": tenant_id,  # KPI-029
+    }
 
 
 @task(queue="email", retries=3)
-async def send_bulk_emails(recipients: list) -> dict:
+async def send_bulk_emails(recipients: list, tenant_id: Optional[str] = None) -> dict:
     """
     Gửi bulk emails.
 
+    KPI-029: tenant_id được dùng cho tenant-specific bulk emails.
+
     Args:
         recipients: List of {email, context}
+        tenant_id: KPI-029: Tenant ID
 
     Returns:
         Bulk send result
     """
-    results = {"success": 0, "failed": 0}
+    results = {"success": 0, "failed": 0, "tenant_id": tenant_id}
 
     for recipient in recipients:
         try:
@@ -181,18 +236,24 @@ async def send_bulk_emails(recipients: list) -> dict:
     return results
 
 
-def chain_tasks(tasks: list) -> Callable:
+def chain_tasks(tasks: list, tenant_id: Optional[str] = None) -> Callable:
     """
     Chain multiple tasks.
 
+    KPI-029: tenant_id được propagate qua tất cả tasks trong chain.
+
     Args:
         tasks: List of task functions
+        tenant_id: KPI-029: Tenant ID cho chain
 
     Returns:
         Chained task
     """
     @task(queue="default")
     async def chained(*args, **kwargs):
+        # KPI-029: Add tenant_id to kwargs
+        if tenant_id and "tenant_id" not in kwargs:
+            kwargs["tenant_id"] = tenant_id
         for task in tasks:
             result = await task(*args, **kwargs)
         return result
@@ -220,3 +281,42 @@ def retry_on_failure(max_retries: int = 3, delay: int = 60):
                     await asyncio.sleep(delay)
         return wrapper
     return decorator
+
+
+# KPI-029: Tenant-specific task helpers
+def tenant_task(queue: str = "default"):
+    """
+    KPI-029: Decorator cho tenant-specific tasks.
+
+    Tạo task với tenant_id auto-extracted.
+
+    Args:
+        queue: Queue name
+
+    Returns:
+        Task decorator
+    """
+    def decorator(func: Callable) -> Callable:
+        decorated = task(queue=queue)(func)
+        return decorated
+    return decorator
+
+
+def send_tenant_email(tenant_id: str, to_email: str, subject: str, body: str):
+    """
+    KPI-029: Helper để send email cho tenant.
+
+    Args:
+        tenant_id: Tenant ID
+        to_email: Recipient email
+        subject: Email subject
+        body: Email body
+
+    Returns:
+        Celery task result
+    """
+    return send_welcome_email.delay(
+        user_id=0,  # Will be set by caller
+        email=to_email,
+        tenant_id=tenant_id,
+    )

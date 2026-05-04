@@ -6,12 +6,18 @@ Cung cấp:
 - Redis broker/backend
 - Task routing
 - Beat scheduler
+- Tenant context propagation (KPI-029)
 
 CP13: Background Job & Workflow
+KPI-029: Tenant Isolation cho background tasks
 """
 
 import os
+from contextvars import ContextVar
+from typing import Optional
+
 from celery import Celery
+from celery.signals import task_prerun, task_postrun
 
 # Redis settings từ environment
 REDIS_URL = os.getenv(
@@ -25,6 +31,85 @@ CELERY_RESULT_EXPIRES = int(os.getenv("CELERY_RESULT_EXPIRES", "3600"))  # 1 hou
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "3600"))  # 1 hour
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "3000"))  # 50 minutes
 CELERY_TASK_MAX_RETRIES = int(os.getenv("CELERY_TASK_MAX_RETRIES", "3"))
+
+# ============================================================================
+# Tenant Context - KPI-029: Tenant Isolation cho background tasks
+# ============================================================================
+
+# ContextVar để lưu tenant ID xuyên suốt task execution
+# KPI-029: Mỗi task chạy với tenant context riêng, không bị leak giữa các tasks
+_tenant_id_ctx: ContextVar[Optional[str]] = ContextVar("tenant_id", default=None)
+
+
+def get_tenant_id_from_context() -> Optional[str]:
+    """
+    Trích xuất tenant ID từ Celery request context.
+
+    KPI-029: Tenant Isolation - lấy tenant_id từ context cho background tasks.
+    
+    Hàm này cho phép các tasks truy cập tenant context mà không cần pass
+    tenant_id qua tất cả function calls.
+
+    Returns:
+        Optional[str]: Tenant ID nếu có, None nếu không tìm thấy.
+
+    Usage:
+        @celery_app.task
+        def process_order(order_id: str):
+            tenant_id = get_tenant_id_from_context()
+            # Process with tenant isolation
+    """
+    return _tenant_id_ctx.get()
+
+
+def set_tenant_context(tenant_id: Optional[str]) -> None:
+    """
+    Set tenant ID vào context.
+
+    KPI-029: Cho phép propagate tenant context vào task execution.
+
+    Args:
+        tenant_id: Tenant ID để set vào context
+    """
+    _tenant_id_ctx.set(tenant_id)
+
+
+def clear_tenant_context() -> None:
+    """
+    Clear tenant context sau khi task hoàn thành.
+
+    KPI-029: Prevent tenant context leak giữa các tasks.
+    """
+    _tenant_id_ctx.set(None)
+
+
+# Celery signals để tự động manage tenant context
+@task_prerun.connect
+def capture_tenant_on_task_start(task, *args, **kwargs):
+    """
+    Capture tenant_id từ task kwargs khi task bắt đầu.
+
+    KPI-029: Tự động extract tenant_id và lưu vào context.
+    """
+    if "tenant_id" in kwargs:
+        set_tenant_context(kwargs["tenant_id"])
+    elif args and len(args) > 0:
+        # Try to get tenant_id from first arg if it's a dict
+        try:
+            if isinstance(args[0], dict) and "tenant_id" in args[0]:
+                set_tenant_context(args[0]["tenant_id"])
+        except Exception:
+            pass
+
+
+@task_postrun.connect
+def clear_tenant_on_task_end(task, *args, **kwargs):
+    """
+    Clear tenant context sau khi task hoàn thành.
+
+    KPI-029: Prevent tenant context leak giữa các tasks.
+    """
+    clear_tenant_context()
 
 
 # Create Celery app

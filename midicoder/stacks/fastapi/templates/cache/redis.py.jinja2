@@ -5,8 +5,10 @@ Cung cấp:
 - Async Redis client với connection pooling
 - Cache service với TTL support
 - Health check cho Redis
+- Tenant-aware cache keys (KPI-029)
 
 CP09: Caching & Performance
+KPI-029: Tenant Isolation cho cache
 """
 
 import os
@@ -100,3 +102,32 @@ async def close_redis_connections() -> None:
     if _connection_pool:
         _connection_pool.disconnect()
         _connection_pool = None
+
+
+# ============================================================================
+# Tenant Isolation - KPI-029
+# ============================================================================
+
+def get_key_with_tenant(key: str, tenant_id: Optional[str] = None) -> str:
+    """
+    Thêm tenant prefix vào cache key cho tenant isolation.
+
+    KPI-029: Tenant Isolation - mỗi tenant có cache riêng.
+    Format: {tenant_id}:{key}
+
+    Args:
+        key: Cache key gốc
+        tenant_id: Tenant ID (optional). Nếu None, không thêm prefix.
+
+    Returns:
+        Cache key với tenant prefix (nếu có tenant_id)
+
+    Example:
+        >>> get_key_with_tenant("user:123", "tenant-a")
+        'tenant-a:user:123'
+        >>> get_key_with_tenant("user:123")
+        'user:123'
+    """
+    if tenant_id:
+        return f"{tenant_id}:{key}"
+    return key

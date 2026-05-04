@@ -5,15 +5,17 @@ Cung cấp các cache strategies:
 - Read-through: Load from cache, fallback to DB
 - Write-through: Write to DB then cache
 - Cache-aside: Manual cache management
+- Tenant-aware caching (KPI-029)
 
 CP09: Caching & Performance
+KPI-029: Tenant Isolation cho cache
 """
 
 import json
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Optional, TypeVar
 
-from .redis import get_redis
+from .redis import get_redis, get_key_with_tenant
 
 T = TypeVar("T")
 
@@ -26,18 +28,40 @@ class CacheStrategy(ABC):
     Abstract base class cho cache strategies.
 
     Cung cấp interface thống nhất cho các strategies.
+    KPI-029: Support tenant isolation qua tenant_id parameter.
     """
 
-    def __init__(self, prefix: str = "cache:", ttl: int = DEFAULT_TTL) -> None:
+    def __init__(
+        self,
+        prefix: str = "cache:",
+        ttl: int = DEFAULT_TTL,
+        tenant_id: Optional[str] = None,
+    ) -> None:
         """
         Khởi tạo cache strategy.
 
         Args:
             prefix: Cache key prefix
             ttl: Default TTL (giây)
+            tenant_id: Tenant ID cho tenant isolation (optional)
         """
         self.prefix = prefix
         self.ttl = ttl
+        self.tenant_id = tenant_id
+
+    def _get_tenant_key(self, key: str) -> str:
+        """
+        Tạo cache key với tenant prefix.
+
+        KPI-029: Tenant Isolation - mỗi tenant có cache riêng.
+
+        Args:
+            key: Cache key gốc
+
+        Returns:
+            Cache key với tenant prefix (nếu có tenant_id)
+        """
+        return get_key_with_tenant(f"{self.prefix}{key}", self.tenant_id)
 
     @abstractmethod
     async def get(self, key: str, loader: Callable[[], Any]) -> Any:
@@ -89,6 +113,8 @@ class ReadThroughStrategy(CacheStrategy):
         """
         Get với automatic loading.
 
+        KPI-029: Tenant isolation - lấy cache theo tenant_id.
+
         Args:
             key: Cache key
             loader: Function để load value
@@ -97,7 +123,7 @@ class ReadThroughStrategy(CacheStrategy):
             Cached hoặc loaded value
         """
         redis = get_redis()
-        full_key = f"{self.prefix}{key}"
+        full_key = self._get_tenant_key(key)
 
         # Try get from cache
         cached = await redis.get(full_key)
@@ -121,14 +147,24 @@ class ReadThroughStrategy(CacheStrategy):
         return value
 
     async def set(self, key: str, value: Any) -> None:
-        """Set value vào cache."""
+        """
+        Set value vào cache với tenant prefix.
+
+        KPI-029: Tenant isolation - lưu cache theo tenant_id.
+        """
         redis = get_redis()
-        await redis.setex(f"{self.prefix}{key}", self.ttl, json.dumps(value, default=str))
+        full_key = self._get_tenant_key(key)
+        await redis.setex(full_key, self.ttl, json.dumps(value, default=str))
 
     async def delete(self, key: str) -> bool:
-        """Delete value từ cache."""
+        """
+        Delete value từ cache với tenant prefix.
+
+        KPI-029: Tenant isolation - xóa cache theo tenant_id.
+        """
         redis = get_redis()
-        deleted = await redis.delete(f"{self.prefix}{key}")
+        full_key = self._get_tenant_key(key)
+        deleted = await redis.delete(full_key)
         return deleted > 0
 
 
@@ -147,21 +183,29 @@ class WriteThroughStrategy(CacheStrategy):
         """
         Write-through: Write to cache after DB.
 
+        KPI-029: Tenant isolation - lưu cache theo tenant_id.
+
         Usage:
             # Trong repository:
             async def create(self, data: dict) -> Entity:
                 # Write to DB
                 entity = await db.insert(data)
-                # Write to cache
+                # Write to cache với tenant
                 await self.cache.set(f"entity:{entity.id}", entity)
         """
         redis = get_redis()
-        await redis.setex(f"{self.prefix}{key}", self.ttl, json.dumps(value, default=str))
+        full_key = self._get_tenant_key(key)
+        await redis.setex(full_key, self.ttl, json.dumps(value, default=str))
 
     async def delete(self, key: str) -> bool:
-        """Delete value từ cache."""
+        """
+        Delete value từ cache với tenant prefix.
+
+        KPI-029: Tenant isolation - xóa cache theo tenant_id.
+        """
         redis = get_redis()
-        deleted = await redis.delete(f"{self.prefix}{key}")
+        full_key = self._get_tenant_key(key)
+        deleted = await redis.delete(full_key)
         return deleted > 0
 
 
@@ -176,10 +220,13 @@ class CacheAsideStrategy(CacheStrategy):
         """
         Get với manual cache management.
 
+        KPI-029: Tenant isolation - lấy cache theo tenant_id.
+
         Không tự động cache - caller phải gọi set() sau khi load.
         """
         redis = get_redis()
-        cached = await redis.get(f"{self.prefix}{key}")
+        full_key = self._get_tenant_key(key)
+        cached = await redis.get(full_key)
 
         if cached is not None:
             return json.loads(cached)
@@ -188,13 +235,23 @@ class CacheAsideStrategy(CacheStrategy):
         return None
 
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
-        """Set value vào cache."""
+        """
+        Set value vào cache với tenant prefix.
+
+        KPI-029: Tenant isolation - lưu cache theo tenant_id.
+        """
         redis = get_redis()
         actual_ttl = ttl if ttl is not None else self.ttl
-        await redis.setex(f"{self.prefix}{key}", actual_ttl, json.dumps(value, default=str))
+        full_key = self._get_tenant_key(key)
+        await redis.setex(full_key, actual_ttl, json.dumps(value, default=str))
 
     async def delete(self, key: str) -> bool:
-        """Delete value từ cache."""
+        """
+        Delete value từ cache với tenant prefix.
+
+        KPI-029: Tenant isolation - xóa cache theo tenant_id.
+        """
         redis = get_redis()
-        deleted = await redis.delete(f"{self.prefix}{key}")
+        full_key = self._get_tenant_key(key)
+        deleted = await redis.delete(full_key)
         return deleted > 0

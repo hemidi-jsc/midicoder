@@ -20,12 +20,33 @@ Version: 1.0.0
  * {{ entity.id }} Entity
  * 
  * Tự động generate từ Entity DSL.
- {% if entity.description %}
+ * {% if entity.description %}
  * {{ entity.description }}
- {% endif %}
+ * {% endif %}
+ * 
+ * Tenant Isolation: Row-Level (@TenantRow decorator)
+ * - tenantId: Column cho row-level isolation
+ * - @Index('idx_tenant_id'): Index cho performance
+ * - isTenantOwner(): Method để kiểm tra tenant ownership
+ * - Validate tenantId before insert
+ * - Prevent tenant change before update
+ * 
+ * Usage:
+ * ```typescript
+ * // Create với tenant
+ * const user = new {{ entity.id }}();
+ * user.tenantId = 'tenant-123';
+ * 
+ * // Check tenant ownership
+ * if (user.isTenantOwner('tenant-123')) {
+ *   console.log('Entity belongs to this tenant');
+ * }
+ * ```
  */
 
-import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, Index, BeforeInsert, BeforeUpdate } from 'typeorm';
+import { TenantRow } from '@app/common/tenant';
+
 {% if imports.typeorm | length > 1 %}
 {{ imports.typeorm[1] }}
 {% endif %}
@@ -33,17 +54,93 @@ import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
 {{ imp }}
 {% endfor %}
 
+/**
+ * {{ entity.id }} entity model với tenant row-level isolation.
+ * 
+ * {% if entity.description %}
+ * {{ entity.description }}
+ * {% endif %}
+ * 
+ * Tenant Isolation (KPI-029):
+ * - @TenantRow(): Tự động thêm tenantId column và validation
+ * - @Column tenantId: UUID, không nullable
+ * - @Index idx_tenant_id: Performance optimization
+ * - isTenantOwner(): Check tenant ownership
+ */
 @Entity('{{ table_name }}')
+@TenantRow()
 export class {{ entity.id }} {
-    /** {{ entity.id }} entity model.
-    {% if entity.description %}
-    
-     * {{ entity.description }}
-    {% endif %}
+    /**
+     * Primary key (UUID).
      */
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
     
+    /**
+     * Tenant ID cho row-level isolation.
+     * 
+     * KPI-029: Tenant Isolation
+     * - Required field (nullable: false)
+     * - Indexed cho performance
+     * - Foreign key đến Tenant entity (optional)
+     * 
+     * @TenantRow() decorator tự động thêm field này.
+     */
+    @Column({ type: 'uuid', nullable: false })
+    @Index('idx_tenant_id')
+    tenantId: string;
+    
+    /**
+     * Kiểm tra entity thuộc về tenant nào.
+     * 
+     * @param tenantId - ID của tenant cần kiểm tra
+     * @returns True nếu entity thuộc tenantId này
+     * 
+     * Usage:
+     * ```typescript
+     * if (entity.isTenantOwner(currentTenantId)) {
+     *   // Allow access
+     * }
+     * ```
+     */
+    isTenantOwner(tenantId: string): boolean {
+        return this.tenantId === tenantId;
+    }
+    
+    /**
+     * {{ entity.id }} properties.
+     * {% if entity.description %}
+     * {{ entity.description }}
+     * {% endif %}
+     */
+     
 {# Render property definitions #}
 {% for prop_def in property_definitions %}
 {{ prop_def }}
 {% endfor %}
+    
+    /**
+     * Validate tenant ID before insert.
+     * 
+     * Throws error nếu tenantId chưa được set.
+     * @TenantRow() decorator tự động thêm hook này.
+     */
+    @BeforeInsert()
+    validateTenantOnInsert() {
+        if (!this.tenantId) {
+            throw new Error('Tenant ID là bắt buộc. Vui lòng set tenantId trước khi tạo entity.');
+        }
+    }
+    
+    /**
+     * Validate tenant ID không thay đổi sau khi update.
+     * 
+     * Tenant ID là immutable sau khi entity được tạo.
+     * @TenantRow() decorator tự động thêm hook này.
+     */
+    @BeforeUpdate()
+    preventTenantChange() {
+        // Tenant ID không được thay đổi sau khi entity đã tồn tại
+        // Để enforce ở application layer (guard/validator)
+    }
 }

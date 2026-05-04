@@ -8,10 +8,11 @@ Module này cung cấp:
 - Load/reload configuration
 
 CP06: API Gateway & Service Mesh
+KPI-029: Tenant Isolation - Tenant-specific routes và backends
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 class RouteConfig:
     """
     RouteConfig - Cấu hình route.
+    
+    KPI-029: tenant_ids cho tenant-specific routing.
     
     Attributes:
         id: Route ID
@@ -34,6 +37,7 @@ class RouteConfig:
         weight: Weight cho load balancing
         priority: Priority cho route matching
         enabled: Enabled flag
+        tenant_ids: KPI-029: Tenant IDs cho route này (None = global)
     """
     id: str
     name: str
@@ -47,6 +51,7 @@ class RouteConfig:
     weight: int = 1
     priority: int = 0
     enabled: bool = True
+    tenant_ids: Optional[List[str]] = None  # KPI-029: Tenant IDs (None = global)
 
 
 @dataclass
@@ -54,18 +59,22 @@ class BackendConfig:
     """
     BackendConfig - Cấu hình backend.
     
+    KPI-029: tenant_ids cho tenant-specific backends.
+    
     Attributes:
         id: Backend ID
         name: Backend name
         url: Backend URL
         health_path: Health check path
         enabled: Enabled flag
+        tenant_ids: KPI-029: Tenant IDs cho backend này
     """
     id: str
     name: str
     url: str
     health_path: str = "/health"
     enabled: bool = True
+    tenant_ids: Optional[List[str]] = None  # KPI-029: Tenant IDs
 
 
 class RouteConfigManager:
@@ -78,6 +87,8 @@ class RouteConfigManager:
     3. Reload configuration
     4. Validate routes
     
+    KPI-029: Support tenant-specific routing.
+    
     Attributes:
         routes: Danh sách routes
         backends: Danh sách backends
@@ -87,6 +98,9 @@ class RouteConfigManager:
         """Khởi tạo RouteConfigManager."""
         self.routes: List[RouteConfig] = []
         self.backends: List[BackendConfig] = []
+        # KPI-029: Tenant-specific routes cache
+        self.tenant_routes: Dict[str, List[RouteConfig]] = {}
+        self.tenant_backends: Dict[str, List[BackendConfig]] = {}
     
     async def load(self):
         """
@@ -138,19 +152,50 @@ class RouteConfigManager:
         
         logger.info(f"Loaded {len(self.routes)} routes and {len(self.backends)} backends")
     
-    def find_route(self, path: str, method: str) -> Optional[RouteConfig]:
+    def find_route(self, path: str, method: str, tenant_id: Optional[str] = None) -> Optional[RouteConfig]:
         """
         Find route cho request.
+        
+        KPI-029: Support tenant-specific route matching.
         
         Args:
             path: Request path
             method: HTTP method
+            tenant_id: KPI-029: Tenant ID cho tenant-specific routing
             
         Returns:
             Matching route hoặc None
         """
+        # KPI-029: First, try tenant-specific routes
+        if tenant_id:
+            for route in self.routes:
+                if not route.enabled:
+                    continue
+                
+                # KPI-029: Check nếu route là tenant-specific và match tenant_id
+                if route.tenant_ids is not None and tenant_id not in route.tenant_ids:
+                    continue
+                
+                # Method matching
+                if method not in route.methods:
+                    continue
+                
+                # Path matching
+                for route_path in route.paths:
+                    if route_path.endswith("/*"):
+                        prefix = route_path[:-1]
+                        if path.startswith(prefix):
+                            return route
+                    elif route_path == path:
+                        return route
+        
+        # Global routes (no tenant filter)
         for route in self.routes:
             if not route.enabled:
+                continue
+            
+            # KPI-029: Skip tenant-specific routes if tenant_id provided
+            if tenant_id and route.tenant_ids is not None:
                 continue
             
             # Method matching
@@ -193,20 +238,44 @@ class RouteConfigManager:
         await self.load()
         logger.info("Route configuration reloaded")
     
-    def get_backend(self, backend_id: str) -> Optional[BackendConfig]:
+    def get_backend(self, backend_id: str, tenant_id: Optional[str] = None) -> Optional[BackendConfig]:
         """
         Get backend by ID.
         
+        KPI-029: Support tenant-specific backend resolution.
+        
         Args:
             backend_id: Backend ID
+            tenant_id: KPI-029: Tenant ID cho tenant-specific backend
             
         Returns:
             Backend config hoặc None
         """
+        # KPI-029: First, try tenant-specific backend
+        if tenant_id:
+            for backend in self.backends:
+                if backend.id == backend_id and backend.enabled:
+                    if backend.tenant_ids is None or tenant_id in backend.tenant_ids:
+                        return backend
+        
+        # Global backend (no tenant filter)
         for backend in self.backends:
             if backend.id == backend_id and backend.enabled:
-                return backend
+                if backend.tenant_ids is None:
+                    return backend
         return None
+    
+    def add_tenant_backend(self, tenant_id: str, backend: BackendConfig):
+        """
+        KPI-029: Add tenant-specific backend.
+        
+        Args:
+            tenant_id: Tenant ID
+            backend: Backend config
+        """
+        backend.tenant_ids = [tenant_id]
+        self.backends.append(backend)
+        logger.info(f"Added tenant {tenant_id} backend: {backend.id}")
     
     def add_route(self, route: RouteConfig):
         """

@@ -4,6 +4,7 @@
  * Module này cung cấp EventPublisher để publish events.
  * Có thể mở rộng để publish sang Kafka, RabbitMQ, SQS, v.v.
  * 
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant_id trong events
  * CP05: Event-Driven Architecture
  */
 
@@ -47,8 +48,11 @@ export class EventPublisherService {
   /**
    * Publish event với event_id và payload.
    * 
+   * KPI-029: Hỗ trợ tenant_id để isolate events theo tenant.
+   * 
    * @param event_id - ID của event type (ví dụ: "order.created")
    * @param payload - Dữ liệu event
+   * @param tenant_id - ID của tenant (KPI-029: tenant isolation)
    * @param topic - Topic để publish (default: "events")
    * @param correlation_id - ID để trace event (optional, auto-generate nếu không có)
    * @param metadata - Metadata bổ sung (optional)
@@ -57,6 +61,7 @@ export class EventPublisherService {
   publishEvent(
     event_id: string,
     payload: Record<string, any>,
+    tenant_id?: string,  // KPI-029: Tenant isolation
     topic: string = 'events',
     correlation_id?: string,
     metadata?: Record<string, any>,
@@ -67,6 +72,7 @@ export class EventPublisherService {
     const message: EventMessage = {
       event_id,
       payload,
+      tenant_id,  // KPI-029: Tenant isolation
       correlation_id: correlationId,
       metadata,
       topic,
@@ -82,9 +88,12 @@ export class EventPublisherService {
    * 
    * Helper method để publish domain events với standard metadata.
    * 
+   * KPI-029: Hỗ trợ tenant_id để isolate domain events theo tenant.
+   * 
    * @param aggregate_type - Loại aggregate (ví dụ: "Order")
    * @param event_name - Tên event (ví dụ: "Created")
    * @param aggregate_id - ID của aggregate
+   * @param tenant_id - ID của tenant (KPI-029: tenant isolation)
    * @param payload - Dữ liệu event
    * @param topic - Topic để publish (optional)
    */
@@ -92,7 +101,8 @@ export class EventPublisherService {
     aggregate_type: string,
     event_name: string,
     aggregate_id: string,
-    payload: Record<string, any>,
+    tenant_id?: string,  // KPI-029: Tenant isolation
+    payload: Record<string, any> = {},
     topic?: string,
   ): EventMessage {
     const event_id = `${aggregate_type.toLowerCase()}.${event_name.toLowerCase()}`;
@@ -105,6 +115,7 @@ export class EventPublisherService {
     return this.publishEvent(
       event_id,
       { aggregate_id, ...payload },
+      tenant_id,  // KPI-029: Tenant isolation
       topic || `${aggregate_type.toLowerCase()}s`,
       undefined,
       metadata,

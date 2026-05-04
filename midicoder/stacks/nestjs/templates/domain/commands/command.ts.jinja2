@@ -3,34 +3,46 @@
  * 
  * Command class cho {{ command.id }}.
  * 
+ * KPI-029: Tenant Isolation - tenantId trong command.
+ * 
  * @author Midicoder Auto-generated
  */
 
 export class {{ command.id }} {
     /**
      * Command class cho {{ command.description }}.
+     * 
+     * KPI-029: tenantId được dùng để isolate command execution per tenant.
      */
 {% for input_field in command.input %}
     /** {{ input_field.name|replace('_', ' ') }} */
     readonly {{ input_field.name }}: string | string[] | number | undefined;
 {% endfor %}
+    // KPI-029: Tenant isolation
+    readonly tenantId?: string;  // KPI-029: Tenant ID cho multi-tenant
 
     constructor(params: Partial<{{ command.id }}> = {}) {
 {% for input_field in command.input %}
         this.{{ input_field.name }} = params.{{ input_field.name }};
 {% endfor %}
+        // KPI-029: Set tenantId
+        this.tenantId = params.tenantId;
     }
 
     toObject(): Record<string, unknown> {
         /**
          * Chuyển command sang object.
          * 
-         * @returns Object representation của command
+         * KPI-029: Bao gồm tenantId trong object.
+         * 
+         * @returns Object representation của command với tenantId
          */
         return {
 {% for input_field in command.input %}
             {{ input_field.name }}: this.{{ input_field.name }},
 {% endfor %}
+            // KPI-029: Include tenantId
+            tenantId: this.tenantId,
         };
     }
 
@@ -38,9 +50,32 @@ export class {{ command.id }} {
         /**
          * Tạo command từ object.
          * 
-         * @param data Object chứa command data
+         * KPI-029: Bao gồm tenantId nếu có trong data.
+         * 
+         * @param data Object chứa command data với tenantId
          * @returns {{ command.id }} instance
          */
         return new {{ command.id }}(data as Partial<{{ command.id }}>);
+    }
+
+    /**
+     * KPI-029: Get tenantId của command.
+     * 
+     * @returns Tenant ID nếu có, undefined nếu không
+     */
+    getTenantId(): string | undefined {
+        return this.tenantId;
+    }
+
+    /**
+     * KPI-029: Set tenantId cho command.
+     * 
+     * @param tenantId Tenant ID để set
+     * @returns Command với tenantId mới (immutable)
+     */
+    withTenantId(tenantId: string): {{ command.id }} {
+        const newCommand = new {{ command.id }}(this.toObject());
+        newCommand.tenantId = tenantId;
+        return newCommand;
     }
 }

@@ -7,10 +7,13 @@ Cung cấp:
 - Dependency injection cho FastAPI
 
 CP08: Database & Data Access
+KPI-029: Tenant Isolation - tenant context trong database session
 """
 
 import os
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from typing import Optional
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -23,6 +26,11 @@ from sqlalchemy.orm import DeclarativeBase
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/gateway",
+)
+
+# KPI-029: Tenant context variable
+_current_tenant_id: ContextVar[Optional[str]] = ContextVar(
+    "tenant_id", default=None
 )
 
 # Connection Pool Settings - cấu hình connection pooling
@@ -53,11 +61,43 @@ async_session_factory = async_sessionmaker(
 )
 
 
+# KPI-029: Tenant context helpers
+def set_tenant_context(tenant_id: str) -> None:
+    """
+    KPI-029: Set tenant context cho current request.
+
+    Args:
+        tenant_id: Tenant ID để set
+    """
+    _current_tenant_id.set(tenant_id)
+
+
+def get_tenant_context() -> Optional[str]:
+    """
+    KPI-029: Get tenant context từ current request.
+
+    Returns:
+        Tenant ID nếu có, None nếu không
+    """
+    return _current_tenant_id.get()
+
+
+def clear_tenant_context() -> None:
+    """
+    KPI-029: Clear tenant context.
+
+    Gọi sau khi request hoàn thành.
+    """
+    _current_tenant_id.set(None)
+
+
 # Dependency cho FastAPI - cung cấp database session
 @asynccontextmanager
 async def get_db():
     """
     Dependency cho database session.
+
+    KPI-029: Auto-apply tenant filter nếu có tenant context.
 
     Usage trong FastAPI:
         @router.get("/items")
@@ -69,6 +109,9 @@ async def get_db():
     """
     async with async_session_factory() as session:
         try:
+            # KPI-029: Get tenant_id từ context
+            tenant_id = get_tenant_context()
+            session.state.tenant_id = tenant_id if tenant_id else None
             yield session
             await session.commit()
         except Exception:
@@ -76,6 +119,41 @@ async def get_db():
             raise
         finally:
             await session.close()
+            # KPI-029: Clear tenant context sau khi request hoàn thành
+            clear_tenant_context()
+
+
+@asynccontextmanager
+async def get_db_for_tenant(tenant_id: str):
+    """
+    KPI-029: Dependency cho database session với explicit tenant_id.
+
+    Usage:
+        @router.get("/tenants/{tenant_id}/items")
+        async def list_items(
+            tenant_id: str,
+            db: AsyncSession = Depends(get_db_for_tenant(tenant_id))
+        ):
+            ...
+
+    Args:
+        tenant_id: Tenant ID
+
+    Yields:
+        AsyncSession với tenant context
+    """
+    set_tenant_context(tenant_id)
+    async with async_session_factory() as session:
+        try:
+            session.state.tenant_id = tenant_id
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+            clear_tenant_context()
 
 
 # Base class cho models

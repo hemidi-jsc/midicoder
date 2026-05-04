@@ -7,6 +7,8 @@
  * - Business rule validation (domain-specific rules)
  * - Formula validation (quantity * price = total)
  * 
+ * KPI-029: Tenant Isolation - tenantId validation trong validator.
+ * 
  * @author Midicoder Auto-generated
  */
 
@@ -53,13 +55,16 @@ export class {{ command.id }}Validator {
     /**
      * Validate command với đầy đủ validation rules.
      * 
-     * Process:
-     * 1. Field-level validation (required, pattern, min/max)
-     * 2. Cross-field validation (end_date > start_date, etc.)
-     * 3. Business rule validation (domain-specific)
-     * 4. Return ValidationResult
+     * KPI-029: Include tenantId validation.
      * 
-     * @param command Command instance
+     * Process:
+     * 1. KPI-029: Tenant ID validation
+     * 2. Field-level validation (required, pattern, min/max)
+     * 3. Cross-field validation (end_date > start_date, etc.)
+     * 4. Business rule validation (domain-specific)
+     * 5. Return ValidationResult
+     * 
+     * @param command Command instance với tenantId
      * @returns ValidationResult (is_valid=True nếu valid)
      * @throws ValidationError Nếu input không hợp lệ
 {% for error in command.errors %}
@@ -68,6 +73,9 @@ export class {{ command.id }}Validator {
      */
     async validate(command: {{ command.id }}): Promise<ValidationResult> {
         const errors: string[] = [];
+
+        // KPI-029: Bước 0: Tenant ID validation
+        this._validateTenant(command, errors);
 
         // Bước 1: Field-level validation
         this._validateFields(command, errors);
@@ -88,6 +96,39 @@ export class {{ command.id }}Validator {
         }
 
         return { isValid: true };
+    }
+
+    /**
+     * KPI-029: Validate tenant ID.
+     * 
+     * Checks:
+     * - tenantId không được empty nếu command yêu cầu multi-tenant
+     * - tenantId định dạng hợp lệ (UUID hoặc string)
+     * 
+     * @param command Command instance
+     * @param errors Error list to append to
+     */
+    private _validateTenant(command: {{ command.id }}, errors: string[]): void {
+        // KPI-029: Nếu command có tenantId field
+        if (command.tenantId != null && command.tenantId) {
+            // Validate tenantId format (should be UUID or valid string)
+            const tenantId = String(command.tenantId);
+            
+            // Check empty
+            if (tenantId.trim() === '') {
+                errors.push('KPI-029: Tenant ID không được để trống');
+                return;
+            }
+            
+            // Validate UUID format (optional, flexible)
+            const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+            if (!uuidPattern.test(tenantId) && tenantId.length < 3) {
+                errors.push('KPI-029: Tenant ID định dạng không hợp lệ');
+            }
+        } else if (command.tenantId === undefined) {
+            // KPI-029: Warning - tenantId nên được set cho multi-tenant
+            // Not an error, will be handled by guards
+        }
     }
 
     /**

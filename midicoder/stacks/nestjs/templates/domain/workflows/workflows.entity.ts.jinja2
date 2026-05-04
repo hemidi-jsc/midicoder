@@ -1,23 +1,44 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+/**
+ * WorkflowEntity - Entity cho workflow instances.
+ * 
+ * KPI-029: Tenant Isolation - Each workflow instance is scoped to a tenant.
+ * CP04: Workflow Engine
+ */
 
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+
+/**
+ * WorkflowEntity - Snapshot của current workflow state.
+ * 
+ * KPI-029: Tenant Isolation - tenantId column ensures workflow instances are tenant-scoped.
+ * 
+ * Mỗi entity có một workflow instance cho mỗi workflow type.
+ */
 @Entity('workflow_instances')
 export class WorkflowEntity {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
     @Column({ type: 'varchar', length: 255 })
+    @Index()
     workflowName: string;
 
     @Column({ type: 'varchar', length: 255 })
+    @Index()
     entityType: string;
 
     @Column({ type: 'uuid' })
+    @Index()
     entityId: string;
 
     @Column({ type: 'varchar', length: 255 })
     currentState: string;
 
+    /**
+     * KPI-029: Tenant ID - Workflow instance là tenant-scoped.
+     */
     @Column({ type: 'uuid' })
+    @Index()
     tenantId: string;
 
     @CreateDateColumn()

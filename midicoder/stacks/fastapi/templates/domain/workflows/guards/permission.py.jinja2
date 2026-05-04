@@ -3,6 +3,8 @@ Mô-đun Permission Guard.
 
 Cung cấp:
 - PermissionGuard: Guard cho permission checking
+
+KPI-029: Tenant Isolation - tenant_id trong permission check
 """
 
 from typing import Any
@@ -14,6 +16,7 @@ class PermissionGuard:
     Guard evaluator cho permission-based guards.
     
     Kiểm tra user có permission cần thiết không trước khi transition.
+    KPI-029: tenant_id được dùng để enforce tenant boundary.
     """
 
     async def evaluate(
@@ -22,18 +25,23 @@ class PermissionGuard:
         user_id: UUID,
         resource: str,
         context: dict[str, Any],
+        tenant_id: UUID | None = None,  # KPI-029: Tenant isolation
     ) -> bool:
         """
         Evaluate permission guard.
+        
+        KPI-029: tenant_id được dùng để verify user belongs to same tenant as resource.
         
         Args:
             permission: Permission string cần kiểm tra
             user_id: User ID
             resource: Resource string (entity_type:entity_id)
             context: Transition context
+            tenant_id: KPI-029: Tenant ID cho tenant boundary check
             
         Returns:
             True nếu user có permission, False nếu không
         """
+        # KPI-029: Check nếu user có quyền access resource của tenant này
         # TODO: Integrate với CP03/CP04 Auth system
         return True

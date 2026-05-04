@@ -7,6 +7,8 @@
  * - Effects execution (19+ effect types)
  * - Error handling with rollback
  * 
+ * KPI-029: Tenant Isolation - tenantId được enforce trong tất cả operations.
+ * 
  * @author Midicoder Auto-generated
  */
 
@@ -16,6 +18,7 @@ import { {{ command.id }}Validator } from './{{ command_snake }}.validator';
 import { {{ command.id }}Guards } from './{{ command_snake }}.guards';
 import { {{ command.id }}Effects } from './{{ command_snake }}.effects';
 import { TransactionManager } from '@midicoder/core/transaction';
+import { TenantGuard } from '@midicoder/core/tenant';
 
 /**
  * Handler cho {{ command.description }}.
@@ -47,6 +50,8 @@ export class {{ command.id }}Handler {
     /**
      * Xử lý command với transaction support.
      * 
+     * KPI-029: Tenant isolation được enforce ở mọi bước.
+     * 
      * Process:
      * 1. Validate input (cross-field, business rules)
      * 2. Check guards (auth, tenant, KYC, AML, HIPAA)
@@ -54,6 +59,12 @@ export class {{ command.id }}Handler {
      * 4. Execute effects (19+ types)
      * 5. Commit/rollback transaction
      * 6. Return result
+     * 
+     * KPI-029: Tenant Flow:
+     * - tenantId được extract từ command hoặc context
+     * - tenantId được verify ở guards
+     * - tenantId được pass đến tất cả effects
+     * - tenant isolation được enforce trong database operations
      * 
      * Transaction Flow:
 {% if transaction_required %}
@@ -65,28 +76,36 @@ export class {{ command.id }}Handler {
      * No transaction - effects execute directly
 {% endif %}
      * 
-     * @param command Command instance
+     * @param command Command instance với tenantId (KPI-029)
      * @param userId User ID (nếu có)
-     * @param tenantId Tenant ID (nếu có)
-     * @returns Result object with success status and data
-     * @throws ValidationError Nếu input không hợp lệ (cross-field validation failed)
-     * @throws PermissionError Nếu không có quyền (auth guard failed)
-     * @throws ValueError Nếu vi phạm tenant isolation
-     * @throws RuntimeError Nếu compliance check failed (KYC/AML/HIPAA)
+     * @param tenantId Tenant ID (nếu có - override command.tenantId)
+     * @returns Result object với success status và data
+     * @throws ValidationError Nếu input không hợp lệ
+     * @throws PermissionError Nếu không có quyền
+     * @throws ValueError Nếu vi phạm tenant isolation (KPI-029)
+     * @throws RuntimeError Nếu compliance check failed
      */
     async handle(
         command: {{ command.id }},
         userId?: string,
         tenantId?: string,
     ): Promise<{ success: boolean; message: string; data: Record<string, unknown> }> {
+        // KPI-029: Get tenantId từ command hoặc context
+        const effectiveTenantId = tenantId || command.getTenantId();
+
         // Bước 1: Validate input (cross-field, business rules)
         const validation = await this.validator.validate(command);
         if (!validation.isValid) {
             throw validation.error;
         }
 
+        // KPI-029: Check nếu tenantId được set
+        if (!effectiveTenantId) {
+            throw new Error('KPI-029: tenantId là bắt buộc cho command này');
+        }
+
         // Bước 2: Check guards (auth, tenant, KYC, AML, HIPAA)
-        await this.guards.check(command, userId, tenantId);
+        await this.guards.check(command, userId, effectiveTenantId);
 
 {% if transaction_required %}
         // Bước 3: Execute với transaction support (ACID)
@@ -95,8 +114,8 @@ export class {{ command.id }}Handler {
             await this.transactionManager.beginTransaction();
 
             try {
-                // Execute effects
-                const result = await this.effects.execute(command, userId, tenantId);
+                // KPI-029: Execute effects với tenantId
+                const result = await this.effects.execute(command, userId, effectiveTenantId);
 
                 // Commit transaction (all effects succeeded)
                 await this.transactionManager.commitTransaction();
@@ -120,7 +139,8 @@ export class {{ command.id }}Handler {
         }
 {% else %}
         // Bước 3: Execute effects (no transaction)
-        const result = await this.effects.execute(command, userId, tenantId);
+        // KPI-029: Execute với tenantId
+        const result = await this.effects.execute(command, userId, effectiveTenantId);
 
         // Bước 4: Return result
         return {
@@ -129,5 +149,23 @@ export class {{ command.id }}Handler {
             data: result,
         };
 {% endif %}
+    }
+
+    /**
+     * KPI-029: Handle command với auto tenantId extraction.
+     * 
+     * Tự động extract tenantId từ request context nếu không có trong command.
+     * 
+     * @param command Command instance
+     * @param userId User ID (nếu có)
+     * @returns Result object
+     */
+    async handleWithTenantContext(
+        command: {{ command.id }},
+        userId?: string,
+    ): Promise<{ success: boolean; message: string; data: Record<string, unknown> }> {
+        // KPI-029: Tenant ID sẽ được extract từ request context bởi TenantGuard
+        // TenantGuard sẽ set tenantId trong ExecutionContext
+        return this.handle(command, userId, undefined);
     }
 }

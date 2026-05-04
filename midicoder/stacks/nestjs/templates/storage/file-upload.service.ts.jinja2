@@ -6,6 +6,7 @@
  * - Validation
  * - S3 integration
  *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant-specific folder prefix
  * CP11: File Storage & Media
  */
 
@@ -25,8 +26,14 @@ const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024; // 10MB
 
+// KPI-029: Tenant folder prefix settings
+const STORAGE_TENANT_PREFIX = process.env.STORAGE_TENANT_PREFIX || "tenant";
+const STORAGE_TENANT_ISOLATION = (process.env.STORAGE_TENANT_ISOLATION || "true").toLowerCase() === "true";
+
 /**
  * File Upload Service.
+ *
+ * KPI-029: Hỗ trợ tenant-specific folder prefix để isolate files theo tenant.
  */
 @Injectable()
 export class FileUploadService {
@@ -34,21 +41,41 @@ export class FileUploadService {
    * Constructor.
    *
    * @param s3Client - AWS S3 client
+   * @param tenantId KPI-029: Tenant ID cho tenant-specific operations
    */
   constructor(
     @Inject("S3_CLIENT")
     private readonly s3Client: AWS.S3Client,
+    private readonly tenantId?: string,
   ) {}
 
   private readonly bucket = process.env.S3_BUCKET || "uploads";
 
   /**
+   * KPI-029: Tạo folder path với tenant prefix.
+   *
+   * @param folder - Folder gốc
+   * @param tenantId - Tenant ID (override instance tenantId)
+   * @returns Folder path với tenant prefix
+   */
+  private getTenantFolder(folder: string, tenantId?: string): string {
+    const effectiveTenantId = tenantId || this.tenantId;
+    if (STORAGE_TENANT_ISOLATION && effectiveTenantId) {
+      return `${STORAGE_TENANT_PREFIX}/${effectiveTenantId}/${folder}`;
+    }
+    return folder;
+  }
+
+  /**
    * Upload image file.
+   *
+   * KPI-029: Support tenant-specific folder prefix.
    *
    * @param buffer - File buffer
    * @param filename - Original filename
    * @param contentType - Content type
    * @param folder - Storage folder
+   * @param tenantId KPI-029: Tenant ID (optional)
    * @returns Upload result
    */
   async uploadImage(
@@ -56,6 +83,7 @@ export class FileUploadService {
     filename: string,
     contentType: string,
     folder: string = "images",
+    tenantId?: string,
   ): Promise<{ key: string; url: string; size: number }> {
     if (!ALLOWED_IMAGE_TYPES.includes(contentType)) {
       throw new Error(`Unsupported image type: ${contentType}`);
@@ -65,8 +93,10 @@ export class FileUploadService {
       throw new Error(`Image too large. Max size: ${MAX_IMAGE_SIZE / 1024 / 1024}MB`);
     }
 
+    // KPI-029: Use tenant-specific folder
+    const tenantFolder = this.getTenantFolder(folder, tenantId);
     const ext = filename.split(".").pop() || "jpg";
-    const key = `${folder}/${uuidv4()}.${ext}`;
+    const key = `${tenantFolder}/${uuidv4()}.${ext}`;
 
     await this.s3Client.send(
       new PutObjectCommand({
@@ -85,10 +115,13 @@ export class FileUploadService {
   /**
    * Upload video file.
    *
+   * KPI-029: Support tenant-specific folder prefix.
+   *
    * @param buffer - File buffer
    * @param filename - Original filename
    * @param contentType - Content type
    * @param folder - Storage folder
+   * @param tenantId KPI-029: Tenant ID (optional)
    * @returns Upload result
    */
   async uploadVideo(
@@ -96,6 +129,7 @@ export class FileUploadService {
     filename: string,
     contentType: string,
     folder: string = "videos",
+    tenantId?: string,
   ): Promise<{ key: string; url: string; size: number }> {
     if (!ALLOWED_VIDEO_TYPES.includes(contentType)) {
       throw new Error(`Unsupported video type: ${contentType}`);
@@ -105,8 +139,10 @@ export class FileUploadService {
       throw new Error(`Video too large. Max size: ${MAX_VIDEO_SIZE / 1024 / 1024}MB`);
     }
 
+    // KPI-029: Use tenant-specific folder
+    const tenantFolder = this.getTenantFolder(folder, tenantId);
     const ext = filename.split(".").pop() || "mp4";
-    const key = `${folder}/${uuidv4()}.${ext}`;
+    const key = `${tenantFolder}/${uuidv4()}.${ext}`;
 
     await this.s3Client.send(
       new PutObjectCommand({
@@ -125,10 +161,13 @@ export class FileUploadService {
   /**
    * Upload document file.
    *
+   * KPI-029: Support tenant-specific folder prefix.
+   *
    * @param buffer - File buffer
    * @param filename - Original filename
    * @param contentType - Content type
    * @param folder - Storage folder
+   * @param tenantId KPI-029: Tenant ID (optional)
    * @returns Upload result
    */
   async uploadDocument(
@@ -136,6 +175,7 @@ export class FileUploadService {
     filename: string,
     contentType: string,
     folder: string = "documents",
+    tenantId?: string,
   ): Promise<{ key: string; url: string; size: number }> {
     if (!ALLOWED_DOCUMENT_TYPES.includes(contentType)) {
       throw new Error(`Unsupported document type: ${contentType}`);
@@ -145,8 +185,10 @@ export class FileUploadService {
       throw new Error(`Document too large. Max size: ${MAX_DOCUMENT_SIZE / 1024 / 1024}MB`);
     }
 
+    // KPI-029: Use tenant-specific folder
+    const tenantFolder = this.getTenantFolder(folder, tenantId);
     const ext = filename.split(".").pop() || "pdf";
-    const key = `${folder}/${uuidv4()}.${ext}`;
+    const key = `${tenantFolder}/${uuidv4()}.${ext}`;
 
     await this.s3Client.send(
       new PutObjectCommand({
@@ -209,16 +251,46 @@ export class FileUploadService {
   /**
    * Generate presigned URL for file.
    *
+   * KPI-029: Add tenant prefix if key doesn't have one.
+   *
    * @param key - File key
    * @param expiration - URL validity in seconds
+   * @param tenantId KPI-029: Tenant ID (optional)
    * @returns Presigned URL
    */
-  async getPresignedUrl(key: string, expiration: number = 3600): Promise<string> {
+  async getPresignedUrl(key: string, expiration: number = 3600, tenantId?: string): Promise<string> {
+    // KPI-029: Add tenant prefix if not present
+    const effectiveTenantId = tenantId || this.tenantId;
+    let targetKey = key;
+    if (STORAGE_TENANT_ISOLATION && effectiveTenantId && !key.startsWith(`${STORAGE_TENANT_PREFIX}/`)) {
+      targetKey = `${STORAGE_TENANT_PREFIX}/${effectiveTenantId}/${key}`;
+    }
+
     const command = new GetObjectCommand({
       Bucket: this.bucket,
-      Key: key,
+      Key: targetKey,
     });
 
     return getSignedUrl(this.s3Client, command, { expiresIn: expiration });
+  }
+
+  /**
+   * KPI-029: Delete all files for a tenant.
+   *
+   * @param tenantId - Tenant ID
+   * @param folder - Specific folder (optional, if undefined deletes all folders)
+   * @returns Deletion result
+   */
+  async deleteTenantFiles(tenantId: string, folder?: string): Promise<{ tenantId: string; prefix: string; status: string }> {
+    const prefix = folder
+      ? `${STORAGE_TENANT_PREFIX}/${tenantId}/${folder}`
+      : `${STORAGE_TENANT_PREFIX}/${tenantId}`;
+
+    // TODO: Implement bulk delete with S3 listObjectsV2 and deleteObjects
+    return {
+      tenantId,
+      prefix,
+      status: "pending_implementation",
+    };
   }
 }

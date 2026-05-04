@@ -7,6 +7,7 @@
  * - Distributed rate limiting (Redis)
  * - Local rate limiting (Memory)
  * 
+ * KPI-029: Tenant Isolation - Support tenant-specific rate limiting
  * CP06: API Gateway & Service Mesh
  */
 
@@ -16,6 +17,8 @@ import { ThrottlerStorageServiceInterface } from '@nestjs/throttler';
 
 /**
  * RateLimiterConfig - Configuration cho rate limiter.
+ * 
+ * KPI-029: Bao gồm tenant_id cho tenant-specific rate limiting.
  */
 export interface RateLimiterConfig {
   /** Số request tối đa */
@@ -30,6 +33,8 @@ export interface RateLimiterConfig {
   whitelist?: string[];
   /** Blacklist IP addresses */
   blacklist?: string[];
+  /** KPI-029: Tenant ID cho tenant-specific rate limiting */
+  tenantId?: string;
 }
 
 /**
@@ -398,6 +403,8 @@ export const DISTRIBUTED_RATE_LIMITER_PROVIDER: Provider = {
 /**
  * KeyGeneratorProvider - Provider cho custom key generator.
  * 
+ * KPI-029: Support tenant-aware key generation.
+ * 
  * Custom key generator cho rate limiting.
  */
 export const KEY_GENERATOR_PROVIDER: Provider = {
@@ -406,8 +413,19 @@ export const KEY_GENERATOR_PROVIDER: Provider = {
     configService: ConfigService,
   ): ((req: any) => string) => {
     const useIpKey = configService.get('RATE_LIMIT_KEY_BY_IP', true);
+    const useTenantKey = configService.get('RATE_LIMIT_KEY_BY_TENANT', false);
 
     return (req: any): string => {
+      const tenantId = req.headers['x-tenant-id'] || req.user?.tenantId;
+      
+      if (useTenantKey && tenantId) {
+        // KPI-029: Key bao gồm tenant_id để isolate rate limiting theo tenant
+        if (useIpKey) {
+          return `${tenantId}:${req.ip || req.socket?.remoteAddress || 'unknown'}`;
+        }
+        return `${tenantId}:${req.user?.sub || req.ip || 'anonymous'}`;
+      }
+      
       if (useIpKey) {
         // Key bằng IP address
         return req.ip || req.socket?.remoteAddress || 'unknown';
@@ -416,6 +434,65 @@ export const KEY_GENERATOR_PROVIDER: Provider = {
       // Key bằng user ID (nếu authenticated)
       return req.user?.sub || req.ip || 'anonymous';
     };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * KPI-029: TenantAwareKeyGeneratorProvider - Provider cho tenant-aware key generator.
+ * 
+ * Key generator riêng cho tenant-specific rate limiting.
+ */
+export const TENANT_AWARE_KEY_GENERATOR_PROVIDER: Provider = {
+  provide: 'TENANT_AWARE_KEY_GENERATOR',
+  useFactory: (
+    configService: ConfigService,
+  ): ((req: any) => string) => {
+    return (req: any): string => {
+      const tenantId = req.headers['x-tenant-id'] || req.user?.tenantId || 'global';
+      const userId = req.user?.sub || 'anonymous';
+      const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+      
+      // KPI-029: Kết hợp tenant_id, user_id, và IP trong key
+      return `tenant:${tenantId}:user:${userId}:ip:${ip}`;
+    };
+  },
+  inject: [ConfigService],
+};
+
+/**
+ * KPI-029: TenantRateLimitConfigProvider - Provider cho tenant-specific rate limit config.
+ * 
+ * Hỗ trợ cấu hình rate limit riêng cho mỗi tenant.
+ */
+export const TENANT_RATE_LIMIT_CONFIG_PROVIDER: Provider = {
+  provide: 'TENANT_RATE_LIMIT_CONFIG',
+  useFactory: async (
+    configService: ConfigService,
+  ): Promise<Map<string, RateLimiterConfig>> => {
+    const tenantConfigs = new Map<string, RateLimiterConfig>();
+    
+    // KPI-029: Load tenant-specific rate limit configs từ env
+    const envConfig = configService.get<string>('TENANT_RATE_LIMIT_CONFIG');
+    if (envConfig) {
+      try {
+        const parsed = JSON.parse(envConfig);
+        Object.entries(parsed).forEach(([tenantId, config]) => {
+          tenantConfigs.set(tenantId, { ...config, tenantId });
+        });
+      } catch (error) {
+        console.warn('Invalid TENANT_RATE_LIMIT_CONFIG JSON:', error.message);
+      }
+    }
+    
+    // Default config cho tenants không có config riêng
+    tenantConfigs.set('default', {
+      limit: configService.get('RATE_LIMIT_SHORT', 100),
+      ttl: 1000,
+      tenantId: 'default',
+    });
+    
+    return tenantConfigs;
   },
   inject: [ConfigService],
 };

@@ -5,8 +5,10 @@ Cung cấp:
 - SMTP email sending
 - Email templates
 - Async email operations
+- Tenant-specific email settings (KPI-029)
 
 CP12: Notification & Communication
+KPI-029: Tenant Isolation - Multi-tenant email support
 """
 
 import os
@@ -27,20 +29,29 @@ class EmailService:
     """
     Service cho email operations.
 
+    KPI-029: Tenant Isolation - Email service hỗ trợ tenant-specific settings.
+
     Hỗ trợ:
     - Send emails
     - Send templated emails
     - Send bulk emails
+    - Tenant-specific email templates (KPI-029)
     """
 
-    def __init__(self) -> None:
-        """Khởi tạo email service."""
+    def __init__(self, tenant_id: Optional[str] = None) -> None:
+        """
+        Khởi tạo email service.
+
+        Args:
+            tenant_id: Tenant ID cho tenant-specific settings (KPI-029, optional)
+        """
         self.smtp_host = SMTP_HOST
         self.smtp_port = SMTP_PORT
         self.smtp_user = SMTP_USER
         self.smtp_password = SMTP_PASSWORD
         self.use_tls = SMTP_USE_TLS
         self.default_from = DEFAULT_FROM
+        self.tenant_id = tenant_id  # KPI-029: Tenant Isolation
 
     async def send_email(
         self,
@@ -50,9 +61,12 @@ class EmailService:
         from_email: Optional[str] = None,
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
+        tenant_id: Optional[str] = None,
     ) -> bool:
         """
         Gửi email đơn giản.
+
+        KPI-029: Tenant Isolation - Hỗ trợ tenant_id để track email sender.
 
         Args:
             to: Email address người nhận
@@ -61,6 +75,7 @@ class EmailService:
             from_email: Email người gửi (optional)
             cc: CC recipients (optional)
             bcc: BCC recipients (optional)
+            tenant_id: Tenant ID để track email (KPI-029, optional)
 
         Returns:
             True nếu gửi thành công
@@ -94,15 +109,19 @@ class EmailService:
         subject: str,
         html_body: str,
         from_email: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> bool:
         """
         Gửi email HTML.
+
+        KPI-029: Tenant Isolation - Hỗ trợ tenant_id để track email sender.
 
         Args:
             to: Email address người nhận
             subject: Tiêu đề email
             html_body: Nội dung HTML
             from_email: Email người gửi (optional)
+            tenant_id: Tenant ID để track email (KPI-029, optional)
 
         Returns:
             True nếu gửi thành công
@@ -133,19 +152,27 @@ class EmailService:
         template_name: str,
         context: dict,
         subject_template: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> bool:
         """
         Gửi email từ template.
+
+        KPI-029: Tenant Isolation - Template có thể render tenant-specific content.
 
         Args:
             to: Email address người nhận
             template_name: Tên template file
             context: Context cho template
             subject_template: Subject template (optional)
+            tenant_id: Tenant ID để track email (KPI-029, optional)
 
         Returns:
             True nếu gửi thành công
         """
+        # KPI-029: Add tenant_id to context
+        context = context.copy() if context else {}
+        context["tenant_id"] = tenant_id or self.tenant_id
+
         # Load template
         from jinja2 import Environment, FileSystemLoader
 
@@ -161,7 +188,7 @@ class EmailService:
         else:
             subject = context.get("subject", "No Subject")
 
-        return await self.send_html_email(to, subject, html_body)
+        return await self.send_html_email(to, subject, html_body, tenant_id=tenant_id)
 
     async def send_bulk_emails(
         self,

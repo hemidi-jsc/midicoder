@@ -5,7 +5,9 @@
  * - Process jobs from queue
  * - Error handling
  * - Job processing examples
+ * - KPI-029: Tenant context trong background jobs
  *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant_id trong job processing
  * CP13: Background Job & Workflow
  */
 
@@ -14,203 +16,302 @@ import { Process, Processor } from "@nestjs/bull";
 import { Job } from "bull";
 
 /**
- * Worker Service.
+ * Email Worker Service.
  *
- * Process jobs from different queues.
+ * Process email jobs với tenant context support.
+ * 
+ * KPI-029: Extract tenant_id từ job data để isolate email operations.
  */
 @Processor("email")
 @Injectable()
 export class EmailWorkerService {
   /**
-   * Process email jobs.
+   * Process welcome email jobs.
+   *
+   * KPI-029: Support tenant_id trong job data.
    *
    * @param job - Bull job
    * @returns Promise<void>
    */
   @Process("send-welcome-email")
   async processWelcomeEmail(job: Job): Promise<void> {
-    const { userId, email } = job.data;
+    const { userId, email, tenant_id } = job.data;
+    const tenantContext = tenant_id ? ` [Tenant: ${tenant_id}]` : '';
 
     try {
-      // TODO: Implement email sending
-      console.log(`Sending welcome email to ${email} (user: ${userId})`);
-      await this.sendEmail(email, "Welcome", "Xin chào!");
+      console.log(`Sending welcome email to ${email} (user: ${userId})${tenantContext}`);
+      await this.sendEmail(email, "Welcome", "Xin chào!", tenant_id);
     } catch (error) {
-      console.error("Failed to send welcome email:", error);
+      console.error(`Failed to send welcome email${tenantContext}:`, error);
       throw error; // Will retry
     }
   }
 
   @Process("send-password-reset")
   async processPasswordReset(job: Job): Promise<void> {
-    const { userId, email, token } = job.data;
+    const { userId, email, token, tenant_id } = job.data;
+    const tenantContext = tenant_id ? ` [Tenant: ${tenant_id}]` : '';
 
     try {
-      console.log(`Sending password reset to ${email}`);
-      await this.sendEmail(email, "Đặt lại mật khẩu", `Token: ${token}`);
+      console.log(`Sending password reset to ${email}${tenantContext}`);
+      await this.sendEmail(email, "Đặt lại mật khẩu", `Token: ${token}`, tenant_id);
     } catch (error) {
-      console.error("Failed to send password reset:", error);
+      console.error(`Failed to send password reset${tenantContext}:`, error);
       throw error;
     }
   }
 
-  private async sendEmail(to: string, subject: string, body: string): Promise<void> {
-    // TODO: Implement email sending
-    console.log(`Email: ${to} - ${subject}`);
+  private async sendEmail(
+    to: string, 
+    subject: string, 
+    body: string,
+    tenant_id?: string,  // KPI-029: Tenant context
+  ): Promise<void> {
+    // TODO: Implement email sending với tenant context
+    console.log(`Email: ${to} - ${subject}${tenant_id ? ` (tenant: ${tenant_id})` : ''}`);
   }
 }
 
 /**
  * Notification Worker.
+ * 
+ * KPI-029: Support tenant_id để isolate notifications theo tenant.
  */
 @Processor("notification")
 @Injectable()
 export class NotificationWorkerService {
   /**
    * Process push notification jobs.
+   * 
+   * KPI-029: Extract tenant_id từ job data.
    */
   @Process("send-push-notification")
   async processPushNotification(job: Job): Promise<void> {
-    const { userId, message, title } = job.data;
+    const { userId, message, title, tenant_id } = job.data;
+    const tenantContext = tenant_id ? ` [Tenant: ${tenant_id}]` : '';
 
     try {
-      console.log(`Sending push to user ${userId}: ${title}`);
-      // TODO: Implement push notification
+      console.log(`Sending push to user ${userId}: ${title}${tenantContext}`);
+      // TODO: Implement push notification với tenant context
+      await this.sendPushNotification(userId, message, title, tenant_id);
     } catch (error) {
-      console.error("Failed to send push notification:", error);
+      console.error(`Failed to send push notification${tenantContext}:`, error);
       throw error;
     }
+  }
+
+  private async sendPushNotification(
+    userId: string,
+    message: string,
+    title?: string,
+    tenant_id?: string,  // KPI-029: Tenant context
+  ): Promise<void> {
+    // TODO: Implement push notification
+    console.log(`Push: user ${userId} - ${title || message}${tenant_id ? ` (tenant: ${tenant_id})` : ''}`);
   }
 }
 
 /**
  * Report Worker.
+ * 
+ * KPI-029: Generate reports với tenant data isolation.
  */
 @Processor("report")
 @Injectable()
 export class ReportWorkerService {
   /**
    * Process daily report generation.
+   * 
+   * KPI-029: Support tenant-specific report generation.
    */
   @Process("generate-daily-report")
   async processDailyReport(job: Job): Promise<void> {
-    const { date } = job.data;
+    const { date, tenant_id } = job.data;
+    const tenantContext = tenant_id ? ` for tenant ${tenant_id}` : '';
 
     try {
-      console.log(`Generating daily report for ${date}`);
-      // TODO: Implement report generation
+      console.log(`Generating daily report for ${date}${tenantContext}`);
+      // KPI-029: Implement report generation với tenant filtering
+      await this.generateReport(date, "daily", tenant_id);
     } catch (error) {
-      console.error("Failed to generate report:", error);
+      console.error(`Failed to generate report${tenantContext}:`, error);
       throw error;
     }
   }
 
   /**
    * Process weekly report generation.
+   * 
+   * KPI-029: Support tenant-specific report generation.
    */
   @Process("generate-weekly-report")
   async processWeeklyReport(job: Job): Promise<void> {
-    const { weekStart } = job.data;
+    const { weekStart, tenant_id } = job.data;
+    const tenantContext = tenant_id ? ` for tenant ${tenant_id}` : '';
 
     try {
-      console.log(`Generating weekly report from ${weekStart}`);
-      // TODO: Implement report generation
+      console.log(`Generating weekly report from ${weekStart}${tenantContext}`);
+      // KPI-029: Implement report generation với tenant filtering
+      await this.generateReport(weekStart, "weekly", tenant_id);
     } catch (error) {
-      console.error("Failed to generate weekly report:", error);
+      console.error(`Failed to generate weekly report${tenantContext}:`, error);
       throw error;
     }
+  }
+
+  private async generateReport(
+    date: string,
+    type: "daily" | "weekly" | "monthly",
+    tenant_id?: string,  // KPI-029: Tenant context
+  ): Promise<void> {
+    // TODO: Implement report generation với tenant filtering
+    console.log(`Report: ${type} for ${date}${tenant_id ? ` (tenant: ${tenant_id})` : ''}`);
   }
 }
 
 /**
  * Sync Worker.
+ * 
+ * KPI-029: Sync data với tenant isolation.
  */
 @Processor("sync")
 @Injectable()
 export class SyncWorkerService {
   /**
    * Process external data sync.
+   * 
+   * KPI-029: Support tenant-specific data sync.
    */
   @Process("sync-external-data")
   async processSync(job: Job): Promise<void> {
-    const { source, entityType } = job.data;
+    const { source, entityType, tenant_id } = job.data;
+    const tenantContext = tenant_id ? ` for tenant ${tenant_id}` : '';
 
     try {
-      console.log(`Syncing ${entityType} from ${source}`);
-      // TODO: Implement sync logic
+      console.log(`Syncing ${entityType} from ${source}${tenantContext}`);
+      // KPI-029: Implement sync logic với tenant filtering
+      await this.syncData(source, entityType, tenant_id);
     } catch (error) {
-      console.error("Failed to sync data:", error);
+      console.error(`Failed to sync data${tenantContext}:`, error);
       throw error;
     }
+  }
+
+  private async syncData(
+    source: string,
+    entityType: string,
+    tenant_id?: string,  // KPI-029: Tenant context
+  ): Promise<void> {
+    // TODO: Implement sync logic với tenant filtering
+    console.log(`Sync: ${entityType} from ${source}${tenant_id ? ` (tenant: ${tenant_id})` : ''}`);
   }
 }
 
 /**
  * Cleanup Worker.
+ * 
+ * KPI-029: Cleanup data với tenant isolation.
  */
 @Processor("cleanup")
 @Injectable()
 export class CleanupWorkerService {
   /**
    * Process expired data cleanup.
+   * 
+   * KPI-029: Support tenant-specific data cleanup.
    */
   @Process("cleanup-expired-data")
   async processCleanup(job: Job): Promise<void> {
-    const { days } = job.data;
+    const { days, tenant_id } = job.data;
+    const tenantContext = tenant_id ? ` for tenant ${tenant_id}` : '';
 
     try {
-      console.log(`Cleaning up data older than ${days} days`);
-      // TODO: Implement cleanup logic
+      console.log(`Cleaning up data older than ${days} days${tenantContext}`);
+      // KPI-029: Implement cleanup logic với tenant filtering
+      await this.cleanupExpiredData(days, tenant_id);
     } catch (error) {
-      console.error("Failed to cleanup:", error);
+      console.error(`Failed to cleanup${tenantContext}:`, error);
       throw error;
     }
+  }
+
+  private async cleanupExpiredData(
+    days: number,
+    tenant_id?: string,  // KPI-029: Tenant context
+  ): Promise<void> {
+    // TODO: Implement cleanup logic với tenant filtering
+    console.log(`Cleanup: ${days} days${tenant_id ? ` (tenant: ${tenant_id})` : ''}`);
   }
 }
 
 /**
- * Job decorators.
+ * Job interfaces với tenant support.
+ * 
+ * KPI-029: Tất cả job data interfaces đều có tenant_id optional.
  */
 
 /**
  * Email job data.
+ * 
+ * KPI-029: Bao gồm tenant_id để isolate email operations.
  */
 export interface EmailJobData {
   userId: string;
   email: string;
   token?: string;
+  tenant_id?: string;  // KPI-029: Tenant isolation
 }
 
 /**
  * Notification job data.
+ * 
+ * KPI-029: Bao gồm tenant_id để isolate notifications.
  */
 export interface NotificationJobData {
   userId: string;
   message: string;
   title?: string;
   data?: Record<string, any>;
+  tenant_id?: string;  // KPI-029: Tenant isolation
 }
 
 /**
  * Report job data.
+ * 
+ * KPI-029: Bao gồm tenant_id để generate tenant-specific reports.
  */
 export interface ReportJobData {
   date?: string;
   weekStart?: string;
   type: "daily" | "weekly" | "monthly";
+  tenant_id?: string;  // KPI-029: Tenant isolation
 }
 
 /**
  * Sync job data.
+ * 
+ * KPI-029: Bao gồm tenant_id để sync tenant-specific data.
  */
 export interface SyncJobData {
   source: string;
   entityType: string;
+  tenant_id?: string;  // KPI-029: Tenant isolation
 }
 
 /**
  * Cleanup job data.
+ * 
+ * KPI-029: Bao gồm tenant_id để cleanup tenant-specific data.
  */
 export interface CleanupJobData {
   days: number;
+  tenant_id?: string;  // KPI-029: Tenant isolation
+}
+
+/**
+ * KPI-029: Base interface cho tất cả job data với tenant context.
+ */
+export interface BaseJobData {
+  tenant_id?: string;  // KPI-029: Tenant isolation
+  [key: string]: any;
 }

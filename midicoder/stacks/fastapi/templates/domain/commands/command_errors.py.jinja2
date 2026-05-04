@@ -3,12 +3,80 @@ Error classes cho {{ command.id }}.
 
 Định nghĩa custom exceptions cho {{ command.description }}.
 
+KPI-029: Tenant Isolation - Includes TenantIsolationError for tenant violations
+
 Author: Midicoder Auto-generated
 """
 
 from __future__ import annotations
 
 from http import HTTPStatus
+
+
+# KPI-029: Tenant Isolation Error
+class TenantIsolationError({{ command.id }}Error):
+    """
+    KPI-029: Lỗi vi phạm tenant isolation.
+
+    Được throw khi user cố access data của tenant khác.
+
+    HTTP Status: 403 Forbidden
+    Error Code: TENANT_ISOLATION_VIOLATION
+    """
+
+    def __init__(self, user_tenant_id: str | None, target_tenant_id: str) -> None:
+        """
+        Khởi tạo error.
+
+        Args:
+            user_tenant_id: Tenant ID của user (None nếu chưa authenticated)
+            target_tenant_id: Tenant ID của resource bị access
+        """
+        message = (
+            f"User từ tenant {user_tenant_id or 'unknown'} "
+            f"không thể access resource của tenant {target_tenant_id}"
+        )
+        super().__init__(
+            message=message,
+            http_status=403,
+        )
+        self.user_tenant_id = user_tenant_id
+        self.target_tenant_id = target_tenant_id
+
+
+class TenantNotFoundError({{ command.id }}Error):
+    """
+    KPI-029: Tenant không tìm thấy.
+
+    HTTP Status: 404 Not Found
+    Error Code: TENANT_NOT_FOUND
+    """
+
+    def __init__(self, tenant_id: str) -> None:
+        """Khởi tạo error."""
+        super().__init__(
+            message=f"Tenant '{tenant_id}' không tồn tại",
+            http_status=404,
+        )
+        self.tenant_id = tenant_id
+
+
+class TenantPermissionError({{ command.id }}Error):
+    """
+    KPI-029: User không có permission cho tenant.
+
+    HTTP Status: 403 Forbidden
+    Error Code: TENANT_PERMISSION_DENIED
+    """
+
+    def __init__(self, tenant_id: str, user_id: str) -> None:
+        """Khởi tạo error."""
+        super().__init__(
+            message=f"User '{user_id}' không có permission cho tenant '{tenant_id}'",
+            http_status=403,
+        )
+        self.tenant_id = tenant_id
+        self.user_id = user_id
 
 
 class {{ command.id }}Error(Exception):

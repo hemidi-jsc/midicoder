@@ -5,6 +5,7 @@ Module này cung cấp JWT authentication cho FastAPI application.
 Hỗ trợ create token, verify token, và dependency injection.
 
 CP03: Authentication & Authorization
+KPI-029: Tenant Isolation - tenant_id embedded in JWT tokens for tenant context
 """
 
 import time
@@ -44,10 +45,14 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    """JWT Token data (decoded)."""
+    """
+    JWT Token data (decoded).
+    
+    KPI-029: tenant_id được extract từ token để set tenant context.
+    """
 
     user_id: Optional[str] = None
-    tenant_id: Optional[str] = None
+    tenant_id: Optional[str] = None  # KPI-029: Tenant ID for multi-tenancy
     roles: list[str] = []
 
 
@@ -63,14 +68,21 @@ def create_access_token(
     """
     Tạo JWT access token.
 
+    KPI-029: tenant_id được embed vào token payload.
+
     Args:
         data: Data để encode vào token (user_id, tenant_id, roles, v.v.)
         expires_delta: Thời gian hết hạn (optional, default: 30 minutes)
 
     Returns:
-        JWT token string
+        JWT token string với tenant_id trong payload
     """
     to_encode = data.copy()
+
+    # KPI-029: Ensure tenant_id is in the token
+    if "tenant_id" not in to_encode:
+        # Try to get tenant_id from current tenant context
+        to_encode["tenant_id"] = get_tenant_id()
 
     # Set expiration time
     if expires_delta:
@@ -169,6 +181,8 @@ async def get_current_active_user(
     """
     Dependency để get current active user.
 
+    KPI-029: Có thể verify tenant_id từ token match với tenant context.
+
     Có thể extend để check user status (active, banned, v.v.).
 
     Args:
@@ -178,8 +192,17 @@ async def get_current_active_user(
         TokenData nếu user active
 
     Raises:
-        HTTPException: Nếu user không active
+        HTTPException: Nếu user không active hoặc tenant mismatch
     """
+    # KPI-029: Verify tenant_id từ token match với current tenant context
+    current_tenant_id = get_tenant_id()
+    if current_user.tenant_id and current_tenant_id:
+        if current_user.tenant_id != current_tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User không thuộc tenant này",
+            )
+
     # TODO: Check user status từ database
     # if not current_user.active:
     #     raise HTTPException(status_code=400, detail="User inactive")

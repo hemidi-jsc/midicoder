@@ -8,6 +8,7 @@
  * - Metrics tracking
  * - Error handling
  * 
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant context trong proxy requests
  * CP06: API Gateway & Service Mesh
  */
 
@@ -22,6 +23,8 @@ import { RouteConfigService } from './route-config.service';
 
 /**
  * ProxyRequest - Request object cho proxy.
+ * 
+ * KPI-029: Bao gồm tenant_id để propagate tenant context.
  */
 export interface ProxyRequest {
   /** HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS */
@@ -36,10 +39,14 @@ export interface ProxyRequest {
   body?: any;
   /** Route configuration */
   routeConfig: any;
+  /** KPI-029: Tenant ID cho tenant isolation */
+  tenantId?: string;
 }
 
 /**
  * ProxyResponse - Response object từ proxy.
+ * 
+ * KPI-029: Bao gồm tenant_id để track tenant context.
  */
 export interface ProxyResponse {
   /** HTTP status code */
@@ -52,6 +59,8 @@ export interface ProxyResponse {
   redirect?: string;
   /** Response stream (if any) */
   stream?: any;
+  /** KPI-029: Tenant ID từ request context */
+  tenantId?: string;
 }
 
 /**
@@ -220,11 +229,13 @@ export class GatewayService {
   /**
    * Forward Request.
    * 
+   * KPI-029: Propagate tenant_id trong proxy request đến backend.
+   * 
    * Forward request đến backend service.
    * Apply retry logic & circuit breaker.
    * 
-   * @param request Proxy request
-   * @returns Proxy response
+   * @param request Proxy request với tenant_id
+   * @returns Proxy response với tenant_id
    */
   async forwardRequest(request: ProxyRequest): Promise<ProxyResponse> {
     const startTime = Date.now();
@@ -265,23 +276,33 @@ export class GatewayService {
   /**
    * Do Forward - Actual HTTP forward.
    * 
+   * KPI-029: Include tenant_id trong headers cho backend.
+   * 
    * Perform the actual HTTP request to backend.
    * Sử dụng HttpClient (Axios) cho requests.
    * 
-   * @param request Proxy request
+   * @param request Proxy request với tenant_id
    * @returns Axios response
    */
   private async doForward(request: ProxyRequest): Promise<ProxyResponse> {
     try {
+      // KPI-029: Build headers với tenant context
+      const headers = {
+        ...request.headers,
+        'X-Forwarded-For': request.headers['x-forwarded-for'] || '',
+        'X-Request-Start': Date.now().toString(),
+        'Content-Type': request.headers['content-type'] || 'application/json',
+      };
+      
+      // KPI-029: Add tenant_id header nếu có
+      if (request.tenantId) {
+        headers['X-Tenant-Id'] = request.tenantId;
+      }
+      
       const response = await this.httpClient.request({
         method: request.method.toLowerCase(),
         url: request.url,
-        headers: {
-          ...request.headers,
-          'X-Forwarded-For': request.headers['x-forwarded-for'] || '',
-          'X-Request-Start': Date.now().toString(),
-          'Content-Type': request.headers['content-type'] || 'application/json', // Content-Type handling
-        },
+        headers,
         params: request.query,
         data: request.body,
         timeout: request.routeConfig?.timeout || 30000,
@@ -290,10 +311,12 @@ export class GatewayService {
         decompress: true, // gzip/compress support
       });
 
+      // KPI-029: Include tenant_id trong response
       return {
         status: response.status,
         headers: response.headers as Record<string, string>,
         body: response.data,
+        tenantId: request.tenantId,
       };
     } catch (error) {
       // Transform axios error
@@ -379,16 +402,19 @@ export class GatewayService {
   /**
    * Get Metrics.
    * 
+   * KPI-029: Support tenant-specific metrics.
+   * 
    * Get gateway metrics cho Prometheus.
    * Metrics & telemetry support.
    * 
+   * @param tenantId KPI-029: Tenant ID để filter metrics (optional)
    * @returns Metrics object
    */
-  getMetrics(): any {
+  getMetrics(tenantId?: string): any {
     // span tracking for distributed tracing
     const spanId = this.requestTimes.length > 0 ? Date.now().toString() : 'none';
     
-    return {
+    const metrics: any = {
       gateway_requests_total: this.requestStats.totalRequests,
       gateway_requests_success_total: this.requestStats.successfulRequests,
       gateway_requests_failed_total: this.requestStats.failedRequests,
@@ -399,6 +425,14 @@ export class GatewayService {
         trace: 'gateway-trace',
       },
     };
+    
+    // KPI-029: Add tenant info nếu có
+    if (tenantId) {
+      metrics.tenant_id = tenantId;
+      // TODO: Add tenant-specific metrics
+    }
+    
+    return metrics;
   }
 
   /**

@@ -3,6 +3,7 @@
  * 
  * Guard này verify JWT token và inject user vào request.
  * 
+ * KPI-029: Tenant Isolation - Support tenant_id trong JWT payload
  * CP03: Authentication & Authorization
  */
 
@@ -11,17 +12,20 @@ import {
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
+  SetMetadata,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 
 /**
  * JWT Payload interface.
+ * 
+ * KPI-029: Bao gồm tenant_id để support multi-tenant authentication.
  */
 export interface JwtPayload {
   /** User ID */
   sub: string;
-  /** Tenant ID (optional) */
+  /** KPI-029: Tenant ID (optional) - dùng để isolate user theo tenant */
   tenant_id?: string;
   /** User roles */
   roles?: string[];
@@ -51,7 +55,9 @@ export interface CurrentUser {
  * Guard này:
  * 1. Extract JWT token từ Authorization header
  * 2. Verify token với JWT secret
- * 3. Inject user vào request
+ * 3. Inject user vào request với tenant_id
+ * 
+ * KPI-029: Tenant ID được extract từ JWT payload và inject vào request.user
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {

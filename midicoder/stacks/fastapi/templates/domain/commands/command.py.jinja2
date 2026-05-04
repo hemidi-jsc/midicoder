@@ -3,6 +3,8 @@
 
 Command class cho {{ command.id }}.
 
+KPI-029: Tenant Isolation - Command bao gồm tenant_id để cách ly dữ liệu.
+
 Author: Midicoder Auto-generated
 """
 
@@ -10,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import UUID
 
 
 @dataclass
@@ -17,18 +20,27 @@ class {{ command.id }}:
     """
     Command class cho {{ command.description }}.
     
+    KPI-029: Tenant Isolation - Mỗi command phải có tenant_id để đảm bảo
+    dữ liệu chỉ được xử lý trong phạm vi tenant tương ứng.
+    
     Attributes:
 {% for input_field in command.input %}
         {{ input_field.name }}: {{ input_field.type|capitalize }} - {{ input_field.name|replace('_', ' ') }}
 {% endfor %}
+        tenant_id: UUID - Tenant ID để cách ly dữ liệu (KPI-029)
     """
 {% for input_field in command.input %}
     {{ input_field.name }}: Any = field(default=None, metadata={"required": {{ "true" if input_field.required else "false" }}})
 {% endfor %}
+    
+    # KPI-029: Tenant ID để isolate data giữa các tenant (multi-tenant support)
+    tenant_id: UUID = field(default=None, metadata={"required": True})
 
     def to_dict(self) -> dict[str, Any]:
         """
         Chuyển command sang dict.
+        
+        KPI-029: Bao gồm tenant_id trong dict representation.
         
         Returns:
             Dict representation của command
@@ -37,6 +49,7 @@ class {{ command.id }}:
 {% for input_field in command.input %}
             "{{ input_field.name }}": self.{{ input_field.name }},
 {% endfor %}
+            "tenant_id": str(self.tenant_id) if self.tenant_id else None,
         }
 
     @classmethod
@@ -44,14 +57,20 @@ class {{ command.id }}:
         """
         Tạo command từ dict.
         
+        KPI-029: Parse tenant_id từ dict (string -> UUID).
+        
         Args:
             data: Dict chứa command data
             
         Returns:
             {{ command.id }} instance
         """
+        # Parse tenant_id từ string sang UUID
+        tenant_id = UUID(data["tenant_id"]) if data.get("tenant_id") else None
+        
         return cls(
 {% for input_field in command.input %}
             {{ input_field.name }}=data.get("{{ input_field.name }}"),
 {% endfor %}
+            tenant_id=tenant_id,
         )

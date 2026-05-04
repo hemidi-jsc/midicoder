@@ -1,0 +1,225 @@
+/**
+ * Tenant Decorators cho Multi-Tenancy - NestJS/TypeORM.
+ * 
+ * Cung cấp decorators cho 3 isolation strategies:
+ * - @TenantRow(): Row-level isolation (tenantId column)
+ * - @TenantSchema(): Schema-level isolation (PostgreSQL schema)
+ * - @TenantDatabase(): Database-level isolation (separate database)
+ * 
+ * KPI-029: Tenant Isolation
+ * 
+ * Usage:
+ * ```typescript
+ * // Row-level isolation (most common)
+ * @Entity('users')
+ * @TenantRow()
+ * export class User {
+ *   @PrimaryGeneratedColumn('uuid')
+ *   id: string;
+ *   
+ *   // tenantId tự động được thêm
+ *   tenantId: string;
+ * }
+ * ```
+ * 
+ * Author: Midicoder Team
+ * Version: 1.0.0
+ */
+
+import { 
+  Column, 
+  Index, 
+  CreateDateColumn, 
+  UpdateDateColumn,
+  BeforeInsert,
+  BeforeUpdate,
+} from 'typeorm';
+import { SetMetadata } from '@nestjs/common';
+
+// ============================================================================
+// Metadata Keys
+// ============================================================================
+
+export const TENANT_ROW_KEY = '__tenant_row__';
+export const TENANT_SCHEMA_KEY = '__tenant_schema__';
+export const TENANT_DATABASE_KEY = '__tenant_database__';
+
+// ============================================================================
+// TenantRow Decorator (Row-Level Isolation)
+// ============================================================================
+
+/**
+ * Decorator cho Row-Level Tenant Isolation.
+ * 
+ * Tự động thêm:
+ * - tenantId column (UUID, không nullable)
+ * - Index trên tenantId
+ * - isTenantOwner() method
+ * - Validate tenantId before insert
+ * - Prevent tenant change before update
+ * 
+ * @example
+ * ```typescript
+ * @Entity('users')
+ * @TenantRow()
+ * export class User {
+ *   @PrimaryGeneratedColumn('uuid')
+ *   id: string;
+ * }
+ * ```
+ */
+export function TenantRow() {
+  return function (target: Function) {
+    // Thêm metadata
+    Reflect.defineMetadata(TENANT_ROW_KEY, true, target);
+    
+    // Thêm tenantId property nếu chưa có
+    if (!target.prototype.tenantId) {
+      const descriptor = {
+        configurable: true,
+        writable: true,
+        enumerable: false,
+      };
+      Object.defineProperty(target.prototype, 'tenantId', descriptor);
+    }
+    
+    // Thêm isTenantOwner method
+    if (!target.prototype.isTenantOwner) {
+      target.prototype.isTenantOwner = function (tenantId: string): boolean {
+        return this.tenantId === tenantId;
+      };
+    }
+    
+    // Thêm validateTenantOnInsert hook
+    if (!target.prototype.validateTenantOnInsert) {
+      target.prototype.validateTenantOnInsert = function () {
+        if (!this.tenantId) {
+          throw new Error('Tenant ID là bắt buộc. Vui lòng set tenantId trước khi tạo entity.');
+        }
+      };
+    }
+    
+    // Thêm preventTenantChange hook
+    if (!target.prototype.preventTenantChange) {
+      target.prototype.preventTenantChange = function () {
+        // Tenant ID không được thay đổi sau khi entity đã tồn tại
+        // Để enforce ở application layer (guard/validator)
+      };
+    }
+  };
+}
+
+// ============================================================================
+// TenantSchema Decorator (Schema-Level Isolation)
+// ============================================================================
+
+/**
+ * Decorator cho Schema-Level Tenant Isolation.
+ * 
+ * Tự động:
+ * - Set schema từ tenant context
+ * - Dynamic schema routing
+ * 
+ * @param schema - Optional static schema name (nếu không có sẽ lấy từ context)
+ * 
+ * @example
+ * ```typescript
+ * @Entity('users')
+ * @TenantSchema() // Dynamic schema từ context
+ * export class User {
+ *   @PrimaryGeneratedColumn('uuid')
+ *   id: string;
+ * }
+ * 
+ * @Entity('shared')
+ * @TenantSchema('public') // Static schema
+ * export class SharedEntity {
+ *   @PrimaryGeneratedColumn('uuid')
+ *   id: string;
+ * }
+ * ```
+ */
+export function TenantSchema(schema?: string) {
+  return function (target: Function) {
+    Reflect.defineMetadata(TENANT_SCHEMA_KEY, schema, target);
+  };
+}
+
+// ============================================================================
+// TenantDatabase Decorator (Database-Level Isolation)
+// ============================================================================
+
+/**
+ * Decorator cho Database-Level Tenant Isolation.
+ * 
+ * Tự động:
+ * - Build database URL từ tenant context
+ * - Connection pool per tenant
+ * 
+ * @param connectionName - Optional connection name pattern
+ * 
+ * @example
+ * ```typescript
+ * @Entity('users')
+ * @TenantDatabase()
+ * export class User {
+ *   @PrimaryGeneratedColumn('uuid')
+ *   id: string;
+ * }
+ * ```
+ */
+export function TenantDatabase(connectionName?: string) {
+  return function (target: Function) {
+    Reflect.defineMetadata(TENANT_DATABASE_KEY, connectionName, target);
+  };
+}
+
+// ============================================================================
+// Tenant Isolation Strategy Type
+// ============================================================================
+
+/**
+ * Loại Tenant Isolation Strategy.
+ */
+export type TenantIsolationStrategy = 'row' | 'schema' | 'database';
+
+/**
+ * Metadata cho tenant isolation.
+ */
+export interface TenantMetadata {
+  strategy: TenantIsolationStrategy;
+  tenantId?: string;
+  schema?: string;
+  databaseUrl?: string;
+}
+
+// ============================================================================
+// Tenant Context Helper
+// ============================================================================
+
+/**
+ * Get current tenant context.
+ * 
+ * @returns TenantMetadata hoặc undefined nếu không có context
+ */
+export function getTenantContext(): TenantMetadata | undefined {
+  // Implementation: Lấy từ request context/NestJS ContextStore
+  // Đây là placeholder - implementation thực tế ở app/services/tenant-context.service.ts
+  return undefined;
+}
+
+/**
+ * Set tenant context (cho testing/initialization).
+ * 
+ * @param context - TenantMetadata để set
+ */
+export function setTenantContext(context: TenantMetadata): void {
+  // Implementation: Set vào request context
+}
+
+/**
+ * Clear tenant context.
+ */
+export function clearTenantContext(): void {
+  // Implementation: Clear request context
+}

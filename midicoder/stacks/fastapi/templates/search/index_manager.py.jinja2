@@ -6,13 +6,15 @@ Cung cấp:
 - Manage mappings
 - Manage aliases
 - Index lifecycle management
+- KPI-029: Tenant-specific index operations
 
+KPI-029: Tenant Isolation - Hỗ trợ tenant-specific index management
 CP10: Search & Indexing
 """
 
 from typing import Any, Dict, Optional
 
-from .elasticsearch import get_elasticsearch
+from .elasticsearch import get_elasticsearch, get_tenant_elasticsearch, get_tenant_index_name, get_tenant_index_pattern
 
 
 class IndexManager:
@@ -24,17 +26,24 @@ class IndexManager:
     - Quét mapping
     - Quản lý aliases
     - Index templates
+
+    KPI-029: Hỗ trợ tenant-specific index operations để isolate data theo tenant.
     """
 
-    def __init__(self) -> None:
-        """Khởi tạo index manager."""
-        pass
+    def __init__(self, tenant_id: Optional[str] = None) -> None:
+        """Khởi tạo index manager.
+
+        Args:
+            tenant_id: KPI-029: Tenant ID cho tenant-specific operations
+        """
+        self.tenant_id = tenant_id  # KPI-029: Tenant context
 
     async def create_index(
         self,
         name: str,
         mapping: Optional[Dict[str, Any]] = None,
         settings: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Tạo Elasticsearch index.
@@ -43,11 +52,16 @@ class IndexManager:
             name: Index name
             mapping: Field mappings
             settings: Index settings
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Create response
         """
-        client = get_elasticsearch()
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        index_name = get_tenant_index_name(name, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
 
         body = {}
         if mapping:
@@ -56,37 +70,55 @@ class IndexManager:
             body["settings"] = settings
 
         response = await client.indices.create(
-            index=name,
+            index=index_name,
             body=body,
         )
 
         return response
 
-    async def delete_index(self, name: str) -> Dict[str, Any]:
+    async def delete_index(
+        self,
+        name: str,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Xóa Elasticsearch index.
 
         Args:
             name: Index name
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Delete response
         """
-        client = get_elasticsearch()
-        return await client.indices.delete(index=name)
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        index_name = get_tenant_index_name(name, effective_tenant_id)
 
-    async def index_exists(self, name: str) -> bool:
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+        return await client.indices.delete(index=index_name)
+
+    async def index_exists(
+        self,
+        name: str,
+        tenant_id: Optional[str] = None,
+    ) -> bool:
         """
         Kiểm tra index tồn tại.
 
         Args:
             name: Index name
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             True nếu tồn tại
         """
-        client = get_elasticsearch()
-        return await client.indices.exists(index=name)
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        index_name = get_tenant_index_name(name, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+        return await client.indices.exists(index=index_name)
 
     async def get_mapping(self, name: str) -> Dict[str, Any]:
         """
@@ -194,13 +226,87 @@ class IndexManager:
             num_segments=1,
         )
 
-    async def get_all_indices(self) -> list[str]:
+    async def get_all_indices(
+        self,
+        tenant_id: Optional[str] = None,
+    ) -> list[str]:
         """
         Lấy danh sách tất cả indices.
+
+        KPI-029: Nếu có tenant_id, chỉ trả về indices của tenant.
+
+        Args:
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             List của index names
         """
-        client = get_elasticsearch()
-        response = await client.indices.get_alias()
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+
+        if effective_tenant_id:
+            client = get_tenant_elasticsearch(effective_tenant_id)
+            # Search với tenant-specific pattern
+            pattern = f"tenant_{effective_tenant_id}_*"
+        else:
+            client = get_elasticsearch()
+            pattern = "*"
+
+        response = await client.indices.get_alias(index=pattern)
         return list(response.keys())
+
+    async def delete_tenant_indices(
+        self,
+        tenant_id: str,
+        base_indices: Optional[list[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        KPI-029: Xóa tất cả indices của tenant.
+
+        Dùng khi tenant bị xóa để cleanup tenant data.
+
+        Args:
+            tenant_id: ID của tenant
+            base_indices: Danh sách base indices để xóa (nếu None thì xóa tất cả)
+
+        Returns:
+            Delete response
+        """
+        client = get_elasticsearch()
+
+        if base_indices:
+            # Xóa specific base indices cho tenant
+            indices_to_delete = [
+                get_tenant_index_name(base_idx, tenant_id)
+                for base_idx in base_indices
+            ]
+        else:
+            # Xóa tất cả indices của tenant
+            pattern = f"tenant_{tenant_id}_*"
+            response = await client.cat.indices(index=pattern, format="json")
+            indices_to_delete = [idx["index"] for idx in response]
+
+        if not indices_to_delete:
+            return {"acknowledged": True, "deleted_count": 0}
+
+        response = await client.indices.delete(index=indices_to_delete)
+        return response
+
+    async def get_tenant_index_stats(
+        self,
+        name: str,
+        tenant_id: str,
+    ) -> Dict[str, Any]:
+        """
+        KPI-029: Lấy stats của tenant-specific index.
+
+        Args:
+            name: Base index name
+            tenant_id: ID của tenant
+
+        Returns:
+            Index stats
+        """
+        index_name = get_tenant_index_name(name, tenant_id)
+        client = get_tenant_elasticsearch(tenant_id)
+        return await client.indices.stats(index=index_name)

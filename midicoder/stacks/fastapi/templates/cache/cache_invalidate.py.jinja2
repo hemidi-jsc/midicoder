@@ -5,14 +5,16 @@ Cung cấp services cho:
 - Pattern-based invalidation
 - Tag-based invalidation
 - Bulk operations
+- Tenant-aware invalidation (KPI-029)
 
 CP09: Caching & Performance
+KPI-029: Tenant Isolation - invalidation theo tenant
 """
 
 import asyncio
 from typing import List, Optional
 
-from .redis import get_redis
+from .redis import get_redis, get_key_with_tenant
 
 # Default settings
 DEFAULT_BATCH_SIZE = 100
@@ -27,29 +29,60 @@ class CacheInvalidateService:
     - Pattern-based: Xóa theo glob pattern
     - Tag-based: Xóa theo tags
     - Bulk: Xóa nhiều keys cùng lúc
+    - Tenant-aware: KPI-029 - chỉ xóa cache của tenant tương ứng
     """
 
-    def __init__(self, prefix: str = "cache:") -> None:
+    def __init__(self, prefix: str = "cache:", tenant_id: Optional[str] = None) -> None:
         """
         Khởi tạo invalidate service.
 
         Args:
             prefix: Cache key prefix
+            tenant_id: Tenant ID cho tenant isolation (optional)
         """
         self.prefix = prefix
+        self.tenant_id = tenant_id
 
-    async def invalidate_by_pattern(self, pattern: str) -> int:
+    def set_tenant_id(self, tenant_id: Optional[str]) -> None:
+        """
+        Set tenant ID cho current instance.
+
+        KPI-029: Cho phép đổi tenant context động.
+
+        Args:
+            tenant_id: Tenant ID mới
+        """
+        self.tenant_id = tenant_id
+
+    def _get_tenant_prefix(self) -> str:
+        """
+        Tạo prefix với tenant (nếu có).
+
+        Returns:
+            Prefix với tenant: "{tenant_id}:" hoặc "" nếu không có tenant
+        """
+        if self.tenant_id:
+            return f"{self.tenant_id}:"
+        return ""
+
+    async def invalidate_by_pattern(self, pattern: str, tenant_id: Optional[str] = None) -> int:
         """
         Xóa cache theo glob pattern.
 
+        KPI-029: Tenant Isolation - có thể filter theo tenant.
+
         Args:
             pattern: Glob pattern (e.g., "user:*")
+            tenant_id: Tenant ID để filter (optional, override instance tenant)
 
         Returns:
             Số lượng keys đã xóa
         """
         redis = get_redis()
-        full_pattern = f"{self.prefix}{pattern}"
+        effective_tenant = tenant_id or self.tenant_id
+        # Thêm tenant prefix vào pattern
+        tenant_prefix = f"{effective_tenant}:" if effective_tenant else ""
+        full_pattern = f"{self.prefix}{tenant_prefix}{pattern}"
 
         keys = []
         cursor = 0
@@ -70,56 +103,73 @@ class CacheInvalidateService:
 
         return 0
 
-    async def invalidate_by_tags(self, tags: List[str]) -> int:
+    async def invalidate_by_tags(
+        self, tags: List[str], tenant_id: Optional[str] = None
+    ) -> int:
         """
         Xóa cache theo tags.
+
+        KPI-029: Tenant Isolation - chỉ xóa cache của tenant tương ứng.
 
         Tags được lưu trong set, mỗi key có thể có nhiều tags.
 
         Args:
             tags: List của tags cần invalidate
+            tenant_id: Tenant ID để filter (optional, override instance tenant)
 
         Returns:
             Số lượng keys đã xóa
         """
         redis = get_redis()
         total_deleted = 0
+        effective_tenant = tenant_id or self.tenant_id
 
         for tag in tags:
-            tag_key = f"{self.prefix}tag:{tag}"
+            # Tenant-aware tag key
+            tenant_prefix = f"{effective_tenant}:" if effective_tenant else ""
+            tag_key = f"{self.prefix}{tenant_prefix}tag:{tag}"
 
             # Get all keys with this tag
             keys = await redis.smembers(tag_key)
 
             if keys:
                 # Delete the keys
-                if keys:
-                    deleted = await redis.delete(*keys)
-                    total_deleted += deleted
+                deleted = await redis.delete(*keys)
+                total_deleted += deleted
 
                 # Delete the tag set
                 await redis.delete(tag_key)
 
         return total_deleted
 
-    async def invalidate_prefix(self, sub_prefix: str) -> int:
+    async def invalidate_prefix(
+        self, sub_prefix: str, tenant_id: Optional[str] = None
+    ) -> int:
         """
         Xóa tất cả cache với specific prefix.
 
+        KPI-029: Tenant Isolation - filter theo tenant.
+
         Args:
             sub_prefix: Sub-prefix (e.g., "user" sẽ xóa "cache:user:*")
+            tenant_id: Tenant ID để filter (optional)
 
         Returns:
             Số lượng keys đã xóa
         """
-        return await self.invalidate_by_pattern(f"{sub_prefix}:*")
+        return await self.invalidate_by_pattern(f"{sub_prefix}:*", tenant_id=tenant_id)
 
-    async def invalidate_bulk(self, keys: List[str]) -> int:
+    async def invalidate_bulk(
+        self, keys: List[str], tenant_id: Optional[str] = None
+    ) -> int:
         """
         Xóa nhiều keys cùng lúc.
 
+        KPI-029: Tenant Isolation - add tenant prefix.
+
         Args:
             keys: List của keys cần xóa
+            tenant_id: Tenant ID để filter (optional)
 
         Returns:
             Số lượng keys đã xóa
@@ -129,54 +179,93 @@ class CacheInvalidateService:
         if not keys:
             return 0
 
-        # Add prefix to all keys
-        prefixed_keys = [f"{self.prefix}{key}" for key in keys]
+        # Add tenant prefix + main prefix to all keys
+        effective_tenant = tenant_id or self.tenant_id
+        tenant_prefix = f"{effective_tenant}:" if effective_tenant else ""
+        prefixed_keys = [f"{self.prefix}{tenant_prefix}{key}" for key in keys]
 
         return await redis.delete(*prefixed_keys)
 
-    async def invalidate_all(self) -> int:
+    async def invalidate_all(self, tenant_id: Optional[str] = None) -> int:
         """
         Xóa tất cả cache.
 
+        KPI-029: Tenant Isolation - có thể xóa chỉ cache của tenant cụ thể.
+
         Warning: Operation này có thể rất chậm với large cache!
+
+        Args:
+            tenant_id: Tenant ID để xóa (optional). Nếu None, xóa tất cả.
 
         Returns:
             Số lượng keys đã xóa
         """
+        if tenant_id:
+            # Chỉ xóa cache của tenant cụ thể
+            return await self.invalidate_by_pattern(f"*", tenant_id=tenant_id)
+        # Xóa tất cả cache
         return await self.invalidate_by_pattern("*")
 
-    async def add_tag(self, key: str, tag: str) -> bool:
+    async def invalidate_tenant_all(self, tenant_id: str) -> int:
+        """
+        Xóa tất cả cache của một tenant cụ thể.
+
+        KPI-029: Tenant Isolation - bulk cleanup cho tenant.
+
+        Args:
+            tenant_id: Tenant ID cần xóa cache
+
+        Returns:
+            Số lượng keys đã xóa
+        """
+        return await self.invalidate_by_pattern("*", tenant_id=tenant_id)
+
+    async def add_tag(
+        self, key: str, tag: str, tenant_id: Optional[str] = None
+    ) -> bool:
         """
         Thêm tag vào key.
+
+        KPI-029: Tenant Isolation - tag với tenant prefix.
 
         Args:
             key: Cache key
             tag: Tag để thêm
+            tenant_id: Tenant ID (optional)
 
         Returns:
             True nếu thêm thành công
         """
         redis = get_redis()
-        tag_key = f"{self.prefix}tag:{tag}"
-        full_key = f"{self.prefix}{key}"
+        effective_tenant = tenant_id or self.tenant_id
+        tenant_prefix = f"{effective_tenant}:" if effective_tenant else ""
+        tag_key = f"{self.prefix}{tenant_prefix}tag:{tag}"
+        full_key = f"{self.prefix}{tenant_prefix}{key}"
 
         await redis.sadd(tag_key, full_key)
         return True
 
-    async def remove_tag(self, key: str, tag: str) -> bool:
+    async def remove_tag(
+        self, key: str, tag: str, tenant_id: Optional[str] = None
+    ) -> bool:
         """
         Xóa tag từ key.
+
+        KPI-029: Tenant Isolation - remove tag với tenant prefix.
 
         Args:
             key: Cache key
             tag: Tag để xóa
+            tenant_id: Tenant ID (optional)
 
         Returns:
             True nếu xóa thành công
         """
         redis = get_redis()
-        tag_key = f"{self.prefix}tag:{tag}"
-        full_key = f"{self.prefix}{key}"
+        effective_tenant = tenant_id or self.tenant_id
+        tenant_prefix = f"{effective_tenant}:" if effective_tenant else ""
+        tag_key = f"{self.prefix}{tenant_prefix}tag:{tag}"
+        full_key = f"{self.prefix}{tenant_prefix}{key}"
 
         removed = await redis.srem(tag_key, full_key)
         return removed > 0
@@ -186,12 +275,17 @@ class CacheInvalidateService:
 _invalidate_service: Optional[CacheInvalidateService] = None
 
 
-def get_invalidate_service(prefix: str = "cache:") -> CacheInvalidateService:
+def get_invalidate_service(
+    prefix: str = "cache:", tenant_id: Optional[str] = None
+) -> CacheInvalidateService:
     """
     Get singleton invalidate service.
 
+    KPI-029: Support tenant isolation.
+
     Args:
         prefix: Cache prefix
+        tenant_id: Tenant ID cho tenant isolation (optional)
 
     Returns:
         CacheInvalidateService instance
@@ -199,6 +293,6 @@ def get_invalidate_service(prefix: str = "cache:") -> CacheInvalidateService:
     global _invalidate_service
 
     if _invalidate_service is None:
-        _invalidate_service = CacheInvalidateService(prefix)
+        _invalidate_service = CacheInvalidateService(prefix, tenant_id)
 
     return _invalidate_service

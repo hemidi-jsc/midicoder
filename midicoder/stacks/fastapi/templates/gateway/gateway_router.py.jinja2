@@ -8,6 +8,7 @@ Router này xử lý:
 - Error handling
 
 CP06: API Gateway & Service Mesh
+KPI-029: Tenant Isolation - Tenant-aware routing và tenant context propagation
 """
 
 from typing import Any, Dict, Optional
@@ -20,6 +21,9 @@ from pydantic import BaseModel
 from gateway_service import GatewayService
 from rate_limiter import RateLimiter, check_rate_limit
 from circuit_breaker import CircuitBreaker
+
+# KPI-029: Import tenant context
+from tenant.tenant_context import get_tenant_id
 
 # Router instance
 router = APIRouter(
@@ -35,10 +39,15 @@ router = APIRouter(
 
 # Request/Response models
 class ProxyResponse(BaseModel):
-    """Response model cho proxy requests."""
+    """
+    Response model cho proxy requests.
+    
+    KPI-029: Include tenant_id trong response.
+    """
     status: int
     data: Optional[Any] = None
     message: Optional[str] = None
+    tenant_id: Optional[str] = None  # KPI-029: Tenant ID
 
 
 # Dependency injection cho services
@@ -228,32 +237,38 @@ async def search_resources(
         return ProxyResponse(status=500, message=str(e))
 
 
-# Header params endpoint
+# Header params endpoint với tenant context
 @router.get("/headers", response_model=ProxyResponse, status_code=status.HTTP_200_OK)
 async def get_with_headers(
     x_tenant_id: Optional[str] = Header(None, description="Tenant ID"),
     x_request_id: Optional[str] = Header(None, description="Request ID"),
+    request: Request = None,
     gateway_service: GatewayService = Depends(get_gateway_service),
 ):
     """
     Endpoint với header params.
     
+    KPI-029: Support tenant context propagation.
+    
     Args:
-        x_tenant_id: Tenant ID
+        x_tenant_id: KPI-029: Tenant ID từ header
         x_request_id: Request ID
+        request: HTTP request (cho tenant extraction từ state)
         gateway_service: Gateway service
         
     Returns:
-        ProxyResponse
+        ProxyResponse với tenant_id
     """
     try:
-        result = await gateway_service.get_with_headers(x_tenant_id, x_request_id)
-        return ProxyResponse(status=200, data=result)
+        # KPI-029: Use tenant_id từ header hoặc request state
+        tenant_id = x_tenant_id or getattr(request.state, 'tenant_id', None) if request else None
+        result = await gateway_service.get_with_headers(tenant_id, x_request_id)
+        return ProxyResponse(status=200, data=result, tenant_id=tenant_id)
     except Exception as e:
         return ProxyResponse(status=500, message=str(e))
 
 
-# Proxy catch-all route
+# Proxy catch-all route với tenant support
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_route(
     path: str = Path(..., description="Proxy path"),
@@ -265,32 +280,74 @@ async def proxy_route(
     """
     Proxy catch-all route.
     
+    KPI-029: Support tenant-aware proxy routing.
+    
     Proxy tất cả requests đến backend services.
     
     Args:
         path: Proxy path
-        request: HTTP request
+        request: HTTP request (với tenant_id trong state)
         response: HTTP response
         gateway_service: Gateway service
         rate_limiter: Rate limiter
         
     Returns:
-        Response
+        Response với tenant context
     """
     try:
-        # Check rate limit
-        await check_rate_limit(request, rate_limiter)
+        # KPI-029: Extract tenant_id từ request state
+        tenant_id = getattr(request.state, 'tenant_id', None) if request else None
         
-        # Forward to backend
-        result = await gateway_service.proxy(request, path)
+        # Check rate limit với tenant_id
+        await check_rate_limit(request, rate_limiter, tenant_id=tenant_id)
+        
+        # KPI-029: Forward to backend với tenant context
+        result = await gateway_service.proxy(request, path, tenant_id=tenant_id)
+        
+        # KPI-029: Add tenant_id to response headers
+        headers = {}
+        if tenant_id:
+            headers["X-Tenant-Id"] = tenant_id
         
         return Response(
             content=result,
             status_code=200,
             media_type="application/json",
+            headers=headers,
         )
     except Exception as e:
         return JSONResponse(
             status_code=500,
             content={"detail": str(e)},
         )
+
+
+# KPI-029: Tenant-specific endpoints
+@router.get("/tenant/stats", response_model=ProxyResponse, status_code=status.HTTP_200_OK)
+async def get_tenant_stats(
+    request: Request = None,
+    gateway_service: GatewayService = Depends(get_gateway_service),
+):
+    """
+    KPI-029: Get stats cho tenant hiện tại.
+    
+    Args:
+        request: HTTP request (với tenant_id trong state)
+        gateway_service: Gateway service
+        
+    Returns:
+        ProxyResponse với tenant stats
+    """
+    try:
+        # KPI-029: Get tenant_id từ request state
+        tenant_id = getattr(request.state, 'tenant_id', None) if request else None
+        
+        if not tenant_id:
+            return ProxyResponse(status=400, message="Tenant ID không tìm thấy")
+        
+        # KPI-029: Get tenant-specific metrics
+        metrics = gateway_service.get_metrics(tenant_id=tenant_id)
+        
+        return ProxyResponse(status=200, data=metrics, tenant_id=tenant_id)
+    except Exception as e:
+        return ProxyResponse(status=500, message=str(e))

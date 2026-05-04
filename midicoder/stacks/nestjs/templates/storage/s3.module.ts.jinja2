@@ -3,6 +3,7 @@
  *
  * Cấu hình AWS S3 client.
  *
+ * KPI-029: Tenant Isolation - Support tenant-specific S3 configuration
  * CP11: File Storage & Media
  */
 
@@ -15,6 +16,9 @@ config();
 
 /**
  * S3 Client Factory.
+ *
+ * KPI-029: Shared S3 client cho tất cả tenants.
+ * Tenant-specific logic được xử lý ở service layer với folder prefix.
  */
 export const s3ClientFactory = {
   provide: "S3_CLIENT",
@@ -39,7 +43,65 @@ export const s3ClientFactory = {
 };
 
 /**
+ * KPI-029: S3 client factory cho tenant cụ thể.
+ *
+ * Tạo S3 client riêng cho tenant nếu cần dedicated connection.
+ *
+ * @param tenantId - Tenant ID
+ * @returns S3 client factory
+ */
+export const tenantS3ClientFactory = (tenantId: string) => ({
+  provide: `TENANT_S3_CLIENT_${tenantId}`,
+  useFactory: () => {
+    // KPI-029: Tạo S3 client riêng cho tenant
+    return new AWS.S3Client({
+      region: process.env.AWS_REGION || "us-east-1",
+      credentials:
+        process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+          ? {
+              accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+              secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+            }
+          : undefined,
+      endpoint: process.env.AWS_ENDPOINT_URL || undefined,
+      maxAttempts: 3,
+      requestHandler: new AWS.NodeHttpHandler({
+        connectionTimeout: 30000,
+        requestTimeout: 60000,
+      }),
+    });
+  },
+});
+
+/**
+ * KPI-029: Get tenant-specific bucket name.
+ *
+ * @param tenantId - Tenant ID
+ * @returns Tenant bucket name
+ */
+export const getTenantBucketName = (tenantId: string): string => {
+  const prefix = process.env.S3_TENANT_BUCKET_PREFIX || "tenant";
+  return `${prefix}-${tenantId}`;
+};
+
+/**
+ * KPI-029: Get tenant-specific key prefix.
+ *
+ * @param tenantId - Tenant ID
+ * @returns Tenant key prefix
+ */
+export const getTenantKeyPrefix = (tenantId: string): string => {
+  const prefix = process.env.S3_TENANT_KEY_PREFIX || "tenant";
+  return `${prefix}/${tenantId}/`;
+};
+
+/**
  * S3 Module.
+ *
+ * KPI-029: Module cung cấp:
+ * - S3 client (shared cho tất cả tenants)
+ * - Tenant-specific S3 clients (optional)
+ * - Tenant-specific bucket/key prefix utilities
  *
  * Global module cung cấp S3 client cho toàn application.
  */
@@ -48,4 +110,23 @@ export const s3ClientFactory = {
   providers: [s3ClientFactory],
   exports: [s3ClientFactory],
 })
-export class S3Module {}
+export class S3Module {
+  /**
+   * KPI-029: Tạo module cho tenant cụ thể.
+   *
+   * @param tenantId - ID của tenant
+   * @returns Module config cho tenant-specific S3 service
+   */
+  static forTenant(tenantId: string) {
+    return {
+      module: S3Module,
+      global: false,
+      providers: [
+        tenantS3ClientFactory(tenantId),
+      ],
+      exports: [
+        tenantS3ClientFactory(tenantId),
+      ],
+    };
+  }
+}

@@ -3,6 +3,8 @@ Mô-đun Business Guard.
 
 Cung cấp:
 - BusinessGuard: Guard cho business rule validation
+
+KPI-029: Tenant Isolation - tenant_id trong guard context
 """
 
 from typing import Any
@@ -14,23 +16,32 @@ class BusinessGuard:
     Guard evaluator cho business rule guards.
     
     Evaluate business conditions để đảm bảo transition hợp lệ theo business logic.
+    KPI-029: tenant_id được include trong context cho guard evaluation.
     """
 
     async def evaluate(
         self,
         condition: str,
         context: dict[str, Any],
+        tenant_id: str | None = None,  # KPI-029: Tenant isolation
     ) -> bool:
         """
         Evaluate business rule guard.
         
+        KPI-029: tenant_id được thêm vào context nếu chưa có.
+        
         Args:
             condition: Business condition expression
             context: Transition context với data
+            tenant_id: KPI-029: Tenant ID cho guard evaluation
             
         Returns:
             True nếu condition pass, False nếu fail
         """
+        # KPI-029: Thêm tenant_id vào context
+        if tenant_id and "tenant_id" not in context:
+            context["tenant_id"] = tenant_id
+        
         # TODO: Implement safe expression evaluation
         # Example: "items.length > 0" → evaluate against context
         return True

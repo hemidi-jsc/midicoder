@@ -3,6 +3,8 @@
  * 
  * Module định nghĩa providers và exports cho {{ command.description }}.
  * 
+ * KPI-029: Tenant Isolation - module integration với TenantModule.
+ * 
  * @author Midicoder Auto-generated
  */
 
@@ -11,17 +13,28 @@ import { {{ command.id }}Handler } from './{{ command_snake }}.handler';
 import { {{ command.id }}Validator } from './{{ command_snake }}.validator';
 import { {{ command.id }}Guards } from './{{ command_snake }}.guards';
 import { {{ command.id }}Effects } from './{{ command_snake }}.effects';
+// KPI-029: Import tenant module cho tenant isolation
+import { TenantModule } from '@midicoder/tenant';
 
 /**
  * Module cho {{ command.description }}.
  * 
+ * KPI-029: Imports TenantModule để support tenant isolation.
+ * 
  * Providers:
- * - {{ command.id }}Handler
- * - {{ command.id }}Validator
- * - {{ command.id }}Guards
- * - {{ command.id }}Effects
+ * - {{ command.id }}Handler: Command handler với tenant context
+ * - {{ command.id }}Validator: Validator với tenant rules
+ * - {{ command.id }}Guards: Guards với tenant_scope guard (KPI-029)
+ * - {{ command.id }}Effects: Effects với tenant isolation
+ * 
+ * Imports:
+ * - TenantModule: KPI-029: Tenant services cho tenant isolation
  */
 @Module({
+    imports: [
+        // KPI-029: Import TenantModule cho tenant isolation
+        TenantModule,
+    ],
     providers: [
         {{ command.id }}Handler,
         {{ command.id }}Validator,

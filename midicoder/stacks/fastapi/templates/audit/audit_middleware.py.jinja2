@@ -4,10 +4,11 @@ Audit Middleware - Audit middleware cho FastAPI.
 Middleware này:
 - Tự động log audit events cho API requests
 - Track user actions
-- Support multi-tenant
+- Support multi-tenant (KPI-029)
 - Integration với AuditLogger
 
 CP14: Audit & Compliance
+KPI-029: Tenant Isolation - Multi-tenant audit middleware
 """
 
 import logging
@@ -30,7 +31,9 @@ class AuditMiddleware(BaseHTTPMiddleware):
     1. Request audit logging
     2. Response status tracking
     3. User action tracking
-    4. Multi-tenant support
+    4. Multi-tenant support (KPI-029)
+
+    KPI-029: Tenant Isolation - Tự động extract tenant_id từ request và log vào audit.
 
     Usage:
         app.add_middleware(AuditMiddleware, audit_logger=audit_logger)
@@ -137,6 +140,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
         """
         Extract tenant ID từ request.
 
+        KPI-029: Tenant Isolation - Extract tenant_id để enforce tenant boundaries trong audit logs.
+
         Args:
             request: HTTP request
 
@@ -147,7 +152,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if hasattr(request.state, "tenant_id"):
             return request.state.tenant_id
 
-        # Fallback: extract from header
+        # KPI-029: Fallback - extract from X-Tenant-ID header
         return request.headers.get("X-Tenant-ID")
 
     def _get_client_ip(self, request: Request) -> str:

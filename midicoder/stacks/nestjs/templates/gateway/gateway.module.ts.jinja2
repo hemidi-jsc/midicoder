@@ -9,6 +9,7 @@
  * - Health checks
  * - Metrics & observability
  * 
+ * KPI-029: Tenant Isolation - Support tenant context propagation qua gateway
  * CP06: API Gateway & Service Mesh
  */
 
@@ -29,12 +30,18 @@ import { CIRCUIT_BREAKER_PROVIDERS } from './circuit-breaker.providers';
 /**
  * GatewayModule - Module chính cho API Gateway.
  * 
+ * KPI-029: Module này support tenant context propagation:
+ * - Extract tenant_id từ X-Tenant-Id header trong GatewayController
+ * - Propagate tenant_id qua proxy requests đến backend
+ * - Tenant-specific metrics tracking
+ * 
  * Module này:
  * 1. Cung cấp reverse proxy cho backend services
  * 2. Route configuration & discovery
  * 3. Rate limiting (100 req/s, 1000 req/min)
  * 4. Circuit breaker cho service protection
  * 5. Health checks & metrics
+ * 6. KPI-029: Tenant context propagation
  * 
  * @global Module được register toàn cục
  * @Injectable Injectable decorator

@@ -5,9 +5,10 @@ Module này định nghĩa tất cả permissions cho application.
 Permissions được group theo resource.
 
 CP03: Authentication & Authorization
+KPI-029: Tenant Isolation - Tenant-specific permissions và tenant-scoped access
 """
 
-from typing import Set
+from typing import Set, Optional
 
 
 # ============================================================================
@@ -78,6 +79,20 @@ class Permissions:
     SYSTEM_LOGS = "system.logs"
     SYSTEM_CACHE = "system.cache"
 
+    # KPI-029: Tenant permissions
+    TENANT_READ = "tenant.read"
+    TENANT_CREATE = "tenant.create"
+    TENANT_UPDATE = "tenant.update"
+    TENANT_DELETE = "tenant.delete"
+    TENANT_LIST = "tenant.list"
+    TENANT_MANAGE_USERS = "tenant.manage_users"
+    TENANT_MANAGE_ROLES = "tenant.manage_roles"
+    TENANT_MANAGE_PERMISSIONS = "tenant.manage_permissions"
+
+    # KPI-029: Multi-tenant admin permissions (super admin)
+    MULTITENANT_ADMIN = "multitenant.admin"
+    TENANT_SWITCH = "tenant.switch"
+
 
 # ============================================================================
 # Permission Groups
@@ -142,6 +157,17 @@ RESOURCE_PERMISSIONS: dict[str, Set[str]] = {
         Permissions.SYSTEM_LOGS,
         Permissions.SYSTEM_CACHE,
     },
+    # KPI-029: Tenant permissions
+    "tenant": {
+        Permissions.TENANT_READ,
+        Permissions.TENANT_CREATE,
+        Permissions.TENANT_UPDATE,
+        Permissions.TENANT_DELETE,
+        Permissions.TENANT_LIST,
+        Permissions.TENANT_MANAGE_USERS,
+        Permissions.TENANT_MANAGE_ROLES,
+        Permissions.TENANT_MANAGE_PERMISSIONS,
+    },
 }
 
 
@@ -176,6 +202,50 @@ def get_resource_permissions(resource: str) -> Set[str]:
         Set của permissions cho resource
     """
     return RESOURCE_PERMISSIONS.get(resource, set())
+
+
+def get_tenant_scoped_permission(permission: str, tenant_id: str) -> str:
+    """
+    KPI-029: Tạo tenant-scoped permission.
+
+    Example: "order.read" + "tenant-123" → "order.read:tenant-123"
+
+    Args:
+        permission: Base permission
+        tenant_id: Tenant ID
+
+    Returns:
+        Tenant-scoped permission string
+    """
+    return f"{permission}:{tenant_id}"
+
+
+def is_tenant_scoped_permission(permission: str) -> bool:
+    """
+    KPI-029: Check nếu permission là tenant-scoped.
+
+    Args:
+        permission: Permission string
+
+    Returns:
+        True nếu là tenant-scoped permission
+    """
+    return ":" in permission and permission.count(":") == 1
+
+
+def extract_tenant_id_from_permission(permission: str) -> Optional[str]:
+    """
+    KPI-029: Extract tenant_id từ tenant-scoped permission.
+
+    Args:
+        permission: Permission string (có thể tenant-scoped)
+
+    Returns:
+        Tenant ID nếu có, None nếu không
+    """
+    if is_tenant_scoped_permission(permission):
+        return permission.split(":")[1]
+    return None
 
 
 def has_permission(permission: str) -> bool:
@@ -231,5 +301,38 @@ def get_resource_from_permission(permission: str) -> str:
     Returns:
         Resource name
     """
-    parts = permission.split(".")
+    # KPI-029: Remove tenant scope if present
+    base_permission = permission.split(":")[0] if ":" in permission else permission
+    parts = base_permission.split(".")
     return parts[0] if len(parts) > 0 else permission
+
+
+def check_tenant_permission(
+    user_permissions: Set[str], permission: str, tenant_id: Optional[str] = None
+) -> bool:
+    """
+    KPI-029: Check nếu user có permission với tenant context.
+
+    Args:
+        user_permissions: Set của user permissions
+        permission: Permission cần check
+        tenant_id: KPI-029: Tenant ID để check tenant-scoped permission
+
+    Returns:
+        True nếu user có permission (global hoặc tenant-scoped)
+    """
+    # Check global permission
+    if permission in user_permissions:
+        return True
+
+    # KPI-029: Check tenant-scoped permission
+    if tenant_id:
+        tenant_scoped = get_tenant_scoped_permission(permission, tenant_id)
+        if tenant_scoped in user_permissions:
+            return True
+
+    # KPI-029: Check super admin permission
+    if Permissions.MULTITENANT_ADMIN in user_permissions:
+        return True
+
+    return False

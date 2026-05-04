@@ -7,6 +7,7 @@
  * - Health monitoring
  * - State management
  * 
+ * KPI-029: Tenant Isolation - Support tenant-specific circuit breaker states
  * CP06: API Gateway & Service Mesh
  */
 
@@ -15,6 +16,9 @@ import { ConfigService } from '@nestjs/config';
 
 /**
  * CircuitBreakerConfig - Configuration cho circuit breaker.
+ * 
+ * KPI-029: Bao gồm tenant_id cho tenant-specific circuit breaker.
+ * 
  * volumeThreshold configuration for circuit breaker.
  * Volume threshold setting for circuit breaker.
  */
@@ -37,6 +41,8 @@ export interface CircuitBreakerConfig {
   resetTimeout: number;
   /** Timeout cho requests (ms) */
   timeout: number;
+  /** KPI-029: Tenant ID cho tenant-specific circuit breaker */
+  tenantId?: string;
 }
 
 /**
@@ -514,7 +520,40 @@ export const ENABLED_FLAG_PROVIDER: Provider = {
 };
 
 /**
+ * KPI-029: Tenant-specific circuit breaker factory provider.
+ * 
+ * Factory này tạo circuit breakers riêng cho mỗi tenant-backend pair.
+ */
+export const TENANT_CIRCUIT_BREAKER_PROVIDER: Provider = {
+  provide: 'TENANT_CIRCUIT_BREAKER',
+  useFactory: async (
+    configService: ConfigService,
+    circuitBreakerFactory: { create: (id: string, action: any) => any },
+  ): Promise<{ create: (tenantId: string, backendId: string, action: any) => any }> => {
+    return {
+      /**
+       * Create Tenant Circuit Breaker.
+       * 
+       * KPI-029: Tạo circuit breaker riêng cho tenant-backend pair.
+       * 
+       * @param tenantId Tenant ID
+       * @param backendId Backend ID
+       * @param action Action function
+       * @returns Circuit breaker instance
+       */
+      create: (tenantId: string, backendId: string, action: any): any => {
+        const id = `${tenantId}:${backendId}`;
+        return circuitBreakerFactory.create(id, action);
+      },
+    };
+  },
+  inject: [ConfigService, 'CIRCUIT_BREAKER_FACTORY'],
+};
+
+/**
  * CircuitBreakerProviders - Array của tất cả circuit breaker providers.
+ * 
+ * KPI-029: Includes TENANT_CIRCUIT_BREAKER_PROVIDER cho tenant-specific breakers.
  */
 export const CIRCUIT_BREAKER_PROVIDERS: Provider[] = [
   OPOSSUM_CIRCUIT_BREAKER_PROVIDER,
@@ -529,4 +568,5 @@ export const CIRCUIT_BREAKER_PROVIDERS: Provider[] = [
   CACHE_STORE_PROVIDER,
   CONCURRENT_LIMIT_PROVIDER,
   ENABLED_FLAG_PROVIDER,
+  TENANT_CIRCUIT_BREAKER_PROVIDER,
 ];

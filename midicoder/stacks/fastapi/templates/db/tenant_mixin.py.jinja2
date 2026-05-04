@@ -1,51 +1,331 @@
 """
-Tenant Mixin cho Multi-Tenancy.
+Tenant Mixins cho Multi-Tenancy - Strategy-Specific Implementation.
 
-Tất cả models cần isolation giữa tenants phải kế thừa TenantMixin.
+Cung cấp 3 isolation strategies:
+- TenantRowMixin: Row-level isolation (tenant_id column)
+- TenantSchemaMixin: Schema-level isolation (PostgreSQL schema)
+- TenantDatabaseMixin: Database-level isolation (separate database)
 
+Mỗi mixin độc lập, có thể chọn theo tenant strategy config.
+
+KPI-029: Tenant Isolation
 CP08: Database & Data Access
 """
 
+from typing import Optional, Callable
 from sqlalchemy import Column, String, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-class TenantMixin:
-    """
-    Mixin cho multi-tenancy support.
+# ============================================================================
+# Tenant Row Mixin (Row-Level Isolation)
+# ============================================================================
 
-    Cung cấp:
-    - tenant_id: Foreign key đến Tenant model
-    - Index cho tenant_id queries
-    - Soft query filter cho tenant scope
+class TenantRowMixin:
+    """
+    Mixin cho row-level tenant isolation.
+
+    Cách hoạt động:
+    - Thêm tenant_id column vào mỗi table
+    - All queries auto-filter bằng tenant_id
+    - Phù hợp cho: Shared database, shared schema architecture
 
     Usage:
-        class User(Base, TenantMixin):
+        class User(Base, TenantRowMixin):
             __tablename__ = "users"
-            ...
+            name: Mapped[str] = mapped_column(String(255))
+
+    Data Flow:
+        Request → Extract Tenant ID → Filter queries by tenant_id → Isolation
+
+    Security:
+        - tenant_id là required (nullable=False)
+        - Index trên tenant_id cho performance
+        - Foreign key constraint đến tenants table
     """
 
-    # Tenant ID - khóa ngoài đến tenant
+    # Tenant ID - khóa ngoài đến tenant (required, indexed)
     tenant_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+        comment="Tenant ID - Row-level isolation key",
     )
 
-    # Index cho tenant_id queries - tối ưu performance
-    __table_args__ = (
+    # Index composite cho tenant_id queries - tối ưu performance
+    __table_args__: tuple = (
         Index("idx_tenant_id", "tenant_id"),
     )
 
     def is_tenant_owner(self, tenant_id: str) -> bool:
         """
-        Kiểm tra model thuộc về tenant.
+        Kiểm tra record thuộc về tenant nào.
 
         Args:
             tenant_id: ID của tenant cần kiểm tra
 
         Returns:
-            True nếu model thuộc tenant
+            True nếu record thuộc tenant_id này
+
+        Example:
+            user = session.query(User).first()
+            if user.is_tenant_owner("tenant-123"):
+                print("User belongs to this tenant")
         """
         return self.tenant_id == tenant_id
+
+    def get_tenant_id(self) -> str:
+        """
+        Lấy tenant ID của record.
+
+        Returns:
+            Tenant ID string
+
+        Raises:
+            AttributeError: Nếu tenant_id chưa được set
+        """
+        return self.tenant_id
+
+
+# ============================================================================
+# Tenant Schema Mixin (Schema-Level Isolation)
+# ============================================================================
+
+class TenantSchemaMixin:
+    """
+    Mixin cho schema-level tenant isolation.
+
+    Cách hoạt động:
+    - Mỗi tenant có PostgreSQL schema riêng
+    - Tables được create trong tenant-specific schema
+    - Phù hợp cho: Shared database, isolated schemas architecture
+
+    Usage:
+        class User(Base, TenantSchemaMixin):
+            __tablename__ = "users"
+            name: Mapped[str] = mapped_column(String(255))
+
+        # Schema được resolve từ tenant context tại runtime
+        User.__table__.schema = User.get_tenant_schema()
+
+    Data Flow:
+        Request → Extract Tenant Context → Set Search Path → Query isolated schema
+
+    Security:
+        - PostgreSQL schema permissions
+        - Search path injection prevention
+        - Row-level security policies (optional)
+
+    Notes:
+        - Requires PostgreSQL 14+
+        - Schema name must be valid SQL identifier
+        - Use tenant_context để inject schema tại runtime
+    """
+
+    # Sentinel value cho schema (resolve tại runtime)
+    __tenant_schema__: Optional[str] = None
+
+    @classmethod
+    def get_tenant_schema(cls) -> str:
+        """
+        Lấy tenant schema từ current tenant context.
+
+        Resolution Order:
+        1. tenant_schema từ TenantContext (nếu có)
+        2. tenant_id từ TenantContext (fallback)
+        3. Raise error nếu không có context
+
+        Returns:
+            Schema name string
+
+        Raises:
+            RuntimeError: Nếu tenant context không tồn tại
+
+        Example:
+            with tenant_context("acme"):
+                schema = User.get_tenant_schema()
+                # Returns: "acme" hoặc "acme_db"
+        """
+        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+
+        context = get_tenant_context()
+        if context is None:
+            raise RuntimeError("Tenant context không tồn tại. Vui lòng set tenant context trước.")
+
+        # Priority 1: Explicit schema name
+        if hasattr(context, "tenant_schema") and context.tenant_schema:
+            return context.tenant_schema
+
+        # Priority 2: Fallback to tenant_id
+        return context.tenant_id
+
+    @classmethod
+    def get_table_schema(cls) -> Optional[str]:
+        """
+        Lấy schema cho table (cho SQLAlchemy metadata).
+
+        Returns:
+            Schema name hoặc None (cho default schema)
+
+        Usage:
+            class User(Base, TenantSchemaMixin):
+                __tablename__ = "users"
+                __table_args__ = {"schema": TenantSchemaMixin.get_table_schema()}
+        """
+        try:
+            return cls.get_tenant_schema()
+        except RuntimeError:
+            # Return None tại definition time (resolve tại runtime)
+            return None
+
+    def is_tenant_owner(self, tenant_id: str) -> bool:
+        """
+        Kiểm tra record thuộc về tenant nào (qua schema).
+
+        Args:
+            tenant_id: ID của tenant cần kiểm tra
+
+        Returns:
+            True nếu current tenant context khớp với tenant_id
+        """
+        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+
+        context = get_tenant_context()
+        if context is None:
+            return False
+
+        return context.tenant_id == tenant_id
+
+
+# ============================================================================
+# Tenant Database Mixin (Database-Level Isolation)
+# ============================================================================
+
+class TenantDatabaseMixin:
+    """
+    Mixin cho database-level tenant isolation.
+
+    Cách hoạt động:
+    - Mỗi tenant có database riêng hoàn toàn
+    - Connection pooling per tenant
+    - Phù hợp cho: Maximum isolation, enterprise/compliance requirements
+
+    Usage:
+        class User(Base, TenantDatabaseMixin):
+            __tablename__ = "users"
+            name: Mapped[str] = mapped_column(String(255))
+
+        # Database URL được resolve từ tenant context
+        db_url = User.get_tenant_database_url()
+        engine = create_engine(db_url)
+
+    Data Flow:
+        Request → Extract Tenant Context → Connect to tenant DB → Query
+
+    Security:
+        - Physical database isolation
+        - Separate connection strings
+        - No cross-tenant data access possible
+
+    Notes:
+        - Requires database-per-tenant provisioning
+        - Connection pool management is critical
+        - Backup/restore là per-tenant operation
+    """
+
+    # Default database URL template (configurable)
+    DATABASE_URL_TEMPLATE: str = "postgresql://{username}:{password}@{host}/{tenant_id}"
+
+    @classmethod
+    def get_tenant_database_url(cls) -> str:
+        """
+        Lấy database URL cho current tenant.
+
+        Resolution Order:
+        1. database_url từ TenantContext (nếu có)
+        2. Build URL từ template + tenant_id
+        3. Raise error nếu không có context
+
+        Returns:
+            Database connection URL string
+
+        Raises:
+            RuntimeError: Nếu tenant context không tồn tại
+
+        Example:
+            with tenant_context("acme", database_url="postgresql://..."):
+                url = User.get_tenant_database_url()
+                engine = create_engine(url)
+        """
+        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+
+        context = get_tenant_context()
+        if context is None:
+            raise RuntimeError("Tenant context không tồn tại. Vui lòng set tenant context trước.")
+
+        # Priority 1: Explicit database URL
+        if hasattr(context, "database_url") and context.database_url:
+            return context.database_url
+
+        # Priority 2: Build from template
+        # Note: In real implementation, load connection params from config
+        return cls.DATABASE_URL_TEMPLATE.format(
+            username=context.tenant_id,
+            password="",  # Should be loaded from secrets manager
+            host="localhost",
+            tenant_id=context.tenant_id,
+        )
+
+    @classmethod
+    def get_tenant_database_name(cls) -> str:
+        """
+        Lấy database name cho current tenant.
+
+        Returns:
+            Database name string
+
+        Example:
+            db_name = User.get_tenant_database_name()
+            # Returns: "tenant-123" hoặc "acme_db"
+        """
+        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+
+        context = get_tenant_context()
+        if context is None:
+            raise RuntimeError("Tenant context không tồn tại.")
+
+        # Extract database name from URL if available
+        if hasattr(context, "database_url") and context.database_url:
+            # Simple parsing: postgresql://host/dbname -> dbname
+            url = context.database_url
+            if "/" in url:
+                return url.split("/")[-1]
+
+        return context.tenant_id
+
+    def is_tenant_owner(self, tenant_id: str) -> bool:
+        """
+        Kiểm tra record thuộc về tenant nào (qua database).
+
+        Args:
+            tenant_id: ID của tenant cần kiểm tra
+
+        Returns:
+            True nếu current database thuộc tenant_id này
+        """
+        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+
+        context = get_tenant_context()
+        if context is None:
+            return False
+
+        return context.tenant_id == tenant_id
+
+
+# ============================================================================
+# Backward Compatibility Alias
+# ============================================================================
+
+# Alias cho backward compatibility (old TenantMixin → TenantRowMixin)
+TenantMixin = TenantRowMixin

@@ -4,6 +4,7 @@
  * Module này định nghĩa tất cả permissions cho application.
  * Permissions được group theo resource.
  * 
+ * KPI-029: Tenant Isolation - Support tenant-specific permissions
  * CP03: Authentication & Authorization
  */
 
@@ -11,6 +12,8 @@
  * Permission constants.
  * 
  * Format: resource.action (ví dụ: order.create)
+ * 
+ * KPI-029: Tenant-specific permissions có prefix "tenant_" (ví dụ: tenant_order.create)
  */
 export class Permissions {
   // User permissions
@@ -68,6 +71,14 @@ export class Permissions {
   static readonly SYSTEM_CONFIG = 'system.config';
   static readonly SYSTEM_LOGS = 'system.logs';
   static readonly SYSTEM_CACHE = 'system.cache';
+
+  // KPI-029: Tenant management permissions
+  static readonly TENANT_READ = 'tenant.read';
+  static readonly TENANT_CREATE = 'tenant.create';
+  static readonly TENANT_UPDATE = 'tenant.update';
+  static readonly TENANT_DELETE = 'tenant.delete';
+  static readonly TENANT_LIST = 'tenant.list';
+  static readonly TENANT_ADMIN = 'tenant.admin';  // Admin access across all tenants
 }
 
 /**
@@ -130,6 +141,15 @@ export const RESOURCE_PERMISSIONS: Record<string, string[]> = {
     Permissions.SYSTEM_LOGS,
     Permissions.SYSTEM_CACHE,
   ],
+  // KPI-029: Tenant resource permissions
+  tenant: [
+    Permissions.TENANT_READ,
+    Permissions.TENANT_CREATE,
+    Permissions.TENANT_UPDATE,
+    Permissions.TENANT_DELETE,
+    Permissions.TENANT_LIST,
+    Permissions.TENANT_ADMIN,
+  ],
 };
 
 /**
@@ -191,4 +211,43 @@ export function getActionFromPermission(permission: string): string {
 export function getResourceFromPermission(permission: string): string {
   const parts = permission.split('.');
   return parts[0];
+}
+
+/**
+ * KPI-029: Check if permission is tenant-scoped.
+ * 
+ * @param permission - Permission ID
+ * @returns True if permission is tenant-scoped
+ */
+export function isTenantScopedPermission(permission: string): boolean {
+  return permission.startsWith('tenant_');
+}
+
+/**
+ * KPI-029: Get tenant-specific version of a permission.
+ * 
+ * Converts "order.create" to "tenant_order.create"
+ * 
+ * @param permission - Base permission ID
+ * @returns Tenant-scoped permission ID
+ */
+export function getTenantScopedPermission(permission: string): string {
+  return isTenantScopedPermission(permission) ? permission : `tenant_${permission}`;
+}
+
+/**
+ * KPI-029: Get base permission from tenant-scoped permission.
+ * 
+ * Converts "tenant_order.create" to "order.create"
+ * 
+ * @param permission - Tenant-scoped permission ID
+ * @returns Base permission ID
+ */
+export function getBasePermission(permission: string): string {
+  if (!isTenantScopedPermission(permission)) {
+    return permission;
+  }
+  const parts = permission.split('.');
+  parts[0] = parts[0].replace('tenant_', '');
+  return parts.join('.');
 }

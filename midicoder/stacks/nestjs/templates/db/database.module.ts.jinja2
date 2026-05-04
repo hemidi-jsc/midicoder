@@ -4,6 +4,7 @@
  * Cấu hình TypeORM/Prisma connection
  * Cung cấp DataSources cho toàn application
  *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant-specific database schema/database
  * CP08: Database & Data Access
  */
 
@@ -19,6 +20,11 @@ config();
  *
  * Cấu hình TypeORM với PostgreSQL
  * Support connection pooling
+ * 
+ * KPI-029: Hỗ trợ multi-tenant với các chế độ:
+ * - shared-db: Tất cả tenants dùng chung database, phân biệt bằng tenant_id column
+ * - shared-schema: Mỗi tenant có schema riêng trong cùng database
+ * - dedicated-db: Mỗi tenant có database riêng
  */
 @Module({
   imports: [
@@ -30,6 +36,9 @@ config();
       username: process.env.DATABASE_USER || "postgres",
       password: process.env.DATABASE_PASSWORD || "postgres",
       database: process.env.DATABASE_NAME || "gateway",
+      
+      // KPI-029: Tenant-specific schema (nếu dùng shared-schema mode)
+      schema: process.env.TENANT_SCHEMA || "public",
 
       // Entities - các entity classes
       entities: ["dist/**/*.entity{.ts,.js}"],
@@ -50,9 +59,53 @@ config();
 
       // Synchronize - chỉ dùng dev
       synchronize: process.env.DB_SYNCHRONIZE === "true",
+      
+      // KPI-029: Entity interceptor để auto-filter theo tenant_id
+      // Entities với tenant_row mixin sẽ tự động thêm WHERE tenant_id = ?
+      subscribers: ["dist/**/*.subscriber{.ts,.js}"],
     }),
   ],
   // Export để dùng trong modules khác
   exports: [TypeOrmModule],
 })
-export class DatabaseModule {}
+export class DatabaseModule {
+  /**
+   * KPI-029: Tạo connection cho tenant cụ thể (dedicated-db mode).
+   * 
+   * @param tenantId - ID của tenant
+   * @returns TypeOrmModule config cho tenant
+   */
+  static forTenant(tenantId: string) {
+    return TypeOrmModule.forRoot({
+      type: "postgres",
+      host: process.env.DATABASE_HOST || "localhost",
+      port: parseInt(process.env.DATABASE_PORT || "5432", 10),
+      username: process.env.DATABASE_USER || "postgres",
+      password: process.env.DATABASE_PASSWORD || "postgres",
+      // KPI-029: Database riêng cho tenant (dedicated-db mode)
+      database: process.env.TENANT_DEDICATED_DB_PREFIX 
+        ? `${process.env.TENANT_DEDICATED_DB_PREFIX}_${tenantId}`
+        : `tenant_${tenantId}`,
+      schema: process.env.TENANT_SCHEMA || "public",
+      entities: ["dist/**/*.entity{.ts,.js}"],
+      migrations: ["dist/migrations/*.js"],
+      migrationsTableName: "migrations",
+      extra: {
+        max: parseInt(process.env.DB_POOL_SIZE || "10", 10),
+        min: parseInt(process.env.DB_POOL_MIN || "2", 10),
+        idleTimeoutMillis: parseInt(process.env.DB_POOL_TIMEOUT || "30000", 10),
+      },
+      logging: process.env.DB_LOGGING === "true",
+      synchronize: process.env.DB_SYNCHRONIZE === "true",
+    });
+  }
+
+  /**
+   * KPI-029: Lấy mode tenant isolation đang cấu hình.
+   * 
+   * @returns Mode: "shared-db" | "shared-schema" | "dedicated-db"
+   */
+  static getTenantIsolationMode(): "shared-db" | "shared-schema" | "dedicated-db" {
+    return (process.env.TENANT_ISOLATION_MODE as "shared-db" | "shared-schema" | "dedicated-db") || "shared-db";
+  }
+}

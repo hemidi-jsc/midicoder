@@ -8,6 +8,7 @@ Module này cung cấp:
 - Sliding window và fixed window algorithms
 
 CP06: API Gateway & Service Mesh
+KPI-029: Tenant Isolation - Per-tenant rate limits và tenant-specific keys
 """
 
 import asyncio
@@ -29,12 +30,17 @@ class RateLimitAlgorithm(Enum):
 
 @dataclass
 class RateLimitResult:
-    """Result of rate limit check."""
+    """
+    Result of rate limit check.
+    
+    KPI-029: tenant_id cho tenant-specific rate limits.
+    """
     allowed: bool
     limit: int
     remaining: int
     reset_at: float
     retry_after: Optional[int] = None
+    tenant_id: Optional[str] = None  # KPI-029: Tenant ID
 
 
 class RateLimitExceeded(Exception):
@@ -227,19 +233,24 @@ class RateLimiter:
         window: int = 60,
         use_redis: bool = False,
         redis_url: str = "redis://localhost:6379",
+        tenant_limits: Optional[Dict[str, int]] = None,  # KPI-029
     ):
         """
         Khởi tạo RateLimiter.
         
+        KPI-029: Support per-tenant rate limits.
+        
         Args:
-            limit: Max requests per window
+            limit: Max requests per window (default)
             window: Window size (seconds)
             use_redis: Sử dụng Redis storage
             redis_url: Redis connection URL
+            tenant_limits: KPI-029: Dict của tenant_id -> custom limit
         """
         self.limit = limit
         self.window = window
         self.use_redis = use_redis
+        self.tenant_limits = tenant_limits or {}  # KPI-029: Per-tenant limits
         
         # Initialize storage
         if use_redis:
@@ -257,19 +268,27 @@ class RateLimiter:
         # key_factory config cho key generation
         self.key_factory = None
     
-    async def acquire(self, key: str) -> RateLimitResult:
+    async def acquire(
+        self, key: str, tenant_id: Optional[str] = None
+    ) -> RateLimitResult:
         """
         Acquire rate limit slot.
         
+        KPI-029: Support tenant-specific rate limits.
+        
         Args:
             key: Rate limit key
+            tenant_id: KPI-029: Tenant ID cho tenant-specific limit
             
         Returns:
-            RateLimitResult
+            RateLimitResult với tenant_id
             
         Raises:
             RateLimitExceeded: Nếu vượt quá limit
         """
+        # KPI-029: Get tenant-specific limit
+        limit = self.tenant_limits.get(tenant_id, self.limit) if tenant_id else self.limit
+        
         # Check whitelist
         if key in self.whitelist:
             return RateLimitResult(
@@ -277,14 +296,19 @@ class RateLimiter:
                 limit=-1,
                 remaining=-1,
                 reset_at=0,
+                tenant_id=tenant_id,  # KPI-029
             )
         
         # Check blacklist
         if key in self.blacklist:
-            raise RateLimitExceeded(self.limit, self.window)
+            raise RateLimitExceeded(limit, self.window)
+        
+        # KPI-029: Create tenant-specific key
+        rate_limit_key = f"{tenant_id}:{key}" if tenant_id else key
         
         # Increment counter
-        result = await self.store.increment(key, self.window, self.limit)
+        result = await self.store.increment(rate_limit_key, self.window, limit)
+        result.tenant_id = tenant_id  # KPI-029: Set tenant_id in result
         
         return result
     
@@ -338,13 +362,18 @@ class RateLimiter:
         logger.info(f"Removed {key} from blacklist")
 
 
-async def check_rate_limit(request, rate_limiter: RateLimiter) -> None:
+async def check_rate_limit(
+    request, rate_limiter: RateLimiter, tenant_id: Optional[str] = None
+) -> None:
     """
     Check rate limit cho request.
+    
+    KPI-029: tenant_id được pass vào cho tenant-specific rate limits.
     
     Args:
         request: HTTP request
         rate_limiter: RateLimiter instance
+        tenant_id: KPI-029: Tenant ID cho tenant-specific limit
         
     Raises:
         RateLimitExceeded: Nếu vượt quá limit
@@ -355,7 +384,8 @@ async def check_rate_limit(request, rate_limiter: RateLimiter) -> None:
     else:
         key = "anonymous"
     
-    result = await rate_limiter.acquire(key)
+    # KPI-029: Acquire với tenant_id
+    result = await rate_limiter.acquire(key, tenant_id=tenant_id)
     
     if not result.allowed:
         raise RateLimitExceeded(result.limit, result.retry_after)
@@ -397,3 +427,71 @@ class FixedWindowRateLimiter(RateLimiter):
             window: Window size
         """
         super().__init__(limit=limit, window=window)
+
+
+# KPI-029: Tenant-specific rate limiter
+class TenantRateLimiter(RateLimiter):
+    """
+    KPI-029: Rate limiter với tenant-specific features.
+    
+    Multi-tenant rate limiting với:
+    - Per-tenant limits
+    - Tenant whitelisting
+    - Cross-tenant admin bypass
+    """
+    
+    def __init__(
+        self,
+        default_limit: int = 100,
+        window: int = 60,
+        use_redis: bool = False,
+        redis_url: str = "redis://localhost:6379",
+    ):
+        """
+        Khởi tạo TenantRateLimiter.
+        
+        Args:
+            default_limit: Default limit cho tenants
+            window: Window size
+            use_redis: Sử dụng Redis
+            redis_url: Redis URL
+        """
+        super().__init__(
+            limit=default_limit,
+            window=window,
+            use_redis=use_redis,
+            redis_url=redis_url,
+            tenant_limits={},  # KPI-029: Will be populated dynamically
+        )
+    
+    def set_tenant_limit(self, tenant_id: str, limit: int):
+        """
+        KPI-029: Set custom limit cho tenant.
+        
+        Args:
+            tenant_id: Tenant ID
+            limit: Custom limit
+        """
+        self.tenant_limits[tenant_id] = limit
+        logger.info(f"Set tenant {tenant_id} limit to {limit}")
+    
+    def remove_tenant_limit(self, tenant_id: str):
+        """
+        KPI-029: Remove custom limit cho tenant.
+        
+        Args:
+            tenant_id: Tenant ID
+        """
+        if tenant_id in self.tenant_limits:
+            del self.tenant_limits[tenant_id]
+            logger.info(f"Removed tenant {tenant_id} custom limit")
+    
+    def add_tenant_to_whitelist(self, tenant_id: str):
+        """
+        KPI-029: Add tenant vào whitelist (bypass rate limit).
+        
+        Args:
+            tenant_id: Tenant ID
+        """
+        self.whitelist.add(f"tenant:{tenant_id}")
+        logger.info(f"Added tenant {tenant_id} to whitelist")

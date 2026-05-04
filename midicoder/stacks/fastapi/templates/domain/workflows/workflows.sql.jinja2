@@ -1,7 +1,9 @@
 -- Migration file cho workflows
 -- Created by Midicoder Workflow Emitter
+-- KPI-029: Tenant Isolation - All tables include tenant_id column
 
 -- Table: workflow_instances
+-- KPI-029: tenant_id được dùng để isolate workflow instances per tenant
 CREATE TABLE IF NOT EXISTS workflow_instances (
     id UUID PRIMARY KEY,
     workflow_name VARCHAR(255) NOT NULL,
@@ -10,15 +12,16 @@ CREATE TABLE IF NOT EXISTS workflow_instances (
     current_state VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    tenant_id UUID NOT NULL
+    tenant_id UUID NOT NULL  -- KPI-029: Tenant isolation
 );
 
 CREATE INDEX idx_workflow_instances_workflow ON workflow_instances(workflow_name);
 CREATE INDEX idx_workflow_instances_entity ON workflow_instances(entity_type, entity_id);
-CREATE INDEX idx_workflow_instances_tenant ON workflow_instances(tenant_id);
-CREATE UNIQUE INDEX idx_workflow_instances_unique ON workflow_instances(workflow_name, entity_type, entity_id, tenant_id);
+CREATE INDEX idx_workflow_instances_tenant ON workflow_instances(tenant_id);  -- KPI-029
+CREATE UNIQUE INDEX idx_workflow_instances_unique ON workflow_instances(workflow_name, entity_type, entity_id, tenant_id);  -- KPI-029
 
 -- Table: workflow_events
+-- KPI-029: tenant_id được dùng để filter events per tenant
 CREATE TABLE IF NOT EXISTS workflow_events (
     id UUID PRIMARY KEY,
     instance_id UUID REFERENCES workflow_instances(id) ON DELETE CASCADE,
@@ -28,13 +31,14 @@ CREATE TABLE IF NOT EXISTS workflow_events (
     transition_id VARCHAR(255),
     payload JSONB DEFAULT '{}',
     occurred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    tenant_id UUID NOT NULL
+    tenant_id UUID NOT NULL  -- KPI-029: Tenant isolation
 );
 
 CREATE INDEX idx_workflow_events_instance ON workflow_events(instance_id);
 CREATE INDEX idx_workflow_events_transition ON workflow_events(transition_id);
 
 -- Table: workflow_transitions_log
+-- KPI-029: tenant_id được dùng để filter transition logs per tenant
 CREATE TABLE IF NOT EXISTS workflow_transitions_log (
     id UUID PRIMARY KEY,
     instance_id UUID REFERENCES workflow_instances(id) ON DELETE CASCADE,
@@ -46,7 +50,7 @@ CREATE TABLE IF NOT EXISTS workflow_transitions_log (
     status VARCHAR(50) NOT NULL,
     error_message TEXT,
     executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    tenant_id UUID NOT NULL
+    tenant_id UUID NOT NULL  -- KPI-029: Tenant isolation
 );
 
 CREATE INDEX idx_transition_log_instance ON workflow_transitions_log(instance_id);

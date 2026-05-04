@@ -3,6 +3,8 @@ Mô-đun Audit Effect.
 
 Cung cấp:
 - AuditEffect: Effect cho audit logging
+
+KPI-029: Tenant Isolation - tenant_id được log trong audit record
 """
 
 from typing import Any
@@ -14,6 +16,7 @@ class AuditEffect:
     Effect executor cho audit logging.
     
     Log audit trail khi transition fire.
+    KPI-029: Bao gồm tenant_id trong audit log.
     """
 
     async def execute(
@@ -23,9 +26,12 @@ class AuditEffect:
         entity_type: str,
         entity_id: UUID,
         details: dict[str, Any],
+        tenant_id: UUID | None = None,  # KPI-029: Tenant isolation
     ) -> dict[str, Any]:
         """
         Execute audit logging effect.
+        
+        KPI-029: tenant_id được thêm vào audit record.
         
         Args:
             action: Audit action name
@@ -33,9 +39,15 @@ class AuditEffect:
             entity_type: Entity type
             entity_id: Entity ID
             details: Additional details
+            tenant_id: KPI-029: Tenant ID cho audit log
             
         Returns:
             Result với log status
         """
+        # KPI-029: tenant_id sẽ được log vào audit record
         # TODO: Integrate với CP14 Audit (RX11 compliance)
-        return {"status": "logged", "action": action}
+        return {
+            "status": "logged",
+            "action": action,
+            "tenant_id": str(tenant_id) if tenant_id else None,  # KPI-029
+        }

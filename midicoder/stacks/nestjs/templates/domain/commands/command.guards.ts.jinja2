@@ -11,6 +11,8 @@
  * - AML_SCREENING guard: AML screening (RX03)
  * - HIPAA_ACCESS guard: HIPAA compliance (RX04)
  * 
+ * KPI-029: Tenant Isolation - tenant_scope guard enforce tenant boundaries.
+ * 
  * @author Midicoder Auto-generated
  */
 
@@ -48,18 +50,20 @@ export class {{ command.id }}Guards {
     /**
      * Kiểm tra tất cả guards theo thứ tự ưu tiên.
      * 
+     * KPI-029: tenant_scope guard enforce tenant boundaries.
+     * 
      * Order:
      * 1. AUTH guard (permission check - RBAC)
-     * 2. TENANT_SCOPE guard (tenant isolation)
+     * 2. TENANT_SCOPE guard (tenant isolation) - KPI-029
      * 3. RATE_LIMIT guard (rate limiting)
      * 4. Compliance guards (KYC, AML, HIPAA)
      * 
-     * @param command Command instance
+     * @param command Command instance với tenantId
      * @param userId User ID
-     * @param tenantId Tenant ID
+     * @param tenantId KPI-029: Tenant ID cho tenant isolation check
      * @param ipAddress Client IP address (cho rate limiting)
-     * @throws PermissionError Nếu không có permission (auth guard failed)
-     * @throws ValueError Nếu vi phạm tenant isolation (tenant_scope guard failed)
+     * @throws PermissionError Nếu không có permission
+     * @throws ValueError Nếu vi phạm tenant isolation (KPI-029)
      * @throws RuntimeError Nếu vượt rate limit hoặc compliance check failed
      */
     async check(
@@ -133,35 +137,40 @@ export class {{ command.id }}Guards {
     /**
      * Kiểm tra TENANT_SCOPE guard (tenant isolation).
      * 
-     * Mode: "{{ guard.mode or 'tenant_isolated' }}"
-     * - tenant_isolated: Data phải thuộc tenant
-     * - tenant_shared: Cho phép cross-tenant với permission
-     * - global: Super admin mode
+     * KPI-029: Enforce tenant boundaries cho data access.
      * 
-     * @param command Command instance
-     * @param tenantId Tenant ID
+     * Mode: "{{ guard.mode or 'tenant_isolated' }}"
+     * - tenant_isolated: Data phải thuộc tenant (KPI-029 default)
+     * - tenant_shared: Cho phép cross-tenant với permission
+     * - global: Super admin mode (bypass tenant check)
+     * 
+     * @param command Command instance với tenantId
+     * @param tenantId KPI-029: Tenant ID cho tenant isolation
      * @throws ValueError Nếu tenant_id None hoặc data không thuộc tenant
      */
     private async _checkTenantGuard(command: {{ command.id }}, tenantId?: string): Promise<void> {
+        // KPI-029: tenant_id là bắt buộc cho tenant isolation
         if (!tenantId) {
-            throw new ValueError('Tenant ID không được xác định');
+            throw new ValueError('KPI-029: Tenant ID không được xác định');
         }
 
         const mode: 'tenant_isolated' | 'tenant_shared' | 'global' = '{{ guard.mode or 'tenant_isolated' }}';
 
         if (mode === 'tenant_isolated') {
-            // Check command data belongs to tenant
+            // KPI-029: Check command data belongs to tenant
             const isBelong = await this.tenantService.belongsToTenant({
                 data: command,
                 tenantId,
             });
             if (!isBelong) {
-                throw new ValueError('Data không thuộc tenant');
+                throw new ValueError('KPI-029: Data không thuộc tenant');
             }
         } else if (mode === 'tenant_shared') {
             // Shared mode - check permission for cross-tenant access
+            // KPI-029: Need special permission for cross-tenant
         } else if (mode === 'global') {
             // Global mode - super admin, no check needed
+            // KPI-029: Super admin bypass tenant check
         }
     }
 
