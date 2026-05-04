@@ -1,87 +1,88 @@
-/**
- * WorkflowEffects - Effects manager cho workflow transitions.
- * 
- * KPI-029: Tenant Isolation - Effects are executed within tenant context.
- * CP04: Workflow Engine
- */
-
 import { Injectable } from '@nestjs/common';
 
 /**
- * TransitionContext - Context cho workflow transition.
- * 
- * KPI-029: Includes tenantId for tenant-scoped operations.
+ * TransitionContext - Context cho transition execution.
  */
 export interface TransitionContext {
-    workflowName: string;
-    instanceId: string;
-    entityType: string;
-    entityId: string;
-    fromState: string;
-    toState: string;
-    userId?: string;
-    /** KPI-029: Tenant ID cho tenant isolation */
-    tenantId?: string;
+  workflowName: string;
+  instanceId: string;
+  entityType: string;
+  entityId: string;
+  fromState?: string;
+  toState: string;
+  userId?: string;
+  tenantId: string;
 }
 
 /**
- * WorkflowEffects - Executer cho workflow effects.
+ * WorkflowEffects - Effects service cho workflow transitions.
  * 
- * KPI-029: Tenant Isolation - All effects respect tenant context from TransitionContext.
- * 
- * Effect types:
- * - publishEvent: Publish domain events
- * - executeCommand: Execute commands
- * - sendNotification: Send notifications (email, SMS, push)
- * - logAudit: Write audit logs
+ * Cung cấp các effect implementations:
+ * - Event publishing
+ * - Command execution
+ * - Notification sending
+ * - Audit logging
+ * - Compensation/rollback
  */
 @Injectable()
 export class WorkflowEffects {
-    /**
-     * Publish domain event.
-     * 
-     * KPI-029: Event includes tenantId from context.
-     */
-    async publishEvent(context: TransitionContext, eventName: string): Promise<void> {
-        // TODO: Integrate with Event Bus
-        // KPI-029: Include context.tenantId in event payload
-        console.log(`Published event: ${eventName}`);
-    }
+  /**
+   * Publish domain event.
+   * 
+   * @param eventName Event name
+   * @param payload Event payload
+   */
+  async publishEvent(eventName: string, payload: TransitionContext): Promise<void> {
+    // TODO: Integrate với Event Bus (e.g., NestJS EventsModule)
+    console.log(`Published event: ${eventName}`, payload);
+  }
 
-    /**
-     * Execute command.
-     * 
-     * KPI-029: Command is tenant-scoped via context.tenantId.
-     */
-    async executeCommand(context: TransitionContext, commandName: string): Promise<void> {
-        // TODO: Execute command
-        // KPI-029: Pass context.tenantId to command
-        console.log(`Executed command: ${commandName}`);
-    }
+  /**
+   * Execute command.
+   * 
+   * @param commandName Command name
+   * @param params Command parameters
+   */
+  async executeCommand(commandName: string, params: Record<string, unknown>): Promise<void> {
+    // TODO: Integrate với Command Bus
+    console.log(`Executed command: ${commandName}`, params);
+  }
 
-    /**
-     * Send notification.
-     * 
-     * KPI-029: Notification is sent to tenant-specific recipients.
-     */
-    async sendNotification(
-        context: TransitionContext,
-        channel: string,
-        template: string,
-    ): Promise<void> {
-        // TODO: Send notification
-        // KPI-029: Filter recipients by context.tenantId
-        console.log(`Sent notification via ${channel}: ${template}`);
-    }
+  /**
+   * Send notification.
+   * 
+   * @param channel Notification channel
+   * @param template Template name
+   * @param recipient Recipient identifier
+   */
+  async sendNotification(
+    channel: string,
+    template: string,
+    recipient: string,
+  ): Promise<void> {
+    // TODO: Integrate với Notification Service
+    console.log(`Sent notification via ${channel}: ${template} to ${recipient}`);
+  }
 
-    /**
-     * Log audit record.
-     * 
-     * KPI-029: Audit log includes tenantId for audit trail.
-     */
-    async logAudit(context: TransitionContext, action: string): Promise<void> {
-        // TODO: Log audit
-        // KPI-029: Include context.tenantId in audit record
-        console.log(`Logged audit: ${action}`);
-    }
+  /**
+   * Log audit event.
+   * 
+   * @param action Action name
+   * @param context Transition context
+   */
+  async logAudit(action: string, context: TransitionContext): Promise<void> {
+    // TODO: Integrate với Audit Service
+    console.log(`Logged audit: ${action}`, context);
+  }
+
+  /**
+   * Execute compensation/rollback action.
+   * 
+   * @param action Rollback action name
+   * @param params Rollback parameters
+   */
+  async rollback(action: string, params: Record<string, unknown>): Promise<void> {
+    // TODO: Integrate với Compensation Service
+    console.log(`Executed rollback: ${action}`, params);
+  }
 }

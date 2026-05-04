@@ -1,2 +1,27 @@
-# Workflow guards package
-# KPI-029: Tenant Isolation - Guards validate tenant_id for workflow operations
+"""
+Guards cho workflow transitions.
+
+Cung cấp các guard implementations với dependency injection:
+- PermissionGuard: Kiểm tra permission từ Auth service
+- BusinessGuard: Evaluate business rule conditions
+- ComplianceGuard: Kiểm tra compliance requirements
+- RoleGuard: Kiểm tra role membership
+- StateGuard: Kiểm tra state-based conditions
+"""
+
+from .permission import PermissionGuard, PermissionChecker
+from .business import BusinessGuard
+from .compliance import ComplianceGuard, ComplianceChecker
+from .role import RoleGuard, RoleChecker
+from .state import StateGuard
+
+__all__ = [
+    "PermissionGuard",
+    "PermissionChecker",
+    "BusinessGuard",
+    "ComplianceGuard",
+    "ComplianceChecker",
+    "RoleGuard",
+    "RoleChecker",
+    "StateGuard",
+]

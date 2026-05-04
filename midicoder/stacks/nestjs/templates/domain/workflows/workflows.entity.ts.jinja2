@@ -1,18 +1,11 @@
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index, OneToMany } from 'typeorm';
+import { WorkflowEventEntity } from './workflow-events.entity';
+import { WorkflowTransitionLogEntity } from './workflow-transitions-log.entity';
+
 /**
  * WorkflowEntity - Entity cho workflow instances.
  * 
- * KPI-029: Tenant Isolation - Each workflow instance is scoped to a tenant.
- * CP04: Workflow Engine
- */
-
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
-
-/**
- * WorkflowEntity - Snapshot của current workflow state.
- * 
- * KPI-029: Tenant Isolation - tenantId column ensures workflow instances are tenant-scoped.
- * 
- * Mỗi entity có một workflow instance cho mỗi workflow type.
+ * Lưu trữ current state của mỗi entity cho mỗi workflow type.
  */
 @Entity('workflow_instances')
 export class WorkflowEntity {
@@ -34,9 +27,12 @@ export class WorkflowEntity {
     @Column({ type: 'varchar', length: 255 })
     currentState: string;
 
-    /**
-     * KPI-029: Tenant ID - Workflow instance là tenant-scoped.
-     */
+    @Column({ type: 'boolean', default: false })
+    isAsync: boolean;
+
+    @Column({ type: 'varchar', length: 500, nullable: true })
+    asyncCallbackUrl: string | null;
+
     @Column({ type: 'uuid' })
     @Index()
     tenantId: string;
@@ -46,4 +42,10 @@ export class WorkflowEntity {
 
     @UpdateDateColumn()
     updatedAt: Date;
+
+    @OneToMany(() => WorkflowEventEntity, (event) => event.instance)
+    events: WorkflowEventEntity[];
+
+    @OneToMany(() => WorkflowTransitionLogEntity, (log) => log.instance)
+    transitionLogs: WorkflowTransitionLogEntity[];
 }
