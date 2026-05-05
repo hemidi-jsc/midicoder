@@ -1,0 +1,109 @@
+/**
+ * Healthcare Patient Entity (NestJS/TypeORM)
+ *
+ * Bệnh nhân với PHI encryption (RX04: HIPAA).
+ */
+
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+
+export enum PatientStatus {
+  ACTIVE = 'active',
+  INACTIVE = 'inactive',
+  DISCHARGED = 'discharged',
+}
+
+@Entity('healthcare_patients')
+@Index('idx_patient_id', ['patientId'])
+export class Patient {
+  @PrimaryColumn({ name: 'id', length: 50 })
+  id: string;
+
+  @Column({ name: 'tenant_id', length: 50 })
+  tenantId: string;
+
+  @Column({ name: 'patient_id', length: 50, unique: true })
+  patientId: string;
+
+  // RX04: PHI fields encrypted
+  @Column({ name: 'full_name_enc', length: 500 })
+  fullNameEnc: string;
+
+  @Column({ name: 'date_of_birth_enc', length: 50, nullable: true })
+  dateOfBirthEnc: string | null;
+
+  @Column({ length: 10, nullable: true })
+  gender: string | null;
+
+  @Column({ name: 'phone_enc', length: 50, nullable: true })
+  phoneEnc: string | null;
+
+  @Column({ name: 'address_enc', type: 'text', nullable: true })
+  addressEnc: string | null;
+
+  @Column({ name: 'blood_type', length: 5, nullable: true })
+  bloodType: string | null;
+
+  @Column({ enum: PatientStatus, default: PatientStatus.ACTIVE })
+  status: PatientStatus;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+
+@Entity('healthcare_clinical_notes')
+@Index('idx_note_patient', ['patientId'])
+export class ClinicalNote {
+  @PrimaryColumn({ name: 'id', length: 50 })
+  id: string;
+
+  @Column({ name: 'tenant_id', length: 50 })
+  tenantId: string;
+
+  @Column({ name: 'note_id', length: 50, unique: true })
+  noteId: string;
+
+  @Column({ name: 'patient_id', length: 50 })
+  patientId: string;
+
+  @Column({ name: 'provider_id', length: 50 })
+  providerId: string;
+
+  @Column({ name: 'note_type', length: 50 })
+  noteType: string;
+
+  // RX04: PHI encrypted
+  @Column({ name: 'content_enc', type: 'text' })
+  contentEnc: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+}
+
+@Entity('healthcare_ehr')
+@Index('idx_ehr_patient', ['patientId'])
+export class EHR {
+  @PrimaryColumn({ name: 'id', length: 50 })
+  id: string;
+
+  @Column({ name: 'tenant_id', length: 50 })
+  tenantId: string;
+
+  @Column({ name: 'ehr_id', length: 50, unique: true })
+  ehrId: string;
+
+  @Column({ name: 'patient_id', length: 50 })
+  patientId: string;
+
+  // RX04: PHI encrypted
+  @Column({ name: 'diagnosis_enc', type: 'text', nullable: true })
+  diagnosisEnc: string | null;
+
+  @Column({ name: 'allergies_enc', type: 'text', nullable: true })
+  allergiesEnc: string | null;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}

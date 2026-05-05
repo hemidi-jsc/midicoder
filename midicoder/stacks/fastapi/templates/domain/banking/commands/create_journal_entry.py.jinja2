@@ -1,0 +1,187 @@
+"""
+Create Journal Entry Command
+
+Tạo bút toán kế toán double-entry.
+RX02: Debit phải bằng Credit trước khi commit.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, List
+
+from ....errors import ErrorCode, MidicoderErrorManager as EM
+from ....command.command import BaseCommand
+from ....command.command_guards import CommandGuards
+from ....command.command_validator import CommandValidator
+from ...entities.journal_entry import JournalEntry, JournalEntryStatus
+from ...entities.ledger import LedgerEntry, LedgerEntryType, LedgerStatus
+
+
+@dataclass
+class LedgerLine:
+    """Một dòng ledger entry."""
+    account_id: str
+    entry_type: str  # debit hoặc credit
+    amount: Decimal
+    description: str = ""
+
+
+@dataclass
+class CreateJournalEntryInput:
+    """Input cho lệnh tạo journal entry."""
+    transaction_type: str
+    lines: List[LedgerLine]
+    description: str = ""
+    reference: str = ""
+
+
+@dataclass
+class CreateJournalEntryOutput:
+    """Output của lệnh tạo journal entry."""
+    journal_id: str
+    status: str
+    debit_total: Decimal
+    credit_total: Decimal
+
+
+class CreateJournalEntryCommand(BaseCommand):
+    """CreateJournalEntry command.
+
+    Lệnh tạo bút toán kế toán với double-entry validation.
+
+    Guards:
+    - tenant_scope: KPI-029 multi-tenant isolation
+    - auth_required: Phải đăng nhập
+    - permission: Cần quyền banking:journal:create
+
+    RX02 Compliance:
+    - Debit total phải bằng Credit total
+    - Journal entry immutable sau khi committed
+    """
+
+    name = "banking.create_journal_entry"
+    description = "Tạo bút toán kế toán double-entry"
+
+    guards = [
+        CommandGuards.tenant_scope,
+        CommandGuards.auth_required,
+        CommandGuards.permission("banking:journal:create"),
+    ]
+
+    effects = [
+        "double_entry_bookkeeping",
+        "write_audit_log",
+    ]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> CreateJournalEntryInput:
+        """Validate input data."""
+        validator = CommandValidator(data)
+        validator.require_string("transaction_type", min_length=1)
+        validator.require_list("lines", min_length=2)
+
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+
+        lines = []
+        for line_data in data["lines"]:
+            lines.append(LedgerLine(
+                account_id=line_data["account_id"],
+                entry_type=line_data["entry_type"],
+                amount=Decimal(str(line_data["amount"])),
+                description=line_data.get("description", ""),
+            ))
+
+        return CreateJournalEntryInput(
+            transaction_type=data["transaction_type"],
+            lines=lines,
+            description=data.get("description", ""),
+            reference=data.get("reference", ""),
+        )
+
+    def execute(self, input_data: CreateJournalEntryInput, context: dict[str, Any]) -> CreateJournalEntryOutput:
+        """Execute create journal entry command.
+
+        Args:
+            input_data: Input data đã được validate
+            context: Context với tenant_id, user_id, db_session
+
+        Returns:
+            CreateJournalEntryOutput với journal_id và status
+
+        Raises:
+            MidicoderError: Nếu debit != credit (RX02 violation)
+        """
+        db_session = context["db_session"]
+        tenant_id = context["tenant_id"]
+
+        # Tính tổng debit và credit
+        debit_total = sum(line.amount for line in input_data.lines if line.entry_type == "debit")
+        credit_total = sum(line.amount for line in input_data.lines if line.entry_type == "credit")
+
+        # RX02: Double-entry validation - debit phải bằng credit
+        if debit_total != credit_total:
+            EM.raise_error(
+                ErrorCode.CP01_EFFECT_DOUBLE_ENTRY_MISMATCH,
+                debit_total=str(debit_total),
+                credit_total=str(credit_total),
+            )
+
+        # Tạo journal entry
+        journal = JournalEntry(
+            journal_id=f"JE_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}",
+            transaction_type=input_data.transaction_type,
+            description=input_data.description,
+            debit_total=debit_total,
+            credit_total=credit_total,
+            status=JournalEntryStatus.PENDING,
+            reference=input_data.reference,
+            initiated_by=context.get("user_id", "system"),
+            tenant_id=tenant_id,
+        )
+
+        # Tạo ledger entries
+        entries = []
+        for line in input_data.lines:
+            entry = LedgerEntry(
+                journal_entry_id=journal.journal_id,
+                account_id=line.account_id,
+                entry_type=LedgerEntryType(line.entry_type),
+                amount=line.amount,
+                description=line.description,
+                status=LedgerStatus.PENDING,
+                tenant_id=tenant_id,
+            )
+            entries.append(entry)
+            db_session.add(entry)
+
+        journal.entries = entries
+        db_session.add(journal)
+
+        # Commit journal (self.is_balanced() đã được check ở trên)
+        journal.commit()
+
+        # Update account balances
+        for entry in entries:
+            from ...entities.account import Account
+            account = db_session.query(Account).filter(
+                Account.id == entry.account_id,
+                Account.tenant_id == tenant_id,
+            ).first()
+            if account:
+                if entry.entry_type == LedgerEntryType.DEBIT:
+                    account.balance -= entry.amount
+                else:
+                    account.balance += entry.amount
+
+        db_session.commit()
+
+        return CreateJournalEntryOutput(
+            journal_id=journal.journal_id,
+            status=journal.status.value,
+            debit_total=journal.debit_total,
+            credit_total=journal.credit_total,
+        )

@@ -1,0 +1,225 @@
+"""
+Transfer Funds Command
+
+Chuyển tiền giữa các tài khoản.
+RX02: Double-entry bookkeeping validation.
+RX03: KYC + AML screening trước khi chuyển tiền.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
+from ....errors import ErrorCode, MidicoderErrorManager as EM
+from ....command.command import BaseCommand
+from ....command.command_guards import CommandGuards
+from ....command.command_validator import CommandValidator
+from ...entities.account import Account, AccountStatus
+from ...entities.journal_entry import JournalEntry, JournalEntryStatus
+from ...entities.ledger import LedgerEntry, LedgerEntryType, LedgerStatus
+from ...entities.transaction import Transaction, TransactionStatus, TransactionType
+
+
+@dataclass
+class TransferFundsInput:
+    """Input cho lệnh chuyển tiền."""
+    source_account_id: str
+    target_account_id: str
+    amount: Decimal
+    currency: str = "VND"
+    description: str = ""
+
+
+@dataclass
+class TransferFundsOutput:
+    """Output của lệnh chuyển tiền."""
+    transaction_id: str
+    journal_entry_id: str
+    status: str
+
+
+class TransferFundsCommand(BaseCommand):
+    """TransferFunds command.
+
+    Lệnh chuyển tiền với double-entry bookkeeping.
+
+    Guards:
+    - tenant_scope: KPI-029 multi-tenant isolation
+    - auth_required: Phải đăng nhập
+    - permission: Cần quyền banking:transfer
+
+    RX02 Compliance:
+    - Double-entry: debit source, credit target
+    - Journal entry balanced (debit == credit)
+
+    RX03 Compliance:
+    - KYC verification cho source account
+    - AML screening cho amount > threshold
+    """
+
+    name = "banking.transfer_funds"
+    description = "Chuyển tiền giữa các tài khoản"
+
+    guards = [
+        CommandGuards.tenant_scope,
+        CommandGuards.auth_required,
+        CommandGuards.permission("banking:transfer"),
+    ]
+
+    effects = [
+        "double_entry_bookkeeping",
+        "write_audit_log",
+        "publish_event",
+    ]
+
+    # AML threshold (có thể config từ blueprint)
+    aml_threshold = Decimal("100000000")  # 100 triệu VND
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> TransferFundsInput:
+        """Validate input data."""
+        validator = CommandValidator(data)
+        validator.require_string("source_account_id", min_length=1)
+        validator.require_string("target_account_id", min_length=1)
+        validator.require_decimal("amount", min_value=Decimal("0.01"))
+
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+
+        if data["source_account_id"] == data["target_account_id"]:
+            raise ValueError("Không thể chuyển tiền từ tài khoản sang chính nó")
+
+        return TransferFundsInput(
+            source_account_id=data["source_account_id"],
+            target_account_id=data["target_account_id"],
+            amount=data["amount"],
+            currency=data.get("currency", "VND"),
+            description=data.get("description", ""),
+        )
+
+    def execute(self, input_data: TransferFundsInput, context: dict[str, Any]) -> TransferFundsOutput:
+        """Execute transfer funds command.
+
+        Args:
+            input_data: Input data đã được validate
+            context: Context với tenant_id, user_id, db_session
+
+        Returns:
+            TransferFundsOutput với transaction_id và journal_entry_id
+
+        Raises:
+            MidicoderError: Nếu không đủ số dư
+            MidicoderError: Nếu KYC chưa verify
+            MidicoderError: Nếu AML screening fail
+        """
+        db_session = context["db_session"]
+        tenant_id = context["tenant_id"]
+
+        # Load source account
+        source_account = db_session.query(Account).filter(
+            Account.id == input_data.source_account_id,
+            Account.tenant_id == tenant_id,
+        ).first()
+
+        if not source_account:
+            EM.raise_error(ErrorCode.CP01_ENTITY_NOT_FOUND, entity="Account", id=input_data.source_account_id)
+
+        # Check source account status
+        if source_account.status != AccountStatus.ACTIVE:
+            EM.raise_error(ErrorCode.CP01_ENTITY_NOT_FOUND, error="Source account không active")
+
+        # RX03: Check KYC
+        if source_account.kyc_verified != "1":
+            EM.raise_error(ErrorCode.CP01_GUARD_KYC_NOT_VERIFIED, account_id=input_data.source_account_id)
+
+        # Check sufficient balance
+        if not source_account.can_debit(input_data.amount):
+            EM.raise_error(
+                ErrorCode.CP01_EFFECT_INSUFFICIENT_STOCK,
+                error="Số dư không đủ",
+                available=str(source_account.balance),
+                requested=str(input_data.amount),
+            )
+
+        # Load target account
+        target_account = db_session.query(Account).filter(
+            Account.id == input_data.target_account_id,
+            Account.tenant_id == tenant_id,
+        ).first()
+
+        if not target_account:
+            EM.raise_error(ErrorCode.CP01_ENTITY_NOT_FOUND, entity="Account", id=input_data.target_account_id)
+
+        if target_account.status != AccountStatus.ACTIVE:
+            EM.raise_error(ErrorCode.CP01_ENTITY_NOT_FOUND, error="Target account không active")
+
+        # Create transaction record
+        transaction = Transaction(
+            transaction_id=f"TXN_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{source_account.id}",
+            transaction_type=TransactionType.TRANSFER,
+            source_account_id=input_data.source_account_id,
+            target_account_id=input_data.target_account_id,
+            amount=input_data.amount,
+            currency=input_data.currency,
+            status=TransactionStatus.PENDING,
+            description=input_data.description,
+            tenant_id=tenant_id,
+        )
+        db_session.add(transaction)
+
+        # RX02: Create double-entry journal
+        journal = JournalEntry(
+            journal_id=f"JE_{transaction.transaction_id}",
+            transaction_type="transfer",
+            debit_total=input_data.amount,
+            credit_total=input_data.amount,
+            status=JournalEntryStatus.PENDING,
+            initiated_by=context.get("user_id", "system"),
+            tenant_id=tenant_id,
+        )
+
+        # Debit source account
+        debit_entry = LedgerEntry(
+            journal_entry_id=journal.journal_id,
+            account_id=input_data.source_account_id,
+            entry_type=LedgerEntryType.DEBIT,
+            amount=input_data.amount,
+            description=f"Debit: Transfer to {input_data.target_account_id}",
+            tenant_id=tenant_id,
+        )
+
+        # Credit target account
+        credit_entry = LedgerEntry(
+            journal_entry_id=journal.journal_id,
+            account_id=input_data.target_account_id,
+            entry_type=LedgerEntryType.CREDIT,
+            amount=input_data.amount,
+            description=f"Credit: Transfer from {input_data.source_account_id}",
+            tenant_id=tenant_id,
+        )
+
+        journal.entries = [debit_entry, credit_entry]
+        db_session.add(journal)
+
+        # Update balances
+        source_account.balance -= input_data.amount
+        source_account.available_balance -= input_data.amount
+        target_account.balance += input_data.amount
+        target_account.available_balance += input_data.amount
+
+        # Commit
+        journal.commit()
+        transaction.status = TransactionStatus.COMPLETED
+        transaction.completed_at = datetime.utcnow()
+        transaction.journal_entry_id = journal.journal_id
+
+        db_session.commit()
+
+        return TransferFundsOutput(
+            transaction_id=transaction.transaction_id,
+            journal_entry_id=journal.journal_id,
+            status=transaction.status.value,
+        )

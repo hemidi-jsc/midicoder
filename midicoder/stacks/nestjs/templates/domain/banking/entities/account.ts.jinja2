@@ -1,0 +1,91 @@
+/**
+ * Banking Account Entity (NestJS/TypeORM)
+ *
+ * Tài khoản ngân hàng với KYC fields.
+ * RX03: KYC/AML compliance. KPI-029: Multi-tenant isolation.
+ */
+
+import {
+  Entity,
+  PrimaryColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from 'typeorm';
+
+export enum AccountStatus {
+  ACTIVE = 'active',
+  FROZEN = 'frozen',
+  CLOSED = 'closed',
+}
+
+export enum AccountType {
+  CHECKING = 'checking',
+  SAVINGS = 'savings',
+  CURRENT = 'current',
+}
+
+@Entity('banking_accounts')
+@index('idx_account_number', ['accountNumber'])
+@index('idx_account_tenant', ['tenantId'])
+export class Account {
+  @PrimaryColumn({ name: 'id', length: 50 })
+  id: string;
+
+  @Column({ name: 'tenant_id', length: 50 })
+  tenantId: string;
+
+  @Column({ name: 'account_number', length: 50, unique: true })
+  accountNumber: string;
+
+  @Column({ name: 'account_type', enum: AccountType })
+  accountType: AccountType;
+
+  @Column({ length: 3, default: 'VND' })
+  currency: string;
+
+  @Column({ name: 'balance', type: 'decimal', precision: 19, scale: 2, default: 0 })
+  balance: string;
+
+  @Column({ name: 'available_balance', type: 'decimal', precision: 19, scale: 2, default: 0 })
+  availableBalance: string;
+
+  @Column({ enum: AccountStatus, default: AccountStatus.ACTIVE })
+  status: AccountStatus;
+
+  // RX03: KYC fields
+  @Column({ name: 'kyc_verified', length: 1, default: '0' })
+  kycVerified: string;
+
+  @Column({ name: 'kyc_verified_at', type: 'timestamp', nullable: true })
+  kycVerifiedAt: Date | null;
+
+  @CreateDateColumn({ name: 'opened_at' })
+  openedAt: Date;
+
+  @Column({ name: 'closed_at', type: 'timestamp', nullable: true })
+  closedAt: Date | null;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  /** Kiểm tra có thể debit số tiền không. */
+  canDebit(amount: number): boolean {
+    return this.status === AccountStatus.ACTIVE && (parseFloat(this.balance) - amount) >= -1000000;
+  }
+
+  /** Đóng băng tài khoản. */
+  freeze(): void {
+    this.status = AccountStatus.FROZEN;
+  }
+
+  /** Đóng tài khoản (chỉ khi số dư = 0). */
+  close(): void {
+    if (parseFloat(this.balance) !== 0) {
+      throw new Error('Không thể đóng tài khoản khi số dư khác 0');
+    }
+    this.status = AccountStatus.CLOSED;
+    this.closedAt = new Date();
+  }
+}

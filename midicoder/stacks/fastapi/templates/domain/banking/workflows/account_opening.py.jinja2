@@ -1,0 +1,172 @@
+"""
+Account Opening Workflow
+
+Quy trình mở tài khoản: INITIATED → KYC_VERIFIED → AML_CHECKED → ACCOUNT_CREATED.
+RX03: KYC + AML mandatory trước khi tạo tài khoản.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+
+class AccountOpeningState(str, Enum):
+    """Trạng thái quy trình mở tài khoản."""
+    INITIATED = "initiated"
+    KYC_VERIFIED = "kyc_verified"
+    AML_CHECKED = "aml_checked"
+    ACCOUNT_CREATED = "account_created"
+    FAILED = "failed"
+
+
+class AccountOpeningEvent(str, Enum):
+    """Sự kiện trong quy trình mở tài khoản."""
+    SUBMIT_APPLICATION = "submit_application"
+    KYC_VERIFIED = "kyc_verified"
+    AML_PASSED = "aml_passed"
+    AML_FAILED = "aml_failed"
+    CREATE_ACCOUNT = "create_account"
+    REJECT = "reject"
+
+
+@dataclass
+class WorkflowTransition:
+    """Chuyển trạng thái trong workflow."""
+    from_state: AccountOpeningState
+    to_state: AccountOpeningState
+    event: AccountOpeningEvent
+    guard: Optional[str] = None
+    effect: Optional[str] = None
+
+
+# Định nghĩa state machine cho Account Opening
+ACCOUNT_OPENING_TRANSITIONS: List[WorkflowTransition] = [
+    WorkflowTransition(
+        from_state=AccountOpeningState.INITIATED,
+        to_state=AccountOpeningState.KYC_VERIFIED,
+        event=AccountOpeningEvent.KYC_VERIFIED,
+        guard="kyc_verified_guard",
+        effect="write_kyc_audit_log",
+    ),
+    WorkflowTransition(
+        from_state=AccountOpeningState.KYC_VERIFIED,
+        to_state=AccountOpeningState.AML_CHECKED,
+        event=AccountOpeningEvent.AML_PASSED,
+        guard="aml_screening_guard",
+        effect="write_aml_audit_log",
+    ),
+    WorkflowTransition(
+        from_state=AccountOpeningState.KYC_VERIFIED,
+        to_state=AccountOpeningState.FAILED,
+        event=AccountOpeningEvent.AML_FAILED,
+        guard=None,
+        effect="write_rejection_log",
+    ),
+    WorkflowTransition(
+        from_state=AccountOpeningState.AML_CHECKED,
+        to_state=AccountOpeningState.ACCOUNT_CREATED,
+        event=AccountOpeningEvent.CREATE_ACCOUNT,
+        guard="accounts_available_guard",
+        effect="create_account_record",
+    ),
+    # Có thể reject ở bất kỳ bước nào
+    WorkflowTransition(
+        from_state=AccountOpeningState.INITIATED,
+        to_state=AccountOpeningState.FAILED,
+        event=AccountOpeningEvent.REJECT,
+        guard=None,
+        effect="write_rejection_log",
+    ),
+    WorkflowTransition(
+        from_state=AccountOpeningState.KYC_VERIFIED,
+        to_state=AccountOpeningState.FAILED,
+        event=AccountOpeningEvent.REJECT,
+        guard=None,
+        effect="write_rejection_log",
+    ),
+]
+
+
+@dataclass
+class AccountOpeningWorkflow:
+    """Workflow cho quy trình mở tài khoản.
+
+    State machine với các states:
+    INITIATED → KYC_VERIFIED → AML_CHECKED → ACCOUNT_CREATED
+
+    RX03 Compliance:
+    - KYC verification mandatory
+    - AML screening mandatory
+    """
+
+    workflow_id: str
+    tenant_id: str
+    customer_id: str
+    current_state: AccountOpeningState = AccountOpeningState.INITIATED
+    history: List[Dict[str, Any]] = field(default_factory=list)
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
+    failed_reason: Optional[str] = None
+
+    def can_transition(self, event: AccountOpeningEvent) -> bool:
+        """Kiểm tra có thể transition với event này không."""
+        for transition in ACCOUNT_OPENING_TRANSITIONS:
+            if (
+                transition.from_state == self.current_state
+                and transition.event == event
+            ):
+                return True
+        return False
+
+    def transition(self, event: AccountOpeningEvent, context: Dict[str, Any]) -> AccountOpeningState:
+        """Transition đến state mới.
+
+        Args:
+            event: Event trigger transition
+            context: Context với data cần thiết
+
+        Returns:
+            State mới sau khi transition
+
+        Raises:
+            ValueError: Nếu transition không hợp lệ
+        """
+        if not self.can_transition(event):
+            raise ValueError(
+                f"Không thể transition từ {self.current_state.value} với event {event.value}"
+            )
+
+        # Find transition
+        transition = next(
+            t for t in ACCOUNT_OPENING_TRANSITIONS
+            if t.from_state == self.current_state and t.event == event
+        )
+
+        # Log history
+        self.history.append({
+            "from_state": self.current_state.value,
+            "to_state": transition.to_state.value,
+            "event": event.value,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
+        self.current_state = transition.to_state
+        self.updated_at = datetime.utcnow()
+
+        return self.current_state
+
+    @property
+    def is_completed(self) -> bool:
+        """Kiểm tra workflow đã hoàn tất không."""
+        return self.current_state in (
+            AccountOpeningState.ACCOUNT_CREATED,
+            AccountOpeningState.FAILED,
+        )
+
+    @property
+    def is_terminal(self) -> bool:
+        """Kiểm tra có ở terminal state không."""
+        return self.is_completed

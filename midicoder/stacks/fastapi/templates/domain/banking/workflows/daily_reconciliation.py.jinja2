@@ -1,0 +1,78 @@
+"""
+Daily Reconciliation Workflow
+
+Quy trình đối chiếu hàng ngày: SCHEDULED → IN_PROGRESS → COMPLETED/VARIANCE_FOUND.
+RX02: Daily reconciliation mandatory.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, date
+from decimal import Decimal
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+
+class ReconciliationWorkflowState(str, Enum):
+    SCHEDULED = "scheduled"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    VARIANCE_FOUND = "variance_found"
+    FAILED = "failed"
+
+
+class ReconciliationEvent(str, Enum):
+    START = "start"
+    FETCH_EXTERNAL = "fetch_external"
+    COMPARE = "compare"
+    RESOLVE = "resolve"
+    COMPLETE = "complete"
+    FAIL = "fail"
+
+
+@dataclass
+class DailyReconciliationWorkflow:
+    """Workflow cho đối chiếu hàng ngày.
+
+    State machine: SCHEDULED → IN_PROGRESS → COMPLETED/VARIANCE_FOUND
+    RX02: Mandatory daily reconciliation
+    """
+
+    workflow_id: str
+    tenant_id: str
+    reconciliation_date: date
+    current_state: ReconciliationWorkflowState = ReconciliationWorkflowState.SCHEDULED
+    internal_balance: Decimal = Decimal("0.00")
+    external_balance: Decimal = Decimal("0.00")
+    variance: Decimal = Decimal("0.00")
+    history: List[Dict[str, Any]] = field(default_factory=list)
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+
+    def start(self) -> None:
+        self.current_state = ReconciliationWorkflowState.IN_PROGRESS
+        self._log("start")
+
+    def compare_balances(self) -> bool:
+        self.variance = self.internal_balance - self.external_balance
+        is_matched = self.variance == Decimal("0.00")
+        self.current_state = ReconciliationWorkflowState.COMPLETED if is_matched else ReconciliationWorkflowState.VARIANCE_FOUND
+        self._log("compare", {"variance": str(self.variance), "matched": is_matched})
+        return is_matched
+
+    def complete(self) -> None:
+        self.current_state = ReconciliationWorkflowState.COMPLETED
+        self.completed_at = datetime.utcnow()
+        self._log("complete")
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.current_state in (ReconciliationWorkflowState.COMPLETED, ReconciliationWorkflowState.VARIANCE_FOUND, ReconciliationWorkflowState.FAILED)
+
+    def _log(self, action: str, data: Dict[str, Any] | None = None) -> None:
+        self.history.append({"action": action, "time": datetime.utcnow().isoformat(), **(data or {})})
+
+
+# Cron: chạy mỗi ngày lúc 00:00
+CRON_CONFIG = {"schedule": "0 0 * * *", "action": "daily_reconciliation", "description": "Đối chiếu hàng ngày"}

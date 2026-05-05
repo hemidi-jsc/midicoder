@@ -1,0 +1,84 @@
+"""
+Healthcare Claim & Lab Entities (DP10)
+
+Yêu cầu bồi thường, kết quả xét nghiệm, phân phối thuốc.
+RX04: PHI encryption cho tất cả fields nhạy cảm.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+from enum import Enum
+
+from sqlalchemy import Column, DateTime, Enum as SQLAlchemyEnum, Index, Numeric, String, Text
+
+from ....db.base_model import Base
+from ....db.tenant_mixin import TenantRowMixin
+
+
+class ClaimStatus(str, Enum):
+    SUBMITTED = "submitted"
+    UNDER_REVIEW = "under_review"
+    APPROVED = "approved"
+    DENIED = "denied"
+    PAID = "paid"
+
+
+class Claim(Base, TenantRowMixin):
+    """Healthcare insurance claim entity."""
+
+    __tablename__ = "healthcare_claims"
+
+    claim_id = Column(String(50), nullable=False, unique=True)
+    patient_id = Column(String(50), nullable=False)
+    provider_id = Column(String(50), nullable=False)
+    diagnosis_code = Column(String(20), nullable=True)
+    procedure_code = Column(String(20), nullable=True)
+    description_enc = Column(Text, nullable=True)  # PHI encrypted
+    amount = Column(Numeric(19, 2), nullable=False)
+    status = Column(SQLAlchemyEnum(ClaimStatus), nullable=False, default=ClaimStatus.SUBMITTED)
+    submitted_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    reviewed_at = Column(DateTime, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (Index("idx_claim_patient", "patient_id"), Index("idx_claim_status", "status"),)
+
+
+class LabResult(Base, TenantRowMixin):
+    """Lab result entity.
+
+    RX04: PHI encrypted.
+    """
+
+    __tablename__ = "healthcare_lab_results"
+
+    result_id = Column(String(50), nullable=False, unique=True)
+    patient_id = Column(String(50), nullable=False)
+    order_id = Column(String(50), nullable=False)
+    test_type = Column(String(100), nullable=False)
+    result_value_enc = Column(Text, nullable=True)  # PHI encrypted
+    reference_range = Column(String(200), nullable=True)
+    status = Column(String(20), nullable=False, default="pending")
+    ordered_by = Column(String(50), nullable=True)
+    performed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (Index("idx_lab_patient", "patient_id"),)
+
+
+class PharmacyDispense(Base, TenantRowMixin):
+    """Pharmacy dispense entity."""
+
+    __tablename__ = "healthcare_pharmacy_dispense"
+
+    dispense_id = Column(String(50), nullable=False, unique=True)
+    prescription_id = Column(String(50), nullable=False)
+    patient_id = Column(String(50), nullable=False)
+    medication = Column(String(500), nullable=False)
+    quantity = Column(String(20), nullable=False)
+    pharmacist_id = Column(String(50), nullable=False)
+    dispensed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    status = Column(String(20), nullable=False, default="dispensed")
+
+    __table_args__ = (Index("idx_dispense_patient", "patient_id"),)
