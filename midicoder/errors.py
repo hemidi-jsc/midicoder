@@ -320,6 +320,25 @@ class ErrorCode(str, Enum):
     CP01_GUARD_PHI_NOT_ENCRYPTED = "MDC-CP01-073"       # PHI field not encrypted
     CP01_GUARD_MINIMUM_NECESSARY_VIOLATION = "MDC-CP01-074"  # Excessive PHI access
     
+    # FRAUD_DETECTION (DP12 Payments)
+    CP01_GUARD_FRAUD_VELOCITY_EXCEEDED = "MDC-CP01-075"  # Transaction velocity exceeded
+    CP01_GUARD_FRAUD_AMOUNT_THRESHOLD = "MDC-CP01-076"   # Amount threshold exceeded
+    CP01_GUARD_FRAUD_PATTERN_ANOMALY = "MDC-CP01-077"    # Pattern anomaly detected
+    CP01_GUARD_FRAUD_EXTERNAL_BLOCKED = "MDC-CP01-078"   # External fraud service blocked
+    CP01_GUARD_FRAUD_EXTERNAL_TIMEOUT = "MDC-CP01-079"   # External fraud API timeout
+    
+    # SAFETY_CHECK (DP05 Manufacturing)
+    CP01_GUARD_SAFETY_EQUIPMENT_UNSAFE = "MDC-CP01-080"  # Equipment not safe
+    CP01_GUARD_SAFETY_PERSONNEL_UNCERTIFIED = "MDC-CP01-081"  # Personnel not certified
+    CP01_GUARD_SAFETY_PROCESS_NON_COMPLIANT = "MDC-CP01-082"  # Process non-compliant
+    CP01_GUARD_SAFETY_HAZARD_DETECTED = "MDC-CP01-083"   # Hazard detected
+    
+    # CLAIMS_VALIDATION (DP14 Insurance)
+    CP01_GUARD_CLAIMS_NOT_COVERED = "MDC-CP01-084"       # Claim not covered by policy
+    CP01_GUARD_CLAIMS_OUTSIDE_PERIOD = "MDC-CP01-085"    # Claim outside coverage period
+    CP01_GUARD_CLAIMS_EXCEEDS_LIMIT = "MDC-CP01-086"     # Claim exceeds policy limit
+    CP01_GUARD_CLAIMS_EXCLUDED = "MDC-CP01-087"          # Claim excluded by policy
+    
     # =========================================================================
     # CP01: Transaction Errors
     # =========================================================================

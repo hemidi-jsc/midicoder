@@ -613,6 +613,357 @@ class ComplianceService:
             user_id, active, tenant_id, expiry_date
         )
 
+    # -------------------------------------------------------------------------
+    # DP12: Fraud Detection Methods (FRAUD_DETECTION guard)
+    # -------------------------------------------------------------------------
+
+    async def check_transaction_velocity(
+        self,
+        user_id: str,
+        tenant_id: Optional[str],
+        threshold: int,
+        window: str,
+    ) -> bool:
+        """
+        Check transaction velocity cho user.
+
+        KPI-029: Tenant-aware velocity check.
+
+        Args:
+            user_id: User ID
+            tenant_id: KPI-029: Tenant ID
+            threshold: Số transactions tối đa cho phép trong window
+            window: Thời gian window (e.g., "1h", "24h")
+
+        Returns:
+            True nếu vượt quá velocity threshold
+        """
+        # TODO: Implement velocity check with Redis or time-series DB
+        # For now, return False (not exceeded)
+        audit_logger.info(
+            "Transaction velocity check",
+            extra={
+                "user_id": user_id,
+                "tenant_id": tenant_id,
+                "threshold": threshold,
+                "window": window,
+            },
+        )
+        return False
+
+    async def detect_pattern_anomaly(
+        self,
+        user_id: str,
+        transaction_data: dict[str, Any],
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Detect pattern anomaly trong transaction data.
+
+        KPI-029: Tenant-aware anomaly detection.
+
+        Args:
+            user_id: User ID
+            transaction_data: Transaction data để analyze
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu phát hiện anomaly
+        """
+        # TODO: Implement ML-based anomaly detection
+        # For now, return False (no anomaly)
+        audit_logger.info(
+            "Pattern anomaly detection",
+            extra={
+                "user_id": user_id,
+                "tenant_id": tenant_id,
+                "amount": transaction_data.get("amount"),
+            },
+        )
+        return False
+
+    async def call_external_fraud_api(
+        self,
+        user_id: str,
+        transaction_data: dict[str, Any],
+        tenant_id: Optional[str],
+        timeout: int,
+    ) -> dict[str, Any]:
+        """
+        Call external fraud detection API.
+
+        KPI-029: Tenant-aware external API call.
+        Services: Stripe Radar, Signifyd, Kount, etc.
+
+        Args:
+            user_id: User ID
+            transaction_data: Transaction data
+            tenant_id: KPI-029: Tenant ID
+            timeout: Timeout in seconds
+
+        Returns:
+            Response từ external fraud API
+
+        Raises:
+            TimeoutError: Nếu external API timeout
+        """
+        # TODO: Implement external fraud API call
+        # For now, return empty response (no fraud detected)
+        audit_logger.info(
+            "External fraud API call",
+            extra={
+                "user_id": user_id,
+                "tenant_id": tenant_id,
+                "timeout": timeout,
+            },
+        )
+        return {"blocked": False}
+
+    # -------------------------------------------------------------------------
+    # DP05: Safety Check Methods (SAFETY_CHECK guard)
+    # -------------------------------------------------------------------------
+
+    async def check_equipment_safety(
+        self,
+        equipment_id: str,
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Check equipment safety status.
+
+        KPI-029: Tenant-aware equipment safety check.
+
+        Args:
+            equipment_id: Equipment ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu thiết bị an toàn
+        """
+        # TODO: Implement equipment safety check
+        # For now, return True (equipment safe)
+        audit_logger.info(
+            "Equipment safety check",
+            extra={"equipment_id": equipment_id, "tenant_id": tenant_id},
+        )
+        return True
+
+    async def check_personnel_certification(
+        self,
+        user_id: str,
+        operation_type: Optional[str],
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Check personnel certification cho operation type.
+
+        KPI-029: Tenant-aware certification check.
+
+        Args:
+            user_id: User ID
+            operation_type: Type của operation
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu personnel có chứng chỉ hợp lệ
+        """
+        # TODO: Implement personnel certification check
+        # For now, return True (certified)
+        audit_logger.info(
+            "Personnel certification check",
+            extra={
+                "user_id": user_id,
+                "operation_type": operation_type,
+                "tenant_id": tenant_id,
+            },
+        )
+        return True
+
+    async def check_process_compliance(
+        self,
+        operation_type: Optional[str],
+        process_data: dict[str, Any],
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Check process compliance với SOP.
+
+        KPI-029: Tenant-aware process compliance check.
+
+        Args:
+            operation_type: Type của operation
+            process_data: Process data để check
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu tuân thủ quy trình an toàn
+        """
+        # TODO: Implement process compliance check
+        # For now, return True (compliant)
+        audit_logger.info(
+            "Process compliance check",
+            extra={
+                "operation_type": operation_type,
+                "tenant_id": tenant_id,
+            },
+        )
+        return True
+
+    async def detect_hazards(
+        self,
+        operation_data: dict[str, Any],
+        tenant_id: Optional[str],
+    ) -> list[str]:
+        """
+        Detect hazards trong operation.
+
+        KPI-029: Tenant-aware hazard detection.
+
+        Args:
+            operation_data: Operation data để check hazards
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            List của hazards detected (empty nếu không có hazard)
+        """
+        # TODO: Implement hazard detection
+        # For now, return empty list (no hazards)
+        audit_logger.info(
+            "Hazard detection",
+            extra={"tenant_id": tenant_id},
+        )
+        return []
+
+    # -------------------------------------------------------------------------
+    # DP14: Claims Validation Methods (CLAIMS_VALIDATION guard)
+    # -------------------------------------------------------------------------
+
+    async def check_policy_coverage(
+        self,
+        policy_id: str,
+        claim_type: Optional[str],
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Check nếu claim type nằm trong phạm vi bảo hiểm.
+
+        KPI-029: Tenant-aware policy coverage check.
+
+        Args:
+            policy_id: Policy ID
+            claim_type: Type của claim
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu claim type được bảo hiểm
+        """
+        # TODO: Implement policy coverage check
+        # For now, return True (covered)
+        audit_logger.info(
+            "Policy coverage check",
+            extra={
+                "policy_id": policy_id,
+                "claim_type": claim_type,
+                "tenant_id": tenant_id,
+            },
+        )
+        return True
+
+    async def check_coverage_period(
+        self,
+        policy_id: str,
+        incident_date: Optional[str],
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Check nếu incident_date nằm trong thời hạn hiệu lực.
+
+        KPI-029: Tenant-aware coverage period check.
+
+        Args:
+            policy_id: Policy ID
+            incident_date: Incident date (ISO format)
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu nằm trong coverage period
+        """
+        # TODO: Implement coverage period check
+        # For now, return True (within period)
+        audit_logger.info(
+            "Coverage period check",
+            extra={
+                "policy_id": policy_id,
+                "incident_date": incident_date,
+                "tenant_id": tenant_id,
+            },
+        )
+        return True
+
+    async def check_claim_limit(
+        self,
+        policy_id: str,
+        claim_amount: float,
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Check nếu claim amount không vượt quá policy limit.
+
+        KPI-029: Tenant-aware claim limit check.
+
+        Args:
+            policy_id: Policy ID
+            claim_amount: Claim amount
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu không vượt quá limit
+        """
+        # TODO: Implement claim limit check
+        # For now, return True (within limit)
+        audit_logger.info(
+            "Claim limit check",
+            extra={
+                "policy_id": policy_id,
+                "claim_amount": claim_amount,
+                "tenant_id": tenant_id,
+            },
+        )
+        return True
+
+    async def check_claim_exclusions(
+        self,
+        policy_id: str,
+        claim_type: Optional[str],
+        incident_data: dict[str, Any],
+        tenant_id: Optional[str],
+    ) -> bool:
+        """
+        Check nếu claim thuộc loại bị loại trừ.
+
+        KPI-029: Tenant-aware exclusions check.
+
+        Args:
+            policy_id: Policy ID
+            claim_type: Type của claim
+            incident_data: Incident data
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu claim bị loại trừ
+        """
+        # TODO: Implement claim exclusions check
+        # For now, return False (not excluded)
+        audit_logger.info(
+            "Claim exclusions check",
+            extra={
+                "policy_id": policy_id,
+                "claim_type": claim_type,
+                "tenant_id": tenant_id,
+            },
+        )
+        return False
+
 
 # ============================================================================
 # Global Compliance Service Instance
