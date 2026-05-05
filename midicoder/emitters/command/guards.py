@@ -105,6 +105,12 @@ class CommandGuards:
                 await self._check_aml(guard, data, user_id)
             elif guard.guard_type == GuardType.HIPAA_ACCESS:
                 await self._check_hipaa(guard, user_id)
+            elif guard.guard_type == GuardType.FRAUD_DETECTION:
+                await self._check_fraud_detection(guard, data, user_id, tenant_id)
+            elif guard.guard_type == GuardType.SAFETY_CHECK:
+                await self._check_safety(guard, data, user_id, tenant_id)
+            elif guard.guard_type == GuardType.CLAIMS_VALIDATION:
+                await self._check_claims_validation(guard, data, user_id, tenant_id)
 
     async def _check_auth(
         self,
@@ -541,5 +547,419 @@ class CommandGuards:
 
         await self._log_compliance_check(
             GuardType.HIPAA_ACCESS, user_id, tenant_id, "passed",
+            {"tenant_id": tenant_id}
+        )
+
+    # -------------------------------------------------------------------------
+    # FRAUD_DETECTION Guard (DP12 Payments)
+    # -------------------------------------------------------------------------
+
+    async def _check_fraud_detection(
+        self,
+        guard: CommandGuard,
+        data: dict[str, Any],
+        user_id: Optional[str],
+        tenant_id: Optional[str],
+    ) -> None:
+        """
+        Check FRAUD_DETECTION guard cho DP12 Payments.
+
+        Kiểm tra:
+        - Transaction velocity (số lượng giao dịch / thời gian)
+        - Amount threshold (số tiền vượt ngưỡng)
+        - Pattern anomaly (phát hiện pattern bất thường)
+        - External fraud API (gọi external fraud service)
+
+        KPI-029: Tenant-aware fraud detection với audit trail.
+
+        Args:
+            guard: Guard definition
+            data: Transaction data (amount, timestamp, etc.)
+            user_id: User ID
+            tenant_id: Tenant ID (KPI-029)
+
+        Raises:
+            MidicoderError: Nếu phát hiện gian lận hoặc vượt threshold
+        """
+        if user_id is None:
+            await self._log_compliance_check(
+                GuardType.FRAUD_DETECTION, user_id, tenant_id, "failed",
+                {"reason": "user_not_authenticated"}
+            )
+            EM.raise_error(ErrorCode.CP01_GUARD_USER_NOT_AUTHENTICATED)
+
+        if self._compliance_service is None:
+            await self._log_compliance_check(
+                GuardType.FRAUD_DETECTION, user_id, tenant_id, "skipped",
+                {"reason": "no_compliance_service"}
+            )
+            return
+
+        # 1. Transaction velocity check
+        velocity_threshold = guard.limit or 10  # default: 10 transactions/hour
+        velocity_window = guard.window or "1h"
+        
+        velocity_exceeded = await self._compliance_service.check_transaction_velocity(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            threshold=velocity_threshold,
+            window=velocity_window,
+        )
+        
+        if velocity_exceeded:
+            await self._log_compliance_check(
+                GuardType.FRAUD_DETECTION, user_id, tenant_id, "failed",
+                {"reason": "velocity_exceeded", "threshold": velocity_threshold}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_FRAUD_VELOCITY_EXCEEDED,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                threshold=velocity_threshold,
+                window=velocity_window,
+            )
+
+        # 2. Amount threshold check
+        amount = data.get("amount", 0)
+        amount_threshold = guard.condition  # Should be set in guard config
+        if amount_threshold:
+            try:
+                threshold_value = float(amount_threshold)
+                if amount > threshold_value:
+                    await self._log_compliance_check(
+                        GuardType.FRAUD_DETECTION, user_id, tenant_id, "failed",
+                        {"reason": "amount_threshold_exceeded", "amount": amount}
+                    )
+                    EM.raise_error(
+                        ErrorCode.CP01_GUARD_FRAUD_AMOUNT_THRESHOLD,
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                        amount=amount,
+                        threshold=threshold_value,
+                    )
+            except (ValueError, TypeError):
+                pass  # Invalid threshold, skip check
+
+        # 3. Pattern anomaly detection
+        anomaly_detected = await self._compliance_service.detect_pattern_anomaly(
+            user_id=user_id,
+            transaction_data=data,
+            tenant_id=tenant_id,
+        )
+        
+        if anomaly_detected:
+            await self._log_compliance_check(
+                GuardType.FRAUD_DETECTION, user_id, tenant_id, "failed",
+                {"reason": "pattern_anomaly_detected"}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_FRAUD_PATTERN_ANOMALY,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+
+        # 4. External fraud API call (optional, with circuit breaker)
+        try:
+            external_result = await self._compliance_service.call_external_fraud_api(
+                user_id=user_id,
+                transaction_data=data,
+                tenant_id=tenant_id,
+                timeout=5,  # 5 seconds timeout
+            )
+            
+            if external_result.get("blocked", False):
+                await self._log_compliance_check(
+                    GuardType.FRAUD_DETECTION, user_id, tenant_id, "failed",
+                    {"reason": "external_fraud_blocked"}
+                )
+                EM.raise_error(
+                    ErrorCode.CP01_GUARD_FRAUD_EXTERNAL_BLOCKED,
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    reason=external_result.get("reason", "Unknown"),
+                )
+        except TimeoutError:
+            # Fallback: allow if external API timeout
+            await self._log_compliance_check(
+                GuardType.FRAUD_DETECTION, user_id, tenant_id, "skipped",
+                {"reason": "external_api_timeout", "fallback": "allow"}
+            )
+            return
+
+        await self._log_compliance_check(
+            GuardType.FRAUD_DETECTION, user_id, tenant_id, "passed",
+            {"tenant_id": tenant_id}
+        )
+
+    # -------------------------------------------------------------------------
+    # SAFETY_CHECK Guard (DP05 Manufacturing)
+    # -------------------------------------------------------------------------
+
+    async def _check_safety(
+        self,
+        guard: CommandGuard,
+        data: dict[str, Any],
+        user_id: Optional[str],
+        tenant_id: Optional[str],
+    ) -> None:
+        """
+        Check SAFETY_CHECK guard cho DP05 Manufacturing.
+
+        Kiểm tra:
+        - Equipment safety (thiết bị an toàn)
+        - Personnel certification (nhân sự có chứng chỉ)
+        - Process compliance (tuân thủ quy trình an toàn)
+        - Hazard detection (phát hiện nguy cơ)
+
+        KPI-029: Tenant-aware safety check với audit trail.
+
+        Args:
+            guard: Guard definition
+            data: Safety-related data (equipment_id, operation_type, etc.)
+            user_id: User ID
+            tenant_id: Tenant ID (KPI-029)
+
+        Raises:
+            MidicoderError: Nếu không đạt yêu cầu an toàn
+        """
+        if user_id is None:
+            await self._log_compliance_check(
+                GuardType.SAFETY_CHECK, user_id, tenant_id, "failed",
+                {"reason": "user_not_authenticated"}
+            )
+            EM.raise_error(ErrorCode.CP01_GUARD_USER_NOT_AUTHENTICATED)
+
+        if self._compliance_service is None:
+            await self._log_compliance_check(
+                GuardType.SAFETY_CHECK, user_id, tenant_id, "skipped",
+                {"reason": "no_compliance_service"}
+            )
+            return
+
+        # 1. Equipment safety check
+        equipment_id = data.get("equipment_id")
+        if equipment_id:
+            equipment_safe = await self._compliance_service.check_equipment_safety(
+                equipment_id=equipment_id,
+                tenant_id=tenant_id,
+            )
+            
+            if not equipment_safe:
+                await self._log_compliance_check(
+                    GuardType.SAFETY_CHECK, user_id, tenant_id, "failed",
+                    {"reason": "equipment_unsafe", "equipment_id": equipment_id}
+                )
+                EM.raise_error(
+                    ErrorCode.CP01_GUARD_SAFETY_EQUIPMENT_UNSAFE,
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    equipment_id=equipment_id,
+                )
+
+        # 2. Personnel certification check
+        personnel_certified = await self._compliance_service.check_personnel_certification(
+            user_id=user_id,
+            operation_type=data.get("operation_type"),
+            tenant_id=tenant_id,
+        )
+        
+        if not personnel_certified:
+            await self._log_compliance_check(
+                GuardType.SAFETY_CHECK, user_id, tenant_id, "failed",
+                {"reason": "personnel_not_certified"}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_SAFETY_PERSONNEL_UNCERTIFIED,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                operation_type=data.get("operation_type"),
+            )
+
+        # 3. Process compliance check
+        process_compliant = await self._compliance_service.check_process_compliance(
+            operation_type=data.get("operation_type"),
+            process_data=data.get("process_data", {}),
+            tenant_id=tenant_id,
+        )
+        
+        if not process_compliant:
+            await self._log_compliance_check(
+                GuardType.SAFETY_CHECK, user_id, tenant_id, "failed",
+                {"reason": "process_non_compliant"}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_SAFETY_PROCESS_NON_COMPLIANT,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                operation_type=data.get("operation_type"),
+            )
+
+        # 4. Hazard detection
+        hazards = await self._compliance_service.detect_hazards(
+            operation_data=data,
+            tenant_id=tenant_id,
+        )
+        
+        if hazards:
+            await self._log_compliance_check(
+                GuardType.SAFETY_CHECK, user_id, tenant_id, "failed",
+                {"reason": "hazards_detected", "hazards": hazards}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_SAFETY_HAZARD_DETECTED,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                hazards=hazards,
+            )
+
+        await self._log_compliance_check(
+            GuardType.SAFETY_CHECK, user_id, tenant_id, "passed",
+            {"tenant_id": tenant_id}
+        )
+
+    # -------------------------------------------------------------------------
+    # CLAIMS_VALIDATION Guard (DP14 Insurance)
+    # -------------------------------------------------------------------------
+
+    async def _check_claims_validation(
+        self,
+        guard: CommandGuard,
+        data: dict[str, Any],
+        user_id: Optional[str],
+        tenant_id: Optional[str],
+    ) -> None:
+        """
+        Check CLAIMS_VALIDATION guard cho DP14 Insurance.
+
+        Kiểm tra:
+        - Policy coverage (claim nằm trong phạm vi bảo hiểm)
+        - Coverage period (claim nằm trong thời hạn hiệu lực)
+        - Claim amount vs limit (số tiền không vượt quá limit)
+        - Exclusion check (claim không thuộc loại bị loại trừ)
+
+        KPI-029: Tenant-aware claims validation với audit trail.
+
+        Args:
+            guard: Guard definition
+            data: Claim data (policy_id, amount, incident_date, claim_type, etc.)
+            user_id: User ID
+            tenant_id: Tenant ID (KPI-029)
+
+        Raises:
+            MidicoderError: Nếu claim không thỏa mãn điều kiện bảo hiểm
+        """
+        if user_id is None:
+            await self._log_compliance_check(
+                GuardType.CLAIMS_VALIDATION, user_id, tenant_id, "failed",
+                {"reason": "user_not_authenticated"}
+            )
+            EM.raise_error(ErrorCode.CP01_GUARD_USER_NOT_AUTHENTICATED)
+
+        if self._compliance_service is None:
+            await self._log_compliance_check(
+                GuardType.CLAIMS_VALIDATION, user_id, tenant_id, "skipped",
+                {"reason": "no_compliance_service"}
+            )
+            return
+
+        policy_id = data.get("policy_id")
+        if not policy_id:
+            await self._log_compliance_check(
+                GuardType.CLAIMS_VALIDATION, user_id, tenant_id, "failed",
+                {"reason": "missing_policy_id"}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_CLAIMS_NOT_COVERED,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                reason="missing_policy_id",
+            )
+
+        # 1. Policy coverage check
+        claim_type = data.get("claim_type")
+        is_covered = await self._compliance_service.check_policy_coverage(
+            policy_id=policy_id,
+            claim_type=claim_type,
+            tenant_id=tenant_id,
+        )
+        
+        if not is_covered:
+            await self._log_compliance_check(
+                GuardType.CLAIMS_VALIDATION, user_id, tenant_id, "failed",
+                {"reason": "claim_not_covered", "claim_type": claim_type}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_CLAIMS_NOT_COVERED,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                policy_id=policy_id,
+                claim_type=claim_type,
+            )
+
+        # 2. Coverage period check
+        incident_date = data.get("incident_date")
+        within_period = await self._compliance_service.check_coverage_period(
+            policy_id=policy_id,
+            incident_date=incident_date,
+            tenant_id=tenant_id,
+        )
+        
+        if not within_period:
+            await self._log_compliance_check(
+                GuardType.CLAIMS_VALIDATION, user_id, tenant_id, "failed",
+                {"reason": "outside_coverage_period", "incident_date": incident_date}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_CLAIMS_OUTSIDE_PERIOD,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                policy_id=policy_id,
+                incident_date=incident_date,
+            )
+
+        # 3. Claim amount vs limit check
+        claim_amount = data.get("amount", 0)
+        within_limit = await self._compliance_service.check_claim_limit(
+            policy_id=policy_id,
+            claim_amount=claim_amount,
+            tenant_id=tenant_id,
+        )
+        
+        if not within_limit:
+            await self._log_compliance_check(
+                GuardType.CLAIMS_VALIDATION, user_id, tenant_id, "failed",
+                {"reason": "exceeds_limit", "amount": claim_amount}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_CLAIMS_EXCEEDS_LIMIT,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                policy_id=policy_id,
+                amount=claim_amount,
+            )
+
+        # 4. Exclusion check
+        is_excluded = await self._compliance_service.check_claim_exclusions(
+            policy_id=policy_id,
+            claim_type=claim_type,
+            incident_data=data.get("incident_data", {}),
+            tenant_id=tenant_id,
+        )
+        
+        if is_excluded:
+            await self._log_compliance_check(
+                GuardType.CLAIMS_VALIDATION, user_id, tenant_id, "failed",
+                {"reason": "claim_excluded"}
+            )
+            EM.raise_error(
+                ErrorCode.CP01_GUARD_CLAIMS_EXCLUDED,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                policy_id=policy_id,
+                claim_type=claim_type,
+            )
+
+        await self._log_compliance_check(
+            GuardType.CLAIMS_VALIDATION, user_id, tenant_id, "passed",
             {"tenant_id": tenant_id}
         )

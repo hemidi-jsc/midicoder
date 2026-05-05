@@ -104,6 +104,9 @@ class GuardType(str, Enum):
     HIPAA_ACCESS: HIPAA access check (RX04)
     GDPR_CONSENT: GDPR consent check (RX05)
     PCI_RESTRICT: PCI restriction check (RX06)
+    FRAUD_DETECTION: Fraud detection for payments (DP12)
+    SAFETY_CHECK: Safety check for manufacturing (DP05)
+    CLAIMS_VALIDATION: Claims validation for insurance (DP14)
     """
     AUTH = "auth"
     TENANT_SCOPE = "tenant_scope"
@@ -113,6 +116,9 @@ class GuardType(str, Enum):
     HIPAA_ACCESS = "hipaa_access"
     GDPR_CONSENT = "gdpr_consent"
     PCI_RESTRICT = "pci_restrict"
+    FRAUD_DETECTION = "fraud_detection"
+    SAFETY_CHECK = "safety_check"
+    CLAIMS_VALIDATION = "claims_validation"
 
 
 # ============================================================================

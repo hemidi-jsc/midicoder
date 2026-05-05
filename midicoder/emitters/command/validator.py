@@ -572,3 +572,187 @@ class CommandValidator:
                             result.add_error(f"Custom validation failed: {validator_name}")
                 except Exception as e:
                     result.add_error(f"Custom validator '{validator_name}' raised error: {str(e)}")
+
+    # -------------------------------------------------------------------------
+    # Domain-Specific Validators (P2-001-D2: DP12, DP05, DP14)
+    # -------------------------------------------------------------------------
+
+    async def validate_fraud_detection(
+        self,
+        data: dict[str, Any],
+        tenant_id: str | None = None,
+    ) -> ValidationResult:
+        """
+        Validate fraud detection rules cho DP12 Payments.
+
+        Validation rules:
+        - Transaction velocity check (số lượng giao dịch / thời gian)
+        - Amount threshold check (số tiền vượt ngưỡng)
+        - Pattern anomaly detection (phát hiện pattern bất thường)
+        - External fraud API check (optional)
+
+        Args:
+            data: Transaction data với amount, timestamp, user_id, etc.
+            tenant_id: Tenant ID cho isolated checks (KPI-029)
+
+        Returns:
+            ValidationResult với errors nếu phát hiện gian lận
+        """
+        result = ValidationResult(is_valid=True)
+
+        # 1. Transaction velocity validation
+        velocity_threshold = data.get("velocity_threshold", 10)
+        velocity_window = data.get("velocity_window", "1h")
+        transaction_count = data.get("transaction_count", 0)
+
+        if transaction_count > velocity_threshold:
+            result.add_error(
+                f"Vượt quá velocity threshold: {transaction_count} transactions trong {velocity_window} (limit: {velocity_threshold})"
+            )
+
+        # 2. Amount threshold validation
+        amount = data.get("amount", 0)
+        amount_threshold = data.get("amount_threshold")
+        if amount_threshold is not None:
+            try:
+                threshold_value = float(amount_threshold)
+                if amount > threshold_value:
+                    result.add_error(
+                        f"Số tiền vượt ngưỡng: {amount} > {threshold_value} (tenant: {tenant_id})"
+                    )
+            except (ValueError, TypeError):
+                pass  # Invalid threshold, skip check
+
+        # 3. Pattern anomaly validation (simplified heuristic)
+        # In production, this would use ML model
+        if data.get("is_anomaly_detected", False):
+            result.add_error(
+                f"Phát hiện pattern bất thường trong giao dịch (tenant: {tenant_id})"
+            )
+
+        # 4. External fraud check result (if available)
+        if data.get("external_fraud_blocked", False):
+            result.add_error(
+                f"Giao dịch bị blocked bởi external fraud service (tenant: {tenant_id})"
+            )
+
+        return result
+
+    async def validate_safety_check(
+        self,
+        data: dict[str, Any],
+        tenant_id: str | None = None,
+    ) -> ValidationResult:
+        """
+        Validate safety check rules cho DP05 Manufacturing.
+
+        Validation rules:
+        - Equipment safety check (thiết bị an toàn)
+        - Personnel certification check (nhân sự có chứng chỉ)
+        - Process compliance check (tuân thủ quy trình an toàn)
+        - Hazard detection (phát hiện nguy cơ)
+
+        Args:
+            data: Safety-related data với equipment_id, operation_type, etc.
+            tenant_id: Tenant ID cho isolated checks (KPI-029)
+
+        Returns:
+            ValidationResult với errors nếu không đạt yêu cầu an toàn
+        """
+        result = ValidationResult(is_valid=True)
+
+        # 1. Equipment safety validation
+        equipment_id = data.get("equipment_id")
+        if equipment_id:
+            if not data.get("equipment_safe", True):
+                result.add_error(
+                    f"Thiết bị không an toàn: {equipment_id} (tenant: {tenant_id})"
+                )
+
+        # 2. Personnel certification validation
+        user_id = data.get("user_id")
+        operation_type = data.get("operation_type")
+        if user_id and operation_type:
+            if not data.get("personnel_certified", True):
+                result.add_error(
+                    f"Nhân sự không có chứng chỉ cho operation: {operation_type} (user: {user_id}, tenant: {tenant_id})"
+                )
+
+        # 3. Process compliance validation
+        if not data.get("process_compliant", True):
+            result.add_error(
+                f"Không tuân thủ quy trình an toàn (operation: {operation_type}, tenant: {tenant_id})"
+            )
+
+        # 4. Hazard detection validation
+        detected_hazards = data.get("detected_hazards", [])
+        if detected_hazards:
+            result.add_error(
+                f"Phát hiện nguy cơ an toàn: {detected_hazards} (tenant: {tenant_id})"
+            )
+
+        return result
+
+    async def validate_claims_validation(
+        self,
+        data: dict[str, Any],
+        tenant_id: str | None = None,
+    ) -> ValidationResult:
+        """
+        Validate claims validation rules cho DP14 Insurance.
+
+        Validation rules:
+        - Policy coverage check (claim nằm trong phạm vi bảo hiểm)
+        - Coverage period check (claim nằm trong thời hạn hiệu lực)
+        - Claim amount vs limit check (số tiền không vượt quá limit)
+        - Exclusion check (claim không thuộc loại bị loại trừ)
+
+        Args:
+            data: Claim data với policy_id, amount, incident_date, claim_type, etc.
+            tenant_id: Tenant ID cho isolated checks (KPI-029)
+
+        Returns:
+            ValidationResult với errors nếu claim không thỏa mãn điều kiện
+        """
+        result = ValidationResult(is_valid=True)
+
+        policy_id = data.get("policy_id")
+        claim_type = data.get("claim_type")
+
+        # Validate required fields
+        if not policy_id:
+            result.add_error("Thiếu policy_id")
+            return result
+
+        if not claim_type:
+            result.add_error("Thiếu claim_type")
+            return result
+
+        # 1. Policy coverage validation
+        if not data.get("is_covered", True):
+            result.add_error(
+                f"Claim type '{claim_type}' không nằm trong phạm vi bảo hiểm (policy: {policy_id}, tenant: {tenant_id})"
+            )
+
+        # 2. Coverage period validation
+        incident_date = data.get("incident_date")
+        if incident_date:
+            if not data.get("within_coverage_period", True):
+                result.add_error(
+                    f"Incident date '{incident_date}' nằm ngoài thời hạn hiệu lực (policy: {policy_id}, tenant: {tenant_id})"
+                )
+
+        # 3. Claim amount vs limit validation
+        claim_amount = data.get("amount", 0)
+        if not data.get("within_limit", True):
+            result.add_error(
+                f"Số tiền claim {claim_amount} vượt quá policy limit (policy: {policy_id}, tenant: {tenant_id})"
+            )
+
+        # 4. Exclusion validation
+        if data.get("is_excluded", False):
+            result.add_error(
+                f"Claim bị loại trừ theo điều khoản hợp đồng (policy: {policy_id}, claim_type: {claim_type}, tenant: {tenant_id})"
+            )
+
+        return result
