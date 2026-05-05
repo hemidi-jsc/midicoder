@@ -1,0 +1,127 @@
+/**
+ * Payment Gateway Service - Payment Processing Service cho NestJS.
+ *
+ * KPI-029: Tenant-aware payment processing
+ * DP12: Payments & Cards domain pack
+ */
+
+import { Injectable } from "@nestjs/common";
+import { PaymentRepository } from "../db/payment.repository";
+import { AuditLoggerService } from "../audit/audit.service";
+
+/**
+ * Payment Gateway Service.
+ */
+@Injectable()
+export class PaymentGatewayService {
+  private readonly gatewayConfigs: Record<string, any> = {
+    stripe: { baseUrl: "https://api.stripe.com/v1" },
+    vnpay: { baseUrl: "https://sandbox.vnpay.vn" },
+    momo: { baseUrl: "https://test-payment.momo.vn" },
+  };
+
+  constructor(
+    private readonly paymentRepo: PaymentRepository,
+    private readonly auditLogger: AuditLoggerService,
+  ) {}
+
+  /**
+   * Process payment qua external gateway.
+   */
+  async processPayment(
+    amount: number,
+    currency: string,
+    gateway: string,
+    paymentMethod: string,
+    idempotencyKey: string,
+    customerId: string,
+    description: string,
+    userId: string | undefined,
+    tenantId: string,
+  ): Promise<any> {
+    // Check idempotency
+    const existing = await this.paymentRepo.getPaymentByIdempotency(idempotencyKey, tenantId);
+    if (existing) {
+      return { ...existing, idempotent: true };
+    }
+
+    // Validate gateway
+    if (!this.gatewayConfigs[gateway]) {
+      throw new Error(`Unsupported gateway: ${gateway}`);
+    }
+
+    // Process payment
+    const result = await this._processPayment(gateway, amount, currency, idempotencyKey, customerId, description, tenantId);
+
+    // Save payment record
+    await this.paymentRepo.createPayment({
+      paymentId: result.paymentId,
+      tenantId,
+      amount,
+      currency,
+      gateway,
+      paymentMethod,
+      status: result.status,
+      transactionRef: result.transactionRef,
+      idempotencyKey,
+      customerId,
+      userId,
+      createdAt: new Date().toISOString(),
+    });
+
+    this.auditLogger.info("Payment processed", {
+      paymentId: result.paymentId,
+      tenantId,
+      amount,
+      currency,
+      gateway,
+      status: result.status,
+      userId,
+    });
+
+    return result;
+  }
+
+  private async _processPayment(
+    gateway: string,
+    amount: number,
+    currency: string,
+    idempotencyKey: string,
+    customerId: string,
+    description: string,
+    tenantId: string,
+  ): Promise<any> {
+    // TODO: Implement gateway-specific logic
+    return {
+      paymentId: `pi_${gateway}_${idempotencyKey}`,
+      status: "completed",
+      transactionRef: `txn_${gateway}_${idempotencyKey}`,
+    };
+  }
+
+  /**
+   * Cancel payment.
+   */
+  async cancelPayment(paymentId: string, gateway: string, tenantId: string): Promise<boolean> {
+    await this.paymentRepo.updatePaymentStatus(paymentId, tenantId, "cancelled");
+    return true;
+  }
+
+  /**
+   * Refund payment.
+   */
+  async refundPayment(paymentId: string, amount: number, gateway: string, tenantId: string): Promise<any> {
+    const refundId = `refund_${tenantId}_${Date.now()}`;
+    await this.paymentRepo.createRefund({ refundId, paymentId, amount, tenantId });
+    return { refundId, status: "completed" };
+  }
+
+  /**
+   * Verify payment status.
+   */
+  async verifyPayment(paymentId: string, gateway: string, tenantId: string): Promise<any> {
+    const payment = await this.paymentRepo.getPayment(paymentId, tenantId);
+    if (!payment) return { verified: false, error: "Payment not found" };
+    return { verified: true, ...payment };
+  }
+}

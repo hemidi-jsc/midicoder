@@ -1,0 +1,360 @@
+"""
+Inventory Service - Stock Management Service cho FastAPI.
+
+Module này cung cấp Inventory service cho:
+- Stock reservation
+- Reservation release
+- Reservation to shipment conversion
+- Available quantity tracking
+
+KPI-029: Tenant-aware inventory management
+DP05: Manufacturing & Supply Chain
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+from app.core.db.repository import InventoryRepository
+from app.core.logging import audit_logger
+
+
+# ============================================================================
+# Inventory Service
+# ============================================================================
+
+
+class InventoryService:
+    """
+    Inventory Service - Stock management service.
+
+    Service này cung cấp methods cho:
+    - Reserve stock (giảm available, tăng reserved)
+    - Release reservation (trả lại available)
+    - Convert to shipment (chuyển reserved → shipped)
+    - Expiry management cho reservations
+
+    KPI-029: Support tenant-scoped inventory operations.
+    DP05: Manufacturing & Supply Chain domain pack.
+
+    Usage:
+        inventory_svc = InventoryService(inventory_repo)
+        result = await inventory_svc.reserve_stock(
+            item_id="ITEM_001", quantity=100, tenant_id="tenant_123"
+        )
+    """
+
+    def __init__(self, inventory_repo: InventoryRepository) -> None:
+        """
+        Initialize InventoryService.
+
+        Args:
+            inventory_repo: Repository cho inventory data storage
+        """
+        self._inventory_repo = inventory_repo
+
+    async def reserve_stock(
+        self,
+        item_id: str,
+        quantity: int,
+        reservation_ref: str,
+        expires_in: int,
+        user_id: Optional[str],
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """
+        Reserve stock cho item.
+
+        KPI-029: Tenant-scoped inventory reservation.
+        DP05: Manufacturing domain pack.
+
+        Args:
+            item_id: Item/Product ID
+            quantity: Quantity to reserve
+            reservation_ref: Reservation reference ID
+            expires_in: Expiry time in hours
+            user_id: User thực hiện reservation
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Dict với reservation_id, quantity, status, expires_at
+
+        Raises:
+            ValueError: Nếu không đủ stock
+        """
+        # Check available quantity
+        available = await self.get_available_quantity(item_id, tenant_id)
+
+        if available < quantity:
+            raise ValueError(
+                f"Insufficient stock: available={available}, requested={quantity}"
+            )
+
+        # Create reservation record
+        reservation_id = f"res_{tenant_id}_{datetime.now(timezone.utc).timestamp()}"
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(hours=expires_in)
+
+        reservation = {
+            "reservation_id": reservation_id,
+            "item_id": item_id,
+            "tenant_id": tenant_id,
+            "quantity": quantity,
+            "status": "reserved",
+            "reservation_ref": reservation_ref,
+            "created_at": now.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "user_id": user_id,
+        }
+
+        # Save reservation
+        await self._inventory_repo.create_reservation(reservation)
+
+        # Update inventory (reduce available, increase reserved)
+        await self._inventory_repo.update_inventory(
+            item_id=item_id,
+            tenant_id=tenant_id,
+            available_delta=-quantity,
+            reserved_delta=quantity,
+        )
+
+        # Audit log
+        audit_logger.info(
+            "Stock reservation created",
+            extra={
+                "reservation_id": reservation_id,
+                "item_id": item_id,
+                "tenant_id": tenant_id,
+                "quantity": quantity,
+                "expires_at": expires_at.isoformat(),
+                "user_id": user_id,
+            },
+        )
+
+        return {
+            "reservation_id": reservation_id,
+            "item_id": item_id,
+            "quantity": quantity,
+            "status": "reserved",
+            "expires_at": expires_at.isoformat(),
+        }
+
+    async def release_reservation(
+        self,
+        reservation_id: str,
+        tenant_id: str,
+    ) -> bool:
+        """
+        Release reservation (trả lại available stock).
+
+        KPI-029: Tenant-scoped reservation release.
+
+        Args:
+            reservation_id: Reservation ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu release thành công
+
+        Raises:
+            ValueError: Nếu reservation không tồn tại hoặc đã expired
+        """
+        # Get reservation
+        reservation = await self._inventory_repo.get_reservation(reservation_id, tenant_id)
+
+        if not reservation:
+            raise ValueError(f"Reservation not found: {reservation_id}")
+
+        # Check if expired
+        expires_at = datetime.fromisoformat(reservation["expires_at"])
+        if datetime.now(timezone.utc) > expires_at:
+            raise ValueError(f"Reservation expired: {reservation_id}")
+
+        # Check if already released/shipped
+        if reservation["status"] in ["released", "shipped"]:
+            raise ValueError(f"Reservation already {reservation['status']}: {reservation_id}")
+
+        # Update inventory (increase available, decrease reserved)
+        await self._inventory_repo.update_inventory(
+            item_id=reservation["item_id"],
+            tenant_id=tenant_id,
+            available_delta=reservation["quantity"],
+            reserved_delta=-reservation["quantity"],
+        )
+
+        # Update reservation status
+        await self._inventory_repo.update_reservation_status(
+            reservation_id, tenant_id, "released"
+        )
+
+        # Audit log
+        audit_logger.info(
+            "Reservation released",
+            extra={
+                "reservation_id": reservation_id,
+                "tenant_id": tenant_id,
+                "quantity": reservation["quantity"],
+            },
+        )
+
+        return True
+
+    async def convert_to_shipment(
+        self,
+        reservation_id: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """
+        Convert reservation to shipment.
+
+        KPI-029: Tenant-scoped shipment conversion.
+
+        Args:
+            reservation_id: Reservation ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Dict với shipment_id, item_id, quantity
+
+        Raises:
+            ValueError: Nếu reservation không tồn tại hoặc đã expired
+        """
+        # Get reservation
+        reservation = await self._inventory_repo.get_reservation(reservation_id, tenant_id)
+
+        if not reservation:
+            raise ValueError(f"Reservation not found: {reservation_id}")
+
+        # Check if expired
+        expires_at = datetime.fromisoformat(reservation["expires_at"])
+        if datetime.now(timezone.utc) > expires_at:
+            raise ValueError(f"Reservation expired: {reservation_id}")
+
+        # Update inventory (decrease reserved, decrease total)
+        await self._inventory_repo.update_inventory(
+            item_id=reservation["item_id"],
+            tenant_id=tenant_id,
+            reserved_delta=-reservation["quantity"],
+            total_delta=-reservation["quantity"],
+        )
+
+        # Update reservation status
+        await self._inventory_repo.update_reservation_status(
+            reservation_id, tenant_id, "shipped"
+        )
+
+        # Create shipment record
+        shipment_id = f"ship_{tenant_id}_{datetime.now(timezone.utc).timestamp()}"
+        shipment = {
+            "shipment_id": shipment_id,
+            "reservation_id": reservation_id,
+            "item_id": reservation["item_id"],
+            "tenant_id": tenant_id,
+            "quantity": reservation["quantity"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await self._inventory_repo.create_shipment(shipment)
+
+        # Audit log
+        audit_logger.info(
+            "Reservation converted to shipment",
+            extra={
+                "shipment_id": shipment_id,
+                "reservation_id": reservation_id,
+                "tenant_id": tenant_id,
+                "quantity": reservation["quantity"],
+            },
+        )
+
+        return {
+            "shipment_id": shipment_id,
+            "item_id": reservation["item_id"],
+            "quantity": reservation["quantity"],
+        }
+
+    async def get_available_quantity(
+        self,
+        item_id: str,
+        tenant_id: str,
+    ) -> int:
+        """
+        Lấy available quantity cho item.
+
+        KPI-029: Tenant-scoped inventory query.
+
+        Args:
+            item_id: Item ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Available quantity (total - reserved)
+        """
+        inventory = await self._inventory_repo.get_inventory(item_id, tenant_id)
+
+        if not inventory:
+            return 0
+
+        return inventory.get("available", 0)
+
+    async def get_inventory_status(
+        self,
+        item_id: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """
+        Lấy full inventory status cho item.
+
+        KPI-029: Tenant-scoped inventory status.
+
+        Args:
+            item_id: Item ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Dict với total, available, reserved, in_transit
+        """
+        return await self._inventory_repo.get_inventory(item_id, tenant_id) or {
+            "item_id": item_id,
+            "tenant_id": tenant_id,
+            "total": 0,
+            "available": 0,
+            "reserved": 0,
+            "in_transit": 0,
+        }
+
+
+# ============================================================================
+# Global Inventory Service Instance
+# ============================================================================
+
+_inventory_service: Optional[InventoryService] = None
+
+
+def init_inventory_service(inventory_repo: InventoryRepository) -> None:
+    """
+    Initialize global inventory service.
+
+    Args:
+        inventory_repo: Inventory repository instance
+    """
+    global _inventory_service
+    _inventory_service = InventoryService(inventory_repo)
+
+
+async def get_inventory_service() -> InventoryService:
+    """
+    Dependency để get inventory service.
+
+    Returns:
+        InventoryService instance
+
+    Raises:
+        RuntimeError: Nếu inventory service chưa được initialize
+    """
+    if _inventory_service is None:
+        raise RuntimeError("InventoryService chưa được initialize")
+
+    return _inventory_service

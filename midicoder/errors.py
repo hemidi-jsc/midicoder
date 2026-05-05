@@ -338,7 +338,27 @@ class ErrorCode(str, Enum):
     CP01_GUARD_CLAIMS_OUTSIDE_PERIOD = "MDC-CP01-085"    # Claim outside coverage period
     CP01_GUARD_CLAIMS_EXCEEDS_LIMIT = "MDC-CP01-086"     # Claim exceeds policy limit
     CP01_GUARD_CLAIMS_EXCLUDED = "MDC-CP01-087"          # Claim excluded by policy
-    
+
+    # DOUBLE_ENTRY_BOOKKEEPING (DP11 Banking Core)
+    CP01_EFFECT_DOUBLE_ENTRY_MISMATCH = "MDC-CP01-088"   # Debit != Credit trong double-entry
+    CP01_EFFECT_LEDGER_ENTRY_FAILED = "MDC-CP01-089"     # Không thể tạo ledger entry
+    CP01_EFFECT_TRANSACTION_IMMUTABLE = "MDC-CP01-090"   # Transaction đã committed
+
+    # INVENTORY_RESERVATION (DP05 Manufacturing)
+    CP01_EFFECT_INSUFFICIENT_STOCK = "MDC-CP01-091"      # Không đủ hàng tồn kho
+    CP01_EFFECT_RESERVATION_EXPIRED = "MDC-CP01-092"     # Reservation đã hết hạn
+    CP01_EFFECT_RESERVATION_NOT_FOUND = "MDC-CP01-093"   # Reservation không tồn tại
+
+    # PAYMENT_GATEWAY (DP12 Payments)
+    CP01_EFFECT_PAYMENT_FAILED = "MDC-CP01-094"          # Payment bị gateway reject
+    CP01_EFFECT_PAYMENT_GATEWAY_ERROR = "MDC-CP01-095"   # Gateway connection error
+    CP01_EFFECT_PAYMENT_DUPLICATE = "MDC-CP01-096"       # Idempotency key đã tồn tại
+
+    # CLINICAL_WORKFLOW (DP09 Healthcare)
+    CP01_EFFECT_INVALID_STATE_TRANSITION = "MDC-CP01-097"  # State transition không hợp lệ
+    CP01_EFFECT_CLINICAL_CHECK_FAILED = "MDC-CP01-098"    # Clinical decision check fail
+    CP01_EFFECT_PROVIDER_NOT_CERTIFIED = "MDC-CP01-099"   # Provider không có chứng chỉ
+
     # =========================================================================
     # CP01: Transaction Errors
     # =========================================================================

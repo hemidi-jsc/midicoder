@@ -1,0 +1,409 @@
+"""
+Payment Gateway Service - Payment Processing Service cho FastAPI.
+
+Module này cung cấp Payment Gateway service cho:
+- Payment processing qua multiple gateways
+- Idempotency cho retries
+- Payment cancellation
+- Refund processing
+
+KPI-029: Tenant-aware payment processing
+DP12: Payments & Cards domain pack
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+import httpx
+
+from app.core.db.repository import PaymentRepository
+from app.core.logging import audit_logger
+
+
+# ============================================================================
+# Payment Gateway Service
+# ============================================================================
+
+
+class PaymentGatewayService:
+    """
+    Payment Gateway Service - Payment processing service.
+
+    Service này cung cấp methods cho:
+    - Process payment qua external gateway (Stripe, VNPay, MoMo)
+    - Handle async callbacks/webhooks
+    - Idempotency cho retries (prevent duplicate)
+    - Payment cancellation và refund
+
+    KPI-029: Support tenant-scoped payment operations.
+    DP12: Payments & Cards domain pack.
+
+    Supported gateways:
+        - stripe: Stripe payment gateway
+        - vnpay: VNPay gateway (Vietnam)
+        - momo: MoMo e-wallet (Vietnam)
+
+    Usage:
+        payment_svc = PaymentGatewayService(payment_repo, config)
+        result = await payment_svc.process_payment(
+            amount=100000, currency="VND", gateway="stripe",
+            idempotency_key="txn_123", tenant_id="tenant_123"
+        )
+    """
+
+    # Gateway configurations
+    GATEWAY_CONFIGS = {
+        "stripe": {
+            "base_url": "https://api.stripe.com/v1",
+            "api_key_env": "STRIPE_API_KEY",
+        },
+        "vnpay": {
+            "base_url": "https://sandbox.vnpay.vn",
+            "api_key_env": "VNPAY_API_KEY",
+        },
+        "momo": {
+            "base_url": "https://test-payment.momo.vn",
+            "api_key_env": "MOMO_API_KEY",
+        },
+    }
+
+    def __init__(
+        self,
+        payment_repo: PaymentRepository,
+        config: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """
+        Initialize PaymentGatewayService.
+
+        Args:
+            payment_repo: Repository cho payment data storage
+            config: Configuration dict với API keys, timeout, etc.
+        """
+        self._payment_repo = payment_repo
+        self._config = config or {}
+
+    async def process_payment(
+        self,
+        amount: float,
+        currency: str,
+        gateway: str,
+        payment_method: str,
+        idempotency_key: str,
+        customer_id: str,
+        description: str,
+        user_id: Optional[str],
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """
+        Process payment qua external gateway.
+
+        KPI-029: Tenant-scoped payment processing.
+        DP12: Payments domain pack.
+
+        Args:
+            amount: Payment amount
+            currency: Currency (VND, USD, etc.)
+            gateway: Gateway name (stripe, vnpay, momo)
+            payment_method: Payment method (card, e-wallet, bank_transfer)
+            idempotency_key: Idempotency key để prevent duplicate
+            customer_id: Customer ID
+            description: Payment description
+            user_id: User thực hiện payment
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Dict với payment_id, status, transaction_ref
+
+        Raises:
+            ValueError: Nếu payment failed
+            ConnectionError: Nếu gateway connection error
+        """
+        # Check idempotency
+        existing = await self._payment_repo.get_payment_by_idempotency(
+            idempotency_key, tenant_id
+        )
+        if existing:
+            return {
+                "payment_id": existing["payment_id"],
+                "status": existing["status"],
+                "gateway": gateway,
+                "transaction_ref": existing.get("transaction_ref"),
+                "idempotent": True,
+            }
+
+        # Validate gateway
+        if gateway not in self.GATEWAY_CONFIGS:
+            raise ValueError(f"Unsupported gateway: {gateway}")
+
+        # Process payment based on gateway
+        if gateway == "stripe":
+            result = await self._process_stripe_payment(
+                amount=amount,
+                currency=currency,
+                customer_id=customer_id,
+                description=description,
+                idempotency_key=idempotency_key,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+        elif gateway == "vnpay":
+            result = await self._process_vnpay_payment(
+                amount=amount,
+                currency=currency,
+                customer_id=customer_id,
+                description=description,
+                idempotency_key=idempotency_key,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+        elif gateway == "momo":
+            result = await self._process_momo_payment(
+                amount=amount,
+                currency=currency,
+                customer_id=customer_id,
+                description=description,
+                idempotency_key=idempotency_key,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+        else:
+            raise ValueError(f"Gateway not implemented: {gateway}")
+
+        # Save payment record
+        payment_record = {
+            "payment_id": result["payment_id"],
+            "tenant_id": tenant_id,
+            "amount": amount,
+            "currency": currency,
+            "gateway": gateway,
+            "payment_method": payment_method,
+            "status": result["status"],
+            "transaction_ref": result.get("transaction_ref"),
+            "idempotency_key": idempotency_key,
+            "customer_id": customer_id,
+            "user_id": user_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await self._payment_repo.create_payment(payment_record)
+
+        # Audit log
+        audit_logger.info(
+            "Payment processed",
+            extra={
+                "payment_id": result["payment_id"],
+                "tenant_id": tenant_id,
+                "amount": amount,
+                "currency": currency,
+                "gateway": gateway,
+                "status": result["status"],
+                "user_id": user_id,
+            },
+        )
+
+        return result
+
+    async def _process_stripe_payment(
+        self,
+        amount: float,
+        currency: str,
+        customer_id: str,
+        description: str,
+        idempotency_key: str,
+        user_id: Optional[str],
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Process payment qua Stripe gateway."""
+        # TODO: Implement Stripe API integration
+        api_key = self._config.get("stripe_api_key")
+        
+        # Simulated response
+        return {
+            "payment_id": f"pi_stripe_{idempotency_key}",
+            "status": "completed",
+            "transaction_ref": f"txn_stripe_{idempotency_key}",
+        }
+
+    async def _process_vnpay_payment(
+        self,
+        amount: float,
+        currency: str,
+        customer_id: str,
+        description: str,
+        idempotency_key: str,
+        user_id: Optional[str],
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Process payment qua VNPay gateway."""
+        # TODO: Implement VNPay API integration
+        return {
+            "payment_id": f"pi_vnpay_{idempotency_key}",
+            "status": "completed",
+            "transaction_ref": f"txn_vnpay_{idempotency_key}",
+        }
+
+    async def _process_momo_payment(
+        self,
+        amount: float,
+        currency: str,
+        customer_id: str,
+        description: str,
+        idempotency_key: str,
+        user_id: Optional[str],
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Process payment qua MoMo gateway."""
+        # TODO: Implement MoMo API integration
+        return {
+            "payment_id": f"pi_momo_{idempotency_key}",
+            "status": "completed",
+            "transaction_ref": f"txn_momo_{idempotency_key}",
+        }
+
+    async def cancel_payment(
+        self,
+        payment_id: str,
+        gateway: str,
+        tenant_id: str,
+    ) -> bool:
+        """
+        Cancel payment.
+
+        KPI-029: Tenant-scoped cancellation.
+
+        Args:
+            payment_id: Payment ID
+            gateway: Gateway name
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu cancel thành công
+        """
+        # TODO: Implement gateway-specific cancel logic
+        await self._payment_repo.update_payment_status(payment_id, tenant_id, "cancelled")
+
+        audit_logger.info(
+            "Payment cancelled",
+            extra={
+                "payment_id": payment_id,
+                "gateway": gateway,
+                "tenant_id": tenant_id,
+            },
+        )
+
+        return True
+
+    async def refund_payment(
+        self,
+        payment_id: str,
+        amount: float,
+        gateway: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """
+        Refund payment.
+
+        KPI-029: Tenant-scoped refund.
+
+        Args:
+            payment_id: Payment ID
+            amount: Refund amount
+            gateway: Gateway name
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Dict với refund_id, status
+        """
+        # TODO: Implement gateway-specific refund logic
+        refund_id = f"refund_{tenant_id}_{datetime.now(timezone.utc).timestamp()}"
+
+        await self._payment_repo.create_refund(
+            refund_id=refund_id,
+            payment_id=payment_id,
+            amount=amount,
+            tenant_id=tenant_id,
+        )
+
+        audit_logger.info(
+            "Payment refunded",
+            extra={
+                "refund_id": refund_id,
+                "payment_id": payment_id,
+                "amount": amount,
+                "tenant_id": tenant_id,
+            },
+        )
+
+        return {"refund_id": refund_id, "status": "completed"}
+
+    async def verify_payment(
+        self,
+        payment_id: str,
+        gateway: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """
+        Verify payment status từ gateway.
+
+        KPI-029: Tenant-scoped verification.
+
+        Args:
+            payment_id: Payment ID
+            gateway: Gateway name
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Dict với payment status details
+        """
+        payment = await self._payment_repo.get_payment(payment_id, tenant_id)
+
+        if not payment:
+            return {"verified": False, "error": "Payment not found"}
+
+        return {
+            "verified": True,
+            "status": payment.get("status"),
+            "amount": payment.get("amount"),
+            "currency": payment.get("currency"),
+            "gateway": payment.get("gateway"),
+        }
+
+
+# ============================================================================
+# Global Payment Gateway Service Instance
+# ============================================================================
+
+_payment_gateway_service: Optional[PaymentGatewayService] = None
+
+
+def init_payment_gateway_service(
+    payment_repo: PaymentRepository, config: Optional[dict] = None
+) -> None:
+    """
+    Initialize global payment gateway service.
+
+    Args:
+        payment_repo: Payment repository instance
+        config: Configuration dict
+    """
+    global _payment_gateway_service
+    _payment_gateway_service = PaymentGatewayService(payment_repo, config)
+
+
+async def get_payment_gateway_service() -> PaymentGatewayService:
+    """
+    Dependency để get payment gateway service.
+
+    Returns:
+        PaymentGatewayService instance
+
+    Raises:
+        RuntimeError: Nếu payment gateway service chưa được initialize
+    """
+    if _payment_gateway_service is None:
+        raise RuntimeError("PaymentGatewayService chưa được initialize")
+
+    return _payment_gateway_service

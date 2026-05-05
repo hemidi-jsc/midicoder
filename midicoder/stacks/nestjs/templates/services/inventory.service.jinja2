@@ -1,0 +1,156 @@
+/**
+ * Inventory Service - Stock Management Service cho NestJS.
+ *
+ * KPI-029: Tenant-aware inventory management
+ * DP05: Manufacturing & Supply Chain
+ */
+
+import { Injectable } from "@nestjs/common";
+import { InventoryRepository } from "../db/inventory.repository";
+import { AuditLoggerService } from "../audit/audit.service";
+
+/**
+ * Inventory Reservation Result interface.
+ */
+interface ReservationResult {
+  reservationId: string;
+  itemId: string;
+  quantity: number;
+  status: string;
+  expiresAt: string;
+}
+
+/**
+ * Inventory Service - Stock management service.
+ */
+@Injectable()
+export class InventoryService {
+  constructor(
+    private readonly inventoryRepo: InventoryRepository,
+    private readonly auditLogger: AuditLoggerService,
+  ) {}
+
+  /**
+   * Reserve stock cho item.
+   */
+  async reserveStock(
+    itemId: string,
+    quantity: number,
+    reservationRef: string,
+    expiresIn: number,
+    userId: string | undefined,
+    tenantId: string,
+  ): Promise<ReservationResult> {
+    // Check available quantity
+    const available = await this.getAvailableQuantity(itemId, tenantId);
+
+    if (available < quantity) {
+      throw new Error(`Insufficient stock: available=${available}, requested=${quantity}`);
+    }
+
+    // Create reservation
+    const reservationId = `res_${tenantId}_${Date.now()}`;
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + expiresIn * 60 * 60 * 1000);
+
+    await this.inventoryRepo.createReservation({
+      reservationId,
+      itemId,
+      tenantId,
+      quantity,
+      status: "reserved",
+      reservationRef,
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      userId,
+    });
+
+    // Update inventory
+    await this.inventoryRepo.updateInventory(itemId, tenantId, -quantity, quantity);
+
+    this.auditLogger.info("Stock reservation created", {
+      reservationId,
+      itemId,
+      tenantId,
+      quantity,
+      expiresAt: expiresAt.toISOString(),
+      userId,
+    });
+
+    return {
+      reservationId,
+      itemId,
+      quantity,
+      status: "reserved",
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * Release reservation (trả lại available stock).
+   */
+  async releaseReservation(reservationId: string, tenantId: string): Promise<boolean> {
+    const reservation = await this.inventoryRepo.getReservation(reservationId, tenantId);
+
+    if (!reservation) {
+      throw new Error(`Reservation not found: ${reservationId}`);
+    }
+
+    if (reservation.status === "released" || reservation.status === "shipped") {
+      throw new Error(`Reservation already ${reservation.status}`);
+    }
+
+    await this.inventoryRepo.updateInventory(
+      reservation.itemId,
+      tenantId,
+      reservation.quantity,
+      -reservation.quantity,
+    );
+
+    await this.inventoryRepo.updateReservationStatus(reservationId, tenantId, "released");
+
+    return true;
+  }
+
+  /**
+   * Convert reservation to shipment.
+   */
+  async convertToShipment(reservationId: string, tenantId: string): Promise<any> {
+    const reservation = await this.inventoryRepo.getReservation(reservationId, tenantId);
+
+    if (!reservation) {
+      throw new Error(`Reservation not found: ${reservationId}`);
+    }
+
+    // Update inventory
+    await this.inventoryRepo.updateInventory(
+      reservation.itemId,
+      tenantId,
+      0,
+      -reservation.quantity,
+      -reservation.quantity,
+    );
+
+    await this.inventoryRepo.updateReservationStatus(reservationId, tenantId, "shipped");
+
+    const shipmentId = `ship_${tenantId}_${Date.now()}`;
+    await this.inventoryRepo.createShipment({
+      shipmentId,
+      reservationId,
+      itemId: reservation.itemId,
+      tenantId,
+      quantity: reservation.quantity,
+      createdAt: new Date().toISOString(),
+    });
+
+    return { shipmentId, itemId: reservation.itemId, quantity: reservation.quantity };
+  }
+
+  /**
+   * Lấy available quantity.
+   */
+  async getAvailableQuantity(itemId: string, tenantId: string): Promise<number> {
+    const inventory = await this.inventoryRepo.getInventory(itemId, tenantId);
+    return inventory?.available ?? 0;
+  }
+}
