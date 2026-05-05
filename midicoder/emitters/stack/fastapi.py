@@ -65,6 +65,10 @@ from midicoder.emitters.core.authnz import (
     Role,
     TenantMode,
 )
+from midicoder.emitters.core.event import (
+    FastAPIEventEmitter as CoreFastAPIEventEmitter,
+    EventParser,
+)
 from midicoder.pipeline.mir import MIR
 
 
@@ -173,7 +177,12 @@ class BackendFastAPIEmitter:
         
         # Emit auth code (CP02-CP04)
         files.extend(self._emit_auth(output_dir))
-        
+
+        # Emit events từ MIR metadata (CP05)
+        events_data = mir.metadata.get("events", [])
+        if events_data:
+            files.extend(self._emit_events(events_data, output_dir))
+
         return files
     
     def _emit_base_files(self, output_dir: Path) -> list[GeneratedFile]:
@@ -985,17 +994,65 @@ class BackendFastAPIEmitter:
             capability=capability,
         )
     
+    def _emit_events(
+        self,
+        events_data: list[dict[str, Any]],
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """
+        Emit event code files (CP05: Event-Driven Architecture).
+
+        Sử dụng FastAPIEventEmitter để generate event code.
+
+        Files được emit:
+        - app/core/event/event_bus.py
+        - app/core/event/event_publisher.py
+        - app/core/event/event_subscriber.py
+        - app/core/event/__init__.py
+
+        Args:
+            events_data: List of event dicts từ MIR metadata
+            output_dir: Output directory
+
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+
+        try:
+            # Parse events từ dict
+            parser = EventParser()
+            events = parser.parse(events_data)
+
+            # Tạo emitter và emit files
+            event_emitter = CoreFastAPIEventEmitter(stack_dir=self.stack_dir)
+            emitted_files = event_emitter.emit(events, output_dir)
+
+            # Chuyển đổi sang GeneratedFile
+            for emitted in emitted_files:
+                files.append(GeneratedFile(
+                    path=emitted.path,
+                    content=emitted.content,
+                    template=emitted.template,
+                    capability="CP05",
+                ))
+        except Exception as e:
+            import logging
+            logging.warning(f"FastAPIEventEmitter failed: {e}")
+
+        return files
+
     def _render_template(self, template_name: str, context: dict[str, Any]) -> str:
         """
         Render Jinja2 template với context.
-        
+
         Args:
             template_name: Tên template (ví dụ: main.py.jinja2)
             context: Template context
-            
+
         Returns:
             Rendered content
-            
+
         Raises:
             FileNotFoundError: Nếu template không tìm thấy
             TemplateSyntaxError: Nếu template có syntax error
