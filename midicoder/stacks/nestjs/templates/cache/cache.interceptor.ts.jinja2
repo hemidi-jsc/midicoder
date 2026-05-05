@@ -14,19 +14,44 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  Logger,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { Observable, of } from "rxjs";
 import { tap, catchError } from "rxjs/operators";
 import { Redis } from "ioredis";
 
-// Decorator metadata key
+// ============================================================================
+// Type Definitions - Sử dụng interface thay vì DOM Request type
+// ============================================================================
+
+/**
+ * Interface cho HTTP Request - tương thích Express/Fastify.
+ *
+ * KPI-029: Bao gồm tenantId cho tenant isolation.
+ */
+interface HttpCompatibleRequest {
+  method?: string;
+  url?: string;
+  headers: Record<string, string | string[] | undefined>;
+  /** KPI-029: Tenant ID từ middleware hoặc header */
+  tenantId?: string;
+  [key: string]: unknown;
+}
+
+// ============================================================================
+// Decorator Metadata Keys
+// ============================================================================
+
 export const CACHE_TTL = "cacheTtl";
 export const CACHE_KEY = "cacheKey";
 export const CACHE_DISABLE = "cacheDisable";
 
 // Default TTL (giây)
 const DEFAULT_TTL = 300;
+
+// Logger instance - thay thế console.log
+const logger = new Logger("CacheInterceptor");
 
 /**
  * Cache TTL Decorator.
@@ -72,18 +97,85 @@ export function CacheDisable() {
   return Reflect.metadata(CACHE_DISABLE, true);
 }
 
+// ============================================================================
+// Tenant ID Sanitization - KPI-029
+// ============================================================================
+
+/**
+ * Chuẩn hóa tenantId để an toàn cho Redis keys.
+ *
+ * KPI-029: Tenant Isolation - Đảm bảo tenantId không chứa ký tự đặc biệt
+ * có thể làm hỏng format của Redis keys.
+ *
+ * @param rawTenantId - Tenant ID thô từ request
+ * @returns Tenant ID đã được sanitize
+ */
+function sanitizeTenantId(rawTenantId: string): string {
+  // Loại bỏ ký tự đặc biệt, chỉ giữ alphanumeric, dash, underscore
+  return String(rawTenantId).replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+// ============================================================================
+// Safe JSON Serialization
+// ============================================================================
+
+/**
+ * Serialize an toàn thành JSON string.
+ *
+ * Xử lý các trường hợp JSON.stringify thất bại:
+ * - Streams, Buffers, circular objects
+ * - Returns null nếu không thể serialize
+ *
+ * @param data - Data cần serialize
+ * @returns JSON string hoặc null
+ */
+function safeStringify(data: unknown): string | null {
+  try {
+    // Guard: không serialize undefined, null
+    if (data === undefined || data === null) {
+      return null;
+    }
+    return JSON.stringify(data);
+  } catch {
+    // Nếu serialize thất bại, trả về null
+    return null;
+  }
+}
+
+/**
+ * Parse an toàn từ JSON string.
+ *
+ * @param data - JSON string cần parse
+ * @returns Parsed object hoặc null
+ */
+function safeParse(data: string | null): unknown {
+  if (!data) {
+    return null;
+  }
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
+// Cache Interceptor
+// ============================================================================
+
 /**
  * Cache Interceptor.
  *
  * Tự động cache responses và invalidate khi cần.
+ * KPI-029: Tenant Isolation - Cache keys được prefix với tenantId.
  */
 @Injectable()
 export class CacheInterceptor implements NestInterceptor {
   /**
    * Constructor.
    *
-   * @param redis - Redis client
    * @param reflector - NestJS Reflector
+   * @param redis - Redis client
    */
   constructor(
     private readonly reflector: Reflector,
@@ -123,31 +215,48 @@ export class CacheInterceptor implements NestInterceptor {
     );
 
     // KPI-029: Tenant Isolation - Lấy tenantId từ request context
-    const request = context.switchToHttp().getRequest();
-    
-    // Get tenantId from request headers or context
-    const tenantId = request.headers['x-tenant-id'] || request.tenantId || 'default';
-    
+    const request = context.switchToHttp().getRequest<HttpCompatibleRequest>();
+
+    // Get tenantId từ headers hoặc request context
+    // KPI-029: Nếu không có tenantId, KHÔNG dùng 'default' để tránh cache collision
+    const rawTenantId =
+      (request.headers["x-tenant-id"] as string) || request.tenantId;
+
+    if (!rawTenantId) {
+      // Không có tenantId → không cache (an toàn hơn là dùng default)
+      logger.debug("[Cache] SKIP: Missing tenantId, bypassing cache");
+      return next.handle();
+    }
+
+    // KPI-029: Sanitize tenantId để an toàn cho Redis keys
+    const tenantId = sanitizeTenantId(rawTenantId);
+
     const key = customKey || this.generateKey(request, tenantId);
 
     // Try get from cache
     return this.redis.get(key).then((cached) => {
       if (cached) {
         // Cache hit
-        console.log(`[Cache] HIT: ${key}`);
-        return of(JSON.parse(cached));
+        const parsed = safeParse(cached);
+        if (parsed !== null) {
+          logger.debug(`[Cache] HIT: ${key}`);
+          return of(parsed);
+        }
       }
 
       // Cache miss - call handler
-      console.log(`[Cache] MISS: ${key}`);
+      logger.debug(`[Cache] MISS: ${key}`);
       return next.handle().pipe(
         tap((response) => {
-          // Cache the response
-          this.redis.setex(key, ttl, JSON.stringify(response));
+          // Cache the response với safe stringify
+          const serialized = safeStringify(response);
+          if (serialized) {
+            this.redis.setex(key, ttl, serialized);
+          }
         }),
         catchError((error) => {
-          // Don't cache errors
-          console.error(`[Cache] Error: ${key}`, error);
+          // Không cache errors
+          logger.error(`[Cache] Error: ${key}`, error.stack);
           throw error;
         }),
       );
@@ -161,10 +270,10 @@ export class CacheInterceptor implements NestInterceptor {
    * Điều này đảm bảo cache của tenant A không bị share với tenant B.
    *
    * @param request - HTTP request
-   * @param tenantId - Tenant ID để tạo tenant-specific cache key
+   * @param tenantId - Tenant ID đã được sanitize
    * @returns Cache key string với tenant prefix
    */
-  private generateKey(request: Request, tenantId: string): string {
+  private generateKey(request: HttpCompatibleRequest, tenantId: string): string {
     const method = request.method || "GET";
     const path = request.url || "/";
     // KPI-029: Prefix với tenantId để isolate cache theo tenant
@@ -195,6 +304,7 @@ export class CacheInterceptor implements NestInterceptor {
 
     if (keys.length > 0) {
       await this.redis.del(...keys);
+      logger.log(`[Cache] Invalidated ${keys.length} keys matching: ${pattern}`);
     }
 
     return keys.length;
@@ -212,12 +322,17 @@ export class CacheInterceptor implements NestInterceptor {
   }
 
   /**
-   * Clear all cache.
+   * Clear tất cả cache - CẢNH BÁO: Chỉ dùng cho development.
    *
-   * Warning: Slow với large cache!
+   * KPI-029: Trong production, nên xóa theo tenant pattern thay vì clear all.
+   * Sử dụng clearTenantCache() từ redis.module.ts thay thế.
+   *
    * @returns Số lượng keys đã xóa
    */
   async clearAll(): Promise<number> {
+    logger.warn(
+      "[Cache] clearAll() gọi - hoạt động nguy hiểm trong production!",
+    );
     return this.invalidate("*");
   }
 }

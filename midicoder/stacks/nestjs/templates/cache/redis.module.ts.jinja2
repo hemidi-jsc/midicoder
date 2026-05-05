@@ -7,26 +7,52 @@
  * CP09: Caching & Performance
  */
 
-import { Module } from "@nestjs/common";
+import { Module, Logger } from "@nestjs/common";
 import { Redis } from "ioredis";
 import { config } from "dotenv";
 
 // Load environment variables
 config();
 
+// Logger instance
+const logger = new Logger("RedisModule");
+
+// ============================================================================
+// Tenant ID Sanitization - KPI-029
+// ============================================================================
+
+/**
+ * Chuẩn hóa tenantId để an toàn cho Redis keyPrefix.
+ *
+ * KPI-029: Tenant Isolation - Đảm bảo tenantId không chứa ký tự đặc biệt
+ * có thể làm hỏng format của Redis keys.
+ *
+ * @param tenantId - Tenant ID cần sanitize
+ * @returns Tenant ID đã được sanitize
+ */
+function sanitizeTenantId(tenantId: string): string {
+  return String(tenantId).replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+// ============================================================================
+// Redis Factory
+// ============================================================================
+
 /**
  * Redis Factory - tạo Redis connection.
  *
  * Sử dụng ioredis cho better performance và cluster support.
- * 
+ *
  * KPI-029: Key prefix có thể bao gồm tenant_id để isolate cache theo tenant.
  */
 export const redisFactory = {
   provide: "REDIS_CLIENT",
-  useFactory: () => {
+  useFactory: (): Redis => {
     // KPI-029: Base prefix (có thể thêm tenant prefix sau)
     const basePrefix = process.env.REDIS_KEY_PREFIX || "cache:";
-    
+
+    logger.log(`[Redis] Connecting to ${process.env.REDIS_HOST || "localhost"}:${process.env.REDIS_PORT || "6379"}`);
+
     return new Redis({
       // Redis URL từ environment
       host: process.env.REDIS_HOST || "localhost",
@@ -38,85 +64,145 @@ export const redisFactory = {
       maxRetriesPerRequest: 3,
       connectTimeout: parseInt(process.env.REDIS_TIMEOUT || "10000", 10),
 
-      // Retry strategy
+      // Retry strategy - exponential backoff
       retryStrategy: (times: number) => {
         const delay = Math.min(times * 50, 2000);
+        logger.debug(`[Redis] Retry #${times}, delay: ${delay}ms`);
         return delay;
       },
 
       // Key prefix - base prefix, tenant prefix sẽ được thêm trong service
       keyPrefix: basePrefix,
+
+      // Event handlers
+      onConnect: () => {
+        logger.log("[Redis] Connected successfully");
+      },
+      onError: (error: Error) => {
+        logger.error("[Redis] Connection error", error.stack);
+      },
     });
   },
 };
 
+// ============================================================================
+// Tenant-Specific Redis Factory - KPI-029
+// ============================================================================
+
 /**
  * KPI-029: Tạo Redis connection cho tenant cụ thể.
- * 
+ *
  * Mỗi tenant có key prefix riêng để isolate cache.
- * 
- * @param tenantId - ID của tenant
- * @returns Redis config cho tenant
+ *
+ * @param tenantId - ID của tenant (đã được sanitize)
+ * @returns Redis factory cho tenant
  */
-export const tenantRedisFactory = (tenantId: string) => ({
-  provide: `TENANT_REDIS_CLIENT_${tenantId}`,
-  useFactory: () => {
-    // KPI-029: Tenant-specific prefix để isolate cache
-    const tenantPrefix = process.env.REDIS_TENANT_PREFIX 
-      ? `${process.env.REDIS_TENANT_PREFIX}${tenantId}:`
-      : `tenant:${tenantId}:`;
-    
-    return new Redis({
-      host: process.env.REDIS_HOST || "localhost",
-      port: parseInt(process.env.REDIS_PORT || "6379", 10),
-      password: process.env.REDIS_PASSWORD || undefined,
-      db: parseInt(process.env.REDIS_DB || "0", 10),
-      maxRetriesPerRequest: 3,
-      connectTimeout: parseInt(process.env.REDIS_TIMEOUT || "10000", 10),
-      retryStrategy: (times: number) => {
-        const delay = Math.min(times * 50, 2000);
-        return delay;
-      },
-      // KPI-029: Tenant-specific key prefix
-      keyPrefix: tenantPrefix,
-    });
-  },
-});
+export const tenantRedisFactory = (tenantId: string) => {
+  const sanitizedId = sanitizeTenantId(tenantId);
+
+  return {
+    provide: `TENANT_REDIS_CLIENT_${sanitizedId}`,
+    useFactory: (): Redis => {
+      // KPI-029: Tenant-specific prefix để isolate cache
+      const tenantPrefix = process.env.REDIS_TENANT_PREFIX
+        ? `${process.env.REDIS_TENANT_PREFIX}${sanitizedId}:`
+        : `tenant:${sanitizedId}:`;
+
+      logger.log(`[Redis] Tenant Redis created for tenant: ${sanitizedId}`);
+
+      return new Redis({
+        host: process.env.REDIS_HOST || "localhost",
+        port: parseInt(process.env.REDIS_PORT || "6379", 10),
+        password: process.env.REDIS_PASSWORD || undefined,
+        db: parseInt(process.env.REDIS_DB || "0", 10),
+        maxRetriesPerRequest: 3,
+        connectTimeout: parseInt(process.env.REDIS_TIMEOUT || "10000", 10),
+        retryStrategy: (times: number) => {
+          const delay = Math.min(times * 50, 2000);
+          return delay;
+        },
+        // KPI-029: Tenant-specific key prefix
+        keyPrefix: tenantPrefix,
+        onConnect: () => {
+          logger.log(`[Redis] Tenant ${sanitizedId} connected`);
+        },
+        onError: (error: Error) => {
+          logger.error(`[Redis] Tenant ${sanitizedId} error`, error.stack);
+        },
+      });
+    },
+  };
+};
+
+// ============================================================================
+// Helper Functions - KPI-029
+// ============================================================================
 
 /**
  * KPI-029: Helper function để tạo key với tenant prefix.
- * 
+ *
  * @param tenantId - ID của tenant (optional, nếu không có thì không thêm tenant prefix)
  * @param key - Key gốc
- * @returns Key với tenant prefix
+ * @returns Key với tenant prefix (tenantId được sanitize)
  */
 export function getTenantKey(tenantId: string | undefined, key: string): string {
   if (!tenantId) {
     return key;
   }
-  const prefix = process.env.REDIS_TENANT_PREFIX 
-    ? `${process.env.REDIS_TENANT_PREFIX}${tenantId}:`
-    : `tenant:${tenantId}:`;
+  const sanitizedId = sanitizeTenantId(tenantId);
+  const prefix = process.env.REDIS_TENANT_PREFIX
+    ? `${process.env.REDIS_TENANT_PREFIX}${sanitizedId}:`
+    : `tenant:${sanitizedId}:`;
   return `${prefix}${key}`;
 }
 
 /**
  * KPI-029: Helper function để xóa tất cả cache của tenant.
- * 
+ *
+ * An toàn hơn clearAll() vì chỉ xóa cache của tenant cụ thể.
+ *
  * @param redis - Redis client
  * @param tenantId - ID của tenant cần xóa cache
+ * @returns Số lượng keys đã xóa
  */
-export async function clearTenantCache(redis: Redis, tenantId: string): Promise<void> {
-  const prefix = process.env.REDIS_TENANT_PREFIX 
-    ? `${process.env.REDIS_TENANT_PREFIX}${tenantId}:`
-    : `tenant:${tenantId}:`;
-  
-  // Scan và xóa tất cả keys với tenant prefix
-  const keys = await redis.keys(`${prefix}*`);
+export async function clearTenantCache(
+  redis: Redis,
+  tenantId: string,
+): Promise<number> {
+  const sanitizedId = sanitizeTenantId(tenantId);
+  const prefix = process.env.REDIS_TENANT_PREFIX
+    ? `${process.env.REDIS_TENANT_PREFIX}${sanitizedId}:`
+    : `tenant:${sanitizedId}:`;
+
+  logger.log(`[Redis] Clearing tenant cache for: ${sanitizedId}`);
+
+  // Sử dụng SCAN thay vì KEYS để không block Redis
+  const keys: string[] = [];
+  let cursor = "0";
+
+  do {
+    const [newCursor, keysBatch] = await redis.scan(
+      cursor,
+      "MATCH",
+      `${prefix}*`,
+      "COUNT",
+      "100",
+    );
+    cursor = newCursor;
+    keys.push(...keysBatch);
+  } while (cursor !== "0");
+
   if (keys.length > 0) {
     await redis.del(...keys);
+    logger.log(`[Redis] Cleared ${keys.length} keys for tenant: ${sanitizedId}`);
   }
+
+  return keys.length;
 }
+
+// ============================================================================
+// Redis Module
+// ============================================================================
 
 /**
  * Redis Module.
