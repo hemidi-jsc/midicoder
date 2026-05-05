@@ -20,8 +20,6 @@ from typing import Any, Optional
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
-from .models import EffectType
-
 
 # ============================================================================
 # Domain Effect Result Models
