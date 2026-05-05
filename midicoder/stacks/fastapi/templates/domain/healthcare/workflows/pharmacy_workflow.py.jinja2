@@ -1,0 +1,53 @@
+"""
+Pharmacy Workflow (DP09)
+
+Prescription → Verify → Dispense → Completed.
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List
+
+class PharmacyState(str, Enum):
+    RECEIVED = "received"
+    VERIFIED = "verified"
+    DISPENSED = "dispensed"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class PharmacyEvent(str, Enum):
+    VERIFY = "verify"
+    DISPENSE = "dispense"
+    COMPLETE = "complete"
+    FAIL = "fail"
+
+@dataclass
+class PharmacyWorkflow:
+    """Quy trình nhà thuốc: Prescription → Verify → Dispense."""
+    workflow_id: str
+    tenant_id: str
+    prescription_id: str
+    current_state: PharmacyState = PharmacyState.RECEIVED
+    history: List[Dict[str, Any]] = field(default_factory=list)
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+    def transition(self, event: PharmacyEvent) -> PharmacyState:
+        transitions = {
+            (PharmacyState.RECEIVED, PharmacyEvent.VERIFY): PharmacyState.VERIFIED,
+            (PharmacyState.VERIFIED, PharmacyEvent.DISPENSE): PharmacyState.DISPENSED,
+            (PharmacyState.DISPENSED, PharmacyEvent.COMPLETE): PharmacyState.COMPLETED,
+        }
+        for state in PharmacyState:
+            transitions[(state, PharmacyEvent.FAIL)] = PharmacyState.FAILED
+        new_state = transitions.get((self.current_state, event))
+        if not new_state:
+            raise ValueError(f"Không thể transition {self.current_state.value} với {event.value}")
+        self.history.append({"from": self.current_state.value, "to": new_state.value, "event": event.value})
+        self.current_state = new_state
+        return new_state
+
+    @property
+    def is_completed(self) -> bool:
+        return self.current_state in (PharmacyState.COMPLETED, PharmacyState.FAILED)

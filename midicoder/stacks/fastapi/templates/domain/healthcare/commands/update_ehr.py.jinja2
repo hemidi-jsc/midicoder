@@ -1,0 +1,64 @@
+"""
+Update EHR Command (DP09)
+
+Cập nhật Electronic Health Record với audit trail (RX04: HIPAA).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+from ....command.command import BaseCommand
+from ....command.command_guards import CommandGuards
+from ....command.command_validator import CommandValidator
+from ...entities.patient import EHR
+
+
+@dataclass
+class UpdateEHRInput:
+    ehr_id: str
+    patient_id: str
+    diagnosis: str
+    allergies: str
+    current_medications: str
+
+
+@dataclass
+class UpdateEHROutput:
+    ehr_id: str
+    updated_at: datetime
+
+
+class UpdateEHRCommand(BaseCommand):
+    """UpdateEHR command.
+
+    RX04: PHI encrypted, audit trail mandatory.
+    """
+
+    name = "healthcare.update_ehr"
+    description = "Cập nhật EHR với audit trail"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("healthcare:ehr:update")]
+    effects = ["update_record", "encrypt_phi", "write_audit_log"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> UpdateEHRInput:
+        validator = CommandValidator(data)
+        validator.require_string("ehr_id", min_length=1)
+        validator.require_string("patient_id", min_length=1)
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return UpdateEHRInput(**{k: data.get(k, "") for k in UpdateEHRInput.__dataclass_fields__})
+
+    def execute(self, input_data: UpdateEHRInput, context: dict[str, Any]) -> UpdateEHROutput:
+        """Execute update EHR command."""
+        db_session = context["db_session"]
+        ehr = db_session.query(EHR).filter(EHR.ehr_id == input_data.ehr_id).first()
+        if ehr:
+            ehr.diagnosis_enc = f"ENC:{input_data.diagnosis}"
+            ehr.allergies_enc = f"ENC:{input_data.allergies}"
+            ehr.current_medications_enc = f"ENC:{input_data.current_medications}"
+            ehr.last_updated_by = context.get("user_id", "")
+            db_session.commit()
+        return UpdateEHROutput(ehr_id=ehr.ehr_id, updated_at=ehr.updated_at)

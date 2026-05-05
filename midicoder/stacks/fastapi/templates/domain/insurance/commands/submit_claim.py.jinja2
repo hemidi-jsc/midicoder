@@ -1,0 +1,226 @@
+"""
+Insurance Submit/Review/Pay Claim Commands (DP14)
+
+Nộp, xem xét, thanh toán bồi thường bảo hiểm.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
+from ....command.command import BaseCommand
+from ....command.command_guards import CommandGuards
+from ....command.command_validator import CommandValidator
+from ...entities.policy import InsuranceClaim, Policy, PolicyStatus
+
+
+@dataclass
+class SubmitClaimInput:
+    claim_id: str
+    policy_id: str
+    claimant_name: str
+    incident_date: str
+    claimed_amount: Decimal
+    description: str = ""
+
+
+@dataclass
+class SubmitClaimOutput:
+    claim_id: str
+    status: str
+    submitted_at: datetime
+
+
+class SubmitClaimCommand(BaseCommand):
+    """SubmitClaim command cho insurance."""
+
+    name = "insurance.submit_claim"
+    description = "Nộp yêu cầu bồi thường bảo hiểm"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("insurance:claim:submit")]
+    effects = ["create_record", "write_audit_log", "publish_event"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> SubmitClaimInput:
+        validator = CommandValidator(data)
+        validator.require_string("claim_id", min_length=1)
+        validator.require_string("policy_id", min_length=1)
+        validator.require_string("claimant_name", min_length=1)
+        validator.require_string("incident_date", min_length=1)
+        validator.require_decimal("claimed_amount", min_value=Decimal("0.01"))
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return SubmitClaimInput(**{k: data.get(k, "") for k in SubmitClaimInput.__dataclass_fields__})
+
+    def execute(self, input_data: SubmitClaimInput, context: dict[str, Any]) -> SubmitClaimOutput:
+        """Execute submit claim command."""
+        db_session = context["db_session"]
+        tenant_id = context["tenant_id"]
+        claim = InsuranceClaim(
+            tenant_id=tenant_id, claim_id=input_data.claim_id, policy_id=input_data.policy_id,
+            claimant_name=input_data.claimant_name, claimed_amount=input_data.claimed_amount,
+            description=input_data.description, status="submitted",
+        )
+        db_session.add(claim)
+        db_session.commit()
+        return SubmitClaimOutput(claim_id=claim.claim_id, status=claim.status, submitted_at=claim.submitted_at)
+
+
+@dataclass
+class ReviewClaimInput:
+    claim_id: str
+    decision: str
+    assessed_amount: Decimal = Decimal("0")
+    notes: str = ""
+
+
+@dataclass
+class ReviewClaimOutput:
+    claim_id: str
+    status: str
+
+
+class ReviewClaimCommand(BaseCommand):
+    """ReviewClaim command cho insurance."""
+
+    name = "insurance.review_claim"
+    description = "Xem xét yêu cầu bồi thường"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("insurance:claim:review")]
+    effects = ["update_record", "write_audit_log"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> ReviewClaimInput:
+        validator = CommandValidator(data)
+        validator.require_string("claim_id", min_length=1)
+        validator.require_string("decision", allowed=["approved", "denied"])
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return ReviewClaimInput(claim_id=data["claim_id"], decision=data["decision"], assessed_amount=Decimal(str(data.get("assessed_amount", 0))))
+
+    def execute(self, input_data: ReviewClaimInput, context: dict[str, Any]) -> ReviewClaimOutput:
+        """Execute review claim command."""
+        db_session = context["db_session"]
+        claim = db_session.query(InsuranceClaim).filter(InsuranceClaim.claim_id == input_data.claim_id).first()
+        if claim:
+            claim.status = "approved" if input_data.decision == "approved" else "denied"
+            claim.assessed_amount = input_data.assessed_amount if input_data.decision == "approved" else None
+            db_session.commit()
+        return ReviewClaimOutput(claim_id=claim.claim_id, status=claim.status)
+
+
+@dataclass
+class PayClaimInput:
+    claim_id: str
+    payment_amount: Decimal
+
+
+@dataclass
+class PayClaimOutput:
+    claim_id: str
+    status: str
+
+
+class PayClaimCommand(BaseCommand):
+    """PayClaim command cho insurance."""
+
+    name = "insurance.pay_claim"
+    description = "Thanh toán bồi thường bảo hiểm"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("insurance:claim:pay")]
+    effects = ["update_record", "payment_processing", "write_audit_log"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> PayClaimInput:
+        validator = CommandValidator(data)
+        validator.require_string("claim_id", min_length=1)
+        validator.require_decimal("payment_amount", min_value=Decimal("0.01"))
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return PayClaimInput(claim_id=data["claim_id"], payment_amount=Decimal(str(data["payment_amount"])))
+
+    def execute(self, input_data: PayClaimInput, context: dict[str, Any]) -> PayClaimOutput:
+        """Execute pay claim command."""
+        db_session = context["db_session"]
+        claim = db_session.query(InsuranceClaim).filter(InsuranceClaim.claim_id == input_data.claim_id).first()
+        if claim:
+            claim.status = "paid"
+            db_session.commit()
+        return PayClaimOutput(claim_id=claim.claim_id, status=claim.status)
+
+
+@dataclass
+class CancelPolicyInput:
+    policy_id: str
+    reason: str = ""
+
+
+@dataclass
+class CancelPolicyOutput:
+    policy_id: str
+    status: str
+
+
+class CancelPolicyCommand(BaseCommand):
+    """CancelPolicy command."""
+
+    name = "insurance.cancel_policy"
+    description = "Hủy hợp đồng bảo hiểm"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("insurance:policy:cancel")]
+    effects = ["update_record", "write_audit_log", "publish_event"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> CancelPolicyInput:
+        validator = CommandValidator(data)
+        validator.require_string("policy_id", min_length=1)
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return CancelPolicyInput(policy_id=data["policy_id"], reason=data.get("reason", ""))
+
+    def execute(self, input_data: CancelPolicyInput, context: dict[str, Any]) -> CancelPolicyOutput:
+        """Execute cancel policy command."""
+        db_session = context["db_session"]
+        policy = db_session.query(Policy).filter(Policy.policy_id == input_data.policy_id).first()
+        if policy:
+            policy.status = PolicyStatus.CANCELLED
+            db_session.commit()
+        return CancelPolicyOutput(policy_id=policy.policy_id, status=policy.status.value)
+
+
+@dataclass
+class RenewPolicyInput:
+    policy_id: str
+    new_end_date: str
+
+
+@dataclass
+class RenewPolicyOutput:
+    policy_id: str
+    status: str
+
+
+class RenewPolicyCommand(BaseCommand):
+    """RenewPolicy command."""
+
+    name = "insurance.renew_policy"
+    description = "Gia hạn hợp đồng bảo hiểm"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("insurance:policy:renew")]
+    effects = ["update_record", "underwriting_check", "write_audit_log"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> RenewPolicyInput:
+        validator = CommandValidator(data)
+        validator.require_string("policy_id", min_length=1)
+        validator.require_string("new_end_date", min_length=1)
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return RenewPolicyInput(policy_id=data["policy_id"], new_end_date=data["new_end_date"])
+
+    def execute(self, input_data: RenewPolicyInput, context: dict[str, Any]) -> RenewPolicyOutput:
+        """Execute renew policy command."""
+        db_session = context["db_session"]
+        policy = db_session.query(Policy).filter(Policy.policy_id == input_data.policy_id).first()
+        if policy:
+            policy.status = PolicyStatus.ACTIVE
+            db_session.commit()
+        return RenewPolicyOutput(policy_id=policy.policy_id, status=policy.status.value)

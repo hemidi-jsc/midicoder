@@ -1,0 +1,52 @@
+"""
+Claim Processing Workflow (DP10)
+
+Submit → Review → Approve/Deny → Pay.
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List
+
+class ClaimProcessState(str, Enum):
+    SUBMITTED = "submitted"
+    UNDER_REVIEW = "under_review"
+    APPROVED = "approved"
+    DENIED = "denied"
+    PAID = "paid"
+
+class ClaimProcessEvent(str, Enum):
+    REVIEW = "review"
+    APPROVE = "approve"
+    DENY = "deny"
+    PAY = "pay"
+
+@dataclass
+class ClaimProcessingWorkflow:
+    """Quy trình xử lý bồi thường: Submit → Review → Approve/Deny → Pay."""
+    workflow_id: str
+    tenant_id: str
+    claim_id: str
+    current_state: ClaimProcessState = ClaimProcessState.SUBMITTED
+    history: List[Dict[str, Any]] = field(default_factory=list)
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+    def transition(self, event: ClaimProcessEvent) -> ClaimProcessState:
+        transitions = {
+            (ClaimProcessState.SUBMITTED, ClaimProcessEvent.REVIEW): ClaimProcessState.UNDER_REVIEW,
+            (ClaimProcessState.UNDER_REVIEW, ClaimProcessEvent.APPROVE): ClaimProcessState.APPROVED,
+            (ClaimProcessState.UNDER_REVIEW, ClaimProcessEvent.DENY): ClaimProcessState.DENIED,
+            (ClaimProcessState.APPROVED, ClaimProcessEvent.PAY): ClaimProcessState.PAID,
+        }
+        new_state = transitions.get((self.current_state, event))
+        if not new_state:
+            raise ValueError(f"Không thể transition {self.current_state.value} với {event.value}")
+        self.history.append({"from": self.current_state.value, "to": new_state.value, "event": event.value})
+        self.current_state = new_state
+        return new_state
+
+    @property
+    def is_completed(self) -> bool:
+        return self.current_state in (ClaimProcessState.PAID, ClaimProcessState.DENIED)

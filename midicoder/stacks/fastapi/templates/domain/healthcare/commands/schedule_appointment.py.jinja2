@@ -1,0 +1,103 @@
+"""
+Schedule Appointment Command (DP09)
+
+Lịch hẹn khám bệnh.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+from ....command.command import BaseCommand
+from ....command.command_guards import CommandGuards
+from ....command.command_validator import CommandValidator
+from ...entities.patient import Appointment
+
+
+@dataclass
+class ScheduleAppointmentInput:
+    appointment_id: str
+    patient_id: str
+    provider_id: str
+    appointment_type: str
+    scheduled_at: str
+
+
+@dataclass
+class ScheduleAppointmentOutput:
+    appointment_id: str
+    status: str
+    scheduled_at: str
+
+
+class ScheduleAppointmentCommand(BaseCommand):
+    """ScheduleAppointment command."""
+
+    name = "healthcare.schedule_appointment"
+    description = "Lịch hẹn khám bệnh"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("healthcare:appointment:schedule")]
+    effects = ["create_record", "write_audit_log"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> ScheduleAppointmentInput:
+        validator = CommandValidator(data)
+        validator.require_string("appointment_id", min_length=1)
+        validator.require_string("patient_id", min_length=1)
+        validator.require_string("provider_id", min_length=1)
+        validator.require_string("appointment_type", min_length=1)
+        validator.require_string("scheduled_at", min_length=1)
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return ScheduleAppointmentInput(**{k: data.get(k, "") for k in ScheduleAppointmentInput.__dataclass_fields__})
+
+    def execute(self, input_data: ScheduleAppointmentInput, context: dict[str, Any]) -> ScheduleAppointmentOutput:
+        """Execute schedule appointment command."""
+        db_session = context["db_session"]
+        tenant_id = context["tenant_id"]
+        appt = Appointment(
+            tenant_id=tenant_id, appointment_id=input_data.appointment_id,
+            patient_id=input_data.patient_id, provider_id=input_data.provider_id,
+            appointment_type=input_data.appointment_type, status="scheduled",
+        )
+        db_session.add(appt)
+        db_session.commit()
+        return ScheduleAppointmentOutput(appointment_id=appt.appointment_id, status=appt.status, scheduled_at=input_data.scheduled_at)
+
+
+@dataclass
+class CancelAppointmentInput:
+    appointment_id: str
+
+
+@dataclass
+class CancelAppointmentOutput:
+    appointment_id: str
+    status: str
+
+
+class CancelAppointmentCommand(BaseCommand):
+    """CancelAppointment command."""
+
+    name = "healthcare.cancel_appointment"
+    description = "Hủy hẹn khám bệnh"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("healthcare:appointment:cancel")]
+    effects = ["update_record", "write_audit_log"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> CancelAppointmentInput:
+        validator = CommandValidator(data)
+        validator.require_string("appointment_id", min_length=1)
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return CancelAppointmentInput(appointment_id=data["appointment_id"])
+
+    def execute(self, input_data: CancelAppointmentInput, context: dict[str, Any]) -> CancelAppointmentOutput:
+        """Execute cancel appointment command."""
+        db_session = context["db_session"]
+        appt = db_session.query(Appointment).filter(Appointment.appointment_id == input_data.appointment_id).first()
+        if appt:
+            appt.status = "cancelled"
+            db_session.commit()
+        return CancelAppointmentOutput(appointment_id=appt.appointment_id, status=appt.status)
