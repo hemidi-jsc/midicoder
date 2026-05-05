@@ -1,0 +1,16 @@
+"""
+Routes package - tú ng sinh b»i Midicoder CE.
+
+Imports t¸t c¶ routers ®Ó register vµo FastAPI app.
+"""
+
+{% for tag in tags %}
+from . import {{ tag }}_routes
+{% endfor %}
+
+# Danh s¸ch routers ®Ó register vµo FastAPI app
+routers = [
+{% for tag in tags %}
+    {{ tag }}_routes.router,
+{% endfor %}
+]
