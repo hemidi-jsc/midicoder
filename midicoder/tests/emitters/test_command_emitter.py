@@ -324,7 +324,7 @@ class MockComplianceService:
         """Check AML screening."""
         return self.aml_clear
     
-    async def check_hipaa_clearance(self, user_id: str) -> bool:
+    async def check_hipaa_clearance(self, user_id: str, tenant_id: str = None) -> bool:
         """Check HIPAA clearance."""
         return self.hipaa_cleared
 

@@ -350,7 +350,7 @@ class TestTemplateRendering:
     def test_value_object_template_has_tenant_id_field(self):
         """KPI-029: value_object.py.jinja2 template phải render tenant_id field."""
         # Read template file
-        template_path = "midicoder/stacks/fastapi/templates/domain/value_objects/value_object.py.jinja2"
+        template_path = "midicoder/stacks/fastapi/templates/value_objects/value_object.py.jinja2"
         
         with open(template_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -364,7 +364,7 @@ class TestTemplateRendering:
 
     def test_value_object_template_has_kpi_029_comment(self):
         """KPI-029: Template phải có KPI-029 comment."""
-        template_path = "midicoder/stacks/fastapi/templates/domain/value_objects/value_object.py.jinja2"
+        template_path = "midicoder/stacks/fastapi/templates/value_objects/value_object.py.jinja2"
         
         with open(template_path, "r", encoding="utf-8") as f:
             content = f.read()

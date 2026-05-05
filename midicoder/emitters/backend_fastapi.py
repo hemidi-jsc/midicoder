@@ -660,7 +660,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}.py",
-                template="domain/queries/query.py.jinja2",
+                template="queries/query.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -668,7 +668,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}_handler.py",
-                template="domain/queries/query_handler.py.jinja2",
+                template="queries/query_handler.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -676,7 +676,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}_validator.py",
-                template="domain/queries/query_validator.py.jinja2",
+                template="queries/query_validator.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -684,7 +684,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}_guards.py",
-                template="domain/queries/query_guards.py.jinja2",
+                template="queries/query_guards.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -692,7 +692,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}_output.py",
-                template="domain/queries/query_output.py.jinja2",
+                template="queries/query_output.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -700,7 +700,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename="__init__.py",
-                template="domain/queries/__init__.py.jinja2",
+                template="queries/__init__.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -876,7 +876,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}.py",
-                template="domain/commands/command.py.jinja2",
+                template="commands/command.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -884,7 +884,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}_handler.py",
-                template="domain/commands/command_handler.py.jinja2",
+                template="commands/command_handler.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -892,7 +892,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}_validator.py",
-                template="domain/commands/command_validator.py.jinja2",
+                template="commands/command_validator.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -900,7 +900,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}_guards.py",
-                template="domain/commands/command_guards.py.jinja2",
+                template="commands/command_guards.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -908,7 +908,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}_effects.py",
-                template="domain/commands/command_effects.py.jinja2",
+                template="commands/command_effects.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -916,7 +916,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}_errors.py",
-                template="domain/commands/command_errors.py.jinja2",
+                template="commands/command_errors.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -924,7 +924,7 @@ class BackendFastAPIEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename="__init__.py",
-                template="domain/commands/__init__.py.jinja2",
+                template="commands/__init__.py.jinja2",
                 context=context,
                 capability="CP01",
             ))
