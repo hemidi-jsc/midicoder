@@ -13,7 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from midicoder.pipeline.mir import MIR, MIRBuilder
-from midicoder.emitters.backend_nestjs import (
+from midicoder.emitters.stack.nestjs import (
     BackendNestJSEmitter,
     GeneratedFile,
 )

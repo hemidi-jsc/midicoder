@@ -19,7 +19,7 @@ import pytest
 from pathlib import Path
 import tempfile
 
-from midicoder.emitters.authnz.models import (
+from midicoder.emitters.core.authnz.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
@@ -30,7 +30,7 @@ from midicoder.emitters.authnz.models import (
     Role,
     TenantMode,
 )
-from midicoder.emitters.authnz.nestjs import (
+from midicoder.emitters.core.authnz.nestjs import (
     emit_nestjs_auth,
     GeneratedFile,
     NestJSEmitter,

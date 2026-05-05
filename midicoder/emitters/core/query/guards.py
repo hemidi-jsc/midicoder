@@ -11,7 +11,7 @@ Theo SoT E06:
 - No cross-tenant data access without explicit cross_tenant scope
 
 Usage:
-    from midicoder.emitters.query import QueryGuards
+    from midicoder.emitters.core.query import QueryGuards
     
     guards = QueryGuards(query)
     await guards.check_all(query_data, user_id=user_id, tenant_id=tenant_id)

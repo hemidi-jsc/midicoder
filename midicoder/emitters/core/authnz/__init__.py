@@ -20,7 +20,7 @@ Author: Midicoder Team
 Version: 1.0.0
 """
 
-from midicoder.emitters.authnz.models import (
+from midicoder.emitters.core.authnz.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
@@ -33,16 +33,16 @@ from midicoder.emitters.authnz.models import (
     Role,
     TenantMode,
 )
-from midicoder.emitters.authnz.parser import (
+from midicoder.emitters.core.authnz.parser import (
     AuthParser,
     parse_auth_dsl,
     validate_permission_format,
 )
-from midicoder.emitters.authnz.fastapi import (
+from midicoder.emitters.core.authnz.fastapi import (
     FastAPIAuthEmitter,
     emit_fastapi_auth,
 )
-from midicoder.emitters.authnz.nestjs import (
+from midicoder.emitters.core.authnz.nestjs import (
     NestJSEmitter,
     emit_nestjs_auth,
 )

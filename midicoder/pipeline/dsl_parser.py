@@ -27,11 +27,11 @@ from typing import Any
 import yaml
 
 from midicoder.dsl.projection import ProjectionNode, ProjectionTree, NodeKind
-from midicoder.emitters.entity.parser import EntityParser
-from midicoder.emitters.command.parser import CommandParser
-from midicoder.emitters.query.parser import parse_filters, parse_pagination
-from midicoder.emitters.workflow.parser import WorkflowParser
-from midicoder.emitters.value_object.parser import ValueObjectParser
+from midicoder.emitters.core.`entity.parser import EntityParser
+from midicoder.emitters.core.`command.parser import CommandParser
+from midicoder.emitters.core.`query.parser import parse_filters, parse_pagination
+from midicoder.emitters.core.`workflow.parser import WorkflowParser
+from midicoder.emitters.core.`value_object.parser import ValueObjectParser
 
 
 class DSLParser:

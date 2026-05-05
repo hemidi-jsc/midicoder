@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pytest_mock import MockerFixture
 
-from midicoder.emitters.command.domain_effects import (
+from midicoder.emitters.core.command.domain_effects import (
     ClinicalTransitionResult,
     DomainEffects,
     InventoryReservationResult,

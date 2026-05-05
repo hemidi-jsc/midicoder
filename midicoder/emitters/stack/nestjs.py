@@ -1,29 +1,29 @@
 """
-Backend FastAPI Emitter Module.
+Backend NestJS Emitter Module.
 
-Module này cung cấp `BackendFastAPIEmitter` class để generate FastAPI backend code
+Module này cung cấp BackendNestJSEmitter class để generate NestJS/TypeScript backend code
 từ MIR (Midicoder Intermediate Representation).
 
-CP01: Domain Model - Entity models (SQLAlchemy)
+CP01: Domain Model - Entity models (TypeORM)
 CP08: Database & Data Access - Repositories
 
 Theo SoT E07, emitter sử dụng Jinja2 templates để render code.
-Templates nằm trong `midicoder/stacks/fastapi/templates/`.
+Templates nằm trong midicoder/stacks/nestjs/templates/.
 
 Ví dụ sử dụng:
     from midicoder.pipeline.mir import MIR
-    from midicoder.emitters.backend_fastapi import BackendFastAPIEmitter
+    from midicoder.emitters.backend_nestjs import BackendNestJSEmitter
     
     # Load MIR từ SQLite
     mir = MIR.from_json(mir_json)
     
     # Tạo emitter
-    emitter = BackendFastAPIEmitter(
-        stack_dir=Path("midicoder/stacks/fastapi/templates")
+    emitter = BackendNestJSEmitter(
+        stack_dir=Path("midicoder/stacks/nestjs/templates")
     )
     
     # Emit code
-    files = emitter.emit(mir, output_dir=Path(".midicoder/versions/v1.0.0/src/api"))
+    files = emitter.emit(mir, output_dir=Path(".midicoder/versions/v1.0.0/src"))
     
     # files: list[GeneratedFile] với path, content, template, capability
 
@@ -39,29 +39,29 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
-from midicoder.emitters.value_object import FastAPIValueObjectEmitter
-from midicoder.emitters.command import (
-    FastAPICommandEmitter,
+from midicoder.emitters.core.value_object import NestJSValueObjectEmitter
+from midicoder.emitters.core.command import (
+    NestJSCommandEmitter,
     Command,
 )
-from midicoder.emitters.query import (
-    FastAPIQueryEmitter,
+from midicoder.emitters.core.query import (
+    NestJSQueryEmitter,
     Query,
     QueryGuard,
     QueryEffect,
     QueryGuardType,
     QueryEffectType,
 )
-from midicoder.emitters.entity import (
+from midicoder.emitters.core.entity import (
     EntityParser,
-    FastAPIEntityEmitter,
+    NestJSEntityEmitter,
 )
-from midicoder.emitters.authnz import (
+from midicoder.emitters.core.authnz import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
-    FastAPIAuthEmitter,
     JWTAuthConfig,
+    NestJSEmitter as NestJSAuthEmitter,
     Role,
     TenantMode,
 )
@@ -79,7 +79,7 @@ class GeneratedFile:
     Generated File - File đã generate từ template.
     
     Attributes:
-        path: Đường dẫn file tương đối (ví dụ: app/models/order.py)
+        path: Đường dẫn file tương đối (ví dụ: src/modules/order/order.entity.ts)
         content: Nội dung file đã generate
         template: Tên template đã dùng
         capability: Core Capability code (CP01, CP08, etc.)
@@ -92,18 +92,18 @@ class GeneratedFile:
 
 
 # ============================================================================
-# Backend FastAPI Emitter
+# Backend NestJS Emitter
 # ============================================================================
 
 
-class BackendFastAPIEmitter:
+class BackendNestJSEmitter:
     """
-    Emitter cho FastAPI backend.
+    Emitter cho NestJS backend.
     
     Generate code từ MIR cho:
-    - CP01: Domain Models (SQLAlchemy)
+    - CP01: Domain Models (TypeORM entities)
     - CP08: Repositories
-    - CP06: API Routes (future)
+    - CP06: Controllers (future)
     
     Attributes:
         stack_dir: Đường dẫn đến templates directory
@@ -112,10 +112,10 @@ class BackendFastAPIEmitter:
     
     def __init__(self, stack_dir: Path) -> None:
         """
-        Khởi tạo BackendFastAPIEmitter.
+        Khởi tạo BackendNestJSEmitter.
         
         Args:
-            stack_dir: Đường dẫn đến templates directory (ví dụ: midicoder/stacks/fastapi/templates)
+            stack_dir: Đường dẫn đến templates directory (ví dụ: midicoder/stacks/nestjs/templates)
             
         Raises:
             FileNotFoundError: Nếu stack_dir không tồn tại
@@ -138,7 +138,7 @@ class BackendFastAPIEmitter:
         Emit code từ MIR.
         
         Process:
-        1. Emit base files (main.py, config.py, database.py, __init__.py files)
+        1. Emit base files (main.ts, app.module.ts, config.ts, etc.)
         2. Emit entity files cho mỗi entity trong MIR metadata
         3. Emit value object files cho mỗi value object trong MIR metadata
         4. Write files to output directory
@@ -178,19 +178,15 @@ class BackendFastAPIEmitter:
     
     def _emit_base_files(self, output_dir: Path) -> list[GeneratedFile]:
         """
-        Emit base files cho FastAPI backend.
+        Emit base files cho NestJS backend.
         
         Files được emit:
-        - app/main.py
-        - app/config.py
-        - app/database.py
-        - app/__init__.py
-        - app/models/__init__.py
-        - app/models/base.py
-        - app/schemas/__init__.py
-        - app/repositories/__init__.py
-        - app/repositories/base.py
-        - app/routes/__init__.py
+        - src/main.ts
+        - src/app.module.ts
+        - src/config.ts
+        - src/common/index.ts
+        - src/modules/index.ts
+        - src/database/index.ts
         
         Args:
             output_dir: Output directory
@@ -201,93 +197,87 @@ class BackendFastAPIEmitter:
         files: list[GeneratedFile] = []
         
         # Create directories
-        app_dir = output_dir / "app"
-        models_dir = app_dir / "models"
-        schemas_dir = app_dir / "schemas"
-        repos_dir = app_dir / "repositories"
-        routes_dir = app_dir / "routes"
+        modules_dir = output_dir / "modules"
+        entities_dir = modules_dir / "entities"
+        database_dir = output_dir / "database"
+        common_dir = output_dir / "common"
         
-        for dir_path in [app_dir, models_dir, schemas_dir, repos_dir, routes_dir]:
+        for dir_path in [output_dir, modules_dir, entities_dir, database_dir, common_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
         
-        # Emit main.py
+        # Emit main.ts
         files.append(self._write_file(
-            output_dir=app_dir,
-            filename="main.py",
-            template="main.py.jinja2",
+            output_dir=output_dir,
+            filename="main.ts",
+            template="main.ts.jinja2",
             context={},
             capability="CP06",
         ))
         
-        # Emit config.py
+        # Emit app.module.ts
         files.append(self._write_file(
-            output_dir=app_dir,
-            filename="config.py",
-            template="config.py.jinja2",
+            output_dir=output_dir,
+            filename="app.module.ts",
+            template="app.module.ts.jinja2",
             context={},
-            capability="CP01",
-        ))
-        
-        # Emit database.py (from db/database.py.jinja2)
-        files.append(self._write_file(
-            output_dir=app_dir,
-            filename="database.py",
-            template="db/database.py.jinja2",
-            context={},
-            capability="CP08",
-        ))
-        
-        # Emit __init__.py files
-        files.append(self._write_file(
-            output_dir=app_dir,
-            filename="__init__.py",
-            template="__init__.py.jinja2",
-            context={"module_name": "app"},
-            capability="CP01",
-        ))
-        files.append(self._write_file(
-            output_dir=models_dir,
-            filename="__init__.py",
-            template="__init__.py.jinja2",
-            context={"module_name": "models"},
-            capability="CP01",
-        ))
-        files.append(self._write_file(
-            output_dir=schemas_dir,
-            filename="__init__.py",
-            template="__init__.py.jinja2",
-            context={"module_name": "schemas"},
-            capability="CP01",
-        ))
-        files.append(self._write_file(
-            output_dir=repos_dir,
-            filename="__init__.py",
-            template="__init__.py.jinja2",
-            context={"module_name": "repositories"},
-            capability="CP08",
-        ))
-        files.append(self._write_file(
-            output_dir=routes_dir,
-            filename="__init__.py",
-            template="__init__.py.jinja2",
-            context={"module_name": "routes"},
             capability="CP06",
         ))
         
-        # Emit base model (copy from db/base_model.py.jinja2)
+        # Emit config.ts
         files.append(self._write_file(
-            output_dir=models_dir,
-            filename="base.py",
-            template="db/base_model.py.jinja2",
+            output_dir=output_dir,
+            filename="config.ts",
+            template="config.ts.jinja2",
             context={},
             capability="CP01",
         ))
         
-        # Emit base repository (copy from db/base_repository.py.jinja2)
+        # Emit index files
         files.append(self._write_file(
-            output_dir=repos_dir,
-            filename="base.py",
-            template="db/base_repository.py.jinja2",
+            output_dir=common_dir,
+            filename="index.ts",
+            template="index.ts.jinja2",
+            context={"module_name": "common"},
+            capability="CP01",
+        ))
+        files.append(self._write_file(
+            output_dir=modules_dir,
+            filename="index.ts",
+            template="index.ts.jinja2",
+            context={"module_name": "modules"},
+            capability="CP01",
+        ))
+        files.append(self._write_file(
+            output_dir=database_dir,
+            filename="index.ts",
+            template="index.ts.jinja2",
+            context={"module_name": "database"},
+            capability="CP08",
+        ))
+        
+        # Emit base entity (from db/base.entity.ts.jinja2)
+        files.append(self._write_file(
+            output_dir=database_dir,
+            filename="base.entity.ts",
+            template="db/base.entity.ts.jinja2",
+            context={},
+            capability="CP01",
+        ))
+        
+        # Emit base repository (from db/base.repository.ts.jinja2)
+        files.append(self._write_file(
+            output_dir=database_dir,
+            filename="base.repository.ts",
+            template="db/base.repository.ts.jinja2",
+            context={},
+            capability="CP08",
+        ))
+        
+        # Emit database module
+        files.append(self._write_file(
+            output_dir=modules_dir / "database",
+            filename="database.module.ts",
+            template="db/database.module.ts.jinja2",
             context={},
             capability="CP08",
         ))
@@ -296,14 +286,15 @@ class BackendFastAPIEmitter:
     
     def _emit_auth(self, output_dir: Path) -> list[GeneratedFile]:
         """
-        Emit auth code cho FastAPI backend (CP02-CP04).
+        Emit auth code cho NestJS backend (CP02-CP04).
         
         Files được emit:
-        - app/core/security/jwt_auth.py
-        - app/core/security/rbac_service.py
-        - app/core/security/permissions.py
-        - app/core/security/policy_engine.py
-        - app/core/security/tenant_context.py
+        - src/auth/jwt-auth.guard.ts
+        - src/auth/rbac.service.ts
+        - src/auth/permissions.module.ts
+        - src/auth/policy_engine.ts
+        - src/auth/tenant_context.ts
+        - src/auth/index.ts
         
         KPI-028: Missing permission detection
         KPI-029: Missing tenant filter detection
@@ -322,14 +313,14 @@ class BackendFastAPIEmitter:
         auth_data = self._build_default_auth_ir()
         
         # Tạo emitter và emit auth files
-        auth_emitter = FastAPIAuthEmitter(stack_dir=self.stack_dir)
+        auth_emitter = NestJSAuthEmitter(stack_dir=self.stack_dir)
         
         try:
             auth_files = auth_emitter.emit(auth_data, output_dir)
             files.extend(auth_files)
         except Exception as e:
             import logging
-            logging.warning(f"FastAPIAuthEmitter failed: {e}")
+            logging.warning(f"NestJSAuthEmitter failed: {e}")
             # Continue without auth files - basic templates will work
         
         return files
@@ -385,11 +376,13 @@ class BackendFastAPIEmitter:
     
     def _emit_entity(self, entity: dict[str, Any], output_dir: Path, all_entities: list[dict[str, Any]] = None) -> list[GeneratedFile]:
         """
-        Emit files cho một entity sử dụng FastAPIEntityEmitter mới.
+        Emit files cho một entity sử dụng NestJSEntityEmitter mới.
         
         Files được emit:
-        - app/models/{entity}.py (generated by FastAPIEntityEmitter)
-        - app/repositories/{entity}_repo.py (repository template)
+        - src/modules/{entity}/{entity}.entity.ts (generated by NestJSEntityEmitter)
+        - src/modules/{entity}/{entity}.repository.ts (repository template)
+        - src/modules/{entity}/{entity}.controller.ts (controller template)
+        - src/modules/{entity}/{entity}.service.ts (service template)
         
         Args:
             entity: Entity dict từ MIR metadata
@@ -404,12 +397,16 @@ class BackendFastAPIEmitter:
         entity_id = entity.get("id", "Entity")
         entity_lower = entity_id.lower()
         
-        app_dir = output_dir / "app"
-        models_dir = app_dir / "models"
+        # Create entity directory
+        entity_dir = output_dir / "modules" / entity_lower
+        dto_dir = entity_dir / "dto"
+        
+        entity_dir.mkdir(parents=True, exist_ok=True)
+        dto_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            # Sử dụng FastAPIEntityEmitter mới để generate entity model
-            entity_emitter = FastAPIEntityEmitter(stack_dir=self.stack_dir)
+            # Sử dụng NestJSEntityEmitter mới để generate entity
+            entity_emitter = NestJSEntityEmitter(stack_dir=self.stack_dir)
             
             # Convert Python type names to EntityParser expected format
             def convert_entity_type(field: dict) -> None:
@@ -426,9 +423,9 @@ class BackendFastAPIEmitter:
             
             # Parse entity DSL từ dict (convert dict to YAML format then parse)
             import yaml
+            import copy
             
             # Deep copy entity to avoid modifying original
-            import copy
             entity_copy = copy.deepcopy(entity) if isinstance(entity, dict) else entity
             
             # Convert field types
@@ -462,7 +459,7 @@ class BackendFastAPIEmitter:
                 emitted_code = entity_emitter.emit(entity_obj, all_parsed_entities)
                 
                 # Write entity file
-                entity_file_path = models_dir / f"{entity_lower}.py"
+                entity_file_path = entity_dir / f"{entity_lower}.entity.ts"
                 entity_file_path.write_text(emitted_code, encoding="utf-8")
                 
                 files.append(GeneratedFile(
@@ -472,27 +469,59 @@ class BackendFastAPIEmitter:
                     capability="CP01",
                 ))
         except Exception as e:
-            # Fallback: Use base_model.py.jinja2 template nếu có lỗi
+            # Fallback: Use old template-based approach nếu có lỗi
             import logging
-            logging.warning(f"FastAPIEntityEmitter failed for {entity_id}, using fallback: {e}")
+            logging.warning(f"NestJSEntityEmitter failed for {entity_id}, using fallback: {e}")
             
-            # Sử dụng base_model.py.jinja2 template (đã tồn tại trong db/)
             files.append(self._write_file(
-                output_dir=models_dir,
-                filename=f"{entity_lower}.py",
-                template="db/base_model.py.jinja2",
+                output_dir=entity_dir,
+                filename=f"{entity_lower}.entity.ts",
+                template="db/entity.ts.jinja2",
                 context={"entity": entity},
                 capability="CP01",
             ))
         
-        # Emit repository (entity-specific - CP08) - Keep using template
-        repos_dir = app_dir / "repositories"
+        # Emit repository file (from db/repository.ts.jinja2) - Keep using template
         files.append(self._write_file(
-            output_dir=repos_dir,
-            filename=f"{entity_lower}_repo.py",
-            template="db/repository.py.jinja2",
+            output_dir=entity_dir,
+            filename=f"{entity_lower}.repository.ts",
+            template="db/repository.ts.jinja2",
             context={"entity": entity},
             capability="CP08",
+        ))
+        
+        # Emit controller
+        files.append(self._write_file(
+            output_dir=entity_dir,
+            filename=f"{entity_lower}.controller.ts",
+            template="controller.ts.jinja2",
+            context={"entity": entity},
+            capability="CP06",
+        ))
+        
+        # Emit service
+        files.append(self._write_file(
+            output_dir=entity_dir,
+            filename=f"{entity_lower}.service.ts",
+            template="service.ts.jinja2",
+            context={"entity": entity},
+            capability="CP08",
+        ))
+        
+        # Emit DTOs
+        files.append(self._write_file(
+            output_dir=dto_dir,
+            filename=f"create.{entity_lower}.dto.ts",
+            template="dto.ts.jinja2",
+            context={"entity": entity},
+            capability="CP01",
+        ))
+        files.append(self._write_file(
+            output_dir=dto_dir,
+            filename=f"update.{entity_lower}.dto.ts",
+            template="dto.ts.jinja2",
+            context={"entity": entity},
+            capability="CP01",
         ))
         
         return files
@@ -504,11 +533,11 @@ class BackendFastAPIEmitter:
         all_value_objects: list[dict[str, Any]] = None
     ) -> list[GeneratedFile]:
         """
-        Emit files cho một Value Object sử dụng FastAPIValueObjectEmitter mới.
+        Emit files cho một Value Object sử dụng NestJSValueObjectEmitter mới.
         
         Files được emit:
-        - app/domain/value_objects/{vo_id_lower}.py
-        - app/domain/value_objects/__init__.py (nếu chưa tồn tại)
+        - src/domain/value-objects/{vo_id_lower}.value-object.ts
+        - src/domain/value-objects/index.ts (nếu chưa tồn tại)
         
         Args:
             vo: Value Object dict từ MIR metadata
@@ -523,28 +552,29 @@ class BackendFastAPIEmitter:
         vo_id = vo.get("id", "ValueObject")
         vo_lower = vo_id.lower()
         
-        app_dir = output_dir / "app"
-        domain_dir = app_dir / "domain"
-        vo_dir = domain_dir / "value_objects"
+        src_dir = output_dir / "src"
+        domain_dir = src_dir / "domain"
+        vo_dir = domain_dir / "value-objects"
         
-        # Create value_objects directory
+        # Create value-objects directory
         vo_dir.mkdir(parents=True, exist_ok=True)
         
-        # Emit __init__.py for value_objects directory nếu chưa có
-        init_file = vo_dir / "__init__.py"
-        if not init_file.exists():
-            files.append(self._write_file(
-                output_dir=vo_dir,
-                filename="__init__.py",
-                template="__init__.py.jinja2",
-                context={"module_name": "value_objects"},
+        # Emit index.ts for value-objects directory nếu chưa có
+        index_file = vo_dir / "index.ts"
+        if not index_file.exists():
+            index_content = """// Value Objects exports\n"""
+            index_file.write_text(index_content, encoding="utf-8")
+            files.append(GeneratedFile(
+                path=index_file.relative_to(output_dir),
+                content=index_content,
+                template="generated",
                 capability="CP01",
             ))
         
-        # Sử dụng FastAPIValueObjectEmitter mới để generate code
+        # Sử dụng NestJSValueObjectEmitter mới để generate code
         try:
             # Tạo emitter
-            vo_emitter = FastAPIValueObjectEmitter(stack_dir=self.stack_dir)
+            vo_emitter = NestJSValueObjectEmitter(stack_dir=self.stack_dir)
             
             # Build vo_map cho inheritance resolution
             vo_map = {}
@@ -555,24 +585,33 @@ class BackendFastAPIEmitter:
             # Emit VO với inheritance support
             emitted_vo = vo_emitter.emit(vo, parent_vo_map=vo_map)
             
+            # Render template với context đầy đủ
+            context = vo_emitter._build_template_context(emitted_vo)
+            rendered_content = vo_emitter.render_value_object(emitted_vo)
+            
             # Write file
-            file_path = vo_dir / f"{vo_lower}.py"
+            file_path = vo_dir / f"{vo_lower}.value-object.ts"
+            file_path.write_text(rendered_content, encoding="utf-8")
+            
+            files.append(GeneratedFile(
+                path=file_path.relative_to(output_dir),
+                content=rendered_content,
+                template="value-objects/value-object.ts.jinja2",
+                capability="CP01",
+            ))
+            
+        except Exception:
+            # Fallback: Use emitter's fallback method
+            vo_emitter = NestJSValueObjectEmitter(stack_dir=self.stack_dir)
+            emitted_vo = vo_emitter.emit(vo)
+            
+            file_path = vo_dir / f"{vo_lower}.value-object.ts"
             file_path.write_text(emitted_vo.full_content, encoding="utf-8")
             
             files.append(GeneratedFile(
                 path=file_path.relative_to(output_dir),
                 content=emitted_vo.full_content,
-                template="value_object_emitter",
-                capability="CP01",
-            ))
-            
-        except Exception as e:
-            # Fallback: Use old template-based approach
-            files.append(self._write_file(
-                output_dir=vo_dir,
-                filename=f"{vo_lower}.py",
-                template="domain/value_objects/value_object.py.jinja2",
-                context={"vo": vo},
+                template="value_object_emitter_fallback",
                 capability="CP01",
             ))
         
@@ -582,16 +621,16 @@ class BackendFastAPIEmitter:
         """
         Emit files cho một Query (CP01-Part4).
         
-        Sử dụng FastAPIQueryEmitter để generate code.
+        Sử dụng NestJSQueryEmitter để generate code.
         
         Files được emit:
-        - app/queries/{query_snake}/{query_snake}.py
-        - app/queries/{query_snake}/{query_snake}_handler.py
-        - app/queries/{query_snake}/{query_snake}_validator.py
-        - app/queries/{query_snake}/{query_snake}_guards.py
-        - app/queries/{query_snake}/{query_snake}_effects.py
-        - app/queries/{query_snake}/{query_snake}_output.py
-        - app/queries/{query_snake}/__init__.py
+        - src/queries/{query_snake}/{query_snake}.ts
+        - src/queries/{query_snake}/{query_snake}.handler.ts
+        - src/queries/{query_snake}/{query_snake}.validator.ts
+        - src/queries/{query_snake}/{query_snake}.guards.ts
+        - src/queries/{query_snake}/{query_snake}.effects.ts
+        - src/queries/{query_snake}/{query_snake}.output.ts
+        - src/queries/{query_snake}/index.ts
         
         Args:
             query: Query dict từ MIR metadata
@@ -605,8 +644,8 @@ class BackendFastAPIEmitter:
         query_id = query.get("id", "Query")
         query_snake = self._to_snake_case(query_id)
         
-        app_dir = output_dir / "app"
-        queries_dir = app_dir / "queries" / query_snake
+        src_dir = output_dir / "src"
+        queries_dir = src_dir / "queries" / query_snake
         
         # Create queries directory
         queries_dir.mkdir(parents=True, exist_ok=True)
@@ -616,7 +655,7 @@ class BackendFastAPIEmitter:
             query_obj = self._build_query_from_dict(query)
             
             # Tạo emitter và emit files
-            query_emitter = FastAPIQueryEmitter(stack_dir=self.stack_dir)
+            query_emitter = NestJSQueryEmitter(stack_dir=self.stack_dir)
             
             # Kiểm tra aggregation query
             if query_obj.get("aggregation"):
@@ -642,7 +681,7 @@ class BackendFastAPIEmitter:
         except Exception as e:
             # Fallback: Use old template-based approach nếu có lỗi
             import logging
-            logging.warning(f"FastAPIQueryEmitter failed, using fallback: {e}")
+            logging.warning(f"NestJSQueryEmitter failed, using fallback: {e}")
             
             # Template context (old style)
             context = {
@@ -659,48 +698,48 @@ class BackendFastAPIEmitter:
             # Emit query files (fallback)
             files.append(self._write_file(
                 output_dir=queries_dir,
-                filename=f"{query_snake}.py",
-                template="queries/query.py.jinja2",
+                filename=f"{query_snake}.query.ts",
+                template="queries/query.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=queries_dir,
-                filename=f"{query_snake}_handler.py",
-                template="queries/query_handler.py.jinja2",
+                filename=f"{query_snake}.handler.ts",
+                template="queries/query.handler.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=queries_dir,
-                filename=f"{query_snake}_validator.py",
-                template="queries/query_validator.py.jinja2",
+                filename=f"{query_snake}.validator.ts",
+                template="queries/query.validator.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=queries_dir,
-                filename=f"{query_snake}_guards.py",
-                template="queries/query_guards.py.jinja2",
+                filename=f"{query_snake}.guards.ts",
+                template="queries/query.guards.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=queries_dir,
-                filename=f"{query_snake}_output.py",
-                template="queries/query_output.py.jinja2",
+                filename=f"{query_snake}.output.ts",
+                template="queries/query.output.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=queries_dir,
-                filename="__init__.py",
-                template="queries/__init__.py.jinja2",
+                filename="index.ts",
+                template="queries/index.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -717,7 +756,7 @@ class BackendFastAPIEmitter:
         Returns:
             Dictionary với Query hoặc AggregationQuery instance
         """
-        from midicoder.emitters.query import (
+        from midicoder.emitters.core.query import (
             QueryField, FilterExpression, FilterOp,
             PaginationConfig, PaginationType, ProjectionConfig,
             SortExpression, SortDirection,
@@ -807,16 +846,17 @@ class BackendFastAPIEmitter:
         """
         Emit files cho một Command (Full DDD pattern).
         
-        Sử dụng FastAPICommandEmitter để generate code.
+        Sử dụng NestJSCommandEmitter để generate code.
         
         Files được emit:
-        - app/commands/{command_snake}/{command_snake}.py
-        - app/commands/{command_snake}/{command_snake}_handler.py
-        - app/commands/{command_snake}/{command_snake}_validator.py
-        - app/commands/{command_snake}/{command_snake}_guards.py
-        - app/commands/{command_snake}/{command_snake}_effects.py
-        - app/commands/{command_snake}/{command_snake}_errors.py
-        - app/commands/{command_snake}/__init__.py
+        - src/commands/{command_snake}/{command_snake}.ts
+        - src/commands/{command_snake}/{command_snake}.handler.ts
+        - src/commands/{command_snake}/{command_snake}.validator.ts
+        - src/commands/{command_snake}/{command_snake}.guards.ts
+        - src/commands/{command_snake}/{command_snake}.effects.ts
+        - src/commands/{command_snake}/{command_snake}.errors.ts
+        - src/commands/{command_snake}/{command_snake}.module.ts
+        - src/commands/{command_snake}/index.ts
         
         Args:
             command: Command dict từ MIR metadata
@@ -830,14 +870,14 @@ class BackendFastAPIEmitter:
         command_id = command.get("id", "Command")
         command_snake = self._to_snake_case(command_id)
         
-        app_dir = output_dir / "app"
-        commands_dir = app_dir / "commands" / command_snake
+        src_dir = output_dir / "src"
+        commands_dir = src_dir / "commands" / command_snake
         
         # Create commands directory
         commands_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            # Sử dụng FastAPICommandEmitter để generate command files
+            # Sử dụng NestJSCommandEmitter để generate command files
             from midicoder.dsl.kernel import ProjectionNode
             
             # Build Command object từ dict
@@ -845,7 +885,7 @@ class BackendFastAPIEmitter:
             command_obj = Command.from_projection_node(projection_node)
             
             # Tạo emitter và emit files
-            command_emitter = FastAPICommandEmitter(stack_dir=self.stack_dir)
+            command_emitter = NestJSCommandEmitter(stack_dir=self.stack_dir)
             emitted_files = command_emitter.emit(command_obj, commands_dir)
             
             # Chuyển đổi sang GeneratedFile
@@ -863,68 +903,75 @@ class BackendFastAPIEmitter:
         except Exception as e:
             # Fallback: Use old template-based approach nếu có lỗi
             import logging
-            logging.warning(f"FastAPICommandEmitter failed, using fallback: {e}")
+            logging.warning(f"NestJSCommandEmitter failed, using fallback: {e}")
             
             # Template context
             context = {
                 "command": command,
-                "command_id": command_id,
                 "command_snake": command_snake,
             }
             
             # Emit command files (fallback)
             files.append(self._write_file(
                 output_dir=commands_dir,
-                filename=f"{command_snake}.py",
-                template="commands/command.py.jinja2",
+                filename=f"{command_snake}.ts",
+                template="commands/command.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=commands_dir,
-                filename=f"{command_snake}_handler.py",
-                template="commands/command_handler.py.jinja2",
+                filename=f"{command_snake}.handler.ts",
+                template="commands/command.handler.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=commands_dir,
-                filename=f"{command_snake}_validator.py",
-                template="commands/command_validator.py.jinja2",
+                filename=f"{command_snake}.validator.ts",
+                template="commands/command.validator.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=commands_dir,
-                filename=f"{command_snake}_guards.py",
-                template="commands/command_guards.py.jinja2",
+                filename=f"{command_snake}.guards.ts",
+                template="commands/command.guards.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=commands_dir,
-                filename=f"{command_snake}_effects.py",
-                template="commands/command_effects.py.jinja2",
+                filename=f"{command_snake}.effects.ts",
+                template="commands/command.effects.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=commands_dir,
-                filename=f"{command_snake}_errors.py",
-                template="commands/command_errors.py.jinja2",
+                filename=f"{command_snake}.errors.ts",
+                template="commands/command.errors.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
             
             files.append(self._write_file(
                 output_dir=commands_dir,
-                filename="__init__.py",
-                template="commands/__init__.py.jinja2",
+                filename=f"{command_snake}.module.ts",
+                template="commands/command.module.ts.jinja2",
+                context=context,
+                capability="CP01",
+            ))
+            
+            files.append(self._write_file(
+                output_dir=commands_dir,
+                filename="index.ts",
+                template="commands/index.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -990,7 +1037,7 @@ class BackendFastAPIEmitter:
         Render Jinja2 template với context.
         
         Args:
-            template_name: Tên template (ví dụ: main.py.jinja2)
+            template_name: Tên template (ví dụ: main.ts.jinja2)
             context: Template context
             
         Returns:
@@ -1005,11 +1052,11 @@ class BackendFastAPIEmitter:
             return template.render(**context)
         except TemplateNotFound as e:
             raise FileNotFoundError(
-                f"Template not found: {template_name}"
+                f"Template không tìm thấy: {template_name}"
             ) from e
         except TemplateSyntaxError as e:
             raise TemplateSyntaxError(
-                f"Template syntax error in {template_name}: {e.message}",
+                f"Lỗi syntax trong template {template_name}: {e.message}",
                 e.filename,
                 e.lineno,
             ) from e

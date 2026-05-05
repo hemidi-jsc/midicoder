@@ -15,12 +15,12 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.emitters.value_object.models import (
+from midicoder.emitters.core.value_object.models import (
     ValueObject,
     VOField,
     VOFieldType,
 )
-from midicoder.emitters.value_object.parser import ValueObjectParser
+from midicoder.emitters.core.value_object.parser import ValueObjectParser
 
 
 # ============================================================================

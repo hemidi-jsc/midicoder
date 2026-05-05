@@ -13,7 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from midicoder.pipeline.mir import MIR, MIRBuilder
-from midicoder.emitters.backend_fastapi import (
+from midicoder.emitters.stack.fastapi import (
     BackendFastAPIEmitter,
     GeneratedFile,
 )
