@@ -120,24 +120,33 @@ class IndexManager:
         client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
         return await client.indices.exists(index=index_name)
 
-    async def get_mapping(self, name: str) -> Dict[str, Any]:
+    async def get_mapping(
+        self,
+        name: str,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Lấy index mapping.
 
         Args:
             name: Index name
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Mapping dictionary
         """
-        client = get_elasticsearch()
-        response = await client.indices.get_mapping(index=name)
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        index_name = get_tenant_index_name(name, effective_tenant_id)
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+        response = await client.indices.get_mapping(index=index_name)
         return response
 
     async def update_mapping(
         self,
         name: str,
         mapping: Dict[str, Any],
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Cập nhật index mapping.
@@ -145,13 +154,17 @@ class IndexManager:
         Args:
             name: Index name
             mapping: Mapping updates
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Update response
         """
-        client = get_elasticsearch()
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        index_name = get_tenant_index_name(name, effective_tenant_id)
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
         return await client.indices.put_mapping(
-            index=name,
+            index=index_name,
             body=mapping,
         )
 
@@ -159,6 +172,7 @@ class IndexManager:
         self,
         alias: str,
         index: str,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Tạo index alias.
@@ -166,13 +180,17 @@ class IndexManager:
         Args:
             alias: Alias name
             index: Target index
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Create response
         """
-        client = get_elasticsearch()
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        index_name = get_tenant_index_name(index, effective_tenant_id)
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
         return await client.indices.put_alias(
-            index=index,
+            index=index_name,
             name=alias,
         )
 
@@ -180,6 +198,7 @@ class IndexManager:
         self,
         alias: str,
         index: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Xóa index alias.
@@ -187,42 +206,62 @@ class IndexManager:
         Args:
             alias: Alias name
             index: Target index (optional)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Delete response
         """
-        client = get_elasticsearch()
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or alias, effective_tenant_id)
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
         return await client.indices.delete_alias(
-            index=index or alias,
+            index=target_index,
             name=alias,
         )
 
-    async def refresh_index(self, name: str) -> Dict[str, Any]:
+    async def refresh_index(
+        self,
+        name: str,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Refresh index (make documents searchable).
 
         Args:
             name: Index name
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Refresh response
         """
-        client = get_elasticsearch()
-        return await client.indices.refresh(index=name)
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        index_name = get_tenant_index_name(name, effective_tenant_id)
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+        return await client.indices.refresh(index=index_name)
 
-    async def optimize_index(self, name: str) -> Dict[str, Any]:
+    async def optimize_index(
+        self,
+        name: str,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Optimize index (force merge).
 
         Args:
             name: Index name
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
 
         Returns:
             Force merge response
         """
-        client = get_elasticsearch()
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        index_name = get_tenant_index_name(name, effective_tenant_id)
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
         return await client.indices.forcemerge(
-            index=name,
+            index=index_name,
             num_segments=1,
         )
 
