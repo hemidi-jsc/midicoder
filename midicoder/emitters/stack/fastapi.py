@@ -183,6 +183,9 @@ class BackendFastAPIEmitter:
         if events_data:
             files.extend(self._emit_events(events_data, output_dir))
 
+        # Emit API routes từ MIR metadata (CP06)
+        files.extend(self._emit_routes(mir, output_dir))
+
         return files
     
     def _emit_base_files(self, output_dir: Path) -> list[GeneratedFile]:
@@ -1039,6 +1042,88 @@ class BackendFastAPIEmitter:
         except Exception as e:
             import logging
             logging.warning(f"FastAPIEventEmitter failed: {e}")
+
+        return files
+
+    def _emit_routes(
+        self,
+        mir: MIR,
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """
+        Emit API route files (CP06: API Gateway & Service Mesh).
+
+        Sử dụng RouteParser + FastAPIRouteEmitter để generate:
+        - HTTP REST routes → app/routes/{tag}_routes.py
+        - GraphQL resolvers → app/graphql/resolvers/
+        - Webhook handlers → app/webhooks/
+
+        Args:
+            mir: MIR instance
+            output_dir: Output directory
+
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+
+        try:
+            from midicoder.emitters.core.route import (
+                RouteParser,
+                FastAPIRouteEmitter,
+                FastAPIGraphQLResolverEmitter,
+                FastAPIWebhookEmitter,
+            )
+
+            # Parse routes từ MIR metadata
+            parser = RouteParser()
+            collection = parser.parse_from_metadata(
+                routes_data=mir.metadata.get("routes", []),
+                graphql_data=mir.metadata.get("graphql", []),
+                webhooks_data=mir.metadata.get("webhooks", []),
+            )
+
+            app_dir = output_dir / "app"
+
+            # Emit HTTP REST routes
+            if collection.routes:
+                route_emitter = FastAPIRouteEmitter()
+                emitted = route_emitter.emit(collection, app_dir)
+                for file_path, content in emitted.items():
+                    files.append(GeneratedFile(
+                        path=Path(file_path),
+                        content=content,
+                        template="route_emitter",
+                        capability="CP06",
+                    ))
+
+            # Emit GraphQL resolvers
+            if collection.resolvers:
+                gql_emitter = FastAPIGraphQLResolverEmitter()
+                emitted = gql_emitter.emit(collection, app_dir)
+                for file_path, content in emitted.items():
+                    files.append(GeneratedFile(
+                        path=Path(file_path),
+                        content=content,
+                        template="graphql_emitter",
+                        capability="CP06",
+                    ))
+
+            # Emit Webhook handlers
+            if collection.webhooks:
+                webhook_emitter = FastAPIWebhookEmitter()
+                emitted = webhook_emitter.emit(collection, app_dir)
+                for file_path, content in emitted.items():
+                    files.append(GeneratedFile(
+                        path=Path(file_path),
+                        content=content,
+                        template="webhook_emitter",
+                        capability="CP06",
+                    ))
+
+        except Exception as e:
+            import logging
+            logging.warning(f"CP06 Route Emitter failed: {e}")
 
         return files
 

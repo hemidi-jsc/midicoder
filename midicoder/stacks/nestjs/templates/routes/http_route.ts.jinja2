@@ -1,0 +1,166 @@
+/**
+ * Controller cho {{ tag }} endpoints.
+ *
+ * Tú t¹ng sinh b»i Midicoder CE - KH«NG ch÷nh süa thö c«ng.
+ *
+ * CP06: API Gateway & Service Mesh
+ * KPI-029: Tenant Isolation - Tenant context propagation vµ tenant scope enforcement
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Delete,
+  Param,
+  Query,
+  Body,
+  Headers,
+  Ip,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Request, Response } from 'express';
+
+// Import auth guards
+{% if has_auth %}
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { TenantGuard } from '../auth/tenant.guard';
+{% endif %}
+
+// Import command/query services
+{% for route in routes %}
+{% if route.handler_type == 'command' %}
+import { {{ route.handler_id }}Service } from '../commands/{{ route.handler_id | to_kebab }}/{{ route.handler_id | to_kebab }}.service';
+{% elif route.handler_type == 'query' %}
+import { {{ route.handler_id }}Service } from '../queries/{{ route.handler_id | to_kebab }}/{{ route.handler_id | to_kebab }}.service';
+{% endif %}
+{% endfor %}
+
+@ApiTags('{{ tag }}')
+@Controller('{{ prefix | default('/api', true) }}/{{ tag | to_kebab }}')
+{% if has_auth %}
+@UseGuards(JwtAuthGuard, TenantGuard)
+@ApiBearerAuth()
+{% endif %}
+export class {{ tag | to_pascal }}Controller {
+
+  // Inject command/query services
+  {% for route in routes %}
+  {% if route.handler_type == 'command' or route.handler_type == 'query' %}
+  private readonly {{ route.handler_id | to_camel }}Service: {{ route.handler_id }}Service;
+  {% endif %}
+  {% endfor %}
+
+  constructor(
+    {% for route in routes %}
+    {% if route.handler_type == 'command' or route.handler_type == 'query' %}
+    private {{ route.handler_id | to_camel }}Service: {{ route.handler_id }}Service,
+    {% endif %}
+    {% endfor %}
+  ) {}
+
+{% for route in routes %}
+  // ---------------------------------------------------------------------------
+  // {{ route.method }} {{ route.path }}
+  // ---------------------------------------------------------------------------
+
+  @{{ route.method | to_nestjs_decorator }}('{{ route.path | strip_prefix }}')
+  @ApiOperation({ summary: '{{ route.description or (route.method ~ " " ~ route.path) }}' })
+  @ApiResponse({ status: {{ route.response_status | default(200, true) }}, description: 'Success' })
+  {% if route.requires_auth %}
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  @ApiBearerAuth()
+  {% endif %}
+  async {{ route.id | to_camel }}(
+    // Path parameters
+    {% for param in route.path_params %}
+    @Param('{{ param.name }}') {{ param.name }}: string,
+    {% endfor %}
+    // Query parameters
+    {% for param in route.query_params %}
+    @Query('{{ param.name }}') {{ param.name }}: {{ param.ts_type }},
+    {% endfor %}
+    // Request body cho write operations
+    {% if route.is_write %}
+    @Body() body: {{ route.id | to_pascal }}Dto,
+    {% endif %}
+    // KPI-029: Tenant context
+    @Headers('x-tenant-id') tenantId: string,
+    @Req() request: Request,
+    @Res() response: Response,
+  ): Promise<{{ route.id | to_pascal }}Dto> {
+    try {
+      // KPI-029: Validate tenant scope
+      {% if route.requires_auth and route.auth.tenant_scoped %}
+      const userTenantId = request.user?.tenant_id;
+      if (tenantId && userTenantId && tenantId !== userTenantId) {
+        throw new HttpException(
+          'KPI-029: Tenant mismatch - kh«ng ®Æc truy cá»p data cña tenant kh¸c',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      {% endif %}
+
+      // Build handler kwargs tõ path/query params
+      const handlerKwargs: Record<string, any> = {
+        {% for param in route.path_params %}
+        {{ param.name }},
+        {% endfor %}
+        {% for param in route.query_params %}
+        {{ param.name }},
+        {% endfor %}
+        // KPI-029: Always pass tenant_id
+        tenant_id: tenantId,
+        {% if route.requires_auth %}
+        user_id: request.user?.id,
+        {% endif %}
+      };
+
+      // Call command/query handler
+      {% if route.handler_type == 'command' %}
+      // Command handler - write operation ví»i side effects
+      const result = await this.{{ route.handler_id | to_camel }}Service.execute({
+        ...body,
+        ...handlerKwargs,
+      });
+      {% elif route.handler_type == 'query' %}
+      // Query handler - read operation
+      const result = await this.{{ route.handler_id | to_camel }}Service.execute(handlerKwargs);
+      {% else %}
+      // Side effect trigger - gäi event handler
+      const eventBus = this.eventBus;
+      const result = await eventBus.publish('{{ route.handler_id }}', handlerKwargs);
+      {% endif %}
+
+      // Return response ví»i KPI-029 tenant_id
+      return {
+        ...result,
+        tenant_id: tenantId,
+      };
+
+    } catch (error) {
+      throw new HttpException(
+        `Lá»i xö lÝ {{ route.id }}: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+{% endfor %}
+}
+
+// DTO definitions
+{% for route in routes %}
+{% if route.is_write %}
+export class {{ route.id | to_pascal }}Dto {
+  {% for field in route.request_schema %}
+  {{ field.name }}: {{ field.ts_type }};
+  {% endfor %}
+}
+{% endif %}
+{% endfor %}

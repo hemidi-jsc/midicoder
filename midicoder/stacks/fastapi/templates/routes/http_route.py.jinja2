@@ -1,0 +1,179 @@
+"""
+Route module cho {{ tag }} endpoints.
+
+Tự động sinh bởi Midicoder CE - KHÔNG chỉnh sửa thủ công.
+
+CP06: API Gateway & Service Mesh
+KPI-029: Tenant Isolation - Tenant context propagation và tenant scope enforcement
+"""
+
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Path, Query, Request, status
+from pydantic import BaseModel
+
+# KPI-029: Import tenant context
+from app.core.security.tenant_context import get_tenant_id
+
+# Import auth dependencies
+{% if has_auth %}
+from app.core.security.auth import get_current_user
+from app.models.user import User
+{% endif %}
+
+# Import command/query handlers
+{% for route in routes %}
+{% if route.handler_type == 'command' %}
+from app.commands.{{ route.handler_id | to_snake }}.{{ route.handler_id | to_snake }}_handler import {{ route.handler_id }}Handler as {{ route.handler_id }}Handler
+{% elif route.handler_type == 'query' %}
+from app.queries.{{ route.handler_id | to_snake }}.{{ route.handler_id | to_snake }}_handler import {{ route.handler_id }}Handler as {{ route.handler_id }}Handler
+{% endif %}
+{% endfor %}
+
+# Router instance
+router = APIRouter(
+    prefix="{{ prefix | default('/api', true) }}",
+    tags=["{{ tag }}"],
+)
+
+
+{% for route in routes %}
+# ---------------------------------------------------------------------------
+# {{ route.method }} {{ route.path }}
+# ---------------------------------------------------------------------------
+
+{% if route.is_write %}
+# Request schema
+class {{ route.id }}Request(BaseModel):
+    """Request schema cho {{ route.description or route.id }}."""
+    {% for field in route.request_schema %}
+    {{ field.name }}: {{ field.type_map }}{% if field.required %}{% else %} = None{% endif %}
+    {% endfor %}
+
+
+{% endif %}
+# Response schema
+class {{ route.id }}Response(BaseModel):
+    """Response schema cho {{ route.description or route.id }}."""
+    {% for field in route.response_schema %}
+    {{ field.name }}: {{ field.type_map }}{% if not field.required %} = None{% endif %}
+    {% endfor %}
+    tenant_id: Optional[str] = None  # KPI-029
+
+
+@router.{{ route.method | lower }}(
+    "{{ route.path }}",
+    response_model={{ route.id }}Response,
+    status_code={{ route.response_status | default(200, true) }},
+    summary="{{ route.description or (route.method ~ ' ' ~ route.path) }}",
+)
+async def {{ route.id | to_snake }}(
+    # Path parameters
+    {% for param in route.path_params %}
+    {{ param.name }}: {{ param.type_map }} = Path(..., description="{{ param.description }}"),
+    {% endfor %}
+    # Query parameters
+    {% for param in route.query_params %}
+    {{ param.name }}: {{ param.type_map }}{% if not param.required %} = None{% endif %} = Query({{ param.default | default('None', true) }}, description="{{ param.description }}"),
+    {% endfor %}
+    # Request body cho write operations
+    {% if route.is_write %}
+    body: {{ route.id }}Request = Body(...),
+    {% endif %}
+    # Auth dependencies
+    {% if route.requires_auth %}
+    current_user: User = Depends(get_current_user),
+    {% endif %}
+    # KPI-029: Tenant context
+    tenant_id: Optional[str] = Depends(get_tenant_id),
+    request: Request = None,
+) -> {{ route.id }}Response:
+    """
+    {{ route.description or (route.method ~ ' ' ~ route.path) }}
+
+    KPI-029: Tenant isolation được enforce qua tenant_id dependency.
+
+    Args:
+    {% for param in route.path_params %}
+        {{ param.name }}: {{ param.description }}
+    {% endfor %}
+    {% for param in route.query_params %}
+        {{ param.name }}: {{ param.description }}
+    {% endfor %}
+    {% if route.is_write %}
+        body: Request body
+    {% endif %}
+    {% if route.requires_auth %}
+        current_user: Current authenticated user
+    {% endif %}
+        tenant_id: KPI-029: Tenant ID từ context
+        request: HTTP request object
+
+    Returns:
+        {{ route.id }}Response: Response với kết quả và tenant_id
+
+    Raises:
+        HTTPException: Nếu có lỗi xử lý
+    """
+    try:
+        # KPI-029: Validate tenant scope
+        {% if route.requires_auth and route.auth.tenant_scoped %}
+        if tenant_id and current_user.tenant_id and tenant_id != current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="KPI-029: Tenant mismatch - không được truy cập data của tenant khác",
+            )
+        {% endif %}
+
+        # Build handler kwargs từ path/query params
+        handler_kwargs: Dict[str, Any] = {
+            {% for param in route.path_params %}
+            "{{ param.name }}": {{ param.name }},
+            {% endfor %}
+            {% for param in route.query_params %}
+            "{{ param.name }}": {{ param.name }},
+            {% endfor %}
+            # KPI-029: Always pass tenant_id
+            "tenant_id": tenant_id,
+            {% if route.requires_auth %}
+            "user_id": current_user.id,
+            {% endif %}
+        }
+
+        # Call command/query handler
+        {% if route.handler_type == 'command' %}
+        # Command handler - write operation với side effects
+        command_handler = {{ route.handler_id }}Handler()
+        result = await command_handler.handle(
+            command_body=body.dict() if body else {},
+            **handler_kwargs,
+        )
+        {% elif route.handler_type == 'query' %}
+        # Query handler - read operation
+        query_handler = {{ route.handler_id }}Handler()
+        result = await query_handler.execute(**handler_kwargs)
+        {% else %}
+        # Side effect trigger - gọi event handler
+        from app.core.event.event_bus import get_event_bus
+        event_bus = get_event_bus()
+        result = await event_bus.publish("{{ route.handler_id }}", handler_kwargs)
+        {% endif %}
+
+        # Return response với KPI-029 tenant_id
+        return {{ route.id }}Response(
+            {% for field in route.response_schema %}
+            {{ field.name }}=result.get("{{ field.name }}"),
+            {% endfor %}
+            tenant_id=tenant_id,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi xử lý {{ route.id }}: {str(e)}",
+        )
+
+
+{% endfor %}
