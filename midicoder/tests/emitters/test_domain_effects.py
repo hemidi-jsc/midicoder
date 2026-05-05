@@ -22,13 +22,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pytest_mock import MockerFixture
 
-from midicoder.emitters.domain.effects.domain_effects import (
-    ClinicalTransitionResult,
-    DomainEffects,
-    InventoryReservationResult,
-    LedgerEntryResult,
-    PaymentProcessResult,
-)
+from midicoder.emitters.domain import DomainEffects, ClinicalTransitionResult
+from midicoder.emitters.domain.banking.effects.effects import LedgerEntryResult
+from midicoder.emitters.domain.manufacturing.effects.effects import InventoryReservationResult
+from midicoder.emitters.domain.payments.effects.effects import PaymentProcessResult
 from midicoder.errors import ErrorCode, MidicoderError
 
 

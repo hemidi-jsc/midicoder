@@ -87,12 +87,6 @@ class EffectType(str, Enum):
     CHECK_COMPLIANCE = "check_compliance"
     MASK_PII = "mask_pii"
 
-    # Domain-Specific Effects (DP05, DP09, DP11, DP12)
-    DOUBLE_ENTRY_LEDGER = "double_entry_ledger"    # DP11 Banking: Double-entry bookkeeping
-    INVENTORY_RESERVATION = "inventory_reservation"  # DP05 Manufacturing: Inventory reservation
-    PAYMENT_PROCESS = "payment_process"              # DP12 Payments: Payment gateway processing
-    CLINICAL_TRANSITION = "clinical_transition"      # DP09 Healthcare: Clinical workflow transition
-
 
 # ============================================================================
 # GuardType Enum (Command-specific)
