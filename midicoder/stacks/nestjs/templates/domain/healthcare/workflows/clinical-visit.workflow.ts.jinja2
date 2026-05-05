@@ -1,0 +1,33 @@
+/**
+ * Clinical Visit Workflow (NestJS/TypeScript)
+ *
+ * Quy trình khám bệnh: Check-in → Triage → Consultation → Prescription.
+ */
+
+export enum ClinicalVisitState {
+  CHECK_IN = 'check_in',
+  TRIAGE = 'triage',
+  CONSULTATION = 'consultation',
+  PRESCRIPTION = 'prescription',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
+}
+
+export class ClinicalVisitWorkflow {
+  name = 'healthcare.clinical_visit';
+  description = 'Quy trình khám bệnh: Check-in → Triage → Consultation → Prescription';
+  currentState: ClinicalVisitState = ClinicalVisitState.CHECK_IN;
+
+  async transition(event: string): Promise<ClinicalVisitState> {
+    const transitions: Record<string, Record<string, ClinicalVisitState>> = {
+      [ClinicalVisitState.CHECK_IN]: { 'triage': ClinicalVisitState.TRIAGE },
+      [ClinicalVisitState.TRIAGE]: { 'consult': ClinicalVisitState.CONSULTATION },
+      [ClinicalVisitState.CONSULTATION]: {
+        'prescribe': ClinicalVisitState.PRESCRIPTION,
+        'complete': ClinicalVisitState.COMPLETED,
+      },
+      [ClinicalVisitState.PRESCRIPTION]: { 'complete': ClinicalVisitState.COMPLETED },
+    };
+    return ClinicalVisitState.CANCELLED;
+  }
+}
