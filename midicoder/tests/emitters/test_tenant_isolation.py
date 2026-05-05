@@ -19,13 +19,13 @@ from pathlib import Path
 @pytest.fixture
 def fastapi_entity_template_path():
     """Path đến FastAPI entity template."""
-    return Path("midicoder/stacks/fastapi/templates/domain/entities/entity.py.jinja2")
+    return Path("midicoder/stacks/fastapi/templates/entities/entity.py.jinja2")
 
 
 @pytest.fixture
 def nestjs_entity_template_path():
     """Path đến NestJS entity template."""
-    return Path("midicoder/stacks/nestjs/templates/domain/entities/entity.ts.jinja2")
+    return Path("midicoder/stacks/nestjs/templates/entities/entity.ts.jinja2")
 
 
 @pytest.fixture

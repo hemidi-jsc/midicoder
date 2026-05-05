@@ -62,7 +62,7 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
         self.computed_evaluator = ComputedFieldEvaluator()
 
         # Initialize Jinja2 environment
-        templates_dir = stack_dir / "domain" / "value_objects"
+        templates_dir = stack_dir / "value_objects"
         self.template_env = Environment(
             loader=FileSystemLoader(str(templates_dir)),
             autoescape=True,

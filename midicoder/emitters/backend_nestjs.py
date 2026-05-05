@@ -596,7 +596,7 @@ class BackendNestJSEmitter:
             files.append(GeneratedFile(
                 path=file_path.relative_to(output_dir),
                 content=rendered_content,
-                template="domain/value-objects/value-object.ts.jinja2",
+                template="value-objects/value-object.ts.jinja2",
                 capability="CP01",
             ))
             
@@ -699,7 +699,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}.query.ts",
-                template="domain/queries/query.ts.jinja2",
+                template="queries/query.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -707,7 +707,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}.handler.ts",
-                template="domain/queries/query.handler.ts.jinja2",
+                template="queries/query.handler.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -715,7 +715,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}.validator.ts",
-                template="domain/queries/query.validator.ts.jinja2",
+                template="queries/query.validator.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -723,7 +723,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}.guards.ts",
-                template="domain/queries/query.guards.ts.jinja2",
+                template="queries/query.guards.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -731,7 +731,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename=f"{query_snake}.output.ts",
-                template="domain/queries/query.output.ts.jinja2",
+                template="queries/query.output.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -739,7 +739,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=queries_dir,
                 filename="index.ts",
-                template="domain/queries/index.ts.jinja2",
+                template="queries/index.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -915,7 +915,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}.ts",
-                template="domain/commands/command.ts.jinja2",
+                template="commands/command.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -923,7 +923,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}.handler.ts",
-                template="domain/commands/command.handler.ts.jinja2",
+                template="commands/command.handler.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -931,7 +931,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}.validator.ts",
-                template="domain/commands/command.validator.ts.jinja2",
+                template="commands/command.validator.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -939,7 +939,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}.guards.ts",
-                template="domain/commands/command.guards.ts.jinja2",
+                template="commands/command.guards.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -947,7 +947,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}.effects.ts",
-                template="domain/commands/command.effects.ts.jinja2",
+                template="commands/command.effects.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -955,7 +955,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}.errors.ts",
-                template="domain/commands/command.errors.ts.jinja2",
+                template="commands/command.errors.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -963,7 +963,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename=f"{command_snake}.module.ts",
-                template="domain/commands/command.module.ts.jinja2",
+                template="commands/command.module.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))
@@ -971,7 +971,7 @@ class BackendNestJSEmitter:
             files.append(self._write_file(
                 output_dir=commands_dir,
                 filename="index.ts",
-                template="domain/commands/index.ts.jinja2",
+                template="commands/index.ts.jinja2",
                 context=context,
                 capability="CP01",
             ))

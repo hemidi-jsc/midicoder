@@ -47,7 +47,7 @@ class EntityEmitter(ABC):
 
     def _init_template_env(self) -> None:
         """Initialize Jinja2 environment."""
-        templates_dir = self.stack_dir / "domain" / "entities"
+        templates_dir = self.stack_dir / "entities"
         self.template_env = Environment(
             loader=FileSystemLoader(str(templates_dir)),
             autoescape=True,
