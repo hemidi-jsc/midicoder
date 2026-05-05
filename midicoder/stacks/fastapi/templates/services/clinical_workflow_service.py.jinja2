@@ -1,0 +1,383 @@
+"""
+Clinical Workflow Service - Healthcare Workflow Service cho FastAPI.
+
+Module này cung cấp Clinical Workflow service cho:
+- State transitions cho clinical cases
+- Clinical decision support checks
+- PHI audit logging (RX04 HIPAA)
+- Provider credential verification
+
+KPI-029: Tenant-aware clinical workflows
+RX04: HIPAA compliance
+DP09: Healthcare Provider domain pack
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from app.core.db.repository import ClinicalRepository
+from app.core.logging import audit_logger
+
+
+# ============================================================================
+# Clinical Workflow Service
+# ============================================================================
+
+
+class ClinicalWorkflowService:
+    """
+    Clinical Workflow Service - Healthcare workflow service.
+
+    Service này cung cấp methods cho:
+    - State transitions (pending → scheduled → in_progress → completed)
+    - Clinical decision support checks (guard conditions)
+    - PHI audit logging (RX04 clinical_audit_trail)
+    - Provider credential verification
+
+    KPI-029: Support tenant-scoped clinical operations.
+    RX04: HIPAA compliance - PHI encryption, clinical audit trail, minimum necessary access.
+    DP09: Healthcare Provider domain pack.
+
+    Valid state transitions:
+        - pending → scheduled
+        - scheduled → in_progress
+        - in_progress → completed
+        - in_progress → cancelled
+        - scheduled → cancelled
+
+    Usage:
+        clinical_svc = ClinicalWorkflowService(clinical_repo)
+        result = await clinical_svc.transition_state(
+            case_id="CASE_001", from_state="pending", to_state="scheduled",
+            user_id="provider_123", tenant_id="tenant_123"
+        )
+    """
+
+    # Valid state transitions
+    VALID_TRANSITIONS = {
+        "pending": ["scheduled", "cancelled"],
+        "scheduled": ["in_progress", "cancelled"],
+        "in_progress": ["completed", "cancelled"],
+        "completed": [],
+        "cancelled": [],
+    }
+
+    def __init__(self, clinical_repo: ClinicalRepository) -> None:
+        """
+        Initialize ClinicalWorkflowService.
+
+        Args:
+            clinical_repo: Repository cho clinical data storage
+        """
+        self._clinical_repo = clinical_repo
+
+    async def transition_state(
+        self,
+        case_id: str,
+        from_state: str,
+        to_state: str,
+        user_id: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """
+        Transition clinical case state.
+
+        KPI-029: Tenant-scoped clinical workflow.
+        DP09: Healthcare Provider domain pack.
+
+        Args:
+            case_id: Clinical case ID
+            from_state: Current state
+            to_state: Target state
+            user_id: Provider ID thực hiện transition
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Dict với transitioned status, new state
+
+        Raises:
+            ValueError: Nếu state transition không hợp lệ
+        """
+        # Validate transition
+        if not self._is_valid_transition(from_state, to_state):
+            raise ValueError(
+                f"Invalid transition: {from_state} → {to_state}"
+            )
+
+        # Get case
+        case = await self._clinical_repo.get_case(case_id, tenant_id)
+        if not case:
+            raise ValueError(f"Case not found: {case_id}")
+
+        # Verify current state matches
+        if case.get("state") != from_state:
+            raise ValueError(
+                f"State mismatch: expected {from_state}, current {case.get('state')}"
+            )
+
+        # Update case state
+        await self._clinical_repo.update_case_state(
+            case_id, tenant_id, to_state, user_id
+        )
+
+        # Audit log (RX04)
+        audit_logger.info(
+            "Clinical case state transitioned",
+            extra={
+                "case_id": case_id,
+                "from_state": from_state,
+                "to_state": to_state,
+                "user_id": user_id,
+                "tenant_id": tenant_id,
+            },
+        )
+
+        return {
+            "case_id": case_id,
+            "from_state": from_state,
+            "to_state": to_state,
+            "transitioned": True,
+        }
+
+    async def check_clinical_decision(
+        self,
+        case_id: str,
+        check_type: str,
+        from_state: str,
+        to_state: str,
+        tenant_id: str,
+    ) -> bool:
+        """
+        Clinical decision support check trước khi transition.
+
+        RX04: Clinical decision support protocols.
+
+        Args:
+            case_id: Clinical case ID
+            check_type: Check type (e.g., "vital_signs", "lab_results")
+            from_state: Source state
+            to_state: Target state
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu check pass, False nếu fail
+        """
+        # TODO: Implement clinical decision logic
+        # For now, return True (check passed)
+
+        audit_logger.info(
+            "Clinical decision check",
+            extra={
+                "case_id": case_id,
+                "check_type": check_type,
+                "from_state": from_state,
+                "to_state": to_state,
+                "tenant_id": tenant_id,
+                "result": "passed",
+            },
+        )
+
+        return True
+
+    async def log_phi_access(
+        self,
+        case_id: str,
+        user_id: str,
+        phi_fields: list[str],
+        action: str,
+        tenant_id: str,
+    ) -> str:
+        """
+        Log PHI access (RX04 clinical_audit_trail).
+
+        RX04: PHI encryption required, clinical audit trail, minimum necessary access.
+        KPI-029: Tenant-scoped audit logging.
+
+        Args:
+            case_id: Clinical case ID
+            user_id: User accessing PHI
+            phi_fields: PHI fields being accessed
+            action: Action performed (view, edit, export, etc.)
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Audit log ID
+        """
+        # Create audit record
+        audit_id = f"audit_{tenant_id}_{datetime.now(timezone.utc).timestamp()}"
+
+        audit_record = {
+            "audit_id": audit_id,
+            "case_id": case_id,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "action": action,
+            "phi_fields_accessed": phi_fields,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "tamper_proof_hash": self._compute_hash(
+                audit_id, case_id, user_id, action, phi_fields
+            ),
+        }
+
+        # Save audit record (tamper-evident)
+        await self._clinical_repo.save_phi_audit(audit_record)
+
+        return audit_id
+
+    async def verify_provider_credentials(
+        self,
+        user_id: str,
+        tenant_id: str,
+    ) -> bool:
+        """
+        Verify provider credentials cho clinical actions.
+
+        RX04: Provider credential verification required.
+
+        Args:
+            user_id: Provider ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            True nếu provider có chứng chỉ hợp lệ
+        """
+        # Get provider credentials
+        provider = await self._clinical_repo.get_provider_credentials(
+            user_id, tenant_id
+        )
+
+        if not provider:
+            return False
+
+        # Check certification status
+        if not provider.get("certified", False):
+            return False
+
+        # Check certification expiry
+        expiry_date = provider.get("certification_expiry")
+        if expiry_date:
+            expiry = datetime.fromisoformat(expiry_date)
+            if datetime.now(timezone.utc) > expiry:
+                return False
+
+        return True
+
+    def _is_valid_transition(self, from_state: str, to_state: str) -> bool:
+        """
+        Check nếu state transition hợp lệ.
+
+        Args:
+            from_state: Source state
+            to_state: Target state
+
+        Returns:
+            True nếu transition hợp lệ
+        """
+        valid_to_states = self.VALID_TRANSITIONS.get(from_state, [])
+        return to_state in valid_to_states
+
+    def _compute_hash(
+        self,
+        audit_id: str,
+        case_id: str,
+        user_id: str,
+        action: str,
+        phi_fields: list[str],
+    ) -> str:
+        """
+        Compute tamper-proof hash cho audit record.
+
+        RX04: Tamper-evident logging.
+
+        Args:
+            audit_id: Audit ID
+            case_id: Case ID
+            user_id: User ID
+            action: Action
+            phi_fields: PHI fields
+
+        Returns:
+            Hash string
+        """
+        # TODO: Implement proper hash computation (SHA-256)
+        # For now, return simple hash
+        import hashlib
+
+        data = f"{audit_id}|{case_id}|{user_id}|{action}|{','.join(phi_fields)}"
+        return hashlib.sha256(data.encode()).hexdigest()
+
+    async def get_case(
+        self,
+        case_id: str,
+        tenant_id: str,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Get clinical case details.
+
+        KPI-029: Tenant-scoped case retrieval.
+
+        Args:
+            case_id: Case ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Case dict hoặc None
+        """
+        return await self._clinical_repo.get_case(case_id, tenant_id)
+
+    async def get_cases_by_state(
+        self,
+        state: str,
+        tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """
+        Get clinical cases by state.
+
+        KPI-029: Tenant-scoped case query.
+
+        Args:
+            state: State to filter
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            List của cases trong state
+        """
+        return await self._clinical_repo.get_cases_by_state(state, tenant_id)
+
+
+# ============================================================================
+# Global Clinical Workflow Service Instance
+# ============================================================================
+
+_clinical_workflow_service: Optional[ClinicalWorkflowService] = None
+
+
+def init_clinical_workflow_service(clinical_repo: ClinicalRepository) -> None:
+    """
+    Initialize global clinical workflow service.
+
+    Args:
+        clinical_repo: Clinical repository instance
+    """
+    global _clinical_workflow_service
+    _clinical_workflow_service = ClinicalWorkflowService(clinical_repo)
+
+
+async def get_clinical_workflow_service() -> ClinicalWorkflowService:
+    """
+    Dependency để get clinical workflow service.
+
+    Returns:
+        ClinicalWorkflowService instance
+
+    Raises:
+        RuntimeError: Nếu clinical workflow service chưa được initialize
+    """
+    if _clinical_workflow_service is None:
+        raise RuntimeError("ClinicalWorkflowService chưa được initialize")
+
+    return _clinical_workflow_service

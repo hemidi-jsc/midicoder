@@ -1,0 +1,341 @@
+"""
+Ledger Service - Double-Entry Bookkeeping Service cho FastAPI.
+
+Module này cung cấp Ledger service cho:
+- Double-entry validation (RX02)
+- Ledger entry creation
+- Transaction immutability
+- Balance reconciliation
+
+KPI-029: Tenant-aware ledger operations
+RX02: Financial integrity with double-entry bookkeeping
+
+Author: Midicoder Auto-generated
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from app.core.db.repository import LedgerRepository
+from app.core.logging import audit_logger
+
+
+# ============================================================================
+# Ledger Service
+# ============================================================================
+
+
+class LedgerService:
+    """
+    Ledger Service - Double-entry bookkeeping service.
+
+    Service này cung cấp methods cho:
+    - Double-entry validation (debit == credit)
+    - Ledger entry creation
+    - Transaction immutability (RX02)
+    - Balance reconciliation
+
+    KPI-029: Support tenant-scoped ledger operations.
+    RX02: Financial integrity - double-entry required, transaction immutability.
+
+    Usage:
+        ledger_svc = LedgerService(ledger_repo)
+        result = await ledger_svc.create_ledger_entries(
+            debit_entries=[...], credit_entries=[...], tenant_id="tenant_123"
+        )
+    """
+
+    def __init__(self, ledger_repo: LedgerRepository) -> None:
+        """
+        Initialize LedgerService.
+
+        Args:
+            ledger_repo: Repository cho ledger data storage
+        """
+        self._ledger_repo = ledger_repo
+
+    async def create_ledger_entries(
+        self,
+        debit_entries: list[dict[str, Any]],
+        credit_entries: list[dict[str, Any]],
+        transaction_ref: str,
+        description: str,
+        user_id: Optional[str],
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """
+        Tạo ledger entries cho double-entry transaction.
+
+        KPI-029: Tenant-scoped ledger entries.
+        RX02: Double-entry validation và transaction immutability.
+
+        Args:
+            debit_entries: List của debit entries [{"account": str, "amount": float, "description": str}]
+            credit_entries: List của credit entries
+            transaction_ref: Transaction reference ID
+            description: Transaction description
+            user_id: User thực hiện transaction
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Dict với transaction_id, entry_ids, balanced status
+
+        Raises:
+            ValueError: Nếu debit != credit
+        """
+        # Validate double-entry balance
+        debit_total = sum(e.get("amount", 0) for e in debit_entries)
+        credit_total = sum(e.get("amount", 0) for e in credit_entries)
+
+        tolerance = 0.01
+        if abs(debit_total - credit_total) > tolerance:
+            raise ValueError(
+                f"Double-entry imbalance: debit={debit_total}, credit={credit_total}"
+            )
+
+        # Create transaction record
+        transaction_id = f"txn_{tenant_id}_{datetime.now(timezone.utc).timestamp()}"
+
+        # Create ledger entries
+        entry_ids = []
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Create debit entries
+        for entry in debit_entries:
+            ledger_entry = {
+                "transaction_id": transaction_id,
+                "tenant_id": tenant_id,
+                "account": entry.get("account"),
+                "amount": entry.get("amount", 0),
+                "type": "debit",
+                "description": entry.get("description", ""),
+                "transaction_ref": transaction_ref,
+                "user_id": user_id,
+                "timestamp": timestamp,
+                "immutable": False,  # Will be set to True after commit
+            }
+            entry_id = await self._ledger_repo.create_entry(ledger_entry)
+            entry_ids.append(entry_id)
+
+        # Create credit entries
+        for entry in credit_entries:
+            ledger_entry = {
+                "transaction_id": transaction_id,
+                "tenant_id": tenant_id,
+                "account": entry.get("account"),
+                "amount": entry.get("amount", 0),
+                "type": "credit",
+                "description": entry.get("description", ""),
+                "transaction_ref": transaction_ref,
+                "user_id": user_id,
+                "timestamp": timestamp,
+                "immutable": False,
+            }
+            entry_id = await self._ledger_repo.create_entry(ledger_entry)
+            entry_ids.append(entry_id)
+
+        # Mark transaction as immutable (RX02)
+        await self._ledger_repo.mark_transaction_immutable(transaction_id, tenant_id)
+
+        # Audit log
+        audit_logger.info(
+            "Double-entry transaction created",
+            extra={
+                "transaction_id": transaction_id,
+                "tenant_id": tenant_id,
+                "debit_total": debit_total,
+                "credit_total": credit_total,
+                "entry_count": len(entry_ids),
+                "user_id": user_id,
+            },
+        )
+
+        return {
+            "transaction_id": transaction_id,
+            "entry_ids": entry_ids,
+            "debit_total": debit_total,
+            "credit_total": credit_total,
+            "balanced": True,
+        }
+
+    async def validate_balance(
+        self,
+        debit: float,
+        credit: float,
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Validate double-entry balance (debit == credit).
+
+        RX02: Double-entry validation.
+
+        Args:
+            debit: Tổng debit
+            credit: Tổng credit
+            tenant_id: KPI-029: Tenant ID (optional for validation)
+
+        Returns:
+            True nếu debit == credit (within tolerance)
+        """
+        tolerance = 0.01
+        return abs(debit - credit) <= tolerance
+
+    async def get_transaction_balance(
+        self,
+        txn_id: str,
+        tenant_id: str,
+    ) -> float:
+        """
+        Lấy transaction balance.
+
+        KPI-029: Tenant-scoped transaction.
+
+        Args:
+            txn_id: Transaction ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Balance (should be 0 for balanced transaction)
+        """
+        entries = await self._ledger_repo.get_transaction_entries(txn_id, tenant_id)
+
+        debit_total = sum(
+            e["amount"] for e in entries if e.get("type") == "debit"
+        )
+        credit_total = sum(
+            e["amount"] for e in entries if e.get("type") == "credit"
+        )
+
+        return debit_total - credit_total
+
+    async def get_account_balance(
+        self,
+        account: str,
+        tenant_id: str,
+    ) -> float:
+        """
+        Lấy account balance.
+
+        KPI-029: Tenant-scoped account balance.
+
+        Args:
+            account: Account ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Account balance (debit - credit)
+        """
+        entries = await self._ledger_repo.get_account_entries(account, tenant_id)
+
+        debit_total = sum(
+            e["amount"] for e in entries if e.get("type") == "debit"
+        )
+        credit_total = sum(
+            e["amount"] for e in entries if e.get("type") == "credit"
+        )
+
+        return debit_total - credit_total
+
+    async def get_transaction(
+        self,
+        txn_id: str,
+        tenant_id: str,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Lấy transaction details.
+
+        KPI-029: Tenant-scoped transaction.
+
+        Args:
+            txn_id: Transaction ID
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Transaction dict hoặc None nếu không tìm thấy
+        """
+        return await self._ledger_repo.get_transaction(txn_id, tenant_id)
+
+    async def reconcile_daily(
+        self,
+        date: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """
+        Daily reconciliation cho tenant.
+
+        KPI-029: Tenant-scoped reconciliation.
+        RX02: Daily reconciliation mandatory.
+
+        Args:
+            date: Date string (YYYY-MM-DD)
+            tenant_id: KPI-029: Tenant ID
+
+        Returns:
+            Reconciliation report
+        """
+        transactions = await self._ledger_repo.get_daily_transactions(date, tenant_id)
+
+        total_debit = 0.0
+        total_credit = 0.0
+        imbalanced_transactions = []
+
+        for txn in transactions:
+            txn_debit = sum(e["amount"] for e in txn.get("entries", []) if e.get("type") == "debit")
+            txn_credit = sum(e["amount"] for e in txn.get("entries", []) if e.get("type") == "credit")
+
+            total_debit += txn_debit
+            total_credit += txn_credit
+
+            if abs(txn_debit - txn_credit) > 0.01:
+                imbalanced_transactions.append({
+                    "transaction_id": txn.get("id"),
+                    "debit": txn_debit,
+                    "credit": txn_credit,
+                })
+
+        return {
+            "date": date,
+            "tenant_id": tenant_id,
+            "total_debit": total_debit,
+            "total_credit": total_credit,
+            "balanced": abs(total_debit - total_credit) <= 0.01,
+            "transaction_count": len(transactions),
+            "imbalanced_count": len(imbalanced_transactions),
+            "imbalanced_transactions": imbalanced_transactions,
+        }
+
+
+# ============================================================================
+# Global Ledger Service Instance
+# ============================================================================
+
+_ledger_service: Optional[LedgerService] = None
+
+
+def init_ledger_service(ledger_repo: LedgerRepository) -> None:
+    """
+    Initialize global ledger service.
+
+    Args:
+        ledger_repo: Ledger repository instance
+    """
+    global _ledger_service
+    _ledger_service = LedgerService(ledger_repo)
+
+
+async def get_ledger_service() -> LedgerService:
+    """
+    Dependency để get ledger service.
+
+    Returns:
+        LedgerService instance
+
+    Raises:
+        RuntimeError: Nếu ledger service chưa được initialize
+    """
+    if _ledger_service is None:
+        raise RuntimeError("LedgerService chưa được initialize")
+
+    return _ledger_service
