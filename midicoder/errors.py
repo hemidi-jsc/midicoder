@@ -166,6 +166,25 @@ class ErrorCode(str, Enum):
     CODE_OUTPUT_DIR_ERROR = "MDC-CODE-008"
 
     # =========================================================================
+    # Invariant Enforcement Errors
+    # =========================================================================
+    INV_NOT_REGISTERED = "MDC-INV-001"
+    INV_VALIDATION_FAILED = "MDC-INV-002"
+    INV_BLUEPRINT_MISSING = "MDC-INV-003"
+    INV_CATEGORY_UNKNOWN = "MDC-INV-004"
+    INV_ENFORCEMENT_UNKNOWN = "MDC-INV-005"
+    INV_BUSINESS_ENTITY_REF = "MDC-INV-006"
+    INV_BUSINESS_MUTATION_TXN = "MDC-INV-007"
+    INV_BUSINESS_QUERY_WRITE = "MDC-INV-008"
+    INV_BUSINESS_EVENT_ORDER = "MDC-INV-009"
+    INV_BUSINESS_STATE_TRANSITION = "MDC-INV-010"
+    INV_COMP_PII_ENCRYPTION = "MDC-INV-011"
+    INV_COMP_AUDIT_TRAIL = "MDC-INV-012"
+    INV_COMP_TENANT_ISOLATION = "MDC-INV-013"
+    INV_COMP_PERMISSION_CHECK = "MDC-INV-014"
+    INV_FM_ERROR_HANDLER = "MDC-INV-015"
+
+    # =========================================================================
     # Preview Errors
     # =========================================================================
     PREVIEW_DOCKER_NOT_INSTALLED = "MDC-PRV-001"
@@ -398,6 +417,20 @@ class ErrorCode(str, Enum):
     CP04_PERMISSION_DENIED = "MDC-CP04-006"
     CP04_POLICY_SYNTAX_ERROR = "MDC-CP04-007"
     CP04_ROLE_CYCLE_DETECTED = "MDC-CP04-008"
+
+    # =========================================================================
+    # CP05: Event Emitter Errors
+    # =========================================================================
+    EVT_BUS_NOT_INITIALIZED = "MDC-EVT-001"
+    EVT_SUBSCRIBER_NOT_FOUND = "MDC-EVT-002"
+    EVT_SCHEMA_VALIDATION_FAILED = "MDC-EVT-003"
+    EVT_OUTBOX_WRITE_FAILED = "MDC-EVT-004"
+    EVT_PUBLISHER_NOT_FOUND = "MDC-EVT-005"
+    EVT_HANDLER_FAILED = "MDC-EVT-006"
+    EVT_TOPIC_INVALID = "MDC-EVT-007"
+    EVT_MESSAGE_SERIALIZATION_FAILED = "MDC-EVT-008"
+    EVT_DEAD_LETTER_FAILED = "MDC-EVT-009"
+    EVT_TENANT_ISOLATION_VIOLATION = "MDC-EVT-010"
 
 class ExitCode(Enum):
     """
@@ -657,6 +690,23 @@ class MidicoderErrorManager:
         ErrorCode.PREVIEW_RESTART_FAILED: "Không thể restart preview services.",
         ErrorCode.PREVIEW_HEALTH_CHECK_TIMEOUT: "Timeout chờ services healthy. Vui lòng kiểm tra logs.",
         
+        # Invariant Enforcement Errors
+        ErrorCode.INV_NOT_REGISTERED: "Invariant không được đăng ký trong registry.",
+        ErrorCode.INV_VALIDATION_FAILED: "Validation invariant thất bại.",
+        ErrorCode.INV_BLUEPRINT_MISSING: "Blueprint không tìm thấy để validate invariants.",
+        ErrorCode.INV_CATEGORY_UNKNOWN: "Invariant category không hợp lệ.",
+        ErrorCode.INV_ENFORCEMENT_UNKNOWN: "Enforcement mode không hợp lệ.",
+        ErrorCode.INV_BUSINESS_ENTITY_REF: "Entity reference không thể resolve trong business invariant.",
+        ErrorCode.INV_BUSINESS_MUTATION_TXN: "Mutation không có transaction scope.",
+        ErrorCode.INV_BUSINESS_QUERY_WRITE: "Query có write operation (phải read-only).",
+        ErrorCode.INV_BUSINESS_EVENT_ORDER: "Event publish không đúng thứ tự sau mutation commit.",
+        ErrorCode.INV_BUSINESS_STATE_TRANSITION: "State machine transition không hợp lệ.",
+        ErrorCode.INV_COMP_PII_ENCRYPTION: "PII fields không được encrypt.",
+        ErrorCode.INV_COMP_AUDIT_TRAIL: "Thiếu audit trail cho operation.",
+        ErrorCode.INV_COMP_TENANT_ISOLATION: "Tenant isolation không được enforce.",
+        ErrorCode.INV_COMP_PERMISSION_CHECK: "Thiếu permission check cho operation.",
+        ErrorCode.INV_FM_ERROR_HANDLER: "Thiếu error handler cho mutation.",
+
         # Infrastructure Errors
         ErrorCode.INFRA_MIR_NOT_FOUND: "Không tìm thấy MIR trong artifacts. Hãy chạy `midicoder ir build` trước.",
         ErrorCode.INFRA_TEMPLATE_NOT_FOUND: "Không tìm thấy Docker Compose template.",
