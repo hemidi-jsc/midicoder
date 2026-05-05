@@ -1,0 +1,60 @@
+"""
+Clinical Visit Workflow (DP09)
+
+Check-in → Triage → Consultation → Prescription → Completed.
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List
+
+class VisitState(str, Enum):
+    CHECK_IN = "check_in"
+    TRIAGE = "triage"
+    CONSULTATION = "consultation"
+    PRESCRIPTION = "prescription"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+class VisitEvent(str, Enum):
+    CHECK_IN = "check_in"
+    TRIAGE = "triage"
+    CONSULT = "consult"
+    PRESCRIBE = "prescribe"
+    COMPLETE = "complete"
+    CANCEL = "cancel"
+
+@dataclass
+class ClinicalVisitWorkflow:
+    """Quy trình khám bệnh."""
+    workflow_id: str
+    tenant_id: str
+    patient_id: str
+    current_state: VisitState = VisitState.CHECK_IN
+    history: List[Dict[str, Any]] = field(default_factory=list)
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+    def transition(self, event: VisitEvent) -> VisitState:
+        transitions = {
+            (VisitState.CHECK_IN, VisitEvent.TRIAGE): VisitState.TRIAGE,
+            (VisitState.TRIAGE, VisitEvent.CONSULT): VisitState.CONSULTATION,
+            (VisitState.CONSULTATION, VisitEvent.PRESSCRIBE): VisitState.PRESCRIPTION,
+            (VisitState.CONSULTATION, VisitEvent.COMPLETE): VisitState.COMPLETED,
+            (VisitState.PRESCRIPTION, VisitEvent.COMPLETE): VisitState.COMPLETED,
+        }
+        # Cancel từ bất kỳ state nào
+        for state in VisitState:
+            transitions[(state, VisitEvent.CANCEL)] = VisitState.CANCELLED
+
+        new_state = transitions.get((self.current_state, event))
+        if not new_state:
+            raise ValueError(f"Không thể transition {self.current_state.value} với {event.value}")
+        self.history.append({"from": self.current_state.value, "to": new_state.value, "event": event.value})
+        self.current_state = new_state
+        return new_state
+
+    @property
+    def is_completed(self) -> bool:
+        return self.current_state in (VisitState.COMPLETED, VisitState.CANCELLED)

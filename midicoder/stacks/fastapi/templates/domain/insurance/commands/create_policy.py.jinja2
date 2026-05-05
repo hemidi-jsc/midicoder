@@ -1,0 +1,65 @@
+"""
+Create Policy Command (DP14)
+
+Tạo hợp đồng bảo hiểm mới với underwriting check.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
+from ....command.command import BaseCommand
+from ....command.command_guards import CommandGuards
+from ....command.command_validator import CommandValidator
+from ...entities.policy import Policy, PolicyStatus
+
+
+@dataclass
+class CreatePolicyInput:
+    policy_id: str
+    policy_type: str
+    insured_name: str
+    coverage_amount: Decimal
+    premium_amount: Decimal
+    start_date: str
+    end_date: str
+
+
+@dataclass
+class CreatePolicyOutput:
+    policy_id: str
+    status: str
+    created_at: datetime
+
+
+class CreatePolicyCommand(BaseCommand):
+    name = "insurance.create_policy"
+    description = "Tạo hợp đồng bảo hiểm mới"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("insurance:policy:create")]
+    effects = ["create_record", "underwriting_check", "write_audit_log"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> CreatePolicyInput:
+        validator = CommandValidator(data)
+        validator.require_string("policy_id", min_length=1)
+        validator.require_string("policy_type", min_length=1)
+        validator.require_decimal("coverage_amount", min_value=Decimal("0.01"))
+        validator.require_decimal("premium_amount", min_value=Decimal("0.01"))
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return CreatePolicyInput(**{k: data.get(k, "") for k in CreatePolicyInput.__dataclass_fields__})
+
+    def execute(self, input_data: CreatePolicyInput, context: dict[str, Any]) -> CreatePolicyOutput:
+        db_session = context["db_session"]
+        tenant_id = context["tenant_id"]
+        policy = Policy(
+            tenant_id=tenant_id, policy_id=input_data.policy_id, policy_type=input_data.policy_type,
+            insured_name=input_data.insured_name, coverage_amount=input_data.coverage_amount,
+            premium_amount=input_data.premium_amount, status=PolicyStatus.DRAFT,
+        )
+        db_session.add(policy)
+        db_session.commit()
+        return CreatePolicyOutput(policy_id=policy.policy_id, status=policy.status.value, created_at=policy.created_at)

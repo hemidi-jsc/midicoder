@@ -1,0 +1,84 @@
+"""
+Banking Journal Entry Entity Model
+
+Bút toán kế toán - Đơn vị transaction trong double-entry bookkeeping.
+Mỗi JournalEntry có nhiều LedgerEntry (debit + credit).
+RX02: Financial Integrity - Journal entries immutable sau khi committed.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+from enum import Enum
+
+from sqlalchemy import Column, DateTime, Enum as SQLAlchemyEnum, ForeignKey, Index, Numeric, String
+from sqlalchemy.orm import relationship
+
+from ...db.base_model import Base
+from ...db.tenant_mixin import TenantRowMixin
+
+
+class JournalEntryStatus(str, Enum):
+    """Trạng thái journal entry."""
+    PENDING = "pending"
+    COMMITTED = "committed"
+    FAILED = "failed"
+    REVERSED = "reversed"
+
+
+class JournalEntry(Base, TenantRowMixin):
+    """JournalEntry entity model.
+
+   一笔交易 (Journal Entry) trong kế toán double-entry.
+    Gồm nhiều ledger entries với tổng debit = tổng credit.
+
+    RX02 Compliance:
+    - immutable sau khi status = COMMITTED
+    - debit_total == credit_total phải đúng
+    """
+
+    __tablename__ = "banking_journal_entries"
+
+    journal_id = Column(String(50), nullable=False, unique=True)
+    transaction_type = Column(String(50), nullable=False)
+    description = Column(String(500), nullable=True)
+    debit_total = Column(Numeric(19, 2), nullable=False, default=Decimal("0.00"))
+    credit_total = Column(Numeric(19, 2), nullable=False, default=Decimal("0.00"))
+    status = Column(SQLAlchemyEnum(JournalEntryStatus), nullable=False, default=JournalEntryStatus.PENDING)
+    reference = Column(String(100), nullable=True)
+    initiated_by = Column(String(50), nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    committed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    entries = relationship("LedgerEntry", backref="journal_entry", lazy="joined")
+
+    __table_args__ = (
+        Index("idx_journal_id", "journal_id"),
+        Index("idx_journal_status", "status"),
+        Index("idx_journal_created", "created_at"),
+    )
+
+    def is_balanced(self) -> bool:
+        """Kiểm tra double-entry có balanced không (debit == credit)."""
+        return self.debit_total == self.credit_total
+
+    def is_immutable(self) -> bool:
+        """Kiểm tra journal entry có immutable không (RX02)."""
+        return self.status == JournalEntryStatus.COMMITTED
+
+    def commit(self) -> None:
+        """Commit journal entry."""
+        if not self.is_balanced():
+            raise ValueError("Journal entry không balanced: debit != credit")
+        self.status = JournalEntryStatus.COMMITTED
+        self.committed_at = datetime.utcnow()
+
+    def reverse(self) -> None:
+        """Reverse journal entry (chỉ được reverse nếu chưa committed)."""
+        if self.status == JournalEntryStatus.COMMITTED:
+            raise ValueError("Không thể reverse journal entry đã committed")
+        self.status = JournalEntryStatus.REVERSED

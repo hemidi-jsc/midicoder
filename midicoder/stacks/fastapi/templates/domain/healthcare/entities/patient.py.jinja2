@@ -1,0 +1,122 @@
+"""
+Healthcare Patient Entity Model
+
+Bệnh nhân với PHI encryption (RX04: HIPAA).
+KPI-029: Multi-tenant isolation.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+
+from sqlalchemy import Column, DateTime, Enum as SQLAlchemyEnum, Index, String, Text
+
+from ....db.base_model import Base
+from ....db.tenant_mixin import TenantRowMixin
+
+
+class PatientStatus(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    DISCHARGED = "discharged"
+
+
+class Patient(Base, TenantRowMixin):
+    """Patient entity model.
+
+    RX04: PHI fields encrypted at rest.
+    """
+
+    __tablename__ = "healthcare_patients"
+
+    patient_id = Column(String(50), nullable=False, unique=True)
+    full_name_enc = Column(String(500), nullable=False)  # PHI encrypted
+    date_of_birth_enc = Column(String(50), nullable=True)  # PHI encrypted
+    gender = Column(String(10), nullable=True)
+    phone_enc = Column(String(50), nullable=True)  # PHI encrypted
+    address_enc = Column(Text, nullable=True)  # PHI encrypted
+    blood_type = Column(String(5), nullable=True)
+    emergency_contact_enc = Column(String(500), nullable=True)  # PHI encrypted
+    status = Column(SQLAlchemyEnum(PatientStatus), nullable=False, default=PatientStatus.ACTIVE)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_patient_id", "patient_id"),
+        Index("idx_patient_status", "status"),
+    )
+
+
+class ClinicalNote(Base, TenantRowMixin):
+    """Clinical note entity model.
+
+    RX04: PHI audit trail cho tất cả access.
+    """
+
+    __tablename__ = "healthcare_clinical_notes"
+
+    note_id = Column(String(50), nullable=False, unique=True)
+    patient_id = Column(String(50), nullable=False)
+    provider_id = Column(String(50), nullable=False)
+    note_type = Column(String(50), nullable=False)
+    content_enc = Column(Text, nullable=False)  # PHI encrypted
+    audit_trail_id = Column(String(50), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (Index("idx_note_patient", "patient_id"),)
+
+
+class Prescription(Base, TenantRowMixin):
+    """Prescription entity model."""
+
+    __tablename__ = "healthcare_prescriptions"
+
+    prescription_id = Column(String(50), nullable=False, unique=True)
+    patient_id = Column(String(50), nullable=False)
+    provider_id = Column(String(50), nullable=False)
+    medication_enc = Column(String(500), nullable=False)  # PHI encrypted
+    dosage_enc = Column(String(500), nullable=False)  # PHI encrypted
+    frequency = Column(String(100), nullable=True)
+    duration_days = Column(String(10), nullable=True)
+    status = Column(String(20), nullable=False, default="active")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (Index("idx_rx_patient", "patient_id"),)
+
+
+class EHR(Base, TenantRowMixin):
+    """Electronic Health Record entity model.
+
+    RX04: All PHI fields encrypted.
+    """
+
+    __tablename__ = "healthcare_ehr"
+
+    ehr_id = Column(String(50), nullable=False, unique=True)
+    patient_id = Column(String(50), nullable=False)
+    diagnosis_enc = Column(Text, nullable=True)  # PHI encrypted
+    medical_history_enc = Column(Text, nullable=True)  # PHI encrypted
+    allergies_enc = Column(Text, nullable=True)  # PHI encrypted
+    current_medications_enc = Column(Text, nullable=True)  # PHI encrypted
+    last_updated_by = Column(String(50), nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (Index("idx_ehr_patient", "patient_id"),)
+
+
+class Appointment(Base, TenantRowMixin):
+    """Appointment entity model."""
+
+    __tablename__ = "healthcare_appointments"
+
+    appointment_id = Column(String(50), nullable=False, unique=True)
+    patient_id = Column(String(50), nullable=False)
+    provider_id = Column(String(50), nullable=False)
+    appointment_type = Column(String(50), nullable=False)
+    scheduled_at = Column(DateTime, nullable=False)
+    status = Column(String(20), nullable=False, default="scheduled")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (Index("idx_appt_patient", "patient_id"), Index("idx_appt_scheduled", "scheduled_at"),)

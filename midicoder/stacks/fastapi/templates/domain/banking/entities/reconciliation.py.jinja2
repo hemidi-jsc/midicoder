@@ -1,0 +1,79 @@
+"""
+Banking Reconciliation Entity Model
+
+Báo cáo đối chiếu tài khoản hàng ngày.
+RX02: Financial Integrity - Daily reconciliation mandatory.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
+
+from sqlalchemy import Column, DateTime, Date, Enum as SQLAlchemyEnum, Index, Numeric, String, Text
+from sqlalchemy.orm import relationship
+
+from ...db.base_model import Base
+from ...db.tenant_mixin import TenantRowMixin
+
+
+class ReconciliationStatus(str, Enum):
+    """Trạng thái đối chiếu."""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    VARIANCE_FOUND = "variance_found"
+
+
+class Reconciliation(Base, TenantRowMixin):
+    """Reconciliation entity model.
+
+    Báo cáo đối chiếu hàng ngày.
+    So sánh số dư nội bộ với external system (core banking).
+
+    RX02 Compliance:
+    - Daily reconciliation mandatory
+    - Variance phải được investigate và resolve
+    """
+
+    __tablename__ = "banking_reconciliations"
+
+    reconciliation_id = Column(String(50), nullable=False, unique=True)
+    reconciliation_date = Column(Date, nullable=False)
+    account_id = Column(String(50), nullable=True)
+    status = Column(SQLAlchemyEnum(ReconciliationStatus), nullable=False, default=ReconciliationStatus.PENDING)
+
+    # Số dư nội bộ vs external
+    internal_balance = Column(Numeric(19, 2), nullable=False, default=Decimal("0.00"))
+    external_balance = Column(Numeric(19, 2), nullable=False, default=Decimal("0.00"))
+    variance = Column(Numeric(19, 2), nullable=False, default=Decimal("0.00"))
+
+    # Kết quả
+    is_matched = Column(String(1), nullable=False, default="0")
+    variance_reason = Column(Text, nullable=True)
+    resolved_by = Column(String(50), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_reconciliation_date", "reconciliation_date"),
+        Index("idx_reconciliation_status", "status"),
+        Index("idx_reconciliation_account", "account_id"),
+    )
+
+    def has_variance(self) -> bool:
+        """Kiểm tra có variance không."""
+        return self.variance != Decimal("0.00")
+
+    def calculate_variance(self) -> None:
+        """Tính variance = internal - external."""
+        self.variance = self.internal_balance - self.external_balance
+        self.is_matched = "0" if self.has_variance() else "1"
+
+    def is_resolved(self) -> bool:
+        """Kiểm tra đã resolve chưa."""
+        return self.resolved_at is not None

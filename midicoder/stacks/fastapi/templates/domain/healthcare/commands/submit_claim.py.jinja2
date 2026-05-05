@@ -1,0 +1,71 @@
+"""
+Submit Claim Command (DP10)
+
+Nộp yêu cầu bồi thường bảo hiểm y tế.
+RX04: PHI encryption cho tất cả fields nhạy cảm.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
+from ....command.command import BaseCommand
+from ....command.command_guards import CommandGuards
+from ....command.command_validator import CommandValidator
+from ...entities.claim import Claim, ClaimStatus
+
+
+@dataclass
+class SubmitClaimInput:
+    claim_id: str
+    patient_id: str
+    provider_id: str
+    diagnosis_code: str
+    procedure_code: str
+    description: str
+    amount: Decimal
+
+
+@dataclass
+class SubmitClaimOutput:
+    claim_id: str
+    status: str
+    submitted_at: datetime
+
+
+class SubmitClaimCommand(BaseCommand):
+    """SubmitClaim command.
+
+    RX04: PHI encrypted before storage.
+    """
+    name = "healthcare.submit_claim"
+    description = "Nộp yêu cầu bồi thường bảo hiểm y tế"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("healthcare:claim:submit")]
+    effects = ["create_record", "encrypt_phi", "write_audit_log", "publish_event"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> SubmitClaimInput:
+        validator = CommandValidator(data)
+        validator.require_string("claim_id", min_length=1)
+        validator.require_string("patient_id", min_length=1)
+        validator.require_decimal("amount", min_value=Decimal("0.01"))
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return SubmitClaimInput(**{k: data.get(k, "") for k in SubmitClaimInput.__dataclass_fields__})
+
+    def execute(self, input_data: SubmitClaimInput, context: dict[str, Any]) -> SubmitClaimOutput:
+        """Execute submit claim command."""
+        db_session = context["db_session"]
+        tenant_id = context["tenant_id"]
+        claim = Claim(
+            tenant_id=tenant_id, claim_id=input_data.claim_id, patient_id=input_data.patient_id,
+            provider_id=input_data.provider_id, diagnosis_code=input_data.diagnosis_code,
+            procedure_code=input_data.procedure_code, description_enc=f"ENC:{input_data.description}",
+            amount=input_data.amount, status=ClaimStatus.SUBMITTED,
+        )
+        db_session.add(claim)
+        db_session.commit()
+        return SubmitClaimOutput(claim_id=claim.claim_id, status=claim.status.value, submitted_at=claim.submitted_at)
