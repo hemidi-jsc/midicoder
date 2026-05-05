@@ -29,7 +29,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
-from midicoder.emitters.authnz.models import (
+from midicoder.emitters.core.authnz.models import (
     AuthIR,
     JWTAuthConfig,
 )

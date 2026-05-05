@@ -17,7 +17,7 @@ Theo SoT E06:
 - Query must filter by tenant_id
 
 Usage:
-    from midicoder.emitters.query import (
+    from midicoder.emitters.core.query import (
         Query, QueryGuard, QueryEffect,
         FastAPIQueryEmitter, NestJSQueryEmitter,
     )

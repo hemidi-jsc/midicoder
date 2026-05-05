@@ -20,8 +20,8 @@ from decimal import Decimal
 import pytest
 
 from midicoder.pipeline.mir import MIR
-from midicoder.emitters.backend_fastapi import BackendFastAPIEmitter
-from midicoder.emitters.backend_nestjs import BackendNestJSEmitter
+from midicoder.emitters.stack.fastapi import BackendFastAPIEmitter
+from midicoder.emitters.stack.nestjs import BackendNestJSEmitter
 
 
 # ============================================================================

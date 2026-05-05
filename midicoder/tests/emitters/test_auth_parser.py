@@ -18,7 +18,7 @@ import pytest
 from pathlib import Path
 import tempfile
 
-from midicoder.emitters.authnz.models import (
+from midicoder.emitters.core.authnz.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
@@ -30,7 +30,7 @@ from midicoder.emitters.authnz.models import (
     Role,
     TenantMode,
 )
-from midicoder.emitters.authnz.parser import (
+from midicoder.emitters.core.authnz.parser import (
     AuthParser,
     parse_auth_dsl,
     validate_permission_format,

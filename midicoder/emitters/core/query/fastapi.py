@@ -14,7 +14,7 @@ Theo SoT E07, template-based code generation với Jinja2.
 Theo clarification Q6, rebuild templates để match Commands pattern.
 
 Usage:
-    from midicoder.emitters.query import FastAPIQueryEmitter
+    from midicoder.emitters.core.query import FastAPIQueryEmitter
     
     emitter = FastAPIQueryEmitter(stack_dir=Path("midicoder/stacks/fastapi/templates"))
     files = emitter.emit(query, output_dir=Path("app/queries/get_order"))

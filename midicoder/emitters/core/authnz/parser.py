@@ -24,7 +24,7 @@ from typing import Any
 
 import yaml
 
-from midicoder.emitters.authnz.models import (
+from midicoder.emitters.core.authnz.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,

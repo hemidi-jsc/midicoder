@@ -478,7 +478,7 @@ export class WorkflowEngine {{
         fromState: currentState,
         toState: null,
         transitionId: '',
-        error: `No transition found for event '{{eventName}}' from state '{{currentState}}'`,
+        error: No transition found for event '{{eventName}}' from state '{{currentState}}',
       }};
     }}
 
@@ -554,7 +554,7 @@ export class WorkflowEngine {{
   async getState(instanceId: string): Promise<string> {{
     const instance = await this.workflowRepo.findOne({{ where: {{ id: instanceId }} }});
     if (!instance) {{
-      throw new Error(`Workflow instance {{{{instanceId}}}} not found`);
+      throw new Error(Workflow instance {{{{instanceId}}}} not found);
     }}
     return instance.currentState;
   }}
@@ -578,7 +578,7 @@ export class WorkflowEngine {{
   ): Promise<WorkflowEntity> {{
     const config = WORKFLOW_CONFIGS[workflowName];
     if (!config) {{
-      throw new Error(`Workflow '{{workflowName}}' not found`);
+      throw new Error(Workflow '{{workflowName}}' not found);
     }}
 
     const instance = this.workflowRepo.create({{
@@ -631,7 +631,7 @@ export class WorkflowEngine {{
 
     for (let i = 0; i < transition.guards.length; i++) {{
       const guard = transition.guards[i];
-      const guardName = `{{guard.type}}_${{i}}`;
+      const guardName = {{guard.type}}_${{i}};
       
       const guardResult = await this.evaluateSingleGuard(
         guard,
@@ -735,7 +735,7 @@ export class WorkflowEngine {{
 
     for (let i = 0; i < transition.effects.length; i++) {{
       const effect = transition.effects[i];
-      const effectName = `{{effect.type}}_${{i}}`;
+      const effectName = {{effect.type}}_${{i}};
 
       const success = await this.executeSingleEffect(
         effect,
@@ -1093,7 +1093,7 @@ export class WorkflowEffects {{
    */
   async publishEvent(eventName: string, payload: TransitionContext): Promise<void> {{
     // TODO: Integrate với Event Bus (e.g., NestJS EventsModule)
-    console.log(`Published event: {{{{eventName}}}}`, payload);
+    console.log(Published event: {{{{eventName}}}}, payload);
   }}
 
   /**
@@ -1104,7 +1104,7 @@ export class WorkflowEffects {{
    */
   async executeCommand(commandName: string, params: Record<string, unknown>): Promise<void> {{
     // TODO: Integrate với Command Bus
-    console.log(`Executed command: {{{{commandName}}}}`, params);
+    console.log(Executed command: {{{{commandName}}}}, params);
   }}
 
   /**
@@ -1120,7 +1120,7 @@ export class WorkflowEffects {{
     recipient: string,
   ): Promise<void> {{
     // TODO: Integrate với Notification Service
-    console.log(`Sent notification via {{{{channel}}}}: {{{{template}}}} to {{{{recipient}}}}`);
+    console.log(Sent notification via {{{{channel}}}}: {{{{template}}}} to {{{{recipient}}}});
   }}
 
   /**
@@ -1131,7 +1131,7 @@ export class WorkflowEffects {{
    */
   async logAudit(action: string, context: TransitionContext): Promise<void> {{
     // TODO: Integrate với Audit Service
-    console.log(`Logged audit: {{{{action}}}}`, context);
+    console.log(Logged audit: {{{{action}}}}, context);
   }}
 
   /**
@@ -1142,7 +1142,7 @@ export class WorkflowEffects {{
    */
   async rollback(action: string, params: Record<string, unknown>): Promise<void> {{
     // TODO: Integrate với Compensation Service
-    console.log(`Executed rollback: {{{{action}}}}`, params);
+    console.log(Executed rollback: {{{{action}}}}, params);
   }}
 }}
 '''
@@ -1166,7 +1166,7 @@ export class WorkflowEffects {{
             if isinstance(v, str):
                 items.append(f'{k}: "{v}"')
             elif isinstance(v, list):
-                items.append(f'{k}: [{", ".join(f"`{item}`" for item in v)}]')
+                items.append(f'{k}: [{", ".join(f"{item}" for item in v)}]')
             elif isinstance(v, bool):
                 items.append(f'{k}: {str(v).lower()}')
             else:

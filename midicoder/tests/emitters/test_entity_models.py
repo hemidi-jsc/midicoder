@@ -19,7 +19,7 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.emitters.entity.models import (
+from midicoder.emitters.core.entity.models import (
     Entity,
     Field,
     FieldType,

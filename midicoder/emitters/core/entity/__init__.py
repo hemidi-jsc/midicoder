@@ -8,7 +8,7 @@ Cung cấp:
 - NestJSEntityEmitter: NestJS implementation
 
 Sử dụng:
-    from midicoder.emitters.entity import (
+    from midicoder.emitters.core.entity import (
         EntityParser,
         FastAPIEntityEmitter,
         NestJSEntityEmitter,

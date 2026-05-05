@@ -14,8 +14,8 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from midicoder.emitters.workflow.parser import WorkflowParser
-from midicoder.emitters.workflow.models import (
+from midicoder.emitters.core.workflow.parser import WorkflowParser
+from midicoder.emitters.core.workflow.models import (
     WorkflowDefinition,
     Transition,
     Guard,

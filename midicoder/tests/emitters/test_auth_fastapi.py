@@ -19,7 +19,7 @@ import pytest
 from pathlib import Path
 import tempfile
 
-from midicoder.emitters.authnz.models import (
+from midicoder.emitters.core.authnz.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
@@ -30,7 +30,7 @@ from midicoder.emitters.authnz.models import (
     Role,
     TenantMode,
 )
-from midicoder.emitters.authnz.fastapi import (
+from midicoder.emitters.core.authnz.fastapi import (
     emit_fastapi_auth,
     FastAPIAuthEmitter,
     GeneratedFile,

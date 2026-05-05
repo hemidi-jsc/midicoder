@@ -7,7 +7,7 @@ Module này cung cấp CommandParser để parse Command DSL YAML:
 - Error handling với MidicoderError
 
 Sử dụng:
-    from midicoder.emitters.command.parser import CommandParser
+    from midicoder.emitters.core.command.parser import CommandParser
     
     parser = CommandParser()
     commands = parser.parse(yaml_string)
