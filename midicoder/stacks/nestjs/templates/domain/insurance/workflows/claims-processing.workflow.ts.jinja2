@@ -1,0 +1,31 @@
+/**
+ * Claims Processing Workflow (NestJS/TypeScript)
+ *
+ * Quy trình bồi thường: Submit → Investigate → Adjudicate → Pay/Deny.
+ */
+
+export enum ClaimsProcessingState {
+  SUBMITTED = 'submitted',
+  INVESTIGATING = 'investigating',
+  ADJUDICATING = 'adjudicating',
+  PAID = 'paid',
+  DENIED = 'denied',
+}
+
+export class ClaimsProcessingWorkflow {
+  name = 'insurance.claims_processing';
+  description = 'Quy trình bồi thường: Submit → Investigate → Adjudicate → Pay/Deny';
+  currentState: ClaimsProcessingState = ClaimsProcessingState.SUBMITTED;
+
+  async transition(event: string): Promise<ClaimsProcessingState> {
+    const transitions: Record<string, Record<string, ClaimsProcessingState>> = {
+      [ClaimsProcessingState.SUBMITTED]: { 'investigate': ClaimsProcessingState.INVESTIGATING },
+      [ClaimsProcessingState.INVESTIGATING]: { 'adjudicate': ClaimsProcessingState.ADJUDICATING },
+      [ClaimsProcessingState.ADJUDICATING]: {
+        'approve': ClaimsProcessingState.PAID,
+        'deny': ClaimsProcessingState.DENIED,
+      },
+    };
+    return ClaimsProcessingState.DENIED;
+  }
+}

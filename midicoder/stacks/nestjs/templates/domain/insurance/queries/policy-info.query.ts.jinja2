@@ -1,0 +1,35 @@
+/**
+ * Policy Info Query (NestJS/TypeScript)
+ *
+ * Truy vấn thông tin hợp đồng bảo hiểm.
+ */
+
+import { IsString, IsNotEmpty } from 'class-validator';
+
+export class PolicyInfoInput {
+  @IsString()
+  @IsNotEmpty()
+  policyId: string;
+}
+
+export class PolicyInfoOutput {
+  policyId: string;
+  policyType: string;
+  insuredName: string;
+  coverageAmount: number;
+  premiumAmount: number;
+  startDate: string;
+  endDate: string;
+  status: string;
+}
+
+export class PolicyInfoQuery {
+  name = 'insurance.policy_info';
+  description = 'Truy vấn thông tin hợp đồng bảo hiểm';
+  guards = ['tenant_scope', 'auth_required', 'permission:insurance:policy:read'];
+  effects = ['read_record', 'cache_result'];
+
+  async execute(input: PolicyInfoInput, context: any): Promise<PolicyInfoOutput> {
+    return {} as PolicyInfoOutput;
+  }
+}

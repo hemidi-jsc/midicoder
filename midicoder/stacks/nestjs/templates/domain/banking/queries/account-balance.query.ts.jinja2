@@ -1,0 +1,33 @@
+/**
+ * Account Balance Query (NestJS/TypeScript)
+ *
+ * Truy vấn số dư tài khoản ngân hàng.
+ */
+
+import { IsString, IsNotEmpty } from 'class-validator';
+
+export class AccountBalanceInput {
+  @IsString()
+  @IsNotEmpty()
+  accountId: string;
+}
+
+export class AccountBalanceOutput {
+  accountId: string;
+  balance: number;
+  availableBalance: number;
+  currency: string;
+  status: string;
+}
+
+export class AccountBalanceQuery {
+  name = 'banking.account_balance';
+  description = 'Truy vấn số dư tài khoản';
+  guards = ['tenant_scope', 'auth_required', 'permission:banking:account:read'];
+  effects = ['read_record', 'cache_result'];
+
+  async execute(input: AccountBalanceInput, context: any): Promise<AccountBalanceOutput> {
+    // KPI-029: Tenant isolation
+    return {} as AccountBalanceOutput;
+  }
+}
