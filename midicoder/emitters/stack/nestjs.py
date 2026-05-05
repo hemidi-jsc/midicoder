@@ -65,6 +65,10 @@ from midicoder.emitters.core.authnz import (
     Role,
     TenantMode,
 )
+from midicoder.emitters.core.event import (
+    NestJSEventEmitter as CoreNestJSEventEmitter,
+    EventParser,
+)
 from midicoder.pipeline.mir import MIR
 
 
@@ -173,7 +177,12 @@ class BackendNestJSEmitter:
         
         # Emit auth code (CP02-CP04)
         files.extend(self._emit_auth(output_dir))
-        
+
+        # Emit events từ MIR metadata (CP05)
+        events_data = mir.metadata.get("events", [])
+        if events_data:
+            files.extend(self._emit_events(events_data, output_dir))
+
         return files
     
     def _emit_base_files(self, output_dir: Path) -> list[GeneratedFile]:
@@ -978,20 +987,69 @@ class BackendNestJSEmitter:
         
         return files
     
+    def _emit_events(
+        self,
+        events_data: list[dict[str, Any]],
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """
+        Emit event code files (CP05: Event-Driven Architecture).
+
+        Sử dụng NestJSEventEmitter để generate event code.
+
+        Files được emit:
+        - core/event/event-bus.service.ts
+        - core/event/event-publisher.service.ts
+        - core/event/event-subscriber.service.ts
+        - core/event/event.module.ts
+        - core/event/index.ts
+
+        Args:
+            events_data: List of event dicts từ MIR metadata
+            output_dir: Output directory
+
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+
+        try:
+            # Parse events từ dict
+            parser = EventParser()
+            events = parser.parse(events_data)
+
+            # Tạo emitter và emit files
+            event_emitter = CoreNestJSEventEmitter(stack_dir=self.stack_dir)
+            emitted_files = event_emitter.emit(events, output_dir)
+
+            # Chuyển đổi sang GeneratedFile
+            for emitted in emitted_files:
+                files.append(GeneratedFile(
+                    path=emitted.path,
+                    content=emitted.content,
+                    template=emitted.template,
+                    capability="CP05",
+                ))
+        except Exception as e:
+            import logging
+            logging.warning(f"NestJSEventEmitter failed: {e}")
+
+        return files
+
     def _to_snake_case(self, name: str) -> str:
         """
         Chuyển string sang snake_case.
-        
+
         Args:
             name: Tên cần chuyển
-            
+
         Returns:
             Snake case string
         """
         import re
         s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
         return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
-    
+
     def _write_file(
         self,
         output_dir: Path,
