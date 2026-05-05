@@ -67,15 +67,15 @@ class ReactComponentEmitter:
         components_dir.mkdir(parents=True, exist_ok=True)
 
         for entity in entities:
-            files.extend(self._emit_entity_components(entity, components_dir))
+            files.extend(self._emit_entity_components(entity, components_dir, output_dir))
 
-        files.extend(self._emit_layout_component(components_dir))
-        files.extend(self._emit_dashboard_component(components_dir, entities))
+        files.extend(self._emit_layout_component(components_dir, output_dir))
+        files.extend(self._emit_dashboard_component(components_dir, entities, output_dir))
 
         return files
 
     def _emit_entity_components(
-        self, entity: dict[str, Any], output_dir: Path
+        self, entity: dict[str, Any], output_dir: Path, root_dir: Path
     ) -> list[GeneratedFile]:
         """Emit List/Detail/Form cho 1 entity."""
         entity_id = entity["id"]
@@ -84,13 +84,13 @@ class ReactComponentEmitter:
         entity_dir.mkdir(parents=True, exist_ok=True)
 
         files: list[GeneratedFile] = []
-        files.extend(self._emit_list_view(entity_id, entity_lower, entity_dir))
-        files.extend(self._emit_detail_view(entity_id, entity_lower, entity.get("fields", []), entity_dir))
-        files.extend(self._emit_form_view(entity_id, entity_lower, entity.get("fields", []), entity_dir))
+        files.extend(self._emit_list_view(entity_id, entity_lower, entity_dir, root_dir))
+        files.extend(self._emit_detail_view(entity_id, entity_lower, entity.get("fields", []), entity_dir, root_dir))
+        files.extend(self._emit_form_view(entity_id, entity_lower, entity.get("fields", []), entity_dir, root_dir))
         return files
 
     def _emit_list_view(
-        self, entity_id: str, entity_lower: str, output_dir: Path
+        self, entity_id: str, entity_lower: str, output_dir: Path, root_dir: Path
     ) -> list[GeneratedFile]:
         """Emit ListView Component."""
         import_stmt = self._get_ui_import()
@@ -136,10 +136,10 @@ class ReactComponentEmitter:
             '  );\n'
             '};\n'
         )
-        return [self._write_file(entity_lower + '-list.tsx', content, output_dir)]
+        return [self._write_file(entity_lower + '-list.tsx', content, output_dir, root_dir)]
 
     def _emit_detail_view(
-        self, entity_id: str, entity_lower: str, fields: list[dict], output_dir: Path
+        self, entity_id: str, entity_lower: str, fields: list[dict], output_dir: Path, root_dir: Path
     ) -> list[GeneratedFile]:
         """Emit DetailView Component."""
         fields_jsx = self._generate_fields_jsx(fields)
@@ -171,10 +171,10 @@ class ReactComponentEmitter:
             '  );\n'
             '};\n'
         )
-        return [self._write_file(entity_lower + '-detail.tsx', content, output_dir)]
+        return [self._write_file(entity_lower + '-detail.tsx', content, output_dir, root_dir)]
 
     def _emit_form_view(
-        self, entity_id: str, entity_lower: str, fields: list[dict], output_dir: Path
+        self, entity_id: str, entity_lower: str, fields: list[dict], output_dir: Path, root_dir: Path
     ) -> list[GeneratedFile]:
         """Emit FormView Component với validation."""
         form_fields = self._generate_form_fields(fields)
@@ -241,9 +241,9 @@ class ReactComponentEmitter:
             '  );\n'
             '};\n'
         )
-        return [self._write_file(entity_lower + '-form.tsx', content, output_dir)]
+        return [self._write_file(entity_lower + '-form.tsx', content, output_dir, root_dir)]
 
-    def _emit_layout_component(self, output_dir: Path) -> list[GeneratedFile]:
+    def _emit_layout_component(self, output_dir: Path, root_dir: Path) -> list[GeneratedFile]:
         """Emit Layout Component với sidebar navigation."""
         import_stmt = self._get_ui_import()
         content = (
@@ -293,10 +293,10 @@ class ReactComponentEmitter:
             '  );\n'
             '};\n'
         )
-        return [self._write_file("layout.tsx", content, output_dir)]
+        return [self._write_file("layout.tsx", content, output_dir, root_dir)]
 
     def _emit_dashboard_component(
-        self, output_dir: Path, entities: list[dict]
+        self, output_dir: Path, entities: list[dict], root_dir: Path
     ) -> list[GeneratedFile]:
         """Emit Dashboard Component với stats widgets."""
         stat_cards = ''.join(
@@ -352,7 +352,7 @@ class ReactComponentEmitter:
             '  );\n'
             '};\n'
         )
-        return [self._write_file("dashboard.tsx", content, output_dir)]
+        return [self._write_file("dashboard.tsx", content, output_dir, root_dir)]
 
     def _get_ui_import(self) -> str:
         """Lấy import statement theo UI framework."""
@@ -448,14 +448,28 @@ class ReactComponentEmitter:
         return '\n'.join(lines)
 
     def _write_file(
-        self, filename: str, content: str, output_dir: Path
+        self, filename: str, content: str, output_dir: Path, root_dir: Path | None = None
     ) -> GeneratedFile:
-        """Write file và trả về GeneratedFile."""
+        """Write file và trả về GeneratedFile.
+
+        Args:
+            filename: Tên file
+            content: Nội dung file
+            output_dir: Directory chứa file
+            root_dir: Root directory để tính relative path
+        """
         file_path = output_dir / filename
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(content, encoding="utf-8")
+
+        rel_to = root_dir if root_dir is not None else output_dir.parent
+        try:
+            rel_path = file_path.relative_to(rel_to)
+        except ValueError:
+            rel_path = file_path
+
         return GeneratedFile(
-            path=file_path.relative_to(output_dir.parent),
+            path=rel_path,
             content=content,
             template="component/react/" + filename,
         )
