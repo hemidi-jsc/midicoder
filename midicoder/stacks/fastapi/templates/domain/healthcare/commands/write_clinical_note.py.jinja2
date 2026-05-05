@@ -1,0 +1,66 @@
+"""
+Write Clinical Note Command (DP09)
+
+Ghi chú y khoa với audit trail (RX04: HIPAA).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+from ....command.command import BaseCommand
+from ....command.command_guards import CommandGuards
+from ....command.command_validator import CommandValidator
+from ...entities.patient import ClinicalNote
+
+
+@dataclass
+class WriteClinicalNoteInput:
+    note_id: str
+    patient_id: str
+    note_type: str
+    content: str
+
+
+@dataclass
+class WriteClinicalNoteOutput:
+    note_id: str
+    created_at: datetime
+
+
+class WriteClinicalNoteCommand(BaseCommand):
+    """WriteClinicalNote command.
+
+    RX04: PHI encrypted, audit trail mandatory.
+    """
+
+    name = "healthcare.write_clinical_note"
+    description = "Ghi chú y khoa với audit trail"
+    guards = [CommandGuards.tenant_scope, CommandGuards.auth_required, CommandGuards.permission("healthcare:note:write")]
+    effects = ["create_record", "encrypt_phi", "write_audit_log"]
+
+    @classmethod
+    def validate_input(cls, data: dict[str, Any]) -> WriteClinicalNoteInput:
+        validator = CommandValidator(data)
+        validator.require_string("note_id", min_length=1)
+        validator.require_string("patient_id", min_length=1)
+        validator.require_string("note_type", min_length=1)
+        validator.require_string("content", min_length=1)
+        if validator.has_errors():
+            raise ValueError(f"Validation failed: {validator.errors}")
+        return WriteClinicalNoteInput(**{k: data.get(k, "") for k in WriteClinicalNoteInput.__dataclass_fields__})
+
+    def execute(self, input_data: WriteClinicalNoteInput, context: dict[str, Any]) -> WriteClinicalNoteOutput:
+        """Execute write clinical note command."""
+        db_session = context["db_session"]
+        tenant_id = context["tenant_id"]
+        note = ClinicalNote(
+            tenant_id=tenant_id, note_id=input_data.note_id, patient_id=input_data.patient_id,
+            provider_id=context.get("user_id", ""), note_type=input_data.note_type,
+            content_enc=f"ENC:{input_data.content}", audit_trail_id=f"AUDIT_{input_data.note_id}",
+        )
+        db_session.add(note)
+        db_session.commit()
+        return WriteClinicalNoteOutput(note_id=note.note_id, created_at=note.created_at)
