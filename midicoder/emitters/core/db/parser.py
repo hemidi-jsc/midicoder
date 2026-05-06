@@ -1,8 +1,8 @@
 # coding: utf-8
 """
-DB Parser - Parse MIR metadata thành DataModelCollection.
+DB Parser - Parse MIR metadata và YAML DSL thành DataModelCollection.
 
-Module nay chua DBParser de parse data models tu MIR metadata.
+Module này chứa DBParser để parse data models từ MIR metadata hoặc YAML DSL string.
 
 Author: Midicoder Team
 Version: 1.0.0
@@ -10,21 +10,26 @@ Version: 1.0.0
 
 from __future__ import annotations
 
+import yaml
 from dataclasses import dataclass
 from typing import Any
 
 from midicoder.emitters.core.db.models import (
     DataModel,
     DataModelCollection,
+    Datasource,
+    DatabaseEngine,
+    ReplicaConfig,
     ColumnDef,
     ColumnType,
     Relationship,
     RelationshipType,
     IndexDef,
 )
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
 
-# Mapping tu type string sang ColumnType enum
+# Mapping từ type string sang ColumnType enum
 _TYPE_MAP = {
     "str": ColumnType.STRING, "string": ColumnType.STRING,
     "int": ColumnType.INTEGER, "integer": ColumnType.INTEGER,
@@ -37,7 +42,7 @@ _TYPE_MAP = {
 }
 
 
-# Mapping tu rel_type string sang RelationshipType enum
+# Mapping từ rel_type string sang RelationshipType enum
 _REL_TYPE_MAP = {
     "many_to_one": RelationshipType.MANY_TO_ONE,
     "one_to_many": RelationshipType.ONE_TO_MANY,
@@ -46,28 +51,75 @@ _REL_TYPE_MAP = {
 }
 
 
+# Mapping từ engine string sang DatabaseEngine enum
+_ENGINE_MAP = {
+    "postgresql": DatabaseEngine.POSTGRESQL,
+    "postgres": DatabaseEngine.POSTGRESQL,
+    "mysql": DatabaseEngine.MYSQL,
+    "sqlserver": DatabaseEngine.SQLSERVER,
+    "mssql": DatabaseEngine.SQLSERVER,
+    "oracle": DatabaseEngine.ORACLE,
+}
+
+
 @dataclass
 class DBParser:
     """
-    Parser de convert MIR metadata thanh DataModelCollection.
+    Parser để convert MIR metadata và YAML DSL thành DataModelCollection.
 
-    Input: Dictionary chua 'data_models' key
-    Output: DataModelCollection voi tat ca models da parse
+    Input: Dictionary hoặc YAML string chứa 'datasources' và 'data_models'
+    Output: DataModelCollection với tất cả models và datasources đã parse
     """
 
-    def parse_from_metadata(self, metadata: dict[str, Any]) -> DataModelCollection:
+    def parse(self, raw: str) -> DataModelCollection:
         """
-        Parse data models tu MIR metadata.
+        Parse YAML DSL string thành DataModelCollection.
 
         Args:
-            metadata: Dictionary chua 'data_models' key
+            raw: YAML string chứa cấu hình database
 
         Returns:
-            DataModelCollection voi tat ca models da parse
+            DataModelCollection với datasources và models
+
+        Raises:
+            MidicoderError: Với code MDC-CP08-005 khi YAML parse error
+        """
+        # Xu ly empty string: tra ve empty collection
+        if not raw or not raw.strip():
+            return DataModelCollection()
+
+        try:
+            data = yaml.safe_load(raw)
+        except yaml.YAMLError as e:
+            EM.raise_error(ErrorCode.CP08_DSL_PARSE_ERROR, original_error=str(e))
+
+        if not isinstance(data, dict):
+            EM.raise_error(ErrorCode.CP08_DSL_PARSE_ERROR, reason="YAML root phai la mapping")
+
+        return self._parse_from_dict(data)
+
+    def _parse_from_dict(self, data: dict[str, Any]) -> DataModelCollection:
+        """
+        Parse dictionary thành DataModelCollection.
+
+        Args:
+            data: Dictionary chứa 'datasources' và/hoặc 'data_models'
+
+        Returns:
+            DataModelCollection
         """
         collection = DataModelCollection()
 
-        for model_dict in metadata.get("data_models", []):
+        # Parse datasources
+        for ds_data in data.get("datasources", []):
+            try:
+                datasource = self._parse_datasource(ds_data)
+                collection.add_datasource(datasource)
+            except Exception:
+                continue
+
+        # Parse data models
+        for model_dict in data.get("data_models", []):
             try:
                 model = self._parse_model(model_dict)
                 collection.add_model(model)
@@ -76,8 +128,47 @@ class DBParser:
 
         return collection
 
+    def parse_from_metadata(self, metadata: dict[str, Any]) -> DataModelCollection:
+        """
+        Parse data models từ MIR metadata (backward compatible).
+
+        Args:
+            metadata: Dictionary chứa 'data_models' key
+
+        Returns:
+            DataModelCollection với tất cả models đã parse
+        """
+        return self._parse_from_dict(metadata)
+
+    def _parse_datasource(self, data: dict[str, Any]) -> Datasource:
+        """Parse một datasource dictionary."""
+        # Parse read replicas
+        replicas = []
+        for replica_data in data.get("read_replicas", []):
+            replicas.append(ReplicaConfig(
+                name=replica_data.get("name", ""),
+                connection_string=replica_data.get("connection_string", ""),
+                weight=replica_data.get("weight", 1),
+            ))
+
+        engine_str = data.get("engine", "postgresql")
+        engine = _ENGINE_MAP.get(engine_str, DatabaseEngine.POSTGRESQL)
+
+        return Datasource(
+            name=data.get("name", ""),
+            engine=engine,
+            connection_string=data.get("connection_string", ""),
+            pool_size=data.get("pool_size", 10),
+            max_overflow=data.get("max_overflow", 20),
+            pool_timeout=data.get("pool_timeout", 30),
+            pool_recycle=data.get("pool_recycle", 3600),
+            read_replicas=replicas,
+            ssl_enabled=data.get("ssl_enabled", False),
+            description=data.get("description", ""),
+        )
+
     def _parse_model(self, data: dict[str, Any]) -> DataModel:
-        """Parse mot model dictionary."""
+        """Parse một model dictionary."""
         columns = []
         for col_data in data.get("columns", []):
             col_type = _TYPE_MAP.get(col_data.get("type", "string"), ColumnType.STRING)

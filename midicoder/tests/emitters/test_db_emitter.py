@@ -25,8 +25,12 @@ from midicoder.emitters.core.db.models import (
     DataModelCollection,
     ColumnType,
     RelationshipType,
+    Datasource,
+    DatabaseEngine,
+    ReplicaConfig,
 )
 from midicoder.emitters.core.db.parser import DBParser
+from midicoder.errors import ErrorCode, MidicoderError, MidicoderErrorManager as EM
 from midicoder.emitters.core.db.fastapi import SQLAlchemyEmitter
 from midicoder.emitters.core.db.nestjs import TypeORMEmitter
 
@@ -438,6 +442,7 @@ class TestKPI029TenantIsolation:
             id="Test",
             table_name="test",
             columns=[
+                ColumnDef(name="id", column_type=ColumnType.UUID, primary_key=True),
                 ColumnDef(name="tenant_id", column_type=ColumnType.STRING, tenant_aware=True),
             ],
         )
@@ -991,3 +996,372 @@ class TestKPI029TenantIsolation:
         restored = DataModel.from_dict(d)
         assert restored.tenant_isolated is True
         assert restored.has_tenant_column() is True
+
+
+# ============================================================================
+# FR10: Tests cho Datasource, ReplicaConfig, DatabaseEngine, DSL Parser, Errors
+# ============================================================================
+
+
+class TestDatabaseEngine:
+    """Tests cho DatabaseEngine enum."""
+
+    def test_postgresql_value(self):
+        assert DatabaseEngine.POSTGRESQL.value == "postgresql"
+
+    def test_mysql_value(self):
+        assert DatabaseEngine.MYSQL.value == "mysql"
+
+    def test_sqlserver_value(self):
+        assert DatabaseEngine.SQLSERVER.value == "sqlserver"
+
+    def test_oracle_value(self):
+        assert DatabaseEngine.ORACLE.value == "oracle"
+
+    def test_has_four_values(self):
+        assert len(DatabaseEngine) == 4
+
+
+class TestReplicaConfig:
+    """Tests cho ReplicaConfig model."""
+
+    def test_create_replica(self):
+        replica = ReplicaConfig(name="r1", connection_string="postgres://r1:5432/db")
+        assert replica.name == "r1"
+        assert replica.weight == 1
+
+    def test_create_replica_with_weight(self):
+        replica = ReplicaConfig(name="r2", connection_string="postgres://r2:5432/db", weight=3)
+        assert replica.weight == 3
+
+    def test_to_dict_and_from_dict(self):
+        original = ReplicaConfig(name="r1", connection_string="postgres://r1:5432/db", weight=2)
+        d = original.to_dict()
+        restored = ReplicaConfig.from_dict(d)
+        assert restored.name == original.name
+        assert restored.weight == original.weight
+
+    def test_empty_name_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            ReplicaConfig(name="", connection_string="postgres://db")
+        assert exc_info.value.code == ErrorCode.CP08_EMPTY_NAME
+
+    def test_empty_connection_string_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            ReplicaConfig(name="r1", connection_string="")
+        assert exc_info.value.code == ErrorCode.CP08_MISSING_DATASOURCE
+
+    def test_negative_weight_defaults_to_one(self):
+        replica = ReplicaConfig(name="r1", connection_string="postgres://db", weight=-1)
+        assert replica.weight == 1
+
+
+class TestDatasource:
+    """Tests cho Datasource model."""
+
+    def test_create_datasource(self):
+        ds = Datasource(name="primary", engine=DatabaseEngine.POSTGRESQL, connection_string="postgres://localhost:5432/mydb")
+        assert ds.name == "primary"
+        assert ds.engine == DatabaseEngine.POSTGRESQL
+        assert ds.pool_size == 10
+        assert ds.ssl_enabled is False
+
+    def test_create_datasource_with_all_options(self):
+        ds = Datasource(name="analytics", engine=DatabaseEngine.MYSQL, connection_string="mysql://analytics:3306/db", pool_size=20, ssl_enabled=True, description="Analytics DB")
+        assert ds.engine == DatabaseEngine.MYSQL
+        assert ds.pool_size == 20
+        assert ds.ssl_enabled is True
+
+    def test_create_datasource_with_replicas(self):
+        ds = Datasource(
+            name="primary", engine=DatabaseEngine.POSTGRESQL, connection_string="postgres://db",
+            read_replicas=[ReplicaConfig(name="r1", connection_string="postgres://r1:5432/db", weight=1)],
+        )
+        assert len(ds.read_replicas) == 1
+
+    def test_to_dict_and_from_dict(self):
+        original = Datasource(name="test", engine=DatabaseEngine.SQLSERVER, connection_string="mssql://test:1433/db", pool_size=15, ssl_enabled=True)
+        d = original.to_dict()
+        restored = Datasource.from_dict(d)
+        assert restored.name == original.name
+        assert restored.engine == original.engine
+        assert restored.ssl_enabled == original.ssl_enabled
+
+    def test_empty_name_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            Datasource(name="", engine=DatabaseEngine.POSTGRESQL, connection_string="postgres://db")
+        assert exc_info.value.code == ErrorCode.CP08_EMPTY_NAME
+
+    def test_empty_connection_string_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            Datasource(name="primary", engine=DatabaseEngine.POSTGRESQL, connection_string="")
+        assert exc_info.value.code == ErrorCode.CP08_MISSING_DATASOURCE
+
+    def test_negative_pool_size_defaults_to_one(self):
+        ds = Datasource(name="primary", engine=DatabaseEngine.POSTGRESQL, connection_string="postgres://db", pool_size=-5)
+        assert ds.pool_size == 1
+
+
+class TestDSLParser:
+    """Tests cho DBParser.parse() DSL YAML method."""
+
+    def test_parse_valid_yaml(self):
+        parser = DBParser()
+        yaml_str = """
+datasources:
+  - name: primary
+    engine: postgresql
+    connection_string: "${DB_URL}"
+    pool_size: 10
+data_models:
+  - id: User
+    table_name: users
+    columns:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: tenant_id
+        type: string
+        tenant_aware: true
+"""
+        collection = parser.parse(yaml_str)
+        assert collection.total_count == 1
+        assert len(collection.datasources) == 1
+        model = collection.get_by_id("User")
+        assert model is not None
+        assert model.has_tenant_column() is True
+
+    def test_parse_invalid_yaml_raises_error(self):
+        parser = DBParser()
+        with pytest.raises(MidicoderError) as exc_info:
+            parser.parse(":::invalid: [yaml")
+        assert exc_info.value.code == ErrorCode.CP08_DSL_PARSE_ERROR
+
+    def test_parse_empty_yaml(self):
+        parser = DBParser()
+        collection = parser.parse("")
+        assert collection.total_count == 0
+
+    def test_parse_yaml_with_replicas(self):
+        parser = DBParser()
+        yaml_str = """
+datasources:
+  - name: primary
+    engine: postgresql
+    connection_string: "${DB_URL}"
+    read_replicas:
+      - name: replica1
+        connection_string: "${DB_REPLICA_URL}"
+        weight: 1
+data_models:
+  - id: Order
+    table_name: orders
+    columns:
+      - name: id
+        type: uuid
+        primary_key: true
+"""
+        collection = parser.parse(yaml_str)
+        ds = collection.get_primary_datasource()
+        assert ds is not None
+        assert len(ds.read_replicas) == 1
+        assert ds.read_replicas[0].weight == 1
+
+    def test_parse_yaml_with_relationships_and_indexes(self):
+        parser = DBParser()
+        yaml_str = """
+data_models:
+  - id: User
+    table_name: users
+    columns:
+      - name: id
+        type: uuid
+        primary_key: true
+    relationships:
+      - target_model: Order
+        rel_type: one_to_many
+        back_ref: user
+    indexes:
+      - name: idx_tenant
+        columns: [tenant_id]
+"""
+        collection = parser.parse(yaml_str)
+        model = collection.get_by_id("User")
+        assert model is not None
+        assert len(model.relationships) == 1
+        assert len(model.indexes) == 1
+
+
+class TestCP08ErrorCodes:
+    """Tests cho CP08 error codes."""
+
+    def test_error_code_001_empty_name(self):
+        error = EM.create(ErrorCode.CP08_EMPTY_NAME, field="test")
+        assert error.code == ErrorCode.CP08_EMPTY_NAME
+        assert "trống" in error.message.lower() or "không" in error.message.lower()
+
+    def test_error_code_002_invalid_column_type(self):
+        error = EM.create(ErrorCode.CP08_INVALID_COLUMN_TYPE)
+        assert error.code == ErrorCode.CP08_INVALID_COLUMN_TYPE
+
+    def test_error_code_003_duplicate_column(self):
+        error = EM.create(ErrorCode.CP08_DUPLICATE_COLUMN_NAME, model="Test")
+        assert error.code == ErrorCode.CP08_DUPLICATE_COLUMN_NAME
+
+    def test_error_code_004_duplicate_table(self):
+        error = EM.create(ErrorCode.CP08_DUPLICATE_TABLE_NAME, table="users")
+        assert error.code == ErrorCode.CP08_DUPLICATE_TABLE_NAME
+
+    def test_error_code_005_dsl_parse(self):
+        error = EM.create(ErrorCode.CP08_DSL_PARSE_ERROR, original_error="bad yaml")
+        assert error.code == ErrorCode.CP08_DSL_PARSE_ERROR
+
+    def test_error_code_006_missing_datasource(self):
+        error = EM.create(ErrorCode.CP08_MISSING_DATASOURCE)
+        assert error.code == ErrorCode.CP08_MISSING_DATASOURCE
+
+    def test_error_code_007_circular_fk(self):
+        error = EM.create(ErrorCode.CP08_CIRCULAR_FOREIGN_KEY)
+        assert error.code == ErrorCode.CP08_CIRCULAR_FOREIGN_KEY
+
+    def test_error_code_008_missing_pk(self):
+        error = EM.create(ErrorCode.CP08_MISSING_PRIMARY_KEY, model="Test")
+        assert error.code == ErrorCode.CP08_MISSING_PRIMARY_KEY
+
+    def test_error_code_009_migration_error(self):
+        error = EM.create(ErrorCode.CP08_MIGRATION_ERROR)
+        assert error.code == ErrorCode.CP08_MIGRATION_ERROR
+
+    def test_error_code_010_runtime_error(self):
+        error = EM.create(ErrorCode.CP08_RUNTIME_DATASOURCE_ERROR)
+        assert error.code == ErrorCode.CP08_RUNTIME_DATASOURCE_ERROR
+
+    def test_error_suggestions_exist(self):
+        """Error codes co suggestions."""
+        for code in [
+            ErrorCode.CP08_EMPTY_NAME, ErrorCode.CP08_INVALID_COLUMN_TYPE,
+            ErrorCode.CP08_DUPLICATE_COLUMN_NAME, ErrorCode.CP08_DUPLICATE_TABLE_NAME,
+            ErrorCode.CP08_DSL_PARSE_ERROR, ErrorCode.CP08_MISSING_DATASOURCE,
+            ErrorCode.CP08_CIRCULAR_FOREIGN_KEY, ErrorCode.CP08_MISSING_PRIMARY_KEY,
+            ErrorCode.CP08_MIGRATION_ERROR, ErrorCode.CP08_RUNTIME_DATASOURCE_ERROR,
+        ]:
+            error = EM.create(code)
+            assert len(error.suggestions) > 0, f"Missing suggestions for {code}"
+
+
+class TestEnhancedEmitters:
+    """Tests cho enhanced emitter methods (FR6)."""
+
+    def test_sqlalchemy_emit_connection_config(self):
+        ds = Datasource(name="primary", engine=DatabaseEngine.POSTGRESQL, connection_string="postgres://db", pool_size=15)
+        emitter = SQLAlchemyEmitter()
+        files = emitter.emit_connection_config(ds)
+        assert "database.py" in files
+        content = files["database.py"]
+        assert "pool_size=15" in content
+        assert "create_engine" in content
+
+    def test_sqlalchemy_emit_base_repository(self):
+        emitter = SQLAlchemyEmitter()
+        files = emitter.emit_base_repository()
+        assert "repositories/base_repository.py" in files
+        content = files["repositories/base_repository.py"]
+        assert "BaseRepository" in content
+        assert "tenant_id" in content
+
+    def test_sqlalchemy_emit_migration(self):
+        model = DataModel(id="User", table_name="users", columns=[ColumnDef(name="id", column_type=ColumnType.UUID, primary_key=True)])
+        emitter = SQLAlchemyEmitter()
+        files = emitter.emit_migration(model, "abc123")
+        assert any("abc123" in k for k in files.keys())
+        content = list(files.values())[0]
+        assert "create_table" in content
+
+    def test_sqlalchemy_emit_seed_data(self):
+        models = [DataModel(id="User", table_name="users", columns=[ColumnDef(name="id", column_type=ColumnType.UUID, primary_key=True)])]
+        emitter = SQLAlchemyEmitter()
+        files = emitter.emit_seed_data(models)
+        assert "seed_data.py" in files
+        content = files["seed_data.py"]
+        assert "users" in content
+
+    def test_typeorm_emit_connection_config(self):
+        ds = Datasource(name="primary", engine=DatabaseEngine.POSTGRESQL, connection_string="postgres://db", pool_size=10)
+        emitter = TypeORMEmitter()
+        files = emitter.emit_connection_config(ds)
+        assert "datasource.ts" in files
+        content = files["datasource.ts"]
+        assert "DataSource" in content
+
+    def test_typeorm_emit_base_repository(self):
+        emitter = TypeORMEmitter()
+        files = emitter.emit_base_repository()
+        assert "repositories/base-entity-repository.ts" in files
+        content = files["repositories/base-entity-repository.ts"]
+        assert "BaseEntityRepository" in content
+
+    def test_typeorm_emit_migration(self):
+        model = DataModel(id="User", table_name="users", columns=[ColumnDef(name="id", column_type=ColumnType.UUID, primary_key=True)])
+        emitter = TypeORMEmitter()
+        files = emitter.emit_migration(model, "v1")
+        content = list(files.values())[0]
+        assert "MigrationInterface" in content
+
+    def test_typeorm_emit_seed_data(self):
+        entities = [DataModel(id="User", table_name="users", columns=[ColumnDef(name="id", column_type=ColumnType.UUID, primary_key=True)])]
+        emitter = TypeORMEmitter()
+        files = emitter.emit_seed_data(entities)
+        assert "seed.ts" in files
+        content = files["seed.ts"]
+        assert "users" in content
+
+
+class TestValidation:
+    """Tests cho __post_init__ validation."""
+
+    def test_column_empty_name_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            ColumnDef(name="", column_type=ColumnType.STRING)
+        assert exc_info.value.code == ErrorCode.CP08_EMPTY_NAME
+
+    def test_relationship_empty_target_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            Relationship(target_model="", rel_type=RelationshipType.MANY_TO_ONE)
+        assert exc_info.value.code == ErrorCode.CP08_EMPTY_NAME
+
+    def test_index_empty_name_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            IndexDef(name="", columns=["col"])
+        assert exc_info.value.code == ErrorCode.CP08_EMPTY_NAME
+
+    def test_model_empty_id_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            DataModel(id="", table_name="test")
+        assert exc_info.value.code == ErrorCode.CP08_EMPTY_NAME
+
+    def test_model_empty_table_name_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            DataModel(id="Test", table_name="")
+        assert exc_info.value.code == ErrorCode.CP08_EMPTY_NAME
+
+    def test_model_missing_primary_key_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            DataModel(id="Test", table_name="test", columns=[ColumnDef(name="name", column_type=ColumnType.STRING)])
+        assert exc_info.value.code == ErrorCode.CP08_MISSING_PRIMARY_KEY
+
+    def test_model_duplicate_columns_raises_error(self):
+        with pytest.raises(MidicoderError) as exc_info:
+            DataModel(
+                id="Test", table_name="test", columns=[
+                    ColumnDef(name="id", column_type=ColumnType.UUID, primary_key=True),
+                    ColumnDef(name="id", column_type=ColumnType.STRING),
+                ]
+            )
+        assert exc_info.value.code == ErrorCode.CP08_DUPLICATE_COLUMN_NAME
+
+    def test_collection_duplicate_table_raises_error(self):
+        collection = DataModelCollection()
+        collection.add_model(DataModel(id="A", table_name="users"))
+        with pytest.raises(MidicoderError) as exc_info:
+            collection.add_model(DataModel(id="B", table_name="users"))
+        assert exc_info.value.code == ErrorCode.CP08_DUPLICATE_TABLE_NAME

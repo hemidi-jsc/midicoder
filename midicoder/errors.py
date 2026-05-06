@@ -419,6 +419,20 @@ class ErrorCode(str, Enum):
     CP04_ROLE_CYCLE_DETECTED = "MDC-CP04-008"
 
     # =========================================================================
+    # CP08: Database & Data Access Layer Errors
+    # =========================================================================
+    CP08_EMPTY_NAME = "MDC-CP08-001"
+    CP08_INVALID_COLUMN_TYPE = "MDC-CP08-002"
+    CP08_DUPLICATE_COLUMN_NAME = "MDC-CP08-003"
+    CP08_DUPLICATE_TABLE_NAME = "MDC-CP08-004"
+    CP08_DSL_PARSE_ERROR = "MDC-CP08-005"
+    CP08_MISSING_DATASOURCE = "MDC-CP08-006"
+    CP08_CIRCULAR_FOREIGN_KEY = "MDC-CP08-007"
+    CP08_MISSING_PRIMARY_KEY = "MDC-CP08-008"
+    CP08_MIGRATION_ERROR = "MDC-CP08-009"
+    CP08_RUNTIME_DATASOURCE_ERROR = "MDC-CP08-010"
+
+    # =========================================================================
     # CP05: Event Emitter Errors
     # =========================================================================
     EVT_BUS_NOT_INITIALIZED = "MDC-EVT-001"
@@ -762,6 +776,18 @@ class MidicoderErrorManager:
         ErrorCode.CP12_NOTIFICATION_DISPATCH_FAILED: "Dispatch notification thất bại.",
         ErrorCode.CP12_NOTIFICATION_RATE_LIMIT_EXCEEDED: "Vượt quá rate limit cho notification channel.",
         ErrorCode.CP12_NOTIFICATION_INVALID_RECIPIENT: "Người nhận notification không hợp lệ.",
+
+        # CP08 Database Errors
+        ErrorCode.CP08_EMPTY_NAME: "Tên không được để trống (datasource/column/table/index).",
+        ErrorCode.CP08_INVALID_COLUMN_TYPE: "Column type không hợp lệ.",
+        ErrorCode.CP08_DUPLICATE_COLUMN_NAME: "Column name trùng lặp trong model.",
+        ErrorCode.CP08_DUPLICATE_TABLE_NAME: "Table name trùng lặp trong collection.",
+        ErrorCode.CP08_DSL_PARSE_ERROR: "Lỗi parsing DSL YAML cho database configuration.",
+        ErrorCode.CP08_MISSING_DATASOURCE: "Thiếu datasource config bắt buộc.",
+        ErrorCode.CP08_CIRCULAR_FOREIGN_KEY: "Phát hiện circular foreign key reference.",
+        ErrorCode.CP08_MISSING_PRIMARY_KEY: "Model có columns nhưng không có primary key.",
+        ErrorCode.CP08_MIGRATION_ERROR: "Lỗi generate migration file.",
+        ErrorCode.CP08_RUNTIME_DATASOURCE_ERROR: "Lỗi runtime datasource connection.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {
@@ -860,6 +886,51 @@ class MidicoderErrorManager:
         ErrorCode.DB_PERMISSION_DENIED: [
             "Kiểm tra quyền đọc/ghi thư mục database",
             "Chạy với elevated permissions nếu cần",
+        ],
+
+        # CP08 Database Errors
+        ErrorCode.CP08_EMPTY_NAME: [
+            "Kiểm tra tên datasource/column/table/index không được để trống",
+            "Đảm bảo field 'name' có giá trị",
+        ],
+        ErrorCode.CP08_INVALID_COLUMN_TYPE: [
+            "Kiểm tra column type nằm trong catalog: string, integer, boolean, decimal, text, json, datetime, uuid",
+            "Xem documentation cho supported types",
+        ],
+        ErrorCode.CP08_DUPLICATE_COLUMN_NAME: [
+            "Kiểm tra không có 2 column cùng tên trong một model",
+            "Đổi tên column trùng lặp",
+        ],
+        ErrorCode.CP08_DUPLICATE_TABLE_NAME: [
+            "Kiểm tra không có 2 model cùng table_name",
+            "Đổi table_name trùng lặp",
+        ],
+        ErrorCode.CP08_DSL_PARSE_ERROR: [
+            "Kiểm tra YAML syntax trong DSL file",
+            "Đảm bảo indentation đúng (2 spaces)",
+            "Sử dụng YAML validator online",
+        ],
+        ErrorCode.CP08_MISSING_DATASOURCE: [
+            "Cung cấp datasource config trong DSL hoặc metadata",
+            "Kiểm tra section 'datasources' trong DSL YAML",
+        ],
+        ErrorCode.CP08_CIRCULAR_FOREIGN_KEY: [
+            "Review foreign key relationships để tìm circular reference",
+            "Xét lại design để loại bỏ circular dependencies",
+            "Sử dụng intermediate table cho many-to-many",
+        ],
+        ErrorCode.CP08_MISSING_PRIMARY_KEY: [
+            "Thêm column với primary_key=True vào model",
+            "Mỗi model có columns cần ít nhất một primary key",
+        ],
+        ErrorCode.CP08_MIGRATION_ERROR: [
+            "Kiểm tra migration template có tồn tại không",
+            "Xem logs để biết chi tiết lỗi",
+        ],
+        ErrorCode.CP08_RUNTIME_DATASOURCE_ERROR: [
+            "Kiểm tra connection_string hợp lệ",
+            "Đảm bảo database server đang chạy",
+            "Kiểm tra network connectivity",
         ],
     }
 

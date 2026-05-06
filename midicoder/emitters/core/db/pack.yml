@@ -1,0 +1,23 @@
+pack:
+  id: "CP08"
+  name: "Database & Data Access Layer Generator"
+  internal_id: "cp8-database"
+  version: "1.0.0"
+  phase: "P1"
+  category: "persistence"
+  status: "developing"
+  depends_on: ["CP01"]
+  definitions_count: 6
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-CP08"
+    range: "MDC-CP08-001 to MDC-CP08-010"
+  capabilities:
+    - id: "datasource"
+      emitter: "fastapi, nestjs"
+    - id: "entity-generation"
+      emitter: "fastapi, nestjs"
+    - id: "repository-pattern"
+      emitter: "fastapi, nestjs"
+    - id: "migration"
+      emitter: "fastapi, nestjs"

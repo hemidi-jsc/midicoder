@@ -96,7 +96,7 @@ core_packs:
     internal_id: cp8-database
     phase: P1
     description: Datasource declarations, table mappings, column definitions
-    definitions_count: 2
+    definitions_count: 6
     obligations_count: 1
     depends_on:
       - CP01
