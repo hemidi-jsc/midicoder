@@ -1079,7 +1079,209 @@ domain_packs:
     category: "data-governance"
     industries_using:
       - "data-governance-platform"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP38"
+      - "CP43"
     status: "stable"
+
+  # --------------------------------------------------------------------------
+  # NEW Domain Packs - Semantic Depth for 100 Industries
+  # --------------------------------------------------------------------------
+
+  - id: "DP27"
+    name: "Food & Hospitality Operations"
+    description: "Menu management, reservations, kitchen display, POS, restaurant operations"
+    category: "food-hospitality"
+    industries_using:
+      - "food-delivery"
+      - "restaurant-chain"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP33"
+      - "CP45"
+      - "CP50"
+    status: "planned"
+
+  - id: "DP28"
+    name: "Automotive"
+    description: "Vehicle lifecycle (VIN), service history, trade-in, financing, rental"
+    category: "automotive"
+    industries_using:
+      - "auto-dealership"
+      - "auto-service-repair"
+      - "car-rental"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP33"
+      - "CP45"
+    status: "planned"
+
+  - id: "DP29"
+    name: "Mobility & Transportation"
+    description: "Ride-hailing, bike sharing, public transit: route, fare, trip, surge pricing"
+    category: "mobility"
+    industries_using:
+      - "ride-hailing"
+      - "bike-scooter-sharing"
+      - "rail-bus-ticketing"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP33"
+      - "CP35"
+      - "CP45"
+    status: "planned"
+
+  - id: "DP30"
+    name: "Healthcare Analytics & Research"
+    description: "Clinical trials, study protocols, patient cohorts, research consent"
+    category: "healthcare-research"
+    industries_using:
+      - "public-health-surveillance"
+      - "mental-health-services"
+      - "biotech-research"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP14"
+      - "CP47"
+      - "CP49"
+    status: "planned"
+
+  - id: "DP31"
+    name: "Government Services"
+    description: "Citizen portal, licensing, permits, court docket, hearings"
+    category: "government"
+    industries_using:
+      - "government-citizen-portal"
+      - "municipal-licensing"
+      - "court-administration"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP34"
+      - "CP42"
+    status: "planned"
+
+  - id: "DP32"
+    name: "Financial Services Extended"
+    description: "Accounting, tax, audit: chart of accounts, journal entry, trial balance, audit engagement"
+    category: "financial-services"
+    industries_using:
+      - "accounting-services"
+      - "tax-advisory"
+      - "audit-firm"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP14"
+      - "CP33"
+      - "CP34"
+      - "CP42"
+    status: "planned"
+
+  - id: "DP33"
+    name: "Energy & Environmental Operations"
+    description: "Oil & gas, mining, renewable: well, pipeline, extraction rate, environmental impact"
+    category: "energy-environmental"
+    industries_using:
+      - "renewable-energy"
+      - "oil-gas"
+      - "mining"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP14"
+      - "CP35"
+      - "CP42"
+      - "CP47"
+    status: "planned"
+
+  - id: "DP34"
+    name: "Content & Media Platform"
+    description: "Newsroom CMS, OTT, marketing: content, editorial calendar, ad campaign, subscription"
+    category: "content-media"
+    industries_using:
+      - "digital-newsroom"
+      - "ott-subscription"
+      - "marketing-agency"
+      - "creator-influencer"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP11"
+      - "CP12"
+      - "CP33"
+      - "CP34"
+      - "CP36"
+      - "CP42"
+      - "CP45"
+    status: "planned"
+
+  - id: "DP35"
+    name: "Gaming & Esports"
+    description: "Game LiveOps, esports: player profile, match, tournament, bracket, prize pool"
+    category: "gaming"
+    industries_using:
+      - "game-liveops"
+      - "esports-tournament"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP22"
+      - "CP33"
+      - "CP45"
+    status: "planned"
+
+  - id: "DP36"
+    name: "Construction & Engineering"
+    description: "Project management: blueprint revision, RFI, change order, subcontractor, safety inspection"
+    category: "construction"
+    industries_using:
+      - "construction-project-management"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP11"
+      - "CP12"
+      - "CP14"
+      - "CP34"
+      - "CP42"
+      - "CP47"
+    status: "planned"
 
 # ============================================================================
 # REGULATORY OVERLAYS (RX)
@@ -1322,7 +1524,7 @@ statistics:
       experimental: 2
 
   domain_packs:
-    total: 26
+    total: 36
     by_category:
       commerce: 2
       travel: 1
@@ -1332,6 +1534,7 @@ statistics:
       utilities: 1
       agriculture: 1
       healthcare: 2
+      healthcare-research: 1
       banking: 1
       payments: 1
       lending: 1
@@ -1342,6 +1545,15 @@ statistics:
       legal: 1
       education: 1
       media: 1
+      food-hospitality: 1
+      automotive: 1
+      mobility: 1
+      government: 1
+      financial-services: 1
+      energy-environmental: 1
+      content-media: 1
+      gaming: 1
+      construction: 1
       hr: 1
       enterprise: 1
       nonprofit: 1
