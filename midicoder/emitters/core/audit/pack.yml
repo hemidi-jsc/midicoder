@@ -1,0 +1,30 @@
+pack:
+  id: "CP14"
+  name: "Audit Trail & Compliance Generator"
+  internal_id: "cp14-audit-compliance"
+  version: "1.0.0"
+  phase: "P1"
+  category: "compliance"
+  status: "developing"
+  depends_on: ["CP01"]
+  definitions_count: 3
+  obligations_count: 1
+  error_codes:
+    prefix: "CP14"
+    range: "CP14001-CP14010"
+  capabilities:
+    - id: "audit_logging"
+      emitter: "fastapi, nestjs"
+    - id: "compliance_enforcement"
+      emitter: "fastapi, nestjs"
+  models:
+    - AuditTrail
+    - AuditRule
+    - ComplianceControl
+    - AuditComplianceCollection
+  enums:
+    - AuditActionType
+    - AuditLevel
+    - ControlType
+    - EnforcementLevel
+    - StandardType

@@ -69,7 +69,7 @@ class ErrorCode(str, Enum):
     CAPABILITY_TYPE_UNKNOWN = "MDC-COMP-009"
     CAPABILITY_OBLIGATION_UNSATISFIED = "MDC-COMP-010"
     CAPABILITY_EXPAND_FAILED = "MDC-COMP-011"
-    
+
     # =========================================================================
     # Blueprint Errors
     # =========================================================================
@@ -196,7 +196,7 @@ class ErrorCode(str, Enum):
     PREVIEW_STOP_FAILED = "MDC-PRV-007"
     PREVIEW_RESTART_FAILED = "MDC-PRV-008"
     PREVIEW_HEALTH_CHECK_TIMEOUT = "MDC-PRV-009"
-    
+
     # =========================================================================
     # Infrastructure Errors
     # =========================================================================
@@ -205,7 +205,7 @@ class ErrorCode(str, Enum):
     INFRA_TEMPLATE_RENDER_FAILED = "MDC-INFRA-003"
     INFRA_WRITE_FAILED = "MDC-INFRA-004"
     INFRA_INVALID_CONFIG = "MDC-INFRA-005"
-    
+
     # =========================================================================
     # Version Management Errors
     # =========================================================================
@@ -217,7 +217,7 @@ class ErrorCode(str, Enum):
     VERSION_CLEANUP_FAILED = "MDC-VER-006"
     VERSION_METADATA_INVALID = "MDC-VER-007"
     VERSION_ALREADY_EXISTS = "MDC-VER-008"
-    
+
     # =========================================================================
     # Index Command Errors
     # =========================================================================
@@ -226,7 +226,7 @@ class ErrorCode(str, Enum):
     INDEX_PARSE_FAILED = "MDC-IDX-003"
     INDEX_EMBEDDING_FAILED = "MDC-IDX-004"
     INDEX_LOCKED = "MDC-IDX-005"
-    
+
     # =========================================================================
     # Utility Command Errors
     # =========================================================================
@@ -238,9 +238,9 @@ class ErrorCode(str, Enum):
     UTIL_CONFIG_WRITE_FAILED = "MDC-UTIL-006"
     UTIL_NEO4J_CONNECTION_FAILED = "MDC-UTIL-007"
     UTIL_PIPELINE_TRIGGER_FAILED = "MDC-UTIL-008"
-    
+
     # =========================================================================
-    # CP01: Entity Model Emitter Errors
+    # CP01: Entity/Command/Query/Workflow Emitter Errors
     # =========================================================================
     CP01_ENTITY_NOT_FOUND = "MDC-CP01-001"
     CP01_INVALID_FIELD_TYPE = "MDC-CP01-002"
@@ -252,10 +252,6 @@ class ErrorCode(str, Enum):
     CP01_RELATIONSHIP_EMIT_FAILED = "MDC-CP01-008"
     CP01_HOOK_EMIT_FAILED = "MDC-CP01-009"
     CP01_INVALID_ENUM_VALUE = "MDC-CP01-010"
-    
-    # =========================================================================
-    # CP01: Value Object Emitter Errors
-    # =========================================================================
     CP01_VALUE_OBJECT_NOT_FOUND = "MDC-CP01-011"
     CP01_VALUE_OBJECT_INVALID_FIELD_TYPE = "MDC-CP01-012"
     CP01_VALUE_OBJECT_INVALID_VALIDATION_RULE = "MDC-CP01-013"
@@ -266,10 +262,6 @@ class ErrorCode(str, Enum):
     CP01_VALUE_OBJECT_COMPARABLE_NO_HASH = "MDC-CP01-018"
     CP01_VALUE_OBJECT_IMMUTABLE_HAS_SETTER = "MDC-CP01-019"
     CP01_VALUE_OBJECT_INVALID_TAG = "MDC-CP01-020"
-    
-    # =========================================================================
-    # CP01: Command Emitter Errors
-    # =========================================================================
     CP01_COMMAND_NOT_FOUND = "MDC-CP01-021"
     CP01_COMMAND_INVALID_INPUT = "MDC-CP01-022"
     CP01_COMMAND_GUARD_FAILED = "MDC-CP01-023"
@@ -277,10 +269,6 @@ class ErrorCode(str, Enum):
     CP01_COMMAND_VALIDATION_FAILED = "MDC-CP01-025"
     CP01_COMMAND_TEMPLATE_NOT_FOUND = "MDC-CP01-026"
     CP01_COMMAND_EMIT_FAILED = "MDC-CP01-027"
-    
-    # =========================================================================
-    # CP01: Query Emitter Errors
-    # =========================================================================
     CP01_QUERY_NOT_FOUND = "MDC-CP01-028"
     CP01_QUERY_INVALID_FILTER = "MDC-CP01-029"
     CP01_QUERY_INVALID_PAGINATION = "MDC-CP01-030"
@@ -289,10 +277,6 @@ class ErrorCode(str, Enum):
     CP01_QUERY_EMIT_FAILED = "MDC-CP01-033"
     CP01_QUERY_HANDLER_INVALID = "MDC-CP01-034"
     CP01_QUERY_SCHEMA_INVALID = "MDC-CP01-035"
-    
-    # =========================================================================
-    # CP01: Workflow Emitter Errors
-    # =========================================================================
     CP01_WORKFLOW_NOT_FOUND = "MDC-CP01-036"
     CP01_WORKFLOW_INVALID_STATE = "MDC-CP01-037"
     CP01_WORKFLOW_INVALID_TRANSITION = "MDC-CP01-038"
@@ -303,20 +287,12 @@ class ErrorCode(str, Enum):
     CP01_WORKFLOW_COMPENSATION_FAILED = "MDC-CP01-043"
     CP01_WORKFLOW_EVENT_STORE_ERROR = "MDC-CP01-044"
     CP01_WORKFLOW_SYNC_FAILED = "MDC-CP01-045"
-    
-    # =========================================================================
-    # CP01: Entity Emitter Errors (Extended DSL)
-    # =========================================================================
     CP01_ENTITY_PARSER_ERROR = "MDC-CP01-046"
     CP01_ENTITY_INVALID_FIELD = "MDC-CP01-047"
     CP01_ENTITY_INVALID_RELATIONSHIP = "MDC-CP01-048"
     CP01_ENTITY_INVALID_CONSTRAINT = "MDC-CP01-049"
     CP01_ENTITY_INVALID_LIFECYCLE = "MDC-CP01-050"
     CP01_ENTITY_EMIT_FAILED = "MDC-CP01-051"
-    
-    # =========================================================================
-    # CP01: Command Guard Errors
-    # =========================================================================
     CP01_GUARD_TENANT_MISSING = "MDC-CP01-052"
     CP01_GUARD_TENANT_VIOLATION = "MDC-CP01-053"
     CP01_GUARD_USER_NOT_AUTHENTICATED = "MDC-CP01-054"
@@ -327,66 +303,44 @@ class ErrorCode(str, Enum):
     CP01_GUARD_HIPAA_NO_CLEARANCE = "MDC-CP01-059"
     CP01_GUARD_GDPR_NO_CONSENT = "MDC-CP01-060"
     CP01_GUARD_PCI_RESTRICTED = "MDC-CP01-061"
-    
-    # =========================================================================
-    # CP01: Compliance & Domain Guards Errors (RX02-RX04)
-    # =========================================================================
-    CP01_GUARD_COMPLIANCE_LOG_FAILED = "MDC-CP01-068"  # Audit log write failed
-    CP01_GUARD_EXTERNAL_API_TIMEOUT = "MDC-CP01-069"   # External API timeout
-    CP01_GUARD_CLAIMS_VALIDATION_FAILED = "MDC-CP01-070"  # Claims validation failed
-    CP01_GUARD_UNDERWRITING_FAILED = "MDC-CP01-071"     # Underwriting check failed
-    CP01_GUARD_DOUBLE_ENTRY_IMBALANCE = "MDC-CP01-072"  # Double-entry debit != credit
-    CP01_GUARD_PHI_NOT_ENCRYPTED = "MDC-CP01-073"       # PHI field not encrypted
-    CP01_GUARD_MINIMUM_NECESSARY_VIOLATION = "MDC-CP01-074"  # Excessive PHI access
-    
-    # FRAUD_DETECTION (DP12 Payments)
-    CP01_GUARD_FRAUD_VELOCITY_EXCEEDED = "MDC-CP01-075"  # Transaction velocity exceeded
-    CP01_GUARD_FRAUD_AMOUNT_THRESHOLD = "MDC-CP01-076"   # Amount threshold exceeded
-    CP01_GUARD_FRAUD_PATTERN_ANOMALY = "MDC-CP01-077"    # Pattern anomaly detected
-    CP01_GUARD_FRAUD_EXTERNAL_BLOCKED = "MDC-CP01-078"   # External fraud service blocked
-    CP01_GUARD_FRAUD_EXTERNAL_TIMEOUT = "MDC-CP01-079"   # External fraud API timeout
-    
-    # SAFETY_CHECK (DP05 Manufacturing)
-    CP01_GUARD_SAFETY_EQUIPMENT_UNSAFE = "MDC-CP01-080"  # Equipment not safe
-    CP01_GUARD_SAFETY_PERSONNEL_UNCERTIFIED = "MDC-CP01-081"  # Personnel not certified
-    CP01_GUARD_SAFETY_PROCESS_NON_COMPLIANT = "MDC-CP01-082"  # Process non-compliant
-    CP01_GUARD_SAFETY_HAZARD_DETECTED = "MDC-CP01-083"   # Hazard detected
-    
-    # CLAIMS_VALIDATION (DP14 Insurance)
-    CP01_GUARD_CLAIMS_NOT_COVERED = "MDC-CP01-084"       # Claim not covered by policy
-    CP01_GUARD_CLAIMS_OUTSIDE_PERIOD = "MDC-CP01-085"    # Claim outside coverage period
-    CP01_GUARD_CLAIMS_EXCEEDS_LIMIT = "MDC-CP01-086"     # Claim exceeds policy limit
-    CP01_GUARD_CLAIMS_EXCLUDED = "MDC-CP01-087"          # Claim excluded by policy
-
-    # DOUBLE_ENTRY_BOOKKEEPING (DP11 Banking Core)
-    CP01_EFFECT_DOUBLE_ENTRY_MISMATCH = "MDC-CP01-088"   # Debit != Credit trong double-entry
-    CP01_EFFECT_LEDGER_ENTRY_FAILED = "MDC-CP01-089"     # Không thể tạo ledger entry
-    CP01_EFFECT_TRANSACTION_IMMUTABLE = "MDC-CP01-090"   # Transaction đã committed
-
-    # INVENTORY_RESERVATION (DP05 Manufacturing)
-    CP01_EFFECT_INSUFFICIENT_STOCK = "MDC-CP01-091"      # Không đủ hàng tồn kho
-    CP01_EFFECT_RESERVATION_EXPIRED = "MDC-CP01-092"     # Reservation đã hết hạn
-    CP01_EFFECT_RESERVATION_NOT_FOUND = "MDC-CP01-093"   # Reservation không tồn tại
-
-    # PAYMENT_GATEWAY (DP12 Payments)
-    CP01_EFFECT_PAYMENT_FAILED = "MDC-CP01-094"          # Payment bị gateway reject
-    CP01_EFFECT_PAYMENT_GATEWAY_ERROR = "MDC-CP01-095"   # Gateway connection error
-    CP01_EFFECT_PAYMENT_DUPLICATE = "MDC-CP01-096"       # Idempotency key đã tồn tại
-
-    # CLINICAL_WORKFLOW (DP09 Healthcare)
-    CP01_EFFECT_INVALID_STATE_TRANSITION = "MDC-CP01-097"  # State transition không hợp lệ
-    CP01_EFFECT_CLINICAL_CHECK_FAILED = "MDC-CP01-098"    # Clinical decision check fail
-    CP01_EFFECT_PROVIDER_NOT_CERTIFIED = "MDC-CP01-099"   # Provider không có chứng chỉ
-
-    # =========================================================================
-    # CP01: Transaction Errors
-    # =========================================================================
     CP01_TRANSACTION_NOT_ACTIVE = "MDC-CP01-062"
     CP01_TRANSACTION_COMMIT_FAILED = "MDC-CP01-063"
     CP01_TRANSACTION_ROLLBACK_FAILED = "MDC-CP01-064"
     CP01_TRANSACTION_ALREADY_COMMITTED = "MDC-CP01-065"
     CP01_TRANSACTION_ALREADY_ROLLED_BACK = "MDC-CP01-066"
-    
+    CP01_GUARD_COMPLIANCE_LOG_FAILED = "MDC-CP01-068"
+    CP01_GUARD_EXTERNAL_API_TIMEOUT = "MDC-CP01-069"
+    CP01_GUARD_CLAIMS_VALIDATION_FAILED = "MDC-CP01-070"
+    CP01_GUARD_UNDERWRITING_FAILED = "MDC-CP01-071"
+    CP01_GUARD_DOUBLE_ENTRY_IMBALANCE = "MDC-CP01-072"
+    CP01_GUARD_PHI_NOT_ENCRYPTED = "MDC-CP01-073"
+    CP01_GUARD_MINIMUM_NECESSARY_VIOLATION = "MDC-CP01-074"
+    CP01_GUARD_FRAUD_VELOCITY_EXCEEDED = "MDC-CP01-075"
+    CP01_GUARD_FRAUD_AMOUNT_THRESHOLD = "MDC-CP01-076"
+    CP01_GUARD_FRAUD_PATTERN_ANOMALY = "MDC-CP01-077"
+    CP01_GUARD_FRAUD_EXTERNAL_BLOCKED = "MDC-CP01-078"
+    CP01_GUARD_FRAUD_EXTERNAL_TIMEOUT = "MDC-CP01-079"
+    CP01_GUARD_SAFETY_EQUIPMENT_UNSAFE = "MDC-CP01-080"
+    CP01_GUARD_SAFETY_PERSONNEL_UNCERTIFIED = "MDC-CP01-081"
+    CP01_GUARD_SAFETY_PROCESS_NON_COMPLIANT = "MDC-CP01-082"
+    CP01_GUARD_SAFETY_HAZARD_DETECTED = "MDC-CP01-083"
+    CP01_GUARD_CLAIMS_NOT_COVERED = "MDC-CP01-084"
+    CP01_GUARD_CLAIMS_OUTSIDE_PERIOD = "MDC-CP01-085"
+    CP01_GUARD_CLAIMS_EXCEEDS_LIMIT = "MDC-CP01-086"
+    CP01_GUARD_CLAIMS_EXCLUDED = "MDC-CP01-087"
+    CP01_EFFECT_DOUBLE_ENTRY_MISMATCH = "MDC-CP01-088"
+    CP01_EFFECT_LEDGER_ENTRY_FAILED = "MDC-CP01-089"
+    CP01_EFFECT_TRANSACTION_IMMUTABLE = "MDC-CP01-090"
+    CP01_EFFECT_INSUFFICIENT_STOCK = "MDC-CP01-091"
+    CP01_EFFECT_RESERVATION_EXPIRED = "MDC-CP01-092"
+    CP01_EFFECT_RESERVATION_NOT_FOUND = "MDC-CP01-093"
+    CP01_EFFECT_PAYMENT_FAILED = "MDC-CP01-094"
+    CP01_EFFECT_PAYMENT_GATEWAY_ERROR = "MDC-CP01-095"
+    CP01_EFFECT_PAYMENT_DUPLICATE = "MDC-CP01-096"
+    CP01_EFFECT_INVALID_STATE_TRANSITION = "MDC-CP01-097"
+    CP01_EFFECT_CLINICAL_CHECK_FAILED = "MDC-CP01-098"
+    CP01_EFFECT_PROVIDER_NOT_CERTIFIED = "MDC-CP01-099"
+
     # =========================================================================
     # CP02: Multi-Tenant Architecture Errors
     # =========================================================================
@@ -395,7 +349,7 @@ class ErrorCode(str, Enum):
     CP02_TENANT_MISMATCH = "MDC-CP02-003"
     CP02_TENANT_CONTEXT_NOT_SET = "MDC-CP02-004"
     CP02_TENANT_FILTER_MISSING = "MDC-CP02-005"
-    
+
     # =========================================================================
     # CP03: Authentication & Authorization Errors
     # =========================================================================
@@ -405,7 +359,7 @@ class ErrorCode(str, Enum):
     CP03_CREDENTIALS_INVALID = "MDC-CP03-004"
     CP03_AUTH_CONFIG_INVALID = "MDC-CP03-005"
     CP03_JWT_SECRET_MISSING = "MDC-CP03-006"
-    
+
     # =========================================================================
     # CP04: RBAC & Policy Engine Errors
     # =========================================================================
@@ -417,20 +371,6 @@ class ErrorCode(str, Enum):
     CP04_PERMISSION_DENIED = "MDC-CP04-006"
     CP04_POLICY_SYNTAX_ERROR = "MDC-CP04-007"
     CP04_ROLE_CYCLE_DETECTED = "MDC-CP04-008"
-
-    # =========================================================================
-    # CP08: Database & Data Access Layer Errors
-    # =========================================================================
-    CP08_EMPTY_NAME = "MDC-CP08-001"
-    CP08_INVALID_COLUMN_TYPE = "MDC-CP08-002"
-    CP08_DUPLICATE_COLUMN_NAME = "MDC-CP08-003"
-    CP08_DUPLICATE_TABLE_NAME = "MDC-CP08-004"
-    CP08_DSL_PARSE_ERROR = "MDC-CP08-005"
-    CP08_MISSING_DATASOURCE = "MDC-CP08-006"
-    CP08_CIRCULAR_FOREIGN_KEY = "MDC-CP08-007"
-    CP08_MISSING_PRIMARY_KEY = "MDC-CP08-008"
-    CP08_MIGRATION_ERROR = "MDC-CP08-009"
-    CP08_RUNTIME_DATASOURCE_ERROR = "MDC-CP08-010"
 
     # =========================================================================
     # CP05: Event Emitter Errors
@@ -447,6 +387,20 @@ class ErrorCode(str, Enum):
     EVT_TENANT_ISOLATION_VIOLATION = "MDC-EVT-010"
 
     # =========================================================================
+    # CP08: Database & Data Access Layer Errors
+    # =========================================================================
+    CP08_EMPTY_NAME = "MDC-CP08-001"
+    CP08_INVALID_COLUMN_TYPE = "MDC-CP08-002"
+    CP08_DUPLICATE_COLUMN_NAME = "MDC-CP08-003"
+    CP08_DUPLICATE_TABLE_NAME = "MDC-CP08-004"
+    CP08_DSL_PARSE_ERROR = "MDC-CP08-005"
+    CP08_MISSING_DATASOURCE = "MDC-CP08-006"
+    CP08_CIRCULAR_FOREIGN_KEY = "MDC-CP08-007"
+    CP08_MISSING_PRIMARY_KEY = "MDC-CP08-008"
+    CP08_MIGRATION_ERROR = "MDC-CP08-009"
+    CP08_RUNTIME_DATASOURCE_ERROR = "MDC-CP08-010"
+
+    # =========================================================================
     # CP12: Notification & Communication Errors
     # =========================================================================
     CP12_NOTIFICATION_CHANNEL_NOT_SUPPORTED = "MDC-CP12-001"
@@ -457,17 +411,32 @@ class ErrorCode(str, Enum):
     CP12_NOTIFICATION_RATE_LIMIT_EXCEEDED = "MDC-CP12-006"
     CP12_NOTIFICATION_INVALID_RECIPIENT = "MDC-CP12-007"
 
+    # =========================================================================
+    # CP14: Audit Trail & Compliance Errors
+    # =========================================================================
+    CP14_AUDIT_EMPTY_ID = "MDC-CP14-001"
+    CP14_AUDIT_INVALID_ACTION = "MDC-CP14-002"
+    CP14_AUDIT_INVALID_ACTOR_TYPE = "MDC-CP14-003"
+    CP14_AUDIT_INVALID_LEVEL = "MDC-CP14-004"
+    CP14_AUDIT_RETENTION_INVALID = "MDC-CP14-005"
+    CP14_AUDIT_ARCHIVE_EXCEEDS_RETENTION = "MDC-CP14-006"
+    CP14_AUDIT_CONTROL_INVALID_STANDARD = "MDC-CP14-007"
+    CP14_AUDIT_CONTROL_INVALID_TYPE = "MDC-CP14-008"
+    CP14_AUDIT_CONTROL_INVALID_ENFORCEMENT = "MDC-CP14-009"
+    CP14_AUDIT_HASH_VERIFICATION_FAILED = "MDC-CP14-010"
+
+
 class ExitCode(Enum):
     """
     Exit codes cho CLI commands.
-    
+
     Theo standard Unix conventions:
     - 0: Success
     - 1-125: Errors from command
     - 126: Command invoked cannot execute
     - 127: Command not found
     - 128+n: Fatal error signal
-    
+
     Midicoder exit codes:
     - 0: Success
     - 1: Generic Error
@@ -479,7 +448,7 @@ class ExitCode(Enum):
     - 7: Already Initialized
     - 130: Interrupt (Ctrl+C)
     """
-    
+
     SUCCESS = 0
     GENERIC_ERROR = 1
     BAD_ARGUMENTS = 2
@@ -489,15 +458,15 @@ class ExitCode(Enum):
     COMMAND_NOT_FOUND = 6
     ALREADY_INITIALIZED = 7
     INTERRUPT = 130
-    
+
     @classmethod
     def get_description(cls, code: int) -> str:
         """
         Lấy mô tả tiếng Việt cho exit code.
-        
+
         Args:
             code: Exit code integer
-            
+
         Returns:
             Mô tả tiếng Việt của exit code
         """
@@ -714,7 +683,7 @@ class MidicoderErrorManager:
         ErrorCode.PREVIEW_STOP_FAILED: "Không thể stop preview services.",
         ErrorCode.PREVIEW_RESTART_FAILED: "Không thể restart preview services.",
         ErrorCode.PREVIEW_HEALTH_CHECK_TIMEOUT: "Timeout chờ services healthy. Vui lòng kiểm tra logs.",
-        
+
         # Invariant Enforcement Errors
         ErrorCode.INV_NOT_REGISTERED: "Invariant không được đăng ký trong registry.",
         ErrorCode.INV_VALIDATION_FAILED: "Validation invariant thất bại.",
@@ -738,7 +707,7 @@ class MidicoderErrorManager:
         ErrorCode.INFRA_TEMPLATE_RENDER_FAILED: "Không thể render Docker Compose template.",
         ErrorCode.INFRA_WRITE_FAILED: "Không thể ghi file docker-compose.yml.",
         ErrorCode.INFRA_INVALID_CONFIG: "Infrastructure configuration không hợp lệ.",
-        
+
         # CP01 Value Object Errors
         ErrorCode.CP01_VALUE_OBJECT_NOT_FOUND: "Value Object không tìm thấy trong DSL.",
         ErrorCode.CP01_VALUE_OBJECT_INVALID_FIELD_TYPE: "Field type không hợp lệ cho Value Object.",
@@ -750,7 +719,7 @@ class MidicoderErrorManager:
         ErrorCode.CP01_VALUE_OBJECT_COMPARABLE_NO_HASH: "Comparable Value Object cần __hash__ method.",
         ErrorCode.CP01_VALUE_OBJECT_IMMUTABLE_HAS_SETTER: "Immutable Value Object không thể có setter.",
         ErrorCode.CP01_VALUE_OBJECT_INVALID_TAG: "Tag không hợp lệ cho Value Object.",
-        
+
         # Version Management Errors
         ErrorCode.VERSION_NOT_FOUND: "Version không tồn tại. Vui lòng kiểm tra tên version.",
         ErrorCode.VERSION_INVALID_NAME: "Tên version không hợp lệ. Sử dụng SemVer format (ví dụ: v1.0.0, v1.0.1-alpha).",
@@ -760,7 +729,7 @@ class MidicoderErrorManager:
         ErrorCode.VERSION_CLEANUP_FAILED: "Auto-cleanup version thất bại.",
         ErrorCode.VERSION_METADATA_INVALID: "Version metadata không hợp lệ.",
         ErrorCode.VERSION_ALREADY_EXISTS: "Version đã tồn tại. Vui lòng chọn tên khác.",
-        
+
         # Index Command Errors
         ErrorCode.INDEX_PROJECT_NOT_FOUND: "Không tìm thấy project directory. Hãy chạy `midicoder init` trước.",
         ErrorCode.INDEX_NEO4J_CONNECTION_FAILED: "Không thể kết nối đến Neo4j. Vui lòng kiểm tra Neo4j Docker container đang chạy.",
@@ -788,6 +757,18 @@ class MidicoderErrorManager:
         ErrorCode.CP08_MISSING_PRIMARY_KEY: "Model có columns nhưng không có primary key.",
         ErrorCode.CP08_MIGRATION_ERROR: "Lỗi generate migration file.",
         ErrorCode.CP08_RUNTIME_DATASOURCE_ERROR: "Lỗi runtime datasource connection.",
+
+        # CP14 Audit Trail & Compliance Errors
+        ErrorCode.CP14_AUDIT_EMPTY_ID: "ID không được để trống (audit_rule/compliance_control).",
+        ErrorCode.CP14_AUDIT_INVALID_ACTION: "Audit action type không hợp lệ.",
+        ErrorCode.CP14_AUDIT_INVALID_ACTOR_TYPE: "Actor type không hợp lệ.",
+        ErrorCode.CP14_AUDIT_INVALID_LEVEL: "Audit level không hợp lệ.",
+        ErrorCode.CP14_AUDIT_RETENTION_INVALID: "Retention days phải lớn hơn 0.",
+        ErrorCode.CP14_AUDIT_ARCHIVE_EXCEEDS_RETENTION: "Archive days không được lớn hơn retention days.",
+        ErrorCode.CP14_AUDIT_CONTROL_INVALID_STANDARD: "Compliance standard không hợp lệ.",
+        ErrorCode.CP14_AUDIT_CONTROL_INVALID_TYPE: "Control type không hợp lệ.",
+        ErrorCode.CP14_AUDIT_CONTROL_INVALID_ENFORCEMENT: "Enforcement level không hợp lệ.",
+        ErrorCode.CP14_AUDIT_HASH_VERIFICATION_FAILED: "Xác minh hash integrity thất bại.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {
@@ -931,6 +912,44 @@ class MidicoderErrorManager:
             "Kiểm tra connection_string hợp lệ",
             "Đảm bảo database server đang chạy",
             "Kiểm tra network connectivity",
+        ],
+
+        # CP14 Audit Trail & Compliance Errors
+        ErrorCode.CP14_AUDIT_EMPTY_ID: [
+            "Kiểm tra ID của audit_rule hoặc compliance_control không được để trống",
+            "Đảm bảo field 'id' có giá trị duy nhất",
+        ],
+        ErrorCode.CP14_AUDIT_INVALID_ACTION: [
+            "Kiểm tra action type nằm trong catalog: CREATE, UPDATE, DELETE, READ, LOGIN, LOGOUT, EXPORT, APPROVE, REJECT, CUSTOM",
+            "Xem documentation cho supported audit actions",
+        ],
+        ErrorCode.CP14_AUDIT_INVALID_ACTOR_TYPE: [
+            "Kiểm tra actor type nằm trong catalog: user, system, background_job",
+        ],
+        ErrorCode.CP14_AUDIT_INVALID_LEVEL: [
+            "Kiểm tra audit level nằm trong catalog: basic, detailed",
+        ],
+        ErrorCode.CP14_AUDIT_RETENTION_INVALID: [
+            "Đặt retention_days > 0",
+            "Xem yêu cầu compliance standard về retention period tối thiểu",
+        ],
+        ErrorCode.CP14_AUDIT_ARCHIVE_EXCEEDS_RETENTION: [
+            "Đặt archive_after_days < retention_days",
+            "Archive phải xảy ra trước khi retention period kết thúc",
+        ],
+        ErrorCode.CP14_AUDIT_CONTROL_INVALID_STANDARD: [
+            "Kiểm tra standard nằm trong catalog: sox, hipaa, gdpr, pci_dss, custom",
+            "Xem documentation cho supported compliance standards",
+        ],
+        ErrorCode.CP14_AUDIT_CONTROL_INVALID_TYPE: [
+            "Kiểm tra control_type nằm trong catalog: preventive, detective, corrective",
+        ],
+        ErrorCode.CP14_AUDIT_CONTROL_INVALID_ENFORCEMENT: [
+            "Kiểm tra enforcement_level nằm trong catalog: compile, runtime, both",
+        ],
+        ErrorCode.CP14_AUDIT_HASH_VERIFICATION_FAILED: [
+            "Kiểm tra audit log không bị tamper",
+            "Xét lại storage integrity của audit logs",
         ],
     }
 
