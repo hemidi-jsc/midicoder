@@ -1,1799 +1,1738 @@
-# Midicoder CE v1.0.0 - Taxonomy Definition
-#
-# This file defines the canonical taxonomy for Core Packs (CP), Domain Packs (DP),
-# and Regulatory Overlays (RX) used across the entire Midicoder CE pipeline.
-#
-# Version: 1.0.0
-# Created: 2026-04-17
-# Status: APPROVED
-#
-# Usage:
-#   - All blueprints MUST reference packs/overlays from this taxonomy
-#   - IDs are immutable after v1.0.0 release
-#   - New additions require architectural review
-#
----
-
 metadata:
-  version: "1.0.0"
+  version: 1.0.0
   created_date: "2026-04-17"
-  updated_date: "2026-04-17"
-  schema_version: "taxonomy-v1"
-  status: "approved"
-
-# ============================================================================
-# CORE PACKS (CP)
-# ============================================================================
-# Core Packs are the compiler substrate - universal capabilities required for
-# all web applications regardless of domain. These are first-party curated,
-# not plugin-based, to maintain determinism and avoid lock-in.
-#
-# Phase definitions:
-#   - P0: Critical path, required for all blueprints
-#   - P1: High priority, required for most production apps
-#   - P2: Standard features, commonly needed
-#   - P3: Advanced features, specialized use cases
-#   - P4: Experimental/future, opt-in only
-# ============================================================================
-
+  updated_date: "2026-05-06"
+  schema_version: taxonomy-v1
+  status: approved
 core_packs:
-  # --------------------------------------------------------------------------
-  # P0 - Critical Path (Required for All Blueprints)
-  # --------------------------------------------------------------------------
-
-  - id: "CP01"
-    name: "Domain Model DSL & IR Builder"
-    internal_id: "cp1-domain-model"
-    phase: "P0"
-    description: "Core domain primitives: entities, value objects, commands, queries, workflows"
+  - id: CP01
+    name: Domain Model DSL & IR Builder
+    internal_id: cp1-domain-model
+    phase: P0
+    description: "Core domain primitives: entities, value objects, commands,
+      queries, workflows"
     definitions_count: 6
     obligations_count: 2
-    dependencies: []
-    category: "domain-modeling"
-    status: "stable"
-
-  - id: "CP02"
-    name: "Multi-Tenant Architecture Generator"
-    internal_id: "cp2-multi-tenant"
-    phase: "P0"
-    description: "Tenant isolation strategies and provisioning workflows"
+    depends_on: []
+    category: domain-modeling
+    status: stable
+    version: 1.0.0
+  - id: CP02
+    name: Multi-Tenant Architecture Generator
+    internal_id: cp2-multi-tenant
+    phase: P0
+    description: Tenant isolation strategies and provisioning workflows
     definitions_count: 2
     obligations_count: 1
-    dependencies: ["CP01"]
-    category: "architecture"
-    status: "developing"
-
-  - id: "CP03"
-    name: "Authentication & Authorization Framework"
-    internal_id: "cp3-auth"
-    phase: "P0"
-    description: "JWT/OAuth2 baseline, session management, rate limiting"
+    depends_on:
+      - CP01
+    category: architecture
+    status: developing
+    version: 1.0.0
+  - id: CP03
+    name: Authentication & Authorization Framework
+    internal_id: cp3-auth
+    phase: P0
+    description: JWT/OAuth2 baseline, session management, rate limiting
     definitions_count: 2
     obligations_count: 2
-    dependencies: ["CP01", "CP02"]
-    category: "security"
-    status: "stable"
-
-  - id: "CP04"
-    name: "RBAC & Policy Engine"
-    internal_id: "cp4-rbac"
-    phase: "P0"
-    description: "Role-based access control, permissions, policy rules"
+    depends_on:
+      - CP01
+      - CP02
+    category: security
+    status: stable
+    version: 1.0.0
+  - id: CP04
+    name: RBAC & Policy Engine
+    internal_id: cp4-rbac
+    phase: P0
+    description: Role-based access control, permissions, policy rules
     definitions_count: 4
     obligations_count: 1
-    dependencies: ["CP02", "CP03"]
-    category: "security"
-    status: "stable"
-
-  - id: "CP07"
-    name: "Infrastructure as Code Generator"
-    internal_id: "cp7-iac"
-    phase: "P0"
-    description: "Local runtime (docker-compose) and AWS baseline profiles"
+    depends_on:
+      - CP02
+      - CP03
+    category: security
+    status: stable
+    version: 1.0.0
+  - id: CP07
+    name: Infrastructure as Code Generator
+    internal_id: cp7-iac
+    phase: P0
+    description: Local runtime (docker-compose) and AWS baseline profiles
     definitions_count: 2
     obligations_count: 1
-    dependencies: []
-    category: "infrastructure"
-    status: "developing"
-
-  # --------------------------------------------------------------------------
-  # P1 - High Priority (Most Production Apps)
-  # --------------------------------------------------------------------------
-
-  - id: "CP05"
-    name: "Event-Driven Architecture Generator"
-    internal_id: "cp5-event-driven"
-    phase: "P1"
-    description: "Event topics, publishing, subscriptions, outbox pattern"
+    depends_on: []
+    category: infrastructure
+    status: developing
+    version: 1.0.0
+  - id: CP05
+    name: Event-Driven Architecture Generator
+    internal_id: cp5-event-driven
+    phase: P1
+    description: Event topics, publishing, subscriptions, outbox pattern
     definitions_count: 4
     obligations_count: 1
-    dependencies: ["CP01"]
-    category: "architecture"
-    status: "stable"
-
-  - id: "CP06"
-    name: "API Gateway & Service Mesh Generator"
-    internal_id: "cp6-api-gateway"
-    phase: "P1"
-    description: "Gateway profiles, routing, upstream binding"
+    depends_on:
+      - CP01
+    category: architecture
+    status: stable
+    version: 1.0.0
+  - id: CP06
+    name: API Gateway & Service Mesh Generator
+    internal_id: cp6-api-gateway
+    phase: P1
+    description: Gateway profiles, routing, upstream binding
     definitions_count: 2
     obligations_count: 0
-    dependencies: ["CP01", "CP05"]
-    category: "integration"
-    status: "developing"
-
-  - id: "CP08"
-    name: "Database & Data Access Layer Generator"
-    internal_id: "cp8-database"
-    phase: "P1"
-    description: "Datasource declarations, table mappings, column definitions"
+    depends_on:
+      - CP01
+      - CP05
+    category: integration
+    status: developing
+    version: 1.0.0
+  - id: CP08
+    name: Database & Data Access Layer Generator
+    internal_id: cp8-database
+    phase: P1
+    description: Datasource declarations, table mappings, column definitions
     definitions_count: 2
     obligations_count: 1
-    dependencies: ["CP01"]
-    category: "persistence"
-    status: "developing"
-
-  - id: "CP09"
-    name: "Caching & Performance Layer Generator"
-    internal_id: "cp9-cache"
-    phase: "P1"
-    description: "Cache profiles, bindings, invalidation strategies"
+    depends_on:
+      - CP01
+    category: persistence
+    status: developing
+    version: 1.0.0
+  - id: CP09
+    name: Caching & Performance Layer Generator
+    internal_id: cp9-cache
+    phase: P1
+    description: Cache profiles, bindings, invalidation strategies
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP08"]
-    category: "performance"
-    status: "developing"
-
-  - id: "CP10"
-    name: "Search & Indexing Generator"
-    internal_id: "cp10-search"
-    phase: "P1"
-    description: "Search index declarations, query bindings, sync strategies"
+    depends_on:
+      - CP08
+    category: performance
+    status: developing
+    version: 1.0.0
+  - id: CP10
+    name: Search & Indexing Generator
+    internal_id: cp10-search
+    phase: P1
+    description: Search index declarations, query bindings, sync strategies
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP08"]
-    category: "performance"
-    status: "developing"
-
-  - id: "CP11"
-    name: "File Storage & Media Processing Generator"
-    internal_id: "cp11-file-media"
-    phase: "P1"
-    description: "File storage profiles, upload policies, media transforms"
+    depends_on:
+      - CP08
+    category: performance
+    status: developing
+    version: 1.0.0
+  - id: CP11
+    name: File Storage & Media Processing Generator
+    internal_id: cp11-file-media
+    phase: P1
+    description: File storage profiles, upload policies, media transforms
     definitions_count: 3
     obligations_count: 1
-    dependencies: ["CP07"]
-    category: "storage"
-    status: "developing"
-
-  - id: "CP12"
-    name: "Notification & Communication Generator"
-    internal_id: "cp12-notification"
-    phase: "P1"
-    description: "Notification channels, templates, dispatch workflows"
+    depends_on:
+      - CP07
+    category: storage
+    status: developing
+    version: 1.0.0
+  - id: CP12
+    name: Notification & Communication Generator
+    internal_id: cp12-notification
+    phase: P1
+    description: Notification channels, templates, dispatch workflows
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP05"]
-    category: "communication"
-    status: "stable"
-
-  - id: "CP13"
-    name: "Background Job & Workflow Generator"
-    internal_id: "cp13-workflow-runtime"
-    phase: "P1"
-    description: "Job queues, background workers, workflow orchestration"
+    depends_on:
+      - CP05
+    category: communication
+    status: stable
+    version: 1.0.0
+  - id: CP13
+    name: Background Job & Workflow Generator
+    internal_id: cp13-workflow-runtime
+    phase: P1
+    description: Job queues, background workers, workflow orchestration
     definitions_count: 3
     obligations_count: 1
-    dependencies: ["CP05"]
-    category: "runtime"
-    status: "developing"
-
-  - id: "CP14"
-    name: "Audit Trail & Compliance Generator"
-    internal_id: "cp14-audit-compliance"
-    phase: "P1"
-    description: "Audit trails, audit rules, compliance controls"
+    depends_on:
+      - CP05
+    category: runtime
+    status: developing
+    version: 1.0.0
+  - id: CP14
+    name: Audit Trail & Compliance Generator
+    internal_id: cp14-audit-compliance
+    phase: P1
+    description: Audit trails, audit rules, compliance controls
     definitions_count: 3
     obligations_count: 1
-    dependencies: ["CP01"]
-    category: "compliance"
-    status: "developing"
-
-  - id: "CP15"
-    name: "Observability Stack Generator"
-    internal_id: "cp15-observability"
-    phase: "P1"
-    description: "Logging, metrics, tracing baseline profiles"
+    depends_on:
+      - CP01
+    category: compliance
+    status: developing
+    version: 1.0.0
+  - id: CP15
+    name: Observability Stack Generator
+    internal_id: cp15-observability
+    phase: P1
+    description: Logging, metrics, tracing baseline profiles
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP07"]
-    category: "observability"
-    status: "planned"
-
-  - id: "CP23"
-    name: "Testing Framework Generator"
-    internal_id: "cp23-testing-framework"
-    phase: "P1"
-    description: "Test suites, test cases, test policies"
+    depends_on:
+      - CP07
+    category: observability
+    status: planned
+    version: 1.0.0
+  - id: CP23
+    name: Testing Framework Generator
+    internal_id: cp23-testing-framework
+    phase: P1
+    description: Test suites, test cases, test policies
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP01"]
-    category: "quality"
-    status: "planned"
-
-  # --------------------------------------------------------------------------
-  # P2 - Standard Features (Commonly Needed)
-  # --------------------------------------------------------------------------
-
-  - id: "CP16"
-    name: "API & System Monitoring Generator"
-    internal_id: "cp16-monitoring"
-    phase: "P2"
-    description: "Dashboards, SLI definitions, alert policies"
+    depends_on:
+      - CP01
+    category: quality
+    status: planned
+    version: 1.0.0
+  - id: CP16
+    name: API & System Monitoring Generator
+    internal_id: cp16-monitoring
+    phase: P2
+    description: Dashboards, SLI definitions, alert policies
     definitions_count: 3
     obligations_count: 1
-    dependencies: ["CP15"]
-    category: "observability"
-    status: "planned"
-
-  - id: "CP17"
-    name: "Business Intelligence & Analytics Generator"
-    internal_id: "cp17-bi-analytics"
-    phase: "P2"
-    description: "Analytics models, dashboards, scheduled jobs"
+    depends_on:
+      - CP15
+    category: observability
+    status: planned
+    version: 1.0.0
+  - id: CP17
+    name: Business Intelligence & Analytics Generator
+    internal_id: cp17-bi-analytics
+    phase: P2
+    description: Analytics models, dashboards, scheduled jobs
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP08", "CP15"]
-    category: "analytics"
-    status: "planned"
-
-  - id: "CP18"
-    name: "Frontend Framework Generator"
-    internal_id: "cp18-frontend-framework"
-    phase: "P2"
-    description: "Frontend app shells, routing, state stores"
+    depends_on:
+      - CP08
+      - CP15
+    category: analytics
+    status: planned
+    version: 1.0.0
+  - id: CP18
+    name: Frontend Framework Generator
+    internal_id: cp18-frontend-framework
+    phase: P2
+    description: Frontend app shells, routing, state stores
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP01"]
-    category: "frontend"
-    status: "developing"
-
-  - id: "CP19"
-    name: "UI Component Generator"
-    internal_id: "cp19-ui-components"
-    phase: "P2"
-    description: "Reusable components, forms, tables"
+    depends_on:
+      - CP01
+    category: frontend
+    status: developing
+    version: 1.0.0
+  - id: CP19
+    name: UI Component Generator
+    internal_id: cp19-ui-components
+    phase: P2
+    description: Reusable components, forms, tables
     definitions_count: 3
     obligations_count: 1
-    dependencies: ["CP18"]
-    category: "frontend"
-    status: "developing"
-
-  - id: "CP20"
-    name: "API Client & Integration Generator"
-    internal_id: "cp20-api-client"
-    phase: "P2"
-    description: "API clients, bindings, realtime bridges"
+    depends_on:
+      - CP18
+    category: frontend
+    status: developing
+    version: 1.0.0
+  - id: CP20
+    name: API Client & Integration Generator
+    internal_id: cp20-api-client
+    phase: P2
+    description: API clients, bindings, realtime bridges
     definitions_count: 3
     obligations_count: 3
-    dependencies: ["CP06", "CP18"]
-    category: "frontend"
-    status: "developing"
-
-  - id: "CP21"
-    name: "Authentication UI Generator"
-    internal_id: "cp21-auth-ui"
-    phase: "P2"
-    description: "Auth UI shells, route guards, session handling"
+    depends_on:
+      - CP06
+      - CP18
+    category: frontend
+    status: developing
+    version: 1.0.0
+  - id: CP21
+    name: Authentication UI Generator
+    internal_id: cp21-auth-ui
+    phase: P2
+    description: Auth UI shells, route guards, session handling
     definitions_count: 3
     obligations_count: 0
-    dependencies: ["CP03", "CP18"]
-    category: "frontend"
-    status: "planned"
-
-  - id: "CP22"
-    name: "Real-time UI Generator"
-    internal_id: "cp22-realtime-ui"
-    phase: "P2"
-    description: "Realtime channels, widgets, presence indicators"
+    depends_on:
+      - CP03
+      - CP18
+    category: frontend
+    status: planned
+    version: 1.0.0
+  - id: CP22
+    name: Real-time UI Generator
+    internal_id: cp22-realtime-ui
+    phase: P2
+    description: Realtime channels, widgets, presence indicators
     definitions_count: 3
     obligations_count: 1
-    dependencies: ["CP05", "CP18"]
-    category: "frontend"
-    status: "planned"
-
-  # --------------------------------------------------------------------------
-  # P3 - Advanced Features (Specialized Use Cases)
-  # --------------------------------------------------------------------------
-
-  - id: "CP24"
-    name: "Code Quality & Security Scanner Generator"
-    internal_id: "cp24-quality-security"
-    phase: "P3"
-    description: "Quality profiles, security scan rules, quality gates"
+    depends_on:
+      - CP05
+      - CP18
+    category: frontend
+    status: planned
+    version: 1.0.0
+  - id: CP24
+    name: Code Quality & Security Scanner Generator
+    internal_id: cp24-quality-security
+    phase: P3
+    description: Quality profiles, security scan rules, quality gates
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP23"]
-    category: "quality"
-    status: "planned"
-
-  - id: "CP25"
-    name: "Performance Testing Generator"
-    internal_id: "cp25-performance-testing"
-    phase: "P3"
-    description: "Performance suites, scenarios, baselines"
+    depends_on:
+      - CP23
+    category: quality
+    status: planned
+    version: 1.0.0
+  - id: CP25
+    name: Performance Testing Generator
+    internal_id: cp25-performance-testing
+    phase: P3
+    description: Performance suites, scenarios, baselines
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP23"]
-    category: "quality"
-    status: "planned"
-
-  - id: "CP26"
-    name: "Documentation Generator"
-    internal_id: "cp26-documentation"
-    phase: "P3"
-    description: "Documentation portals, sections, endpoint docs"
+    depends_on:
+      - CP23
+    category: quality
+    status: planned
+    version: 1.0.0
+  - id: CP26
+    name: Documentation Generator
+    internal_id: cp26-documentation
+    phase: P3
+    description: Documentation portals, sections, endpoint docs
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP01"]
-    category: "documentation"
-    status: "planned"
-
-  # --------------------------------------------------------------------------
-  # P4 - Experimental/Future (Opt-in Only)
-  # --------------------------------------------------------------------------
-
-  - id: "CP27"
-    name: "Plugin System Generator"
-    internal_id: "cp27-plugin-system"
-    phase: "P4"
-    description: "Extension slots, contracts, policies"
+    depends_on:
+      - CP01
+    category: documentation
+    status: planned
+    version: 1.0.0
+  - id: CP27
+    name: Plugin System Generator
+    internal_id: cp27-plugin-system
+    phase: P4
+    description: Extension slots, contracts, policies
     definitions_count: 3
     obligations_count: 1
-    dependencies: ["CP01"]
-    category: "extensibility"
-    status: "experimental"
-
-  - id: "CP28"
-    name: "Custom Code Injection Generator"
-    internal_id: "cp28-custom-code"
-    phase: "P4"
-    description: "Custom code blocks, hooks, patch rules"
+    depends_on:
+      - CP01
+    category: extensibility
+    status: experimental
+    version: 1.0.0
+  - id: CP28
+    name: Custom Code Injection Generator
+    internal_id: cp28-custom-code
+    phase: P4
+    description: Custom code blocks, hooks, patch rules
     definitions_count: 3
     obligations_count: 1
-    dependencies: ["CP01"]
-    category: "extensibility"
-    status: "experimental"
-
-  - id: "CP29"
-    name: "Multi-Language Support Generator"
-    internal_id: "cp29-multi-language"
-    phase: "P4"
-    description: "Language profiles, i18n bundles, keysets"
+    depends_on:
+      - CP01
+    category: extensibility
+    status: experimental
+    version: 1.0.0
+  - id: CP29
+    name: Multi-Language Support Generator
+    internal_id: cp29-multi-language
+    phase: P4
+    description: Language profiles, i18n bundles, keysets
     definitions_count: 3
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP02"
-      - "CP03"
-      - "CP04"
-      - "CP05"
-      - "CP06"
-      - "CP07"
-      - "CP08"
-      - "CP09"
-      - "CP10"
-      - "CP11"
-      - "CP12"
-      - "CP13"
-      - "CP14"
-      - "CP15"
-      - "CP16"
-      - "CP17"
-      - "CP18"
-      - "CP19"
-      - "CP20"
-      - "CP21"
-      - "CP22"
-      - "CP23"
-      - "CP24"
-      - "CP25"
-      - "CP26"
-      - "CP27"
-      - "CP28"
-      - "CP31"
-      - "CP32"
-      - "CP33"
-      - "CP34"
-      - "CP35"
-      - "CP36"
-      - "CP37"
-      - "CP38"
-      - "CP39"
-      - "CP40"
-      - "CP41"
-      - "CP42"
-      - "CP43"
-      - "CP44"
-      - "CP45"
-      - "CP46"
-      - "CP47"
-      - "CP48"
-      - "CP49"
-      - "CP50"
-      - "CP51"
-      - "CP52"
-      - "CP53"
-    category: "internationalization"
-    status: "planned"
-
-  - id: "CP30"
-    name: "AI-Assisted Development Generator"
-    internal_id: "cp30-ai-assisted"
-    phase: "P4"
-    description: "AI assistant profiles, review policies, prompt templates"
+    depends_on:
+      - CP01
+      - CP02
+      - CP03
+      - CP04
+      - CP05
+      - CP06
+      - CP07
+      - CP08
+      - CP09
+      - CP10
+      - CP11
+      - CP12
+      - CP13
+      - CP14
+      - CP15
+      - CP16
+      - CP17
+      - CP18
+      - CP19
+      - CP20
+      - CP21
+      - CP22
+      - CP23
+      - CP24
+      - CP25
+      - CP26
+      - CP27
+      - CP28
+      - CP31
+      - CP32
+      - CP33
+      - CP34
+      - CP35
+      - CP36
+      - CP37
+      - CP38
+      - CP39
+      - CP40
+      - CP41
+      - CP42
+      - CP43
+      - CP44
+      - CP45
+      - CP46
+      - CP47
+      - CP48
+      - CP49
+      - CP50
+      - CP51
+      - CP52
+      - CP53
+    category: internationalization
+    status: planned
+    version: 1.0.0
+  - id: CP30
+    name: AI-Assisted Development Generator
+    internal_id: cp30-ai-assisted
+    phase: P4
+    description: AI assistant profiles, review policies, prompt templates
     definitions_count: 3
     obligations_count: 2
-    dependencies: ["CP01"]
-    category: "ai-assisted"
-    status: "planned"
-
-  # --------------------------------------------------------------------------
-  # P1 - Critical Runtime Capabilities (New)
-  # --------------------------------------------------------------------------
-
-  - id: "CP31"
-    name: "Scheduler & Cron Engine"
-    internal_id: "cp31-scheduler"
-    phase: "P1"
-    description: "Scheduled tasks, recurring jobs, cron expression, calendar-based scheduling"
+    depends_on:
+      - CP01
+    category: ai-assisted
+    status: planned
+    version: 1.0.0
+  - id: CP31
+    name: Scheduler & Cron Engine
+    internal_id: cp31-scheduler
+    phase: P1
+    description: Scheduled tasks, recurring jobs, cron expression, calendar-based scheduling
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP05"
-      - "CP13"
-      - "CP14"
-    category: "runtime"
-    status: "planned"
-
-  - id: "CP32"
-    name: "State Machine Engine"
-    internal_id: "cp32-state-machine"
-    phase: "P1"
-    description: "Finite state machine for complex entity lifecycle management"
+    depends_on:
+      - CP05
+      - CP13
+      - CP14
+    category: runtime
+    status: planned
+    version: 1.0.0
+  - id: CP32
+    name: State Machine Engine
+    internal_id: cp32-state-machine
+    phase: P1
+    description: Finite state machine for complex entity lifecycle management
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP05"
-      - "CP14"
-    category: "runtime"
-    status: "planned"
-
-  - id: "CP33"
-    name: "Financial Engine"
-    internal_id: "cp33-financial"
-    phase: "P1"
-    description: "Multi-currency arithmetic, FX rates, double-entry ledger, rounding rules"
+    depends_on:
+      - CP01
+      - CP05
+      - CP14
+    category: runtime
+    status: planned
+    version: 1.0.0
+  - id: CP33
+    name: Financial Engine
+    internal_id: cp33-financial
+    phase: P1
+    description: Multi-currency arithmetic, FX rates, double-entry ledger, rounding rules
     definitions_count: 5
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP08"
-      - "CP14"
-    category: "financial"
-    status: "planned"
-
-  - id: "CP34"
-    name: "Report & Document Generator"
-    internal_id: "cp34-reporting"
-    phase: "P1"
-    description: "PDF generation, Excel export, report templates, batch document processing"
+    depends_on:
+      - CP01
+      - CP08
+      - CP14
+    category: financial
+    status: planned
+    version: 1.0.0
+  - id: CP34
+    name: Report & Document Generator
+    internal_id: cp34-reporting
+    phase: P1
+    description: PDF generation, Excel export, report templates, batch document processing
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP08"
-      - "CP13"
-    category: "document"
-    status: "planned"
-
-  - id: "CP36"
-    name: "Tenant Onboarding & Subscription"
-    internal_id: "cp36-tenant-onboarding"
-    phase: "P1"
-    description: "Self-service tenant registration, verification, trial, subscription management"
+    depends_on:
+      - CP01
+      - CP08
+      - CP13
+    category: document
+    status: planned
+    version: 1.0.0
+  - id: CP36
+    name: Tenant Onboarding & Subscription
+    internal_id: cp36-tenant-onboarding
+    phase: P1
+    description: Self-service tenant registration, verification, trial, subscription
+      management
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP02"
-      - "CP03"
-      - "CP12"
-      - "CP33"
-    category: "architecture"
-    status: "planned"
-
-  - id: "CP37"
-    name: "Feature Flags & Dynamic Config"
-    internal_id: "cp37-feature-flags"
-    phase: "P1"
-    description: "Runtime feature toggle, A/B testing, dynamic settings per tenant/environment"
+    depends_on:
+      - CP02
+      - CP03
+      - CP12
+      - CP33
+    category: architecture
+    status: planned
+    version: 1.0.0
+  - id: CP37
+    name: Feature Flags & Dynamic Config
+    internal_id: cp37-feature-flags
+    phase: P1
+    description: Runtime feature toggle, A/B testing, dynamic settings per
+      tenant/environment
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP02"
-      - "CP14"
-    category: "runtime"
-    status: "planned"
-
-  - id: "CP39"
-    name: "i18n/L10n Runtime"
-    internal_id: "cp39-i18n-runtime"
-    phase: "P1"
-    description: "Multi-language support, locale-aware formatting, translation management"
+    depends_on:
+      - CP01
+      - CP02
+      - CP14
+    category: runtime
+    status: planned
+    version: 1.0.0
+  - id: CP39
+    name: i18n/L10n Runtime
+    internal_id: cp39-i18n-runtime
+    phase: P1
+    description: Multi-language support, locale-aware formatting, translation management
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP02"
-    category: "internationalization"
-    status: "planned"
-
-  - id: "CP40"
-    name: "Webhook & Outbound Integration Hub"
-    internal_id: "cp40-webhook"
-    phase: "P1"
-    description: "Webhook management, event delivery, retry policy, outbound API integration"
+    depends_on:
+      - CP01
+      - CP02
+    category: internationalization
+    status: planned
+    version: 1.0.0
+  - id: CP40
+    name: Webhook & Outbound Integration Hub
+    internal_id: cp40-webhook
+    phase: P1
+    description: Webhook management, event delivery, retry policy, outbound API integration
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP05"
-      - "CP12"
-      - "CP14"
-    category: "integration"
-    status: "planned"
-
-  - id: "CP42"
-    name: "Approval Workflow Engine"
-    internal_id: "cp42-approval"
-    phase: "P1"
-    description: "Multi-level approval chain, approval matrix, delegation, escalation"
+    depends_on:
+      - CP05
+      - CP12
+      - CP14
+    category: integration
+    status: planned
+    version: 1.0.0
+  - id: CP42
+    name: Approval Workflow Engine
+    internal_id: cp42-approval
+    phase: P1
+    description: Multi-level approval chain, approval matrix, delegation, escalation
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP04"
-      - "CP05"
-      - "CP12"
-    category: "runtime"
-    status: "planned"
-
-  - id: "CP45"
-    name: "Payment Gateway Abstraction"
-    internal_id: "cp45-payment"
-    phase: "P1"
-    description: "Unified payment interface, payment method management, transaction flow"
+    depends_on:
+      - CP01
+      - CP04
+      - CP05
+      - CP12
+    category: runtime
+    status: planned
+    version: 1.0.0
+  - id: CP45
+    name: Payment Gateway Abstraction
+    internal_id: cp45-payment
+    phase: P1
+    description: Unified payment interface, payment method management, transaction flow
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP05"
-      - "CP14"
-      - "CP33"
-      - "CP40"
-    category: "financial"
-    status: "planned"
-
-  # --------------------------------------------------------------------------
-  # P2 - Standard Runtime Capabilities (New)
-  # --------------------------------------------------------------------------
-
-  - id: "CP35"
-    name: "Geospatial Services"
-    internal_id: "cp35-geospatial"
-    phase: "P2"
-    description: "Location services, geofencing, routing, distance calculation"
+    depends_on:
+      - CP01
+      - CP05
+      - CP14
+      - CP33
+      - CP40
+    category: financial
+    status: planned
+    version: 1.0.0
+  - id: CP35
+    name: Geospatial Services
+    internal_id: cp35-geospatial
+    phase: P2
+    description: Location services, geofencing, routing, distance calculation
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP05"
-      - "CP12"
-    category: "geospatial"
-    status: "planned"
-
-  - id: "CP38"
-    name: "Data Import/Export/ETL"
-    internal_id: "cp38-etl"
-    phase: "P2"
-    description: "CSV import, data migration, bulk data operations, ETL pipeline"
+    depends_on:
+      - CP01
+      - CP05
+      - CP12
+    category: geospatial
+    status: planned
+    version: 1.0.0
+  - id: CP38
+    name: Data Import/Export/ETL
+    internal_id: cp38-etl
+    phase: P2
+    description: CSV import, data migration, bulk data operations, ETL pipeline
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP08"
-      - "CP13"
-      - "CP14"
-    category: "data"
-    status: "planned"
-
-  - id: "CP41"
-    name: "Chat & Messaging"
-    internal_id: "cp41-chat"
-    phase: "P2"
-    description: "In-app chat, real-time messaging, support ticket, notification center"
+    depends_on:
+      - CP01
+      - CP08
+      - CP13
+      - CP14
+    category: data
+    status: planned
+    version: 1.0.0
+  - id: CP41
+    name: Chat & Messaging
+    internal_id: cp41-chat
+    phase: P2
+    description: In-app chat, real-time messaging, support ticket, notification center
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP05"
-      - "CP22"
-    category: "communication"
-    status: "planned"
-
-  - id: "CP43"
-    name: "Versioning & History"
-    internal_id: "cp43-versioning"
-    phase: "P2"
-    description: "Entity versioning, time-travel query, soft delete, audit trail extension"
+    depends_on:
+      - CP01
+      - CP05
+      - CP22
+    category: communication
+    status: planned
+    version: 1.0.0
+  - id: CP43
+    name: Versioning & History
+    internal_id: cp43-versioning
+    phase: P2
+    description: Entity versioning, time-travel query, soft delete, audit trail extension
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP08"
-      - "CP14"
-    category: "data"
-    status: "planned"
-
-  - id: "CP44"
-    name: "Bulk Operations Engine"
-    internal_id: "cp44-bulk-ops"
-    phase: "P2"
-    description: "Batch processing, bulk update, parallel processing, chunk processing"
+    depends_on:
+      - CP01
+      - CP08
+      - CP14
+    category: data
+    status: planned
+    version: 1.0.0
+  - id: CP44
+    name: Bulk Operations Engine
+    internal_id: cp44-bulk-ops
+    phase: P2
+    description: Batch processing, bulk update, parallel processing, chunk processing
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP13"
-      - "CP14"
-    category: "runtime"
-    status: "planned"
-
-  # --------------------------------------------------------------------------
-  # P2 - Specialized Runtime Capabilities
-  # --------------------------------------------------------------------------
-
-  - id: "CP46"
-    name: "MFA & Advanced Authentication"
-    internal_id: "cp46-mfa"
-    phase: "P2"
+    depends_on:
+      - CP01
+      - CP13
+      - CP14
+    category: runtime
+    status: planned
+    version: 1.0.0
+  - id: CP46
+    name: MFA & Advanced Authentication
+    internal_id: cp46-mfa
+    phase: P2
     description: "Multi-factor authentication: TOTP, SMS OTP, WebAuthn/FIDO2, biometric"
     definitions_count: 3
     obligations_count: 2
-    dependencies:
-      - "CP03"
-      - "CP12"
-    category: "security"
-    status: "planned"
-
-  - id: "CP47"
-    name: "Data Retention & Lifecycle Management"
-    internal_id: "cp47-retention"
-    phase: "P2"
-    description: "Automated data lifecycle: retention policy, archival, purging, GDPR erasure"
+    depends_on:
+      - CP03
+      - CP12
+    category: security
+    status: planned
+    version: 1.0.0
+  - id: CP47
+    name: Data Retention & Lifecycle Management
+    internal_id: cp47-retention
+    phase: P2
+    description: "Automated data lifecycle: retention policy, archival, purging,
+      GDPR erasure"
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP08"
-      - "CP13"
-      - "CP14"
-    category: "compliance"
-    status: "planned"
-
-  - id: "CP48"
-    name: "API Rate Limiting & Quota Management"
-    internal_id: "cp48-rate-limit"
-    phase: "P2"
-    description: "Per-client/per-tier rate limiting, quota enforcement, API throttling"
+    depends_on:
+      - CP01
+      - CP08
+      - CP13
+      - CP14
+    category: compliance
+    status: planned
+    version: 1.0.0
+  - id: CP48
+    name: API Rate Limiting & Quota Management
+    internal_id: cp48-rate-limit
+    phase: P2
+    description: Per-client/per-tier rate limiting, quota enforcement, API throttling
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP02"
-      - "CP06"
-      - "CP36"
-    category: "integration"
-    status: "planned"
-
-  - id: "CP49"
-    name: "Consent & Preference Management"
-    internal_id: "cp49-consent"
-    phase: "P2"
-    description: "Cookie consent, data processing consent, communication preference, privacy center"
+    depends_on:
+      - CP02
+      - CP06
+      - CP36
+    category: integration
+    status: planned
+    version: 1.0.0
+  - id: CP49
+    name: Consent & Preference Management
+    internal_id: cp49-consent
+    phase: P2
+    description: Cookie consent, data processing consent, communication preference,
+      privacy center
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP02"
-      - "CP03"
-    category: "privacy"
-    status: "planned"
-
-  - id: "CP50"
-    name: "Catalog & Taxonomy Engine"
-    internal_id: "cp50-catalog"
-    phase: "P2"
-    description: "Product/service catalog, hierarchical taxonomy, faceted search, attribute management"
+    depends_on:
+      - CP01
+      - CP02
+      - CP03
+    category: privacy
+    status: planned
+    version: 1.0.0
+  - id: CP50
+    name: Catalog & Taxonomy Engine
+    internal_id: cp50-catalog
+    phase: P2
+    description: Product/service catalog, hierarchical taxonomy, faceted search,
+      attribute management
     definitions_count: 4
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP08"
-      - "CP10"
-    category: "commerce"
-    status: "planned"
-
-  # --------------------------------------------------------------------------
-  # P0 - Composition Engine (Critical Foundation)
-  # --------------------------------------------------------------------------
-
-  - id: "CP51"
-    name: "Blueprint Composition Engine"
-    internal_id: "cp51-composition"
-    phase: "P0"
-    description: "Compiler engine to compose CPs + DPs + RXs into complete blueprint"
+    depends_on:
+      - CP01
+      - CP08
+      - CP10
+    category: commerce
+    status: planned
+    version: 1.0.0
+  - id: CP51
+    name: Blueprint Composition Engine
+    internal_id: cp51-composition
+    phase: P0
+    description: Compiler engine to compose CPs + DPs + RXs into complete blueprint
     definitions_count: 4
     obligations_count: 3
-    dependencies:
-      - "CP01"
-    category: "compiler"
-    status: "planned"
-
-  - id: "CP52"
-    name: "Invariant Gate Framework"
-    internal_id: "cp52-invariant"
-    phase: "P0"
-    description: "Compile-time invariant checker for blueprint validation"
+    depends_on:
+      - CP01
+    category: compiler
+    status: planned
+    version: 1.0.0
+  - id: CP52
+    name: Invariant Gate Framework
+    internal_id: cp52-invariant
+    phase: P0
+    description: Compile-time invariant checker for blueprint validation
     definitions_count: 3
     obligations_count: 2
-    dependencies:
-      - "CP51"
-    category: "compiler"
-    status: "planned"
-
-  - id: "CP53"
-    name: "Domain Pack Runtime Bridge"
-    internal_id: "cp53-domain-bridge"
-    phase: "P0"
-    description: "Runtime bridge between generic CPs and domain-specific semantics"
+    depends_on:
+      - CP51
+    category: compiler
+    status: planned
+    version: 1.0.0
+  - id: CP53
+    name: Domain Pack Runtime Bridge
+    internal_id: cp53-domain-bridge
+    phase: P0
+    description: Runtime bridge between generic CPs and domain-specific semantics
     definitions_count: 3
     obligations_count: 2
-    dependencies:
-      - "CP01"
-      - "CP51"
-    category: "compiler"
-    status: "planned"
-
-# ============================================================================
-# DOMAIN PACKS (DP)
-# ============================================================================
-# Domain Packs provide industry-specific semantic primitives. Each pack
-# encapsulates the business logic, entities, and workflows specific to a
-# domain area. These compose with Core Packs to form complete blueprints.
-# ============================================================================
-
+    depends_on:
+      - CP01
+      - CP51
+    category: compiler
+    status: planned
+    version: 1.0.0
 domain_packs:
-  # --------------------------------------------------------------------------
-  # Commerce & Transactions
-  # --------------------------------------------------------------------------
-
-  - id: "DP01"
-    name: "Commerce Core"
+  - id: DP01
+    name: Commerce Core
     description: "Core e-commerce capabilities: products, carts, orders, payments"
-    category: "commerce"
+    category: commerce
     industries_using:
-      - "ecommerce-d2c"
-      - "marketplace-b2c"
-      - "marketplace-b2b"
-      - "omnichannel-retail"
-      - "food-delivery"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP08"  # Database
-      - "CP10"  # Search
-      - "CP12"  # Notification
-      - "CP45"  # Payment
-    status: "stable"
-
-  - id: "DP02"
-    name: "Marketplace Core"
+      - ecommerce-d2c
+      - marketplace-b2c
+      - marketplace-b2b
+      - omnichannel-retail
+      - food-delivery
+    depends_on:
+      - CP01
+      - CP08
+      - CP10
+      - CP12
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP02
+    name: Marketplace Core
     description: "Multi-vendor marketplace: seller management, commission, split payments"
-    category: "commerce"
+    category: commerce
     industries_using:
-      - "marketplace-b2c"
-      - "marketplace-b2b"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP03"  # Auth
-      - "CP04"  # RBAC
-      - "CP08"  # Database
-      - "CP10"  # Search
-      - "CP12"  # Notification
-      - "CP45"  # Payment
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Travel & Hospitality
-  # --------------------------------------------------------------------------
-
-  - id: "DP03"
-    name: "Travel & Hospitality"
-    description: "Booking, reservations, availability, room management"
-    category: "travel"
+      - marketplace-b2c
+      - marketplace-b2b
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP10
+      - CP12
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP03
+    name: Travel & Hospitality
+    description: Booking, reservations, availability, room management
+    category: travel
     industries_using:
-      - "hotel-booking"
-      - "vacation-rental"
-      - "flight-booking"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP03"  # Auth
-      - "CP04"  # RBAC
-      - "CP08"  # Database
-      - "CP12"  # Notification
-      - "CP45"  # Payment
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Logistics & Supply Chain
-  # --------------------------------------------------------------------------
-
-  - id: "DP04"
-    name: "Logistics & Fleet"
-    description: "Fleet management, routing, tracking, delivery optimization"
-    category: "logistics"
+      - hotel-booking
+      - vacation-rental
+      - flight-booking
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP04
+    name: Logistics & Fleet
+    description: Fleet management, routing, tracking, delivery optimization
+    category: logistics
     industries_using:
-      - "food-delivery"
-      - "last-mile-delivery"
-      - "warehouse-management"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP03"  # Auth
-      - "CP04"  # RBAC
-      - "CP08"  # Database
-      - "CP12"  # Notification
-      - "CP35"  # Geospatial
-      - "CP45"  # Payment
-    status: "stable"
-
-  - id: "DP05"
-    name: "Manufacturing & Supply Chain"
-    description: "Production planning, BOM, inventory, supplier management"
-    category: "manufacturing"
+      - food-delivery
+      - last-mile-delivery
+      - warehouse-management
+      - freight-forwarding
+      - maritime-port-ops
+      - customs-brokerage
+      - ride-hailing
+      - bike-scooter-sharing
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP35
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP05
+    name: Manufacturing & Supply Chain
+    description: Production planning, BOM, inventory, supplier management
+    category: manufacturing
     industries_using:
-      - "omnichannel-retail"
-      - "warehouse-management"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP03"  # Auth
-      - "CP04"  # RBAC
-      - "CP08"  # Database
-      - "CP12"  # Notification
-      - "CP14"  # Audit
-      - "CP32"  # State Machine
-      - "CP45"  # Payment
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Real Estate & Facilities
-  # --------------------------------------------------------------------------
-
-  - id: "DP06"
-    name: "Real Estate & Facility"
-    description: "Property management, lease management, maintenance"
-    category: "real-estate"
+      - omnichannel-retail
+      - warehouse-management
+      - discrete-manufacturing
+      - process-manufacturing
+      - garment-manufacturing
+      - electronics-manufacturing
+      - oil-gas
+      - mining
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP32
+      - CP45
+    status: developing
+    version: 1.0.0
+    phase: P1
+  - id: DP06
+    name: Real Estate & Facility
+    description: Property management, lease management, maintenance
+    category: real-estate
     industries_using:
-      - "real-estate-brokerage"
-      - "property-management"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP03"  # Auth
-      - "CP04"  # RBAC
-      - "CP08"  # Database
-      - "CP12"  # Notification
-      - "CP14"  # Audit
-      - "CP33"  # Financial
-      - "CP45"  # Payment
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Utilities & Energy
-  # --------------------------------------------------------------------------
-
-  - id: "DP07"
-    name: "Utilities & Energy"
-    description: "Metering, billing, grid management, consumption tracking"
-    category: "utilities"
+      - real-estate-brokerage
+      - property-management
+      - auto-dealership
+      - auto-service-repair
+      - car-rental
+      - construction-project
+      - building-facility-mgmt
+      - mortgage-lending
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP33
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP07
+    name: Utilities & Energy
+    description: Metering, billing, grid management, consumption tracking
+    category: utilities
     industries_using:
-      - "electricity-utility"
-      - "water-utility"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP03"  # Auth
-      - "CP04"  # RBAC
-      - "CP08"  # Database
-      - "CP12"  # Notification
-      - "CP14"  # Audit
-      - "CP33"  # Financial
-      - "CP45"  # Payment
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Agriculture & Food Systems
-  # --------------------------------------------------------------------------
-
-  - id: "DP08"
-    name: "Agriculture & Food Systems"
-    description: "Crop management, livestock tracking, harvest planning"
-    category: "agriculture"
+      - electricity-utility
+      - water-utility
+      - gas-utility
+      - renewable-energy
+      - oil-gas
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP33
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP08
+    name: Agriculture & Food Systems
+    description: Crop management, livestock tracking, harvest planning
+    category: agriculture
     industries_using:
-      - "crop-farming"
-      - "livestock-management"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP03"  # Auth
-      - "CP04"  # RBAC
-      - "CP08"  # Database
-      - "CP12"  # Notification
-      - "CP14"  # Audit
-      - "CP32"  # State Machine
-      - "CP47"  # Data Retention
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Healthcare
-  # --------------------------------------------------------------------------
-
-  - id: "DP09"
-    name: "Healthcare Provider"
-    description: "Patient management, clinical workflows, appointments, EHR"
-    category: "healthcare"
+      - crop-farming
+      - livestock-management
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP32
+      - CP47
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP09
+    name: Healthcare Provider
+    description: Patient management, clinical workflows, appointments, EHR
+    category: healthcare
     industries_using:
-      - "hospital-is"
-      - "telehealth"
-      - "dental-clinic"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP03"  # Auth
-      - "CP04"  # RBAC
-      - "CP08"  # Database
-      - "CP12"  # Notification
-      - "CP14"  # Audit
-      - "CP33"  # Financial (billing)
-      - "CP45"  # Payment
-    status: "stable"
-
-  - id: "DP10"
-    name: "Healthcare Payer, Lab & Pharma"
-    description: "Claims processing, lab workflows, pharmaceutical management"
-    category: "healthcare"
+      - hospital-is
+      - telehealth
+      - dental-clinic
+      - laboratory-lis
+      - imaging-center
+      - public-health
+      - mental-health
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP33
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP10
+    name: Healthcare Payer, Lab & Pharma
+    description: Claims processing, lab workflows, pharmaceutical management
+    category: healthcare
     industries_using:
-      - "laboratory-lis"
-      - "health-insurance"
-    depends_on_core_packs:
-      - "CP01"  # Domain Model
-      - "CP03"  # Auth
-      - "CP04"  # RBAC
-      - "CP08"  # Database
-      - "CP12"  # Notification
-      - "CP14"  # Audit
-      - "CP33"  # Financial
-      - "CP45"  # Payment
-      - "CP49"  # Consent
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Financial Services
-  # --------------------------------------------------------------------------
-
-  - id: "DP11"
-    name: "Banking Core"
-    description: "Account management, ledgers, transfers, reconciliations"
-    category: "banking"
+      - laboratory-lis
+      - health-insurance
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP33
+      - CP45
+      - CP49
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP11
+    name: Banking Core
+    description: Account management, ledgers, transfers, reconciliations
+    category: banking
     industries_using:
-      - "retail-banking"
-      - "corporate-banking"
-      - "neobank"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP33"
-      - "CP45"
-    status: "stable"
-
-  - id: "DP12"
-    name: "Payments & Cards"
-    description: "Payment processing, card lifecycle, transactions, settlements"
-    category: "payments"
+      - retail-banking
+      - corporate-banking
+      - neobank
+      - credit-union
+      - corporate-treasury
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP33
+      - CP45
+    status: developing
+    version: 1.0.0
+    phase: P1
+  - id: DP12
+    name: Payments & Cards
+    description: Payment processing, card lifecycle, transactions, settlements
+    category: payments
     industries_using:
-      - "ecommerce-d2c"
-      - "marketplace-b2c"
-      - "retail-banking"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP33"
-      - "CP45"
-    status: "stable"
-
-  - id: "DP13"
-    name: "Lending & Credit"
-    description: "Loan origination, credit scoring, amortization, collections"
-    category: "lending"
+      - ecommerce-d2c
+      - marketplace-b2c
+      - retail-banking
+      - payment-service-provider
+      - card-issuing
+      - ott-subscription
+      - creator-influencer
+      - payroll-benefits
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP33
+      - CP45
+    status: developing
+    version: 1.0.0
+    phase: P1
+  - id: DP13
+    name: Lending & Credit
+    description: Loan origination, credit scoring, amortization, collections
+    category: lending
     industries_using:
-      - "consumer-lending"
-      - "mortgage-lending"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP32"
-      - "CP33"
-      - "CP42"
-      - "CP45"
-    status: "stable"
-
-  - id: "DP14"
-    name: "Insurance"
-    description: "Policy management, claims processing, underwriting"
-    category: "insurance"
+      - consumer-lending
+      - mortgage-lending
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP32
+      - CP33
+      - CP42
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP14
+    name: Insurance
+    description: Policy management, claims processing, underwriting
+    category: insurance
     industries_using:
-      - "life-insurance"
-      - "non-life-insurance"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP32"
-      - "CP33"
-      - "CP42"
-      - "CP45"
-    status: "stable"
-
-  - id: "DP15"
-    name: "Capital Markets & Wealth"
-    description: "Portfolio management, trading, custody, performance reporting"
-    category: "capital-markets"
+      - life-insurance
+      - non-life-insurance
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP32
+      - CP33
+      - CP42
+      - CP45
+    status: developing
+    version: 1.0.0
+    phase: P1
+  - id: DP15
+    name: Capital Markets & Wealth
+    description: Portfolio management, trading, custody, performance reporting
+    category: capital-markets
     industries_using:
-      - "wealth-management"
-      - "brokerage-platform"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP33"
-      - "CP45"
-    status: "stable"
-
-  - id: "DP16"
-    name: "Exchange Trading & Market Infra"
-    description: "Order matching, market data, clearing, settlement"
-    category: "exchange"
+      - wealth-management
+      - brokerage-platform
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP33
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP16
+    name: Exchange Trading & Market Infra
+    description: Order matching, market data, clearing, settlement
+    category: exchange
     industries_using:
-      - "exchange-trading"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP33"
-      - "CP45"
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Public Sector & Legal
-  # --------------------------------------------------------------------------
-
-  - id: "DP17"
-    name: "Public Sector & Justice"
-    description: "Case management, citizen services, licensing, permits"
-    category: "public-sector"
+      - exchange-trading
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP33
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP17
+    name: Public Sector & Justice
+    description: Case management, citizen services, licensing, permits
+    category: public-sector
     industries_using:
-      - "citizen-portal"
-      - "court-administration"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP34"
-      - "CP42"
-    status: "stable"
-
-  - id: "DP18"
-    name: "Legal Ops & Contracting"
-    description: "Contract lifecycle, case management, e-discovery"
-    category: "legal"
+      - citizen-portal
+      - court-administration
+      - municipal-licensing
+      - law-enforcement
+      - defense-logistics
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP34
+      - CP42
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP18
+    name: Legal Ops & Contracting
+    description: Contract lifecycle, case management, e-discovery
+    category: legal
     industries_using:
-      - "legal-case-management"
-      - "contract-lifecycle"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP34"
-      - "CP42"
-      - "CP43"
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Education & Research
-  # --------------------------------------------------------------------------
-
-  - id: "DP19"
-    name: "Education & Research"
-    description: "Student management, course catalog, grading, research grants"
-    category: "education"
+      - legal-case-management
+      - contract-lifecycle
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP34
+      - CP42
+      - CP43
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP19
+    name: Education & Research
+    description: Student management, course catalog, grading, research grants
+    category: education
     industries_using:
-      - "k12-school"
-      - "university-management"
-      - "vocational-training"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP34"
-      - "CP45"
-      - "CP50"
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Media & Entertainment
-  # --------------------------------------------------------------------------
-
-  - id: "DP20"
-    name: "Media, Creator & Entertainment"
-    description: "Content management, streaming, creator tools, ticketing"
-    category: "media"
+      - k12-school
+      - university-management
+      - vocational-training
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP34
+      - CP45
+      - CP50
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP20
+    name: Media, Creator & Entertainment
+    description: Content management, streaming, creator tools, ticketing
+    category: media
     industries_using:
-      - "digital-newsroom"
-      - "ott-subscription"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP11"
-      - "CP12"
-      - "CP22"
-      - "CP34"
-      - "CP45"
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # HR & Workforce
-  # --------------------------------------------------------------------------
-
-  - id: "DP21"
-    name: "HR, Payroll & Workforce"
-    description: "Employee management, payroll processing, benefits, scheduling"
-    category: "hr"
+      - digital-newsroom
+      - ott-subscription
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP11
+      - CP12
+      - CP22
+      - CP34
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP21
+    name: HR, Payroll & Workforce
+    description: Employee management, payroll processing, benefits, scheduling
+    category: hr
     industries_using:
-      - "payroll-benefits"
-      - "ats-recruiting"
-      - "workforce-scheduling"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP33"
-      - "CP45"
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Enterprise Operations
-  # --------------------------------------------------------------------------
-
-  - id: "DP22"
-    name: "Procurement, ITSM & Enterprise Ops"
-    description: "Procurement workflows, IT service management, asset tracking"
-    category: "enterprise"
+      - payroll-benefits
+      - ats-recruiting
+      - workforce-scheduling
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP33
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP22
+    name: Procurement, ITSM & Enterprise Ops
+    description: Procurement workflows, IT service management, asset tracking
+    category: enterprise
     industries_using:
-      - "procurement-srm"
-      - "itsm-helpdesk"
-      - "erp-finance"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP34"
-      - "CP42"
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Specialized Domains
-  # --------------------------------------------------------------------------
-
-  - id: "DP23"
-    name: "Nonprofit & Community"
-    description: "Donor management, fundraising, volunteer coordination"
-    category: "nonprofit"
+      - procurement-srm
+      - itsm-helpdesk
+      - erp-finance
+      - marketplace-b2b
+      - accounting-services
+      - tax-advisory
+      - audit-firm
+      - contract-lifecycle
+      - defense-logistics
+      - research-grants
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP34
+      - CP42
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP23
+    name: Nonprofit & Community
+    description: Donor management, fundraising, volunteer coordination
+    category: nonprofit
     industries_using:
-      - "nonprofit-fundraising"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP45"
-    status: "stable"
-
-  - id: "DP24"
-    name: "Cybersecurity & SOC"
-    description: "Security operations, incident response, threat monitoring"
-    category: "security"
+      - nonprofit-fundraising
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP24
+    name: Cybersecurity & SOC
+    description: Security operations, incident response, threat monitoring
+    category: security
     industries_using:
-      - "soc-operations"
-      - "itsm-helpdesk"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP42"
-      - "CP46"
-    status: "stable"
-
-  - id: "DP25"
-    name: "ESG & Sustainability"
-    description: "Carbon tracking, sustainability reporting, ESG metrics"
-    category: "esg"
+      - soc-operations
+      - itsm-helpdesk
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP42
+      - CP46
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP25
+    name: ESG & Sustainability
+    description: Carbon tracking, sustainability reporting, ESG metrics
+    category: esg
     industries_using:
-      - "esg-reporting"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP34"
-      - "CP43"
-    status: "stable"
-
-  - id: "DP26"
-    name: "Data Governance & MDM"
-    description: "Master data management, data quality, lineage tracking"
-    category: "data-governance"
+      - esg-reporting
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP34
+      - CP43
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP26
+    name: Data Governance & MDM
+    description: Master data management, data quality, lineage tracking
+    category: data-governance
     industries_using:
-      - "data-governance-platform"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP38"
-      - "CP43"
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # NEW Domain Packs - Semantic Depth for 100 Industries
-  # --------------------------------------------------------------------------
-
-  - id: "DP27"
-    name: "Food & Hospitality Operations"
-    description: "Menu management, reservations, kitchen display, POS, restaurant operations"
-    category: "food-hospitality"
+      - data-governance-platform
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP38
+      - CP43
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: DP27
+    name: Food & Hospitality Operations
+    description: Menu management, reservations, kitchen display, POS, restaurant operations
+    category: food-hospitality
     industries_using:
-      - "food-delivery"
-      - "restaurant-chain"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP33"
-      - "CP45"
-      - "CP50"
-    status: "planned"
-
-  - id: "DP28"
-    name: "Automotive"
-    description: "Vehicle lifecycle (VIN), service history, trade-in, financing, rental"
-    category: "automotive"
+      - food-delivery
+      - restaurant-chain
+    depends_on:
+      - CP01
+      - CP04
+      - CP08
+      - CP12
+      - CP33
+      - CP45
+      - CP50
+    status: planned
+    version: 1.0.0
+    phase: P2
+  - id: DP28
+    name: Automotive
+    description: Vehicle lifecycle (VIN), service history, trade-in, financing, rental
+    category: automotive
     industries_using:
-      - "auto-dealership"
-      - "auto-service-repair"
-      - "car-rental"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP33"
-      - "CP45"
-    status: "planned"
-
-  - id: "DP29"
-    name: "Mobility & Transportation"
-    description: "Ride-hailing, bike sharing, public transit: route, fare, trip, surge pricing"
-    category: "mobility"
+      - auto-dealership
+      - auto-service-repair
+      - car-rental
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP33
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P2
+  - id: DP29
+    name: Mobility & Transportation
+    description: "Ride-hailing, bike sharing, public transit: route, fare, trip,
+      surge pricing"
+    category: mobility
     industries_using:
-      - "ride-hailing"
-      - "bike-scooter-sharing"
-      - "rail-bus-ticketing"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP33"
-      - "CP35"
-      - "CP45"
-    status: "planned"
-
-  - id: "DP30"
-    name: "Healthcare Analytics & Research"
-    description: "Clinical trials, study protocols, patient cohorts, research consent"
-    category: "healthcare-research"
+      - ride-hailing
+      - bike-scooter-sharing
+      - rail-bus-ticketing
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP33
+      - CP35
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P2
+  - id: DP30
+    name: Healthcare Analytics & Research
+    description: Clinical trials, study protocols, patient cohorts, research consent
+    category: healthcare-research
     industries_using:
-      - "public-health-surveillance"
-      - "mental-health-services"
-      - "biotech-research"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP14"
-      - "CP47"
-      - "CP49"
-    status: "planned"
-
-  - id: "DP31"
-    name: "Government Services"
-    description: "Citizen portal, licensing, permits, court docket, hearings"
-    category: "government"
+      - public-health-surveillance
+      - mental-health-services
+      - biotech-research
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP14
+      - CP47
+      - CP49
+    status: planned
+    version: 1.0.0
+    phase: P2
+  - id: DP31
+    name: Government Services
+    description: Citizen portal, licensing, permits, court docket, hearings
+    category: government
     industries_using:
-      - "government-citizen-portal"
-      - "municipal-licensing"
-      - "court-administration"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP14"
-      - "CP34"
-      - "CP42"
-    status: "planned"
-
-  - id: "DP32"
-    name: "Financial Services Extended"
-    description: "Accounting, tax, audit: chart of accounts, journal entry, trial balance, audit engagement"
-    category: "financial-services"
+      - government-citizen-portal
+      - municipal-licensing
+      - court-administration
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP14
+      - CP34
+      - CP42
+    status: planned
+    version: 1.0.0
+    phase: P2
+  - id: DP32
+    name: Financial Services Extended
+    description: "Accounting, tax, audit: chart of accounts, journal entry, trial
+      balance, audit engagement"
+    category: financial-services
     industries_using:
-      - "accounting-services"
-      - "tax-advisory"
-      - "audit-firm"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP14"
-      - "CP33"
-      - "CP34"
-      - "CP42"
-    status: "planned"
-
-  - id: "DP33"
-    name: "Energy & Environmental Operations"
-    description: "Oil & gas, mining, renewable: well, pipeline, extraction rate, environmental impact"
-    category: "energy-environmental"
+      - accounting-services
+      - tax-advisory
+      - audit-firm
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP14
+      - CP33
+      - CP34
+      - CP42
+    status: planned
+    version: 1.0.0
+    phase: P2
+  - id: DP33
+    name: Energy & Environmental Operations
+    description: "Oil & gas, mining, renewable: well, pipeline, extraction rate,
+      environmental impact"
+    category: energy-environmental
     industries_using:
-      - "renewable-energy"
-      - "oil-gas"
-      - "mining"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP14"
-      - "CP35"
-      - "CP42"
-      - "CP47"
-    status: "planned"
-
-  - id: "DP34"
-    name: "Content & Media Platform"
-    description: "Newsroom CMS, OTT, marketing: content, editorial calendar, ad campaign, subscription"
-    category: "content-media"
+      - renewable-energy
+      - oil-gas
+      - mining
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP14
+      - CP35
+      - CP42
+      - CP47
+    status: planned
+    version: 1.0.0
+    phase: P2
+  - id: DP34
+    name: Content & Media Platform
+    description: "Newsroom CMS, OTT, marketing: content, editorial calendar, ad
+      campaign, subscription"
+    category: content-media
     industries_using:
-      - "digital-newsroom"
-      - "ott-subscription"
-      - "marketing-agency"
-      - "creator-influencer"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP11"
-      - "CP12"
-      - "CP33"
-      - "CP34"
-      - "CP36"
-      - "CP42"
-      - "CP45"
-    status: "planned"
-
-  - id: "DP35"
-    name: "Gaming & Esports"
-    description: "Game LiveOps, esports: player profile, match, tournament, bracket, prize pool"
-    category: "gaming"
+      - digital-newsroom
+      - ott-subscription
+      - marketing-agency
+      - creator-influencer
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP11
+      - CP12
+      - CP33
+      - CP34
+      - CP36
+      - CP42
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P2
+  - id: DP35
+    name: Gaming & Esports
+    description: "Game LiveOps, esports: player profile, match, tournament, bracket,
+      prize pool"
+    category: gaming
     industries_using:
-      - "game-liveops"
-      - "esports-tournament"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP12"
-      - "CP22"
-      - "CP33"
-      - "CP45"
-    status: "planned"
-
-  - id: "DP36"
-    name: "Construction & Engineering"
-    description: "Project management: blueprint revision, RFI, change order, subcontractor, safety inspection"
-    category: "construction"
+      - game-liveops
+      - esports-tournament
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP12
+      - CP22
+      - CP33
+      - CP45
+    status: planned
+    version: 1.0.0
+    phase: P2
+  - id: DP36
+    name: Construction & Engineering
+    description: "Project management: blueprint revision, RFI, change order,
+      subcontractor, safety inspection"
+    category: construction
     industries_using:
-      - "construction-project-management"
-    depends_on_core_packs:
-      - "CP01"
-      - "CP03"
-      - "CP04"
-      - "CP08"
-      - "CP11"
-      - "CP12"
-      - "CP14"
-      - "CP34"
-      - "CP42"
-      - "CP47"
-    status: "planned"
-
-# ============================================================================
-# REGULATORY OVERLAYS (RX)
-# ============================================================================
-# Regulatory Overlays enforce compliance requirements at compile-time.
-# Each overlay represents a specific regulatory framework or compliance
-# domain with enforceable obligations and guard rails.
-# ============================================================================
-
+      - construction-project-management
+    depends_on:
+      - CP01
+      - CP03
+      - CP04
+      - CP08
+      - CP11
+      - CP12
+      - CP14
+      - CP34
+      - CP42
+      - CP47
+    status: planned
+    version: 1.0.0
+    phase: P2
 regulatory_overlays:
-  # --------------------------------------------------------------------------
-  # Privacy & Data Protection
-  # --------------------------------------------------------------------------
-
-  - id: "RX01"
-    name: "Privacy & PII Protection"
-    description: "GDPR, CCPA, PII handling, data subject rights"
-    category: "privacy"
+  - id: RX01
+    name: Privacy & PII Protection
+    description: GDPR, CCPA, PII handling, data subject rights
+    category: privacy
     obligations:
-      - "pii_encryption_required"
-      - "data_retention_policy_required"
-      - "consent_management_required"
-      - "right_to_erasure_support"
+      - pii_encryption_required
+      - data_retention_policy_required
+      - consent_management_required
+      - right_to_erasure_support
     industries_requiring:
-      - "all"  # Universal requirement (~95/100 industries)
-    depends_on_core_packs:
-      - "CP03"  # Auth (encryption)
-      - "CP04"  # RBAC (data access)
-      - "CP14"  # Audit (access logging)
-      - "CP47"  # Data Retention (erasure)
-      - "CP49"  # Consent Management
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Financial Integrity
-  # --------------------------------------------------------------------------
-
-  - id: "RX02"
-    name: "Financial Integrity (double-entry, reconciliation)"
-    description: "Double-entry bookkeeping, audit trails, reconciliation"
-    category: "financial"
+      - all
+    depends_on:
+      - CP03
+      - CP04
+      - CP14
+      - CP47
+      - CP49
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX02
+    name: Financial Integrity (double-entry, reconciliation)
+    description: Double-entry bookkeeping, audit trails, reconciliation
+    category: financial
     obligations:
-      - "double_entry_required"
-      - "transaction_immutability"
-      - "reconciliation_mandatory"
+      - double_entry_required
+      - transaction_immutability
+      - reconciliation_mandatory
     industries_requiring:
-      - "retail-banking"
-      - "erp-finance"
-      - "exchange-trading"
-    depends_on_core_packs:
-      - "CP33"  # Financial Engine (double-entry ledger)
-      - "CP14"  # Audit (immutable trail)
-      - "CP34"  # Report (reconciliation)
-      - "CP32"  # State Machine (transaction lifecycle)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Financial Crime Prevention
-  # --------------------------------------------------------------------------
-
-  - id: "RX03"
-    name: "AML, KYC, Sanctions"
-    description: "Anti-money laundering, know your customer, sanctions screening"
-    category: "financial"
+      - retail-banking
+      - erp-finance
+      - exchange-trading
+    depends_on:
+      - CP33
+      - CP14
+      - CP34
+      - CP32
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX03
+    name: AML, KYC, Sanctions
+    description: Anti-money laundering, know your customer, sanctions screening
+    category: financial
     obligations:
-      - "kyc_verification_required"
-      - "aml_screening_required"
-      - "suspicious_activity_reporting"
+      - kyc_verification_required
+      - aml_screening_required
+      - suspicious_activity_reporting
     industries_requiring:
-      - "retail-banking"
-      - "exchange-trading"
-      - "payment-services"
-    depends_on_core_packs:
-      - "CP03"  # Auth (identity verification)
-      - "CP04"  # RBAC (access control)
-      - "CP14"  # Audit (transaction monitoring)
-      - "CP33"  # Financial (transaction tracking)
-      - "CP42"  # Approval (suspicious activity review)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Healthcare Compliance
-  # --------------------------------------------------------------------------
-
-  - id: "RX04"
-    name: "Clinical Safety & Health Privacy"
-    description: "HIPAA, clinical safety protocols, protected health information"
-    category: "healthcare"
+      - retail-banking
+      - exchange-trading
+      - payment-services
+    depends_on:
+      - CP03
+      - CP04
+      - CP14
+      - CP33
+      - CP42
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX04
+    name: Clinical Safety & Health Privacy
+    description: HIPAA, clinical safety protocols, protected health information
+    category: healthcare
     obligations:
-      - "hipaa_compliance_required"
-      - "clinical_audit_trail"
-      - "phii_encryption_required"
-      - "minimum_necessary_access"
+      - hipaa_compliance_required
+      - clinical_audit_trail
+      - phii_encryption_required
+      - minimum_necessary_access
     industries_requiring:
-      - "hospital-is"
-      - "telehealth"
-      - "laboratory-lis"
-    depends_on_core_packs:
-      - "CP03"  # Auth (encryption keys)
-      - "CP04"  # RBAC (minimum necessary access)
-      - "CP14"  # Audit (clinical audit trail)
-      - "CP47"  # Data Retention (PHI lifecycle)
-      - "CP49"  # Consent (patient consent)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Public Records & Procurement
-  # --------------------------------------------------------------------------
-
-  - id: "RX05"
-    name: "Public Records & Procurement"
-    description: "Public records management, procurement transparency"
-    category: "public-sector"
+      - hospital-is
+      - telehealth
+      - laboratory-lis
+    depends_on:
+      - CP03
+      - CP04
+      - CP14
+      - CP47
+      - CP49
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX05
+    name: Public Records & Procurement
+    description: Public records management, procurement transparency
+    category: public-sector
     obligations:
-      - "public_access_compliance"
-      - "procurement_audit_required"
-      - "bid_transparency"
+      - public_access_compliance
+      - procurement_audit_required
+      - bid_transparency
     industries_requiring:
-      - "procurement-srm"
-      - "citizen-portal"
-    depends_on_core_packs:
-      - "CP04"  # RBAC (public access rules)
-      - "CP14"  # Audit (procurement trail)
-      - "CP34"  # Report (transparency reports)
-      - "CP42"  # Approval (bid approval workflow)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Tax & E-Invoice
-  # --------------------------------------------------------------------------
-
-  - id: "RX06"
-    name: "Tax & E-Invoice"
-    description: "Tax calculation, e-invoicing, fiscal compliance"
-    category: "tax"
+      - procurement-srm
+      - citizen-portal
+    depends_on:
+      - CP04
+      - CP14
+      - CP34
+      - CP42
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX06
+    name: Tax & E-Invoice
+    description: Tax calculation, e-invoicing, fiscal compliance
+    category: tax
     obligations:
-      - "tax_calculation_accuracy"
-      - "e_invoice_format_compliance"
-      - "tax_reporting_enabled"
+      - tax_calculation_accuracy
+      - e_invoice_format_compliance
+      - tax_reporting_enabled
     industries_requiring:
-      - "ecommerce-d2c"
-      - "erp-finance"
-      - "payroll-benefits"
-    depends_on_core_packs:
-      - "CP33"  # Financial (tax calculation)
-      - "CP34"  # Report (e-invoice generation)
-      - "CP14"  # Audit (tax trail)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Labor & Payroll
-  # --------------------------------------------------------------------------
-
-  - id: "RX07"
-    name: "Labor & Payroll Compliance"
-    description: "Labor laws, payroll regulations, benefits compliance"
-    category: "labor"
+      - ecommerce-d2c
+      - erp-finance
+      - payroll-benefits
+    depends_on:
+      - CP33
+      - CP34
+      - CP14
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX07
+    name: Labor & Payroll Compliance
+    description: Labor laws, payroll regulations, benefits compliance
+    category: labor
     obligations:
-      - "payroll_accuracy_required"
-      - "labor_law_compliance"
-      - "benefits_admin_compliance"
+      - payroll_accuracy_required
+      - labor_law_compliance
+      - benefits_admin_compliance
     industries_requiring:
-      - "payroll-benefits"
-      - "hr-systems"
-    depends_on_core_packs:
-      - "CP33"  # Financial (payroll calculation)
-      - "CP31"  # Scheduler (payroll cycle)
-      - "CP14"  # Audit (payroll trail)
-      - "CP47"  # Data Retention (payroll records)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Education Accreditation
-  # --------------------------------------------------------------------------
-
-  - id: "RX08"
-    name: "Education Accreditation & Student Record"
-    description: "FERPA, accreditation standards, student data protection"
-    category: "education"
+      - payroll-benefits
+      - hr-systems
+    depends_on:
+      - CP33
+      - CP31
+      - CP14
+      - CP47
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX08
+    name: Education Accreditation & Student Record
+    description: FERPA, accreditation standards, student data protection
+    category: education
     obligations:
-      - "ferpa_compliance_required"
-      - "student_record_integrity"
-      - "grade_immutability"
+      - ferpa_compliance_required
+      - student_record_integrity
+      - grade_immutability
     industries_requiring:
-      - "k12-school"
-      - "university-management"
-      - "vocational-training"
-    depends_on_core_packs:
-      - "CP04"  # RBAC (student data access)
-      - "CP14"  # Audit (access trail)
-      - "CP43"  # Versioning (record history)
-      - "CP47"  # Data Retention (record lifecycle)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Safety & Traceability
-  # --------------------------------------------------------------------------
-
-  - id: "RX09"
-    name: "Safety, Incident & Traceability"
-    description: "Safety protocols, incident reporting, traceability chains"
-    category: "safety"
+      - k12-school
+      - university-management
+      - vocational-training
+    depends_on:
+      - CP04
+      - CP14
+      - CP43
+      - CP47
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX09
+    name: Safety, Incident & Traceability
+    description: Safety protocols, incident reporting, traceability chains
+    category: safety
     obligations:
-      - "incident_reporting_required"
-      - "traceability_chain_complete"
-      - "safety_audit_enabled"
+      - incident_reporting_required
+      - traceability_chain_complete
+      - safety_audit_enabled
     industries_requiring:
-      - "food-delivery"
-      - "warehouse-management"
-      - "manufacturing"
-    depends_on_core_packs:
-      - "CP14"  # Audit (incident trail)
-      - "CP43"  # Versioning (traceability chain)
-      - "CP42"  # Approval (incident escalation)
-      - "CP12"  # Notification (safety alerts)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Consumer Protection
-  # --------------------------------------------------------------------------
-
-  - id: "RX10"
-    name: "Consumer Protection, Refund & Dispute"
-    description: "Consumer rights, refund policies, dispute resolution"
-    category: "consumer-protection"
+      - food-delivery
+      - warehouse-management
+      - manufacturing
+    depends_on:
+      - CP14
+      - CP43
+      - CP42
+      - CP12
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX10
+    name: Consumer Protection, Refund & Dispute
+    description: Consumer rights, refund policies, dispute resolution
+    category: consumer-protection
     obligations:
-      - "refund_policy_enforced"
-      - "dispute_resolution_process"
-      - "consumer_rights_display"
+      - refund_policy_enforced
+      - dispute_resolution_process
+      - consumer_rights_display
     industries_requiring:
-      - "ecommerce-d2c"
-      - "marketplace-b2c"
-      - "food-delivery"
-    depends_on_core_packs:
-      - "CP33"  # Financial (refund calculation)
-      - "CP45"  # Payment (refund processing)
-      - "CP42"  # Approval (dispute resolution)
-      - "CP12"  # Notification (consumer communication)
-      - "CP32"  # State Machine (refund lifecycle)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Audit Evidence
-  # --------------------------------------------------------------------------
-
-  - id: "RX11"
-    name: "Immutable Audit Evidence"
-    description: "Audit trail immutability, evidence preservation"
-    category: "audit"
+      - ecommerce-d2c
+      - marketplace-b2c
+      - food-delivery
+    depends_on:
+      - CP33
+      - CP45
+      - CP42
+      - CP12
+      - CP32
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX11
+    name: Immutable Audit Evidence
+    description: Audit trail immutability, evidence preservation
+    category: audit
     obligations:
-      - "audit_trail_immutable"
-      - "evidence_preservation"
-      - "tamper_evident_logging"
+      - audit_trail_immutable
+      - evidence_preservation
+      - tamper_evident_logging
     industries_requiring:
-      - "all"  # Universal requirement (~95/100 industries)
-    depends_on_core_packs:
-      - "CP14"  # Audit Trail (core)
-      - "CP43"  # Versioning (immutable history)
-      - "CP47"  # Data Retention (evidence lifecycle)
-    status: "stable"
-
-  # --------------------------------------------------------------------------
-  # Data Residency
-  # --------------------------------------------------------------------------
-
-  - id: "RX12"
-    name: "Data Residency & Cross-border Transfer"
-    description: "Data sovereignty, cross-border transfer rules"
-    category: "data-governance"
+      - all
+    depends_on:
+      - CP14
+      - CP43
+      - CP47
+    status: planned
+    version: 1.0.0
+    phase: P1
+  - id: RX12
+    name: Data Residency & Cross-border Transfer
+    description: Data sovereignty, cross-border transfer rules
+    category: data-governance
     obligations:
-      - "data_residency_enforced"
-      - "cross_border_approval_required"
-      - "transfer_mechanism_valid"
+      - data_residency_enforced
+      - cross_border_approval_required
+      - transfer_mechanism_valid
     industries_requiring:
-      - "telehealth"
-      - "international-ecommerce"
-      - "multinational-banking"
-    depends_on_core_packs:
-      - "CP08"  # Database (data location)
-      - "CP04"  # RBAC (access by region)
-      - "CP42"  # Approval (cross-border review)
-      - "CP14"  # Audit (transfer log)
-      - "CP02"  # Multi-Tenant (data isolation)
-    status: "stable"
-
-# ============================================================================
-# TAXONOMY STATISTICS
-# ============================================================================
-
+      - telehealth
+      - international-ecommerce
+      - multinational-banking
+    depends_on:
+      - CP08
+      - CP04
+      - CP42
+      - CP14
+      - CP02
+    status: planned
+    version: 1.0.0
+    phase: P1
 statistics:
   core_packs:
     total: 53
@@ -1808,7 +1747,6 @@ statistics:
       developing: 12
       planned: 36
       experimental: 2
-
   domain_packs:
     total: 36
     by_category:
@@ -1846,7 +1784,10 @@ statistics:
       security: 1
       esg: 1
       data-governance: 1
-
+    by_status:
+      planned: 32
+      developing: 4
+      stable: 0
   regulatory_overlays:
     total: 12
     by_category:
@@ -1862,30 +1803,62 @@ statistics:
       audit: 1
       data-governance: 1
     universal_requirements:
-      - "RX01"  # Privacy & PII Protection
-      - "RX11"  # Immutable Audit Evidence
-
-# ============================================================================
-# VALIDATION RULES
-# ============================================================================
-
+      - RX01
+      - RX11
+    by_status:
+      planned: 12
+      stable: 0
 validation_rules:
-  - rule: "blueprint_must_include_p0_core_packs"
-    description: "All blueprints must include all P0 core packs (CP01-CP04, CP07)"
-    severity: "error"
-
-  - rule: "dependency_order_preserved"
-    description: "Pack dependencies must follow phase ordering (P0 -> P1 -> P2 -> P3 -> P4)"
-    severity: "error"
-
-  - rule: "regulatory_overlay_matches_industry"
-    description: "Industry must include all RX overlays specified in INDUSTRY_100_SYSTEM_MAP.md"
-    severity: "error"
-
-  - rule: "domain_pack_compatible_with_core_packs"
-    description: "Domain packs must be compatible with selected core packs"
-    severity: "warning"
-
-  - rule: "universal_regulatory_overlays_included"
-    description: "All blueprints must include RX01 and RX11"
-    severity: "error"
+  - rule: blueprint_must_include_p0_core_packs
+    description: All blueprints must include all P0 core packs (CP01-CP04, CP07)
+    severity: error
+  - rule: dependency_order_preserved
+    description: Pack dependencies must follow phase ordering (P0 -> P1 -> P2 -> P3 -> P4)
+    severity: error
+  - rule: regulatory_overlay_matches_industry
+    description: Industry must include all RX overlays specified in
+      INDUSTRY_100_SYSTEM_MAP.md
+    severity: error
+  - rule: domain_pack_compatible_with_core_packs
+    description: Domain packs must be compatible with selected core packs
+    severity: warning
+  - rule: universal_regulatory_overlays_included
+    description: All blueprints must include RX01 and RX11
+    severity: error
+  - rule: no_dependency_cycles
+    description: Dependency graph must be acyclic (DAG).
+    severity: error
+  - rule: stable_cannot_depend_on_planned
+    description: A stable pack cannot depend on a planned pack.
+    severity: error
+  - rule: all_referenced_packs_exist
+    description: All pack IDs must exist in taxonomy.
+    severity: error
+status_transitions:
+  planned:
+    - developing
+    - experimental
+  developing:
+    - stable
+    - planned
+  stable:
+    - deprecated
+    - developing
+  experimental:
+    - developing
+    - deprecated
+  deprecated: []
+hotspot_analysis:
+  most_depended_cps:
+    - id: CP01
+      dependents_count: 48
+      priority: critical
+    - id: CP08
+      dependents_count: 34
+      priority: critical
+    - id: CP03
+      dependents_count: 32
+      priority: critical
+    - id: CP04
+      dependents_count: 32
+      priority: critical
