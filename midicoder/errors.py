@@ -432,6 +432,17 @@ class ErrorCode(str, Enum):
     EVT_DEAD_LETTER_FAILED = "MDC-EVT-009"
     EVT_TENANT_ISOLATION_VIOLATION = "MDC-EVT-010"
 
+    # =========================================================================
+    # CP12: Notification & Communication Errors
+    # =========================================================================
+    CP12_NOTIFICATION_CHANNEL_NOT_SUPPORTED = "MDC-CP12-001"
+    CP12_NOTIFICATION_TEMPLATE_NOT_FOUND = "MDC-CP12-002"
+    CP12_NOTIFICATION_TEMPLATE_RENDER_FAILED = "MDC-CP12-003"
+    CP12_NOTIFICATION_PROVIDER_NOT_CONFIGURED = "MDC-CP12-004"
+    CP12_NOTIFICATION_DISPATCH_FAILED = "MDC-CP12-005"
+    CP12_NOTIFICATION_RATE_LIMIT_EXCEEDED = "MDC-CP12-006"
+    CP12_NOTIFICATION_INVALID_RECIPIENT = "MDC-CP12-007"
+
 class ExitCode(Enum):
     """
     Exit codes cho CLI commands.
@@ -742,6 +753,15 @@ class MidicoderErrorManager:
         ErrorCode.INDEX_PARSE_FAILED: "Lỗi khi parse file source code.",
         ErrorCode.INDEX_EMBEDDING_FAILED: "Không thể generate embedding cho symbol.",
         ErrorCode.INDEX_LOCKED: "Index đang bị lock bởi một quá trình khác. Vui lòng thử lại sau.",
+
+        # CP12 Notification Errors
+        ErrorCode.CP12_NOTIFICATION_CHANNEL_NOT_SUPPORTED: "Channel type không được hỗ trợ cho notification.",
+        ErrorCode.CP12_NOTIFICATION_TEMPLATE_NOT_FOUND: "Template notification không tìm thấy.",
+        ErrorCode.CP12_NOTIFICATION_TEMPLATE_RENDER_FAILED: "Render template notification thất bại.",
+        ErrorCode.CP12_NOTIFICATION_PROVIDER_NOT_CONFIGURED: "Provider notification chưa được cấu hình.",
+        ErrorCode.CP12_NOTIFICATION_DISPATCH_FAILED: "Dispatch notification thất bại.",
+        ErrorCode.CP12_NOTIFICATION_RATE_LIMIT_EXCEEDED: "Vượt quá rate limit cho notification channel.",
+        ErrorCode.CP12_NOTIFICATION_INVALID_RECIPIENT: "Người nhận notification không hợp lệ.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {

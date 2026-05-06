@@ -70,6 +70,10 @@ from midicoder.emitters.core.event import (
     EventParser,
 )
 from midicoder.pipeline.mir import MIR
+from midicoder.emitters.core.notification import (
+    NestJSNotificationEmitter,
+    parse_notifications,
+)
 
 
 # ============================================================================
@@ -183,6 +187,11 @@ class BackendNestJSEmitter:
         if events_data:
             files.extend(self._emit_events(events_data, output_dir))
 
+
+        # Emit notification code tu MIR metadata (CP12)
+        notifications_data = mir.metadata.get('notifications', [])
+        if notifications_data:
+            files.extend(self._emit_notifications(notifications_data, output_dir))
         return files
     
     def _emit_base_files(self, output_dir: Path) -> list[GeneratedFile]:
@@ -1090,6 +1099,53 @@ class BackendNestJSEmitter:
             capability=capability,
         )
     
+
+    def _emit_notifications(
+        self,
+        notifications_data: list[dict[str, Any]],
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """
+        Emit notification code files (CP12: Notification & Communication).
+
+        Su dung NestJSNotificationEmitter de generate notification code.
+
+        Files duoc emit:
+        - src/notifications/notification.module.ts
+        - src/notifications/notification.service.ts
+        - src/notifications/notification.controller.ts
+
+        Args:
+            notifications_data: List of notification dicts tu MIR metadata
+            output_dir: Output directory
+
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+
+        try:
+            # Parse notifications tu dict
+            templates = parse_notifications(notifications_data)
+
+            # Tao emitter va emit files
+            notification_emitter = NestJSNotificationEmitter()
+            emitted_files = notification_emitter.generate(templates=templates)
+
+            # Chuyen doi sang GeneratedFile
+            for file_path, file_content in emitted_files.items():
+                files.append(GeneratedFile(
+                    path=Path(file_path),
+                    content=file_content,
+                    template='notification_emitter',
+                    capability='CP12',
+                ))
+        except Exception as e:
+            import logging
+            logging.warning(f'NestJSNotificationEmitter failed: {e}')
+
+        return files
+
     def _render_template(self, template_name: str, context: dict[str, Any]) -> str:
         """
         Render Jinja2 template với context.

@@ -70,6 +70,10 @@ from midicoder.emitters.core.event import (
     EventParser,
 )
 from midicoder.pipeline.mir import MIR
+from midicoder.emitters.core.notification import (
+    FastAPINotificationEmitter,
+    parse_notifications,
+)
 
 
 # ============================================================================
@@ -185,6 +189,11 @@ class BackendFastAPIEmitter:
 
         # Emit API routes từ MIR metadata (CP06)
         files.extend(self._emit_routes(mir, output_dir))
+
+        # Emit notification code tu MIR metadata (CP12)
+        notifications_data = mir.metadata.get('notifications', [])
+        if notifications_data:
+            files.extend(self._emit_notifications(notifications_data, output_dir))
 
         return files
     
@@ -1124,6 +1133,53 @@ class BackendFastAPIEmitter:
         except Exception as e:
             import logging
             logging.warning(f"CP06 Route Emitter failed: {e}")
+
+        return files
+
+
+    def _emit_notifications(
+        self,
+        notifications_data: list[dict[str, Any]],
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """
+        Emit notification code files (CP12: Notification & Communication).
+
+        Su dung FastAPINotificationEmitter de generate notification code.
+
+        Files duoc emit:
+        - app/services/notification_service.py
+        - app/services/email_service.py
+        - app/api/notifications.py
+
+        Args:
+            notifications_data: List of notification dicts tu MIR metadata
+            output_dir: Output directory
+
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+
+        try:
+            # Parse notifications tu dict
+            templates = parse_notifications(notifications_data)
+
+            # Tao emitter va emit files
+            notification_emitter = FastAPINotificationEmitter()
+            emitted_files = notification_emitter.generate(templates=templates)
+
+            # Chuyen doi sang GeneratedFile
+            for file_path, file_content in emitted_files.items():
+                files.append(GeneratedFile(
+                    path=Path(file_path),
+                    content=file_content,
+                    template='notification_emitter',
+                    capability='CP12',
+                ))
+        except Exception as e:
+            import logging
+            logging.warning(f'FastAPINotificationEmitter failed: {e}')
 
         return files
 
