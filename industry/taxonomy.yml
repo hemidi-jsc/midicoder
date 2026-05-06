@@ -416,6 +416,14 @@ core_packs:
       - "CP43"
       - "CP44"
       - "CP45"
+      - "CP46"
+      - "CP47"
+      - "CP48"
+      - "CP49"
+      - "CP50"
+      - "CP51"
+      - "CP52"
+      - "CP53"
     category: "internationalization"
     status: "planned"
 
@@ -650,6 +658,121 @@ core_packs:
       - "CP13"
       - "CP14"
     category: "runtime"
+    status: "planned"
+
+  # --------------------------------------------------------------------------
+  # P2 - Specialized Runtime Capabilities
+  # --------------------------------------------------------------------------
+
+  - id: "CP46"
+    name: "MFA & Advanced Authentication"
+    internal_id: "cp46-mfa"
+    phase: "P2"
+    description: "Multi-factor authentication: TOTP, SMS OTP, WebAuthn/FIDO2, biometric"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies:
+      - "CP03"
+      - "CP12"
+    category: "security"
+    status: "planned"
+
+  - id: "CP47"
+    name: "Data Retention & Lifecycle Management"
+    internal_id: "cp47-retention"
+    phase: "P2"
+    description: "Automated data lifecycle: retention policy, archival, purging, GDPR erasure"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP08"
+      - "CP13"
+      - "CP14"
+    category: "compliance"
+    status: "planned"
+
+  - id: "CP48"
+    name: "API Rate Limiting & Quota Management"
+    internal_id: "cp48-rate-limit"
+    phase: "P2"
+    description: "Per-client/per-tier rate limiting, quota enforcement, API throttling"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP02"
+      - "CP06"
+      - "CP36"
+    category: "integration"
+    status: "planned"
+
+  - id: "CP49"
+    name: "Consent & Preference Management"
+    internal_id: "cp49-consent"
+    phase: "P2"
+    description: "Cookie consent, data processing consent, communication preference, privacy center"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP02"
+      - "CP03"
+    category: "privacy"
+    status: "planned"
+
+  - id: "CP50"
+    name: "Catalog & Taxonomy Engine"
+    internal_id: "cp50-catalog"
+    phase: "P2"
+    description: "Product/service catalog, hierarchical taxonomy, faceted search, attribute management"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP08"
+      - "CP10"
+    category: "commerce"
+    status: "planned"
+
+  # --------------------------------------------------------------------------
+  # P0 - Composition Engine (Critical Foundation)
+  # --------------------------------------------------------------------------
+
+  - id: "CP51"
+    name: "Blueprint Composition Engine"
+    internal_id: "cp51-composition"
+    phase: "P0"
+    description: "Compiler engine to compose CPs + DPs + RXs into complete blueprint"
+    definitions_count: 4
+    obligations_count: 3
+    dependencies:
+      - "CP01"
+    category: "compiler"
+    status: "planned"
+
+  - id: "CP52"
+    name: "Invariant Gate Framework"
+    internal_id: "cp52-invariant"
+    phase: "P0"
+    description: "Compile-time invariant checker for blueprint validation"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies:
+      - "CP51"
+    category: "compiler"
+    status: "planned"
+
+  - id: "CP53"
+    name: "Domain Pack Runtime Bridge"
+    internal_id: "cp53-domain-bridge"
+    phase: "P0"
+    description: "Runtime bridge between generic CPs and domain-specific semantics"
+    definitions_count: 3
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP51"
+    category: "compiler"
     status: "planned"
 
 # ============================================================================
@@ -1185,17 +1308,17 @@ regulatory_overlays:
 
 statistics:
   core_packs:
-    total: 45
+    total: 53
     by_phase:
-      P0: 5
+      P0: 8
       P1: 22
-      P2: 12
+      P2: 17
       P3: 3
       P4: 4
     by_status:
       stable: 5
       developing: 12
-      planned: 26
+      planned: 36
       experimental: 2
 
   domain_packs:
