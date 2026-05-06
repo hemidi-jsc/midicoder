@@ -3,10 +3,10 @@ Tests cho IR Build Command.
 
 Tests này validate:
 - CLI command `ir build` tồn tại và có flags đúng
-- build_mir() function với success path và error cases
-- Helper functions (_dict_to_projection_tree, _build_mir_from_projection_tree, etc.)
+- build_mir() function với success path và error cases (refactored: contract artifacts)
+- Helper functions (_build_mir_from_projection_tree, _process_*, etc.)
 
-Theo SoT E04/E05 và CURRENT_TASK_REQUIREMENT.md (P1-006-F).
+Theo CURRENT_TASK_REQUIREMENT.md (P0-1A).
 
 Author: Midicoder Team
 """
@@ -19,14 +19,14 @@ from click.testing import CliRunner
 from midicoder.pipeline.cli import cli
 from midicoder.pipeline.commands.ir import (
     build_mir,
-    _dict_to_projection_tree,
     _build_mir_from_projection_tree,
     _process_command_to_mir,
     _process_query_to_mir,
     _process_event_to_mir,
     _process_guard_to_mir,
     _process_role_to_mir,
-    _process_workflow_to_mir
+    _process_workflow_to_mir,
+    _REQUIRED_CATEGORIES,
 )
 from midicoder.pipeline.mir import MIR, MIRBuilder, Operation, DataFlow, Boundary
 from midicoder.errors import MidicoderError, ErrorCode
@@ -58,55 +58,53 @@ class TestIRCommands:
 
 
 # ============================================================================
-# build_mir() Function Tests
+# build_mir() Function Tests (Refactored - Contract Artifacts)
 # ============================================================================
 
 class TestBuildMIR:
-    """Tests cho build_mir() function."""
+    """Tests cho build_mir() function (refactored)."""
 
     @patch("midicoder.pipeline.commands.ir.ArtifactsManager")
-    @patch("midicoder.pipeline.commands.ir._dict_to_projection_tree")
+    @patch("midicoder.pipeline.commands.ir.DSLParser")
     @patch("midicoder.pipeline.commands.ir.Validator")
     @patch("midicoder.pipeline.commands.ir._build_mir_from_projection_tree")
     def test_build_mir_success_path(
         self,
         mock_build_mir_from_tree,
         mock_validator,
-        mock_dict_to_tree,
+        mock_dsl_parser,
         mock_artifacts_manager
     ):
-        """Test success path: graph exists → MIR built → saved."""
+        """Test success path: contracts exist → MIR built → saved."""
         # Setup mocks
         mock_mgr = Mock()
         mock_artifacts_manager.return_value = mock_mgr
-        
-        # Mock graph artifact
-        mock_graph_data = {
-            "nodes": {
-                "cmd_001": {"kind": "command", "params": {"id": "create_order", "input": []}}
-            }
-        }
-        mock_mgr.get_by_type.return_value = {
-            "artifact_id": "graph-v1",
-            "content": json.dumps(mock_graph_data)
-        }
-        
-        # Mock projection tree
+
+        # Mock 7 contract artifacts
+        contracts = []
+        for category in _REQUIRED_CATEGORIES:
+            contracts.append({
+                "artifact_id": f"contract_{category}",
+                "content": f"{category}: []",
+            })
+        mock_mgr.list_by_type.return_value = contracts
+
+        # Mock DSLParser
+        mock_parser_instance = Mock()
         mock_tree = Mock(spec=ProjectionTree)
-        mock_tree.node_count.return_value = 1
-        mock_dict_to_tree.return_value = mock_tree
-        
-        # Mock validation report với errors và warnings là list
+        mock_tree.node_count.return_value = 7
+        mock_parser_instance.build_projection_tree.return_value = mock_tree
+        mock_dsl_parser.return_value = mock_parser_instance
+
+        # Mock validation report
         mock_validation_result = Mock()
         mock_validation_result.errors = []
         mock_validation_result.warnings = []
-        
-        # Setup Validator mock để return validation result
         mock_validator_instance = Mock()
         mock_validator_instance.validate.return_value = mock_validation_result
         mock_validator.return_value = mock_validator_instance
-        
-        # Mock MIR với các attributes cần thiết cho logging
+
+        # Mock MIR
         mock_mir = Mock()
         mock_mir.to_json.return_value = '{"version": "1.0.0"}'
         mock_mir.compute_hash.return_value = "abc123"
@@ -115,114 +113,126 @@ class TestBuildMIR:
         mock_mir.effect_flows = []
         mock_mir.boundaries = []
         mock_build_mir_from_tree.return_value = mock_mir
-        
+
         # Run
         result = build_mir(verbose=True)
-        
+
         # Verify
         assert result == mock_mir
         mock_mgr.init.assert_called_once()
-        mock_mgr.get_by_type.assert_called_once_with("capability_graph")
+        mock_mgr.list_by_type.assert_called_once_with("contract")
         mock_mgr.create.assert_called_once()
 
     @patch("midicoder.pipeline.commands.ir.ArtifactsManager")
-    def test_build_mir_graph_not_found(self, mock_artifacts_manager):
-        """Test error: graph not found → MIR_GRAPH_NOT_FOUND error."""
+    def test_build_mir_no_contracts(self, mock_artifacts_manager):
+        """Test error: no contracts → MIR_GRAPH_NOT_FOUND error."""
         mock_mgr = Mock()
         mock_artifacts_manager.return_value = mock_mgr
-        mock_mgr.get_by_type.return_value = None
-        
+        mock_mgr.list_by_type.return_value = []
+
         with pytest.raises(MidicoderError) as exc_info:
             build_mir()
-        
+
         assert exc_info.value.code == ErrorCode.MIR_GRAPH_NOT_FOUND
 
     @patch("midicoder.pipeline.commands.ir.ArtifactsManager")
-    def test_build_mir_invalid_json(self, mock_artifacts_manager):
-        """Test error: invalid JSON → MIR_DSL_PARSE_FAILED error."""
+    def test_build_mir_missing_categories(self, mock_artifacts_manager):
+        """Test error: missing contract categories → MIR_DSL_PARSE_FAILED."""
         mock_mgr = Mock()
         mock_artifacts_manager.return_value = mock_mgr
-        mock_mgr.get_by_type.return_value = {
-            "artifact_id": "graph-v1",
-            "content": "not valid json {"
-        }
-        
+        # Chỉ có 2 categories (thiếu 5)
+        mock_mgr.list_by_type.return_value = [
+            {"artifact_id": "contract_entities", "content": "entities: []"},
+            {"artifact_id": "contract_commands", "content": "commands: []"},
+        ]
+
         with pytest.raises(MidicoderError) as exc_info:
             build_mir()
-        
+
         assert exc_info.value.code == ErrorCode.MIR_DSL_PARSE_FAILED
 
     @patch("midicoder.pipeline.commands.ir.ArtifactsManager")
-    @patch("midicoder.pipeline.commands.ir._dict_to_projection_tree")
+    @patch("midicoder.pipeline.commands.ir.DSLParser")
     @patch("midicoder.pipeline.commands.ir.Validator")
     def test_build_mir_validation_failed(
         self,
         mock_validator,
-        mock_dict_to_tree,
+        mock_dsl_parser,
         mock_artifacts_manager
     ):
         """Test error: validation fails → MIR_VALIDATION_FAILED error."""
         mock_mgr = Mock()
         mock_artifacts_manager.return_value = mock_mgr
-        mock_mgr.get_by_type.return_value = {
-            "artifact_id": "graph-v1",
-            "content": json.dumps({"nodes": {}})
-        }
-        
+
+        # Mock 7 contract artifacts
+        contracts = []
+        for category in _REQUIRED_CATEGORIES:
+            contracts.append({
+                "artifact_id": f"contract_{category}",
+                "content": f"{category}: []",
+            })
+        mock_mgr.list_by_type.return_value = contracts
+
+        # Mock DSLParser
+        mock_parser_instance = Mock()
         mock_tree = Mock(spec=ProjectionTree)
-        mock_tree.node_count.return_value = 0
-        mock_dict_to_tree.return_value = mock_tree
-        
-        # Mock validation report với errors là list không rỗng
+        mock_tree.node_count.return_value = 7
+        mock_parser_instance.build_projection_tree.return_value = mock_tree
+        mock_dsl_parser.return_value = mock_parser_instance
+
+        # Mock validation report với errors
         mock_validation_result = Mock()
         mock_validation_result.errors = ["Error 1", "Error 2"]
         mock_validation_result.warnings = []
-        
-        # Setup Validator mock
         mock_validator_instance = Mock()
         mock_validator_instance.validate.return_value = mock_validation_result
         mock_validator.return_value = mock_validator_instance
-        
+
         with pytest.raises(MidicoderError) as exc_info:
             build_mir()
-        
+
         assert exc_info.value.code == ErrorCode.MIR_VALIDATION_FAILED
 
     @patch("midicoder.pipeline.commands.ir.ArtifactsManager")
-    @patch("midicoder.pipeline.commands.ir._dict_to_projection_tree")
+    @patch("midicoder.pipeline.commands.ir.DSLParser")
     @patch("midicoder.pipeline.commands.ir.Validator")
     @patch("midicoder.pipeline.commands.ir._build_mir_from_projection_tree")
     def test_build_mir_save_failed(
         self,
         mock_build_mir_from_tree,
         mock_validator,
-        mock_dict_to_tree,
+        mock_dsl_parser,
         mock_artifacts_manager
     ):
         """Test error: save fails → MIR_SAVE_FAILED error."""
         mock_mgr = Mock()
         mock_artifacts_manager.return_value = mock_mgr
-        
-        mock_mgr.get_by_type.return_value = {
-            "artifact_id": "graph-v1",
-            "content": json.dumps({"nodes": {}})
-        }
-        
+
+        # Mock 7 contract artifacts
+        contracts = []
+        for category in _REQUIRED_CATEGORIES:
+            contracts.append({
+                "artifact_id": f"contract_{category}",
+                "content": f"{category}: []",
+            })
+        mock_mgr.list_by_type.return_value = contracts
+
+        # Mock DSLParser
+        mock_parser_instance = Mock()
         mock_tree = Mock(spec=ProjectionTree)
-        mock_tree.node_count.return_value = 0
-        mock_dict_to_tree.return_value = mock_tree
-        
-        # Mock validation report
+        mock_tree.node_count.return_value = 7
+        mock_parser_instance.build_projection_tree.return_value = mock_tree
+        mock_dsl_parser.return_value = mock_parser_instance
+
+        # Mock validation
         mock_validation_result = Mock()
         mock_validation_result.errors = []
         mock_validation_result.warnings = []
-        
-        # Setup Validator mock
         mock_validator_instance = Mock()
         mock_validator_instance.validate.return_value = mock_validation_result
         mock_validator.return_value = mock_validator_instance
-        
-        # Mock MIR với các attributes cần thiết cho logging
+
+        # Mock MIR
         mock_mir = Mock()
         mock_mir.to_json.return_value = "{}"
         mock_mir.compute_hash.return_value = "hash123"
@@ -231,39 +241,14 @@ class TestBuildMIR:
         mock_mir.effect_flows = []
         mock_mir.boundaries = []
         mock_build_mir_from_tree.return_value = mock_mir
-        
+
         # Mock save to raise exception
         mock_mgr.create.side_effect = Exception("Save failed")
-        
+
         with pytest.raises(MidicoderError) as exc_info:
             build_mir()
-        
+
         assert exc_info.value.code == ErrorCode.MIR_SAVE_FAILED
-
-
-# ============================================================================
-# Helper Function Tests - _dict_to_projection_tree
-# ============================================================================
-
-class TestDictToProjectionTree:
-    """Tests cho _dict_to_projection_tree() function."""
-
-    def test_dict_to_projection_tree_empty(self):
-        """Test conversion với empty dict."""
-        data = {"nodes": {}}
-        tree = _dict_to_projection_tree(data)
-        
-        assert tree is not None
-
-    # SKIP: Tests này fail vì ProjectionNode validation yêu cầu nhiều fields hơn
-    # Cần cập nhật test data với đầy đủ required fields hoặc skip tests này
-    
-    # @pytest.mark.skip("ProjectionNode validation yêu cầu thêm fields")
-    # def test_dict_to_projection_tree_single_command_node(self):
-    #     """Test conversion với single command node."""
-    #     data = {"nodes": {"cmd_001": {"kind": "command", "params": {"id": "create_order", "input": []}}}}
-    #     tree = _dict_to_projection_tree(data)
-    #     assert "cmd_001" in tree.nodes
 
 
 # ============================================================================
@@ -277,18 +262,17 @@ class TestBuildMIRFromProjectionTree:
         """Test build từ empty tree."""
         tree = ProjectionTree()
         mir = _build_mir_from_projection_tree(tree)
-        
+
         assert isinstance(mir, MIR)
         assert len(mir.operations) == 0
         assert len(mir.data_flows) == 0
         assert len(mir.effect_flows) == 0
-        # Boundaries có thể có từ roles/workflows mặc định
 
     def test_build_mir_version_and_source(self):
         """Test MIR version và source metadata."""
         tree = ProjectionTree()
         mir = _build_mir_from_projection_tree(tree)
-        
+
         assert mir.metadata.get("version") == "1.0.0"
         assert mir.metadata.get("source") == "DSL ProjectionTree"
 
@@ -308,10 +292,10 @@ class TestProcessCommandToMIR:
             kind=NodeKind.COMMAND,
             params={"id": "create_order", "input": [], "category": "create"}
         )
-        
+
         _process_command_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create main operation
         assert len(mir.operations) >= 1
 
@@ -328,10 +312,10 @@ class TestProcessCommandToMIR:
                 "category": "create"
             }
         )
-        
+
         _process_command_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create auth operation
         auth_ops = mir.get_operations_by_type("authorize_permission")
         assert len(auth_ops) == 1
@@ -349,10 +333,10 @@ class TestProcessCommandToMIR:
                 "category": "create"
             }
         )
-        
+
         _process_command_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create tenant operation
         tenant_ops = mir.get_operations_by_type("enforce_tenant_scope")
         assert len(tenant_ops) == 1
@@ -370,10 +354,10 @@ class TestProcessCommandToMIR:
                 "category": "create"
             }
         )
-        
+
         _process_command_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create transaction boundary
         txn_boundaries = [b for b in mir.boundaries if b.boundary_type == "transaction"]
         assert len(txn_boundaries) >= 1
@@ -391,11 +375,11 @@ class TestProcessCommandToMIR:
                 "category": "create"
             }
         )
-        
+
         _process_command_to_mir(builder, node)
         mir = builder.build()
-        
-        # Should create effect flows for each emit
+
+        # Should create effect flows cho mỗi emit
         assert len(mir.effect_flows) == 2
 
 
@@ -410,10 +394,10 @@ class TestProcessQueryToMIR:
             kind=NodeKind.QUERY,
             params={"id": "get_order", "returns": {}, "category": "list"}
         )
-        
+
         _process_query_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create query operation
         query_ops = mir.get_operations_by_type("query_records")
         assert len(query_ops) == 1
@@ -430,10 +414,10 @@ class TestProcessQueryToMIR:
                 "required_permissions": ["order.read"]
             }
         )
-        
+
         _process_query_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create auth operation
         auth_ops = mir.get_operations_by_type("authorize_permission")
         assert len(auth_ops) == 1
@@ -450,10 +434,10 @@ class TestProcessQueryToMIR:
                 "tenant_scope": "tenant_isolated"
             }
         )
-        
+
         _process_query_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create tenant operation
         tenant_ops = mir.get_operations_by_type("enforce_tenant_scope")
         assert len(tenant_ops) == 1
@@ -470,13 +454,12 @@ class TestProcessEventToMIR:
             kind=NodeKind.EVENT,
             params={"id": "order_created", "type": "domain", "source_entity": "Order"}
         )
-        
+
         _process_event_to_mir(builder, node)
         mir = builder.build()
-        
-        # Should add event metadata - key is from params.get("id", event.id)
+
+        # Should add event metadata
         assert "events" in mir.metadata
-        # Key is "order_created" (from params["id"]), not "evt_001" (node.id)
         assert "order_created" in mir.metadata["events"]
 
     def test_process_event_with_fields(self):
@@ -493,11 +476,10 @@ class TestProcessEventToMIR:
                 "tenant_scope": "tenant_isolated"
             }
         )
-        
+
         _process_event_to_mir(builder, node)
         mir = builder.build()
-        
-        # Key is "order_created" (from params["id"])
+
         event_meta = mir.metadata["events"]["order_created"]
         assert event_meta["type"] == "domain_event"
         assert event_meta["fields"] == ["order_id", "total", "status"]
@@ -514,10 +496,10 @@ class TestProcessGuardToMIR:
             kind=NodeKind.GUARD,
             params={"id": "validate_order", "type": "validation", "condition": {}}
         )
-        
+
         _process_guard_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create validation operation
         assert len(mir.operations) == 1
         assert mir.operations[0].op_type == "validate_validation"
@@ -534,10 +516,10 @@ class TestProcessRoleToMIR:
             kind=NodeKind.ROLE,
             params={"id": "admin", "permissions": []}
         )
-        
+
         _process_role_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create auth boundary
         auth_boundaries = [b for b in mir.boundaries if b.boundary_type == "auth"]
         assert len(auth_boundaries) >= 1
@@ -554,10 +536,10 @@ class TestProcessRoleToMIR:
                 "tenant_scope": "global"
             }
         )
-        
+
         _process_role_to_mir(builder, node)
         mir = builder.build()
-        
+
         auth_boundaries = [b for b in mir.boundaries if b.boundary_type == "auth"]
         assert len(auth_boundaries) >= 1
         boundary = auth_boundaries[0]
@@ -576,10 +558,10 @@ class TestProcessWorkflowToMIR:
             kind=NodeKind.WORKFLOW,
             params={"id": "checkout", "states": []}
         )
-        
+
         _process_workflow_to_mir(builder, node)
         mir = builder.build()
-        
+
         # Should create transaction boundary
         txn_boundaries = [b for b in mir.boundaries if b.boundary_type == "transaction"]
         assert len(txn_boundaries) >= 1
@@ -599,15 +581,29 @@ class TestProcessWorkflowToMIR:
                 ]
             }
         )
-        
+
         _process_workflow_to_mir(builder, node)
         mir = builder.build()
-        
+
         txn_boundaries = [b for b in mir.boundaries if b.boundary_type == "transaction"]
         assert len(txn_boundaries) >= 1
         boundary = txn_boundaries[0]
         # States tạo ra 3 operation IDs
         assert len(boundary.enclosing_ops) == 3
+
+
+class TestRequiredCategories:
+    """Tests cho _REQUIRED_CATEGORIES constant."""
+
+    def test_required_categories_has_seven_items(self):
+        """Kiểm tra _REQUIRED_CATEGORIES có đúng 7 items."""
+        assert len(_REQUIRED_CATEGORIES) == 7
+
+    def test_required_categories_contains_expected(self):
+        """Kiểm tra các categories mong đợi."""
+        expected = {"entities", "commands", "queries", "events",
+                    "workflows", "value_objects", "guards"}
+        assert _REQUIRED_CATEGORIES == expected
 
 
 if __name__ == "__main__":

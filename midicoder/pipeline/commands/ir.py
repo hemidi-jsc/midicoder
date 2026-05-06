@@ -1,25 +1,24 @@
 """
 IR Build Command Implementation.
 
-Lệnh build MIR (Midicoder Intermediate Representation) từ Capability Graph:
-- ir build: Build MIR từ Capability Graph trong SQLite
+Lệnh build MIR (Midicoder Intermediate Representation) từ Contract Artifacts:
+- ir build: Build MIR từ contract artifacts trong SQLite
 
 Theo SoT E04/E05:
-- Input: Capability Graph từ artifacts table (SQLite)
-- Process: ProjectionTree → MIR với typed IR
+- Input: Contract artifacts (YAML strings) từ artifacts table (SQLite)
+- Process: DSLParser → ProjectionTree → MIR với typed IR
 - Output: MIR JSON content lưu vào artifacts table
 
 E04: IR Build Command
 E05: MIR Typed IR
 
 Author: Midicoder Team
-Version: 1.0.0
+Version: 2.0.0 (Refactored: contract artifacts input)
 """
 
 from __future__ import annotations
 
 import click
-import json
 from pathlib import Path
 from typing import Any
 
@@ -33,16 +32,24 @@ from midicoder.dsl.validator import Validator
 from midicoder.pipeline.dsl_parser import DSLParser
 
 
+# Các category contract bắt buộc
+_REQUIRED_CATEGORIES = {
+    "entities", "commands", "queries", "events",
+    "workflows", "value_objects", "guards"
+}
+
+
 def build_mir(verbose: bool = False) -> MIR:
     """
-    Build MIR từ Capability Graph trong SQLite.
+    Build MIR từ contract artifacts trong SQLite.
 
     Process:
-    1. Query Capability Graph từ artifacts table
-    2. Parse JSON sang ProjectionTree (DSL kernel)
-    3. Validate ProjectionTree
-    4. Build MIR từ ProjectionTree
-    5. Save MIR JSON vào artifacts table
+    1. Query contract artifacts từ artifacts table (type="contract")
+    2. Validate tất cả 7 categories present (strict mode)
+    3. Parse YAML strings → ProjectionTree (qua DSLParser)
+    4. Validate ProjectionTree
+    5. Build MIR từ ProjectionTree
+    6. Save MIR JSON vào artifacts table
 
     Args:
         verbose: Verbose output
@@ -51,37 +58,54 @@ def build_mir(verbose: bool = False) -> MIR:
         MIR instance
 
     Raises:
-        MidicoderError: Nếu không tìm thấy graph, parse fail, hoặc save fail
+        MidicoderError: Nếu thiếu contracts, parse fail, validation fail, hoặc save fail
     """
-    click.echo("🏗️  Đang build MIR từ Capability Graph...")
+    click.echo("🏗️  Đang build MIR từ contract artifacts...")
 
-    # Step 1: Load Capability Graph từ SQLite
+    # Bước 1: Load contract artifacts từ SQLite
     artifacts_manager = ArtifactsManager()
     artifacts_manager.init()
 
-    # Tìm capability graph artifact
-    graph_artifact = artifacts_manager.get_by_type("capability_graph")
-    if not graph_artifact:
-        click.echo("❌ Không tìm thấy Capability Graph trong artifacts")
+    # Tìm tất cả contract artifacts
+    contracts = artifacts_manager.list_by_type("contract")
+    if not contracts:
+        click.echo("❌ Không tìm thấy contract artifacts trong artifacts")
         click.echo("💡 Chạy 'midicoder contract gen' trước")
         EM.raise_error(ErrorCode.MIR_GRAPH_NOT_FOUND)
 
-    click.echo(f"   → Found capability graph: {graph_artifact['artifact_id']}")
+    click.echo(f"   → Found {len(contracts)} contract artifacts")
 
-    # Parse JSON content thành dict
-    try:
-        graph_data = json.loads(graph_artifact['content'])
-    except json.JSONDecodeError as e:
+    # Bước 2: Phân loại contracts theo category
+    # artifact_id naming convention: "contract_<category>" (ví dụ: "contract_entities")
+    yaml_dict = {}
+    for artifact in contracts:
+        artifact_id = artifact.get("artifact_id", "")
+        # Trích xuất category từ artifact_id (format: "contract_<category>")
+        if artifact_id.startswith("contract_"):
+            category = artifact_id[len("contract_"):]
+            if category in _REQUIRED_CATEGORIES:
+                yaml_content = artifact.get("content", "")
+                yaml_dict[category] = yaml_content
+                click.echo(f"   → Loaded contract: {category}")
+
+    # Bước 3: Validate tất cả categories present (strict mode)
+    missing_categories = _REQUIRED_CATEGORIES - set(yaml_dict.keys())
+    if missing_categories:
+        click.echo(f"❌ Thiếu contract categories: {', '.join(sorted(missing_categories))}")
+        click.echo("💡 Đảm bảo tất cả 7 categories đều được tạo bởi 'contract gen'")
         EM.raise_error(
             ErrorCode.MIR_DSL_PARSE_FAILED,
-            error=str(e)
+            missing_categories=sorted(missing_categories)
         )
 
-    # Step 2: Convert dict → ProjectionTree
-    projection_tree = _dict_to_projection_tree(graph_data)
+    click.echo(f"   ✓ Tất cả {len(_REQUIRED_CATEGORIES)} categories present")
+
+    # Bước 4: Parse YAML strings → ProjectionTree
+    dsl_parser = DSLParser()
+    projection_tree = dsl_parser.build_projection_tree(yaml_dict)
     click.echo(f"   → ProjectionTree: {projection_tree.node_count()} nodes")
 
-    # Step 3: Validate ProjectionTree
+    # Bước 5: Validate ProjectionTree
     validator = Validator()
     validation_result = validator.validate(projection_tree)
     if validation_result.errors:
@@ -92,14 +116,14 @@ def build_mir(verbose: bool = False) -> MIR:
 
     click.echo(f"   ✓ Validation passed ({len(validation_result.warnings)} warnings)")
 
-    # Step 4: Build MIR từ ProjectionTree
+    # Bước 6: Build MIR từ ProjectionTree
     mir = _build_mir_from_projection_tree(projection_tree)
     click.echo(f"   → MIR: {len(mir.operations)} operations, "
                f"{len(mir.data_flows)} data flows, "
                f"{len(mir.effect_flows)} effect flows, "
                f"{len(mir.boundaries)} boundaries")
 
-    # Step 5: Save MIR vào SQLite
+    # Bước 7: Save MIR vào SQLite
     mir_json = mir.to_json()
     mir_hash = mir.compute_hash()
 
@@ -131,83 +155,6 @@ def build_mir(verbose: bool = False) -> MIR:
     click.echo("Tiếp theo:")
     click.echo("  1. Chạy: midicoder code plan (create implementation plan)")
     click.echo("  2. Chạy: midicoder code gen (generate code)")
-
-    return mir
-
-
-def _dict_to_projection_tree(data: dict[str, Any]) -> ProjectionTree:
-    """
-    Chuyển dict từ SQLite sang ProjectionTree.
-
-    Deprecated: Sử dụng DSLParser.parse_directory() thay thế.
-
-    Args:
-        data: Dictionary chứa capability graph data
-
-    Returns:
-        ProjectionTree instance
-    """
-    tree = ProjectionTree()
-
-    # Process nodes từ dict
-    for node_id, node_data in data.get("nodes", {}).items():
-        kind_value = node_data.get("kind", "")
-        params = node_data.get("params", {})
-
-        # Map string kind to NodeKind enum
-        try:
-            kind = NodeKind(kind_value)
-        except ValueError:
-            # Unknown kind, skip
-            continue
-
-        node = ProjectionNode(
-            id=node_id,
-            kind=kind,
-            params=params
-        )
-        tree.add_node(node)
-
-    return tree
-
-
-def _build_mir_from_contracts_directory(contracts_dir: str) -> MIR:
-    """
-    Build MIR từ contracts directory sử dụng DSLParser.
-
-    Đây là preferred method để build MIR từ YAML contracts.
-
-    Args:
-        contracts_dir: Path đến contracts directory
-
-    Returns:
-        MIR instance
-    """
-    click.echo(f"📁 Parsing contracts từ: {contracts_dir}")
-
-    # Parse YAML files → ProjectionTree
-    dsl_parser = DSLParser()
-    tree = dsl_parser.parse_directory(contracts_dir)
-
-    click.echo(f"   → ProjectionTree: {tree.node_count()} nodes")
-
-    # Validate ProjectionTree
-    validator = Validator()
-    validation_result = validator.validate(tree)
-    if validation_result.errors:
-        click.echo("❌ Validation errors:")
-        for error in validation_result.errors:
-            click.echo(f"   - {error}")
-        EM.raise_error(ErrorCode.MIR_VALIDATION_FAILED, errors=len(validation_result.errors))
-
-    click.echo(f"   ✓ Validation passed ({len(validation_result.warnings)} warnings)")
-
-    # Build MIR từ ProjectionTree
-    mir = _build_mir_from_projection_tree(tree)
-    click.echo(f"   → MIR: {len(mir.operations)} operations, "
-               f"{len(mir.data_flows)} data flows, "
-               f"{len(mir.effect_flows)} effect flows, "
-               f"{len(mir.boundaries)} boundaries")
 
     return mir
 
@@ -457,7 +404,7 @@ def _process_workflow_to_mir(builder: MIRBuilder, workflow: ProjectionNode) -> N
     params = workflow.params
     workflow_id = params.get("id", workflow.id)
 
-    # Extract operation IDs from workflow states
+    # Extract operation IDs từ workflow states
     states = params.get("states", [])
     state_ops = [f"{workflow_id}_{state.get('id', str(i))}" for i, state in enumerate(states)]
 
