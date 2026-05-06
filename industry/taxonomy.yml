@@ -401,6 +401,21 @@ core_packs:
       - "CP26"
       - "CP27"
       - "CP28"
+      - "CP31"
+      - "CP32"
+      - "CP33"
+      - "CP34"
+      - "CP35"
+      - "CP36"
+      - "CP37"
+      - "CP38"
+      - "CP39"
+      - "CP40"
+      - "CP41"
+      - "CP42"
+      - "CP43"
+      - "CP44"
+      - "CP45"
     category: "internationalization"
     status: "planned"
 
@@ -413,6 +428,228 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP01"]
     category: "ai-assisted"
+    status: "planned"
+
+  # --------------------------------------------------------------------------
+  # P1 - Critical Runtime Capabilities (New)
+  # --------------------------------------------------------------------------
+
+  - id: "CP31"
+    name: "Scheduler & Cron Engine"
+    internal_id: "cp31-scheduler"
+    phase: "P1"
+    description: "Scheduled tasks, recurring jobs, cron expression, calendar-based scheduling"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP05"
+      - "CP13"
+      - "CP14"
+    category: "runtime"
+    status: "planned"
+
+  - id: "CP32"
+    name: "State Machine Engine"
+    internal_id: "cp32-state-machine"
+    phase: "P1"
+    description: "Finite state machine for complex entity lifecycle management"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP05"
+      - "CP14"
+    category: "runtime"
+    status: "planned"
+
+  - id: "CP33"
+    name: "Financial Engine"
+    internal_id: "cp33-financial"
+    phase: "P1"
+    description: "Multi-currency arithmetic, FX rates, double-entry ledger, rounding rules"
+    definitions_count: 5
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP08"
+      - "CP14"
+    category: "financial"
+    status: "planned"
+
+  - id: "CP34"
+    name: "Report & Document Generator"
+    internal_id: "cp34-reporting"
+    phase: "P1"
+    description: "PDF generation, Excel export, report templates, batch document processing"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP08"
+      - "CP13"
+    category: "document"
+    status: "planned"
+
+  - id: "CP36"
+    name: "Tenant Onboarding & Subscription"
+    internal_id: "cp36-tenant-onboarding"
+    phase: "P1"
+    description: "Self-service tenant registration, verification, trial, subscription management"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP02"
+      - "CP03"
+      - "CP12"
+      - "CP33"
+    category: "architecture"
+    status: "planned"
+
+  - id: "CP37"
+    name: "Feature Flags & Dynamic Config"
+    internal_id: "cp37-feature-flags"
+    phase: "P1"
+    description: "Runtime feature toggle, A/B testing, dynamic settings per tenant/environment"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP02"
+      - "CP14"
+    category: "runtime"
+    status: "planned"
+
+  - id: "CP39"
+    name: "i18n/L10n Runtime"
+    internal_id: "cp39-i18n-runtime"
+    phase: "P1"
+    description: "Multi-language support, locale-aware formatting, translation management"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP02"
+    category: "internationalization"
+    status: "planned"
+
+  - id: "CP40"
+    name: "Webhook & Outbound Integration Hub"
+    internal_id: "cp40-webhook"
+    phase: "P1"
+    description: "Webhook management, event delivery, retry policy, outbound API integration"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP05"
+      - "CP12"
+      - "CP14"
+    category: "integration"
+    status: "planned"
+
+  - id: "CP42"
+    name: "Approval Workflow Engine"
+    internal_id: "cp42-approval"
+    phase: "P1"
+    description: "Multi-level approval chain, approval matrix, delegation, escalation"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP04"
+      - "CP05"
+      - "CP12"
+    category: "runtime"
+    status: "planned"
+
+  - id: "CP45"
+    name: "Payment Gateway Abstraction"
+    internal_id: "cp45-payment"
+    phase: "P1"
+    description: "Unified payment interface, payment method management, transaction flow"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP05"
+      - "CP14"
+      - "CP33"
+      - "CP40"
+    category: "financial"
+    status: "planned"
+
+  # --------------------------------------------------------------------------
+  # P2 - Standard Runtime Capabilities (New)
+  # --------------------------------------------------------------------------
+
+  - id: "CP35"
+    name: "Geospatial Services"
+    internal_id: "cp35-geospatial"
+    phase: "P2"
+    description: "Location services, geofencing, routing, distance calculation"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP05"
+      - "CP12"
+    category: "geospatial"
+    status: "planned"
+
+  - id: "CP38"
+    name: "Data Import/Export/ETL"
+    internal_id: "cp38-etl"
+    phase: "P2"
+    description: "CSV import, data migration, bulk data operations, ETL pipeline"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP08"
+      - "CP13"
+      - "CP14"
+    category: "data"
+    status: "planned"
+
+  - id: "CP41"
+    name: "Chat & Messaging"
+    internal_id: "cp41-chat"
+    phase: "P2"
+    description: "In-app chat, real-time messaging, support ticket, notification center"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP05"
+      - "CP22"
+    category: "communication"
+    status: "planned"
+
+  - id: "CP43"
+    name: "Versioning & History"
+    internal_id: "cp43-versioning"
+    phase: "P2"
+    description: "Entity versioning, time-travel query, soft delete, audit trail extension"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP08"
+      - "CP14"
+    category: "data"
+    status: "planned"
+
+  - id: "CP44"
+    name: "Bulk Operations Engine"
+    internal_id: "cp44-bulk-ops"
+    phase: "P2"
+    description: "Batch processing, bulk update, parallel processing, chunk processing"
+    definitions_count: 4
+    obligations_count: 2
+    dependencies:
+      - "CP01"
+      - "CP13"
+      - "CP14"
+    category: "runtime"
     status: "planned"
 
 # ============================================================================
@@ -948,17 +1185,17 @@ regulatory_overlays:
 
 statistics:
   core_packs:
-    total: 30
+    total: 45
     by_phase:
       P0: 5
-      P1: 12
-      P2: 7
+      P1: 22
+      P2: 12
       P3: 3
       P4: 4
     by_status:
       stable: 5
       developing: 12
-      planned: 11
+      planned: 26
       experimental: 2
 
   domain_packs:
