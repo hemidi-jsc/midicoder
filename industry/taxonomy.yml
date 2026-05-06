@@ -61,7 +61,7 @@ core_packs:
     obligations_count: 1
     dependencies: ["CP01"]
     category: "architecture"
-    status: "stable"
+    status: "developing"
 
   - id: "CP03"
     name: "Authentication & Authorization Framework"
@@ -94,7 +94,7 @@ core_packs:
     obligations_count: 1
     dependencies: []
     category: "infrastructure"
-    status: "stable"
+    status: "developing"
 
   # --------------------------------------------------------------------------
   # P1 - High Priority (Most Production Apps)
@@ -120,7 +120,7 @@ core_packs:
     obligations_count: 0
     dependencies: ["CP01", "CP05"]
     category: "integration"
-    status: "stable"
+    status: "developing"
 
   - id: "CP08"
     name: "Database & Data Access Layer Generator"
@@ -131,7 +131,7 @@ core_packs:
     obligations_count: 1
     dependencies: ["CP01"]
     category: "persistence"
-    status: "stable"
+    status: "developing"
 
   - id: "CP09"
     name: "Caching & Performance Layer Generator"
@@ -142,7 +142,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP08"]
     category: "performance"
-    status: "stable"
+    status: "developing"
 
   - id: "CP10"
     name: "Search & Indexing Generator"
@@ -153,7 +153,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP08"]
     category: "performance"
-    status: "stable"
+    status: "developing"
 
   - id: "CP11"
     name: "File Storage & Media Processing Generator"
@@ -164,7 +164,7 @@ core_packs:
     obligations_count: 1
     dependencies: ["CP07"]
     category: "storage"
-    status: "stable"
+    status: "developing"
 
   - id: "CP12"
     name: "Notification & Communication Generator"
@@ -186,7 +186,7 @@ core_packs:
     obligations_count: 1
     dependencies: ["CP05"]
     category: "runtime"
-    status: "stable"
+    status: "developing"
 
   - id: "CP14"
     name: "Audit Trail & Compliance Generator"
@@ -197,7 +197,7 @@ core_packs:
     obligations_count: 1
     dependencies: ["CP01"]
     category: "compliance"
-    status: "stable"
+    status: "developing"
 
   - id: "CP15"
     name: "Observability Stack Generator"
@@ -208,7 +208,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP07"]
     category: "observability"
-    status: "stable"
+    status: "planned"
 
   - id: "CP23"
     name: "Testing Framework Generator"
@@ -219,7 +219,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP01"]
     category: "quality"
-    status: "stable"
+    status: "planned"
 
   # --------------------------------------------------------------------------
   # P2 - Standard Features (Commonly Needed)
@@ -234,7 +234,7 @@ core_packs:
     obligations_count: 1
     dependencies: ["CP15"]
     category: "observability"
-    status: "stable"
+    status: "planned"
 
   - id: "CP17"
     name: "Business Intelligence & Analytics Generator"
@@ -245,7 +245,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP08", "CP15"]
     category: "analytics"
-    status: "stable"
+    status: "planned"
 
   - id: "CP18"
     name: "Frontend Framework Generator"
@@ -256,7 +256,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP01"]
     category: "frontend"
-    status: "stable"
+    status: "developing"
 
   - id: "CP19"
     name: "UI Component Generator"
@@ -267,7 +267,7 @@ core_packs:
     obligations_count: 1
     dependencies: ["CP18"]
     category: "frontend"
-    status: "stable"
+    status: "developing"
 
   - id: "CP20"
     name: "API Client & Integration Generator"
@@ -278,7 +278,7 @@ core_packs:
     obligations_count: 3
     dependencies: ["CP06", "CP18"]
     category: "frontend"
-    status: "stable"
+    status: "developing"
 
   - id: "CP21"
     name: "Authentication UI Generator"
@@ -289,7 +289,7 @@ core_packs:
     obligations_count: 0
     dependencies: ["CP03", "CP18"]
     category: "frontend"
-    status: "stable"
+    status: "planned"
 
   - id: "CP22"
     name: "Real-time UI Generator"
@@ -300,7 +300,7 @@ core_packs:
     obligations_count: 1
     dependencies: ["CP05", "CP18"]
     category: "frontend"
-    status: "stable"
+    status: "planned"
 
   # --------------------------------------------------------------------------
   # P3 - Advanced Features (Specialized Use Cases)
@@ -315,7 +315,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP23"]
     category: "quality"
-    status: "stable"
+    status: "planned"
 
   - id: "CP25"
     name: "Performance Testing Generator"
@@ -326,7 +326,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP23"]
     category: "quality"
-    status: "stable"
+    status: "planned"
 
   - id: "CP26"
     name: "Documentation Generator"
@@ -337,7 +337,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP01"]
     category: "documentation"
-    status: "stable"
+    status: "planned"
 
   # --------------------------------------------------------------------------
   # P4 - Experimental/Future (Opt-in Only)
@@ -402,7 +402,7 @@ core_packs:
       - "CP27"
       - "CP28"
     category: "internationalization"
-    status: "experimental"
+    status: "planned"
 
   - id: "CP30"
     name: "AI-Assisted Development Generator"
@@ -413,7 +413,7 @@ core_packs:
     obligations_count: 2
     dependencies: ["CP01"]
     category: "ai-assisted"
-    status: "experimental"
+    status: "planned"
 
 # ============================================================================
 # DOMAIN PACKS (DP)
@@ -956,8 +956,10 @@ statistics:
       P3: 3
       P4: 4
     by_status:
-      stable: 26
-      experimental: 4
+      stable: 5
+      developing: 12
+      planned: 11
+      experimental: 2
 
   domain_packs:
     total: 26
