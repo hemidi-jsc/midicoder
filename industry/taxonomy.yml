@@ -14,6 +14,10 @@ core_packs:
     definitions_count: 6
     obligations_count: 2
     depends_on: []
+    capabilities_provided:
+      - dsl_parsing
+      - projection_tree_build
+      - ir_build
     category: domain-modeling
     status: stable
     version: 1.0.0
@@ -26,6 +30,9 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP01
+    capabilities_provided:
+      - enforce_tenant_scope
+      - tenant_isolation
     category: architecture
     status: developing
     version: 1.0.0
@@ -39,6 +46,9 @@ core_packs:
     depends_on:
       - CP01
       - CP02
+    capabilities_provided:
+      - authorize_permission
+      - authenticate_user
     category: security
     status: stable
     version: 1.0.0
@@ -52,6 +62,9 @@ core_packs:
     depends_on:
       - CP02
       - CP03
+    capabilities_provided:
+      - authorize_role
+      - check_policy
     category: security
     status: stable
     version: 1.0.0
@@ -63,6 +76,9 @@ core_packs:
     definitions_count: 2
     obligations_count: 1
     depends_on: []
+    capabilities_provided:
+      - emit_iac_docker
+      - emit_iac_aws
     category: infrastructure
     status: developing
     version: 1.0.0
@@ -75,6 +91,10 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP01
+    capabilities_provided:
+      - publish_event
+      - subscribe_event
+      - event_outbox
     category: architecture
     status: stable
     version: 1.0.0
@@ -88,6 +108,10 @@ core_packs:
     depends_on:
       - CP01
       - CP05
+    capabilities_provided:
+      - route_request
+      - gateway_binding
+      - service_mesh_config
     category: integration
     status: developing
     version: 1.0.0
@@ -100,6 +124,14 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP01
+    capabilities_provided:
+      - create_record
+      - update_record
+      - delete_record
+      - query_records
+      - load_entity
+      - begin_transaction
+      - commit_transaction
     category: persistence
     status: developing
     version: 1.0.0
@@ -112,6 +144,11 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP08
+    capabilities_provided:
+      - cache_get
+      - cache_set
+      - cache_invalidate
+      - cache_warm
     category: performance
     status: developing
     version: 1.0.0
@@ -124,6 +161,10 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP08
+    capabilities_provided:
+      - search_index
+      - search_query
+      - fulltext_search
     category: performance
     status: developing
     version: 1.0.0
@@ -136,6 +177,11 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP07
+    capabilities_provided:
+      - file_upload
+      - file_download
+      - file_storage
+      - media_transform
     category: storage
     status: developing
     version: 1.0.0
@@ -148,6 +194,11 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP05
+    capabilities_provided:
+      - send_notification
+      - email_dispatch
+      - sms_dispatch
+      - push_notification
     category: communication
     status: stable
     version: 1.0.0
@@ -160,6 +211,10 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP05
+    capabilities_provided:
+      - schedule_job
+      - background_worker
+      - workflow_orchestrate
     category: runtime
     status: developing
     version: 1.0.0
@@ -172,8 +227,12 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP01
+    capabilities_provided:
+      - write_audit_log
+      - audit_query
+      - compliance_report
     category: compliance
-    status: developing
+    status: stable
     version: 1.0.0
   - id: CP15
     name: Observability Stack Generator
@@ -184,6 +243,10 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP07
+    capabilities_provided:
+      - emit_metric
+      - structured_logging
+      - distributed_tracing
     category: observability
     status: planned
     version: 1.0.0
@@ -196,6 +259,11 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP01
+    capabilities_provided:
+      - test_unit
+      - test_integration
+      - test_e2e
+      - coverage_report
     category: quality
     status: planned
     version: 1.0.0
@@ -208,6 +276,10 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP15
+    capabilities_provided:
+      - dashboard_create
+      - alert_define
+      - sli_monitor
     category: observability
     status: planned
     version: 1.0.0
@@ -221,6 +293,10 @@ core_packs:
     depends_on:
       - CP08
       - CP15
+    capabilities_provided:
+      - analytics_query
+      - dashboard_build
+      - report_schedule
     category: analytics
     status: planned
     version: 1.0.0
@@ -233,6 +309,10 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP01
+    capabilities_provided:
+      - app_shell_scaffold
+      - route_define
+      - state_store_init
     category: frontend
     status: developing
     version: 1.0.0
@@ -245,6 +325,10 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP18
+    capabilities_provided:
+      - component_render
+      - form_generate
+      - table_generate
     category: frontend
     status: developing
     version: 1.0.0
@@ -258,6 +342,10 @@ core_packs:
     depends_on:
       - CP06
       - CP18
+    capabilities_provided:
+      - api_client_generate
+      - realtime_bridge
+      - openapi_bind
     category: frontend
     status: developing
     version: 1.0.0
@@ -271,6 +359,10 @@ core_packs:
     depends_on:
       - CP03
       - CP18
+    capabilities_provided:
+      - auth_ui_shell
+      - route_guard
+      - session_handle
     category: frontend
     status: planned
     version: 1.0.0
@@ -284,6 +376,10 @@ core_packs:
     depends_on:
       - CP05
       - CP18
+    capabilities_provided:
+      - realtime_channel
+      - widget_render
+      - presence_indicator
     category: frontend
     status: planned
     version: 1.0.0
@@ -296,6 +392,10 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP23
+    capabilities_provided:
+      - quality_scan
+      - security_scan
+      - quality_gate
     category: quality
     status: planned
     version: 1.0.0
@@ -308,6 +408,10 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP23
+    capabilities_provided:
+      - perf_test_run
+      - load_scenario
+      - baseline_compare
     category: quality
     status: planned
     version: 1.0.0
@@ -320,6 +424,10 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP01
+    capabilities_provided:
+      - doc_portal_gen
+      - api_doc_gen
+      - doc_section_render
     category: documentation
     status: planned
     version: 1.0.0
@@ -332,6 +440,10 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP01
+    capabilities_provided:
+      - plugin_slot_define
+      - plugin_contract
+      - plugin_policy
     category: extensibility
     status: experimental
     version: 1.0.0
@@ -344,6 +456,10 @@ core_packs:
     obligations_count: 1
     depends_on:
       - CP01
+    capabilities_provided:
+      - custom_code_inject
+      - hook_define
+      - patch_apply
     category: extensibility
     status: experimental
     version: 1.0.0
@@ -406,6 +522,10 @@ core_packs:
       - CP51
       - CP52
       - CP53
+    capabilities_provided:
+      - language_profile
+      - i18n_bundle
+      - keyset_manage
     category: internationalization
     status: planned
     version: 1.0.0
@@ -418,6 +538,10 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP01
+    capabilities_provided:
+      - ai_review
+      - ai_suggest
+      - prompt_template
     category: ai-assisted
     status: planned
     version: 1.0.0
@@ -432,6 +556,10 @@ core_packs:
       - CP05
       - CP13
       - CP14
+    capabilities_provided:
+      - cron_schedule
+      - recurring_job
+      - calendar_schedule
     category: runtime
     status: planned
     version: 1.0.0
@@ -446,6 +574,10 @@ core_packs:
       - CP01
       - CP05
       - CP14
+    capabilities_provided:
+      - state_transition
+      - state_validate
+      - lifecycle_manage
     category: runtime
     status: planned
     version: 1.0.0
@@ -460,6 +592,11 @@ core_packs:
       - CP01
       - CP08
       - CP14
+    capabilities_provided:
+      - multi_currency_calc
+      - fx_rate_convert
+      - double_entry_ledger
+      - rounding_apply
     category: financial
     status: planned
     version: 1.0.0
@@ -474,6 +611,11 @@ core_packs:
       - CP01
       - CP08
       - CP13
+    capabilities_provided:
+      - pdf_generate
+      - excel_export
+      - report_template
+      - batch_doc_process
     category: document
     status: planned
     version: 1.0.0
@@ -490,6 +632,11 @@ core_packs:
       - CP03
       - CP12
       - CP33
+    capabilities_provided:
+      - tenant_register
+      - tenant_verify
+      - trial_manage
+      - subscription_manage
     category: architecture
     status: planned
     version: 1.0.0
@@ -505,6 +652,10 @@ core_packs:
       - CP01
       - CP02
       - CP14
+    capabilities_provided:
+      - feature_toggle
+      - ab_test
+      - dynamic_config
     category: runtime
     status: planned
     version: 1.0.0
@@ -518,6 +669,10 @@ core_packs:
     depends_on:
       - CP01
       - CP02
+    capabilities_provided:
+      - locale_format
+      - translation_manage
+      - language_switch
     category: internationalization
     status: planned
     version: 1.0.0
@@ -532,6 +687,11 @@ core_packs:
       - CP05
       - CP12
       - CP14
+    capabilities_provided:
+      - webhook_manage
+      - event_deliver
+      - retry_policy
+      - outbound_api
     category: integration
     status: planned
     version: 1.0.0
@@ -547,6 +707,11 @@ core_packs:
       - CP04
       - CP05
       - CP12
+    capabilities_provided:
+      - approval_chain
+      - approval_matrix
+      - delegation
+      - escalation
     category: runtime
     status: planned
     version: 1.0.0
@@ -563,6 +728,11 @@ core_packs:
       - CP14
       - CP33
       - CP40
+    capabilities_provided:
+      - payment_process
+      - payment_method_manage
+      - transaction_flow
+      - refund_process
     category: financial
     status: planned
     version: 1.0.0
@@ -577,6 +747,11 @@ core_packs:
       - CP01
       - CP05
       - CP12
+    capabilities_provided:
+      - location_query
+      - geofence_check
+      - route_calc
+      - distance_calc
     category: geospatial
     status: planned
     version: 1.0.0
@@ -592,6 +767,11 @@ core_packs:
       - CP08
       - CP13
       - CP14
+    capabilities_provided:
+      - csv_import
+      - data_migrate
+      - bulk_operation
+      - etl_pipeline
     category: data
     status: planned
     version: 1.0.0
@@ -606,6 +786,11 @@ core_packs:
       - CP01
       - CP05
       - CP22
+    capabilities_provided:
+      - chat_message
+      - realtime_messaging
+      - support_ticket
+      - notification_center
     category: communication
     status: planned
     version: 1.0.0
@@ -620,6 +805,11 @@ core_packs:
       - CP01
       - CP08
       - CP14
+    capabilities_provided:
+      - entity_version
+      - timetravel_query
+      - soft_delete
+      - history_audit
     category: data
     status: planned
     version: 1.0.0
@@ -634,6 +824,11 @@ core_packs:
       - CP01
       - CP13
       - CP14
+    capabilities_provided:
+      - batch_process
+      - bulk_update
+      - parallel_process
+      - chunk_process
     category: runtime
     status: planned
     version: 1.0.0
@@ -647,6 +842,11 @@ core_packs:
     depends_on:
       - CP03
       - CP12
+    capabilities_provided:
+      - totp_auth
+      - sms_otp
+      - webauthn_fido2
+      - biometric_auth
     category: security
     status: planned
     version: 1.0.0
@@ -663,6 +863,11 @@ core_packs:
       - CP08
       - CP13
       - CP14
+    capabilities_provided:
+      - retention_policy
+      - data_archival
+      - data_purge
+      - gdpr_erasure
     category: compliance
     status: planned
     version: 1.0.0
@@ -677,6 +882,10 @@ core_packs:
       - CP02
       - CP06
       - CP36
+    capabilities_provided:
+      - rate_limit
+      - quota_enforce
+      - api_throttle
     category: integration
     status: planned
     version: 1.0.0
@@ -692,6 +901,11 @@ core_packs:
       - CP01
       - CP02
       - CP03
+    capabilities_provided:
+      - cookie_consent
+      - data_consent
+      - comm_preference
+      - privacy_center
     category: privacy
     status: planned
     version: 1.0.0
@@ -707,6 +921,11 @@ core_packs:
       - CP01
       - CP08
       - CP10
+    capabilities_provided:
+      - catalog_manage
+      - taxonomy_hierarchy
+      - faceted_search
+      - attribute_manage
     category: commerce
     status: planned
     version: 1.0.0
@@ -719,6 +938,9 @@ core_packs:
     obligations_count: 3
     depends_on:
       - CP01
+    capabilities_provided:
+      - compose_blueprint
+      - validate_blueprint
     category: compiler
     status: planned
     version: 1.0.0
@@ -731,6 +953,9 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP51
+    capabilities_provided:
+      - enforce_invariant
+      - gate_check
     category: compiler
     status: planned
     version: 1.0.0
@@ -744,6 +969,9 @@ core_packs:
     depends_on:
       - CP01
       - CP51
+    capabilities_provided:
+      - bridge_domain_pack
+      - runtime_invoke
     category: compiler
     status: planned
     version: 1.0.0
@@ -1743,8 +1971,8 @@ statistics:
       P3: 3
       P4: 4
     by_status:
-      stable: 5
-      developing: 12
+      stable: 6
+      developing: 11
       planned: 36
       experimental: 2
   domain_packs:

@@ -198,7 +198,7 @@ class TestTaxonomyRegistryBlueprint:
             "domain_packs": [{"id": "DP01"}],
             "regulatory_overlays": [{"id": "RX01"}, {"id": "RX11"}],
         }
-        issues = self.registry.validate_blueprint(blueprint)
+        issues = self.registry.validate_pack_combination(blueprint)
         # Should not have missing P0 or missing universal RX errors
         error_rules = [i.rule for i in issues if i.severity == "error"]
         assert "blueprint_must_include_p0_core_packs" not in error_rules
@@ -210,7 +210,7 @@ class TestTaxonomyRegistryBlueprint:
             "domain_packs": [{"id": "DP01"}],
             "regulatory_overlays": [{"id": "RX01"}, {"id": "RX11"}],
         }
-        issues = self.registry.validate_blueprint(blueprint)
+        issues = self.registry.validate_pack_combination(blueprint)
         error_rules = [i.rule for i in issues if i.severity == "error"]
         assert "blueprint_must_include_p0_core_packs" in error_rules
 
@@ -221,7 +221,7 @@ class TestTaxonomyRegistryBlueprint:
             "domain_packs": [{"id": "DP01"}],
             "regulatory_overlays": [{"id": "RX01"}],  # Missing RX11
         }
-        issues = self.registry.validate_blueprint(blueprint)
+        issues = self.registry.validate_pack_combination(blueprint)
         error_rules = [i.rule for i in issues if i.severity == "error"]
         assert "universal_regulatory_overlays_included" in error_rules
 
@@ -232,7 +232,7 @@ class TestTaxonomyRegistryBlueprint:
             "domain_packs": [{"id": "DP999"}],  # Does not exist
             "regulatory_overlays": [{"id": "RX01"}, {"id": "RX11"}],
         }
-        issues = self.registry.validate_blueprint(blueprint)
+        issues = self.registry.validate_pack_combination(blueprint)
         error_rules = [i.rule for i in issues if i.severity == "error"]
         assert "all_referenced_packs_exist" in error_rules
 

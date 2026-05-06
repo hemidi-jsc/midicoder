@@ -283,15 +283,47 @@ class TaxonomyRegistry:
         return issues
 
     # ========================================================================
-    # Blueprint Validation
+    # Pack Resolution (DSL → MIR → Template wiring)
     # ========================================================================
 
-    def validate_blueprint(self, blueprint: dict[str, Any]) -> list[ValidationIssue]:
-        """Validate a blueprint against taxonomy rules."""
+    def resolve_packs_for_operations(self, operation_types: list[str]) -> list[Pack]:
+        """
+        Resolve packs needed for a set of MIR operation types.
+
+        This is the LINK between MIR operations and Pack emitters.
+        MIR op_type 'create_record' → query packs for capabilities_provided → get pack.
+
+        Args:
+            operation_types: List of MIR op_type strings (e.g., ['create_record', 'query_records'])
+
+        Returns:
+            List of Pack objects that provide the requested operations
+        """
+        required_packs: dict[str, Pack] = {}
+
+        for pack in self._packs.values():
+            caps_provided = pack.raw.get("capabilities_provided", [])
+            for op_type in operation_types:
+                if op_type in caps_provided and pack.id not in required_packs:
+                    required_packs[pack.id] = pack
+
+        return list(required_packs.values())
+
+    # ========================================================================
+    # Blueprint / Pack Combination Validation
+    # ========================================================================
+
+    def validate_pack_combination(self, pack_ids: dict[str, Any]) -> list[ValidationIssue]:
+        """
+        Validate a pack combination against taxonomy rules.
+
+        Replaces old validate_blueprint(). Now validates CP/DP/RX combinations
+        for the 3-layer pipeline (DSL → MIR → Template).
+        """
         issues: list[ValidationIssue] = []
-        cp_ids = {p.get("id") for p in blueprint.get("core_packs", [])}
-        dp_ids = {p.get("id") for p in blueprint.get("domain_packs", [])}
-        rx_ids = {p.get("id") for p in blueprint.get("regulatory_overlays", [])}
+        cp_ids = {p.get("id") for p in pack_ids.get("core_packs", [])}
+        dp_ids = {p.get("id") for p in pack_ids.get("domain_packs", [])}
+        rx_ids = {p.get("id") for p in pack_ids.get("regulatory_overlays", [])}
         all_bp_ids = cp_ids | dp_ids | rx_ids
 
         # all_referenced_packs_exist

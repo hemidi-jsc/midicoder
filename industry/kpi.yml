@@ -30,9 +30,9 @@ kpi_categories:
     description: "Obligation, gate, guard coverage per RX"
     priority: "P0"
 
-  - id: "BLUEPRINT_COMPILE"
-    name: "Blueprint Compilation"
-    description: "Blueprint compile success rates"
+  - id: "DSL_PIPELINE"
+    name: "DSL Pipeline (DSL → MIR → Template)"
+    description: "DSL parse, MIR build, pack resolution success rates"
     priority: "P0"
 
   - id: "DETERMINISM"
@@ -206,34 +206,36 @@ kpis:
     check_function: "check_rx_industries"
 
   # --------------------------------------------------------------------------
-  # BLUEPRINT_COMPILE (KPI-015 ~ KPI-017)
+  # DSL_PIPELINE (KPI-015 ~ KPI-017) — replaces BLUEPRINT_COMPILE
+  # Pipeline: DSL → MIR → Template (3-layer architecture)
   # --------------------------------------------------------------------------
 
   - id: "KPI-015"
-    name: "Blueprint Compile Success"
-    category: "BLUEPRINT_COMPILE"
-    description: "All registered blueprints compile successfully"
+    name: "DSL Parse Success"
+    category: "DSL_PIPELINE"
+    description: "All contracts YAML files parse successfully to ProjectionTree"
     target_min: 100
     target_max: 100
-    check_function: "check_blueprint_compile"
+    check_function: "check_dsl_parse"
     result_type: "percent"
 
   - id: "KPI-016"
-    name: "P0 Blueprint Compile"
-    category: "BLUEPRINT_COMPILE"
-    description: "All P0 blueprints compile"
+    name: "MIR Build Success"
+    category: "DSL_PIPELINE"
+    description: "All ProjectionTree instances build successfully to MIR"
     target_min: 100
     target_max: 100
-    check_function: "check_blueprint_compile_p0"
+    check_function: "check_mir_build"
     result_type: "percent"
 
   - id: "KPI-017"
-    name: "Blueprint No Broken Deps"
-    category: "BLUEPRINT_COMPILE"
-    description: "No blueprint references non-existent packs"
-    target_min: 0
-    target_max: 0
-    check_function: "check_blueprint_broken_deps"
+    name: "Pack Resolution Coverage"
+    category: "DSL_PIPELINE"
+    description: "All MIR op_types resolve to at least one pack via capabilities_provided"
+    target_min: 100
+    target_max: 100
+    check_function: "check_pack_resolution"
+    result_type: "percent"
 
   # --------------------------------------------------------------------------
   # DETERMINISM (KPI-018 ~ KPI-021)
@@ -455,7 +457,7 @@ success_criteria_v1_0_0:
     - "KPI-005"  # CP obligations >= 1
     - "KPI-010"  # DP depends_on valid
     - "KPI-011"  # RX obligations >= 2
-    - "KPI-017"  # No broken blueprint deps
+    - "KPI-017"  # Pack resolution coverage
     - "KPI-018"  # Registry hash stable
     - "KPI-019"  # DAG deterministic
     - "KPI-022"  # Unresolved refs caught
