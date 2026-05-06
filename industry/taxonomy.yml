@@ -798,6 +798,12 @@ domain_packs:
       - "marketplace-b2b"
       - "omnichannel-retail"
       - "food-delivery"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP08"  # Database
+      - "CP10"  # Search
+      - "CP12"  # Notification
+      - "CP45"  # Payment
     status: "stable"
 
   - id: "DP02"
@@ -807,6 +813,14 @@ domain_packs:
     industries_using:
       - "marketplace-b2c"
       - "marketplace-b2b"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP03"  # Auth
+      - "CP04"  # RBAC
+      - "CP08"  # Database
+      - "CP10"  # Search
+      - "CP12"  # Notification
+      - "CP45"  # Payment
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -821,6 +835,13 @@ domain_packs:
       - "hotel-booking"
       - "vacation-rental"
       - "flight-booking"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP03"  # Auth
+      - "CP04"  # RBAC
+      - "CP08"  # Database
+      - "CP12"  # Notification
+      - "CP45"  # Payment
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -835,6 +856,14 @@ domain_packs:
       - "food-delivery"
       - "last-mile-delivery"
       - "warehouse-management"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP03"  # Auth
+      - "CP04"  # RBAC
+      - "CP08"  # Database
+      - "CP12"  # Notification
+      - "CP35"  # Geospatial
+      - "CP45"  # Payment
     status: "stable"
 
   - id: "DP05"
@@ -844,6 +873,15 @@ domain_packs:
     industries_using:
       - "omnichannel-retail"
       - "warehouse-management"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP03"  # Auth
+      - "CP04"  # RBAC
+      - "CP08"  # Database
+      - "CP12"  # Notification
+      - "CP14"  # Audit
+      - "CP32"  # State Machine
+      - "CP45"  # Payment
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -857,6 +895,15 @@ domain_packs:
     industries_using:
       - "real-estate-brokerage"
       - "property-management"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP03"  # Auth
+      - "CP04"  # RBAC
+      - "CP08"  # Database
+      - "CP12"  # Notification
+      - "CP14"  # Audit
+      - "CP33"  # Financial
+      - "CP45"  # Payment
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -870,6 +917,15 @@ domain_packs:
     industries_using:
       - "electricity-utility"
       - "water-utility"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP03"  # Auth
+      - "CP04"  # RBAC
+      - "CP08"  # Database
+      - "CP12"  # Notification
+      - "CP14"  # Audit
+      - "CP33"  # Financial
+      - "CP45"  # Payment
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -883,6 +939,15 @@ domain_packs:
     industries_using:
       - "crop-farming"
       - "livestock-management"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP03"  # Auth
+      - "CP04"  # RBAC
+      - "CP08"  # Database
+      - "CP12"  # Notification
+      - "CP14"  # Audit
+      - "CP32"  # State Machine
+      - "CP47"  # Data Retention
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -897,6 +962,15 @@ domain_packs:
       - "hospital-is"
       - "telehealth"
       - "dental-clinic"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP03"  # Auth
+      - "CP04"  # RBAC
+      - "CP08"  # Database
+      - "CP12"  # Notification
+      - "CP14"  # Audit
+      - "CP33"  # Financial (billing)
+      - "CP45"  # Payment
     status: "stable"
 
   - id: "DP10"
@@ -906,6 +980,16 @@ domain_packs:
     industries_using:
       - "laboratory-lis"
       - "health-insurance"
+    depends_on_core_packs:
+      - "CP01"  # Domain Model
+      - "CP03"  # Auth
+      - "CP04"  # RBAC
+      - "CP08"  # Database
+      - "CP12"  # Notification
+      - "CP14"  # Audit
+      - "CP33"  # Financial
+      - "CP45"  # Payment
+      - "CP49"  # Consent
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -920,6 +1004,15 @@ domain_packs:
       - "retail-banking"
       - "corporate-banking"
       - "neobank"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP33"
+      - "CP45"
     status: "stable"
 
   - id: "DP12"
@@ -930,6 +1023,15 @@ domain_packs:
       - "ecommerce-d2c"
       - "marketplace-b2c"
       - "retail-banking"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP33"
+      - "CP45"
     status: "stable"
 
   - id: "DP13"
@@ -939,6 +1041,17 @@ domain_packs:
     industries_using:
       - "consumer-lending"
       - "mortgage-lending"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP32"
+      - "CP33"
+      - "CP42"
+      - "CP45"
     status: "stable"
 
   - id: "DP14"
@@ -948,6 +1061,17 @@ domain_packs:
     industries_using:
       - "life-insurance"
       - "non-life-insurance"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP32"
+      - "CP33"
+      - "CP42"
+      - "CP45"
     status: "stable"
 
   - id: "DP15"
@@ -957,6 +1081,15 @@ domain_packs:
     industries_using:
       - "wealth-management"
       - "brokerage-platform"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP33"
+      - "CP45"
     status: "stable"
 
   - id: "DP16"
@@ -965,6 +1098,15 @@ domain_packs:
     category: "exchange"
     industries_using:
       - "exchange-trading"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP33"
+      - "CP45"
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -978,6 +1120,15 @@ domain_packs:
     industries_using:
       - "citizen-portal"
       - "court-administration"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP34"
+      - "CP42"
     status: "stable"
 
   - id: "DP18"
@@ -987,6 +1138,16 @@ domain_packs:
     industries_using:
       - "legal-case-management"
       - "contract-lifecycle"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP34"
+      - "CP42"
+      - "CP43"
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1001,6 +1162,15 @@ domain_packs:
       - "k12-school"
       - "university-management"
       - "vocational-training"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP34"
+      - "CP45"
+      - "CP50"
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1014,6 +1184,16 @@ domain_packs:
     industries_using:
       - "digital-newsroom"
       - "ott-subscription"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP11"
+      - "CP12"
+      - "CP22"
+      - "CP34"
+      - "CP45"
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1028,6 +1208,15 @@ domain_packs:
       - "payroll-benefits"
       - "ats-recruiting"
       - "workforce-scheduling"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP33"
+      - "CP45"
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1042,6 +1231,15 @@ domain_packs:
       - "procurement-srm"
       - "itsm-helpdesk"
       - "erp-finance"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP34"
+      - "CP42"
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1054,6 +1252,13 @@ domain_packs:
     category: "nonprofit"
     industries_using:
       - "nonprofit-fundraising"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP45"
     status: "stable"
 
   - id: "DP24"
@@ -1063,6 +1268,15 @@ domain_packs:
     industries_using:
       - "soc-operations"
       - "itsm-helpdesk"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP42"
+      - "CP46"
     status: "stable"
 
   - id: "DP25"
@@ -1071,6 +1285,15 @@ domain_packs:
     category: "esg"
     industries_using:
       - "esg-reporting"
+    depends_on_core_packs:
+      - "CP01"
+      - "CP03"
+      - "CP04"
+      - "CP08"
+      - "CP12"
+      - "CP14"
+      - "CP34"
+      - "CP43"
     status: "stable"
 
   - id: "DP26"
@@ -1306,7 +1529,13 @@ regulatory_overlays:
       - "consent_management_required"
       - "right_to_erasure_support"
     industries_requiring:
-      - "all"  # Universal requirement
+      - "all"  # Universal requirement (~95/100 industries)
+    depends_on_core_packs:
+      - "CP03"  # Auth (encryption)
+      - "CP04"  # RBAC (data access)
+      - "CP14"  # Audit (access logging)
+      - "CP47"  # Data Retention (erasure)
+      - "CP49"  # Consent Management
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1325,6 +1554,11 @@ regulatory_overlays:
       - "retail-banking"
       - "erp-finance"
       - "exchange-trading"
+    depends_on_core_packs:
+      - "CP33"  # Financial Engine (double-entry ledger)
+      - "CP14"  # Audit (immutable trail)
+      - "CP34"  # Report (reconciliation)
+      - "CP32"  # State Machine (transaction lifecycle)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1343,6 +1577,12 @@ regulatory_overlays:
       - "retail-banking"
       - "exchange-trading"
       - "payment-services"
+    depends_on_core_packs:
+      - "CP03"  # Auth (identity verification)
+      - "CP04"  # RBAC (access control)
+      - "CP14"  # Audit (transaction monitoring)
+      - "CP33"  # Financial (transaction tracking)
+      - "CP42"  # Approval (suspicious activity review)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1362,6 +1602,12 @@ regulatory_overlays:
       - "hospital-is"
       - "telehealth"
       - "laboratory-lis"
+    depends_on_core_packs:
+      - "CP03"  # Auth (encryption keys)
+      - "CP04"  # RBAC (minimum necessary access)
+      - "CP14"  # Audit (clinical audit trail)
+      - "CP47"  # Data Retention (PHI lifecycle)
+      - "CP49"  # Consent (patient consent)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1379,6 +1625,11 @@ regulatory_overlays:
     industries_requiring:
       - "procurement-srm"
       - "citizen-portal"
+    depends_on_core_packs:
+      - "CP04"  # RBAC (public access rules)
+      - "CP14"  # Audit (procurement trail)
+      - "CP34"  # Report (transparency reports)
+      - "CP42"  # Approval (bid approval workflow)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1397,6 +1648,10 @@ regulatory_overlays:
       - "ecommerce-d2c"
       - "erp-finance"
       - "payroll-benefits"
+    depends_on_core_packs:
+      - "CP33"  # Financial (tax calculation)
+      - "CP34"  # Report (e-invoice generation)
+      - "CP14"  # Audit (tax trail)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1414,6 +1669,11 @@ regulatory_overlays:
     industries_requiring:
       - "payroll-benefits"
       - "hr-systems"
+    depends_on_core_packs:
+      - "CP33"  # Financial (payroll calculation)
+      - "CP31"  # Scheduler (payroll cycle)
+      - "CP14"  # Audit (payroll trail)
+      - "CP47"  # Data Retention (payroll records)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1432,6 +1692,11 @@ regulatory_overlays:
       - "k12-school"
       - "university-management"
       - "vocational-training"
+    depends_on_core_packs:
+      - "CP04"  # RBAC (student data access)
+      - "CP14"  # Audit (access trail)
+      - "CP43"  # Versioning (record history)
+      - "CP47"  # Data Retention (record lifecycle)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1450,6 +1715,11 @@ regulatory_overlays:
       - "food-delivery"
       - "warehouse-management"
       - "manufacturing"
+    depends_on_core_packs:
+      - "CP14"  # Audit (incident trail)
+      - "CP43"  # Versioning (traceability chain)
+      - "CP42"  # Approval (incident escalation)
+      - "CP12"  # Notification (safety alerts)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1468,6 +1738,12 @@ regulatory_overlays:
       - "ecommerce-d2c"
       - "marketplace-b2c"
       - "food-delivery"
+    depends_on_core_packs:
+      - "CP33"  # Financial (refund calculation)
+      - "CP45"  # Payment (refund processing)
+      - "CP42"  # Approval (dispute resolution)
+      - "CP12"  # Notification (consumer communication)
+      - "CP32"  # State Machine (refund lifecycle)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1483,7 +1759,11 @@ regulatory_overlays:
       - "evidence_preservation"
       - "tamper_evident_logging"
     industries_requiring:
-      - "all"  # Universal requirement for compliance
+      - "all"  # Universal requirement (~95/100 industries)
+    depends_on_core_packs:
+      - "CP14"  # Audit Trail (core)
+      - "CP43"  # Versioning (immutable history)
+      - "CP47"  # Data Retention (evidence lifecycle)
     status: "stable"
 
   # --------------------------------------------------------------------------
@@ -1502,6 +1782,12 @@ regulatory_overlays:
       - "telehealth"
       - "international-ecommerce"
       - "multinational-banking"
+    depends_on_core_packs:
+      - "CP08"  # Database (data location)
+      - "CP04"  # RBAC (access by region)
+      - "CP42"  # Approval (cross-border review)
+      - "CP14"  # Audit (transfer log)
+      - "CP02"  # Multi-Tenant (data isolation)
     status: "stable"
 
 # ============================================================================
