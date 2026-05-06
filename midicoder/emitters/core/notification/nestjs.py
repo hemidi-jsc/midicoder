@@ -404,7 +404,7 @@ export class NotificationController {
         Generate gateway interfaces.
 
         Returns:
-            String chứa TypeScript code cho gateway interfaces
+            String chua TypeScript code cho gateway interfaces
         """
         return '''"""
 Notification Gateway Interfaces.
@@ -412,11 +412,21 @@ Notification Gateway Interfaces.
 Cac interface cho notification provider gateways.
 Cac concrete provider (SendGrid, Twilio, Firebase) implement cac interface nay.
 
+Tich hop:
+- Concrete provider interfaces: SendGrid, AWS SES, Twilio, Firebase FCM
+- Template rendering service
+- Rate limiting interceptor
+- Retry policy with exponential backoff
+
 Author: Midicoder Team
 Version: 1.0.0
 """
 
 import { DispatchResult } from "./notification.service";
+
+// ============================================================================
+// Gateway Interfaces
+// ============================================================================
 
 /**
  * Email Gateway Interface.
@@ -427,6 +437,7 @@ export interface EmailGateway {
     to: string,
     subject: string,
     bodyHtml: string,
+    bodyText?: string,
     options?: {
       from?: string;
       replyTo?: string;
@@ -479,6 +490,124 @@ export interface WebhookGateway {
       timeout?: number;
     },
   ): Promise<DispatchResult>;
+}
+
+// ============================================================================
+# Concrete Provider Interfaces
+# ============================================================================
+
+/**
+ * SendGrid provider config.
+ */
+export interface SendGridConfig {
+  apiKey: string;
+  fromEmail: string;
+  fromName?: string;
+}
+
+/**
+ * AWS SES provider config.
+ */
+export interface AwsSesConfig {
+  accessKeyId: string;
+  secretAccessKey: string;
+  fromEmail: string;
+  region?: string;
+}
+
+/**
+ * Twilio provider config.
+ */
+export interface TwilioConfig {
+  accountSid: string;
+  authToken: string;
+  fromPhone: string;
+}
+
+/**
+ * Firebase FCM provider config.
+ */
+export interface FirebaseConfig {
+  projectId: string;
+  accessToken: string;
+}
+
+// ============================================================================
+# Template Rendering Service Interface
+# ============================================================================
+
+/**
+ * Rendered template result.
+ */
+export interface RenderedTemplate {
+  template_id: string;
+  subject: string;
+  body_html: string;
+  body_text: string;
+}
+
+/**
+ * Template rendering service interface.
+ * Support {{variable}} interpolation, filters, va nested variables.
+ */
+export interface TemplateRenderer {
+  render(template: NotificationTemplate, data: Record<string, any>): RenderedTemplate;
+  renderString(template: string, data: Record<string, any>): string;
+}
+
+/**
+ * Template validator interface.
+ */
+export interface TemplateValidator {
+  validate(template: string): string[];
+  extractVariables(template: string): string[];
+}
+
+// ============================================================================
+# Rate Limiter Interface
+# ============================================================================
+
+/**
+ * Rate limiter interface.
+ * Kiem tra rate limit per recipient per channel.
+ */
+export interface RateLimiter {
+  checkLimit(recipient: string, channel: string): boolean;
+  getRemaining(recipient: string, channel: string): number;
+  reset(recipient?: string, channel?: string): void;
+}
+
+/**
+ * Rate limit interceptor for NestJS.
+ * Kiem tra rate limit truoc khi dispatch notification.
+ */
+export interface RateLimitInterceptor {
+  intercept(
+    recipient: string,
+    channel: string,
+  ): Promise<boolean>;
+}
+
+// ============================================================================
+# Retry Policy Interface
+# ============================================================================
+
+/**
+ * Retry policy config.
+ */
+export interface RetryPolicyConfig {
+  maxRetries: number;
+  baseDelay: number; // seconds
+  maxDelay: number; // seconds
+}
+
+/**
+ * Retry policy interface with exponential backoff.
+ */
+export interface RetryPolicy {
+  executeWithRetry<T>(
+    fn: () => Promise<T>,
+  ): Promise<T>;
 }
 '''
 

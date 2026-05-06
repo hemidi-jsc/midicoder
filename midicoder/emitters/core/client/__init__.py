@@ -10,7 +10,9 @@ Exports:
 """
 
 from midicoder.emitters.core.client.angular import AngularClientEmitter
+from midicoder.emitters.core.client.react import ReactClientEmitter
 
 __all__ = [
     "AngularClientEmitter",
+    "ReactClientEmitter",
 ]

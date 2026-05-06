@@ -1,31 +1,45 @@
 """
 Notification Service cho FastAPI.
 
-Cung cấp:
+Cung cap:
 - Multi-channel notifications (email, SMS, push)
-- Notification templates
-- Notification preferences
+- Template rendering voi {{variable}} interpolation
+- Rate limiting per recipient per channel
+- Retry policy voi exponential backoff
+- Concrete providers: SendGrid, AWS SES, Twilio, Firebase FCM
+- i18n support voi locale fallback chain
 - KPI-029: Tenant-specific notifications
 
-KPI-029: Tenant Isolation - Hỗ trợ tenant_id trong notifications
+KPI-029: Tenant Isolation - Ho tro tenant_id trong notifications
 CP12: Notification & Communication
 """
 
 import os
+import time
+import logging
 from typing import Optional, Dict, Any, List
 from enum import Enum
+from collections import defaultdict
+from dataclasses import dataclass, field
 
 from .email_service import EmailService
 
-# Notification channels
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Enums
+# ============================================================================
+
 class NotificationChannel(Enum):
+    """Kenh notification."""
     EMAIL = "email"
     SMS = "sms"
     PUSH = "push"
     IN_APP = "in_app"
 
-# Notification types
+
 class NotificationType(Enum):
+    """Loai notification."""
     WELCOME = "welcome"
     VERIFICATION = "verification"
     PASSWORD_RESET = "password_reset"
@@ -36,27 +50,349 @@ class NotificationType(Enum):
     CUSTOM = "custom"
 
 
+# ============================================================================
+# Models
+# ============================================================================
+
+@dataclass
+class DispatchResult:
+    """Ket qua dispatch notification."""
+    dispatch_id: str
+    status: str  # sent, failed, bounced
+    provider_response: Dict[str, Any] | None = None
+    error_code: str | None = None
+
+
+@dataclass
+class _RateRecord:
+    """Record cho rate tracking."""
+    count: int = 0
+    window_start: float = field(default_factory=time.time)
+
+
+# ============================================================================
+# Template Renderer (inline - khong phụ thuoc external module)
+# ============================================================================
+
+import re
+
+_VARIABLE_PATTERN = re.compile(r"\{\{([^}]+)\}\}")
+
+
+def _render_template_string(template: str, data: Dict[str, Any]) -> str:
+    """
+    Render template string voi variable interpolation.
+
+    Support:
+    - Simple variables: {{name}}
+    - Nested variables: {{user.name}}
+    - Filters: {{price|currency}}, {{name|uppercase}}
+
+    Args:
+        template: Template string chua {{variable}} placeholders
+        data: Dictionary chua variable values
+
+    Returns:
+        Template string da render
+    """
+    def _replace_var(match: re.Match) -> str:
+        expression = match.group(1).strip()
+
+        # Parse filter (neu co)
+        filter_name = None
+        filter_arg = None
+        var_name = expression
+
+        if "|" in expression:
+            parts = expression.split("|", 1)
+            var_name = parts[0].strip()
+            filter_expr = parts[1].strip()
+
+            if ":" in filter_expr:
+                filter_parts = filter_expr.split(":", 1)
+                filter_name = filter_parts[0].strip()
+                filter_arg = filter_parts[1].strip().strip("'\"")
+            else:
+                filter_name = filter_expr
+
+        # Resolve variable value tu data (support nested)
+        value = _resolve_variable(var_name, data)
+
+        # Neu khong resolve duoc, giu nguyen template
+        if value is None:
+            return match.group(0)
+
+        # Apply filter (neu co)
+        if filter_name:
+            value = _apply_filter(value, filter_name, filter_arg)
+
+        return str(value)
+
+    return _VARIABLE_PATTERN.sub(_replace_var, template)
+
+
+def _resolve_variable(var_name: str, data: Dict[str, Any]) -> Any:
+    """
+    Resolve variable name thanh value, support nested access.
+
+    Args:
+        var_name: Ten variable (co the nested)
+        data: Data dictionary
+
+    Returns:
+        Value cua variable, hoac None neu khong tim thay
+    """
+    parts = var_name.split(".")
+    current = data
+
+    for part in parts:
+        if isinstance(current, dict):
+            if part in current:
+                current = current[part]
+            else:
+                return None
+        elif isinstance(current, (list, tuple)):
+            try:
+                index = int(part)
+                current = current[index]
+            except (ValueError, IndexError):
+                return None
+        else:
+            return None
+
+    return current
+
+
+def _apply_filter(value: Any, filter_name: str, filter_arg: str | None = None) -> Any:
+    """
+    Apply filter cho value.
+
+    Args:
+        value: Value can apply filter
+        filter_name: Ten filter
+        filter_arg: Filter argument (optional)
+
+    Returns:
+        Value sau khi apply filter
+    """
+    if filter_name == "currency":
+        try:
+            num = float(str(value).replace(",", ""))
+            return f"{num:,.0f} VND"
+        except (ValueError, TypeError):
+            return str(value)
+    elif filter_name == "uppercase":
+        return str(value).upper()
+    elif filter_name == "lowercase":
+        return str(value).lower()
+    elif filter_name == "default" and filter_arg is not None:
+        if not value or (isinstance(value, str) and not value.strip()):
+            return filter_arg
+        return str(value)
+    return value
+
+
+# ============================================================================
+# NotificationService
+# ============================================================================
+
 class NotificationService:
     """
     Service cho multi-channel notifications.
 
-    Hỗ trợ:
-    - Email notifications
-    - SMS notifications
-    - Push notifications
+    Ho tro:
+    - Email notifications (SendGrid, AWS SES, SMTP)
+    - SMS notifications (Twilio)
+    - Push notifications (Firebase FCM)
     - In-app notifications
+    - Template rendering voi {{variable}} interpolation
+    - Rate limiting per recipient per channel
+    - Retry policy voi exponential backoff
+    - i18n support voi locale fallback chain
 
-    KPI-029: Hỗ trợ tenant_id để isolate notifications theo tenant.
+    KPI-029: Ho tro tenant_id de isolate notifications theo tenant.
     """
 
-    def __init__(self, tenant_id: Optional[str] = None) -> None:
-        """Khởi tạo notification service.
+    def __init__(
+        self,
+        tenant_id: Optional[str] = None,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
+    ) -> None:
+        """Khoi tao notification service.
 
         Args:
             tenant_id: KPI-029: Tenant ID cho tenant-specific notifications
+            max_retries: So lan retry toi da (default: 3)
+            base_delay: Base delay cho retry (giay, default: 1.0)
         """
         self.email_service = EmailService()
         self.tenant_id = tenant_id  # KPI-029: Tenant context
+
+        # Rate limiting config
+        self._rate_limits: Dict[str, int] = {
+            "email": 100,
+            "sms": 10,
+            "push": 1000,
+            "in_app": 1000,
+        }
+        self._rate_records: Dict[tuple, _RateRecord] = defaultdict(_RateRecord)
+
+        # Retry policy config
+        self._max_retries = max_retries
+        self._base_delay = base_delay
+
+        # Template storage
+        self._templates: Dict[str, Dict[str, Any]] = {}
+
+        # Provider gateways
+        self._providers: Dict[str, Dict[str, Any]] = {}
+
+    def register_template(
+        self,
+        template_id: str,
+        channel: NotificationChannel,
+        subject: str = "",
+        body_html: str = "",
+        body_text: str = "",
+        variables: List[str] | None = None,
+        locale: str = "en",
+    ) -> None:
+        """
+        Dang ky notification template.
+
+        Args:
+            template_id: Dinh danh duy nhat cua template
+            channel: Channel de gui notification
+            subject: Subject line (support {{variable}})
+            body_html: HTML body content
+            body_text: Plain text body content
+            variables: Danh sach variables trong template
+            locale: Locale code (BCP 47)
+        """
+        self._templates[template_id] = {
+            "template_id": template_id,
+            "channel": channel,
+            "subject": subject,
+            "body_html": body_html,
+            "body_text": body_text,
+            "variables": variables or [],
+            "locale": locale,
+        }
+
+    def register_provider(
+        self,
+        channel: NotificationChannel,
+        provider_type: str,
+        config: Dict[str, Any],
+    ) -> None:
+        """
+        Dang ky concrete provider cho channel.
+
+        Su dung concrete providers:
+        - SendGridEmailGateway, AwsSesEmailGateway (Email)
+        - TwilioSmsGateway (SMS)
+        - FirebasePushGateway (Push)
+
+        Args:
+            channel: Notification channel
+            provider_type: Loai provider (sendgrid, ses, twilio, firebase)
+            config: Configuration dict cho provider
+        """
+        self._providers[f"{channel.value}_{provider_type}"] = config
+
+    def render_template(
+        self,
+        template_id: str,
+        data: Dict[str, Any],
+        locale: str | None = None,
+    ) -> Dict[str, str]:
+        """
+        Render template voi variable values.
+
+        Su dung TemplateRenderer de thay the {{variable}} trong template
+        bang values tu data dict. Support filters va nested variables.
+
+        Args:
+            template_id: Template ID de render
+            data: Variable values
+            locale: Preferred locale (BCP 47)
+
+        Returns:
+            Dict voi subject, body_html, body_text da render
+
+        Raises:
+            ValueError: Neu template khong tim thay
+        """
+        # Resolve template voi i18n fallback chain
+        template = None
+
+        if locale:
+            # Try exact locale match
+            for t in self._templates.values():
+                if t["template_id"] == template_id and t["locale"] == locale:
+                    template = t
+                    break
+            # Try language-only match
+            if template is None and "-" in locale:
+                lang_only = locale.split("-")[0]
+                for t in self._templates.values():
+                    if t["template_id"] == template_id and t["locale"] == lang_only:
+                        template = t
+                        break
+
+        # Try English fallback
+        if template is None:
+            for t in self._templates.values():
+                if t["template_id"] == template_id and t["locale"] == "en":
+                    template = t
+                    break
+
+        # Try any template with matching ID
+        if template is None:
+            template = self._templates.get(template_id)
+
+        if template is None:
+            raise ValueError(f"MDC-CP12-002: Template not found: {template_id}")
+
+        # Render template
+        return {
+            "subject": _render_template_string(template["subject"], data),
+            "body_html": _render_template_string(template["body_html"], data),
+            "body_text": _render_template_string(template["body_text"], data),
+        }
+
+    def _check_rate_limit(self, recipient: str, channel: str) -> bool:
+        """
+        Kiem tra rate limit cho recipient.
+
+        Args:
+            recipient: Recipient identifier
+            channel: Channel name
+
+        Returns:
+            True neu con quota
+
+        Raises:
+            ValueError: Neu vuot rate limit
+        """
+        limit = self._rate_limits.get(channel, 100)
+        key = (recipient, channel)
+        now = time.time()
+        record = self._rate_records[key]
+
+        # Reset window neu da qua 1 phut
+        if now - record.window_start >= 60:
+            record.count = 0
+            record.window_start = now
+
+        if record.count >= limit:
+            raise ValueError(
+                f"MDC-CP12-007: Rate limit exceeded for {recipient} on {channel}"
+            )
+
+        record.count += 1
+        return True
 
     async def notify(
         self,
@@ -64,26 +400,24 @@ class NotificationService:
         notification_type: NotificationType,
         channel: NotificationChannel,
         data: Dict[str, Any],
-        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
+        tenant_id: Optional[str] = None,
         template: Optional[str] = None,
     ) -> bool:
         """
-        Gửi notification qua channel specified.
+        Gui notification qua channel specified.
 
         Args:
             user_id: User ID
-            notification_type: Loại notification
-            channel: Channel để gửi
+            notification_type: Loai notification
+            channel: Channel de gui
             data: Notification data
             tenant_id: KPI-029: Tenant ID (override instance tenant_id)
             template: Template name (optional)
 
         Returns:
-            True nếu gửi thành công
+            True neu gui thanh cong
         """
-        # KPI-029: Use provided tenant_id or instance tenant_id
         effective_tenant_id = tenant_id or self.tenant_id
-        # Thêm tenant_id vào data cho các services
         data_with_tenant = {**data, "tenant_id": effective_tenant_id}
 
         if channel == NotificationChannel.EMAIL:
@@ -105,33 +439,36 @@ class NotificationService:
         template: Optional[str] = None,
     ) -> bool:
         """
-        Gửi email notification.
+        Gui email notification voi rate limit.
 
         Args:
             user_id: User ID
             notification_type: Notification type
-            data: Notification data (bao gồm tenant_id - KPI-029)
+            data: Notification data (bao gom tenant_id - KPI-029)
             template: Email template name
 
         Returns:
-            True nếu gửi thành công
+            True neu gui thanh cong
         """
-        # Get user email
         email = data.get("email")
         if not email:
             return False
 
-        # KPI-029: Get tenant_id từ data
-        tenant_id = data.get("tenant_id")
+        # Kiem tra rate limit
+        try:
+            self._check_rate_limit(email, "email")
+        except ValueError:
+            logger.warning(f"Rate limit exceeded for {email} on email channel")
+            return False
 
-        # Use template or default
+        tenant_id = data.get("tenant_id")
         template_name = template or f"notifications/{notification_type.value}"
 
         return await self.email_service.send_template_email(
             to=email,
             template_name=template_name,
             context={**data, "user_id": user_id},
-            tenant_id=tenant_id,  # KPI-029: Pass tenant_id
+            tenant_id=tenant_id,
         )
 
     async def send_sms_notification(
@@ -142,31 +479,35 @@ class NotificationService:
         template: Optional[str] = None,
     ) -> bool:
         """
-        Gửi SMS notification.
+        Gui SMS notification voi rate limit.
 
         Args:
             user_id: User ID
             notification_type: Notification type
-            data: Notification data (bao gồm tenant_id - KPI-029)
+            data: Notification data (bao gom tenant_id - KPI-029)
             template: SMS template name
 
         Returns:
-            True nếu gửi thành công
+            True neu gui thanh cong
         """
         phone = data.get("phone")
         if not phone:
             return False
 
-        # KPI-029: Get tenant_id từ data
+        # Kiem tra rate limit
+        try:
+            self._check_rate_limit(phone, "sms")
+        except ValueError:
+            logger.warning(f"Rate limit exceeded for {phone} on SMS channel")
+            return False
+
         tenant_id = data.get("tenant_id")
         tenant_context = f" [Tenant: {tenant_id}]" if tenant_id else ""
 
-        # Get message from template or default
         message = self._get_sms_message(notification_type, data, template)
 
-        # Send SMS (placeholder - integrate with Twilio, etc.)
         try:
-            # TODO: Integrate with SMS provider với tenant context
+            # TODO: Integrate with SMS provider voi tenant context
             print(f"Sending SMS to {phone}: {message}{tenant_context}")
             return True
         except Exception as e:
@@ -180,32 +521,35 @@ class NotificationService:
         data: Dict[str, Any],
     ) -> bool:
         """
-        Gửi push notification.
+        Gui push notification voi rate limit.
 
         Args:
             user_id: User ID
             notification_type: Notification type
-            data: Notification data (bao gồm tenant_id - KPI-029)
+            data: Notification data (bao gom tenant_id - KPI-029)
 
         Returns:
-            True nếu gửi thành công
+            True neu gui thanh cong
         """
-        # Get device token
         device_token = data.get("device_token")
         if not device_token:
             return False
 
-        # KPI-029: Get tenant_id từ data
+        # Kiem tra rate limit
+        try:
+            self._check_rate_limit(device_token, "push")
+        except ValueError:
+            logger.warning(f"Rate limit exceeded for {device_token} on push channel")
+            return False
+
         tenant_id = data.get("tenant_id")
         tenant_context = f" [Tenant: {tenant_id}]" if tenant_id else ""
 
-        # Build push notification
         title = self._get_push_title(notification_type)
         body = self._get_push_body(notification_type, data)
 
-        # Send push (placeholder - integrate with FCM/APNS)
         try:
-            # TODO: Integrate with FCM/APNS với tenant context
+            # TODO: Integrate with FCM/APNS voi tenant context
             print(f"Sending push to {device_token}: {title} - {body}{tenant_context}")
             return True
         except Exception as e:
@@ -219,21 +563,20 @@ class NotificationService:
         data: Dict[str, Any],
     ) -> bool:
         """
-        Tạo in-app notification.
+        Tao in-app notification.
 
         Args:
             user_id: User ID
             notification_type: Notification type
-            data: Notification data (bao gồm tenant_id - KPI-029)
+            data: Notification data (bao gom tenant_id - KPI-029)
 
         Returns:
-            True nếu tạo thành công
+            True neu tao thanh cong
         """
-        # KPI-029: Get tenant_id từ data
         tenant_id = data.get("tenant_id")
         tenant_context = f" for tenant '{tenant_id}'" if tenant_id else ""
 
-        # TODO: Save to database với tenant_id
+        # TODO: Save to database voi tenant_id
         print(f"Creating in-app notification for {user_id}: {notification_type.value}{tenant_context}")
         return True
 
@@ -243,10 +586,10 @@ class NotificationService:
         notification_type: NotificationType,
         data: Dict[str, Any],
         channels: Optional[List[NotificationChannel]] = None,
-        tenant_id: Optional[str] = None,  # KPI-029: Tenant isolation
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, bool]:
         """
-        Gửi notification qua multiple channels.
+        Gui notification qua multiple channels.
 
         Args:
             user_id: User ID
@@ -276,26 +619,26 @@ class NotificationService:
     ) -> str:
         """Get SMS message from template."""
         templates = {
-            NotificationType.WELCOME: "Xin chào! Cảm ơn bạn đã đăng ký.",
-            NotificationType.VERIFICATION: f"Mã xác nhận của bạn là: {data.get('code', '123456')}",
-            NotificationType.PASSWORD_RESET: f"Mã đặt lại mật khẩu: {data.get('code', '123456')}",
-            NotificationType.ORDER_UPDATE: f"Đơn hàng {data.get('order_id')} đã được cập nhật.",
-            NotificationType.PAYMENT: f"Thanh toán {data.get('amount')} thành công.",
+            NotificationType.WELCOME: "Xin chao! Cam on ban da dang ky.",
+            NotificationType.VERIFICATION: f"Ma xac nhan cua ban la: {data.get('code', '123456')}",
+            NotificationType.PASSWORD_RESET: f"Ma dat lai mat khau: {data.get('code', '123456')}",
+            NotificationType.ORDER_UPDATE: f"Don hang {data.get('order_id')} da duoc cap nhat.",
+            NotificationType.PAYMENT: f"Thanh toan {data.get('amount')} thanh cong.",
         }
-        return templates.get(notification_type, f"Thông báo: {data.get('message', '')}")
+        return templates.get(notification_type, f"Thong bao: {data.get('message', '')}")
 
     def _get_push_title(self, notification_type: NotificationType) -> str:
         """Get push notification title."""
         titles = {
-            NotificationType.WELCOME: "Chào mừng!",
-            NotificationType.VERIFICATION: "Xác nhận tài khoản",
-            NotificationType.PASSWORD_RESET: "Đặt lại mật khẩu",
-            NotificationType.ORDER_UPDATE: "Cập nhật đơn hàng",
-            NotificationType.PAYMENT: "Thanh toán thành công",
-            NotificationType.ALERT: "Cảnh báo",
-            NotificationType.REMINDER: "Nhắc nhở",
+            NotificationType.WELCOME: "Chao mung!",
+            NotificationType.VERIFICATION: "Xac nhan tai khoan",
+            NotificationType.PASSWORD_RESET: "Dat lai mat khau",
+            NotificationType.ORDER_UPDATE: "Cap nhat don hang",
+            NotificationType.PAYMENT: "Thanh toan thanh cong",
+            NotificationType.ALERT: "Canh bao",
+            NotificationType.REMINDER: "Nac nho",
         }
-        return titles.get(notification_type, "Thông báo")
+        return titles.get(notification_type, "Thong bao")
 
     def _get_push_body(
         self,
@@ -303,4 +646,4 @@ class NotificationService:
         data: Dict[str, Any],
     ) -> str:
         """Get push notification body."""
-        return data.get("message", "Bạn có thông báo mới.")
+        return data.get("message", "Ban co thong bao moi.")

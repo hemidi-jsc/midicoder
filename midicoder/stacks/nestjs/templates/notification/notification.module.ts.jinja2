@@ -2,9 +2,13 @@
  * Notification Module cho NestJS.
  *
  * Cung cấp:
- * - Email service
- * - SMS service
- * - Push notification service
+ * - Email service (SMTP/Nodemailer)
+ * - SMS service (Twilio)
+ * - Push notification service (Firebase FCM)
+ * - Template rendering service
+ * - Rate limiting
+ * - Retry policy với exponential backoff
+ * - Concrete providers: SendGrid, AWS SES, Twilio, Firebase FCM
  *
  * KPI-029: Tenant Isolation - Support tenant-specific notification configuration
  * CP12: Notification & Communication
@@ -16,8 +20,12 @@ import { config } from "dotenv";
 // Load environment variables
 config();
 
+// ============================================================================
+// Email Service Factory (SMTP)
+// ============================================================================
+
 /**
- * Email Service Factory.
+ * Email Service Factory (SMTP).
  *
  * KPI-029: Shared email transporter cho tất cả tenants.
  * Tenant-specific logic được xử lý ở EmailService layer.
@@ -46,16 +54,11 @@ export const emailServiceFactory = {
 
 /**
  * KPI-029: Email service factory với tenant context.
- *
- * Tạo EmailService với tenant_id option.
  */
 export const emailServiceInjectableFactory = {
   provide: "EMAIL_SERVICE_INJECTABLE",
   useFactory: (transporter: ReturnType<typeof emailServiceFactory["useFactory"]>) => {
     const { EmailService } = require("./email.service");
-    
-    // KPI-029: EmailService được tạo không có tenant_id mặc định
-    // Tenant context được pass vào qua method parameters
     return new EmailService(transporter);
   },
   inject: ["EMAIL_SERVICE"],
@@ -63,22 +66,203 @@ export const emailServiceInjectableFactory = {
 
 /**
  * KPI-029: Tenant-specific email service factory.
- *
- * Tạo EmailService với tenant_id cụ thể.
- *
- * @param tenantId - Tenant ID
- * @returns Email service factory
  */
 export const tenantEmailServiceFactory = (tenantId: string) => ({
   provide: `TENANT_EMAIL_SERVICE_${tenantId}`,
   useFactory: (transporter: ReturnType<typeof emailServiceFactory["useFactory"]>) => {
     const { EmailService } = require("./email.service");
-    
-    // KPI-029: Tạo EmailService với tenant_id cụ thể
     return new EmailService(transporter, tenantId);
   },
   inject: ["EMAIL_SERVICE"],
 });
+
+// ============================================================================
+# Concrete Provider Factories
+# ============================================================================
+
+/**
+ * SendGrid Email Provider Factory.
+ *
+ * Config:
+ * - SENDGRID_API_KEY: SendGrid API key (bat buoc)
+ * - SENDGRID_FROM_EMAIL: From email address (bat buoc)
+ * - SENDGRID_FROM_NAME: From name (optional)
+ */
+export const sendGridProviderFactory = {
+  provide: "SENDGRID_EMAIL_GATEWAY",
+  useFactory: () => {
+    const apiKey = process.env.SENDGRID_API_KEY;
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL;
+
+    if (!apiKey || !fromEmail) {
+      console.warn("SendGrid: API key or from email not configured");
+      return null;
+    }
+
+    // Import SendGridEmailGateway from providers
+    const { SendGridEmailGateway } = require("./gateways");
+    return new SendGridEmailGateway({
+      apiKey,
+      fromEmail,
+      fromName: process.env.SENDGRID_FROM_NAME || "Midicoder",
+    });
+  },
+};
+
+/**
+ * AWS SES Email Provider Factory.
+ *
+ * Config:
+ * - AWS_ACCESS_KEY_ID: AWS Access Key ID (bat buoc)
+ * - AWS_SECRET_ACCESS_KEY: AWS Secret Access Key (bat buoc)
+ * - AWS_SES_FROM_EMAIL: From email address (bat buoc)
+ * - AWS_REGION: AWS region (default: us-east-1)
+ */
+export const awsSesProviderFactory = {
+  provide: "AWS_SES_EMAIL_GATEWAY",
+  useFactory: () => {
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    const fromEmail = process.env.AWS_SES_FROM_EMAIL;
+
+    if (!accessKeyId || !secretAccessKey || !fromEmail) {
+      console.warn("AWS SES: Credentials or from email not configured");
+      return null;
+    }
+
+    const { AwsSesEmailGateway } = require("./gateways");
+    return new AwsSesEmailGateway({
+      accessKeyId,
+      secretAccessKey,
+      fromEmail,
+      region: process.env.AWS_REGION || "us-east-1",
+    });
+  },
+};
+
+/**
+ * Twilio SMS Provider Factory.
+ *
+ * Config:
+ * - TWILIO_ACCOUNT_SID: Twilio Account SID (bat buoc)
+ * - TWILIO_AUTH_TOKEN: Twilio Auth Token (bat buoc)
+ * - TWILIO_FROM_PHONE: From phone number E.164 (bat buoc)
+ */
+export const twilioProviderFactory = {
+  provide: "TWILIO_SMS_GATEWAY",
+  useFactory: () => {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const fromPhone = process.env.TWILIO_FROM_PHONE;
+
+    if (!accountSid || !authToken || !fromPhone) {
+      console.warn("Twilio: Credentials or from phone not configured");
+      return null;
+    }
+
+    const { TwilioSmsGateway } = require("./gateways");
+    return new TwilioSmsGateway({
+      accountSid,
+      authToken,
+      fromPhone,
+    });
+  },
+};
+
+/**
+ * Firebase FCM Push Provider Factory.
+ *
+ * Config:
+ * - FIREBASE_PROJECT_ID: Firebase project ID (bat buoc)
+ * - FIREBASE_ACCESS_TOKEN: Firebase access token (bat buoc)
+ */
+export const firebaseProviderFactory = {
+  provide: "FIREBASE_PUSH_GATEWAY",
+  useFactory: () => {
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const accessToken = process.env.FIREBASE_ACCESS_TOKEN;
+
+    if (!projectId || !accessToken) {
+      console.warn("Firebase FCM: Project ID or access token not configured");
+      return null;
+    }
+
+    const { FirebasePushGateway } = require("./gateways");
+    return new FirebasePushGateway({
+      projectId,
+      accessToken,
+    });
+  },
+};
+
+// ============================================================================
+# Rate Limiter Provider
+# ============================================================================
+
+/**
+ * Rate Limiter Provider.
+ *
+ * Config:
+ * - NOTIFICATION_RATE_LIMIT_EMAIL: Email rate limit per minute (default: 100)
+ * - NOTIFICATION_RATE_LIMIT_SMS: SMS rate limit per minute (default: 10)
+ * - NOTIFICATION_RATE_LIMIT_PUSH: Push rate limit per minute (default: 1000)
+ */
+export const rateLimiterProvider = {
+  provide: "RATE_LIMITER",
+  useFactory: () => {
+    const { InMemoryRateLimiter } = require("./rate-limiter.service");
+    return new InMemoryRateLimiter({
+      email: parseInt(process.env.NOTIFICATION_RATE_LIMIT_EMAIL || "100", 10),
+      sms: parseInt(process.env.NOTIFICATION_RATE_LIMIT_SMS || "10", 10),
+      push: parseInt(process.env.NOTIFICATION_RATE_LIMIT_PUSH || "1000", 10),
+      in_app: 1000,
+    });
+  },
+};
+
+// ============================================================================
+# Retry Policy Provider
+# ============================================================================
+
+/**
+ * Retry Policy Provider.
+ *
+ * Config:
+ * - NOTIFICATION_MAX_RETRIES: Max retries (default: 3)
+ * - NOTIFICATION_BASE_DELAY: Base delay in seconds (default: 1)
+ */
+export const retryPolicyProvider = {
+  provide: "RETRY_POLICY",
+  useFactory: () => {
+    const { ExponentialBackoffRetryPolicy } = require("./retry-policy.service");
+    return new ExponentialBackoffRetryPolicy({
+      maxRetries: parseInt(process.env.NOTIFICATION_MAX_RETRIES || "3", 10),
+      baseDelay: parseFloat(process.env.NOTIFICATION_BASE_DELAY || "1.0"),
+      maxDelay: 60.0,
+    });
+  },
+};
+
+// ============================================================================
+# Template Renderer Provider
+# ============================================================================
+
+/**
+ * Template Renderer Provider.
+ *
+ * Cung cấp TemplateRenderer cho template rendering.
+ */
+export const templateRendererProvider = {
+  provide: "TEMPLATE_RENDERER",
+  useFactory: () => {
+    const { TemplateRendererService } = require("./template-renderer.service");
+    return new TemplateRendererService();
+  },
+};
+
+// ============================================================================
+# Notification Module
+# ============================================================================
 
 /**
  * Notification Module.
@@ -86,19 +270,46 @@ export const tenantEmailServiceFactory = (tenantId: string) => ({
  * KPI-029: Module cung cấp:
  * - Email transporter (shared cho tất cả tenants)
  * - EmailService với tenant context support
- * - Tenant-specific email services (optional)
+ * - Concrete providers: SendGrid, AWS SES, Twilio, Firebase FCM
+ * - Rate limiter cho rate limiting
+ * - Retry policy cho exponential backoff
+ * - Template renderer cho template rendering
  *
  * Global module cung cấp notification services.
  */
 @Global()
 @Module({
   providers: [
+    // SMTP Email
     emailServiceFactory,
     emailServiceInjectableFactory,  // KPI-029: Default email service
+
+    // Concrete Providers
+    sendGridProviderFactory,
+    awsSesProviderFactory,
+    twilioProviderFactory,
+    firebaseProviderFactory,
+
+    // Infrastructure
+    rateLimiterProvider,
+    retryPolicyProvider,
+    templateRendererProvider,
   ],
   exports: [
+    // SMTP Email
     emailServiceFactory,
     emailServiceInjectableFactory,  // KPI-029: Export email service
+
+    // Concrete Providers
+    sendGridProviderFactory,
+    awsSesProviderFactory,
+    twilioProviderFactory,
+    firebaseProviderFactory,
+
+    // Infrastructure
+    rateLimiterProvider,
+    retryPolicyProvider,
+    templateRendererProvider,
   ],
 })
 export class NotificationModule {

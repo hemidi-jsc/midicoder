@@ -40,24 +40,29 @@ class FastAPINotificationEmitter:
         """
         Generate NotificationService class code.
 
-        Tạo service class với các methods:
-        - send_email(): Gửi email qua provider
-        - send_sms(): Gửi SMS qua provider
-        - send_push(): Gửi push notification
-        - send_webhook(): Gửi webhook HTTP POST
-        - render_template(): Render template với variables
+        Tao service class voi:
+        - TemplateRenderer: Render templates voi {{variable}} interpolation
+        - RateLimiter: Rate limiting per recipient per channel
+        - RetryPolicy: Exponential backoff cho provider calls
+        - Concrete providers: SendGrid, AWS SES, Twilio, Firebase FCM
 
         Args:
-            templates: List templates (optional, dùng để generate type hints)
+            templates: List templates (optional, dung de generate type hints)
 
         Returns:
-            String chứa Python code cho NotificationService
+            String chua Python code cho NotificationService
         """
         code = '''"""
 Notification Service Module.
 
-Module này cung cấp NotificationService cho việc dispatch notifications
-qua các kênh: Email, SMS, Push, Webhook, In-App.
+Module nay cung cap NotificationService cho viec dispatch notifications
+qua cac kênh: Email, SMS, Push, Webhook, In-App.
+
+Tich hop:
+- TemplateRenderer: Render templates voi {{variable}} va filters
+- RateLimiter: Rate limiting per recipient per channel
+- RetryPolicy: Exponential backoff cho provider calls
+- Concrete providers: SendGrid, AWS SES, Twilio, Firebase FCM
 
 Author: Midicoder Team
 Version: 1.0.0
@@ -66,155 +71,306 @@ Version: 1.0.0
 from __future__ import annotations
 
 import logging
-import re
+import time
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import Depends
+from midicoder.emitters.core.notification.template_engine import (
+    TemplateRenderer, TemplateValidator, RenderedTemplate,
+)
+from midicoder.emitters.core.notification.i18n import I18nTemplateRegistry
+from midicoder.emitters.core.notification.rate_limiter import RateLimiter
+from midicoder.emitters.core.notification.retry_policy import RetryPolicy
+from midicoder.emitters.core.notification.providers import (
+    EmailGateway, SmsGateway, PushGateway,
+    SendGridEmailGateway, AwsSesEmailGateway,
+    TwilioSmsGateway, FirebasePushGateway,
+)
+from midicoder.emitters.core.notification.models import (
+    NotificationChannel, NotificationTemplate, DispatchResult,
+)
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
 
 logger = logging.getLogger(__name__)
 
 
-class NotificationChannel(str, Enum):
-    """Kênh notification."""
-    EMAIL = "email"
-    SMS = "sms"
-    PUSH = "push"
-    WEBHOOK = "webhook"
-    IN_APP = "in_app"
-
-
 @dataclass
-class DispatchResult:
-    """Kết quả dispatch notification."""
-    dispatch_id: str
-    status: str  # sent, failed, bounced
-    provider_response: dict[str, Any] | None = None
-    error_code: str | None = None
+class _RateRecord:
+    """Record cho rate tracking."""
+    count: int = 0
+    window_start: float = field(default_factory=time.time)
 
 
 class NotificationGateway(ABC):
     """
     Abstract gateway cho notification providers.
-    
-    Các concrete provider (SendGrid, Twilio, Firebase) implement interface này.
+
+    Cac concrete provider (SendGrid, Twilio, Firebase) implement interface nay.
     """
 
     @abstractmethod
     async def send(self, recipient: str, subject: str, body: str, **kwargs: Any) -> DispatchResult:
-        """Gửi notification qua provider."""
+        """Gui notification qua provider."""
         pass
 
 
 class NotificationService:
     """
-    Service chính cho notification system.
-    
-    Quản lý templates, providers, và dispatch notifications qua các kênh.
-    Support async dispatch qua Celery background tasks.
+    Service chinh cho notification system.
+
+    Quan ly templates, providers, va dispatch notifications qua cac kênh.
+    Tich hop TemplateRenderer, RateLimiter, RetryPolicy.
     """
 
     def __init__(
         self,
         gateways: dict[NotificationChannel, list[NotificationGateway]] | None = None,
         rate_limits: dict[str, int] | None = None,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
     ) -> None:
         """
-        Khởi tạo NotificationService.
-        
+        Khoi tao NotificationService.
+
         Args:
             gateways: Mapping channel -> list of gateway providers
             rate_limits: Rate limits per channel (requests per minute)
+            max_retries: So lan retry toi da (default: 3)
+            base_delay: Base delay cho retry (giay, default: 1.0)
         """
         self._gateways: dict[NotificationChannel, list[NotificationGateway]] = gateways or {}
-        self._rate_limits: dict[str, int] = rate_limits or {"email": 100, "sms": 10, "push": 1000, "webhook": 100, "in_app": 1000}
-        self._templates: dict[str, dict[str, Any]] = {}
+        self._rate_limits: dict[str, int] = rate_limits or {
+            "email": 100, "sms": 10, "push": 1000, "webhook": 100, "in_app": 1000,
+        }
+        self._templates: dict[str, NotificationTemplate] = {}
         self._dispatch_log: list[dict[str, Any]] = []
 
-    def register_template(self, template_id: str, channel: NotificationChannel, subject: str = "", body_html: str = "", body_text: str = "", variables: list[str] | None = None) -> None:
+        # Tich hop TemplateRenderer
+        self._renderer = TemplateRenderer()
+
+        # Tich hop I18nTemplateRegistry
+        self._i18n_registry = I18nTemplateRegistry()
+
+        # Tich hop RateLimiter (in-memory)
+        self._rate_records: dict[tuple[str, str], _RateRecord] = defaultdict(_RateRecord)
+
+        # Tich hop RetryPolicy
+        self._retry_policy = RetryPolicy(
+            max_retries=max_retries,
+            base_delay=base_delay,
+        )
+
+    def register_provider(
+        self,
+        channel: NotificationChannel,
+        provider_type: str,
+        config: dict[str, Any],
+    ) -> None:
         """
-        Đăng ký notification template.
-        
+        Dang ky concrete provider cho channel.
+
+        Su dung concrete providers tu module providers:
+        - SendGridEmailGateway, AwsSesEmailGateway (Email)
+        - TwilioSmsGateway (SMS)
+        - FirebasePushGateway (Push)
+
         Args:
-            template_id: Định danh duy nhất của template
-            channel: Channel để gửi notification
+            channel: Notification channel
+            provider_type: Loai provider (sendgrid, ses, twilio, firebase)
+            config: Configuration dict cho provider
+        """
+        gateway: EmailGateway | SmsGateway | PushGateway | None = None
+
+        if provider_type == "sendgrid":
+            gateway = SendGridEmailGateway(config)
+        elif provider_type == "ses":
+            gateway = AwsSesEmailGateway(config)
+        elif provider_type == "twilio":
+            gateway = TwilioSmsGateway(config)
+        elif provider_type == "firebase":
+            gateway = FirebasePushGateway(config)
+
+        if gateway is not None:
+            if channel not in self._gateways:
+                self._gateways[channel] = []
+            self._gateways[channel].append(gateway)  # type: ignore
+
+    def register_template(
+        self,
+        template: NotificationTemplate,
+    ) -> None:
+        """
+        Dang ky notification template.
+
+        Template duoc luu theo template_id va locale (i18n support).
+
+        Args:
+            template: NotificationTemplate instance
+        """
+        self._templates[template.template_id] = template
+        self._i18n_registry.register(
+            template_id=template.template_id,
+            locale=template.locale,
+            template=template,
+        )
+
+    def register_template_legacy(
+        self,
+        template_id: str,
+        channel: NotificationChannel,
+        subject: str = "",
+        body_html: str = "",
+        body_text: str = "",
+        variables: list[str] | None = None,
+        locale: str = "en",
+    ) -> None:
+        """
+        Dang ky notification template (legacy API).
+
+        Args:
+            template_id: Dinh danh duy nhat cua template
+            channel: Channel de gui notification
             subject: Subject line (support {{variable}})
             body_html: HTML body content
             body_text: Plain text body content
-            variables: Danh sách variables trong template
+            variables: Danh sach variables trong template
+            locale: Locale code (BCP 47)
         """
-        self._templates[template_id] = {
-            "template_id": template_id,
-            "channel": channel,
-            "subject": subject,
-            "body_html": body_html,
-            "body_text": body_text,
-            "variables": variables or [],
-        }
+        template = NotificationTemplate(
+            template_id=template_id,
+            channel=channel,
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text,
+            variables=variables or [],
+            locale=locale,
+        )
+        self.register_template(template)
 
-    def render_template(self, template_id: str, data: dict[str, Any]) -> dict[str, str]:
+    def render_template(
+        self,
+        template_id: str,
+        data: dict[str, Any],
+        locale: str | None = None,
+    ) -> RenderedTemplate:
         """
-        Render template với variable values.
-        
-        Thay thế {{variable}} trong template bằng values từ data dict.
-        
+        Render template voi variable values.
+
+        Su dung TemplateRenderer de thay the {{variable}} trong template
+        bang values tu data dict. Support filters va nested variables.
+
         Args:
-            template_id: Template ID để render
+            template_id: Template ID de render
             data: Variable values
-            
+            locale: Preferred locale (BCP 47)
+
         Returns:
-            Dict với subject, body_html, body_text đã render
-            
+            RenderedTemplate voi subject, body_html, body_text da render
+
         Raises:
-            MidicoderError: Nếu template không tìm thấy
+            MidicoderError: Neu template khong tim thay
         """
-        if template_id not in self._templates:
+        # Resolve template voi i18n fallback chain
+        template = None
+
+        if locale:
+            template = self._i18n_registry.resolve(template_id, locale)
+
+        if template is None:
+            template = self._templates.get(template_id)
+
+        if template is None:
             EM.raise_error(
                 ErrorCode.CP12_NOTIFICATION_TEMPLATE_NOT_FOUND,
-                template_id=template_id
+                template_id=template_id,
             )
 
-        template = self._templates[template_id]
-        pattern = re.compile(r"\\{\\{(\\w+)\\}\\}")
+        # Su dung TemplateRenderer
+        return self._renderer.render(template, data)
 
-        result: dict[str, str] = {
-            "subject": template["subject"],
-            "body_html": template["body_html"],
-            "body_text": template["body_text"],
-        }
-
-        for key in result:
-            def _replacer(match: re.Match) -> str:
-                var_name = match.group(1)
-                if var_name in data:
-                    return str(data[var_name])
-                return match.group(0)
-            result[key] = pattern.sub(_replacer, result[key])
-
-        return result
-
-    async def send_email(self, recipient: str, subject: str, body_html: str, **kwargs: Any) -> DispatchResult:
+    def _check_rate_limit(self, recipient: str, channel: str) -> bool:
         """
-        Gửi email notification.
-        
-        Dispatch email qua provider gateway (SendGrid, SES, v.v.).
-        
+        Kiem tra rate limit cho recipient.
+
         Args:
-            recipient: Email address người nhận
+            recipient: Recipient identifier
+            channel: Channel name
+
+        Returns:
+            True neu con quota
+
+        Raises:
+            MidicoderError: Neu vuot rate limit
+        """
+        limit = self._rate_limits.get(channel, 100)
+        key = (recipient, channel)
+        now = time.time()
+        record = self._rate_records[key]
+
+        # Reset window neu da qua 1 phut
+        if now - record.window_start >= 60:
+            record.count = 0
+            record.window_start = now
+
+        if record.count >= limit:
+            EM.raise_error(
+                ErrorCode.CP12_NOTIFICATION_RATE_LIMIT_EXCEEDED,
+                recipient=recipient,
+                channel=channel,
+                limit=limit,
+                window_seconds=60,
+            )
+
+        record.count += 1
+        return True
+
+    def _dispatch_with_retry(
+        self,
+        func: Callable[..., DispatchResult],
+        *args: Any,
+        **kwargs: Any,
+    ) -> DispatchResult:
+        """
+        Execute dispatch voi retry policy.
+
+        Args:
+            func: Function can execute
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+
+        Returns:
+            DispatchResult
+        """
+        return self._retry_policy.execute_with_retry(func, *args, **kwargs)
+
+    async def send_email(self, recipient: str, subject: str, body_html: str, body_text: str = "", **kwargs: Any) -> DispatchResult:
+        """
+        Gui email notification voi rate limit va retry.
+
+        Dispatch email qua provider gateway (SendGrid, SES, v.v.).
+        Kiem tra rate limit truoc khi dispatch. Retry neu that bai.
+
+        Args:
+            recipient: Email address nguoi nhan
             subject: Email subject
             body_html: HTML email body
-            **kwargs: Additional parameters (from_email, reply_to, attachments)
-            
+            body_text: Plain text email body
+            **kwargs: Additional parameters
+
         Returns:
-            DispatchResult với status và provider response
+            DispatchResult voi status va provider response
         """
         channel = NotificationChannel.EMAIL
         dispatch_id = f"email_{datetime.utcnow().isoformat()}"
+
+        # Kiem tra rate limit
+        self._check_rate_limit(recipient, channel.value)
 
         try:
             gateways = self._gateways.get(channel, [])
@@ -225,9 +381,17 @@ class NotificationService:
                     error_code="MDC-CP12-004",
                 )
 
-            # Lấy gateway có priority cao nhất
             gateway = gateways[0]
-            result = await gateway.send(recipient, subject, body_html, **kwargs)
+
+            # Dispatch voi retry policy
+            def _do_send() -> DispatchResult:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                return loop.run_until_complete(
+                    gateway.send(recipient, subject, body_html, body_text, **kwargs)
+                )
+
+            result = self._dispatch_with_retry(_do_send)
             result.dispatch_id = dispatch_id
 
             logger.info("Email sent successfully: %s to %s", dispatch_id, recipient)
@@ -243,20 +407,21 @@ class NotificationService:
 
     async def send_sms(self, recipient: str, body_text: str, **kwargs: Any) -> DispatchResult:
         """
-        Gửi SMS notification.
-        
-        Dispatch SMS qua provider gateway (Twilio, v.v.).
-        
+        Gui SMS notification voi rate limit va retry.
+
         Args:
-            recipient: Phone number người nhận
+            recipient: Phone number nguoi nhan
             body_text: SMS body text
             **kwargs: Additional parameters
-            
+
         Returns:
-            DispatchResult với status và provider response
+            DispatchResult voi status va provider response
         """
         channel = NotificationChannel.SMS
         dispatch_id = f"sms_{datetime.utcnow().isoformat()}"
+
+        # Kiem tra rate limit
+        self._check_rate_limit(recipient, channel.value)
 
         try:
             gateways = self._gateways.get(channel, [])
@@ -284,21 +449,22 @@ class NotificationService:
 
     async def send_push(self, recipient: str, title: str, body: str, **kwargs: Any) -> DispatchResult:
         """
-        Gửi push notification.
-        
-        Dispatch push notification qua provider (Firebase, APNs).
-        
+        Gui push notification voi rate limit.
+
         Args:
             recipient: User/device ID
             title: Push notification title
             body: Push notification body
             **kwargs: Additional parameters (badge, sound, data)
-            
+
         Returns:
-            DispatchResult với status và provider response
+            DispatchResult voi status va provider response
         """
         channel = NotificationChannel.PUSH
         dispatch_id = f"push_{datetime.utcnow().isoformat()}"
+
+        # Kiem tra rate limit
+        self._check_rate_limit(recipient, channel.value)
 
         try:
             gateways = self._gateways.get(channel, [])
@@ -326,17 +492,17 @@ class NotificationService:
 
     async def send_webhook(self, url: str, payload: dict[str, Any], **kwargs: Any) -> DispatchResult:
         """
-        Gửi webhook notification.
-        
-        Dispatch HTTP POST request đến webhook URL.
-        
+        Gui webhook notification.
+
+        Dispatch HTTP POST request den webhook URL.
+
         Args:
             url: Webhook URL
             payload: JSON payload
             **kwargs: Additional parameters (headers, timeout)
-            
+
         Returns:
-            DispatchResult với status và provider response
+            DispatchResult voi status va provider response
         """
         channel = NotificationChannel.WEBHOOK
         dispatch_id = f"webhook_{datetime.utcnow().isoformat()}"
@@ -371,37 +537,48 @@ class NotificationService:
         recipient: str,
         payload: dict[str, Any],
         channel: NotificationChannel | None = None,
+        locale: str | None = None,
     ) -> DispatchResult:
         """
-        Dispatch notification dựa trên template.
-        
-        Render template và dispatch qua channel phù hợp.
-        
+        Dispatch notification dua tren template.
+
+        Render template voi TemplateRenderer va dispatch qua channel phù hop.
+        Kiem tra rate limit va ap dung retry policy.
+
         Args:
             template_id: Template ID
-            recipient: Người nhận
+            recipient: Nguoi nhan
             payload: Variable values cho template
             channel: Override channel (optional)
-            
+            locale: Preferred locale (BCP 47)
+
         Returns:
             DispatchResult
         """
-        rendered = self.render_template(template_id, payload)
-        template = self._templates[template_id]
-        target_channel = channel or template["channel"]
+        # Render template voi TemplateRenderer + i18n
+        rendered = self.render_template(template_id, payload, locale=locale)
+        template = self._templates.get(template_id)
+        if template is None:
+            EM.raise_error(
+                ErrorCode.CP12_NOTIFICATION_TEMPLATE_NOT_FOUND,
+                template_id=template_id,
+            )
+        target_channel = channel or template.channel
 
         if target_channel == NotificationChannel.EMAIL:
-            return await self.send_email(recipient, rendered["subject"], rendered["body_html"])
+            return await self.send_email(
+                recipient, rendered.subject, rendered.body_html, rendered.body_text,
+            )
         elif target_channel == NotificationChannel.SMS:
-            return await self.send_sms(recipient, rendered["body_text"])
+            return await self.send_sms(recipient, rendered.body_text)
         elif target_channel == NotificationChannel.PUSH:
-            return await self.send_push(recipient, rendered["subject"], rendered["body_text"])
+            return await self.send_push(recipient, rendered.subject, rendered.body_text)
         elif target_channel == NotificationChannel.WEBHOOK:
             return await self.send_webhook(recipient, payload)
         else:
             EM.raise_error(
                 ErrorCode.CP12_NOTIFICATION_CHANNEL_NOT_SUPPORTED,
-                channel=target_channel.value
+                channel=target_channel.value,
             )
 
 
