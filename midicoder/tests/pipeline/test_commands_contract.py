@@ -30,7 +30,6 @@ import yaml
 from midicoder.pipeline.commands.contract import (
     check_contracts,
     generate_contracts,
-    generate_placeholder_contracts,
     repair_contracts,
     _build_placeholder_yaml,
     _generate_contracts_to_sqlite,
@@ -383,33 +382,6 @@ class TestRepairContracts:
             repair_contracts()
         except Exception:
             pass  # Expected: dependency builder bug with dict references
-
-
-# ============================================================================
-# Tests: Backward Compatibility
-# ============================================================================
-
-class TestBackwardCompatibility:
-    """Tests cho deprecated functions."""
-
-    @patch("midicoder.pipeline.commands.contract.click.echo")
-    def test_generate_placeholder_contracts_still_works(
-        self, mock_echo, temp_workspace, sample_brief
-    ):
-        """Test: Deprecated function vẫn hoạt động (backward compat)."""
-        contracts_dir = temp_workspace / ".midicoder" / "contracts"
-        contracts_dir.mkdir(parents=True)
-
-        with pytest.deprecated_call():
-            generate_placeholder_contracts(contracts_dir, sample_brief)
-
-        # Files should exist
-        assert (contracts_dir / "entities.yaml").exists()
-        # SQLite artifacts should exist
-        artifacts_manager = ArtifactsManager()
-        artifacts_manager.init()
-        contracts = artifacts_manager.list_by_type("contract")
-        assert len(contracts) == 7
 
 
 # ============================================================================

@@ -9,17 +9,18 @@ Commands:
 - contract check: Validate contracts từ SQLite với DSL schema
 - contract repair: Sửa contracts có lỗi bằng LLM → SQLite
 
-Theo SoT (MIDICODER_ARCHITECTURE.md Section 7):
+Pipeline:
 - Input: Brief (SQLite)
 - Output: Contract artifacts (SQLite, artifact_type="contract")
 - Pipeline: contract gen → contract check → ir build
 
 Author: Midicoder Team
-Version: 3.0.0 (Refactored: SQLite-only architecture)
+Version: 4.0.0 (LLM Contract Generation)
 """
 
 from __future__ import annotations
 
+import json
 import click
 import yaml
 from datetime import datetime, timezone
@@ -31,6 +32,7 @@ from midicoder.storage.sqlite import BriefsManager, ArtifactsManager
 from midicoder.dsl.projection import ProjectionTree
 from midicoder.dsl.validator import validate_tree, ValidationStatus, ValidationReport
 from midicoder.pipeline.dsl_parser import DSLParser
+from midicoder.pipeline.prompts import load_prompt
 from litellm import APIError
 from midicoder.pipeline.llm.client import (
     LlmConfig,
@@ -45,7 +47,302 @@ REQUIRED_CATEGORIES = [
 ]
 
 # Số lần thử tối đa để LLM fix contracts
-MAX_REPAIR_ATTEMPTS = 3
+MAX_REPAIR_ATTEMPTS = 5
+
+
+# ============================================================================
+# LLM Contract Generation (P0-4)
+# ============================================================================
+
+# Mapping category → tên file prompt
+_CATEGORY_PROMPT_MAP = {
+    "entities": "contract_entities",
+    "commands": "contract_commands",
+    "queries": "contract_queries",
+    "events": "contract_events",
+    "workflows": "contract_workflows",
+    "value_objects": "contract_value_objects",
+    "guards": "contract_guards",
+}
+
+
+def _build_category_prompt(
+    category: str,
+    analysis_data: dict,
+    clarifications: list,
+    brief_content: str,
+) -> tuple[str, str]:
+    """
+    Xây dựng prompt cho LLM để generate DSL contracts cho một category.
+
+    Tải system prompt từ file Markdown riêng cho từng category.
+    User prompt bao gồm: analysis data, clarifications, và brief content.
+
+    Args:
+        category: Tên category (entities, commands, queries, events, workflows, value_objects, guards)
+        analysis_data: JSON data từ brief analysis
+        clarifications: Danh sách Q&A clarifications
+        brief_content: Content của brief ban đầu
+
+    Returns:
+        Tuple (system_prompt, user_prompt)
+    """
+    # Load system prompt từ file Markdown
+    prompt_name = _CATEGORY_PROMPT_MAP.get(category)
+    if prompt_name:
+        system = load_prompt(prompt_name)
+    else:
+        # Fallback nếu không có prompt file
+        system = f"Generate DSL contracts for the \"{category}\" category. Output valid YAML dict."
+
+    # Xây dựng user prompt
+    user_parts = []
+
+    # Thêm brief content
+    user_parts.append(f"## Brief Content:\n{brief_content}")
+
+    # Thêm analysis data
+    if analysis_data:
+        user_parts.append(f"## Analysis Data:\n{json.dumps(analysis_data, indent=2, ensure_ascii=False)}")
+
+    # Thêm clarifications
+    if clarifications:
+        clar_text = "\n".join(
+            f"- Q: {q.get('question', '')}\n  A: {q.get('answer', '')}"
+            for q in clarifications
+        )
+        user_parts.append(f"## Clarifications:\n{clar_text}")
+
+    # Category request
+    user_parts.append(f"\n## Task: Generate contracts for the \"{category}\" category.")
+    user_parts.append("Output ONLY the YAML dict with the category key as the top-level key.")
+
+    user = "\n\n".join(user_parts)
+
+    return system, user
+
+
+# Số lần retry tối đa cho mỗi LLM category call
+_MAX_CATEGORY_RETRIES = 10
+
+
+def _generate_category_with_retry(
+    config: LlmConfig,
+    category: str,
+    system: str,
+    user: str,
+    max_retries: int = _MAX_CATEGORY_RETRIES,
+) -> str:
+    """
+    Gọi LLM để generate YAML cho một category, retry tới khi thành công.
+
+    Hàm sẽ retry tối đa `max_retries` lần. Nếu hết lần retry → raise Exception.
+    Loại bỏ markdown code blocks nếu có.
+
+    Args:
+        config: LLM config
+        category: Tên category
+        system: System prompt
+        user: User prompt
+        max_retries: Số lần retry tối đa
+
+    Returns:
+        YAML string hợp lệ cho category
+
+    Raises:
+        RuntimeError: Nếu hết lần retry mà vẫn không có valid YAML
+    """
+    attempt = 0
+
+    while attempt < max_retries:
+        attempt += 1
+
+        try:
+            response = call_llm(
+                config,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+
+            yaml_content = response.content.strip()
+
+            # Loại bỏ markdown code blocks
+            if yaml_content.startswith("```yaml"):
+                yaml_content = yaml_content.removeprefix("```yaml").removesuffix("```").strip()
+            elif yaml_content.startswith("```"):
+                yaml_content = yaml_content.removeprefix("```").removesuffix("```").strip()
+
+            # Kiểm tra xem có phải valid YAML không
+            yaml.safe_load(yaml_content)
+
+            # Nếu đến được đây thì là valid YAML
+            return yaml_content
+
+        except yaml.YAMLError:
+            # LLM output không phải valid YAML → retry
+            click.echo(f"      ⚠️  {category}: LLM output not valid YAML (attempt {attempt}/{max_retries}), retrying...")
+            if attempt >= max_retries:
+                raise RuntimeError(f"Failed to generate valid YAML for {category} after {max_retries} attempts")
+            continue
+        except Exception as e:
+            # Loại lỗi khác (API error, ...) → retry
+            click.echo(f"      ⚠️  {category}: LLM error (attempt {attempt}/{max_retries}): {e}, retrying...")
+            if attempt >= max_retries:
+                raise RuntimeError(f"LLM failed for {category} after {max_retries} attempts: {e}")
+            continue
+
+    raise RuntimeError(f"Exceeded max retries ({max_retries}) for category {category}")
+
+
+def _generate_contracts_with_llm(
+    config: LlmConfig,
+    analysis_data: dict,
+    clarifications: list,
+    brief_content: str,
+) -> Dict[str, str]:
+    """
+    Generate DSL contracts cho tất cả 7 categories bằng LLM.
+
+    Gọi LLM 7 lần riêng biệt, mỗi lần generate 1 category.
+    Mỗi call có prompt riêng phù hợp với schema của category đó.
+
+    Args:
+        config: LLM config
+        analysis_data: JSON data từ brief analysis
+        clarifications: Danh sách clarifications
+        brief_content: Content của brief ban đầu
+
+    Returns:
+        Dictionary mapping category → YAML string
+    """
+    result = {}
+
+    for category in REQUIRED_CATEGORIES:
+        click.echo(f"   → Generating {category}...")
+
+        system, user = _build_category_prompt(
+            category, analysis_data, clarifications, brief_content
+        )
+
+        yaml_content = _generate_category_with_retry(
+            config, category, system, user
+        )
+
+        result[category] = yaml_content
+        click.echo(f"      ✓ {category} generated")
+
+    return result
+
+
+def _auto_fix_contracts(
+    artifacts_manager: ArtifactsManager,
+    yaml_dict: Dict[str, str],
+    brief_id: str,
+    config: LlmConfig,
+) -> bool:
+    """
+    Auto-fix loop: validate → error → LLM fix → revalidate (max 5 iterations).
+
+    Sau khi generate, nếu validation có errors, hàm này sẽ:
+    1. Parse errors từ validation report
+    2. Gọi LLM để fix các categories có lỗi
+    3. Re-validate TOÀN BỘ 7 categories
+    4. Kiểm tra total_errors == 0
+
+    Args:
+        artifacts_manager: ArtifactsManager instance
+        yaml_dict: Dictionary category → YAML content
+        brief_id: Brief ID
+        config: LLM config
+
+    Returns:
+        True nếu valid sau fix, False nếu sau 5 iterations vẫn có errors
+    """
+    dsl_parser = DSLParser()
+
+    for iteration in range(1, MAX_REPAIR_ATTEMPTS + 1):
+        click.echo("")
+        click.echo(f"   → Auto-fix iteration {iteration}/{MAX_REPAIR_ATTEMPTS}")
+
+        # Build ProjectionTree và validate
+        try:
+            tree = dsl_parser.build_projection_tree(yaml_dict)
+            report = validate_tree(tree)
+        except Exception as e:
+            click.echo(f"      ⚠️  Validation error: {e}")
+            break
+
+        if report.total_errors == 0:
+            click.echo(f"      ✓ Contracts valid sau {iteration} iteration(s)")
+            return True
+
+        click.echo(f"      → Vẫn có {report.total_errors} errors, fix...")
+
+        # Fix các categories có lỗi
+        errors_by_node = report.get_errors_by_node()
+        error_messages = []
+        for node_id, node_errors in errors_by_node.items():
+            for error in node_errors:
+                error_messages.append(getattr(error, 'message', str(error)))
+
+        for category in REQUIRED_CATEGORIES:
+            if category not in yaml_dict:
+                continue
+
+            current_content = yaml_dict[category]
+            try:
+                parsed_data = yaml.safe_load(current_content)
+            except Exception:
+                parsed_data = {}
+
+            # Gọi LLM để fix
+            try:
+                response = call_llm(
+                    config,
+                    system="""You are a DSL contract repair expert. Fix validation errors.
+Output ONLY valid YAML dict, no markdown formatting.""",
+                    messages=[{
+                        "role": "user",
+                        "content": f"""Category: {category}
+
+Current content:
+{current_content}
+
+Validation errors:
+{"; ".join(error_messages)}
+
+Fix the YAML. Output ONLY the fixed YAML content."""
+                    }],
+                )
+
+                fixed_yaml = response.content.strip()
+                if fixed_yaml.startswith("```yaml"):
+                    fixed_yaml = fixed_yaml.removeprefix("```yaml").removesuffix("```").strip()
+                elif fixed_yaml.startswith("```"):
+                    fixed_yaml = fixed_yaml.removeprefix("```").removesuffix("```").strip()
+
+                # Validate là fixed YAML hợp lệ
+                yaml.safe_load(fixed_yaml)
+                yaml_dict[category] = fixed_yaml
+                click.echo(f"      ✓ Fixed {category}")
+
+            except Exception as e:
+                click.echo(f"      ⚠️  Failed to fix {category}: {e}")
+
+        # Update artifacts trong SQLite
+        for category, content in yaml_dict.items():
+            _upsert_contract_artifact(artifacts_manager, category, content, brief_id)
+
+    # Sau MAX_REPAIR_ATTEMPTS iterations, kiểm tra cuối cùng
+    try:
+        tree = dsl_parser.build_projection_tree(yaml_dict)
+        report = validate_tree(tree)
+        if report.total_errors == 0:
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 # ============================================================================
@@ -58,9 +355,10 @@ def generate_contracts(force: bool = False):
 
     Process (SQLite-only):
     1. Lấy active brief từ SQLite
-    2. Generate contract YAML strings (placeholder hoặc LLM)
-    3. Upsert contracts vào SQLite (artifact_type="contract")
-    4. Self-validate contracts
+    2. Load analysis data + clarifications
+    3. Gọi LLM để generate 7 categories
+    4. Self-validate + auto-fix nếu có errors
+    5. Save contracts vào SQLite (artifact_type="contract")
 
     Args:
         force: Force regenerate even if exists
@@ -88,6 +386,7 @@ def generate_contracts(force: bool = False):
         click.echo(f"ℹ️  Sử dụng brief: {active_brief.get('brief_id')}")
 
     brief_id = active_brief.get('brief_id')
+    brief_content = active_brief.get('content', '')
     click.echo(f"   → Brief ID: {brief_id}")
     click.echo(f"   → Title: {active_brief.get('title')}")
 
@@ -100,19 +399,71 @@ def generate_contracts(force: bool = False):
         click.echo(f"⚠️  Contracts đã tồn tại ({len(existing)} artifacts)")
         response = click.prompt("Ghi đè? (y/n)", default="n")
         if response.lower() != "y":
-            click.echo("❌ Hủy bỏ.")
+            click.echo("❌ Huỷ bỏ.")
             return
 
-    # Step 3: Generate contract YAML strings và lưu vào SQLite
-    click.echo("🤖 Đang generate contracts...")
-    click.echo("   ⚠️  LLM contract generation chưa được implement")
-    click.echo("   💡 Sử dụng placeholder contracts (stub)")
+    # Step 3: Load analysis data
+    click.echo("")
+    click.echo("   → Loading analysis data...")
+    analysis_data = {}
+    try:
+        analysis_artifact = artifacts_manager.get(f"analysis-{brief_id}")
+        if analysis_artifact:
+            analysis_data = json.loads(analysis_artifact.get("content", "{}"))
+            click.echo(f"   ✓ Analysis loaded: {len(analysis_data.get('entities', []))} entities")
+        else:
+            click.echo("   ⚠️  Không tìm thấy analysis artifact")
+    except Exception as e:
+        click.echo(f"   ⚠️  Lỗi load analysis: {e}")
 
-    _generate_contracts_to_sqlite(brief_id)
+    # Step 4: Load clarifications
+    clarifications = []
+    try:
+        clarifications = briefs_manager.get_clarifications(brief_id)
+        if clarifications:
+            click.echo(f"   ✓ Clarifications loaded: {len(clarifications)} Q&A")
+    except Exception:
+        pass
 
-    # Step 4: Self-validate (tolerant — placeholder data có thể trigger validator bugs)
+    # Step 5: Load LLM config
+    try:
+        config = load_llm_config()
+        click.echo(f"   ✓ LLM config: {config.provider} / {config.model}")
+    except Exception as e:
+        click.echo(f"❌ Không thể load LLM config: {e}")
+        click.echo("💡 Cấu hình LLM tại ~/.midicoder/midicoder.json")
+        return
+
+    # Step 6: Generate contracts bằng LLM
+    click.echo("")
+    click.echo("🤖 Đang generate contracts bằng LLM...")
+
+    try:
+        yaml_dict = _generate_contracts_with_llm(
+            config=config,
+            analysis_data=analysis_data,
+            clarifications=clarifications,
+            brief_content=brief_content,
+        )
+    except Exception as e:
+        click.echo(f"❌ LLM generation failed: {e}")
+        click.echo("💡 Kiểm tra LLM server đang chạy và config hợp lệ")
+        return
+
+    # Step 7: Save contracts vào SQLite
+    click.echo("")
+    click.echo("   → Saving contracts to SQLite...")
+    saved_count = 0
+    for category in REQUIRED_CATEGORIES:
+        yaml_content = yaml_dict.get(category, "")
+        _upsert_contract_artifact(artifacts_manager, category, yaml_content, brief_id)
+        saved_count += 1
+    click.echo(f"   ✓ Saved {saved_count}/7 contract artifacts to SQLite")
+
+    # Step 8: Self-validate + auto-fix
     click.echo("")
     click.echo("   → Self-validating contracts...")
+
     try:
         tree = _load_contracts_from_sqlite()
         if tree is not None:
@@ -122,11 +473,10 @@ def generate_contracts(force: bool = False):
             elif report.status == ValidationStatus.WARNINGS:
                 click.echo(f"   ⚠️  Contracts valid với {report.total_warnings} warnings")
             else:
-                click.echo(f"   ⚠️  Contracts có {report.total_errors} errors (placeholder data)")
+                click.echo(f"   → Contracts có {report.total_errors} errors, auto-fixing...")
+                _auto_fix_contracts(artifacts_manager, yaml_dict, brief_id, config)
     except Exception as e:
-        # Known issue: dependency graph builder fails với complex fetches/writes_to dicts
-        # TODO: Fix dependency builder để handle dict-based references
-        click.echo(f"   ⚠️  Validation skipped (known issue: {e})")
+        click.echo(f"   ⚠️  Validation error: {e}")
 
     # Done
     click.echo("")
@@ -141,25 +491,53 @@ def _generate_contracts_to_sqlite(brief_id: str) -> None:
     """
     Generate contract YAML strings và lưu trực tiếp vào SQLite.
 
-    STUB: Hiện tại dùng placeholder data. Sau khi implement LLM (P0-4),
-    thay thế bằng LLM-generated contracts.
+    Sử dụng LLM để generate contracts. Nếu LLM không được cấu hình,
+    sử dụng placeholder data làm fallback.
 
     Args:
         brief_id: Brief ID liên quan
     """
     artifacts_manager = ArtifactsManager()
     artifacts_manager.init()
+    briefs_manager = BriefsManager()
 
-    generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    # Lấy brief content
+    brief_record = briefs_manager.get(brief_id)
+    brief_content = brief_record.get('content', '') if brief_record else ''
 
-    # Build placeholder YAML content cho mỗi category
-    yaml_dict = _build_placeholder_yaml(brief_id, generated_at)
+    # Lấy analysis data
+    analysis_data = {}
+    try:
+        analysis_artifact = artifacts_manager.get(f"analysis-{brief_id}")
+        if analysis_artifact:
+            analysis_data = json.loads(analysis_artifact.get("content", "{}"))
+    except Exception:
+        pass
+
+    # Lấy clarifications
+    clarifications = []
+    try:
+        clarifications = briefs_manager.get_clarifications(brief_id)
+    except Exception:
+        pass
+
+    # Thử load LLM config
+    try:
+        config = load_llm_config()
+        yaml_dict = _generate_contracts_with_llm(
+            config=config,
+            analysis_data=analysis_data,
+            clarifications=clarifications,
+            brief_content=brief_content,
+        )
+    except Exception:
+        # Fallback: sử dụng placeholder nếu LLM không hợp lệ
+        generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        yaml_dict = _build_placeholder_yaml(brief_id, generated_at)
 
     saved_count = 0
     for category in REQUIRED_CATEGORIES:
         yaml_content = yaml_dict[category]
-
-        # Upsert artifact (idempotent)
         _upsert_contract_artifact(artifacts_manager, category, yaml_content, brief_id)
         saved_count += 1
 
@@ -170,7 +548,7 @@ def _build_placeholder_yaml(brief_id: str, generated_at: str) -> Dict[str, str]:
     """
     Build placeholder YAML content cho 7 categories.
 
-    STUB: Replace with LLM-generated content when P0-4 is implemented.
+    EMERGENCY FALLBACK ONLY — chỉ sử dụng khi LLM không thể gọi được.
 
     Args:
         brief_id: Brief ID
@@ -712,22 +1090,17 @@ def repair_contracts():
     click.echo(f"   → Found {report.total_errors} errors")
 
     # Step 3: Repair bằng LLM
-    # Group errors by category (best effort)
     errors_by_node = report.get_errors_by_node()
 
-    # Track repair results
     repaired_count = 0
     failed_categories: list[str] = []
 
-    # Try to fix each category that has errors
-    # (Simple approach: try to fix all categories)
     for category in REQUIRED_CATEGORIES:
         if category not in yaml_dict:
             continue
 
         current_content = yaml_dict[category]
 
-        # Parse this category to find errors
         try:
             parsed_data = yaml.safe_load(current_content)
         except Exception:
@@ -736,7 +1109,6 @@ def repair_contracts():
         # Collect errors for this category
         category_errors = []
         for node_id, node_errors in errors_by_node.items():
-            # Heuristic: check if node_id might belong to this category
             category_errors.extend(node_errors)
 
         if not category_errors:
@@ -782,13 +1154,11 @@ def repair_contracts():
                 click.echo(f"      ⚠️  Validation error: {e}")
 
         if success and fixed_content is not None:
-            # Upsert fixed artifact
             fixed_yaml = yaml.dump(fixed_content, default_flow_style=False, allow_unicode=True)
+            existing_artifact = artifacts_manager.get(f"contract_{category}")
+            brief_id = existing_artifact.get("brief_id", "unknown") if existing_artifact else "unknown"
             _upsert_contract_artifact(
-                artifacts_manager, category, fixed_yaml,
-                brief_id=artifacts_manager.get(f"contract_{category}")
-                .get("brief_id", "unknown") if artifacts_manager.get(f"contract_{category}")
-                else "unknown"
+                artifacts_manager, category, fixed_yaml, brief_id
             )
             repaired_count += 1
         else:
@@ -806,7 +1176,7 @@ def repair_contracts():
         click.echo(f"⚠️  Failed to repair {len(failed_categories)} category(s):")
         for name in failed_categories:
             click.echo(f"    - {name}")
-        click.echo("💡 Vui lòng sửa thủ công hoặc chạy lại 'midicoder contract repair")
+        click.echo("💡 Vui lòng sửa thủ công hoặc chạy lại 'midicoder contract repair'")
     else:
         click.echo("")
         click.echo("Tiếp theo:")
@@ -822,6 +1192,8 @@ def _build_repair_prompt(
     """
     Xây dựng prompt để LLM fix contracts.
 
+    Tải system prompt từ file Markdown.
+
     Args:
         category: Category name (entities, commands, ...)
         content: Nội dung YAML hiện tại
@@ -830,23 +1202,8 @@ def _build_repair_prompt(
     Returns:
         Tuple của (system prompt, user prompt)
     """
-    system = """You are a DSL contract repair expert. Your task is to fix validation errors in DSL contracts.
-
-DSL Schema Rules:
-1. Entity MUST have: id, description, fields, primary_key, tenant_scope, tags
-2. Field MUST have: name, type, required
-3. Command MUST have: id, description, input, fetches, guards, effects, returns, required_permissions, tenant_scope
-4. Query MUST have: id, description, input, fetches, returns, required_permissions, tenant_scope
-5. Event MUST have: id, description, type, source_entity, fields, version, tenant_scope
-6. All strings support Vietnamese characters
-7. Output ONLY valid YAML dict, no markdown formatting, no explanations
-
-Fix Guidelines:
-- Add missing required fields with sensible defaults
-- Fix field type mismatches
-- Ensure all references point to existing entities
-- Preserve existing content, only fix errors
-- Output complete fixed YAML dict"""
+    # Load system prompt từ file
+    system = load_prompt("contract_repair")
 
     error_messages = "\n".join(
         f"- {getattr(e, 'message', str(e))}" for e in errors
@@ -891,9 +1248,7 @@ def _try_fix_with_llm(
         response = call_llm(
             config,
             system=system,
-            prompt=user,
-            temperature=0.3,
-            max_tokens=4096,
+            messages=[{"role": "user", "content": user}],
         )
 
         yaml_content = response.content.strip()
@@ -918,85 +1273,20 @@ def _try_fix_with_llm(
         return False, None
 
 
-# ============================================================================
-# Backward Compatibility (deprecated — will be removed)
-# ============================================================================
-
-def generate_placeholder_contracts(contracts_dir: Path, brief_id: str):
-    """
-    DEPRECATED: Tạo placeholder contracts files.
-
-    WARNING: Đây là legacy function. Không nên dùng.
-    Sử dụng _generate_contracts_to_sqlite() thay thế.
-
-    Giữ lại để backward compatibility với test suite cũ.
-    Sẽ bị xóa trong version 4.0.0.
-    """
-    import warnings
-    warnings.warn(
-        "generate_placeholder_contracts is deprecated. "
-        "Contracts are now stored in SQLite only.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-
-    # Fallback: call the new SQLite-only function
-    # (Write files only for backward compatibility with old tests)
-    from midicoder.storage.sqlite import ArtifactsManager
-    _generate_contracts_to_sqlite(brief_id)
-    # Also write files for backward compatibility
-    generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    yaml_dict = _build_placeholder_yaml(brief_id, generated_at)
-
-    for category in REQUIRED_CATEGORIES:
-        yaml_content = yaml_dict[category]
-        file_path = contracts_dir / f"{category}.yaml"
-        file_path.write_text(yaml_content, encoding="utf-8")
-
-        # Also save to SQLite
-        artifacts_manager = ArtifactsManager()
-        artifacts_manager.init()
-        _upsert_contract_artifact(artifacts_manager, category, yaml_content, brief_id)
-
-
-def _save_contract_artifacts(contracts_dir: Path, brief_id: str) -> None:
-    """
-    DEPRECATED: Save contract YAML files vào SQLite.
-
-    WARNING: Đây là legacy function. Sử dụng _generate_contracts_to_sqlite() thay thế.
-    Giữ lại để backward compatibility.
-    """
-    import warnings
-    warnings.warn(
-        "_save_contract_artifacts is deprecated. "
-        "Use _generate_contracts_to_sqlite() instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-
-    artifacts_manager = ArtifactsManager()
-    artifacts_manager.init()
-
-    for category in REQUIRED_CATEGORIES:
-        file_path = None
-        for ext in ["yaml", "yml"]:
-            candidate = contracts_dir / f"{category}.{ext}"
-            if candidate.exists():
-                file_path = candidate
-                break
-
-        if file_path is None:
-            click.echo(f"   ⚠️  Không tìm thấy file cho category: {category}")
-            continue
-
-        content = file_path.read_text(encoding="utf-8")
-        _upsert_contract_artifact(artifacts_manager, category, content, brief_id)
-
-
 __all__ = [
     "generate_contracts",
     "check_contracts",
     "repair_contracts",
-    "generate_placeholder_contracts",  # deprecated
-    "_save_contract_artifacts",  # deprecated
+    "_generate_contracts_with_llm",
+    "_build_category_prompt",
+    "_generate_category_with_retry",
+    "_auto_fix_contracts",
+    "_generate_contracts_to_sqlite",
+    "_build_placeholder_yaml",
+    "_upsert_contract_artifact",
+    "_load_contracts_from_sqlite",
+    "_try_fix_with_llm",
+    "_build_repair_prompt",
+    "REQUIRED_CATEGORIES",
+    "MAX_REPAIR_ATTEMPTS",
 ]
