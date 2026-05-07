@@ -1,0 +1,36 @@
+/**
+ * Protected Route Component - CP03.
+ *
+ * Component này bảo vệ route yêu cầu authentication.
+ * Nếu user chưa login, redirect đến /login.
+ *
+ * Usage:
+ *   <Route path="/dashboard" element={
+ *     <ProtectedRoute><Dashboard /></ProtectedRoute>
+ *   } />
+ */
+
+import { ReactNode } from "react";
+import { Navigate, useLocation } from "react-router-dom";
+import { useAuthContext } from "./AuthContext";
+
+/** Props cho ProtectedRoute */
+export interface ProtectedRouteProps {
+  children: ReactNode;
+}
+
+/**
+ * Protected Route - CP03.
+ *
+ * Nếu isLoading: hiển thị loading indicator.
+ * Nếu không isLoggedIn: redirect đến /login.
+ * Nếu đã login: render children.
+ */
+export function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const { isLoggedIn, isLoading } = useAuthContext();
+  const location = useLocation();
+
+  if (isLoading) return <div>Loading...</div>;
+  if (!isLoggedIn) return <Navigate to="/login" state={{ from: location }} replace />;
+  return <>{children}</>;
+}

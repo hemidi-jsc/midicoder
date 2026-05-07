@@ -56,13 +56,12 @@ from midicoder.emitters.core.entity import (
     EntityParser,
     NestJSEntityEmitter,
 )
-from midicoder.emitters.core.authnz import (
+from midicoder.emitters.core.auth import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
     JWTAuthConfig,
     NestJSEmitter as NestJSAuthEmitter,
-    Role,
 )
 from midicoder.emitters.core.tenant.models import TenantMode
 from midicoder.emitters.core.event import (

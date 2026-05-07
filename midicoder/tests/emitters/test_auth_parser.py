@@ -1,371 +1,29 @@
 """
-Tests cho Auth/RBAC DSL Parser.
+Tests cho CP03 Auth Parser.
 
 Unit tests cho:
-- AuthParser class
-- Auth models (TenantMode, AuthProvider, Role, Policy)
-- Validation logic (KPI-028, KPI-029, KPI-030, KPI-031)
-
-CP02: Multi-Tenant Architecture
-CP03: Authentication & Authorization
-CP04: RBAC & Policy Engine
+- AuthParser class (parse YAML → AuthIR)
+- parse_auth_dsl convenience function
+- validate_permission_format utility
 
 Author: Midicoder Team
 Version: 1.0.0
 """
 
 import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
-from midicoder.emitters.core.authnz.models import (
-    AuthIR,
-    AuthProvider,
-    AuthProviderType,
-    JWTAuthConfig,
-    OAuth2AuthConfig,
-    Policy,
-    PolicyCondition,
-    PolicyEffect,
-    Role,
-    TenantMode,
-)
-from midicoder.emitters.core.authnz.parser import (
+from midicoder.emitters.core.auth.parser import (
     AuthParser,
     parse_auth_dsl,
     validate_permission_format,
 )
-from midicoder.errors import ErrorCode, MidicoderError, MidicoderErrorManager as EM
-
-
-# ============================================================================
-# Fixtures
-# ============================================================================
-
-
-@pytest.fixture
-def sample_auth_yaml():
-    """Sample Auth DSL YAML content."""
-    return """
-tenant_mode: schema
-
-authentication:
-  providers:
-    - id: jwt_auth
-      type: jwt
-      config:
-        expire_minutes: 30
-        refresh_expire_days: 7
-        algorithm: HS256
-        tenant_scoped: true
-
-authorization:
-  roles:
-    - id: super_admin
-      permissions:
-        - "*"
-      parents: []
-      tenant_scoped: false
-    
-    - id: tenant_admin
-      permissions:
-        - "user:*"
-        - "order:*"
-      parents: []
-      tenant_scoped: true
-    
-    - id: user
-      permissions:
-        - "order:create"
-        - "order:read"
-      parents: []
-      tenant_scoped: true
-
-  policies:
-    - id: tenant_isolation
-      description: "Tenant isolation policy"
-      effect: deny
-      conditions:
-        - expression: "user.tenant_id != resource.tenant_id"
-          description: "User not in resource tenant"
-"""
-
-
-@pytest.fixture
-def temp_yaml_file(sample_auth_yaml):
-    """Create temporary YAML file with sample content."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False, encoding="utf-8"
-    ) as f:
-        f.write(sample_auth_yaml)
-        temp_path = Path(f.name)
-    
-    yield temp_path
-    temp_path.unlink()
-
-
-# ============================================================================
-# Test Auth Models
-# ============================================================================
-
-
-class TestTenantMode:
-    """Tests cho TenantMode enum."""
-
-    def test_tenant_mode_values(self):
-        """Test TenantMode enum values."""
-        assert TenantMode.DATABASE.value == "database"
-        assert TenantMode.SCHEMA.value == "schema"
-        assert TenantMode.ROW.value == "row"
-        assert TenantMode.HYBRID.value == "hybrid"
-
-    def test_tenant_mode_from_string(self):
-        """Test TenantMode from string."""
-        assert TenantMode("schema") == TenantMode.SCHEMA
-        assert TenantMode("database") == TenantMode.DATABASE
-
-    def test_tenant_mode_invalid_value(self):
-        """Test TenantMode with invalid value."""
-        with pytest.raises(ValueError):
-            TenantMode("invalid_mode")
-
-
-class TestAuthProvider:
-    """Tests cho AuthProvider model."""
-
-    def test_jwt_auth_provider(self):
-        """Test JWT auth provider creation."""
-        provider = AuthProvider(
-            id="jwt_auth",
-            provider_type=AuthProviderType.JWT,
-            config=JWTAuthConfig(expire_minutes=60),
-        )
-        
-        assert provider.id == "jwt_auth"
-        assert provider.provider_type == AuthProviderType.JWT
-        assert provider.config.expire_minutes == 60
-        assert provider.config.tenant_scoped is True  # KPI-029
-
-    def test_oauth2_auth_provider(self):
-        """Test OAuth2 auth provider creation."""
-        provider = AuthProvider(
-            id="oauth2_auth",
-            provider_type=AuthProviderType.OAUTH2,
-            config=OAuth2AuthConfig(
-                authorization_url="/oauth/authorize",
-                token_url="/oauth/token",
-                scopes=["read", "write"],
-            ),
-        )
-        
-        assert provider.id == "oauth2_auth"
-        assert provider.provider_type == AuthProviderType.OAUTH2
-        assert provider.config.scopes == ["read", "write"]
-
-
-class TestRole:
-    """Tests cho Role model."""
-
-    def test_role_creation(self):
-        """Test Role creation."""
-        role = Role(
-            id="admin",
-            permissions=["user:*", "order:*"],
-            parents=[],
-            tenant_scoped=True,
-        )
-        
-        assert role.id == "admin"
-        assert role.permissions == ["user:*", "order:*"]
-        assert role.tenant_scoped is True  # KPI-029
-
-    def test_role_get_all_permissions_no_inheritance(self):
-        """Test Role.get_all_permissions() without inheritance."""
-        roles = {
-            "admin": Role(
-                id="admin",
-                permissions=["user:create", "user:read"],
-                parents=[],
-            ),
-        }
-        
-        permissions = roles["admin"].get_all_permissions(roles)
-        assert permissions == {"user:create", "user:read"}
-
-    def test_role_get_all_permissions_with_inheritance(self):
-        """Test Role.get_all_permissions() with inheritance."""
-        roles = {
-            "base": Role(
-                id="base",
-                permissions=["user:read"],
-                parents=[],
-            ),
-            "admin": Role(
-                id="admin",
-                permissions=["user:create"],
-                parents=["base"],
-            ),
-        }
-        
-        permissions = roles["admin"].get_all_permissions(roles)
-        assert permissions == {"user:read", "user:create"}
-
-    def test_role_get_all_permissions_missing_parent(self):
-        """Test Role.get_all_permissions() with missing parent (KPI-030)."""
-        roles = {
-            "admin": Role(
-                id="admin",
-                permissions=["user:create"],
-                parents=["missing_role"],
-            ),
-        }
-        
-        with pytest.raises(MidicoderError) as exc_info:
-            roles["admin"].get_all_permissions(roles)
-        
-        assert exc_info.value.code == ErrorCode.CP04_ROLE_NOT_FOUND
-
-    def test_role_has_permission_exact_match(self):
-        """Test Role.has_permission() with exact match."""
-        roles = {
-            "admin": Role(
-                id="admin",
-                permissions=["user:create"],
-                parents=[],
-            ),
-        }
-        
-        assert roles["admin"].has_permission("user:create", roles) is True
-        assert roles["admin"].has_permission("user:delete", roles) is False
-
-    def test_role_has_permission_wildcard_match(self):
-        """Test Role.has_permission() with wildcard match."""
-        roles = {
-            "admin": Role(
-                id="admin",
-                permissions=["user:*"],
-                parents=[],
-            ),
-        }
-        
-        assert roles["admin"].has_permission("user:create", roles) is True
-        assert roles["admin"].has_permission("user:delete", roles) is True
-        assert roles["admin"].has_permission("order:create", roles) is False
-
-
-class TestPolicy:
-    """Tests cho Policy model."""
-
-    def test_policy_creation(self):
-        """Test Policy creation."""
-        policy = Policy(
-            id="tenant_isolation",
-            effect=PolicyEffect.DENY,
-            conditions=[
-                PolicyCondition(
-                    expression="user.tenant_id != resource.tenant_id",
-                    description="User not in resource tenant",
-                ),
-            ],
-            description="Tenant isolation policy",
-        )
-        
-        assert policy.id == "tenant_isolation"
-        assert policy.effect == PolicyEffect.DENY
-        assert len(policy.conditions) == 1
-
-    def test_policy_validate_valid(self):
-        """Test Policy.validate() with valid policy."""
-        policy = Policy(
-            id="test_policy",
-            effect=PolicyEffect.ALLOW,
-            conditions=[
-                PolicyCondition(expression="user.id == resource.owner_id"),
-            ],
-        )
-        
-        # Should not raise
-        policy.validate()
-
-    def test_policy_validate_unbalanced_parentheses(self):
-        """Test Policy.validate() with unbalanced parentheses (KPI-031)."""
-        policy = Policy(
-            id="test_policy",
-            effect=PolicyEffect.ALLOW,
-            conditions=[
-                PolicyCondition(expression="user.id == (resource.owner_id"),
-            ],
-        )
-        
-        with pytest.raises(MidicoderError) as exc_info:
-            policy.validate()
-        
-        assert exc_info.value.code == ErrorCode.CP04_POLICY_SYNTAX_ERROR
-
-
-# ============================================================================
-# Test AuthIR
-# ============================================================================
-
-
-class TestAuthIR:
-    """Tests cho AuthIR model."""
-
-    def test_auth_ir_default_values(self):
-        """Test AuthIR default values."""
-        auth_ir = AuthIR()
-        
-        assert auth_ir.tenant_mode == TenantMode.SCHEMA
-        assert auth_ir.providers == []
-        assert auth_ir.roles == {}
-        assert auth_ir.policies == {}
-
-    def test_auth_ir_validate_no_providers(self):
-        """Test AuthIR.validate() with no providers."""
-        auth_ir = AuthIR()
-        
-        with pytest.raises(MidicoderError) as exc_info:
-            auth_ir.validate()
-        
-        assert exc_info.value.code == ErrorCode.CP03_AUTH_PROVIDER_NOT_FOUND
-
-    def test_auth_ir_validate_with_providers(self):
-        """Test AuthIR.validate() with providers."""
-        auth_ir = AuthIR(
-            providers=[
-                AuthProvider(
-                    id="jwt_auth",
-                    provider_type=AuthProviderType.JWT,
-                    config=JWTAuthConfig(),
-                ),
-            ],
-        )
-        
-        # Should not raise
-        auth_ir.validate()
-
-    def test_auth_ir_get_user_permissions(self):
-        """Test AuthIR.get_user_permissions()."""
-        auth_ir = AuthIR(
-            tenant_mode=TenantMode.SCHEMA,
-            providers=[
-                AuthProvider(
-                    id="jwt_auth",
-                    provider_type=AuthProviderType.JWT,
-                    config=JWTAuthConfig(),
-                ),
-            ],
-            roles={
-                "admin": Role(
-                    id="admin",
-                    permissions=["user:*"],
-                    parents=[],
-                ),
-            },
-        )
-        
-        permissions = auth_ir.get_user_permissions(["admin"])
-        assert permissions == {"user:*"}
+from midicoder.emitters.core.auth.models import (
+    AuthIR,
+    AuthProviderType,
+)
+from midicoder.errors import ErrorCode, MidicoderError
 
 
 # ============================================================================
@@ -374,108 +32,260 @@ class TestAuthIR:
 
 
 class TestAuthParser:
-    """Tests cho AuthParser class."""
+    """Tests cho AuthParser."""
 
-    def test_parse_file_not_found(self):
-        """Test parse() with file not found."""
+    def test_parser_file_not_found(self):
+        """Test parser với file không tồn tại raise error."""
         with pytest.raises(MidicoderError) as exc_info:
             AuthParser("/nonexistent/path/auth.yaml")
-        
         assert exc_info.value.code == ErrorCode.DSL_FILE_NOT_FOUND
 
-    def test_parse_valid_file(self, temp_yaml_file):
-        """Test parse() with valid file."""
-        parser = AuthParser(temp_yaml_file)
-        auth_ir = parser.parse()
-        
-        assert auth_ir.tenant_mode == TenantMode.SCHEMA
+    def test_parse_minimal_yaml(self):
+        """Test parse YAML tối thiểu (không có providers → default JWT)."""
+        yaml_content = "authentication: {}\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as f:
+            f.write(yaml_content)
+            path = Path(f.name)
+        try:
+            parser = AuthParser(path)
+            auth_ir = parser.parse()
+        finally:
+            path.unlink()
+
+        assert isinstance(auth_ir, AuthIR)
         assert len(auth_ir.providers) == 1
-        assert auth_ir.providers[0].id == "jwt_auth"
-        assert len(auth_ir.roles) == 3
-        assert "super_admin" in auth_ir.roles
-        assert "tenant_admin" in auth_ir.roles
-        assert "user" in auth_ir.roles
-        assert len(auth_ir.policies) == 1
+        assert auth_ir.providers[0].id == "default_jwt"
+        assert auth_ir.providers[0].provider_type == AuthProviderType.JWT
 
-    def test_parse_invalid_tenant_mode(self):
-        """Test parse() with invalid tenant_mode."""
+    def test_parse_full_yaml(self):
+        """Test parse YAML đầy đủ với JWT, OAuth2, session, permissions."""
         yaml_content = """
-tenant_mode: invalid_mode
-"""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
-        ) as f:
-            f.write(yaml_content)
-            temp_path = Path(f.name)
-        
-        try:
-            with pytest.raises(MidicoderError) as exc_info:
-                AuthParser(temp_path).parse()
-            
-            assert exc_info.value.code == ErrorCode.CP02_TENANT_MODE_INVALID
-        finally:
-            temp_path.unlink()
-
-    def test_parse_missing_parent_role(self):
-        """Test parse() with missing parent role (KPI-030)."""
-        yaml_content = """
-tenant_mode: schema
+authentication:
+  providers:
+    - id: jwt_auth
+      type: jwt
+      config:
+        expire_minutes: 60
+        refresh_expire_days: 14
+        algorithm: RS256
+        tenant_scoped: true
+    - id: google_oauth
+      type: oauth2
+      config:
+        authorization_url: https://accounts.google.com/o/oauth2/auth
+        token_url: https://oauth2.googleapis.com/token
+        scopes:
+          - email
+          - profile
+  session:
+    cookie_name: my_session
+    max_age_minutes: 1440
+    secure: true
+    http_only: true
+    same_site: strict
 authorization:
-  roles:
-    - id: child_role
-      permissions: []
-      parents: ["missing_parent"]
+  permissions:
+    - id: "user:create"
+      description: "Tao user"
+    - "order:read"
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as f:
             f.write(yaml_content)
-            temp_path = Path(f.name)
-        
+            path = Path(f.name)
+        try:
+            parser = AuthParser(path)
+            auth_ir = parser.parse()
+        finally:
+            path.unlink()
+
+        assert isinstance(auth_ir, AuthIR)
+        assert len(auth_ir.providers) == 2
+
+        # Check JWT provider
+        jwt = auth_ir.providers[0]
+        assert jwt.id == "jwt_auth"
+        assert jwt.provider_type == AuthProviderType.JWT
+        assert jwt.config.expire_minutes == 60
+        assert jwt.config.algorithm == "RS256"
+
+        # Check OAuth2 provider
+        oauth = auth_ir.providers[1]
+        assert oauth.id == "google_oauth"
+        assert oauth.provider_type == AuthProviderType.OAUTH2
+        assert oauth.config.scopes == ["email", "profile"]
+
+        # Check session
+        assert auth_ir.session.cookie_name == "my_session"
+        assert auth_ir.session.max_age_minutes == 1440
+        assert auth_ir.session.same_site == "strict"
+
+        # Check permissions
+        assert len(auth_ir.permissions) == 2
+        assert auth_ir.permissions[0].id == "user:create"
+        assert auth_ir.permissions[1].id == "order:read"
+
+    def test_parse_empty_yaml_raises_error(self):
+        """Test parse file YAML rỗng raise error."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as f:
+            f.write("")
+            path = Path(f.name)
         try:
             with pytest.raises(MidicoderError) as exc_info:
-                AuthParser(temp_path).parse()
-            
-            assert exc_info.value.code == ErrorCode.CP04_ROLE_NOT_FOUND
+                AuthParser(path).parse()
+            assert exc_info.value.code == ErrorCode.DSL_YAML_PARSE_ERROR
         finally:
-            temp_path.unlink()
+            path.unlink()
+
+    def test_parse_invalid_provider_type(self):
+        """Test parse provider type không hợp lệ raise error."""
+        yaml_content = """
+authentication:
+  providers:
+    - id: bad_provider
+      type: invalid_type
+      config: {}
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as f:
+            f.write(yaml_content)
+            path = Path(f.name)
+        try:
+            with pytest.raises(MidicoderError) as exc_info:
+                AuthParser(path).parse()
+            assert exc_info.value.code == ErrorCode.CP03_AUTH_CONFIG_INVALID
+        finally:
+            path.unlink()
+
+    def test_parse_oauth2_missing_url(self):
+        """Test parse OAuth2 thiếu authorization_url raise error."""
+        yaml_content = """
+authentication:
+  providers:
+    - id: oauth
+      type: oauth2
+      config:
+        token_url: https://example.com/token
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as f:
+            f.write(yaml_content)
+            path = Path(f.name)
+        try:
+            with pytest.raises(MidicoderError) as exc_info:
+                AuthParser(path).parse()
+            assert exc_info.value.code == ErrorCode.DSL_MISSING_REQUIRED_FIELD
+        finally:
+            path.unlink()
+
+    def test_parse_with_string_permissions(self):
+        """Test parse permissions ở format string đơn giản."""
+        yaml_content = """
+authentication:
+  providers:
+    - id: jwt
+      type: jwt
+authorization:
+  permissions:
+    - "user:create"
+    - "order:*"
+    - "product:read"
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as f:
+            f.write(yaml_content)
+            path = Path(f.name)
+        try:
+            parser = AuthParser(path)
+            auth_ir = parser.parse()
+        finally:
+            path.unlink()
+
+        assert len(auth_ir.permissions) == 3
+        assert auth_ir.permissions[0].resource == "user"
+        assert auth_ir.permissions[0].action == "create"
+        assert auth_ir.permissions[1].action == "*"
+
+    def test_parse_yaml_not_mapping(self):
+        """Test parse YAML là list (không phải mapping) raise error."""
+        yaml_content = "- item1\n- item2\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as f:
+            f.write(yaml_content)
+            path = Path(f.name)
+        try:
+            with pytest.raises(MidicoderError) as exc_info:
+                AuthParser(path).parse()
+            assert exc_info.value.code == ErrorCode.DSL_YAML_PARSE_ERROR
+        finally:
+            path.unlink()
 
 
 # ============================================================================
-# Test Utility Functions
+# Test parse_auth_dsl Convenience Function
+# ============================================================================
+
+
+class TestParseAuthDSL:
+    """Tests cho parse_auth_dsl()."""
+
+    def test_parse_auth_dsl_success(self):
+        """Test parse_auth_dsl với YAML hợp lệ."""
+        yaml_content = """
+authentication:
+  providers:
+    - id: jwt
+      type: jwt
+      config:
+        expire_minutes: 45
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as f:
+            f.write(yaml_content)
+            path = Path(f.name)
+        try:
+            auth_ir = parse_auth_dsl(path)
+        finally:
+            path.unlink()
+
+        assert isinstance(auth_ir, AuthIR)
+        assert auth_ir.providers[0].config.expire_minutes == 45
+
+    def test_parse_auth_dsl_file_not_found(self):
+        """Test parse_auth_dsl với file không tồn tại."""
+        with pytest.raises(MidicoderError) as exc_info:
+            parse_auth_dsl("/nonexistent/file.yaml")
+        assert exc_info.value.code == ErrorCode.DSL_FILE_NOT_FOUND
+
+
+# ============================================================================
+# Test validate_permission_format
 # ============================================================================
 
 
 class TestValidatePermissionFormat:
     """Tests cho validate_permission_format()."""
 
-    def test_valid_permission_format(self):
-        """Test valid permission formats."""
+    def test_valid_resource_action(self):
+        """Test format 'resource:action' hợp lệ."""
         assert validate_permission_format("user:create") is True
         assert validate_permission_format("order:read") is True
         assert validate_permission_format("product:delete") is True
 
-    def test_valid_wildcard_format(self):
-        """Test valid wildcard formats."""
+    def test_valid_wildcard(self):
+        """Test format wildcard hợp lệ."""
         assert validate_permission_format("user:*") is True
         assert validate_permission_format("order:*") is True
 
-    def test_invalid_permission_format(self):
-        """Test invalid permission formats."""
+    def test_invalid_no_colon(self):
+        """Test format không có ':' không hợp lệ."""
+        assert validate_permission_format("invalid") is False
+
+    def test_invalid_extra_colon(self):
+        """Test format có nhiều ':' không hợp lệ."""
         assert validate_permission_format("user:create:extra") is False
-        assert validate_permission_format("user") is False
-        assert validate_permission_format("invalid_format") is False
 
+    def test_empty_permission(self):
+        """Test permission rỗng không hợp lệ."""
+        assert validate_permission_format("") is False
 
-class TestParseAuthDSL:
-    """Tests cho parse_auth_dsl() convenience function."""
-
-    def test_parse_auth_dsl(self, temp_yaml_file):
-        """Test parse_auth_dsl()."""
-        auth_ir = parse_auth_dsl(temp_yaml_file)
-        
-        assert isinstance(auth_ir, AuthIR)
-        assert len(auth_ir.providers) >= 1
+    def test_uppercase_invalid(self):
+        """Test uppercase characters không hợp lệ."""
+        assert validate_permission_format("User:Create") is False
 
 
 if __name__ == "__main__":

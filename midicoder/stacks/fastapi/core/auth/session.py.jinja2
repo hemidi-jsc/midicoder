@@ -1,0 +1,209 @@
+"""
+Session Management Module - CP03.
+
+Module này cung cấp session management với cookie-based sessions.
+Hỗ trợ create, get, destroy session và cookie management.
+"""
+
+import secrets
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from starlette.requests import Request
+from starlette.responses import Response
+
+
+# ============================================================================
+# Session Data Model
+# ============================================================================
+
+
+@dataclass
+class SessionData:
+    """
+    Session data model.
+
+    Attributes:
+        session_id: Session identifier duy nhất
+        user_id: User identifier
+        tenant_id: Tenant identifier (optional)
+        created_at: Thời điểm tạo session
+        expires_at: Thời điểm hết hạn session
+        ip_address: IP address của client (optional)
+        user_agent: User agent của client (optional)
+    """
+    session_id: str
+    user_id: str
+    tenant_id: Optional[str] = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: Optional[datetime] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+
+    def is_expired(self) -> bool:
+        """Kiểm tra xem session có hết hạn không."""
+        if self.expires_at is None:
+            return False
+        return datetime.now(timezone.utc) > self.expires_at
+
+
+# ============================================================================
+# Session Manager
+# ============================================================================
+
+
+class SessionManager:
+    """
+    Quản lý sessions.
+
+    In-memory session store. Trong production, dùng Redis hoặc database.
+
+    Configuration:
+        cookie_name: Tên cookie session
+        max_age_minutes: Thời gian sống tối đa (phút)
+        secure: Chỉ gửi qua HTTPS
+        http_only: Không cho JavaScript truy cập
+        same_site: SameSite attribute
+    """
+
+    def __init__(
+        self,
+        cookie_name: str = "session_id",
+        max_age_minutes: int = 480,
+        secure: bool = True,
+        http_only: bool = True,
+        same_site: str = "lax",
+    ) -> None:
+        """
+        Khởi tạo SessionManager.
+
+        Args:
+            cookie_name: Tên cookie session
+            max_age_minutes: Thời gian sống tối đa (phút)
+            secure: Chỉ gửi qua HTTPS
+            http_only: Không cho JavaScript truy cập
+            same_site: SameSite attribute
+        """
+        self.cookie_name = cookie_name
+        self.max_age_minutes = max_age_minutes
+        self.secure = secure
+        self.http_only = http_only
+        self.same_site = same_site
+        self._store: dict[str, SessionData] = {}
+
+    def create_session(
+        self,
+        user_id: str,
+        tenant_id: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> SessionData:
+        """
+        Tạo session mới cho user.
+
+        Args:
+            user_id: User identifier
+            tenant_id: Tenant identifier
+            ip_address: IP address của client
+            user_agent: User agent của client
+
+        Returns:
+            SessionData object
+        """
+        session_id = secrets.token_urlsafe(32)
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(minutes=self.max_age_minutes)
+
+        session = SessionData(
+            session_id=session_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            created_at=now,
+            expires_at=expires_at,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        self._store[session_id] = session
+        return session
+
+    def get_session(self, session_id: str) -> Optional[SessionData]:
+        """
+        Lấy session theo session_id.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            SessionData nếu tồn tại và chưa hết hạn, None nếu không
+        """
+        session = self._store.get(session_id)
+        if session is None:
+            return None
+        if session.is_expired():
+            self.destroy_session(session_id)
+            return None
+        return session
+
+    def destroy_session(self, session_id: str) -> None:
+        """Xóa session."""
+        self._store.pop(session_id, None)
+
+    def set_cookie(self, response: Response, session_id: str) -> None:
+        """
+        Set session cookie trong response.
+
+        Args:
+            response: HTTP Response object
+            session_id: Session identifier
+        """
+        max_age = self.max_age_minutes * 60
+        response.set_cookie(
+            key=self.cookie_name,
+            value=session_id,
+            max_age=max_age,
+            secure=self.secure,
+            httponly=self.http_only,
+            samesite=self.same_site,
+            path="/",
+        )
+
+    def clear_cookie(self, response: Response) -> None:
+        """Xóa session cookie trong response."""
+        response.delete_cookie(key=self.cookie_name, path="/")
+
+    def get_session_from_request(self, request: Request) -> Optional[SessionData]:
+        """
+        Lấy session từ request cookie.
+
+        Args:
+            request: HTTP Request object
+
+        Returns:
+            SessionData nếu tìm thấy, None nếu không
+        """
+        session_id = request.cookies.get(self.cookie_name)
+        if not session_id:
+            return None
+        return self.get_session(session_id)
+
+
+# ============================================================================
+# Singleton Instance
+# ============================================================================
+
+_default_session_manager: Optional[SessionManager] = None
+
+
+def get_session_manager() -> SessionManager:
+    """
+    Lấy default SessionManager instance.
+
+    Returns:
+        SessionManager instance
+    """
+    global _default_session_manager
+    if _default_session_manager is None:
+        _default_session_manager = SessionManager()
+    return _default_session_manager

@@ -1,0 +1,156 @@
+/**
+ * Auth Service - CP03.
+ *
+ * Service này xử lý authentication cho Angular application.
+ * Hỗ trợ JWT login, logout, token refresh.
+ */
+
+import { Injectable } from "@angular/core";
+import { HttpClient } from "@angular/common/http";
+import { Observable, BehaviorSubject } from "rxjs";
+import { tap, take } from "rxjs/operators";
+
+/** User interface - đại diện cho user đã đăng nhập */
+export interface User {
+  id: string;
+  email: string;
+  tenant_id?: string;
+  roles?: string[];
+  permissions?: string[];
+  disabled?: boolean;
+}
+
+/** Response từ API login/refresh */
+export interface AuthResponse {
+  access_token: string;
+  refresh_token?: string;
+  user: User;
+}
+
+/** Credentials cho login */
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+/**
+ * Auth Service - CP03.
+ *
+ * Service này xử lý authentication cho Angular application.
+ * Cung cấp login, logout, token refresh và current user management.
+ */
+@Injectable({
+  providedIn: "root",
+})
+export class AuthService {
+  private currentUserSubject = new BehaviorSubject<User | null>(null);
+  private apiUrl = "/api/auth";
+
+  constructor(private http: HttpClient) {}
+
+  /**
+   * Login user bằng email/password.
+   *
+   * @param credentials - Thông tin đăng nhập (email, password)
+   * @returns Observable AuthResponse
+   */
+  login(credentials: LoginCredentials): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.apiUrl}/login`, credentials).pipe(
+      tap(response => {
+        localStorage.setItem("access_token", response.access_token);
+        if (response.refresh_token) {
+          localStorage.setItem("refresh_token", response.refresh_token);
+        }
+        localStorage.setItem("user", JSON.stringify(response.user));
+        this.currentUserSubject.next(response.user);
+      }),
+    );
+  }
+
+  /**
+   * Logout user - xóa tokens và reset state.
+   *
+   * @returns Observable void
+   */
+  logout(): Observable<void> {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("user");
+    this.currentUserSubject.next(null);
+    return this.http.post<void>(`${this.apiUrl}/logout`, {});
+  }
+
+  /**
+   * Refresh access token bằng refresh token.
+   *
+   * @returns Observable AuthResponse
+   */
+  refreshToken(): Observable<AuthResponse> {
+    const refreshTok = localStorage.getItem("refresh_token");
+    if (!refreshTok) {
+      throw new Error("No refresh token available");
+    }
+    return this.http.post<AuthResponse>(`${this.apiUrl}/refresh`, {
+      refresh_token: refreshTok,
+    }).pipe(
+      tap(response => {
+        localStorage.setItem("access_token", response.access_token);
+        if (response.refresh_token) {
+          localStorage.setItem("refresh_token", response.refresh_token);
+        }
+        localStorage.setItem("user", JSON.stringify(response.user));
+        this.currentUserSubject.next(response.user);
+      }),
+    );
+  }
+
+  /**
+   * Lấy current user từ state.
+   *
+   * @returns User hoặc null
+   */
+  getCurrentUser(): User | null {
+    return this.currentUserSubject.value;
+  }
+
+  /**
+   * Observable cho current user state.
+   *
+   * @returns Observable User
+   */
+  currentUser$() {
+    return this.currentUserSubject.asObservable();
+  }
+
+  /**
+   * Kiểm tra user đã auth chưa.
+   *
+   * @returns boolean
+   */
+  isLoggedIn(): boolean {
+    return !!localStorage.getItem("access_token");
+  }
+
+  /**
+   * Lấy access token từ localStorage.
+   *
+   * @returns token string hoặc null
+   */
+  getAccessToken(): string | null {
+    return localStorage.getItem("access_token");
+  }
+
+  /**
+   * Initialize user từ localStorage (khi app boot).
+   */
+  initUser(): void {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      try {
+        this.currentUserSubject.next(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem("user");
+      }
+    }
+  }
+}

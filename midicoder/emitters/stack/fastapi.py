@@ -56,13 +56,12 @@ from midicoder.emitters.core.entity import (
     EntityParser,
     FastAPIEntityEmitter,
 )
-from midicoder.emitters.core.authnz import (
+from midicoder.emitters.core.auth import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
     FastAPIAuthEmitter,
     JWTAuthConfig,
-    Role,
 )
 from midicoder.emitters.core.tenant.models import TenantMode
 from midicoder.emitters.core.event import (

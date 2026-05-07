@@ -1,16 +1,12 @@
 """
-Auth/RBAC DSL Parser Module.
+CP03: Authentication & Authorization Framework — DSL Parser.
 
 Module này cung cấp parser để chuyển Auth DSL YAML thành AuthIR:
-- Parse tenant_mode (CP02)
 - Parse authentication providers (CP03)
-- Parse roles và policies (CP04)
+- Parse session configuration
+- Parse permissions
 
 Sử dụng PyYAML để parse YAML, sau đó validate và convert thành AuthIR.
-
-CP02: Multi-Tenant Architecture
-CP03: Authentication & Authorization
-CP04: RBAC & Policy Engine
 
 Author: Midicoder Team
 Version: 1.0.0
@@ -18,23 +14,19 @@ Version: 1.0.0
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from midicoder.emitters.core.authnz.models import (
+from midicoder.emitters.core.auth.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
     JWTAuthConfig,
     OAuth2AuthConfig,
-    Policy,
-    PolicyCondition,
-    PolicyEffect,
-    Role,
-    TenantMode,
+    Permission,
+    SessionConfig,
 )
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
@@ -46,24 +38,19 @@ from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
 class AuthParser:
     """
-    Parser cho Auth/RBAC DSL YAML.
+    Parser cho Authentication DSL YAML.
 
     Parse YAML file thành AuthIR object:
     1. Load YAML file
-    2. Parse tenant_mode (CP02)
-    3. Parse authentication providers (CP03)
-    4. Parse roles và policies (CP04)
+    2. Parse authentication providers (CP03)
+    3. Parse session configuration
+    4. Parse permissions
     5. Validate và return AuthIR
-
-    KPI-028: Missing permission detection
-    KPI-029: Missing tenant filter detection
-    KPI-030: Invalid role binding detection
-    KPI-031: Invalid policy detection
     """
 
     def __init__(self, file_path: str | Path) -> None:
         """
-        Initialize AuthParser.
+        Khởi tạo AuthParser.
 
         Args:
             file_path: Đường dẫn đến YAML file
@@ -93,20 +80,18 @@ class AuthParser:
         data = self._load_yaml()
 
         # Parse từng section
-        tenant_mode = self._parse_tenant_mode(data)
         providers = self._parse_providers(data)
-        roles = self._parse_roles(data)
-        policies = self._parse_policies(data)
+        session = self._parse_session(data)
+        permissions = self._parse_permissions(data)
 
         # Build AuthIR
         auth_ir = AuthIR(
-            tenant_mode=tenant_mode,
             providers=providers,
-            roles=roles,
-            policies=policies,
+            session=session,
+            permissions=permissions,
         )
 
-        # Validate (KPI-028, KPI-029, KPI-030, KPI-031)
+        # Validate
         auth_ir.validate()
 
         return auth_ir
@@ -129,14 +114,14 @@ class AuthParser:
                 EM.raise_error(
                     ErrorCode.DSL_YAML_PARSE_ERROR,
                     file_path=str(self.file_path),
-                    reason="Empty YAML file",
+                    reason="File YAML rỗng",
                 )
 
             if not isinstance(data, dict):
                 EM.raise_error(
                     ErrorCode.DSL_YAML_PARSE_ERROR,
                     file_path=str(self.file_path),
-                    reason="YAML root must be a mapping",
+                    reason="YAML root phải là mapping",
                 )
 
             return data
@@ -147,30 +132,6 @@ class AuthParser:
                 file_path=str(self.file_path),
                 reason=str(e),
                 cause=e,
-            )
-
-    def _parse_tenant_mode(self, data: dict[str, Any]) -> TenantMode:
-        """
-        Parse tenant_mode field (CP02).
-
-        Args:
-            data: Parsed YAML data
-
-        Returns:
-            TenantMode enum
-
-        Raises:
-            MidicoderError: Nếu tenant_mode không valid
-        """
-        tenant_mode_str = data.get("tenant_mode", "schema")
-
-        try:
-            return TenantMode(tenant_mode_str.lower())
-        except ValueError:
-            EM.raise_error(
-                ErrorCode.CP02_TENANT_MODE_INVALID,
-                tenant_mode=tenant_mode_str,
-                valid_values=[mode.value for mode in TenantMode],
             )
 
     def _parse_providers(self, data: dict[str, Any]) -> list[AuthProvider]:
@@ -190,7 +151,7 @@ class AuthParser:
         providers_data = authentication.get("providers", [])
 
         if not providers_data:
-            # Default to JWT if no providers specified
+            # Mặc định JWT nếu không có providers
             return [
                 AuthProvider(
                     id="default_jwt",
@@ -215,7 +176,7 @@ class AuthParser:
 
         Args:
             provider_data: Provider YAML data
-            index: Provider index (for error messages)
+            index: Provider index (cho error messages)
 
         Returns:
             AuthProvider object
@@ -237,7 +198,7 @@ class AuthParser:
                 valid_types=[t.value for t in AuthProviderType],
             )
 
-        # Parse config based on type
+        # Parse config theo type
         if provider_type == AuthProviderType.JWT:
             config = self._parse_jwt_config(config_data, provider_id)
         elif provider_type == AuthProviderType.OAUTH2:
@@ -247,7 +208,7 @@ class AuthParser:
                 ErrorCode.CP03_AUTH_CONFIG_INVALID,
                 provider_id=provider_id,
                 type=provider_type_str,
-                reason="Unsupported provider type",
+                reason="Loại provider không được hỗ trợ",
             )
 
         return AuthProvider(
@@ -264,7 +225,7 @@ class AuthParser:
 
         Args:
             config_data: Config YAML data
-            provider_id: Provider ID (for error messages)
+            provider_id: Provider ID (cho error messages)
 
         Returns:
             JWTAuthConfig object
@@ -273,7 +234,7 @@ class AuthParser:
             expire_minutes=config_data.get("expire_minutes", 30),
             refresh_expire_days=config_data.get("refresh_expire_days", 7),
             algorithm=config_data.get("algorithm", "HS256"),
-            tenant_scoped=config_data.get("tenant_scoped", True),  # KPI-029
+            tenant_scoped=config_data.get("tenant_scoped", True),
         )
 
     def _parse_oauth2_config(
@@ -284,7 +245,7 @@ class AuthParser:
 
         Args:
             config_data: Config YAML data
-            provider_id: Provider ID (for error messages)
+            provider_id: Provider ID (cho error messages)
 
         Returns:
             OAuth2AuthConfig object
@@ -315,109 +276,58 @@ class AuthParser:
             scopes=config_data.get("scopes", []),
         )
 
-    def _parse_roles(self, data: dict[str, Any]) -> dict[str, Role]:
+    def _parse_session(self, data: dict[str, Any]) -> SessionConfig:
         """
-        Parse roles (CP04).
+        Parse session configuration.
 
         Args:
             data: Parsed YAML data
 
         Returns:
-            Mapping từ role id -> Role object
+            SessionConfig object
         """
-        authorization = data.get("authorization", {})
-        roles_data = authorization.get("roles", [])
+        authentication = data.get("authentication", {})
+        session_data = authentication.get("session", {})
 
-        roles: dict[str, Role] = {}
-
-        for role_data in roles_data:
-            role = self._parse_role(role_data)
-            roles[role.id] = role
-
-        return roles
-
-    def _parse_role(self, role_data: dict[str, Any]) -> Role:
-        """
-        Parse single role.
-
-        Args:
-            role_data: Role YAML data
-
-        Returns:
-            Role object
-        """
-        return Role(
-            id=role_data["id"],
-            permissions=role_data.get("permissions", []),
-            parents=role_data.get("parents", []),
-            tenant_scoped=role_data.get("tenant_scoped", True),  # KPI-029
-            description=role_data.get("description", ""),
+        return SessionConfig(
+            cookie_name=session_data.get("cookie_name", "session_id"),
+            max_age_minutes=session_data.get("max_age_minutes", 480),
+            secure=session_data.get("secure", True),
+            http_only=session_data.get("http_only", True),
+            same_site=session_data.get("same_site", "lax"),
+            path=session_data.get("path", "/"),
         )
 
-    def _parse_policies(self, data: dict[str, Any]) -> dict[str, Policy]:
+    def _parse_permissions(self, data: dict[str, Any]) -> list[Permission]:
         """
-        Parse policies (CP04).
+        Parse permissions list.
 
         Args:
             data: Parsed YAML data
 
         Returns:
-            Mapping từ policy id -> Policy object
-
-        KPI-031: Policy validation tại compile-time
+            List Permission objects
         """
         authorization = data.get("authorization", {})
-        policies_data = authorization.get("policies", [])
+        permissions_data = authorization.get("permissions", [])
 
-        policies: dict[str, Policy] = {}
+        permissions: list[Permission] = []
 
-        for policy_data in policies_data:
-            policy = self._parse_policy(policy_data)
-            policies[policy.id] = policy
+        for perm_data in permissions_data:
+            if isinstance(perm_data, str):
+                # Format đơn giản: "user:create"
+                perm = Permission(id=perm_data)
+            elif isinstance(perm_data, dict):
+                perm = Permission(
+                    id=perm_data["id"],
+                    description=perm_data.get("description", ""),
+                )
+            else:
+                continue
 
-        return policies
+            permissions.append(perm)
 
-    def _parse_policy(self, policy_data: dict[str, Any]) -> Policy:
-        """
-        Parse single policy.
-
-        Args:
-            policy_data: Policy YAML data
-
-        Returns:
-            Policy object
-
-        KPI-031: Policy validation
-        """
-        effect_str = policy_data.get("effect", "allow")
-
-        try:
-            effect = PolicyEffect(effect_str.lower())
-        except ValueError:
-            EM.raise_error(
-                ErrorCode.CP04_POLICY_NOT_FOUND,
-                policy_id=policy_data.get("id", "unknown"),
-                effect=effect_str,
-                valid_effects=[e.value for e in PolicyEffect],
-            )
-
-        # Parse conditions
-        conditions = []
-        conditions_data = policy_data.get("conditions", [])
-
-        for cond_data in conditions_data:
-            condition = PolicyCondition(
-                expression=cond_data["expression"],
-                description=cond_data.get("description", ""),
-            )
-            conditions.append(condition)
-
-        return Policy(
-            id=policy_data["id"],
-            effect=effect,
-            conditions=conditions,
-            description=policy_data.get("description", ""),
-        )
+        return permissions
 
 
 # ============================================================================
@@ -447,14 +357,14 @@ def validate_permission_format(permission: str) -> bool:
 
     Permission format: "resource:action" (ví dụ: "user:create", "order:*")
 
-    KPI-028: Missing permission detection.
-
     Args:
         permission: Permission string
 
     Returns:
         True nếu format valid
     """
+    import re
+
     # Check wildcard format (ví dụ: "user:*")
     if permission.endswith(":*"):
         resource = permission[:-2]
@@ -466,7 +376,11 @@ def validate_permission_format(permission: str) -> bool:
         return False
 
     resource, action = parts
-    return bool(resource and action and re.match(r"^[a-z]+$", resource) and re.match(r"^[a-z]+$", action))
+    return bool(
+        resource and action
+        and re.match(r"^[a-z]+$", resource)
+        and re.match(r"^[a-z]+$", action)
+    )
 
 
 __all__ = [

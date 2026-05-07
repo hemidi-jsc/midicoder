@@ -1,0 +1,26 @@
+pack:
+  id: "CP03"
+  name: "Authentication & Authorization Framework"
+  internal_id: "cp3-auth"
+  version: "1.0.0"
+  phase: "P0"
+  category: "security"
+  status: "stable"
+  depends_on: ["CP01", "CP02"]
+  definitions_count: 2
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP03"
+    range: "MDC-CP03-001 to MDC-CP03-006"
+  capabilities_provided:
+    - authorize_permission
+    - authenticate_user
+  capabilities:
+    - id: "jwt_auth"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "oauth2_auth"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "session_management"
+      emitter: "fastapi, nestjs"
+    - id: "permission_authorization"
+      emitter: "fastapi, nestjs, angular, react"

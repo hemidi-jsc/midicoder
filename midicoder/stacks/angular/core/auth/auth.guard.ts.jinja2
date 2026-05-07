@@ -1,0 +1,55 @@
+/**
+ * Auth Guard - CP03.
+ *
+ * Guard này kiểm tra authentication trước khi navigate đến protected routes.
+ * Nếu user chưa login, redirect đến /login.
+ */
+
+import { Injectable } from "@angular/core";
+import {
+  CanActivate,
+  ActivatedRouteSnapshot,
+  RouterStateSnapshot,
+  Router,
+} from "@angular/router";
+import { AuthService } from "./auth.service";
+
+/**
+ * Auth Guard - CP03.
+ *
+ * Implement CanActivate interface để bảo vệ routes.
+ *
+ * Usage:
+ *   const routes: Routes = [
+ *     { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] }
+ *   ];
+ */
+@Injectable({
+  providedIn: "root",
+})
+export class AuthGuard implements CanActivate {
+  constructor(
+    private authService: AuthService,
+    private router: Router,
+  ) {}
+
+  /**
+   * Kiểm tra xem user có thể activate route không.
+   *
+   * @param route - ActivatedRouteSnapshot
+   * @param state - RouterStateSnapshot
+   * @returns boolean - true nếu user đã auth, false nếu redirect
+   */
+  canActivate(
+    route: ActivatedRouteSnapshot,
+    state: RouterStateSnapshot,
+  ): boolean {
+    if (this.authService.isLoggedIn()) {
+      return true;
+    }
+
+    // Redirect đến login page, lưu returnUrl để redirect sau khi login
+    this.router.navigate(["/login"], { queryParams: { returnUrl: state.url } });
+    return false;
+  }
+}

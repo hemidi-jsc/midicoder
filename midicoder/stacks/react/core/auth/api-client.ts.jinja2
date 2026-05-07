@@ -1,0 +1,107 @@
+/**
+ * API Client - CP03.
+ *
+ * Fetch-based API client với JWT authentication.
+ * Tự động attach token vào requests và retry khi 401.
+ */
+
+/** API Client options */
+interface ApiOptions extends RequestInit {
+  _retry?: boolean;
+}
+
+/**
+ * Tạo API request với JWT token.
+ *
+ * Tự động:
+ * - Attach Authorization header với JWT token
+ * - Retry request khi nhận 401 (sau khi refresh token)
+ *
+ * @param url - API endpoint URL
+ * @param options - Request options
+ * @returns Promise<Response>
+ */
+async function apiFetch(url: string, options: ApiOptions = {}): Promise<Response> {
+  const token = localStorage.getItem("access_token");
+
+  const headers = new Headers(options.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  // Retry khi 401 và chưa retry
+  if (response.status === 401 && !options._retry) {
+    try {
+      const refreshTok = localStorage.getItem("refresh_token");
+      if (refreshTok) {
+        const refreshResponse = await fetch("/api/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshTok }),
+        });
+        if (refreshResponse.ok) {
+          const data = await refreshResponse.json();
+          localStorage.setItem("access_token", data.access_token);
+          if (data.refresh_token) {
+            localStorage.setItem("refresh_token", data.refresh_token);
+          }
+          // Retry với new token
+          return apiFetch(url, { ...options, _retry: true });
+        }
+      }
+    } catch {
+      // Refresh failed
+    }
+    // Clear và redirect login
+    localStorage.clear();
+    window.location.href = "/login";
+    return response;
+  }
+
+  return response;
+}
+
+/** API Client namespace với HTTP methods */
+const api = {
+  get(url: string, options?: ApiOptions) {
+    return apiFetch(url, { ...options, method: "GET" });
+  },
+
+  post(url: string, data?: unknown, options?: ApiOptions) {
+    return apiFetch(url, {
+      ...options,
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  put(url: string, data?: unknown, options?: ApiOptions) {
+    return apiFetch(url, {
+      ...options,
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  patch(url: string, data?: unknown, options?: ApiOptions) {
+    return apiFetch(url, {
+      ...options,
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  delete(url: string, options?: ApiOptions) {
+    return apiFetch(url, { ...options, method: "DELETE" });
+  },
+};
+
+export default api;
