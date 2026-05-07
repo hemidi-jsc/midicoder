@@ -158,7 +158,8 @@ class TestBlueprintParsing:
         self, valid_blueprint: CompiledBlueprint
     ) -> None:
         """Kiểm tra config được preserve."""
-        assert valid_blueprint.config.default_tenant_mode == "schema"
+        from midicoder.emitters.core.tenant.models import TenantMode
+        assert valid_blueprint.config.tenant_config.mode == TenantMode.SCHEMA
         assert valid_blueprint.config.default_auth_strategy == "jwt"
         assert valid_blueprint.config.default_db_engine == "postgres"
 

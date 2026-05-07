@@ -21,6 +21,7 @@ from typing import Any
 import yaml
 
 from midicoder.errors import MidicoderError, ErrorCode
+from midicoder.emitters.core.tenant.models import TenantConfig, TenantMode
 from .artifact import ArtifactBase, ArtifactMetadata
 
 
@@ -357,25 +358,37 @@ class InvariantsConfig:
 class BlueprintConfig:
     """
     Configuration overrides cho Blueprint.
-    
+
     Attributes:
-        default_tenant_mode: Default tenant mode (database, schema, row, hybrid)
+        tenant_config: Tenant configuration (CP02 TenantConfig)
         default_auth_strategy: Default auth strategy (jwt, oauth2, saml, hybrid)
         default_db_engine: Default database engine (postgres, mysql, sqlserver, oracle)
         observability: Observability configuration
         security: Security configuration
     """
-    default_tenant_mode: str = "schema"
+    tenant_config: TenantConfig = field(
+        default_factory=lambda: TenantConfig(mode=TenantMode.SCHEMA)
+    )
     default_auth_strategy: str = "jwt"
     default_db_engine: str = "postgres"
     observability: dict[str, Any] = field(default_factory=dict)
     security: dict[str, Any] = field(default_factory=dict)
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BlueprintConfig":
-        """Tạo BlueprintConfig từ dictionary."""
+        """Tao BlueprintConfig tu dictionary."""
+        # Support both new tenant_config and legacy default_tenant_mode
+        if "tenant_config" in data:
+            tc = TenantConfig.from_dict(data["tenant_config"])
+        elif "default_tenant_mode" in data:
+            mode_str = data["default_tenant_mode"]
+            mode = TenantMode(mode_str) if mode_str in [m.value for m in TenantMode] else TenantMode.SCHEMA
+            tc = TenantConfig(mode=mode)
+        else:
+            tc = TenantConfig(mode=TenantMode.SCHEMA)
+
         return cls(
-            default_tenant_mode=data.get("default_tenant_mode", "schema"),
+            tenant_config=tc,
             default_auth_strategy=data.get("default_auth_strategy", "jwt"),
             default_db_engine=data.get("default_db_engine", "postgres"),
             observability=data.get("observability", {}),

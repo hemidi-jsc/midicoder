@@ -19,6 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from midicoder.emitters.core.tenant.models import TenantContext
+
 
 @dataclass
 class ClinicalTransitionResult:
@@ -57,23 +59,31 @@ class DomainEffects:
         self._clinical_service = clinical_service
 
     async def execute_double_entry(
-        self, data: dict[str, Any], user_id: Optional[str] = None, tenant_id: Optional[str] = None
+        self, data: dict[str, Any], tenant_context: Optional[TenantContext] = None
     ):
+        tenant_id = tenant_context.tenant_id if tenant_context else "global"
+        user_id = tenant_context.user_id if tenant_context else None
         return await self._double_entry.execute(data, user_id, tenant_id)
 
     async def execute_inventory_reservation(
-        self, data: dict[str, Any], user_id: Optional[str] = None, tenant_id: Optional[str] = None
+        self, data: dict[str, Any], tenant_context: Optional[TenantContext] = None
     ):
+        tenant_id = tenant_context.tenant_id if tenant_context else "global"
+        user_id = tenant_context.user_id if tenant_context else None
         return await self._inventory.execute(data, user_id, tenant_id)
 
     async def execute_payment_process(
-        self, data: dict[str, Any], user_id: Optional[str] = None, tenant_id: Optional[str] = None
+        self, data: dict[str, Any], tenant_context: Optional[TenantContext] = None
     ):
+        tenant_id = tenant_context.tenant_id if tenant_context else "global"
+        user_id = tenant_context.user_id if tenant_context else None
         return await self._payment.execute(data, user_id, tenant_id)
 
     async def execute_clinical_transition(
-        self, data: dict[str, Any], user_id: Optional[str] = None, tenant_id: Optional[str] = None
+        self, data: dict[str, Any], tenant_context: Optional[TenantContext] = None
     ):
+        tenant_id = tenant_context.tenant_id if tenant_context else "global"
+        user_id = tenant_context.user_id if tenant_context else None
         from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
         case_id = data.get("case_id", "")

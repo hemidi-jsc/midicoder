@@ -63,8 +63,8 @@ from midicoder.emitters.core.authnz import (
     FastAPIAuthEmitter,
     JWTAuthConfig,
     Role,
-    TenantMode,
 )
+from midicoder.emitters.core.tenant.models import TenantMode
 from midicoder.emitters.core.event import (
     FastAPIEventEmitter as CoreFastAPIEventEmitter,
     EventParser,

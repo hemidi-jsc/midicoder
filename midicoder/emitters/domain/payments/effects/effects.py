@@ -1,9 +1,11 @@
 """Payments Domain Effects - Payment Process (DP12)."""
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from midicoder.emitters.core.tenant.models import TenantContext
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
 
@@ -24,18 +26,18 @@ class PaymentEffects:
         self._payment_service = payment_service
 
     async def execute(
-        self, data: dict[str, Any], user_id: Optional[str] = None, tenant_id: Optional[str] = None,
+        self, data: dict[str, Any], tenant_context: Optional[TenantContext] = None,
     ) -> PaymentProcessResult:
         """Execute payment gateway effect."""
+        tenant_id = tenant_context.tenant_id if tenant_context else "global"
+        user_id = tenant_context.user_id if tenant_context else None
+
         amount = data.get("amount", 0)
         gateway = data.get("gateway", "stripe")
         idempotency_key = data.get("idempotency_key", "")
 
         if amount <= 0 or not gateway or not idempotency_key:
             EM.raise_error(ErrorCode.CP01_EFFECT_PAYMENT_FAILED, amount=amount, gateway=gateway)
-
-        if not tenant_id:
-            tenant_id = "global"
 
         if self._payment_service:
             try:
