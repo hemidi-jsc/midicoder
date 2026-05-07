@@ -1,0 +1,37 @@
+pack:
+  id: "CP02"
+  name: "Multi-Tenant Architecture Generator"
+  internal_id: "cp2-multi-tenant"
+  version: "1.0.0"
+  phase: "P0"
+  category: "architecture"
+  status: "developing"
+  depends_on: ["CP01"]
+  definitions_count: 2
+  obligations_count: 1
+  error_codes:
+    prefix: "CP02"
+    range: "CP02001-CP02005"
+  capabilities_provided:
+    - enforce_tenant_scope
+    - tenant_isolation
+  templates:
+    enforce_tenant_scope:
+      fastapi: "app/core/security/tenant_middleware.py"
+      nestjs: "src/core/tenant/tenant.middleware.ts"
+      angular: "src/app/core/tenant/tenant.interceptor.ts"
+      react: "src/app/core/tenant/useTenant.ts"
+    tenant_isolation:
+      fastapi: "app/core/security/tenant_context.py"
+      nestjs: "src/core/tenant/tenant.module.ts"
+      angular: "src/app/core/tenant/tenant.service.ts"
+      react: "src/app/core/tenant/TenantProvider.tsx"
+  frontend_integration:
+    angular:
+      - TenantService
+      - TenantGuard
+      - TenantInterceptor
+    react:
+      - useTenant
+      - TenantProvider
+      - TenantContext

@@ -34,7 +34,7 @@ core_packs:
       - enforce_tenant_scope
       - tenant_isolation
     category: architecture
-    status: developing
+    status: stable
     version: 1.0.0
   - id: CP03
     name: Authentication & Authorization Framework
