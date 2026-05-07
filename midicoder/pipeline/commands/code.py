@@ -444,23 +444,24 @@ def _plan_backend_files(mir: dict) -> List[dict]:
     files = []
     
     # Core files (luôn include)
+    # Template paths là relative so với stacks/{stack}/core/
     files.extend([
         {
             "path": "app/main.py",
             "type": "main",
-            "template": "fastapi/main.py.jinja2",
+            "template": "main.py.jinja2",
             "context": {},
         },
         {
             "path": "app/config.py",
             "type": "config",
-            "template": "fastapi/config.py.jinja2",
+            "template": "config.py.jinja2",
             "context": {},
         },
         {
             "path": "app/database.py",
             "type": "database",
-            "template": "fastapi/database.py.jinja2",
+            "template": "db/database.py.jinja2",
             "context": {},
         },
     ])
@@ -473,19 +474,19 @@ def _plan_backend_files(mir: dict) -> List[dict]:
             {
                 "path": f"app/models/{entity_name}.py",
                 "type": "model",
-                "template": "fastapi/model.py.jinja2",
+                "template": "entities/entity.py.jinja2",
                 "context": {"entity": entity},
             },
             {
                 "path": f"app/schemas/{entity_name}.py",
                 "type": "schema",
-                "template": "fastapi/schema.py.jinja2",
+                "template": "entities/entity.py.jinja2",
                 "context": {"entity": entity},
             },
             {
                 "path": f"app/repositories/{entity_name}_repo.py",
                 "type": "repository",
-                "template": "fastapi/repository.py.jinja2",
+                "template": "db/repository.py.jinja2",
                 "context": {"entity": entity},
             },
         ])
@@ -497,7 +498,7 @@ def _plan_backend_files(mir: dict) -> List[dict]:
         files.append({
             "path": f"app/routes/{entity_name}.py",
             "type": "route",
-            "template": "fastapi/routes.py.jinja2",
+            "template": "routes/http_route.py.jinja2",
             "context": {"entity": entity, "operation": "crud"},
         })
     
@@ -507,7 +508,7 @@ def _plan_backend_files(mir: dict) -> List[dict]:
         files.append({
             "path": f"app/commands/{command_name}_handler.py",
             "type": "command_handler",
-            "template": "fastapi/command_handler.py.jinja2",
+            "template": "commands/command_handler.py.jinja2",
             "context": {"command": command},
         })
     
@@ -517,7 +518,7 @@ def _plan_backend_files(mir: dict) -> List[dict]:
         files.append({
             "path": f"app/queries/{query_name}_handler.py",
             "type": "query_handler",
-            "template": "fastapi/query_handler.py.jinja2",
+            "template": "queries/query_handler.py.jinja2",
             "context": {"query": query},
         })
     
@@ -805,30 +806,38 @@ def _generate_file(file_plan: dict, output_dir: Path, dry_run: bool) -> Optional
         return None
 
 
-def _render_template(template_name: str, context: dict) -> str:
+def _get_stack_from_config() -> str:
     """
-    Render Jinja2 template với context.
-    
-    TODO: Implement Jinja2 template engine integration.
-    Current: Return placeholder content.
-    
-    Args:
-        template_name: Tên template
-        context: Template context
+    Lấy stack target từ config file.
     
     Returns:
-        Rendered content
+        Stack name (mặc định: fastapi)
     """
-    # Placeholder implementation
-    # TODO: Load và render Jinja2 template từ midicoder/stacks/
+    config = get_config()
+    return config.get("stack", "fastapi")
+
+
+def _render_template(template_name: str, context: dict) -> str:
+    """
+    Render Jinja2 template với context bằng Emitter class.
     
-    return f"""# Generated file
-# Template: {template_name}
-# Context: {json.dumps(context, indent=2, ensure_ascii=False) if context else '{}'}
-
-# TODO: Implement template rendering with Jinja2
-
-"""
+    Sử dụng Emitter để load và render template từ stack directory.
+    Stack target được đọc từ config file (mặc định: fastapi).
+    
+    Args:
+        template_name: Tên template (ví dụ: main.py.jinja2)
+        context: Template context (MIR metadata)
+    
+    Returns:
+        Rendered content string
+    """
+    # Lấy stack từ config
+    stack = _get_stack_from_config()
+    
+    # Tạo Emitter và render template
+    from midicoder.pipeline.emitter import Emitter
+    emitter = Emitter(stack=stack)
+    return emitter.render(template_name, context)
 
 
 def _execute_apply(target_dir: str, dry_run: bool, backup: bool, force: bool) -> None:
