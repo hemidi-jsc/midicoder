@@ -1,0 +1,22 @@
+pack:
+  id: "CP07"
+  name: "Infrastructure as Code Generator"
+  internal_id: "cp7-iac"
+  version: "1.0.0"
+  phase: "P0"
+  category: "infrastructure"
+  status: "stable"
+  depends_on: []
+  definitions_count: 2
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-CP07"
+    range: "MDC-CP07-001 to MDC-CP07-005"
+  capabilities:
+    - id: "docker-compose"
+      emitter: "fastapi, nestjs"
+    - id: "terraform-aws"
+      emitter: "fastapi, nestjs"
+  capabilities_provided:
+    - emit_iac_docker
+    - emit_iac_aws

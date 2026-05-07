@@ -669,7 +669,7 @@ def _execute_gen(target: str = "all", dry_run: bool = False) -> None:
         try:
             click.echo("   🐳 Đang generate Docker Compose từ MIR...")
             # Late import để tránh circular import
-            from midicoder.infra.docker import DockerComposeGenerator as DCG
+            from midicoder.emitters.core.iac.docker import DockerComposeGenerator as DCG
             docker_generator = DCG()
             infra_config = docker_generator.generate(mir, docker_compose_path)
             click.echo(f"   ✓ Docker Compose generated với services: {', '.join(infra_config.services)}")

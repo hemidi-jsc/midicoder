@@ -207,6 +207,15 @@ class ErrorCode(str, Enum):
     INFRA_INVALID_CONFIG = "MDC-INFRA-005"
 
     # =========================================================================
+    # CP07: Infrastructure as Code Generator Errors
+    # =========================================================================
+    CP07_MIR_NOT_FOUND = "MDC-CP07-001"
+    CP07_TEMPLATE_NOT_FOUND = "MDC-CP07-002"
+    CP07_RENDER_FAILED = "MDC-CP07-003"
+    CP07_WRITE_FAILED = "MDC-CP07-004"
+    CP07_INVALID_CONFIG = "MDC-CP07-005"
+
+    # =========================================================================
     # Version Management Errors
     # =========================================================================
     VERSION_NOT_FOUND = "MDC-VER-001"

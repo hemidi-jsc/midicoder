@@ -1,5 +1,5 @@
 """
-Docker Compose Generator - Generate Docker Compose từ MIR.
+Docker Compose Generator — Generate Docker Compose từ MIR.
 
 Module này cung cấp DockerComposeGenerator class để:
 - Load MIR từ SQLite artifacts table
@@ -17,8 +17,8 @@ Theo SoT E18, Docker Compose bao gồm:
 Services chỉ được include nếu được detect trong MIR (option B).
 
 Sử dụng:
-    from midicoder.infra.docker import DockerComposeGenerator
-    
+    from midicoder.emitters.core.iac.docker import DockerComposeGenerator
+
     generator = DockerComposeGenerator()
     config = generator.extract_infrastructure(mir)
     compose_content = generator.render_template(config)
@@ -30,8 +30,6 @@ Version: 1.0.0
 
 from __future__ import annotations
 
-import secrets
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -39,82 +37,6 @@ import jinja2
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 from midicoder.storage.sqlite import ArtifactsManager
-
-
-# ============================================================================
-# Constants
-# ============================================================================
-
-DEFAULT_BACKEND_PORT = 8000
-DEFAULT_FRONTEND_PORT = 7272
-DEFAULT_POSTGRES_PASSWORD = "midicoder_pg_pwd_2026"
-DEFAULT_POSTGRES_DATABASE = "midicoder"
-DEFAULT_REDIS_PASSWORD = ""  # Redis không cần password cho local dev
-DEFAULT_NEO4J_USER = "neo4j"
-DEFAULT_NEO4J_PASSWORD = "midicoder_neo4j_pwd_2026"
-
-
-# ============================================================================
-# Data Classes
-# ============================================================================
-
-
-@dataclass
-class InfrastructureConfig:
-    """
-    Infrastructure Configuration từ MIR.
-
-    Lưu trữ configuration extracted từ MIR cho Docker Compose generation.
-
-    Attributes:
-        has_backend: Có backend service không
-        has_frontend: Có frontend service không
-        backend_stack: Backend stack (fastapi, nestjs)
-        frontend_stack: Frontend stack (angular, react)
-        backend_port: Backend port
-        frontend_port: Frontend port
-        postgres_password: PostgreSQL password
-        postgres_database: PostgreSQL database name
-        neo4j_user: Neo4j username
-        neo4j_password: Neo4j password
-        jwt_secret: JWT secret cho backend
-        services: List services được include
-
-    Ví dụ:
-        config = InfrastructureConfig(
-            has_backend=True,
-            has_frontend=True,
-            backend_stack="fastapi",
-            frontend_stack="angular"
-        )
-    """
-
-    has_backend: bool = False
-    has_frontend: bool = False
-    backend_stack: str = "fastapi"
-    frontend_stack: str = "angular"
-    backend_port: int = DEFAULT_BACKEND_PORT
-    frontend_port: int = DEFAULT_FRONTEND_PORT
-    postgres_password: str = field(default_factory=lambda: secrets.token_hex(16))
-    postgres_database: str = DEFAULT_POSTGRES_DATABASE
-    neo4j_user: str = DEFAULT_NEO4J_USER
-    neo4j_password: str = field(default_factory=lambda: secrets.token_hex(16))
-    jwt_secret: str = field(default_factory=lambda: secrets.token_hex(32))
-    services: list[str] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        """
-        Initialize services list sau khi create object.
-
-        Build services list từ has_backend và has_frontend.
-        """
-        if not self.services:
-            self.services = []
-            if self.has_backend:
-                self.services.append("backend")
-            if self.has_frontend:
-                self.services.append("frontend")
-            self.services.extend(["postgres", "redis", "neo4j"])
 
 
 # ============================================================================
@@ -160,7 +82,9 @@ class DockerComposeGenerator:
         if template_path:
             self.template_path = Path(template_path)
         else:
-            self.template_path = Path(__file__).parent.parent / "stacks" / "infrastructure" / "docker-compose.j2"
+            self.template_path = (
+                Path(__file__).parent.parent.parent / "stacks" / "infrastructure" / "docker-compose.j2"
+            )
 
     def load_mir_from_sqlite(self, version: str = "v1.0.0") -> "MIR":
         """
@@ -188,7 +112,7 @@ class DockerComposeGenerator:
 
         if not mir_artifacts:
             EM.raise_error(
-                ErrorCode.INFRA_MIR_NOT_FOUND,
+                ErrorCode.MIR_GRAPH_NOT_FOUND,
                 version=version,
                 suggestions=[
                     "Chạy 'midicoder ir build' để tạo MIR từ Contract Graph",
@@ -210,9 +134,9 @@ class DockerComposeGenerator:
 
         if not mir_json:
             EM.raise_error(
-                ErrorCode.INFRA_MIR_NOT_FOUND,
+                ErrorCode.MIR_GRAPH_NOT_FOUND,
                 version=version,
-                suggestions=["MIR content为空. Kiểm tra artifacts table."]
+                suggestions=["MIR content trống. Kiểm tra artifacts table."]
             )
 
         # Parse MIR JSON
@@ -220,14 +144,16 @@ class DockerComposeGenerator:
             mir = MIR.from_json(mir_json)
         except Exception as e:
             EM.raise_error(
-                ErrorCode.INFRA_MIR_NOT_FOUND,
+                ErrorCode.MIR_GRAPH_NOT_FOUND,
                 error=str(e),
                 suggestions=["MIR JSON format không hợp lệ. Chạy 'midicoder ir build' lại."]
             )
 
         return mir
 
-    def extract_infrastructure(self, mir: "MIR", override_config: dict[str, Any] | None = None) -> InfrastructureConfig:
+    def extract_infrastructure(
+        self, mir: "MIR", override_config: dict[str, Any] | None = None
+    ) -> "InfrastructureConfig":
         """
         Extract infrastructure requirements từ MIR.
 
@@ -248,6 +174,8 @@ class DockerComposeGenerator:
             config = generator.extract_infrastructure(mir)
             print(config.has_backend)  # True nếu detect backend operations
         """
+        from midicoder.emitters.core.iac.models import InfrastructureConfig
+
         # Default config
         has_backend = False
         has_frontend = False
@@ -263,7 +191,6 @@ class DockerComposeGenerator:
         for operation in mir.operations:
             op_type = operation.op_type.lower()
             op_params = operation.params or {}
-            obligation_refs = operation.obligation_refs or []
 
             # Detect backend
             if not has_backend:
@@ -285,7 +212,7 @@ class DockerComposeGenerator:
         # Read stack từ metadata (override_config ưu tiên hơn metadata)
         # Priority: override_config > metadata > default
         metadata = mir.metadata or {}
-        
+
         # Override config có ưu tiên cao nhất
         if override_config:
             if "backend_stack" in override_config:
@@ -310,7 +237,7 @@ class DockerComposeGenerator:
 
         return config
 
-    def render_template(self, config: InfrastructureConfig) -> str:
+    def render_template(self, config: "InfrastructureConfig") -> str:
         """
         Render Docker Compose template với Jinja2.
 
@@ -412,7 +339,9 @@ class DockerComposeGenerator:
                 ]
             )
 
-    def generate(self, mir: "MIR", output_path: Path, override_config: dict[str, Any] | None = None) -> InfrastructureConfig:
+    def generate(
+        self, mir: "MIR", output_path: Path, override_config: dict[str, Any] | None = None
+    ) -> "InfrastructureConfig":
         """
         Generate Docker Compose từ MIR (full pipeline).
 

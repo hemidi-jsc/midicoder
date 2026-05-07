@@ -80,7 +80,7 @@ core_packs:
       - emit_iac_docker
       - emit_iac_aws
     category: infrastructure
-    status: developing
+    status: stable
     version: 1.0.0
   - id: CP05
     name: Event-Driven Architecture Generator

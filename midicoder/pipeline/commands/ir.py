@@ -208,7 +208,53 @@ def _build_mir_from_projection_tree(tree: ProjectionTree) -> MIR:
     for workflow in tree.get_workflows():
         _process_workflow_to_mir(builder, workflow)
 
+    # Auto-generate IAC operations nếu có backend services (commands/queries)
+    # Theo CP07: luôn generate cả 2 IAC ops (docker cho local dev, terraform cho AWS prod)
+    has_backend = (len(tree.get_commands()) > 0 or len(tree.get_queries()) > 0)
+    if has_backend:
+        _auto_generate_iac_ops(builder)
+
     return builder.build()
+
+
+def _auto_generate_iac_ops(builder: MIRBuilder) -> None:
+    """
+    Tự động generate IAC operations cho backend services.
+
+    Theo CP07 spec, khi có backend services (commands/queries),
+    luôn generate cả 2 IAC ops:
+    - emit_iac_docker: Docker Compose cho local development
+    - emit_iac_aws: Terraform cho AWS production
+
+    Args:
+        builder: MIRBuilder
+    """
+    # Docker Compose cho local dev
+    builder.add_operation(
+        op_id="iac_docker_001",
+        op_type="emit_iac_docker",
+        params={
+            "target": "docker-compose.yml",
+            "services": ["backend", "postgres", "redis", "neo4j"]
+        }
+    )
+
+    # Terraform cho AWS prod
+    builder.add_operation(
+        op_id="iac_aws_001",
+        op_type="emit_iac_aws",
+        params={
+            "target": "terraform/",
+            "services": ["ecs", "rds", "elasticache", "neo4j_aura", "s3"]
+        }
+    )
+
+    # Lưu metadata để emitters sử dụng
+    builder.mir.metadata["iac"] = {
+        "auto_generated": True,
+        "docker_target": "docker-compose.yml",
+        "aws_target": "terraform/"
+    }
 
 
 def _process_command_to_mir(builder: MIRBuilder, command: ProjectionNode) -> None:

@@ -1,5 +1,5 @@
 """
-AWS Terraform Generator - Generate Terraform từ MIR.
+AWS Terraform Generator — Generate Terraform từ MIR.
 
 Module này cung cấp TerraformGenerator class để:
 - Load MIR từ SQLite artifacts table
@@ -17,8 +17,8 @@ Theo SoT E18, AWS infrastructure bao gồm:
 Services chỉ được include nếu được detect trong MIR (option B).
 
 Sử dụng:
-    from midicoder.infra.aws import TerraformGenerator
-    
+    from midicoder.emitters.core.iac.terraform import TerraformGenerator
+
     generator = TerraformGenerator()
     config = generator.extract_aws_infrastructure(mir)
     files = generator.render_terraform(config)
@@ -30,104 +30,12 @@ Version: 1.0.0
 
 from __future__ import annotations
 
-import secrets
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import jinja2
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
-
-
-# ============================================================================
-# Constants
-# ============================================================================
-
-DEFAULT_AWS_REGION = "ap-southeast-1"  # Singapore
-DEFAULT_DB_ENGINE = "postgres"
-DEFAULT_DB_VERSION = "15"
-DEFAULT_ENVIRONMENT = "development"
-
-
-# ============================================================================
-# Data Classes
-# ============================================================================
-
-
-@dataclass
-class AWSInfrastructureConfig:
-    """
-    AWS Infrastructure Configuration từ MIR.
-
-    Lưu trữ configuration extracted từ MIR cho Terraform generation.
-
-    Attributes:
-        app_name: Tên ứng dụng
-        region: AWS region
-        use_ecs: Có dùng ECS không
-        ecs_instance_type: ECS instance type
-        ecs_cpu: ECS CPU units
-        ecs_memory: ECS memory (MB)
-        db_engine: Database engine
-        db_version: Database version
-        db_instance_class: RDS instance class
-        db_allocated_storage: RDS allocated storage (GB)
-        use_redis: Có dùng Redis không
-        redis_node_type: ElastiCache node type
-        redis_num_nodes: Số lượng Redis nodes
-        use_neo4j: Có dùng Neo4j không
-        neo4j_instance_type: Neo4j instance type
-        use_s3: Có dùng S3 không
-        s3_bucket_prefix: S3 bucket prefix
-        environment: Environment (development/staging/production)
-        postgres_password: PostgreSQL password
-        neo4j_password: Neo4j password
-        jwt_secret: JWT secret cho backend
-
-    Ví dụ:
-        config = AWSInfrastructureConfig(
-            app_name="my-app",
-            region="us-west-2",
-            use_ecs=True
-        )
-    """
-
-    app_name: str = "midicoder-app"
-    region: str = DEFAULT_AWS_REGION
-
-    # ECS Configuration
-    use_ecs: bool = True
-    ecs_instance_type: str = "t3.medium"
-    ecs_cpu: int = 256
-    ecs_memory: int = 512
-
-    # Database Configuration
-    db_engine: str = DEFAULT_DB_ENGINE
-    db_version: str = DEFAULT_DB_VERSION
-    db_instance_class: str = "db.t3.micro"
-    db_allocated_storage: int = 20
-
-    # Cache Configuration
-    use_redis: bool = True
-    redis_node_type: str = "cache.t3.micro"
-    redis_num_nodes: int = 1
-
-    # Neo4j Configuration
-    use_neo4j: bool = True
-    neo4j_instance_type: str = "t3.medium"
-
-    # S3 Configuration
-    use_s3: bool = True
-    s3_bucket_prefix: str = "midicoder"
-
-    # Environment
-    environment: str = DEFAULT_ENVIRONMENT
-
-    # Secrets (will be stored in AWS Secrets Manager)
-    postgres_password: str = field(default_factory=lambda: secrets.token_hex(16))
-    neo4j_password: str = field(default_factory=lambda: secrets.token_hex(16))
-    jwt_secret: str = field(default_factory=lambda: secrets.token_hex(32))
 
 
 # ============================================================================
@@ -179,7 +87,7 @@ class TerraformGenerator:
 
     def extract_aws_infrastructure(
         self, mir: "MIR", override_config: dict[str, Any] | None = None
-    ) -> AWSInfrastructureConfig:
+    ) -> "AWSInfrastructureConfig":
         """
         Extract AWS infrastructure requirements từ MIR.
 
@@ -202,6 +110,11 @@ class TerraformGenerator:
             config = generator.extract_aws_infrastructure(mir)
             print(config.use_ecs)  # True nếu detect API operations
         """
+        from midicoder.emitters.core.iac.models import (
+            AWSInfrastructureConfig,
+            DEFAULT_AWS_REGION,
+        )
+
         # Default config values
         use_ecs = True
         use_redis = True
@@ -293,7 +206,7 @@ class TerraformGenerator:
 
         return config
 
-    def render_terraform(self, config: AWSInfrastructureConfig) -> dict[str, str]:
+    def render_terraform(self, config: "AWSInfrastructureConfig") -> dict[str, str]:
         """
         Render Terraform templates với Jinja2.
 
@@ -440,7 +353,7 @@ class TerraformGenerator:
         mir: "MIR",
         output_dir: Path,
         override_config: dict[str, Any] | None = None,
-    ) -> AWSInfrastructureConfig:
+    ) -> "AWSInfrastructureConfig":
         """
         Generate Terraform từ MIR (full pipeline).
 
