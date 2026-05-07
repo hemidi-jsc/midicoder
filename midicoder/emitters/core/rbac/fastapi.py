@@ -49,16 +49,16 @@ class FastAPIRBACEmitter:
 
     def __init__(self, config: Any) -> None:
         """
-        Khoi tao FastAPIRBACEmitter.
+        Khởi tạo FastAPIRBACEmitter.
 
         Args:
-            config: RBACConfig instance (hoac dict context)
+            config: RBACConfig instance (hoặc dict context)
         """
         self._config = config
 
     def generate(self) -> dict[str, str]:
         """
-        Generate toan bo FastAPI RBAC code.
+        Generate toàn bộ FastAPI RBAC code.
 
         Returns:
             Dict {file_path: code_content}
@@ -71,7 +71,7 @@ class FastAPIRBACEmitter:
 
     def emit(self, output_dir: Path) -> list[GeneratedFile]:
         """
-        Emit files vao output directory.
+        Emit files vào output directory.
 
         Args:
             output_dir: Output directory path
@@ -103,7 +103,7 @@ class FastAPIRBACEmitter:
         return '''"""
 RBAC Module - Role-Based Access Control & Policy Engine (CP04).
 
-Module nay cung cap:
+Module này cung cấp:
 - RBACService: Service layer cho role/permission checks
 - RoleGuard: FastAPI dependency cho role-based access
 - PolicyGuard: FastAPI dependency cho ABAC policy evaluation

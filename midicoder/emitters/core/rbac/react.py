@@ -1,12 +1,12 @@
 """
 CP04: React RBAC Emitter.
 
-Module nay cung cap ReactRBACEmitter de generate React RBAC code:
+Module này cung cấp ReactRBACEmitter để generate React RBAC code:
 - useAuth(): Custom hook cho role/permission checks
-- ProtectedRoute: Component bao ve route theo role
+- ProtectedRoute: Component bảo vệ route theo role
 - WithPermission: HOC (Higher-Order Component) cho permission check
 
-Tat ca comments bang tieng Viet.
+Tất cả comments bằng tiếng Việt.
 
 Author: Midicoder Team
 Version: 1.0.0

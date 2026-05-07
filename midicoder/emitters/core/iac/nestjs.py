@@ -1,5 +1,5 @@
 """
-NestJS IAC Emitter — Emit Docker Compose cho NestJS stack.
+NestJS IAC Emitter — Sinh Docker Compose cho NestJS stack.
 
 Module này cung cấp NestJSIacEmitter class để generate
 Docker Compose files cho NestJS backend.

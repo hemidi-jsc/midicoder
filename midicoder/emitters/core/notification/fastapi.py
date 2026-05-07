@@ -55,7 +55,7 @@ class FastAPINotificationEmitter:
         code = '''"""
 Notification Service Module.
 
-Module nay cung cap NotificationService cho viec dispatch notifications
+Module này cung cấp NotificationService cho việc dispatch notifications
 qua cac kênh: Email, SMS, Push, Webhook, In-App.
 
 Tich hop:

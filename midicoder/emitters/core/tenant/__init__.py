@@ -2,14 +2,14 @@
 """
 CP02: Multi-Tenant Architecture Generator.
 
-Cung cap 2 capabilities:
-- enforce_tenant_scope: Tu dong inject tenant filter vao queries
-- tenant_isolation: Bat buoc tenant isolation cho tat ca operations
+Cung cấp 2 capabilities:
+- enforce_tenant_scope: Tự động inject tenant filter vào queries
+- tenant_isolation: Bắt buộc tenant isolation cho tất cả operations
 
 Support 3 isolation strategies:
-- Schema: Moi tenant co PostgreSQL schema rieng
-- Row: Tat ca tenant chia will bang, phan biet bang tenant_id column
-- Subdomain: Moi tenant co subdomain rieng
+- Schema: Mỗi tenant có PostgreSQL schema riêng
+- Row: Tất cả tenant chia cùng bảng, phân biệt bằng tenant_id column
+- Subdomain: Mỗi tenant có subdomain riêng
 
 Author: Midicoder Team
 Version: 1.0.0

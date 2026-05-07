@@ -1,7 +1,7 @@
 """
 Twilio SMS Gateway.
 
-Concrete implementation cua SmsGateway cho Twilio Messages API.
+Concrete implementation của SmsGateway cho Twilio Messages API.
 
 Author: Midicoder Team
 Version: 1.0.0

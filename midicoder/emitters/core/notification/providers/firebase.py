@@ -1,7 +1,7 @@
 """
 Firebase FCM Push Gateway.
 
-Concrete implementation cua PushGateway cho Firebase Cloud Messaging v1 API.
+Concrete implementation của PushGateway cho Firebase Cloud Messaging v1 API.
 
 Author: Midicoder Team
 Version: 1.0.0

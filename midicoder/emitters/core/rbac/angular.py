@@ -1,12 +1,12 @@
 """
 CP04: Angular RBAC Emitter.
 
-Module nay cung cap AngularRBACEmitter de generate Angular RBAC code:
+Module này cung cấp AngularRBACEmitter để generate Angular RBAC code:
 - RbacService: Service cho role/permission checks
 - RoleGuard: Route guard (canActivate, canMatch)
 - PermissionDirective: *appPermission directive
 
-Tat ca comments bang tieng Viet.
+Tất cả comments bằng tiếng Việt.
 
 Author: Midicoder Team
 Version: 1.0.0

@@ -1,10 +1,10 @@
 # coding: utf-8
 """
-Database Emitter Module.
+Mô-đun Emitter Cơ Sở Dữ Liệu.
 
-Module nay dinh nghia cac emitter cho database layer:
+Module này định nghĩa các emitter cho database layer:
 - Models: Datasource, DatabaseEngine, ReplicaConfig, DataModel, ColumnDef, Relationship, IndexDef
-- Parser: DBParser de parse MIR metadata va YAML DSL
+- Parser: DBParser để parse MIR metadata và YAML DSL
 - FastAPI Emitter: SQLAlchemy model emitter
 - NestJS Emitter: TypeORM entity emitter
 

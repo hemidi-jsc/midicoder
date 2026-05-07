@@ -1,7 +1,7 @@
 """
-Retry Policy Module.
+Mô-đun Chính Sách Thử Lại.
 
-Module nay cung cap RetryPolicy voi exponential backoff.
+Module này cung cấp RetryPolicy với exponential backoff.
 
 Author: Midicoder Team
 Version: 1.0.0

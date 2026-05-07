@@ -1,5 +1,5 @@
 """
-Event Parser Module.
+Mô-đun Parser Sự Kiện.
 
 Module này cung cấp EventParser class để parse YAML/dict data thành EventDefinition objects.
 

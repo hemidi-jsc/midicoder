@@ -1,7 +1,7 @@
 """
 Notification Providers Package.
 
-Package nay chua cac concrete provider gateways:
+Package này chứa các concrete provider gateways:
 - SendGridEmailGateway: SendGrid email provider
 - AwsSesEmailGateway: AWS SES email provider
 - TwilioSmsGateway: Twilio SMS provider

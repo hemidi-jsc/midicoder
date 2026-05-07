@@ -2,13 +2,13 @@
 """
 Mô-đun models cho CP02 Multi-Tenant Architecture Generator.
 
-Dinh nghia cac dataclass bieu dien:
-- TenantMode: Enum cac chieu cway tenant isolation (schema/row/subdomain)
-- TenantConfig: Cau hinh tenant cho ung dung
+Định nghĩa các dataclass biểu diễn:
+- TenantMode: Enum các chiều cách tenant isolation (schema/row/subdomain)
+- TenantConfig: Cấu hình tenant cho ứng dụng
 - TenantContext: Context tenant trong request
-- TenantResolver: Giai thich tenant ID tu cac nguon khac nhau
+- TenantResolver: Giải thích tenant ID từ các nguồn khác nhau
 
-KPI-029: Tenant Isolation - bat buoc cho tat ca operations.
+KPI-029: Tenant Isolation - bắt buộc cho tất cả operations.
 
 Author: Midicoder Team
 Version: 1.0.0
@@ -32,11 +32,11 @@ from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
 class TenantMode(str, Enum):
     """
-    Enum cac chieu cway tenant isolation.
+    Enum các cách tenant isolation.
 
-    - SCHEMA: Moi tenant co PostgreSQL schema rieng
-    - ROW: Tat ca tenant chia will bang, phan biet bang tenant_id column
-    - SUBDOMAIN: Moi tenant co subdomain rieng (tenant1.app.com)
+    - SCHEMA: Mỗi tenant có PostgreSQL schema riêng
+    - ROW: Tất cả tenant chia cùng bảng, phân biệt bằng tenant_id column
+    - SUBDOMAIN: Mỗi tenant có subdomain riêng (tenant1.app.com)
     """
     SCHEMA = "schema"
     ROW = "row"
@@ -51,15 +51,15 @@ class TenantMode(str, Enum):
 @dataclass
 class TenantConfig:
     """
-    Cau hinh tenant cho ung dung.
+    Cấu hình tenant cho ứng dụng.
 
     Attributes:
-        mode: Chieu cway tenant isolation (SCHEMA, ROW, SUBDOMAIN)
-        tenant_id_column: Ten column chua tenant ID (cho ROW mode)
-        default_tenant_id: Tenant ID mac dinh cho requests khong co tenant
+        mode: Cách tenant isolation (SCHEMA, ROW, SUBDOMAIN)
+        tenant_id_column: Tên column chứa tenant ID (cho ROW mode)
+        default_tenant_id: Tenant ID mặc định cho requests không có tenant
         schema_prefix: Prefix cho schema names (cho SCHEMA mode)
-        domain: Domain cuoi cung (cho SUBDOMAIN mode)
-        cache_ttl: Thoi gian cache tenant resolution (giay)
+        domain: Domain cuối cùng (cho SUBDOMAIN mode)
+        cache_ttl: Thời gian cache tenant resolution (giây)
     """
     mode: TenantMode
     tenant_id_column: str = "tenant_id"
@@ -70,21 +70,21 @@ class TenantConfig:
 
     def __post_init__(self) -> None:
         """Validate tenant config sau khi khoi tao."""
-        # Kiem tra tenant_id_column khong duoc de trong cho ROW mode
+        # Kiểm tra tenant_id_column không được để trống cho ROW mode
         if self.mode == TenantMode.ROW and not self.tenant_id_column.strip():
             EM.raise_error(
                 ErrorCode.CP02_TENANT_FILTER_MISSING,
                 mode=self.mode.value,
-                message="tenant_id_column khong duoc de trong cho ROW mode"
+                message="tenant_id_column không được để trống cho ROW mode"
             )
-        # Kiem tra domain khong duoc de trong cho SUBDOMAIN mode
+        # Kiểm tra domain không được để trống cho SUBDOMAIN mode
         if self.mode == TenantMode.SUBDOMAIN and not self.domain.strip():
             EM.raise_error(
                 ErrorCode.CP02_TENANT_MODE_INVALID,
                 mode=self.mode.value,
-                message="domain khong duoc de trong cho SUBDOMAIN mode"
+                message="domain không được để trống cho SUBDOMAIN mode"
             )
-        # Cache ttl phai >= 0
+        # Cache ttl phải >= 0
         if self.cache_ttl < 0:
             self.cache_ttl = 0
 
@@ -101,7 +101,7 @@ class TenantConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TenantConfig":
-        """Tao TenantConfig tu dict."""
+        """Tạo TenantConfig từ dict."""
         return cls(
             mode=TenantMode(data.get("mode", "row")),
             tenant_id_column=data.get("tenant_id_column", "tenant_id"),
@@ -122,13 +122,13 @@ class TenantContext:
     """
     Context tenant trong request.
 
-    Luu tru thong tin tenant hien tai trong request context.
-    Duoc su dung de enforce tenant isolation cho tat ca operations.
+    Lưu trữ thông tin tenant hiện tại trong request context.
+    Được sử dụng để enforce tenant isolation cho tất cả operations.
 
     Attributes:
-        tenant_id: Tenant ID hien tai
-        user_id: User ID hien tai (optional)
-        mode: Chieu cway tenant isolation
+        tenant_id: Tenant ID hiện tại
+        user_id: User ID hiện tại (optional)
+        mode: Cách tenant isolation
         headers: Request headers (optional, cho debugging)
     """
     tenant_id: str | None
@@ -138,7 +138,7 @@ class TenantContext:
 
     def __post_init__(self) -> None:
         """Validate tenant context sau khi khoi tao."""
-        # Tenant ID khong duoc de trong hoac None
+        # Tenant ID không được để trống hoặc None
         if not self.tenant_id:
             EM.raise_error(
                 ErrorCode.CP02_TENANT_ID_MISSING,
@@ -164,20 +164,20 @@ class TenantContext:
 @dataclass
 class TenantResolver:
     """
-    Giai thich tenant ID tu cac nguon khac nhau.
+    Giải thích tenant ID từ các nguồn khác nhau.
 
-    Thuc hien logic de xac dinh tenant ID tu:
+    Thực hiện logic để xác định tenant ID từ:
     1. Request header (X-Tenant-ID)
     2. JWT claims (tenant_id claim)
     3. Subdomain (tenant.app.com)
     4. Default tenant id
 
-    Thu tu uu tien: Header > JWT > Subdomain > Default
+    Thứ tự ưu tiên: Header > JWT > Subdomain > Default
 
     Attributes:
-        domain: Domain cuoi cung de extract subdomain (cho SUBDOMAIN mode)
-        default_tenant_id: Tenant ID mac dinh neu khong tim thay
-        _cache: Cache da resolve tenant IDs
+        domain: Domain cuối cùng để extract subdomain (cho SUBDOMAIN mode)
+        default_tenant_id: Tenant ID mặc định nếu không tìm thấy
+        _cache: Cache đã resolve tenant IDs
     """
     domain: str = ""
     default_tenant_id: str = "default"
@@ -190,12 +190,12 @@ class TenantResolver:
         host: str = "",
     ) -> str:
         """
-        Resolve tenant ID tu cac nguon khac nhau.
+        Resolve tenant ID từ các nguồn khác nhau.
 
-        Thu tu uu tien:
+        Thứ tự ưu tiên:
         1. Request header (X-Tenant-ID)
         2. JWT claims (tenant_id)
-        3. Subdomain (neu co domain)
+        3. Subdomain (nếu có domain)
         4. Default tenant ID
 
         Args:
@@ -204,34 +204,34 @@ class TenantResolver:
             host: Host header (cho subdomain resolution)
 
         Returns:
-            Tenant ID da resolve
+            Tenant ID đã resolve
 
         Raises:
-            MidicoderError: Neu khong the resolve tenant ID (MDC-CP02-002)
+            MidicoderError: Nếu không thể resolve tenant ID (MDC-CP02-002)
         """
         headers = headers or {}
         jwt_claims = jwt_claims or {}
 
-        # 1. Kiem tra cache truoc
+        # 1. Kiểm tra cache trước
         cache_key = f"{headers.get('X-Tenant-ID', '')}:{host}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
         tenant_id: str = ""
 
-        # 2. Resolve tu header (uu tien nhat)
+        # 2. Resolve từ header (ưu tiên nhất)
         if not tenant_id:
             tenant_id = headers.get("X-Tenant-ID", "")
 
-        # 3. Resolve tu JWT claims
+        # 3. Resolve từ JWT claims
         if not tenant_id:
             tenant_id = jwt_claims.get("tenant_id", "")
 
-        # 4. Resolve tu subdomain
+        # 4. Resolve từ subdomain
         if not tenant_id and self.domain and host:
             tenant_id = self._extract_subdomain(host)
 
-        # 5. Neu van khong co, throw error
+        # 5. Nếu vẫn không có, throw error
         if not tenant_id:
             EM.raise_error(
                 ErrorCode.CP02_TENANT_ID_MISSING,
@@ -240,32 +240,32 @@ class TenantResolver:
                 host=host,
             )
 
-        # Cache ket qua
+        # Cache kết quả
         self._cache[cache_key] = tenant_id
         return tenant_id
 
     def _extract_subdomain(self, host: str) -> str:
         """
-        Extract subdomain tu host.
+        Extract subdomain từ host.
 
-        Vi du:
-            - "tenant1.app.example.com" voi domain="app.example.com" -> "tenant1"
-            - "app.example.com" voi domain="app.example.com" -> ""
+        Ví dụ:
+            - "tenant1.app.example.com" với domain="app.example.com" -> "tenant1"
+            - "app.example.com" với domain="app.example.com" -> ""
 
         Args:
             host: Host header
 
         Returns:
-            Subdomain hoac string rong neu khong tim thay
+            Subdomain hoặc string rỗng nếu không tìm thấy
         """
         if not self.domain or not host:
             return ""
 
-        # Loai bo port neu co
+        # Loại bỏ port nếu có
         host_clean = host.split(":")[0]
         domain_clean = self.domain.split(":")[0]
 
-        # Kiem tra host co ket thoi bang domain khong
+        # Kiểm tra host có kết thúc bằng domain không
         if host_clean.endswith("." + domain_clean):
             subdomain = host_clean[:-(len(domain_clean) + 1)]
             return subdomain
@@ -273,5 +273,5 @@ class TenantResolver:
         return ""
 
     def clear_cache(self) -> None:
-        """Xoa cache tenant resolutions."""
+        """Xóa cache tenant resolutions."""
         self._cache.clear()

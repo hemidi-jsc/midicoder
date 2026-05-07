@@ -1,13 +1,13 @@
 """
 CP04: NestJS RBAC Emitter.
 
-Module nay cung cap NestJSRBACEmitter de generate NestJS RBAC code:
-- RolesGuard: NestJS canact cho role-based access
-- PolicyGuard: NestJS canact cho ABAC policy evaluation
+Module này cung cấp NestJSRBACEmitter để generate NestJS RBAC code:
+- RolesGuard: NestJS canActivate cho role-based access
+- PolicyGuard: NestJS canActivate cho ABAC policy evaluation
 - RBACService: Service layer
 - Decorators: @Roles(), @Policies()
 
-Tat ca comments bang tieng Viet.
+Tất cả comments bằng tiếng Việt.
 
 Author: Midicoder Team
 Version: 1.0.0
@@ -22,7 +22,7 @@ from typing import Any
 
 @dataclass
 class GeneratedFile:
-    """File da generate tu emitter."""
+    """File đã generate từ emitter."""
     path: Path
     content: str
     template: str = ""
@@ -45,7 +45,7 @@ class NestJSRBACEmitter:
         self._config = config
 
     def generate(self) -> dict[str, str]:
-        """Generate toan bo NestJS RBAC code."""
+        """Generate toàn bộ NestJS RBAC code."""
         result: dict[str, str] = {}
         result["src/core/rbac/rbac.module.ts"] = self._generate_module()
         result["src/core/rbac/rbac.service.ts"] = self._generate_service()
@@ -55,7 +55,7 @@ class NestJSRBACEmitter:
         return result
 
     def emit(self, output_dir: Path) -> list[GeneratedFile]:
-        """Emit files vao output directory."""
+        """Emit files vào output directory."""
         files: list[GeneratedFile] = []
         for path_str, content in self.generate().items():
             file_path = output_dir / path_str
@@ -73,8 +73,8 @@ import { PolicyGuard } from "./policy.guard";
 /**
  * RBAC Module - CP04.
  *
- * Module nay cung cap Role-Based Access Control va Policy Engine cho NestJS.
- * Export cac guard va service de su dung trong toan bo app.
+  * Module này cung cấp Role-Based Access Control và Policy Engine cho NestJS.
+  * Export các guard và service để sử dụng trong toàn bộ app.
  */
 @Global()
 @Module({
@@ -123,7 +123,7 @@ export class RBACService {
     this.policies.push({ id, effect, condition, resourceType, actions });
   }
 
-  /** Kiem tra user co role yeu cau (bao gom inheritance) */
+  /** Kiểm tra user có role yêu cầu (bao gồm inheritance) */
   checkRole(userRoles: string[], requiredRole: string): boolean {
     if (userRoles.includes(requiredRole)) return true;
 
@@ -205,7 +205,7 @@ export class RBACService {
     condition: string,
     context: Record<string, unknown>,
   ): boolean {
-    // Simple evaluation — trong production se su dung PolicyEngine AST parser
+    // Simple evaluation — trong production sẽ sử dụng PolicyEngine AST parser
     try {
       // Co the mo phong: "user.role == 'admin'" -> context.user.role === "admin"
       // Day la fallback — chi support simple equality
@@ -250,8 +250,8 @@ import { ROLES_KEY, PERMISSIONS_KEY } from "./decorators";
 /**
  * Roles Guard - CP04.
  *
- * NestJS canact cho role-based access control.
- * Su dung @Roles() decorator de chi dinh roles duoc phep.
+  * NestJS canActivate cho role-based access control.
+  * Sử dụng @Roles() decorator để chỉ định roles được phép.
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -272,7 +272,7 @@ export class RolesGuard implements CanActivate {
     );
 
     if (!requiredRoles && !requiredPermissions) {
-      return true; // Khong co yeu cau -> cho phep
+      return true; // Không có yêu cầu -> cho phép
     }
 
     const request = context.switchToHttp().getRequest();
@@ -326,8 +326,8 @@ import { POLICY_ACTION_KEY } from "./decorators";
 /**
  * Policy Guard - CP04.
  *
- * NestJS canact cho ABAC policy evaluation.
- * Su dung @Policies() decorator de chi dinh action.
+  * NestJS canActivate cho ABAC policy evaluation.
+  * Sử dụng @Policies() decorator để chỉ định action.
  */
 @Injectable()
 export class PolicyGuard implements CanActivate {
@@ -343,7 +343,7 @@ export class PolicyGuard implements CanActivate {
     );
 
     if (!action) {
-      return true; // Khong co policy check -> cho phep
+      return true; // Không có policy check -> cho phép
     }
 
     const request = context.switchToHttp().getRequest();
@@ -394,7 +394,7 @@ export const PERMISSIONS_KEY = "rbac_permissions";
 export const POLICY_ACTION_KEY = "rbac_policy_action";
 
 /**
- * @Roles() - Chi dinh roles duoc phep truy cap.
+ * @Roles() - Chỉ định roles được phép truy cập.
  *
  * Usage:
  *   @Roles("admin", "manager")
@@ -406,7 +406,7 @@ export function Roles(...roles: string[]) {
 }
 
 /**
- * @Permissions() - Chi dinh permissions duoc phep.
+ * @Permissions() - Chỉ định permissions được phép.
  *
  * Usage:
  *   @Permissions("order:create", "order:update")
@@ -418,7 +418,7 @@ export function Permissions(...permissions: string[]) {
 }
 
 /**
- * @Policies() - Chi dinh action cho policy evaluation.
+ * @Policies() - Chỉ định action cho policy evaluation.
  *
  * Usage:
  *   @Policies("order:create")
@@ -430,7 +430,7 @@ export function Policies(action: string) {
 }
 
 /**
- * @RequireAuth() - Ket hop @Roles() voi RolesGuard.
+ * @RequireAuth() - Kết hợp @Roles() với RolesGuard.
  *
  * Usage:
  *   @RequireAuth("admin")
