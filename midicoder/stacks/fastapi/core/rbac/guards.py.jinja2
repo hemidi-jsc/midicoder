@@ -1,0 +1,129 @@
+"""
+RBAC Guards - Decorators và Dependency cho FastAPI.
+
+Module này cung cấp guards cho role-based và policy-based authorization.
+
+CP04: RBAC & Policy Engine
+"""
+
+from functools import wraps
+from typing import Any, Callable, Optional
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+
+from .service import RBACService, get_rbac_service
+
+
+# ============================================================================
+# Role Guard Dependency
+# ============================================================================
+
+
+def require_role(*required_roles: str) -> Callable[..., Any]:
+    """
+    Decorator để yêu cầu user có ít nhất một trong các roles specified.
+
+    Args:
+        *required_roles: Danh sách role names được chấp nhận
+
+    Returns:
+        Decorator function
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            rbac: RBACService = kwargs.get("rbac") or get_rbac_service()
+            user_roles = kwargs.get("user_roles", [])
+            if not rbac.check_role(user_roles, required_roles[0]):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Yêu cầu role: {required_roles[0]}",
+                )
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def require_permission(resource: str, action: str) -> Callable[..., Any]:
+    """
+    Decorator để yêu cầu user có permission cho resource:action.
+
+    Args:
+        resource: Resource name (ví dụ: "order")
+        action: Action name (ví dụ: "create")
+
+    Returns:
+        Decorator function
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            rbac: RBACService = kwargs.get("rbac") or get_rbac_service()
+            user_roles = kwargs.get("user_roles", [])
+            if not rbac.check_permission(user_roles, resource, action):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Yêu cầu permission: {resource}:{action}",
+                )
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+# ============================================================================
+# Policy Guard Dependency
+# ============================================================================
+
+
+def require_policy(policy_id: str) -> Callable[..., Any]:
+    """
+    Decorator để yêu cầu policy evaluation pass.
+
+    Args:
+        policy_id: Policy ID để evaluate
+
+    Returns:
+        Decorator function
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            rbac: RBACService = kwargs.get("rbac") or get_rbac_service()
+            context = kwargs.get("policy_context", {})
+            result = rbac.evaluate_policy(policy_id, context)
+            if result is None or not result.allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Policy '{policy_id}' đã reject",
+                )
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+# ============================================================================
+# FastAPI Dependency Factory
+# ============================================================================
+
+
+def role_guard(*required_roles: str):
+    """
+    FastAPI Dependency factory cho role-based authorization.
+
+    Sử dụng: @router.get("/admin", dependencies=[Depends(role_guard("admin"))])
+    """
+    async def _check(rbac: RBACService = Depends(get_rbac_service)) -> None:
+        # TODO: Extract user roles from request context
+        pass
+    return _check
+
+
+def permission_guard(resource: str, action: str):
+    """
+    FastAPI Dependency factory cho permission-based authorization.
+    """
+    async def _check(rbac: RBACService = Depends(get_rbac_service)) -> None:
+        # TODO: Extract user roles from request context
+        pass
+    return _check

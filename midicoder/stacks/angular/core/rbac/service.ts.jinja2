@@ -1,0 +1,137 @@
+/**
+ * RBAC Service - Role-Based Access Control Service cho Angular.
+ *
+ * Module này cung cấp RBAC service cho client-side authorization.
+ *
+ * CP04: RBAC & Policy Engine
+ */
+
+import { Injectable } from '@angular/core';
+
+export interface RBACRole {
+  id: string;
+  name: string;
+  permissions: string[];
+  parent_roles?: string[];
+}
+
+export interface PolicyRule {
+  id: string;
+  name: string;
+  effect: 'ALLOW' | 'DENY';
+  condition: string;
+}
+
+
+// ============================================================================
+// RBAC Service
+// ============================================================================
+
+@Injectable({
+  providedIn: 'root',
+})
+export class RbacService {
+  private _roles: Map<string, RBACRole> = new Map();
+  private _userRoles: string[] = [];
+  private _policies: Map<string, PolicyRule> = new Map();
+
+  /**
+   * Khởi tạo roles và policies từ server response.
+   */
+  initialize(roles: RBACRole[], userRoles: string[], policies: PolicyRule[]): void {
+    this._roles.clear();
+    for (const role of roles) {
+      this._roles.set(role.id, role);
+    }
+    this._userRoles = userRoles || [];
+    this._policies.clear();
+    for (const policy of policies) {
+      this._policies.set(policy.id, policy);
+    }
+  }
+
+  /**
+   * Check nếu user có role (bao gồm hierarchical inheritance).
+   */
+  hasRole(requiredRole: string): boolean {
+    for (const roleName of this._userRoles) {
+      if (this._roleInherits(roleName, requiredRole)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Check nếu user có permission cho resource:action.
+   */
+  hasPermission(resource: string, action: string): boolean {
+    const permissionId = `${resource.toLowerCase()}.${action}`;
+    const allPermissions = this._gatherPermissions();
+    return allPermissions.has(permissionId);
+  }
+
+  /**
+   * Lấy tất cả permissions của user.
+   */
+  getUserPermissions(): Set<string> {
+    return this._gatherPermissions();
+  }
+
+  /**
+   * Trả về danh sách roles của user.
+   */
+  getUserRoles(): string[] {
+    return [...this._userRoles];
+  }
+
+  /**
+   * Check nếu role có target role qua inheritance.
+   */
+  private _roleInherits(roleName: string, target: string): boolean {
+    if (roleName === target) return true;
+    const role = this._roles.get(roleName);
+    if (!role || !role.parent_roles) return false;
+    for (const parentName of role.parent_roles) {
+      if (this._roleInherits(parentName, target)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Thu thập tất cả permissions từ user roles.
+   */
+  private _gatherPermissions(): Set<string> {
+    const permissions = new Set<string>();
+    for (const roleName of this._userRoles) {
+      const role = this._roles.get(roleName);
+      if (role) {
+        for (const perm of role.permissions) {
+          permissions.add(perm);
+        }
+        // Inherit từ parent roles
+        if (role.parent_roles) {
+          for (const parentName of role.parent_roles) {
+            const parentPerms = this._getPermissionsRecursive(parentName);
+            for (const perm of parentPerms) {
+              permissions.add(perm);
+            }
+          }
+        }
+      }
+    }
+    return permissions;
+  }
+
+  private _getPermissionsRecursive(roleName: string): string[] {
+    const role = this._roles.get(roleName);
+    if (!role) return [];
+    const perms = [...role.permissions];
+    if (role.parent_roles) {
+      for (const parentName of role.parent_roles) {
+        perms.push(...this._getPermissionsRecursive(parentName));
+      }
+    }
+    return perms;
+  }
+}

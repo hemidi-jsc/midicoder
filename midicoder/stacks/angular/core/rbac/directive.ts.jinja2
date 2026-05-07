@@ -1,0 +1,96 @@
+/**
+ * RBAC Directives - Structural Attributes cho Angular Templates.
+ *
+ * Module này cung cấp *appPermission directive cho conditional rendering.
+ *
+ * Ví dụ sử dụng:
+ *   <button *appPermission="'order.create'">Tạo đơn hàng</button>
+ *   <div *appRole="'admin'">Admin Panel</div>
+ *
+ * CP04: RBAC & Policy Engine
+ */
+
+import {
+  Directive,
+  Input,
+  TemplateRef,
+  ViewContainerRef,
+  OnChanges,
+} from '@angular/core';
+import { RbacService } from './service';
+
+
+// ============================================================================
+// *appPermission - Structural Directive cho permission-based rendering
+// ============================================================================
+
+@Directive({
+  selector: '[appPermission]',
+})
+export class AppPermissionDirective implements OnChanges {
+  private _hasPermission = false;
+
+  constructor(
+    private rbac: RbacService,
+    private templateRef: TemplateRef<any>,
+    private viewContainer: ViewContainerRef,
+  ) {}
+
+  @Input() set appPermission(permission: string) {
+    // Parse "resource.action" format
+    const parts = permission.split('.');
+    if (parts.length === 2) {
+      this._hasPermission = this.rbac.hasPermission(parts[0], parts[1]);
+    } else {
+      this._hasPermission = false;
+    }
+    this._updateView();
+  }
+
+  ngOnChanges(): void {
+    this._updateView();
+  }
+
+  private _updateView(): void {
+    if (this._hasPermission) {
+      this.viewContainer.createEmbeddedView(this.templateRef);
+    } else {
+      this.viewContainer.clear();
+    }
+  }
+}
+
+
+// ============================================================================
+// *appRole - Structural Directive cho role-based rendering
+// ============================================================================
+
+@Directive({
+  selector: '[appRole]',
+})
+export class AppRoleDirective implements OnChanges {
+  private _hasRole = false;
+
+  constructor(
+    private rbac: RbacService,
+    private templateRef: TemplateRef<any>,
+    private viewContainer: ViewContainerRef,
+  ) {}
+
+  @Input() set appRole(role: string) {
+    this._hasRole = this.rbac.hasRole(role);
+    this._updateView();
+  }
+
+  ngOnChanges(): void {
+    this._updateView();
+  }
+
+  private _updateView(): void {
+    if (this._hasRole) {
+      this.viewContainer.createEmbeddedView(this.templateRef);
+    } else {
+      this.viewContainer.clear();
+    }
+  }
+}

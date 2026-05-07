@@ -1,0 +1,75 @@
+/**
+ * RBAC Guards - Route Guards cho Angular.
+ *
+ * Module này cung cấp canActivate/canMatch guards cho role và permission.
+ *
+ * CP04: RBAC & Policy Engine
+ */
+
+import { Injectable } from '@angular/core';
+import {
+  CanActivate,
+  CanMatch,
+  Route,
+  Router,
+  UrlSegment,
+} from '@angular/router';
+import { RbacService } from './service';
+
+
+// ============================================================================
+// RoleGuard - CanActivate Guard
+// ============================================================================
+
+@Injectable({
+  providedIn: 'root',
+})
+export class RoleGuard implements CanActivate, CanMatch {
+  constructor(
+    private rbac: RbacService,
+    private router: Router,
+  ) {}
+
+  canActivate(_route: Route, _segments: UrlSegment[]): boolean {
+    const requiredRole = _route.data?.['requiredRole'] as string;
+    if (!requiredRole) return true;
+
+    if (this.rbac.hasRole(requiredRole)) {
+      return true;
+    }
+
+    this.router.navigate(['/unauthorized']);
+    return false;
+  }
+
+  canMatch(_route: Route, _segments: UrlSegment[]): boolean {
+    return this.canActivate(_route, _segments);
+  }
+}
+
+
+// ============================================================================
+// PermissionGuard - CanActivate Guard
+// ============================================================================
+
+@Injectable({
+  providedIn: 'root',
+})
+export class PermissionGuard implements CanActivate {
+  constructor(
+    private rbac: RbacService,
+    private router: Router,
+  ) {}
+
+  canActivate(_route: Route, _segments: UrlSegment[]): boolean {
+    const permission = _route.data?.['requiredPermission'] as { resource: string; action: string };
+    if (!permission) return true;
+
+    if (this.rbac.hasPermission(permission.resource, permission.action)) {
+      return true;
+    }
+
+    this.router.navigate(['/unauthorized']);
+    return false;
+  }
+}

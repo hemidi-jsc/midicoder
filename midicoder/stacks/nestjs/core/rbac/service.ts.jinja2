@@ -1,0 +1,124 @@
+/**
+ * RBAC Service - Role-Based Access Control Service cho NestJS.
+ *
+ * Module này cung cấp RBAC service cho authorization checks.
+ * Hỗ trợ permission checks, role checks, và policy evaluation.
+ *
+ * CP04: RBAC & Policy Engine
+ */
+
+import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Role, Policy, PolicyEvaluationResult } from 'midicoder/contracts/rbac_models';
+
+
+// ============================================================================
+// RBAC Service
+// ============================================================================
+
+@Injectable()
+export class RBACService {
+  private _roles: Map<string, Role>;
+  private _policies: Map<string, Policy>;
+
+  constructor(roles: Map<string, Role>, policies: Policy[]) {
+    this._roles = roles;
+    this._policies = new Map();
+    for (const policy of policies) {
+      this._policies.set(policy.id, policy);
+    }
+  }
+
+  /**
+   * Đăng ký policy mới.
+   */
+  registerPolicy(policy: Policy): void {
+    this._policies.set(policy.id, policy);
+  }
+
+  /**
+   * Check nếu user có role (bao gồm hierarchical inheritance).
+   */
+  checkRole(userRoles: string[], requiredRole: string): boolean {
+    for (const roleName of userRoles) {
+      if (this._roleInherits(roleName, requiredRole)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Check nếu user có permission cho resource:action.
+   */
+  checkPermission(userRoles: string[], resource: string, action: string): boolean {
+    const permissionId = `${resource.toLowerCase()}.${action}`;
+    const allPermissions = this._gatherPermissions(userRoles);
+    return allPermissions.has(permissionId);
+  }
+
+  /**
+   * Evaluate policy với context.
+   */
+  evaluatePolicy(policyId: string, context: Record<string, any>): PolicyEvaluationResult | null {
+    const policy = this._policies.get(policyId);
+    if (!policy) return null;
+    return policy.evaluate(context);
+  }
+
+  /**
+   * Lấy tất cả permissions của user.
+   */
+  getUserPermissions(userRoles: string[]): Set<string> {
+    return this._gatherPermissions(userRoles);
+  }
+
+  /**
+   * Check nếu role có target role qua inheritance.
+   */
+  private _roleInherits(roleName: string, target: string): boolean {
+    if (roleName === target) return true;
+    const role = this._roles.get(roleName);
+    if (!role) return false;
+    for (const parentName of role.parent_roles) {
+      if (this._roleInherits(parentName, target)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Thu thập tất cả permissions từ user roles.
+   */
+  private _gatherPermissions(userRoles: string[]): Set<string> {
+    const permissions = new Set<string>();
+    for (const roleName of userRoles) {
+      const role = this._roles.get(roleName);
+      if (role) {
+        const roleMap = new Map<string, Role>(this._roles);
+        const allPerms = role.get_all_permissions(roleMap);
+        for (const perm of allPerms) {
+          permissions.add(perm);
+        }
+      }
+    }
+    return permissions;
+  }
+}
+
+
+// ============================================================================
+// Policy Service
+// ============================================================================
+
+@Injectable()
+export class PolicyService {
+  constructor(private rbacService: RBACService) {}
+
+  /**
+   * Check nếu action được allow bởi policy.
+   */
+  async checkAllowed(policyId: string, context: Record<string, any>): Promise<boolean> {
+    const result = this.rbacService.evaluatePolicy(policyId, context);
+    if (!result) return false;
+    return result.allowed;
+  }
+}

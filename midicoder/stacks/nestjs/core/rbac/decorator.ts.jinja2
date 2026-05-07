@@ -1,0 +1,102 @@
+/**
+ * RBAC Decorators - Decorators cho NestJS Controllers.
+ *
+ * Module này cung cấp decorators @Roles(), @Permission(), @Policy().
+ *
+ * CP04: RBAC & Policy Engine
+ */
+
+import { SetMetadata, applyDecorators } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+
+export const ROLES_KEY = 'rbac:roles';
+export const PERMISSION_KEY = 'rbac:permission';
+export const POLICY_KEY = 'rbac:policy';
+
+
+// ============================================================================
+// @Roles(...) - Decorator cho role-based authorization
+// ============================================================================
+
+/**
+ * Decorator để yêu cầu user có một trong các roles specified.
+ *
+ * Ví dụ:
+ *   @Roles('admin', 'manager')
+ *   @Get('admin/users')
+ *   listUsers() { ... }
+ */
+export function Roles(...roles: string[]) {
+  return SetMetadata(ROLES_KEY, roles);
+}
+
+
+// ============================================================================
+// @Permission(...) - Decorator cho permission-based authorization
+// ============================================================================
+
+/**
+ * Decorator để yêu cầu user có permission cho resource:action.
+ *
+ * Ví dụ:
+ *   @Permission('order', 'create')
+ *   @Post('orders')
+ *   createOrder(@Body() dto: CreateOrderDto) { ... }
+ */
+export function Permission(resource: string, action: string) {
+  return SetMetadata(PERMISSION_KEY, { resource, action });
+}
+
+
+// ============================================================================
+// @Policy(...) - Decorator cho policy-based authorization
+// ============================================================================
+
+/**
+ * Decorator để yêu cầu policy evaluation pass.
+ *
+ * Ví dụ:
+ *   @Policy('order:owner-only')
+ *   @Get('orders/:id')
+ *   getOrder(@Param('id') id: string) { ... }
+ */
+export function Policy(policyId: string) {
+  return SetMetadata(POLICY_KEY, policyId);
+}
+
+
+// ============================================================================
+// @RequireAuth(...) - Combined decorator
+// ============================================================================
+
+/**
+ * Combined decorator để apply nhiều decorators cùng lúc.
+ *
+ * Ví dụ:
+ *   @RequireAuth({ roles: ['admin'], permission: ['order', 'delete'] })
+ *   @Delete('orders/:id')
+ *   deleteOrder(@Param('id') id: string) { ... }
+ */
+export interface AuthOptions {
+  roles?: string[];
+  permission?: [string, string];
+  policy?: string;
+}
+
+export function RequireAuth(options: AuthOptions) {
+  const decorators: any[] = [];
+
+  if (options.roles && options.roles.length > 0) {
+    decorators.push(Roles(...options.roles));
+  }
+
+  if (options.permission) {
+    decorators.push(Permission(options.permission[0], options.permission[1]));
+  }
+
+  if (options.policy) {
+    decorators.push(Policy(options.policy));
+  }
+
+  return applyDecorators(...decorators);
+}

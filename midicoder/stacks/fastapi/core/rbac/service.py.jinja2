@@ -1,0 +1,158 @@
+"""
+RBAC Service - Role-Based Access Control Service cho FastAPI.
+
+Module này cung cấp RBAC service cho authorization checks.
+Hỗ trợ permission checks, role checks, và policy evaluation.
+
+CP04: RBAC & Policy Engine
+"""
+
+from typing import Any, Optional
+
+from fastapi import HTTPException, status
+
+from midicoder.contracts.rbac_models import (
+    Policy,
+    PolicyEffect,
+    PolicyEvaluationResult,
+    Role,
+)
+
+
+# ============================================================================
+# RBAC Service
+# ============================================================================
+
+
+class RBACService:
+    """
+    RBAC Service - Service cho authorization checks.
+
+    Service này cung cấp methods cho:
+    - Permission checks
+    - Role checks
+    - Role hierarchy (inheritance)
+    - Policy evaluation
+    """
+
+    def __init__(self, roles: dict[str, Role]):
+        """
+        Initialize RBACService.
+
+        Args:
+            roles: Mapping từ role name -> Role object
+        """
+        self._roles = roles
+        self._policies: dict[str, Policy] = {}
+
+    def register_policy(self, policy: Policy) -> None:
+        """
+        Đăng ký policy mới.
+
+        Args:
+            policy: Policy để đăng ký
+        """
+        self._policies[policy.id] = policy
+
+    def check_role(self, user_roles: list[str], required_role: str) -> bool:
+        """
+        Check nếu user có role (bao gồm hierarchical inheritance).
+
+        Args:
+            user_roles: Danh sách roles của user
+            required_role: Role cần kiểm tra
+
+        Returns:
+            True nếu user có role (trực tiếp hoặc qua inheritance)
+        """
+        for role_name in user_roles:
+            if self._role_inherits(role_name, required_role):
+                return True
+        return False
+
+    def check_permission(
+        self, user_roles: list[str], resource: str, action: str
+    ) -> bool:
+        """
+        Check nếu user có permission cho resource:action.
+
+        Args:
+            user_roles: Danh sách roles của user
+            resource: Resource name (ví dụ: "Order")
+            action: Action name (ví dụ: "create")
+
+        Returns:
+            True nếu user có permission
+        """
+        permission_id = f"{resource.lower()}.{action}"
+        all_permissions = self._gather_permissions(user_roles)
+        return permission_id in all_permissions
+
+    def evaluate_policy(
+        self, policy_id: str, context: dict[str, Any]
+    ) -> Optional[PolicyEvaluationResult]:
+        """
+        Evaluate policy với context.
+
+        Args:
+            policy_id: Policy ID để evaluate
+            context: Context cho evaluation
+
+        Returns:
+            PolicyEvaluationResult hoặc None nếu policy không tồn tại
+        """
+        policy = self._policies.get(policy_id)
+        if policy is None:
+            return None
+        return policy.evaluate(context)
+
+    def _role_inherits(self, role_name: str, target: str) -> bool:
+        """Check nếu role có target role qua inheritance."""
+        if role_name == target:
+            return True
+        role = self._roles.get(role_name)
+        if role is None:
+            return False
+        for parent_name in role.parent_roles:
+            if self._role_inherits(parent_name, target):
+                return True
+        return False
+
+    def _gather_permissions(self, user_roles: list[str]) -> set[str]:
+        """Thu thập tất cả permissions từ user roles (bao gồm inheritance)."""
+        permissions: set[str] = set()
+        for role_name in user_roles:
+            role = self._roles.get(role_name)
+            if role:
+                parent_roles = {name: r for name, r in self._roles.items()}
+                permissions.update(role.get_all_permissions(parent_roles))
+        return permissions
+
+
+# ============================================================================
+# Global RBAC Service Instance
+# ============================================================================
+
+
+_rbac_service: Optional[RBACService] = None
+
+
+def init_rbac_service(roles: dict[str, Role], policies: list[Policy]) -> None:
+    """
+    Initialize global RBAC service.
+
+    Args:
+        roles: Mapping từ role name -> Role object
+        policies: Danh sách policies
+    """
+    global _rbac_service
+    _rbac_service = RBACService(roles)
+    for policy in policies:
+        _rbac_service.register_policy(policy)
+
+
+def get_rbac_service() -> RBACService:
+    """Dependency để get RBAC service."""
+    if _rbac_service is None:
+        raise RuntimeError("RBACService chưa được initialize")
+    return _rbac_service

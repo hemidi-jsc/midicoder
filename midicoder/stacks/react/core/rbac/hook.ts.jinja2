@@ -1,0 +1,130 @@
+/**
+ * RBAC Hook - Custom React Hook cho authorization.
+ *
+ * Module này cung cấp useRbac() hook cho role/permission checks.
+ *
+ * Ví dụ sử dụng:
+ *   const { hasRole, hasPermission, userRoles } = useRbac();
+ *   if (hasRole('admin')) { ... }
+ *
+ * CP04: RBAC & Policy Engine
+ */
+
+import { useContext, createContext } from 'react';
+
+export interface RBACRole {
+  id: string;
+  name: string;
+  permissions: string[];
+  parent_roles?: string[];
+}
+
+export interface RBACContextType {
+  roles: RBACRole[];
+  userRoles: string[];
+  hasRole: (requiredRole: string) => boolean;
+  hasPermission: (resource: string, action: string) => boolean;
+  getUserPermissions: () => string[];
+}
+
+// Default context
+const RBACContext = createContext<RBACContextType>({
+  roles: [],
+  userRoles: [],
+  hasRole: () => false,
+  hasPermission: () => false,
+  getUserPermissions: () => [],
+});
+
+/**
+ * Provider component cho RBAC Context.
+ */
+export const RBACProvider = RBACContext.Provider;
+
+/**
+ * Custom Hook cho RBAC checks.
+ *
+ * Sử dụng:
+ *   const { hasRole, hasPermission } = useRbac();
+ */
+export function useRbac(): RBACContextType {
+  return useContext(RBACContext);
+}
+
+/**
+ * Hook chuyên dụng cho role check.
+ */
+export function useHasRole(requiredRole: string): boolean {
+  const { hasRole } = useRbac();
+  return hasRole(requiredRole);
+}
+
+/**
+ * Hook chuyên dụng cho permission check.
+ */
+export function useHasPermission(resource: string, action: string): boolean {
+  const { hasPermission } = useRbac();
+  return hasPermission(resource, action);
+}
+
+/**
+ * Helper: build RBAC context value từ raw data.
+ */
+export function buildRBACContext(
+  roles: RBACRole[],
+  userRoles: string[],
+): RBACContextType {
+  const roleMap = new Map(roles.map(r => [r.id, r]));
+
+  const checkRole = (requiredRole: string): boolean => {
+    for (const roleName of userRoles) {
+      if (roleInherits(roleName, requiredRole)) return true;
+    }
+    return false;
+  };
+
+  const checkPermission = (resource: string, action: string): boolean => {
+    const permissionId = `${resource.toLowerCase()}.${action}`;
+    const allPerms = gatherPermissions(userRoles);
+    return allPerms.has(permissionId);
+  };
+
+  const gatherPermissions = (roles: string[]): Set<string> => {
+    const perms = new Set<string>();
+    for (const roleName of roles) {
+      const p = getPermissionsRecursive(roleName);
+      for (const perm of p) perms.add(perm);
+    }
+    return perms;
+  };
+
+  const getPermissionsRecursive = (roleName: string): string[] => {
+    const role = roleMap.get(roleName);
+    if (!role) return [];
+    const perms = [...role.permissions];
+    if (role.parent_roles) {
+      for (const parentName of role.parent_roles) {
+        perms.push(...getPermissionsRecursive(parentName));
+      }
+    }
+    return perms;
+  };
+
+  const roleInherits = (roleName: string, target: string): boolean => {
+    if (roleName === target) return true;
+    const role = roleMap.get(roleName);
+    if (!role || !role.parent_roles) return false;
+    for (const parentName of role.parent_roles) {
+      if (roleInherits(parentName, target)) return true;
+    }
+    return false;
+  };
+
+  return {
+    roles,
+    userRoles,
+    hasRole: checkRole,
+    hasPermission: checkPermission,
+    getUserPermissions: () => Array.from(gatherPermissions(userRoles)),
+  };
+}

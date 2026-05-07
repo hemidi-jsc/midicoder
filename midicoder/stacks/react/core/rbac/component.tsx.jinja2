@@ -1,0 +1,182 @@
+/**
+ * RBAC Components - React Components cho authorization.
+ *
+ * Module này cung cấp ProtectedRoute và WithPermission components.
+ *
+ * Ví dụ sử dụng:
+ *   <ProtectedRoute role="admin">
+ *     <AdminPanel />
+ *   </ProtectedRoute>
+ *
+ *   <WithPermission resource="order" action="create">
+ *     <CreateOrderButton />
+ *   </WithPermission>
+ *
+ * CP04: RBAC & Policy Engine
+ */
+
+import React from 'react';
+import { Navigate } from 'react-router-dom';
+import { useRbac } from './hook';
+
+
+// ============================================================================
+// ProtectedRoute - Component cho role-based route protection
+// ============================================================================
+
+interface ProtectedRouteProps {
+  /** Role yêu cầu để truy cập */
+  role?: string;
+  /** Permission yêu cầu để truy cập */
+  resource?: string;
+  action?: string;
+  /** Route redirect nếu không có permission */
+  redirectTo?: string;
+  children: React.ReactNode;
+}
+
+/**
+ * Component để bảo vệ route bằng role hoặc permission.
+ *
+ * Ví dụ:
+ *   <ProtectedRoute role="admin">
+ *     <AdminDashboard />
+ *   </ProtectedRoute>
+ *
+ *   <ProtectedRoute resource="order" action="create">
+ *     <CreateOrder />
+ *   </ProtectedRoute>
+ */
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
+  role,
+  resource,
+  action,
+  redirectTo = '/unauthorized',
+  children,
+}) => {
+  const { hasRole, hasPermission } = useRbac();
+
+  // Check role-based protection
+  if (role && !hasRole(role)) {
+    return <Navigate to={redirectTo} replace />;
+  }
+
+  // Check permission-based protection
+  if (resource && action && !hasPermission(resource, action)) {
+    return <Navigate to={redirectTo} replace />;
+  }
+
+  return <>{children}</>;
+};
+
+
+// ============================================================================
+// WithPermission - HOC wrapper cho permission-based rendering
+// ============================================================================
+
+interface WithPermissionProps {
+  /** Resource name */
+  resource: string;
+  /** Action name */
+  action: string;
+  /** Children sẽ được render nếu user có permission */
+  children: React.ReactNode;
+  /** Component fallback nếu không có permission (mặc định: không render gì) */
+  fallback?: React.ReactNode;
+}
+
+/**
+ * HOC để render children chỉ khi user có permission.
+ *
+ * Ví dụ:
+ *   <WithPermission resource="order" action="delete">
+ *     <DeleteButton />
+ *   </WithPermission>
+ */
+export const WithPermission: React.FC<WithPermissionProps> = ({
+  resource,
+  action,
+  children,
+  fallback = null,
+}) => {
+  const { hasPermission } = useRbac();
+
+  if (!hasPermission(resource, action)) {
+    return <>{fallback}</>;
+  }
+
+  return <>{children}</>;
+};
+
+
+// ============================================================================
+// WithRole - HOC wrapper cho role-based rendering
+// ============================================================================
+
+interface WithRoleProps {
+  /** Role yêu cầu */
+  role: string;
+  /** Children sẽ được render nếu user có role */
+  children: React.ReactNode;
+  /** Component fallback nếu không có role */
+  fallback?: React.ReactNode;
+}
+
+/**
+ * HOC để render children chỉ khi user có role.
+ *
+ * Ví dụ:
+ *   <WithRole role="admin">
+ *     <AdminSettings />
+ *   </WithRole>
+ */
+export const WithRole: React.FC<WithRoleProps> = ({
+  role,
+  children,
+  fallback = null,
+}) => {
+  const { hasRole } = useRbac();
+
+  if (!hasRole(role)) {
+    return <>{fallback}</>;
+  }
+
+  return <>{children}</>;
+};
+
+
+// ============================================================================
+// RequireAuth - Route wrapper cho React Router
+// ============================================================================
+
+interface RequireAuthProps {
+  /** Role yêu cầu */
+  role?: string;
+  children: React.ReactNode;
+}
+
+/**
+ * Wrapper component cho React Router routes.
+ *
+ * Ví dụ:
+ *   <Route
+ *     path="/admin/*"
+ *     element={
+ *       <RequireAuth role="admin">
+ *         <AdminLayout />
+ *       </RequireAuth>
+ *     }
+ *   />
+ */
+export const RequireAuth: React.FC<RequireAuthProps> = ({
+  role,
+  children,
+}) => {
+  const { hasRole } = useRbac();
+
+  if (role && !hasRole(role)) {
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  return <>{children}</>;
+};

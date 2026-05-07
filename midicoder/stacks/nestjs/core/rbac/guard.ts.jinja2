@@ -1,0 +1,138 @@
+/**
+ * RBAC Guards - CanActivate Guards cho NestJS.
+ *
+ * Module này cung cấp Guards cho role-based và policy-based authorization.
+ *
+ * CP04: RBAC & Policy Engine
+ */
+
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  ForbiddenException,
+  SetMetadata,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { RBACService } from './service';
+
+export const ROLES_KEY = 'roles';
+export const POLICY_KEY = 'policy';
+export const PERMISSION_KEY = 'permission';
+
+export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
+export const Policy = (policyId: string) => SetMetadata(POLICY_KEY, policyId);
+export const Permission = (resource: string, action: string) =>
+  SetMetadata(PERMISSION_KEY, { resource, action });
+
+
+// ============================================================================
+// RolesGuard - CanActivate cho role-based authorization
+// ============================================================================
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(
+    private reflector: Reflector,
+    private rbacService: RBACService,
+  ) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const requiredRoles = this.reflector.getAllAndOverride<string[]>(
+      ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!requiredRoles || requiredRoles.length === 0) {
+      return true;
+    }
+
+    const request = context.switchToHttp().getRequest();
+    const user = request.user;
+    if (!user || !user.roles) {
+      throw new ForbiddenException('User không có role');
+    }
+
+    for (const role of requiredRoles) {
+      if (this.rbacService.checkRole(user.roles, role)) {
+        return true;
+      }
+    }
+
+    throw new ForbiddenException(`Yêu cầu một trong các roles: ${requiredRoles.join(', ')}`);
+  }
+}
+
+
+// ============================================================================
+// PermissionGuard - CanActivate cho permission-based authorization
+// ============================================================================
+
+@Injectable()
+export class PermissionGuard implements CanActivate {
+  constructor(
+    private reflector: Reflector,
+    private rbacService: RBACService,
+  ) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const permission = this.reflector.getAllAndOverride<{ resource: string; action: string }>(
+      PERMISSION_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!permission) {
+      return true;
+    }
+
+    const request = context.switchToHttp().getRequest();
+    const user = request.user;
+    if (!user || !user.roles) {
+      throw new ForbiddenException('User không có role');
+    }
+
+    if (!this.rbacService.checkPermission(user.roles, permission.resource, permission.action)) {
+      throw new ForbiddenException(`Yêu cầu permission: ${permission.resource}:${permission.action}`);
+    }
+
+    return true;
+  }
+}
+
+
+// ============================================================================
+// PolicyGuard - CanActivate cho policy-based authorization
+// ============================================================================
+
+@Injectable()
+export class PolicyGuard implements CanActivate {
+  constructor(
+    private reflector: Reflector,
+    private rbacService: RBACService,
+  ) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const policyId = this.reflector.getAllAndOverride<string>(
+      POLICY_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!policyId) {
+      return true;
+    }
+
+    const request = context.switchToHttp().getRequest();
+    const context_data: Record<string, any> = {
+      user: request.user,
+      resource: request.body,
+      env: { ip: request.ip },
+    };
+
+    const result = this.rbacService.evaluatePolicy(policyId, context_data);
+    if (!result || !result.allowed) {
+      throw new ForbiddenException(`Policy '${policyId}' đã reject`);
+    }
+
+    return true;
+  }
+}

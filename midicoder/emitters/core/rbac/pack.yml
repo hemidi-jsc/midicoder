@@ -1,0 +1,29 @@
+pack:
+  id: "CP04"
+  name: "RBAC & Policy Engine"
+  internal_id: "cp4-rbac"
+  version: "1.0.0"
+  phase: "P0"
+  category: "security"
+  status: "stable"
+  depends_on: ["CP02", "CP03"]
+  definitions_count: 4
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-CP04"
+    range: "MDC-CP04-001 to MDC-CP04-008"
+  capabilities_provided:
+    - authorize_role
+    - check_policy
+  capabilities:
+    - id: "role_check"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "policy_evaluation"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "role_hierarchy"
+      emitter: "fastapi, nestjs"
+    - id: "abac_engine"
+      emitter: "fastapi, nestjs"
+  frontend_integration:
+    angular: ["RbacService", "RoleGuard", "PermissionDirective"]
+    react: ["useAuth", "ProtectedRoute", "WithPermission"]

@@ -746,9 +746,7 @@ class MidicoderErrorManager:
         ErrorCode.CP12_NOTIFICATION_RATE_LIMIT_EXCEEDED: "Vượt quá rate limit cho notification channel.",
         ErrorCode.CP12_NOTIFICATION_INVALID_RECIPIENT: "Người nhận notification không hợp lệ.",
 
-        # CP08 Database Errors
-        ErrorCode.CP08_EMPTY_NAME: "Tên không được để trống (datasource/column/table/index).",
-        ErrorCode.CP08_INVALID_COLUMN_TYPE: "Column type không hợp lệ.",
+        # CP
         ErrorCode.CP08_DUPLICATE_COLUMN_NAME: "Column name trùng lặp trong model.",
         ErrorCode.CP08_DUPLICATE_TABLE_NAME: "Table name trùng lặp trong collection.",
         ErrorCode.CP08_DSL_PARSE_ERROR: "Lỗi parsing DSL YAML cho database configuration.",
@@ -914,11 +912,6 @@ class MidicoderErrorManager:
             "Kiểm tra network connectivity",
         ],
 
-        # CP14 Audit Trail & Compliance Errors
-        ErrorCode.CP14_AUDIT_EMPTY_ID: [
-            "Kiểm tra ID của audit_rule hoặc compliance_control không được để trống",
-            "Đảm bảo field 'id' có giá trị duy nhất",
-        ],
         ErrorCode.CP14_AUDIT_INVALID_ACTION: [
             "Kiểm tra action type nằm trong catalog: CREATE, UPDATE, DELETE, READ, LOGIN, LOGOUT, EXPORT, APPROVE, REJECT, CUSTOM",
             "Xem documentation cho supported audit actions",
