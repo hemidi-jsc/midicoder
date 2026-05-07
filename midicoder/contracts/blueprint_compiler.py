@@ -23,6 +23,8 @@ import yaml
 from midicoder.errors import MidicoderError, ErrorCode
 from midicoder.emitters.core.tenant.models import TenantConfig, TenantMode
 from .artifact import ArtifactBase, ArtifactMetadata
+from .composition.models import CompositionPlan
+from .composition.engine import CompositionEngine
 
 
 # ============================================================================
@@ -1231,6 +1233,72 @@ class BlueprintCompiler:
             Danh sách regulatory overlay IDs
         """
         return [ro.id for ro in blueprint.regulatory_overlays]
+
+    def compose(
+        self,
+        blueprint: CompiledBlueprint,
+        mir: Any | None = None,
+        target_stacks: list[str] | None = None,
+    ) -> CompositionPlan:
+        """
+        Compose blueprint thành CompositionPlan.
+
+        Method này là entry point của CP51 — nhận CompiledBlueprint
+        và generate CompositionPlan hoàn chỉnh cho stage 'code gen'.
+
+        Process:
+        1. Validate blueprint is_valid()
+        2. Resolve CP dependencies (topological sort theo phase order)
+        3. Resolve DP dependencies (sau CP deps)
+        4. Resolve RX dependencies (sau DP deps)
+        5. Build pack resolution (query taxonomy + load pack.yml)
+        6. Build template mapping (MIR op_type → template)
+        7. Build stack bindings
+        8. Validate templates exist
+        9. Return CompositionPlan
+
+        Args:
+            blueprint: CompiledBlueprint đã compile và validate
+            mir: MIR object (tùy chọn, để extract operations)
+            target_stacks: Danh sách target stacks (default: từ blueprint)
+
+        Returns:
+            CompositionPlan hoàn chỉnh
+        """
+        # Extract MIR operations nếu có
+        mir_operations: list[str] | None = None
+        if mir is not None and hasattr(mir, "operations"):
+            mir_operations = [
+                op.op_type for op in mir.operations
+                if hasattr(op, "op_type")
+            ]
+
+        # Tạo composition engine
+        engine = CompositionEngine(self._taxonomy_registry)
+
+        # Compose
+        return engine.compose(
+            blueprint=blueprint,
+            mir_operations=mir_operations,
+            target_stacks=target_stacks,
+        )
+
+    def _get_taxonomy_registry(self) -> Any:
+        """
+        Lấy TaxonomyRegistry từ taxonomy data.
+
+        Returns:
+            TaxonomyRegistry instance
+        """
+        from industry.registry import TaxonomyRegistry
+        return TaxonomyRegistry(self.taxonomy)
+
+    @property
+    def _taxonomy_registry(self) -> Any:
+        """Lazy load TaxonomyRegistry."""
+        if not hasattr(self, "_registry"):
+            self._registry = self._get_taxonomy_registry()
+        return self._registry
 
 
 # Export classes

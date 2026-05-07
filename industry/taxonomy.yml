@@ -942,7 +942,7 @@ core_packs:
       - compose_blueprint
       - validate_blueprint
     category: compiler
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP52
     name: Invariant Gate Framework
@@ -1971,9 +1971,9 @@ statistics:
       P3: 3
       P4: 4
     by_status:
-      stable: 6
+      stable: 7
       developing: 11
-      planned: 36
+      planned: 35
       experimental: 2
   domain_packs:
     total: 36
