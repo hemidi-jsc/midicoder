@@ -84,67 +84,6 @@ def write_llm_config(root: Path) -> dict[str, str] | None:
     return {"base_url": str(base_url), "model": str(model)}
 
 
-def write_minimal_contracts(root: Path, version: str) -> Path:
-    contracts_root = root / ".midicoder" / "versions" / version / "contracts"
-    (contracts_root / "domain").mkdir(parents=True, exist_ok=True)
-    (contracts_root / "app").mkdir(parents=True, exist_ok=True)
-    (contracts_root / "api").mkdir(parents=True, exist_ok=True)
-    (contracts_root / "rules").mkdir(parents=True, exist_ok=True)
-
-    (contracts_root / "domain" / "entities.yaml").write_text(
-        """
-entities:
-  - id: Order
-    fields:
-      - name: id
-        type: uuid
-""".lstrip(),
-        encoding="utf-8",
-    )
-    (contracts_root / "domain" / "errors.yaml").write_text(
-        """
-errors:
-  - id: OrderNotFound
-    category: business
-""".lstrip(),
-        encoding="utf-8",
-    )
-    (contracts_root / "app" / "commands.yaml").write_text(
-        """
-commands:
-  - id: CreateOrder
-    input:
-      - name: order_id
-        type: uuid
-    fetches: []
-    guards: []
-    effects: []
-    errors: []
-    returns: []
-""".lstrip(),
-        encoding="utf-8",
-    )
-    (contracts_root / "api" / "http.yaml").write_text(
-        """
-routes:
-  - method: POST
-    path: /orders
-    command: CreateOrder
-""".lstrip(),
-        encoding="utf-8",
-    )
-    (contracts_root / "rules" / "rules.yaml").write_text(
-        """
-rules:
-  - id: RuleCreateOrder
-    applies_to: CreateOrder
-    rows: []
-""".lstrip(),
-        encoding="utf-8",
-    )
-    return contracts_root
-
-
 def assert_cli_success(result: subprocess.CompletedProcess[str]) -> None:
     assert result.returncode == 0, (
         "CLI failed with code "
