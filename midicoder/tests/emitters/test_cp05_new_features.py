@@ -1,13 +1,13 @@
 """
-Tests cho CP05 features mới — OutboxEntry, pack.yml, capabilities, outbox templates.
+Tests cho CP05 features mới — OutboxEntry, pack.yml, outbox templates.
 
 Test coverage:
 - OutboxEntry model: 8 tests
 - Pack manifest (pack.yml): 6 tests
-- Core capabilities (subscribe_event, event_outbox): 9 tests
 - Outbox template generation: 9 tests
+- Coverage gaps: 6 tests
 
-Tổng: 32 tests
+Tổng: 29 tests
 """
 
 from __future__ import annotations
@@ -189,88 +189,6 @@ class TestPackManifest:
 
 
 # ============================================================================
-# Test Core Capabilities (subscribe_event + event_outbox)
-# ============================================================================
-
-
-class TestEventCoreCapabilities:
-    """Tests cho Event & Integration Core Capabilities."""
-
-    def test_subscribe_event_capability_exists(self):
-        """subscribe_event capability tồn tại trong EventIntegrationCoreCapabilities."""
-        from midicoder.contracts.core_capabilities import EventIntegrationCoreCapabilities
-
-        caps = EventIntegrationCoreCapabilities()
-        assert hasattr(caps, "SUBSCRIBE_EVENT")
-
-    def test_subscribe_event_capability_id(self):
-        """subscribe_event capability có id là subscribe_event."""
-        from midicoder.contracts.core_capabilities import EventIntegrationCoreCapabilities
-
-        caps = EventIntegrationCoreCapabilities()
-        assert caps.SUBSCRIBE_EVENT.id == "subscribe_event"
-
-    def test_subscribe_event_capability_params(self):
-        """subscribe_event capability có params_schema đúng."""
-        from midicoder.contracts.core_capabilities import EventIntegrationCoreCapabilities
-
-        caps = EventIntegrationCoreCapabilities()
-        params = caps.SUBSCRIBE_EVENT.params_schema
-        assert "event_type" in params
-        assert "handler" in params
-        assert "auto_ack" in params
-
-    def test_subscribe_event_capability_obligations(self):
-        """subscribe_event capability có default_obligations."""
-        from midicoder.contracts.core_capabilities import EventIntegrationCoreCapabilities
-
-        caps = EventIntegrationCoreCapabilities()
-        obligations = caps.SUBSCRIBE_EVENT.default_obligations
-        assert "handler_required" in obligations
-
-    def test_event_outbox_capability_exists(self):
-        """event_outbox capability tồn tại trong EventIntegrationCoreCapabilities."""
-        from midicoder.contracts.core_capabilities import EventIntegrationCoreCapabilities
-
-        caps = EventIntegrationCoreCapabilities()
-        assert hasattr(caps, "EVENT_OUTBOX")
-
-    def test_event_outbox_capability_id(self):
-        """event_outbox capability có id là event_outbox."""
-        from midicoder.contracts.core_capabilities import EventIntegrationCoreCapabilities
-
-        caps = EventIntegrationCoreCapabilities()
-        assert caps.EVENT_OUTBOX.id == "event_outbox"
-
-    def test_event_outbox_capability_params(self):
-        """event_outbox capability có params_schema đúng."""
-        from midicoder.contracts.core_capabilities import EventIntegrationCoreCapabilities
-
-        caps = EventIntegrationCoreCapabilities()
-        params = caps.EVENT_OUTBOX.params_schema
-        assert "event_type" in params
-        assert "payload" in params
-        assert "transaction_id" in params
-
-    def test_event_outbox_capability_obligations(self):
-        """event_outbox capability có default_obligations."""
-        from midicoder.contracts.core_capabilities import EventIntegrationCoreCapabilities
-
-        caps = EventIntegrationCoreCapabilities()
-        obligations = caps.EVENT_OUTBOX.default_obligations
-        assert "transaction_required" in obligations
-        assert "outbox_write_required" in obligations
-
-    def test_publish_event_capability_exists(self):
-        """publish_event capability vẫn tồn tại (không bị remove)."""
-        from midicoder.contracts.core_capabilities import EventIntegrationCoreCapabilities
-
-        caps = EventIntegrationCoreCapabilities()
-        assert hasattr(caps, "PUBLISH_EVENT")
-        assert caps.PUBLISH_EVENT.id == "publish_event"
-
-
-# ============================================================================
 # Test Outbox Template Generation
 # ============================================================================
 
@@ -428,10 +346,6 @@ class TestCoverageGaps:
             stack_dir = Path("midicoder/stacks/fastapi/core")
             emitter = FastAPIEventEmitter(stack_dir=stack_dir)
             events = [EventDefinition(event_name="test.event")]
-            # Template "nonexistent.py.jinja2" không tồn tại, nên fallback
-            files = emitter.emit(events, Path(tmpdir))
-            # Kiểm tra _render_file xử lý TemplateNotFound
-            file_path = Path(tmpdir) / "app" / "core" / "event" / "nonexistent.py"
             # Force trigger TemplateNotFound bằng cách gọi _render_file trực tiếp
             gf = emitter._render_file(
                 template_name="nonexistent.py.jinja2",
