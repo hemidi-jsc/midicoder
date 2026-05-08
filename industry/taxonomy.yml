@@ -973,7 +973,7 @@ core_packs:
       - bridge_domain_pack
       - runtime_invoke
     category: compiler
-    status: planned
+    status: stable
     version: 1.0.0
 domain_packs:
   - id: DP01
