@@ -132,6 +132,14 @@ class FastAPIEventEmitter:
             context=context,
         ))
 
+        # Generate event_outbox.py
+        files.append(self._render_file(
+            template_name="event_outbox.py.jinja2",
+            filename="event_outbox.py",
+            output_dir=event_dir,
+            context=context,
+        ))
+
         # Generate __init__.py
         files.append(self._render_file(
             template_name="__init__.py.jinja2",

@@ -1,0 +1,176 @@
+"""
+Event Outbox Module.
+
+Module này implement Outbox pattern để đảm bảo reliable event delivery.
+Event được ghi vào outbox table cùng transaction với business data,
+sau đó có consumer polling và publish các event chưa gửi.
+
+Author: Midicoder CE
+Auto-generated - do not edit manually
+"""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class OutboxEntry(BaseModel):
+    """
+    Outbox entry model.
+
+    Attributes:
+        id: Unique identifier cho outbox entry
+        event_name: Tên của event
+        payload: Payload data của event
+        topic: Topic để route event
+        transaction_id: Transaction ID để link với business transaction
+        status: Trạng thái (pending, published, failed)
+        visibility_delay: Delay giây trước khi có thể publish
+        created_at: Thời điểm tạo entry
+        published_at: Thời điểm publish thành công
+        retries: Số lần retry đã thực hiện
+        error: Error message nếu publish thất bại
+    """
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    event_name: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    topic: str = "default"
+    transaction_id: str | None = None
+    status: str = "pending"
+    visibility_delay: int = 0
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    published_at: str | None = None
+    retries: int = 0
+    error: str | None = None
+
+
+class EventOutbox:
+    """
+    Event Outbox service.
+
+    Service này quản lý việc ghi event vào outbox và publish
+    các event đã committed ra message broker.
+
+    Usage:
+        outbox = EventOutbox()
+        await outbox.write("order.created", {"order_id": "123"})
+        await outbox.publish_pending()
+    """
+
+    def __init__(self) -> None:
+        """Khởi tạo EventOutbox với in-memory storage."""
+        self._entries: list[OutboxEntry] = []
+        self._published: set[str] = set()
+
+    async def write(
+        self,
+        event_name: str,
+        payload: dict[str, Any] | None = None,
+        topic: str = "default",
+        transaction_id: str | None = None,
+        visibility_delay: int = 0,
+    ) -> OutboxEntry:
+        """
+        Ghi event vào outbox.
+
+        Args:
+            event_name: Tên của event
+            payload: Payload data
+            topic: Topic để route event
+            transaction_id: Transaction ID
+            visibility_delay: Delay trước khi publish
+
+        Returns:
+            OutboxEntry đã tạo
+        """
+        entry = OutboxEntry(
+            event_name=event_name,
+            payload=payload or {},
+            topic=topic,
+            transaction_id=transaction_id,
+            visibility_delay=visibility_delay,
+        )
+        self._entries.append(entry)
+        return entry
+
+    async def publish_pending(self) -> list[str]:
+        """
+        Publish các event pending trong outbox.
+
+        Returns:
+            List of entry IDs đã publish thành công
+        """
+        now = datetime.now(timezone.utc)
+        published_ids: list[str] = []
+
+        for entry in self._entries:
+            if entry.id in self._published:
+                continue
+
+            if entry.status != "pending":
+                continue
+
+            # Check visibility delay
+            if entry.visibility_delay > 0:
+                created = datetime.fromisoformat(entry.created_at)
+                if (now - created).total_seconds() < entry.visibility_delay:
+                    continue
+
+            # Simulate publishing
+            entry.status = "published"
+            entry.published_at = now.isoformat()
+            self._published.add(entry.id)
+            published_ids.append(entry.id)
+
+        return published_ids
+
+    async def get_pending(self) -> list[OutboxEntry]:
+        """Trả về danh sách entries còn pending."""
+        return [e for e in self._entries if e.status == "pending"]
+
+    async def get_failed(self) -> list[OutboxEntry]:
+        """Trả về danh sách entries đã thất bại."""
+        return [e for e in self._entries if e.status == "failed"]
+
+    async def retry_failed(self, max_retries: int = 3) -> list[str]:
+        """
+        Retry các entries đã thất bại.
+
+        Args:
+            max_retries: Số lần retry tối đa
+
+        Returns:
+            List of entry IDs đã retry thành công
+        """
+        now = datetime.now(timezone.utc)
+        retried: list[str] = []
+
+        for entry in self._entries:
+            if entry.status == "failed" and entry.retries < max_retries:
+                entry.status = "pending"
+                entry.retries += 1
+                entry.error = None
+                retried.append(entry.id)
+
+        return retried
+
+    def get_stats(self) -> dict[str, int]:
+        """Trả về thống kê outbox."""
+        return {
+            "total": len(self._entries),
+            "pending": sum(1 for e in self._entries if e.status == "pending"),
+            "published": sum(1 for e in self._entries if e.status == "published"),
+            "failed": sum(1 for e in self._entries if e.status == "failed"),
+        }
+
+
+# Singleton instance
+event_outbox = EventOutbox()

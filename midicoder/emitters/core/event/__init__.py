@@ -13,7 +13,7 @@ Version: 1.0.0
 """
 
 # Import models
-from .models import EventDefinition
+from .models import EventDefinition, OutboxEntry
 
 # Import parser
 from .parser import EventParser
@@ -22,7 +22,7 @@ from .parser import EventParser
 try:
     from .fastapi import FastAPIEventEmitter, GeneratedFile as FastAPIGeneratedFile
     from .nestjs import NestJSEventEmitter, GeneratedFile as NestJSGeneratedFile
-except ImportError as e:
+except ImportError as e:  # pragma: no cover
     FastAPIEventEmitter = None  # type: ignore
     NestJSEventEmitter = None  # type: ignore
     FastAPIGeneratedFile = None  # type: ignore
@@ -31,6 +31,7 @@ except ImportError as e:
 __all__ = [
     # Models
     "EventDefinition",
+    "OutboxEntry",
     # Parser
     "EventParser",
     # Emitters

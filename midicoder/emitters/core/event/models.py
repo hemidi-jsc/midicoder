@@ -97,9 +97,91 @@ class EventDefinition:
 
 
 # ============================================================================
+# OutboxEntry Model
+# ============================================================================
+
+
+@dataclass
+class OutboxEntry:
+    """
+    Outbox entry cho reliable event delivery (Outbox pattern).
+
+    OutboxEntry đại diện cho một event đã được ghi vào outbox table
+    nhưng chưa được publish. Pattern này đảm bảo event không bị mất
+    khi database transaction commit thành công nhưng publish thất bại.
+
+    Attributes:
+        event_name: Tên của event
+        payload: Payload data của event
+        topic: Topic để route event
+        transaction_id: Transaction ID để link với business transaction
+        visibility_delay: Delay (giây) trước khi event có thể được publish
+        status: Trạng thái của outbox entry (pending, published, failed)
+        created_at: Thời điểm tạo entry
+        published_at: Thời điểm publish thành công (optional)
+    """
+
+    event_name: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    topic: str = "default"
+    transaction_id: str | None = None
+    visibility_delay: int = 0
+    status: str = "pending"
+    retries: int = 0
+    created_at: str | None = None
+    published_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Chuyển OutboxEntry sang dictionary.
+
+        Returns:
+            Dictionary representation của OutboxEntry
+        """
+        result: dict[str, Any] = {
+            "event_name": self.event_name,
+            "payload": self.payload,
+            "topic": self.topic,
+            "status": self.status,
+        }
+        if self.transaction_id is not None:
+            result["transaction_id"] = self.transaction_id
+        if self.visibility_delay > 0:
+            result["visibility_delay"] = self.visibility_delay
+        if self.created_at is not None:
+            result["created_at"] = self.created_at
+        if self.published_at is not None:
+            result["published_at"] = self.published_at
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "OutboxEntry":
+        """
+        Tạo OutboxEntry từ dictionary.
+
+        Args:
+            data: Dictionary chứa outbox entry data
+
+        Returns:
+            OutboxEntry instance
+        """
+        return cls(
+            event_name=data.get("event_name", ""),
+            payload=data.get("payload", {}),
+            topic=data.get("topic", "default"),
+            transaction_id=data.get("transaction_id"),
+            visibility_delay=data.get("visibility_delay", 0),
+            status=data.get("status", "pending"),
+            created_at=data.get("created_at"),
+            published_at=data.get("published_at"),
+        )
+
+
+# ============================================================================
 # Exports
 # ============================================================================
 
 __all__ = [
     "EventDefinition",
+    "OutboxEntry",
 ]

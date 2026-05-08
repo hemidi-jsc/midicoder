@@ -234,7 +234,7 @@ class TestFastAPIEventEmitter:
         """Emitter khởi tạo với stack_dir."""
         from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
 
-        stack_dir = Path("midicoder/stacks/fastapi/templates")
+        stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
         assert emitter.stack_dir == stack_dir
 
@@ -250,7 +250,7 @@ class TestFastAPIEventEmitter:
         from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
         from midicoder.emitters.core.event.models import EventDefinition
 
-        stack_dir = Path("midicoder/stacks/fastapi/templates")
+        stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
         events = [EventDefinition(event_name="test.event", topic="test")]
         files = emitter.emit(events, Path("/tmp/output"))
@@ -263,7 +263,7 @@ class TestFastAPIEventEmitter:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            stack_dir = Path("midicoder/stacks/fastapi/templates")
+            stack_dir = Path("midicoder/stacks/fastapi/core")
             emitter = FastAPIEventEmitter(stack_dir=stack_dir)
             events = [EventDefinition(event_name="test.event", topic="test")]
             files = emitter.emit(events, Path(tmpdir))
@@ -278,7 +278,7 @@ class TestFastAPIEventEmitter:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            stack_dir = Path("midicoder/stacks/fastapi/templates")
+            stack_dir = Path("midicoder/stacks/fastapi/core")
             emitter = FastAPIEventEmitter(stack_dir=stack_dir)
             events = [EventDefinition(event_name="test.event", topic="test")]
             files = emitter.emit(events, Path(tmpdir))
@@ -292,7 +292,7 @@ class TestFastAPIEventEmitter:
         from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
         from midicoder.emitters.core.event.models import EventDefinition
 
-        stack_dir = Path("midicoder/stacks/fastapi/templates")
+        stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
         events = [
             EventDefinition(event_name="order.created", topic="orders"),
@@ -306,7 +306,7 @@ class TestFastAPIEventEmitter:
         from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
         from midicoder.emitters.core.event.models import EventDefinition
 
-        stack_dir = Path("midicoder/stacks/fastapi/templates")
+        stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
         events = [
             EventDefinition(event_name="test.event", topic="test", tenant_id="tenant_1")
@@ -319,7 +319,7 @@ class TestFastAPIEventEmitter:
         from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
         from midicoder.emitters.core.event.models import EventDefinition
 
-        stack_dir = Path("midicoder/stacks/fastapi/templates")
+        stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
         events = [
             EventDefinition(
@@ -336,7 +336,7 @@ class TestFastAPIEventEmitter:
         from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
         from midicoder.emitters.core.event.models import EventDefinition
 
-        stack_dir = Path("midicoder/stacks/fastapi/templates")
+        stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
         events = [EventDefinition(event_name="test.event", topic="test")]
         files = emitter.emit(events, Path("/tmp/output"))
@@ -350,7 +350,7 @@ class TestFastAPIEventEmitter:
         """Emit với empty list trả về base files."""
         from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
 
-        stack_dir = Path("midicoder/stacks/fastapi/templates")
+        stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
         files = emitter.emit([], Path("/tmp/output"))
         # Should return files (base event bus, publisher, subscriber)
@@ -369,7 +369,7 @@ class TestNestJSEventEmitter:
         """Emitter khởi tạo với stack_dir."""
         from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
 
-        stack_dir = Path("midicoder/stacks/nestjs/templates")
+        stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
         assert emitter.stack_dir == stack_dir
 
@@ -385,7 +385,7 @@ class TestNestJSEventEmitter:
         from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
         from midicoder.emitters.core.event.models import EventDefinition
 
-        stack_dir = Path("midicoder/stacks/nestjs/templates")
+        stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
         events = [EventDefinition(event_name="test.event", topic="test")]
         files = emitter.emit(events, Path("/tmp/output"))
@@ -398,7 +398,7 @@ class TestNestJSEventEmitter:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            stack_dir = Path("midicoder/stacks/nestjs/templates")
+            stack_dir = Path("midicoder/stacks/nestjs/core")
             emitter = NestJSEventEmitter(stack_dir=stack_dir)
             events = [EventDefinition(event_name="test.event", topic="test")]
             files = emitter.emit(events, Path(tmpdir))
@@ -412,7 +412,7 @@ class TestNestJSEventEmitter:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            stack_dir = Path("midicoder/stacks/nestjs/templates")
+            stack_dir = Path("midicoder/stacks/nestjs/core")
             emitter = NestJSEventEmitter(stack_dir=stack_dir)
             events = [EventDefinition(event_name="test.event", topic="test")]
             files = emitter.emit(events, Path(tmpdir))
@@ -425,7 +425,7 @@ class TestNestJSEventEmitter:
         from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
         from midicoder.emitters.core.event.models import EventDefinition
 
-        stack_dir = Path("midicoder/stacks/nestjs/templates")
+        stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
         events = [
             EventDefinition(event_name="order.created", topic="orders"),
@@ -439,7 +439,7 @@ class TestNestJSEventEmitter:
         from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
         from midicoder.emitters.core.event.models import EventDefinition
 
-        stack_dir = Path("midicoder/stacks/nestjs/templates")
+        stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
         events = [
             EventDefinition(event_name="test.event", topic="test", tenant_id="tenant_1")
@@ -452,7 +452,7 @@ class TestNestJSEventEmitter:
         from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
         from midicoder.emitters.core.event.models import EventDefinition
 
-        stack_dir = Path("midicoder/stacks/nestjs/templates")
+        stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
         events = [EventDefinition(event_name="test.event", topic="test")]
         files = emitter.emit(events, Path("/tmp/output"))
@@ -489,7 +489,7 @@ class TestEventIntegration:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            stack_dir = Path("midicoder/stacks/fastapi/templates")
+            stack_dir = Path("midicoder/stacks/fastapi/core")
             emitter = BackendFastAPIEmitter(stack_dir=stack_dir)
             mir = MIR(operations=[], data_flows=[], effect_flows=[], boundaries=[])
             mir.metadata["events"] = [
@@ -508,7 +508,7 @@ class TestEventIntegration:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            stack_dir = Path("midicoder/stacks/fastapi/templates")
+            stack_dir = Path("midicoder/stacks/fastapi/core")
             emitter = BackendFastAPIEmitter(stack_dir=stack_dir)
             mir = MIR(operations=[], data_flows=[], effect_flows=[], boundaries=[])
             # No events in metadata - verify emit() does not call _emit_events
@@ -531,7 +531,7 @@ class TestEventIntegration:
         events = parser.parse(yaml_data)
         assert len(events) == 2
 
-        stack_dir = Path("midicoder/stacks/fastapi/templates")
+        stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
         files = emitter.emit(events, Path("/tmp/output"))
         assert len(files) >= 1

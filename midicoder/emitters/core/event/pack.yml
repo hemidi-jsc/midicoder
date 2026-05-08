@@ -1,0 +1,18 @@
+pack:
+  id: "CP05"
+  name: "Event-Driven Architecture Generator"
+  internal_id: "cp5-event-driven"
+  version: "1.0.0"
+  phase: "P1"
+  category: "architecture"
+  status: "stable"
+  depends_on: ["CP01"]
+  definitions_count: 4
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-EVT"
+    range: "MDC-EVT-001 to MDC-EVT-010"
+  capabilities_provided:
+    - publish_event
+    - subscribe_event
+    - event_outbox

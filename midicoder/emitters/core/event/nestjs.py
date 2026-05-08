@@ -133,6 +133,14 @@ class NestJSEventEmitter:
             context=context,
         ))
 
+        # Generate event-outbox.service.ts
+        files.append(self._render_file(
+            template_name="event-outbox.service.ts.jinja2",
+            filename="event-outbox.service.ts",
+            output_dir=event_dir,
+            context=context,
+        ))
+
         # Generate event.module.ts
         files.append(self._render_file(
             template_name="event.module.ts.jinja2",

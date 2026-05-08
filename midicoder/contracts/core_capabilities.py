@@ -848,6 +848,89 @@ class EventIntegrationCoreCapabilities:
         )
     )
 
+    # SoT: SUBSCRIBE_EVENT = "subscribe_event"
+    SUBSCRIBE_EVENT: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="subscribe_event",
+            name="Subscribe Event",
+            description="Đăng ký listener để xử lý event khi được publish",
+            params_schema={
+                "event_type": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Event type để subscribe (vd: 'OrderCreated')"
+                },
+                "handler": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Handler function/service name"
+                },
+                "group": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Consumer group cho load balancing"
+                },
+                "auto_ack": {
+                    "type": "boolean",
+                    "required": False,
+                    "default": True,
+                    "description": "Tự động acknowledge sau khi xử lý"
+                },
+                "retry_policy": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Retry policy khi handler thất bại"
+                }
+            },
+            default_obligations=[
+                "handler_required",
+                "error_handler_required"
+            ],
+            read_access=["event_bus"],
+            write_access=[],
+            effects=["event_subscribed"]
+        )
+    )
+
+    # SoT: EVENT_OUTBOX = "event_outbox"
+    EVENT_OUTBOX: CoreCapability = field(
+        default_factory=lambda: CoreCapability(
+            id="event_outbox",
+            name="Event Outbox",
+            description="Ghi event vào outbox table để đảm bảo reliable delivery (Saga/Outbox pattern)",
+            params_schema={
+                "event_type": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Event type"
+                },
+                "payload": {
+                    "type": "object",
+                    "required": True,
+                    "description": "Event payload data"
+                },
+                "transaction_id": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Transaction ID để link với business transaction"
+                },
+                "visibility_delay": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 0,
+                    "description": "Delay (giây) trước khi event có thể được publish"
+                }
+            },
+            default_obligations=[
+                "transaction_required",
+                "outbox_write_required"
+            ],
+            read_access=[],
+            write_access=["database", "event_outbox"],
+            effects=["event_outbox_written"]
+        )
+    )
+
 
 @dataclass
 class AuditObservabilityCoreCapabilities:
