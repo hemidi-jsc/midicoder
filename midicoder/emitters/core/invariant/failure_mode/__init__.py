@@ -1,4 +1,4 @@
-from midicoder.contracts.invariants.failure_mode.checks import (
+from midicoder.emitters.core.invariant.failure_mode.checks import (
     check_error_handler_present,
     check_retry_policy,
     check_timeout_configured,

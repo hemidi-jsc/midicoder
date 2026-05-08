@@ -1,0 +1,46 @@
+/**
+ * Custom hook cho Invariant validation trong React.
+ * Auto-generated bởi Midicoder CP52 - Không sửa tay.
+ */
+
+import { useState, useCallback } from 'react';
+
+export interface InvariantResult {
+  passed: boolean;
+  violations: string[];
+}
+
+/**
+ * Hook để validate invariants trong React components.
+ *
+ * @returns Object với validate function và result state
+ */
+export function useInvariant() {
+  const [result, setResult] = useState<InvariantResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  /**
+   * Validate invariant với context.
+   */
+  const validate = useCallback(async (context: Record<string, any>) => {
+    setIsLoading(true);
+    try {
+      // Invariant validation sẽ được gọi đến backend API
+      const response = await fetch('/api/invariants/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(context),
+      });
+      const data = await response.json();
+      setResult(data);
+      return data.passed;
+    } catch (error) {
+      setResult({ passed: false, violations: [String(error)] });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  return { validate, result, isLoading };
+}

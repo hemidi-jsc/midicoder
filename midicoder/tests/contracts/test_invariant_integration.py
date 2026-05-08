@@ -13,7 +13,7 @@ Version: 1.0.0
 
 import pytest
 from dataclasses import dataclass
-from midicoder.contracts.invariants.models import (
+from midicoder.emitters.core.invariant.models import (
     InvariantCategory,
     EnforcementMode,
     InvariantDefinition,
@@ -21,9 +21,9 @@ from midicoder.contracts.invariants.models import (
     InvariantReport,
     RuntimeGuardSpec,
 )
-from midicoder.contracts.invariants.registry import InvariantRegistry
-from midicoder.contracts.invariants.manager import InvariantManager
-from midicoder.contracts.invariants.runtime.emitter import RuntimeGuardEmitter
+from midicoder.emitters.core.invariant.registry import InvariantRegistry
+from midicoder.emitters.core.invariant.manager import InvariantManager
+from midicoder.emitters.core.invariant.runtime.emitter import RuntimeGuardEmitter
 
 
 @dataclass
@@ -228,7 +228,7 @@ class TestDomainInvariants:
 
     def test_banking_double_entry_balanced(self) -> None:
         """Kiểm tra double entry balanced."""
-        from midicoder.contracts.invariants.domain.banking import double_entry_balance_invariant
+        from midicoder.emitters.core.invariant.domain.banking import double_entry_balance_invariant
         entries = [
             {"type": "debit", "amount": 100},
             {"type": "credit", "amount": 100},
@@ -238,7 +238,7 @@ class TestDomainInvariants:
 
     def test_banking_double_entry_imbalanced(self) -> None:
         """Kiểm tra double entry imbalanced."""
-        from midicoder.contracts.invariants.domain.banking import double_entry_balance_invariant
+        from midicoder.emitters.core.invariant.domain.banking import double_entry_balance_invariant
         entries = [
             {"type": "debit", "amount": 100},
             {"type": "credit", "amount": 50},
@@ -249,28 +249,28 @@ class TestDomainInvariants:
 
     def test_banking_kyc_verified(self) -> None:
         """Kiểm tra KYC verified."""
-        from midicoder.contracts.invariants.domain.banking import kyc_before_transaction_invariant
+        from midicoder.emitters.core.invariant.domain.banking import kyc_before_transaction_invariant
         account = {"id": "ACC-001", "kyc_verified": True}
         result = kyc_before_transaction_invariant(account)
         assert result.valid is True
 
     def test_banking_kyc_not_verified(self) -> None:
         """Kiểm tra KYC not verified."""
-        from midicoder.contracts.invariants.domain.banking import kyc_before_transaction_invariant
+        from midicoder.emitters.core.invariant.domain.banking import kyc_before_transaction_invariant
         account = {"id": "ACC-001", "kyc_verified": False}
         result = kyc_before_transaction_invariant(account)
         assert result.valid is False
 
     def test_healthcare_phi_encrypted(self) -> None:
         """Kiểm tra PHI encrypted."""
-        from midicoder.contracts.invariants.domain.healthcare import phi_encryption_invariant
+        from midicoder.emitters.core.invariant.domain.healthcare import phi_encryption_invariant
         entity = {"ssn_enc": "ENC:123"}
         result = phi_encryption_invariant(entity)
         assert result.valid is True
 
     def test_healthcare_phi_not_encrypted(self) -> None:
         """Kiểm tra PHI not encrypted."""
-        from midicoder.contracts.invariants.domain.healthcare import phi_encryption_invariant
+        from midicoder.emitters.core.invariant.domain.healthcare import phi_encryption_invariant
         entity = {"ssn_enc": "PLAIN:123"}
         result = phi_encryption_invariant(entity)
         assert result.valid is False

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from midicoder.contracts.invariants.models import RuntimeGuardSpec
+from midicoder.emitters.core.invariant.models import RuntimeGuardSpec
 
 
 # ============================================================================

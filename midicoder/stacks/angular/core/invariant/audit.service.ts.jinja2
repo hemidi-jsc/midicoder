@@ -1,0 +1,45 @@
+/**
+ * Audit logging service cho Angular frontend.
+ * Auto-generated bởi Midicoder CP52 - Không sửa tay.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+
+export interface AuditLogEntry {
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  actor_id: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
+}
+
+@Injectable({
+  providedIn: 'root',
+})
+export class AuditLoggerService {
+  constructor(private http: HttpClient) {}
+
+  /**
+   * Log audit event đến backend.
+   */
+  log(entry: AuditLogEntry): void {
+    // Audit log sẽ được gửi đến backend API
+    this.http.post('/api/audit/log', entry).subscribe();
+  }
+
+  /**
+   * Log PHI access action.
+   */
+  logPhiAccess(entityId: string, field: string): void {
+    this.log({
+      action: 'PHI_ACCESS',
+      entity_type: 'PHI_RECORD',
+      entity_id: entityId,
+      actor_id: 'current_user',
+      timestamp: new Date().toISOString(),
+      metadata: { field },
+    });
+  }
+}

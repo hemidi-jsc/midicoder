@@ -14,7 +14,7 @@ Version: 1.0.0
 """
 
 import pytest
-from midicoder.contracts.invariants.models import (
+from midicoder.emitters.core.invariant.models import (
     InvariantCategory,
     EnforcementMode,
     InvariantSeverity,

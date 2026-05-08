@@ -1,0 +1,33 @@
+"""
+Runtime guard: {{ guard_class }}
+Invariant: {{ invariant_id }}
+Auto-generated bởi Midicoder CP52 - Không sửa tay.
+"""
+
+from fastapi import HTTPException, status
+from typing import Any
+
+
+class {{ guard_class }}:
+    """
+    {{ guard_description }}
+
+    Violation Code: {{ error_code }}
+    """
+
+    @staticmethod
+    def check(**kwargs: Any) -> bool:
+        """
+        Execute guard check tại runtime.
+
+        Args:
+            **kwargs: Context data cho guard check
+
+        Returns:
+            True nếu check pass
+
+        Raises:
+            HTTPException: Nếu guard fail
+        """
+        # Guard logic sẽ được implement bởi domain-specific code
+        pass

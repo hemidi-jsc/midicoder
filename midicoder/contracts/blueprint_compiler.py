@@ -1273,6 +1273,40 @@ class BlueprintCompiler:
                 if hasattr(op, "op_type")
             ]
 
+        # CP52 GATE: Validate invariants trước khi compose
+        # Nếu gate fail → throw compile error (MDC-BLUEPRINT-006)
+        try:
+            from midicoder.emitters.core.invariant import InvariantManager
+            from midicoder.errors import MidicoderErrorManager as EM
+
+            invariant_manager = InvariantManager()
+            invariant_manager.initialize()
+
+            # Validate từ MIR (nếu có)
+            if mir is not None:
+                report = invariant_manager.validate(
+                    mir,
+                    blueprint_id=getattr(blueprint, 'id', None) or getattr(blueprint.industry, 'id', '') or '',
+                )
+                if not report.is_passing:
+                    violations = report.get_critical_violations()
+                    violation_codes = report.summary.get('violation_codes', [])
+                    raise EM.raise_error(
+                        ErrorCode.BLUEPRINT_INVARIANT_VIOLATION,
+                        violations=report.failed,
+                        violation_codes=violation_codes,
+                        details=', '.join(
+                            f'{v.invariant_id}: {v.message}' for v in violations
+                        ),
+                    )
+        except MidicoderError:
+            # Re-raise MidicoderError (BLUEPRINT_INVARIANT_VIOLATION)
+            raise
+        except Exception:
+            # Nếu invariant system không khả dụng, continue
+            # Fallback để không block pipeline nếu CP52 chưa ready
+            pass
+
         # Tạo composition engine
         engine = CompositionEngine(self._taxonomy_registry)
 

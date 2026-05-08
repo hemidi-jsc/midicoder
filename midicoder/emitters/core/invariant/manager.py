@@ -20,16 +20,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from midicoder.contracts.invariants.models import (
+from midicoder.emitters.core.invariant.models import (
     InvariantCategory,
     InvariantDefinition,
     InvariantResult,
     InvariantReport,
 )
-from midicoder.contracts.invariants.registry import InvariantRegistry
-from midicoder.contracts.invariants.business.checks import register_business_invariants
-from midicoder.contracts.invariants.compliance.checks import register_compliance_invariants
-from midicoder.contracts.invariants.failure_mode.checks import register_failure_mode_invariants
+from midicoder.emitters.core.invariant.registry import InvariantRegistry
+from midicoder.emitters.core.invariant.business.checks import register_business_invariants
+from midicoder.emitters.core.invariant.compliance.checks import register_compliance_invariants
+from midicoder.emitters.core.invariant.failure_mode.checks import register_failure_mode_invariants
 
 if TYPE_CHECKING:
     from midicoder.contracts.graph import CapabilityGraph
@@ -162,77 +162,77 @@ class InvariantManager:
 
     def _check_entity_ref(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_entity_reference_integrity."""
-        from midicoder.contracts.invariants.business.checks import check_entity_reference_integrity
+        from midicoder.emitters.core.invariant.business.checks import check_entity_reference_integrity
         return check_entity_reference_integrity(graph)
 
     def _check_mutation_txn(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_mutation_transaction_scope."""
-        from midicoder.contracts.invariants.business.checks import check_mutation_transaction_scope
+        from midicoder.emitters.core.invariant.business.checks import check_mutation_transaction_scope
         return check_mutation_transaction_scope(graph)
 
     def _check_query_readonly(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_query_read_only."""
-        from midicoder.contracts.invariants.business.checks import check_query_read_only
+        from midicoder.emitters.core.invariant.business.checks import check_query_read_only
         return check_query_read_only(graph)
 
     def _check_event_consistency(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_event_consistency."""
-        from midicoder.contracts.invariants.business.checks import check_event_consistency
+        from midicoder.emitters.core.invariant.business.checks import check_event_consistency
         return check_event_consistency(graph)
 
     def _check_state_transition(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_state_machine_transition."""
-        from midicoder.contracts.invariants.business.checks import check_state_machine_transition
+        from midicoder.emitters.core.invariant.business.checks import check_state_machine_transition
         return check_state_machine_transition(graph)
 
     def _check_pii_encryption(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_pii_encryption."""
-        from midicoder.contracts.invariants.compliance.checks import check_pii_encryption
+        from midicoder.emitters.core.invariant.compliance.checks import check_pii_encryption
         return check_pii_encryption(graph)
 
     def _check_audit_trail(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_audit_trail."""
-        from midicoder.contracts.invariants.compliance.checks import check_audit_trail
+        from midicoder.emitters.core.invariant.compliance.checks import check_audit_trail
         return check_audit_trail(graph)
 
     def _check_data_retention(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_data_retention."""
-        from midicoder.contracts.invariants.compliance.checks import check_data_retention
+        from midicoder.emitters.core.invariant.compliance.checks import check_data_retention
         return check_data_retention(graph)
 
     def _check_tenant_isolation(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_tenant_isolation."""
-        from midicoder.contracts.invariants.compliance.checks import check_tenant_isolation
+        from midicoder.emitters.core.invariant.compliance.checks import check_tenant_isolation
         return check_tenant_isolation(graph)
 
     def _check_permission(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_permission_check."""
-        from midicoder.contracts.invariants.compliance.checks import check_permission_check
+        from midicoder.emitters.core.invariant.compliance.checks import check_permission_check
         return check_permission_check(graph)
 
     def _check_error_handler(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_error_handler_present."""
-        from midicoder.contracts.invariants.failure_mode.checks import check_error_handler_present
+        from midicoder.emitters.core.invariant.failure_mode.checks import check_error_handler_present
         return check_error_handler_present(graph)
 
     def _check_retry_policy(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_retry_policy."""
-        from midicoder.contracts.invariants.failure_mode.checks import check_retry_policy
+        from midicoder.emitters.core.invariant.failure_mode.checks import check_retry_policy
         return check_retry_policy(graph)
 
     def _check_timeout(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_timeout_configured."""
-        from midicoder.contracts.invariants.failure_mode.checks import check_timeout_configured
+        from midicoder.emitters.core.invariant.failure_mode.checks import check_timeout_configured
         return check_timeout_configured(graph)
 
     def _check_circuit_breaker(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_circuit_breaker."""
-        from midicoder.contracts.invariants.failure_mode.checks import check_circuit_breaker
+        from midicoder.emitters.core.invariant.failure_mode.checks import check_circuit_breaker
         return check_circuit_breaker(graph)
 
     def _check_compensation(self, graph: CapabilityGraph) -> list[InvariantResult]:
         """Wrapper cho check_compensation_defined."""
-        from midicoder.contracts.invariants.failure_mode.checks import check_compensation_defined
+        from midicoder.emitters.core.invariant.failure_mode.checks import check_compensation_defined
         return check_compensation_defined(graph)
 
     def get_invariant(self, invariant_id: str) -> InvariantDefinition:

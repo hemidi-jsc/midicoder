@@ -1,4 +1,4 @@
-from midicoder.contracts.invariants.business.checks import (
+from midicoder.emitters.core.invariant.business.checks import (
     check_entity_reference_integrity,
     check_mutation_transaction_scope,
     check_query_read_only,

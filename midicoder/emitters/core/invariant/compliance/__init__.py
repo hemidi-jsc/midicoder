@@ -1,4 +1,4 @@
-from midicoder.contracts.invariants.compliance.checks import (
+from midicoder.emitters.core.invariant.compliance.checks import (
     check_pii_encryption,
     check_audit_trail,
     check_data_retention,

@@ -1,0 +1,15 @@
+pack:
+  id: "CP52"
+  name: "Invariant Gate Framework"
+  internal_id: "cp52-invariant"
+  version: "1.0.0"
+  phase: "P0"
+  category: "compiler"
+  status: "developing"
+  depends_on: ["CP51"]
+  definitions_count: 3
+  obligations_count: 2
+  error_codes: { prefix: "INV", range: "INV001-INV015" }
+  capabilities_provided:
+    - enforce_invariant
+    - gate_check

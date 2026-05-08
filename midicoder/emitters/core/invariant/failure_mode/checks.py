@@ -15,13 +15,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from midicoder.contracts.invariants.models import (
+from midicoder.emitters.core.invariant.models import (
     InvariantCategory,
     EnforcementMode,
     InvariantDefinition,
     InvariantResult,
 )
-from midicoder.contracts.invariants.registry import InvariantRegistry
+from midicoder.emitters.core.invariant.registry import InvariantRegistry
 
 if TYPE_CHECKING:
     from midicoder.contracts.graph import CapabilityGraph

@@ -957,7 +957,7 @@ core_packs:
       - enforce_invariant
       - gate_check
     category: compiler
-    status: planned
+    status: developing
     version: 1.0.0
   - id: CP53
     name: Domain Pack Runtime Bridge

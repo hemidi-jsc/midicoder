@@ -1,0 +1,24 @@
+/**
+ * Runtime guard cho Invariant Enforcement.
+ * Auto-generated bởi Midicoder CP52 - Không sửa tay.
+ */
+
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
+
+@Injectable()
+export class {{ guard_class || 'InvariantGuard' }} implements CanActivate {
+  /**
+   * Check invariant conditions trước khi activate route.
+   */
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+
+    // Invariant check sẽ được inject bởi CP52 runtime
+    return true;
+  }
+}

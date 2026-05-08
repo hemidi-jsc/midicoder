@@ -7,7 +7,7 @@ Các invariants cho từng domain:
 - insurance: Underwriting, Coverage, Claim Limits
 """
 
-from midicoder.contracts.invariants.domain.banking import (
+from midicoder.emitters.core.invariant.domain.banking import (
     double_entry_balance_invariant,
     transaction_immutability_invariant,
     reconciliation_mandatory_invariant,
@@ -15,13 +15,13 @@ from midicoder.contracts.invariants.domain.banking import (
     aml_screening_invariant,
 )
 
-from midicoder.contracts.invariants.domain.healthcare import (
+from midicoder.emitters.core.invariant.domain.healthcare import (
     phi_encryption_invariant,
     minimum_necessary_access_invariant,
     clinical_audit_trail_invariant,
 )
 
-from midicoder.contracts.invariants.domain.insurance import (
+from midicoder.emitters.core.invariant.domain.insurance import (
     underwriting_before_policy_invariant,
     claim_within_coverage_period_invariant,
     claim_amount_within_limit_invariant,

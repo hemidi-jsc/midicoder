@@ -11,7 +11,7 @@ import pytest
 from datetime import date
 from decimal import Decimal
 
-from midicoder.contracts.invariants.domain.insurance import (
+from midicoder.emitters.core.invariant.domain.insurance import (
     ValidationResult,
     underwriting_before_policy_invariant,
     claim_within_coverage_period_invariant,

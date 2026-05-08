@@ -1,0 +1,39 @@
+/**
+ * Compile-time gate pipe cho Invariant Enforcement.
+ * Auto-generated bởi Midicoder CP52 - Không sửa tay.
+ */
+
+import {
+  Injectable,
+  PipeTransform,
+  BadRequestException,
+  ArgumentMetadata,
+} from '@nestjs/common';
+
+export interface InvariantValidationResult {
+  passed: boolean;
+  violations: string[];
+}
+
+@Injectable()
+export class InvariantGatePipe implements PipeTransform<any, InvariantValidationResult> {
+  /**
+   * Transform và validate invariant conditions.
+   */
+  transform(value: any, metadata: ArgumentMetadata): InvariantValidationResult {
+    const result: InvariantValidationResult = {
+      passed: true,
+      violations: [],
+    };
+
+    if (!result.passed) {
+      throw new BadRequestException({
+        code: 'MDC-INV-002',
+        message: 'Invariant validation failed',
+        violations: result.violations,
+      });
+    }
+
+    return result;
+  }
+}

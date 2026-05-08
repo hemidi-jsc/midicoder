@@ -1,0 +1,30 @@
+/**
+ * Route guard cho Consent/Invariant compliance.
+ * Auto-generated bởi Midicoder CP52 - Không sửa tay.
+ */
+
+import { Injectable } from '@angular/core';
+import {
+  CanActivate,
+  ActivatedRouteSnapshot,
+  RouterStateSnapshot,
+  Router,
+} from '@angular/router';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class ConsentGuard implements CanActivate {
+  constructor(private router: Router) {}
+
+  /**
+   * Check consent/invariant trước khi activate route.
+   */
+  canActivate(
+    route: ActivatedRouteSnapshot,
+    state: RouterStateSnapshot
+  ): boolean {
+    // Consent check sẽ được inject bởi CP52 runtime
+    return true;
+  }
+}

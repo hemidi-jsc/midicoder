@@ -1,0 +1,65 @@
+/**
+ * Invariant Context cho React.
+ * Auto-generated bởi Midicoder CP52 - Không sửa tay.
+ */
+
+import React, { createContext, useContext, useState, ReactNode } from 'react';
+
+export interface InvariantContextState {
+  enabled: boolean;
+  violations: string[];
+  addViolation: (violation: string) => void;
+  clearViolations: () => void;
+  hasViolations: boolean;
+}
+
+const InvariantContext = createContext<InvariantContextState | undefined>(undefined);
+
+export interface InvariantProviderProps {
+  children: ReactNode;
+  initialEnabled?: boolean;
+}
+
+/**
+ * Provider cho Invariant Context.
+ */
+export function InvariantProvider({
+  children,
+  initialEnabled = true,
+}: InvariantProviderProps) {
+  const [enabled, setEnabled] = useState(initialEnabled);
+  const [violations, setViolations] = useState<string[]>([]);
+
+  const addViolation = (violation: string) => {
+    setViolations((prev) => [...prev, violation]);
+  };
+
+  const clearViolations = () => {
+    setViolations([]);
+  };
+
+  return (
+    <InvariantContext.Provider
+      value={{
+        enabled,
+        violations,
+        addViolation,
+        clearViolations,
+        hasViolations: violations.length > 0,
+      }}
+    >
+      {children}
+    </InvariantContext.Provider>
+  );
+}
+
+/**
+ * Hook để sử dụng Invariant Context.
+ */
+export function useInvariantContext(): InvariantContextState {
+  const context = useContext(InvariantContext);
+  if (context === undefined) {
+    throw new Error('useInvariantContext must be used within InvariantProvider');
+  }
+  return context;
+}
