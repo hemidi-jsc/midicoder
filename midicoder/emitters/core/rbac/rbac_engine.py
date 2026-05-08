@@ -16,8 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from midicoder.contracts.rbac_models import Role
-from midicoder.emitters.core.rbac.models import RBACConfig
+from midicoder.emitters.core.rbac.models import Role, RBACConfig
 
 
 class RBACEngine:

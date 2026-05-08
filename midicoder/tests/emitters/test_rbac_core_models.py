@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from midicoder.contracts.rbac_models import (
+from midicoder.emitters.core.rbac.models import (
     Policy,
     PolicyCondition,
     PolicyEffect,

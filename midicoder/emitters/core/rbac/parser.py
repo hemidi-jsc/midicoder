@@ -12,8 +12,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from midicoder.contracts.rbac_models import Role
-from midicoder.emitters.core.rbac.models import PolicyRule, RBACConfig
+from midicoder.emitters.core.rbac.models import Role, PolicyRule, RBACConfig
 
 
 class RBACParser:
@@ -21,7 +20,7 @@ class RBACParser:
     RBAC Parser — Parse DSL YAML nodes thành RBAC models.
 
     Parser chuyển đổi DSL YAML (Role nodes + Guard nodes) thành:
-    - Role objects (từ contracts.rbac_models)
+    - Role objects (từ emitters.core.rbac.models)
     - PolicyRule objects (từ emitters.core.rbac.models)
     - RBACConfig (tổng hợp roles + policies)
     """

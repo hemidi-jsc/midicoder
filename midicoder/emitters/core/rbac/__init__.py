@@ -14,6 +14,12 @@ Version: 1.0.0
 """
 
 from midicoder.emitters.core.rbac.models import (
+    Permission,
+    Role,
+    PolicyEffect,
+    PolicyCondition,
+    PolicyEvaluationResult,
+    Policy,
     PolicyContext,
     PolicyDecision,
     PolicyRule,
@@ -29,6 +35,12 @@ from midicoder.emitters.core.rbac.react import ReactRBACEmitter
 
 __all__ = [
     # Models
+    "Permission",
+    "Role",
+    "PolicyEffect",
+    "PolicyCondition",
+    "PolicyEvaluationResult",
+    "Policy",
     "PolicyContext",
     "PolicyDecision",
     "PolicyRule",

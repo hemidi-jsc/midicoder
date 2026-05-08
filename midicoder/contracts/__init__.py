@@ -6,7 +6,6 @@ Module này định nghĩa các contract chuẩn cho artifacts trong pipeline:
 - MIR (Intermediate Representation): Implementation truth typed
 - Surface/Patch Plan: Map capabilities → runtime surfaces → delivery plan
 - Blueprint Compiler (CP51): Compile blueprints → CompositionPlan
-- RBAC models: Role, Policy cho authorization
 
 Tất cả artifacts được thiết kế để:
 1. Deterministic: Same input → same output (hashable)
@@ -68,12 +67,6 @@ from .composition.models import (
 )
 from .composition.resolver import PackResolver
 from .composition.engine import CompositionEngine
-from .rbac_models import (
-    Role,
-    Policy,
-    PolicyEffect,
-    PolicyEvaluationResult,
-)
 
 __all__ = [
     # Artifact base
@@ -125,10 +118,4 @@ __all__ = [
     "CompositionPlan",
     "PackResolver",
     "CompositionEngine",
-
-    # RBAC
-    "Role",
-    "Policy",
-    "PolicyEffect",
-    "PolicyEvaluationResult",
 ]

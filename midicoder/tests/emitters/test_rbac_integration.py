@@ -14,8 +14,8 @@ import pytest
 from pathlib import Path
 import tempfile
 
-from midicoder.contracts.rbac_models import Role, Policy, PolicyEffect
 from midicoder.emitters.core.rbac.models import (
+    Role, Policy, PolicyEffect,
     PolicyContext,
     PolicyDecision,
     PolicyRule,

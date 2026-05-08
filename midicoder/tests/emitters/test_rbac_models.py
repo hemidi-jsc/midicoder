@@ -200,7 +200,7 @@ class TestRBACConfig:
 
     def test_create_config_with_roles_and_policies(self) -> None:
         """Tạo config với roles và policies."""
-        from midicoder.contracts.rbac_models import Role, Policy, PolicyEffect
+        from midicoder.emitters.core.rbac.models import Role, Policy, PolicyEffect
 
         config = RBACConfig(
             roles=[Role(name="admin")],

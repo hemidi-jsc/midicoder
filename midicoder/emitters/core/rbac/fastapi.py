@@ -254,9 +254,8 @@ class RBACService:
         try:
             from midicoder.emitters.core.rbac.policy_engine import PolicyEngine
             from midicoder.emitters.core.rbac.models import (
-                PolicyContext, PolicyRule, RBACConfig,
+                PolicyContext, PolicyRule, RBACConfig, Role,
             )
-            from midicoder.contracts.rbac_models import Role
 
             # Xay config tu registered data
             roles = [
