@@ -435,6 +435,15 @@ class ErrorCode(str, Enum):
     CP14_AUDIT_HASH_VERIFICATION_FAILED = "MDC-CP14-010"
 
 
+
+    # =========================================================================
+    # CP53: Domain Pack Runtime Bridge Errors
+    # =========================================================================
+    CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
+    CP53_DP_NOT_REGISTERED = "MDC-CP53-002"
+    CP53_DUPLICATE_DP_ID = "MDC-CP53-003"
+    CP53_INVALID_BINDING_ID = "MDC-CP53-004"
+    CP53_INVOKER_CONFIG_EMPTY = "MDC-CP53-005"
 class ExitCode(Enum):
     """
     Exit codes cho CLI commands.
@@ -776,6 +785,11 @@ class MidicoderErrorManager:
         ErrorCode.CP14_AUDIT_CONTROL_INVALID_TYPE: "Control type không hợp lệ.",
         ErrorCode.CP14_AUDIT_CONTROL_INVALID_ENFORCEMENT: "Enforcement level không hợp lệ.",
         ErrorCode.CP14_AUDIT_HASH_VERIFICATION_FAILED: "Xác minh hash integrity thất bại.",
+        ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
+        ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",
+        ErrorCode.CP53_DUPLICATE_DP_ID: "Domain pack ID trung lap.",
+        ErrorCode.CP53_INVALID_BINDING_ID: "Binding ID khong hop le.",
+        ErrorCode.CP53_INVOKER_CONFIG_EMPTY: "RuntimeInvoker cau hinh rong.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {

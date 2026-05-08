@@ -60,7 +60,7 @@ class TestTaxonomyRegistryQuery:
 
     def test_find_stable_core_packs(self):
         stable = self.registry.find_packs(pack_type="core_pack", status="stable")
-        assert len(stable) == 5  # CP01, CP03, CP04, CP05, CP12
+        assert len(stable) == 10  # CP01, CP02, CP03, CP04, CP05, CP07, CP12, CP14, CP51, CP53
 
     def test_find_p0_core_packs(self):
         p0 = self.registry.find_packs(pack_type="core_pack", phase="P0")
@@ -168,9 +168,9 @@ class TestTaxonomyRegistryStatus:
         assert not self.registry.is_valid_transition("deprecated", "stable")
 
     def test_validate_pack_status_valid(self):
-        issues = self.registry.validate_pack_status("CP02", "stable")
-        # CP02 is "developing", transitioning to "stable" is valid
-        # But CP02 depends on CP01 which is "stable" - so no planned dependency issue
+        issues = self.registry.validate_pack_status("CP06", "stable")
+        # CP06 is "developing", transitioning to "stable" is valid
+        # But CP06 depends on CP01 which is "stable" - so no planned dependency issue
         assert len(issues) == 0
 
     def test_validate_pack_status_invalid_transition(self):

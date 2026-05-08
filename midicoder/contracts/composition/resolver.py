@@ -206,6 +206,7 @@ class PackResolver:
             "CP19": "component",
             "CP20": "client",
             "CP23": "command",
+            "CP53": "domain_bridge",
         }
         return mapping.get(cp_id, cp_id.lower())
 
