@@ -1,0 +1,250 @@
+/**
+ * API Client Service - CP06.
+ *
+ * Service này cung cấp HTTP client tự động sinh từ route definitions.
+ * Hỗ trợ auto-attach JWT token, error handling, và tenant isolation.
+ *
+ * Auto-generated bởi Midicoder CE - Không sửa tay.
+ */
+import { Injectable, inject } from '@angular/core';
+import { HttpClient, HttpHeaders, HttpRequest, HttpResponse } from '@angular/common/http';
+import { Observable, throwError } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+
+/**
+ * Cấu hình API Client.
+ */
+interface ApiClientConfig {
+  /** Base URL của API backend. */
+  baseUrl: string;
+  /** API prefix (ví dụ: /api/v1). */
+  apiPrefix: string;
+  /** Có tự động attach JWT token không. */
+  autoAuth: boolean;
+  /** Có enforce tenant scope không (KPI-029). */
+  tenantScoped: boolean;
+}
+
+/**
+ * Response wrapper cho API calls.
+ */
+interface ApiResponse<T = any> {
+  data: T;
+  status: number;
+  statusText: string;
+  tenantId?: string;
+}
+
+@Injectable({ providedIn: 'root' })
+export class ApiClientService {
+  private readonly http = inject(HttpClient);
+
+  // ============================================================================
+  // Cấu hình
+  // ============================================================================
+
+  private config: ApiClientConfig = {
+    baseUrl: '',
+    apiPrefix: '/api',
+    autoAuth: true,
+    tenantScoped: true,
+  };
+
+  /**
+   * Khởi tạo cấu hình API Client.
+   *
+   * @param config - Cấu hình API client
+   */
+  init(config: Partial<ApiClientConfig>): void {
+    this.config = { ...this.config, ...config };
+  }
+
+  // ============================================================================
+  // HTTP Methods
+  // ============================================================================
+
+  /**
+   * GET request với auto-auth và tenant isolation.
+   *
+   * @param endpoint - API endpoint
+   * @param params - Query parameters
+   * @returns Observable response
+   */
+  get<T = any>(endpoint: string, params?: Record<string, any>): Observable<ApiResponse<T>> {
+    return this.http
+      .get<ApiResponse<T>>(this.buildUrl(endpoint), {
+        params,
+        headers: this.buildHeaders(),
+        observe: 'response',
+      })
+      .pipe(
+        map((res: HttpResponse<ApiResponse<T>>) => ({
+          data: res.body as any,
+          status: res.status,
+          statusText: res.statusText,
+        })),
+        catchError((error) => this.handleError(error)),
+      );
+  }
+
+  /**
+   * POST request với auto-auth và tenant isolation.
+   *
+   * @param endpoint - API endpoint
+   * @param body - Request body
+   * @returns Observable response
+   */
+  post<T = any>(endpoint: string, body?: any): Observable<ApiResponse<T>> {
+    return this.http
+      .post<ApiResponse<T>>(this.buildUrl(endpoint), body, {
+        headers: this.buildHeaders(),
+        observe: 'response',
+      })
+      .pipe(
+        map((res: HttpResponse<ApiResponse<T>>) => ({
+          data: res.body as any,
+          status: res.status,
+          statusText: res.statusText,
+        })),
+        catchError((error) => this.handleError(error)),
+      );
+  }
+
+  /**
+   * PUT request với auto-auth và tenant isolation.
+   *
+   * @param endpoint - API endpoint
+   * @param body - Request body
+   * @returns Observable response
+   */
+  put<T = any>(endpoint: string, body?: any): Observable<ApiResponse<T>> {
+    return this.http
+      .put<ApiResponse<T>>(this.buildUrl(endpoint), body, {
+        headers: this.buildHeaders(),
+        observe: 'response',
+      })
+      .pipe(
+        map((res: HttpResponse<ApiResponse<T>>) => ({
+          data: res.body as any,
+          status: res.status,
+          statusText: res.statusText,
+        })),
+        catchError((error) => this.handleError(error)),
+      );
+  }
+
+  /**
+   * PATCH request với auto-auth và tenant isolation.
+   *
+   * @param endpoint - API endpoint
+   * @param body - Request body
+   * @returns Observable response
+   */
+  patch<T = any>(endpoint: string, body?: any): Observable<ApiResponse<T>> {
+    return this.http
+      .patch<ApiResponse<T>>(this.buildUrl(endpoint), body, {
+        headers: this.buildHeaders(),
+        observe: 'response',
+      })
+      .pipe(
+        map((res: HttpResponse<ApiResponse<T>>) => ({
+          data: res.body as any,
+          status: res.status,
+          statusText: res.statusText,
+        })),
+        catchError((error) => this.handleError(error)),
+      );
+  }
+
+  /**
+   * DELETE request với auto-auth và tenant isolation.
+   *
+   * @param endpoint - API endpoint
+   * @returns Observable response
+   */
+  delete<T = any>(endpoint: string): Observable<ApiResponse<T>> {
+    return this.http
+      .delete<ApiResponse<T>>(this.buildUrl(endpoint), {
+        headers: this.buildHeaders(),
+        observe: 'response',
+      })
+      .pipe(
+        map((res: HttpResponse<ApiResponse<T>>) => ({
+          data: res.body as any,
+          status: res.status,
+          statusText: res.statusText,
+        })),
+        catchError((error) => this.handleError(error)),
+      );
+  }
+
+  // ============================================================================
+  // Private Helpers
+  // ============================================================================
+
+  /**
+   * Build full URL từ endpoint.
+   *
+   * @param endpoint - API endpoint
+   * @returns Full URL string
+   */
+  private buildUrl(endpoint: string): string {
+    const prefix = this.config.apiPrefix;
+    const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    return `${this.config.baseUrl}${prefix}${path}`;
+  }
+
+  /**
+   * Build HTTP headers với auto-auth và tenant isolation.
+   *
+   * @returns HttpHeaders instance
+   */
+  private buildHeaders(): HttpHeaders {
+    let headers = new HttpHeaders();
+
+    // Tự động attach JWT token
+    if (this.config.autoAuth) {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        headers = headers.set('Authorization', `Bearer ${token}`);
+      }
+    }
+
+    // KPI-029: Tenant isolation
+    if (this.config.tenantScoped) {
+      const tenantId = localStorage.getItem('tenant_id');
+      if (tenantId) {
+        headers = headers.set('X-Tenant-ID', tenantId);
+      }
+    }
+
+    return headers.set('Content-Type', 'application/json');
+  }
+
+  /**
+   * Handle API errors.
+   *
+   * @param error - HTTP error object
+   * @returns Error Observable
+   */
+  private handleError(error: any): Observable<never> {
+    let message = 'Lỗi không xác định từ server';
+
+    if (error.error?.detail) {
+      message = error.error.detail;
+    } else if (error.status === 0) {
+      message = 'Không thể kết nối đến server. Kiểm tra kết nối mạng.';
+    } else if (error.status === 401) {
+      message = 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.';
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      window.location.href = '/login';
+    } else if (error.status === 403) {
+      message = 'Không có quyền truy cập tài nguyên này.';
+    } else if (error.status >= 500) {
+      message = 'Lỗi server nội bộ. Vui lòng thử lại sau.';
+    }
+
+    return throwError(() => new Error(message));
+  }
+}

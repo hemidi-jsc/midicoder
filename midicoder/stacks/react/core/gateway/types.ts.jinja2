@@ -1,0 +1,297 @@
+/**
+ * API Gateway TypeScript Types - CP06.
+ *
+ * TypeScript interfaces tự động sinh từ API schema definitions.
+ * Dùng cho API client, route guards, và type safety.
+ *
+ * Auto-generated bởi Midicoder CE - Không sửa tay.
+ */
+
+// ============================================================================
+// API Response Types
+// ============================================================================
+
+/**
+ * Response wrapper cho API calls.
+ */
+export interface ApiResponse<T = any> {
+  /** Data trả về từ API. */
+  data: T;
+  /** HTTP status code. */
+  status: number;
+  /** Status text. */
+  statusText: string;
+  /** Tenant ID (KPI-029). */
+  tenantId?: string;
+}
+
+/**
+ * Error response từ API.
+ */
+export interface ApiError {
+  /** HTTP status code. */
+  status: number;
+  /** Error message. */
+  message: string;
+  /** Error code. */
+  code?: string;
+  /** Validation errors (nếu có). */
+  details?: Record<string, string[]>;
+}
+
+/**
+ * Request state cho API hook.
+ */
+export interface RequestState<T = any> {
+  /** Data từ response. */
+  data: T | null;
+  /** Đang loading. */
+  loading: boolean;
+  /** Error message (nếu có). */
+  error: string | null;
+}
+
+// ============================================================================
+// Route Types
+// ============================================================================
+
+/**
+ * HTTP method enum.
+ */
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+
+/**
+ * Route auth mode.
+ */
+export type AuthMode = 'none' | 'jwt' | 'oauth2' | 'api_key' | 'session';
+
+/**
+ * Route definition.
+ */
+export interface RouteDefinition {
+  /** Route ID duy nhất. */
+  id: string;
+  /** HTTP method. */
+  method: HttpMethod;
+  /** URL path. */
+  path: string;
+  /** Handler type (command hoặc query). */
+  handlerType: 'command' | 'query';
+  /** Handler ID. */
+  handlerId: string;
+  /** Auth config. */
+  auth?: RouteAuthConfig;
+  /** Path params. */
+  pathParams?: RouteParam[];
+  /** Query params. */
+  queryParams?: QueryParam[];
+  /** Request schema. */
+  requestSchema?: SchemaField[];
+  /** Response schema. */
+  responseSchema?: SchemaField[];
+  /** Response status code. */
+  responseStatus: number;
+  /** Tags để group routes. */
+  tags: string[];
+}
+
+/**
+ * Route auth config.
+ */
+export interface RouteAuthConfig {
+  /** Auth mode. */
+  mode: AuthMode;
+  /** Required roles. */
+  requiredRoles: string[];
+  /** Required permissions. */
+  requiredPermissions: string[];
+  /** Có enforce tenant scope không (KPI-029). */
+  tenantScoped: boolean;
+}
+
+/**
+ * Route param.
+ */
+export interface RouteParam {
+  /** Tên param. */
+  name: string;
+  /** Kiểu dữ liệu. */
+  type: string;
+  /** Có bắt buộc không. */
+  required: boolean;
+}
+
+/**
+ * Query param.
+ */
+export interface QueryParam {
+  /** Tên param. */
+  name: string;
+  /** Kiểu dữ liệu. */
+  type: string;
+  /** Có bắt buộc không. */
+  required: boolean;
+  /** Default value. */
+  default?: any;
+}
+
+/**
+ * Schema field.
+ */
+export interface SchemaField {
+  /** Tên field. */
+  name: string;
+  /** Kiểu dữ liệu. */
+  type: string;
+  /** Có bắt buộc không. */
+  required: boolean;
+}
+
+// ============================================================================
+// Kong Gateway Types
+// ============================================================================
+
+/**
+ * Kong Gateway config.
+ */
+export interface KongGatewayConfig {
+  /** Tên gateway. */
+  name: string;
+  /** Listen port. */
+  listenPort: number;
+  /** Có bật SSL không. */
+  ssl: boolean;
+  /** Admin port. */
+  adminListenPort: number;
+}
+
+/**
+ * Kong Service config.
+ */
+export interface KongServiceConfig {
+  /** Tên service. */
+  name: string;
+  /** Backend URL. */
+  url: string;
+  /** Protocol. */
+  protocol: 'http' | 'https' | 'grpc' | 'grpcs' | 'tcp' | 'tls';
+  /** Backend port. */
+  port: number;
+  /** Backend host. */
+  host: string;
+  /** Connect timeout (ms). */
+  connectTimeout: number;
+  /** Write timeout (ms). */
+  writeTimeout: number;
+  /** Read timeout (ms). */
+  readTimeout: number;
+}
+
+/**
+ * Kong Route config.
+ */
+export interface KongRouteConfig {
+  /** Tên route. */
+  name: string;
+  /** URL paths. */
+  paths: string[];
+  /** HTTP methods được phép. */
+  methods: string[];
+  /** Service reference. */
+  service?: string;
+  /** Strip prefix path. */
+  stripPath: boolean;
+  /** Preserve host header. */
+  preserveHost: boolean;
+  /** Host patterns. */
+  hosts: string[];
+}
+
+/**
+ * Kong Plugin config.
+ */
+export interface KongPluginConfig {
+  /** Tên plugin. */
+  name: string;
+  /** Plugin config params. */
+  config: Record<string, any>;
+  /** Apply vào service (optional). */
+  service?: string;
+  /** Apply vào route (optional). */
+  route?: string;
+  /** Có bật không. */
+  enabled: boolean;
+}
+
+// ============================================================================
+// Consul Service Mesh Types
+// ============================================================================
+
+/**
+ * Consul Service config.
+ */
+export interface ConsulServiceConfig {
+  /** Tên service. */
+  name: string;
+  /** Service ID. */
+  serviceId: string;
+  /** Service port. */
+  port: number;
+  /** Service address. */
+  address: string;
+  /** Service tags. */
+  tags: string[];
+  /** Metadata. */
+  meta: Record<string, string>;
+}
+
+/**
+ * Consul Health Check config.
+ */
+export type HealthCheckType = 'http' | 'tcp' | 'exec' | 'ttl';
+
+export interface ConsulHealthCheckConfig {
+  /** Check ID. */
+  id: string;
+  /** Check name. */
+  name: string;
+  /** Service ID reference. */
+  serviceId?: string;
+  /** Check type. */
+  checkType: HealthCheckType;
+  /** Check interval. */
+  interval: string;
+  /** Check timeout. */
+  timeout: string;
+  /** HTTP URL (for HTTP check). */
+  http?: string;
+  /** TCP address (for TCP check). */
+  tcp?: string;
+  /** Current status. */
+  status: 'passing' | 'warning' | 'critical';
+}
+
+// ============================================================================
+// Gateway Config
+// ============================================================================
+
+/**
+ * Gateway module config (dùng cho runtime).
+ */
+export interface GatewayModuleConfig {
+  /** API base URL. */
+  apiUrl: string;
+  /** API prefix. */
+  apiPrefix: string;
+  /** Có auto-attach JWT token. */
+  autoAuth: boolean;
+  /** Có enforce tenant scope (KPI-029). */
+  tenantScoped: boolean;
+  /** Kong Gateway config (optional). */
+  kong?: KongGatewayConfig;
+  /** Consul config (optional). */
+  consul?: {
+    services: ConsulServiceConfig[];
+    healthChecks: ConsulHealthCheckConfig[];
+  };
+}

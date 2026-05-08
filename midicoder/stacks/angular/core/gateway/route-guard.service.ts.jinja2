@@ -1,0 +1,218 @@
+/**
+ * Route Guard Service - CP06.
+ *
+ * Guard này xử lý route protection cho Angular application.
+ * Hỗ trợ auth check, permission check, và tenant isolation (KPI-029).
+ *
+ * Auto-generated bởi Midicoder CE - Không sửa tay.
+ */
+import { Injectable, inject } from '@angular/core';
+import {
+  CanActivate,
+  CanActivateChild,
+  ActivatedRouteSnapshot,
+  RouterStateSnapshot,
+  Router,
+  UrlTree,
+} from '@angular/router';
+import { Observable, map, tap } from 'rxjs';
+
+/**
+ * Route config cho route data.
+ */
+interface RouteDataConfig {
+  /** Danh sách roles được phép truy cập. */
+  roles?: string[];
+  /** Danh sách permissions được yêu cầu. */
+  permissions?: string[];
+  /** Có enforce tenant scope không (KPI-029). */
+  tenantScoped?: boolean;
+  /** Page không cần auth. */
+  public?: boolean;
+}
+
+@Injectable({ providedIn: 'root' })
+export class RouteGuardService implements CanActivate, CanActivateChild {
+  private readonly router = inject(Router);
+
+  // ============================================================================
+  // CanActivate
+  // ============================================================================
+
+  /**
+   * Kiểm tra xem user có thể activate route này không.
+   *
+   * @param route - Route snapshot
+   * @param state - Router state snapshot
+   * @returns Observable boolean hoặc UrlTree để redirect
+   */
+  canActivate(
+    route: ActivatedRouteSnapshot,
+    state: RouterStateSnapshot,
+  ): Observable<boolean | UrlTree> {
+    return this.checkRoute(route, state);
+  }
+
+  /**
+   * Kiểm tra xem user có thể activate child route này không.
+   *
+   * @param route - Route snapshot
+   * @param state - RouterState snapshot
+   * @returns Observable boolean hoặc UrlTree để redirect
+   */
+  canActivateChild(
+    route: ActivatedRouteSnapshot,
+    state: RouterStateSnapshot,
+  ): Observable<boolean | UrlTree> {
+    return this.checkRoute(route, state);
+  }
+
+  // ============================================================================
+  // Private Helpers
+  // ============================================================================
+
+  /**
+   * Kiểm tra route với auth, roles, permissions, và tenant scope.
+   *
+   * @param route - Route snapshot
+   * @param state - Router state snapshot
+   * @returns Observable boolean hoặc UrlTree
+   */
+  private checkRoute(
+    route: ActivatedRouteSnapshot,
+    state: RouterStateSnapshot,
+  ): Observable<boolean | UrlTree> {
+    const config: RouteDataConfig = (route.data['gateway'] as RouteDataConfig) || {};
+
+    // Page public không cần check
+    if (config.public) {
+      return new Observable((subscriber) => {
+        subscriber.next(true);
+        subscriber.complete();
+      });
+    }
+
+    // Check authentication
+    if (!this.isAuthenticated()) {
+      const loginUrl: UrlTree = this.router.createUrlTree(['/login'], {
+        queryParams: { returnUrl: state.url },
+      });
+      return new Observable((subscriber) => {
+        subscriber.next(loginUrl);
+        subscriber.complete();
+      });
+    }
+
+    // Check roles
+    if (config.roles && config.roles.length > 0) {
+      const userRoles = this.getUserRoles();
+      const hasRole = config.roles.some((role) => userRoles.includes(role));
+
+      if (!hasRole) {
+        const forbiddenUrl: UrlTree = this.router.createUrlTree(['/forbidden']);
+        return new Observable((subscriber) => {
+          subscriber.next(forbiddenUrl);
+          subscriber.complete();
+        });
+      }
+    }
+
+    // Check permissions
+    if (config.permissions && config.permissions.length > 0) {
+      const userPermissions = this.getUserPermissions();
+      const hasPermission = config.permissions.every((perm) =>
+        userPermissions.includes(perm),
+      );
+
+      if (!hasPermission) {
+        const forbiddenUrl: UrlTree = this.router.createUrlTree(['/forbidden']);
+        return new Observable((subscriber) => {
+          subscriber.next(forbiddenUrl);
+          subscriber.complete();
+        });
+      }
+    }
+
+    // KPI-029: Check tenant scope
+    if (config.tenantScoped !== false) {
+      if (!this.hasTenantContext()) {
+        const errorUrl: UrlTree = this.router.createUrlTree(['/error/tenant-missing']);
+        return new Observable((subscriber) => {
+          subscriber.next(errorUrl);
+          subscriber.complete();
+        });
+      }
+    }
+
+    return new Observable((subscriber) => {
+      subscriber.next(true);
+      subscriber.complete();
+    });
+  }
+
+  /**
+   * Kiểm tra user đã authentication chưa.
+   *
+   * @returns True nếu user đã auth
+   */
+  private isAuthenticated(): boolean {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      return false;
+    }
+
+    // Check token expiration
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.exp > Date.now() / 1000;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Lấy danh sách roles của user hiện tại.
+   *
+   * @returns Array role strings
+   */
+  private getUserRoles(): string[] {
+    try {
+      const userJson = localStorage.getItem('user_data');
+      if (userJson) {
+        const user = JSON.parse(userJson);
+        return user.roles || [];
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return [];
+  }
+
+  /**
+   * Lấy danh sách permissions của user hiện tại.
+   *
+   * @returns Array permission strings
+   */
+  private getUserPermissions(): string[] {
+    try {
+      const userJson = localStorage.getItem('user_data');
+      if (userJson) {
+        const user = JSON.parse(userJson);
+        return user.permissions || [];
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return [];
+  }
+
+  /**
+   * Kiểm tra user có tenant context không (KPI-029).
+   *
+   * @returns True nếu có tenant context
+   */
+  private hasTenantContext(): boolean {
+    const tenantId = localStorage.getItem('tenant_id');
+    return !!tenantId;
+  }
+}

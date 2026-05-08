@@ -1,0 +1,278 @@
+/**
+ * Protected Route Component - CP06.
+ *
+ * Component wrapper để bảo vệ routes với auth check, permission check,
+ * và tenant isolation (KPI-029).
+ *
+ * Auto-generated bởi Midicoder CE - Không sửa tay.
+ */
+import React, { useMemo } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
+
+// ============================================================================
+// Interfaces
+// ============================================================================
+
+/**
+ * Props cho ProtectedRoute component.
+ */
+export interface ProtectedRouteProps {
+  /** Children components để render nếu user được phép. */
+  children: React.ReactNode;
+  /** Danh sách roles được phép truy cập. */
+  roles?: string[];
+  /** Danh sách permissions được yêu cầu. */
+  permissions?: string[];
+  /** Có enforce tenant scope không (KPI-029). */
+  tenantScoped?: boolean;
+  /** Page path để redirect nếu chưa auth. */
+  redirectTo?: string;
+  /** Component để render nếu user không có quyền. */
+  fallback?: React.ReactNode;
+}
+
+/**
+ * User data structure.
+ */
+interface UserData {
+  roles: string[];
+  permissions: string[];
+  tenantId?: string;
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Kiểm tra user đã authentication chưa.
+ *
+ * @returns True nếu user đã auth với valid token
+ */
+function isAuthenticated(): boolean {
+  const token = localStorage.getItem('access_token');
+  if (!token) {
+    return false;
+  }
+
+  // Check token expiration
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp > Date.now() / 1000;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Lấy user data từ localStorage.
+ *
+ * @returns User data hoặc null
+ */
+function getUserData(): UserData | null {
+  try {
+    const userJson = localStorage.getItem('user_data');
+    if (userJson) {
+      return JSON.parse(userJson);
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null;
+}
+
+// ============================================================================
+// ProtectedRoute Component
+// ============================================================================
+
+/**
+ * Protected Route component.
+ *
+ * Wrapper component để bảo vệ routes:
+ * - Check authentication (JWT token valid)
+ * - Check roles (nếu yêu cầu)
+ * - Check permissions (nếu yêu cầu)
+ * - Check tenant scope (KPI-029)
+ *
+ * @param props - ProtectedRoute props
+ * @returns Protected children hoặc redirect/fallback
+ */
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
+  children,
+  roles = [],
+  permissions = [],
+  tenantScoped = true,
+  redirectTo = '/login',
+  fallback,
+}) => {
+  const location = useLocation();
+
+  // Check auth status và permissions
+  const checkResult = useMemo(() => {
+    // Check authentication
+    if (!isAuthenticated()) {
+      return {
+        allowed: false,
+        redirect: `${redirectTo}?returnUrl=${encodeURIComponent(location.pathname)}`,
+        reason: 'not_authenticated' as const,
+      };
+    }
+
+    const userData = getUserData();
+
+    // Check roles
+    if (roles.length > 0 && userData) {
+      const hasRole = roles.some((role) => userData.roles.includes(role));
+      if (!hasRole) {
+        return {
+          allowed: false,
+          redirect: null,
+          reason: 'insufficient_role' as const,
+        };
+      }
+    }
+
+    // Check permissions
+    if (permissions.length > 0 && userData) {
+      const hasAllPermissions = permissions.every((perm) =>
+        userData.permissions.includes(perm),
+      );
+      if (!hasAllPermissions) {
+        return {
+          allowed: false,
+          redirect: null,
+          reason: 'insufficient_permission' as const,
+        };
+      }
+    }
+
+    // KPI-029: Check tenant scope
+    if (tenantScoped && (!userData || !userData.tenantId)) {
+      return {
+        allowed: false,
+        redirect: '/error/tenant-missing',
+        reason: 'tenant_missing' as const,
+      };
+    }
+
+    return {
+      allowed: true,
+      redirect: null,
+      reason: null,
+    };
+  }, [roles, permissions, tenantScoped, redirectTo, location.pathname]);
+
+  // Redirect nếu chưa auth
+  if (checkResult.redirect) {
+    return <Navigate to={checkResult.redirect} replace />;
+  }
+
+  // Render fallback nếu không có quyền
+  if (!checkResult.allowed && fallback) {
+    return <>{fallback}</>;
+  }
+
+  // Render fallback mặc định nếu không có quyền
+  if (!checkResult.allowed) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <h2>403 - Không có quyền truy cập</h2>
+        <p>Bạn không có quyền truy cập tài nguyên này.</p>
+        <Navigate to="/forbidden" replace />
+      </div>
+    );
+  }
+
+  // Render children nếu qua tất cả checks
+  return <>{children}</>;
+};
+
+// ============================================================================
+// WithPermission HOC
+// ============================================================================
+
+/**
+ * Props cho WithPermission component.
+ */
+interface WithPermissionProps {
+  /** Resource name. */
+  resource: string;
+  /** Action name. */
+  action: string;
+  /** Children để render nếu có permission. */
+  children: React.ReactNode;
+  /** Fallback nếu không có permission. */
+  fallback?: React.ReactNode;
+}
+
+/**
+ * WithPermission component.
+ *
+ * HOC để gate UI elements theo permission.
+ *
+ * @param props - WithPermission props
+ * @returns Children hoặc fallback
+ */
+export const WithPermission: React.FC<WithPermissionProps> = ({
+  resource,
+  action,
+  children,
+  fallback = null,
+}) => {
+  const hasPermission = useMemo(() => {
+    const userData = getUserData();
+    if (!userData) return false;
+    const permission = `${resource}:${action}`;
+    return userData.permissions.includes(permission);
+  }, [resource, action]);
+
+  if (!hasPermission) {
+    return <>{fallback}</>;
+  }
+
+  return <>{children}</>;
+};
+
+// ============================================================================
+// WithRole HOC
+// ============================================================================
+
+/**
+ * Props cho WithRole component.
+ */
+interface WithRoleProps {
+  /** Role name. */
+  role: string;
+  /** Children để render nếu có role. */
+  children: React.ReactNode;
+  /** Fallback nếu không có role. */
+  fallback?: React.ReactNode;
+}
+
+/**
+ * WithRole component.
+ *
+ * HOC để gate UI elements theo role.
+ *
+ * @param props - WithRole props
+ * @returns Children hoặc fallback
+ */
+export const WithRole: React.FC<WithRoleProps> = ({
+  role,
+  children,
+  fallback = null,
+}) => {
+  const hasRole = useMemo(() => {
+    const userData = getUserData();
+    if (!userData) return false;
+    return userData.roles.includes(role);
+  }, [role]);
+
+  if (!hasRole) {
+    return <>{fallback}</>;
+  }
+
+  return <>{children}</>;
+};
+
+export default ProtectedRoute;

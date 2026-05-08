@@ -1,0 +1,33 @@
+pack:
+  id: "CP06"
+  name: "API Gateway & Service Mesh Generator"
+  internal_id: "cp6-api-gateway"
+  version: "1.0.0"
+  phase: "P1"
+  category: "integration"
+  status: "stable"
+  depends_on: ["CP01", "CP05"]
+  definitions_count: 2
+  obligations_count: 0
+  error_codes:
+    prefix: "MDC-CP06"
+    range: "MDC-CP06-001 to MDC-CP06-020"
+  capabilities_provided:
+    - route_request
+    - gateway_binding
+    - service_mesh_config
+  templates:
+    route_request:
+      fastapi: "fastapi/core/gateway/gateway_router.py.jinja2"
+      nestjs: "nestjs/core/gateway/gateway.controller.ts.jinja2"
+      angular: "angular/core/gateway/api-client.service.ts.jinja2"
+      react: "react/core/gateway/api-client.ts.jinja2"
+    gateway_binding:
+      fastapi: "fastapi/core/gateway/gateway_app.py.jinja2"
+      nestjs: "nestjs/core/gateway/gateway.module.ts.jinja2"
+    service_mesh_config:
+      fastapi: "fastapi/core/gateway/route_config.py.jinja2"
+      nestjs: "nestjs/core/gateway/route-config.service.ts.jinja2"
+  frontend_integration:
+    angular: ["ApiClientService", "RouteGuardService", "GatewayModule"]
+    react: ["useApi", "ProtectedRoute", "ApiTypes"]

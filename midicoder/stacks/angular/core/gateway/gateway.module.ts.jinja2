@@ -1,0 +1,61 @@
+/**
+ * Gateway Module - CP06.
+ *
+ * Angular feature module cho API Gateway integration.
+ * Import HTTP client, route guards, và API client service.
+ *
+ * Auto-generated bởi Midicoder CE - Không sửa tay.
+ */
+import { NgModule } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
+
+// ============================================================================
+// Declarations
+// ============================================================================
+
+// Import services và guards
+import { ApiClientService } from './api-client.service';
+import { RouteGuardService } from './route-guard.service';
+
+/**
+ * Gateway Module.
+ *
+ * Module này cung cấp:
+ * - HttpClient configuration
+ * - API Client Service
+ * - Route Guard cho auth/permission/tenant
+ */
+@NgModule({
+  declarations: [],
+  imports: [
+    CommonModule,
+    HttpClientModule,
+  ],
+  providers: [
+    ApiClientService,
+    RouteGuardService,
+  ],
+  exports: [
+    HttpClientModule,
+  ],
+})
+export class GatewayModule {
+  /**
+   * FOR: Convenience method để import GatewayModule vào feature modules.
+   *
+   * @returns GatewayModule instance
+   */
+  static forRoot(): {
+    ngModule: typeof GatewayModule;
+    providers: any[];
+  } {
+    return {
+      ngModule: GatewayModule,
+      providers: [
+        ApiClientService,
+        RouteGuardService,
+      ],
+    };
+  }
+}

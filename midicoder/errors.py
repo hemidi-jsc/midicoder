@@ -394,6 +394,34 @@ class ErrorCode(str, Enum):
     EVT_MESSAGE_SERIALIZATION_FAILED = "MDC-EVT-008"
     EVT_DEAD_LETTER_FAILED = "MDC-EVT-009"
     EVT_TENANT_ISOLATION_VIOLATION = "MDC-EVT-010"
+    
+    # =========================================================================
+    # CP06: API Gateway & Service Mesh Errors
+    # =========================================================================
+    # Route validation errors (001-005)
+    CP06_ROUTE_NOT_FOUND = "MDC-CP06-001"
+    CP06_INVALID_METHOD = "MDC-CP06-002"
+    CP06_DUPLICATE_PATH = "MDC-CP06-003"
+    CP06_INVALID_AUTH_CONFIG = "MDC-CP06-004"
+    CP06_HANDLER_NOT_FOUND = "MDC-CP06-005"
+    # Gateway configuration errors (006-010)
+    CP06_GATEWAY_CONFIG_INVALID = "MDC-CP06-006"
+    CP06_SERVICE_URL_INVALID = "MDC-CP06-007"
+    CP06_ROUTE_BIND_FAILED = "MDC-CP06-008"
+    CP06_PLUGIN_CONFIG_INVALID = "MDC-CP06-009"
+    CP06_UPSTREAM_EMPTY = "MDC-CP06-010"
+    # Service mesh errors (011-015)
+    CP06_MESH_CONFIG_INVALID = "MDC-CP06-011"
+    CP06_HEALTH_CHECK_FAILED = "MDC-CP06-012"
+    CP06_CONNECT_PROXY_ERROR = "MDC-CP06-013"
+    CP06_SERVICE_REG_FAILED = "MDC-CP06-014"
+    CP06_TLS_CONFIG_INVALID = "MDC-CP06-015"
+    # Kong/Consul integration errors (016-020)
+    CP06_KONG_YAML_ERROR = "MDC-CP06-016"
+    CP06_CONSUL_HCL_ERROR = "MDC-CP06-017"
+    CP06_PLUGIN_NOT_FOUND = "MDC-CP06-018"
+    CP06_RATE_LIMIT_EXCEEDED = "MDC-CP06-019"
+    CP06_CIRCUIT_BREAKER_OPEN = "MDC-CP06-020"
 
     # =========================================================================
     # CP08: Database & Data Access Layer Errors

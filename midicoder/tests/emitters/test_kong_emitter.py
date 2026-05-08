@@ -16,7 +16,7 @@ from unittest import TestCase
 from pathlib import Path
 
 from midicoder.dsl.projection import ProjectionTree, NodeKind, ProjectionNode
-from midicoder.emitters.kong_gateway import KongGatewayEmitter
+from midicoder.emitters.core.gateway.kong_gateway import KongGatewayEmitter
 
 
 class TestKongGatewayEmitter(TestCase):
@@ -443,5 +443,235 @@ class TestKongGatewayEmitter(TestCase):
             ))
         
         result = self.emitter.generate(tree)
-        
+
         self.assertEqual(len(result["services"]), 3)
+
+    def test_save_consul_hcl(self):
+        """Test save Consul configuration ra file HCL."""
+        tree = ProjectionTree()
+
+        # Thêm Consul service - required: id, name, port
+        tree.add_node(ProjectionNode(
+            id="hcl-service",
+            kind=NodeKind.CONSUL_SERVICE,
+            params={
+                "id": "hcl-service-1",
+                "name": "hcl-service",
+                "port": 8080,
+                "address": "hcl-service.local",
+                "tags": ["v1", "production"]
+            }
+        ))
+
+        # Thêm health check
+        tree.add_node(ProjectionNode(
+            id="hcl-health-check",
+            kind=NodeKind.CONSUL_HEALTH_CHECK,
+            params={
+                "id": "hcl-health",
+                "type": "http",
+                "service": "hcl-service",
+                "http": "http://hcl-service.local:8080/health",
+                "interval": "10s",
+                "timeout": "5s"
+            }
+        ))
+
+        # Thêm connect proxy
+        tree.add_node(ProjectionNode(
+            id="hcl-connect",
+            kind=NodeKind.CONSUL_CONNECT,
+            params={
+                "id": "hcl-connect",
+                "service_id": "hcl-service",
+                "service": "hcl-service",
+                "proxy": {
+                    "upstreams": [
+                        {"destination_name": "db-service", "local_bind_port": 5432}
+                    ]
+                }
+            }
+        ))
+
+        # Save HCL
+        output_path = Path("/tmp/test_consul_hcl.hcl")
+        self.emitter.save_consul_hcl(tree, output_path)
+
+        # Verify file được tạo
+        self.assertTrue(output_path.exists())
+
+        # Đọc và verify HCL content
+        content = output_path.read_text()
+        self.assertIn('service "hcl-service"', content)
+        self.assertIn("port = 8080", content)
+        self.assertIn("address = \"hcl-service.local\"", content)
+        self.assertIn("tags = [", content)
+        self.assertIn('id = "hcl-health"', content)
+        self.assertIn('http = "http://hcl-service.local:8080/health"', content)
+        self.assertIn('connect "hcl-service"', content)
+        self.assertIn('destination_name = "db-service"', content)
+
+        # Clean up
+        output_path.unlink()
+
+    def test_render_consul_hcl_empty(self):
+        """Test render HCL với config rỗng."""
+        hcl = self.emitter._render_consul_hcl({})
+        self.assertEqual(hcl, "")
+
+    def test_render_consul_hcl_services_only(self):
+        """Test render HCL chỉ với services."""
+        consul_config = {
+            "services": [
+                {"name": "test-svc", "port": 9090, "address": "test.local"}
+            ]
+        }
+        hcl = self.emitter._render_consul_hcl(consul_config)
+        self.assertIn('service "test-svc"', hcl)
+        self.assertIn("port = 9090", hcl)
+
+    def test_render_consul_hcl_health_checks_only(self):
+        """Test render HCL chỉ với health checks."""
+        consul_config = {
+            "health_checks": [
+                {
+                    "id": "hc-1",
+                    "name": "health-check",
+                    "service": "svc",
+                    "interval": "15s",
+                    "timeout": "3s",
+                    "http": "http://svc/health"
+                }
+            ]
+        }
+        hcl = self.emitter._render_consul_hcl(consul_config)
+        self.assertIn('id = "hc-1"', hcl)
+        self.assertIn('http = "http://svc/health"', hcl)
+
+    def test_render_consul_hcl_connects_only(self):
+        """Test render HCL chỉ với connects."""
+        consul_config = {
+            "connects": [
+                {
+                    "service": "proxy-svc",
+                    "proxy": {
+                        "upstreams": [
+                            {"destination_name": "upstream-svc", "local_bind_port": 3306}
+                        ]
+                    }
+                }
+            ]
+        }
+        hcl = self.emitter._render_consul_hcl(consul_config)
+        self.assertIn('connect "proxy-svc"', hcl)
+        self.assertIn('destination_name = "upstream-svc"', hcl)
+        self.assertIn("local_bind_port = 3306", hcl)
+
+    def test_generate_plugin_with_route_scope(self):
+        """Test generate plugin với scope là route."""
+        tree = ProjectionTree()
+        tree.add_node(ProjectionNode(
+            id="route-plugin",
+            kind=NodeKind.KONG_PLUGIN,
+            params={
+                "id": "cors-plugin",
+                "name": "cors",
+                "route": "user-route",
+                "config": {"origins": ["https://example.com"]}
+            }
+        ))
+        result = self.emitter.generate(tree)
+        plugins = result["plugins"]
+        self.assertEqual(len(plugins), 1)
+        self.assertEqual(plugins[0]["route"], "user-route")
+
+    def test_generate_plugin_with_consumer_scope(self):
+        """Test generate plugin với scope là consumer."""
+        tree = ProjectionTree()
+        tree.add_node(ProjectionNode(
+            id="consumer-plugin",
+            kind=NodeKind.KONG_PLUGIN,
+            params={
+                "id": "rate-limit",
+                "name": "rate-limiting",
+                "consumer": "admin-user",
+                "config": {"second": 50}
+            }
+        ))
+        result = self.emitter.generate(tree)
+        plugins = result["plugins"]
+        self.assertEqual(len(plugins), 1)
+        self.assertEqual(plugins[0]["consumer"], "admin-user")
+
+    def test_generate_plugin_global_no_scope(self):
+        """Test generate plugin global (không có scope)."""
+        tree = ProjectionTree()
+        tree.add_node(ProjectionNode(
+            id="global-plugin",
+            kind=NodeKind.KONG_PLUGIN,
+            params={
+                "id": "global-req-transform",
+                "name": "request-transformer",
+                "config": {"add": {"headers": {"X-Global": "true"}}}
+            }
+        ))
+        result = self.emitter.generate(tree)
+        plugins = result["plugins"]
+        self.assertEqual(len(plugins), 1)
+        self.assertNotIn("service", plugins[0])
+        self.assertNotIn("route", plugins[0])
+        self.assertNotIn("consumer", plugins[0])
+
+    def test_health_check_with_all_options(self):
+        """Test generate health check với tất cả options."""
+        tree = ProjectionTree()
+        tree.add_node(ProjectionNode(
+            id="full-health-check",
+            kind=NodeKind.CONSUL_HEALTH_CHECK,
+            params={
+                "id": "full-hc",
+                "type": "http",
+                "service": "full-svc",
+                "http": "http://full-svc/health",
+                "tcp": "full-svc:8080",
+                "exec": "/bin/check.sh",
+                "ttl": "30s",
+                "interval": "10s",
+                "timeout": "5s",
+                "deregister_critical_service_after": "90s",
+                "notes": "Full health check",
+                "tags": ["critical"]
+            }
+        ))
+        result = self.emitter.generate(tree)
+        checks = result["consul"]["health_checks"]
+        self.assertEqual(len(checks), 1)
+        check = checks[0]
+        self.assertEqual(check["http"], "http://full-svc/health")
+        self.assertEqual(check["tcp"], "full-svc:8080")
+        self.assertEqual(check["exec"], "/bin/check.sh")
+        self.assertEqual(check["ttl"], "30s")
+        self.assertEqual(check["deregister_critical_service_after"], "90s")
+        self.assertEqual(check["notes"], "Full health check")
+        self.assertEqual(check["tags"], ["critical"])
+
+    def test_consul_service_with_weight(self):
+        """Test generate Consul service với weight."""
+        tree = ProjectionTree()
+        tree.add_node(ProjectionNode(
+            id="weighted-service",
+            kind=NodeKind.CONSUL_SERVICE,
+            params={
+                "id": "weighted-svc-1",
+                "name": "weighted-service",
+                "port": 8080,
+                "address": "weighted.local",
+                "tags": ["v1"],
+                "meta": {"version": "1.0"},
+                "weight": 75
+            }
+        ))
+        result = self.emitter.generate(tree)
+        services = result["consul"]["services"]
+        self.assertEqual(len(services), 1)
+        self.assertEqual(services[0]["weight"], 75)

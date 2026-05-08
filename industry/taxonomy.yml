@@ -113,7 +113,7 @@ core_packs:
       - gateway_binding
       - service_mesh_config
     category: integration
-    status: developing
+    status: stable
     version: 1.0.0
   - id: CP08
     name: Database & Data Access Layer Generator
