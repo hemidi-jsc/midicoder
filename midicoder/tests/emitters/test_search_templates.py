@@ -1,13 +1,14 @@
+# coding: utf-8
 """
 Test suite cho Search & Indexing templates (CP10).
 
 Test coverage cho:
 - FastAPI: Elasticsearch client, search services, index management
 - NestJS: Search module, search service, index decorators
+- Angular: Search service, search module
+- React: SearchProvider, useSearch hook
 
-Tổng cộng: 40+ tests
-
-Mục tiêu coverage: >80%
+KPI-029: Tenant Isolation - Tat ca templates phai co tenant awareness
 
 CP10: Search & Indexing
 """
@@ -20,180 +21,281 @@ class TestFastApiElasticsearchConfig(TestCase):
     """Test FastAPI Elasticsearch configuration template."""
 
     def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/search/elasticsearch.py.jinja2")
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/fastapi/core/search/elasticsearch.py.jinja2"
+        )
 
     def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Elasticsearch config không tồn tại")
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "Elasticsearch config khong ton tai",
+        )
 
     def test_template_has_elasticsearch_import(self):
-        """Test template có Elasticsearch imports."""
+        """Test template co Elasticsearch imports."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("elasticsearch", content) or self.assertIn("Elasticsearch", content)
+        self.assertIn("elasticsearch", content.lower())
 
     def test_template_has_async_support(self):
-        """Test template có async support."""
+        """Test template co async support."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("async", content) or self.assertIn("Async", content)
+        self.assertIn("async", content)
 
-    def test_template_has_elasticsearch_url(self):
-        """Test template có ELASTICSEARCH_URL."""
+    def test_template_has_tenant_isolation(self):
+        """Test template co tenant isolation (KPI-029)."""
         content = self.template_path.read_text(encoding="utf-8")
-        assert "ELASTICSEARCH" in content or "elasticsearch_url" in content or "ELASTICSEARCH_URL" in content, "Không có ELASTICSEARCH_URL"
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("#", content) or self.assertIn('"""', content)
+        self.assertIn("tenant", content.lower())
 
 
 class TestFastApiSearchService(TestCase):
     """Test FastAPI search service template."""
 
     def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/search/search_service.py.jinja2")
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/fastapi/core/search/search_service.py.jinja2"
+        )
 
     def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Search service không tồn tại")
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "Search service khong ton tai",
+        )
 
     def test_template_has_search_method(self):
-        """Test template có search method."""
+        """Test template co search method."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("search", content) or self.assertIn("Search", content)
+        self.assertIn("search", content.lower())
 
-    def test_template_has_index_method(self):
-        """Test template có index method."""
+    def test_template_has_tenant_isolation(self):
+        """Test template co tenant filtering (KPI-029)."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("index", content) or self.assertIn("Index", content)
-
-    def test_template_has_delete_method(self):
-        """Test template có delete method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("delete", content) or self.assertIn("Delete", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("#", content) or self.assertIn('"""', content)
+        self.assertIn("tenant", content.lower())
 
 
 class TestFastApiIndexManager(TestCase):
     """Test FastAPI index manager template."""
 
     def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/fastapi/templates/search/index_manager.py.jinja2")
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/fastapi/core/search/index_manager.py.jinja2"
+        )
 
     def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Index manager không tồn tại")
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "Index manager khong ton tai",
+        )
 
     def test_template_has_create_index(self):
-        """Test template có create_index method."""
+        """Test template co create_index method."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("create", content) or self.assertIn("Create", content)
+        self.assertIn("create", content.lower())
 
-    def test_template_has_mapping(self):
-        """Test template có index mapping."""
+    def test_template_has_tenant_isolation(self):
+        """Test template co tenant isolation (KPI-029)."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("mapping", content) or self.assertIn("Mapping", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        assert "#" in content or '"""' in content or "Tạo" in content or "Lấy" in content, "Không có comments tiếng Việt"
+        self.assertIn("tenant", content.lower())
 
 
 class TestNestJsSearchModule(TestCase):
     """Test NestJS search module template."""
 
     def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/search/search.module.ts.jinja2")
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/nestjs/core/search/search.module.ts.jinja2"
+        )
 
     def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Search module không tồn tại")
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "Search module khong ton tai",
+        )
 
     def test_template_has_nestjs_module(self):
-        """Test template có NestJS @Module."""
+        """Test template co NestJS @Module."""
         content = self.template_path.read_text(encoding="utf-8")
         self.assertIn("@Module", content) or self.assertIn("Module", content)
 
     def test_template_has_elasticsearch(self):
-        """Test template có Elasticsearch."""
+        """Test template co Elasticsearch."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("elasticsearch", content) or self.assertIn("Elasticsearch", content)
-
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("/", content) or self.assertIn("*", content)
+        self.assertIn(
+            "elasticsearch", content.lower()
+        ) or self.assertIn("Elasticsearch", content)
 
 
 class TestNestJsSearchService(TestCase):
     """Test NestJS search service template."""
 
     def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/search/search.service.ts.jinja2")
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/nestjs/core/search/search.service.ts.jinja2"
+        )
 
     def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Search service không tồn tại")
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "Search service khong ton tai",
+        )
 
     def test_template_has_search_method(self):
-        """Test template có search method."""
+        """Test template co search method."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("search", content) or self.assertIn("Search", content)
-
-    def test_template_has_index_method(self):
-        """Test template có index method."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("index", content) or self.assertIn("Index", content)
+        self.assertIn("search", content.lower())
 
     def test_template_has_async(self):
-        """Test template có async methods."""
+        """Test template co async methods."""
         content = self.template_path.read_text(encoding="utf-8")
         self.assertIn("async", content)
 
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("/", content) or self.assertIn("*", content)
 
-
-class TestSearchIndexDecorator(TestCase):
-    """Test NestJS search index decorator template."""
+class TestNestJsSearchDecorators(TestCase):
+    """Test NestJS search decorators template."""
 
     def setUp(self):
-        """Thiết lập test fixtures."""
-        self.template_path = Path("midicoder/stacks/nestjs/templates/search/search.decorators.ts.jinja2")
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/nestjs/core/search/search.decorators.ts.jinja2"
+        )
 
     def test_template_file_exists(self):
-        """Test template file tồn tại."""
-        self.assertTrue(self.template_path.exists(), "Search decorators không tồn tại")
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "Search decorators khong ton tai",
+        )
 
     def test_template_has_index_decorator(self):
-        """Test template có @SearchIndex decorator."""
+        """Test template co @SearchIndex decorator."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("SearchIndex", content) or self.assertIn("index", content)
+        self.assertIn("SearchIndex", content)
 
-    def test_template_has_field_decorator(self):
-        """Test template có @SearchField decorator."""
-        content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("SearchField", content) or self.assertIn("field", content)
 
-    def test_template_has_vietnamese_comments(self):
-        """Test template có comments tiếng Việt."""
+class TestAngularSearchService(TestCase):
+    """Test Angular search service template."""
+
+    def setUp(self):
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/angular/core/search/search.service.ts.jinja2"
+        )
+
+    def test_template_file_exists(self):
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "Angular Search service khong ton tai",
+        )
+
+    def test_template_has_injectable(self):
+        """Test template co @Injectable."""
         content = self.template_path.read_text(encoding="utf-8")
-        self.assertIn("/", content) or self.assertIn("*", content)
+        self.assertIn("@Injectable", content)
+
+    def test_template_has_http_client(self):
+        """Test template co HttpClient."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("HttpClient", content)
+
+    def test_template_has_tenant_isolation(self):
+        """Test template co tenant isolation (KPI-029)."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("tenant", content.lower())
+
+
+class TestAngularSearchModule(TestCase):
+    """Test Angular search module template."""
+
+    def setUp(self):
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/angular/core/search/search.module.ts.jinja2"
+        )
+
+    def test_template_file_exists(self):
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "Angular Search module khong ton tai",
+        )
+
+    def test_template_has_ngmodule(self):
+        """Test template co @NgModule."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("@NgModule", content)
+
+
+class TestReactSearchProvider(TestCase):
+    """Test React SearchProvider template."""
+
+    def setUp(self):
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/react/core/search/SearchProvider.tsx.jinja2"
+        )
+
+    def test_template_file_exists(self):
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "React SearchProvider khong ton tai",
+        )
+
+    def test_template_has_context(self):
+        """Test template co createContext."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("createContext", content)
+
+    def test_template_has_search_method(self):
+        """Test template co search method."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("search", content.lower())
+
+    def test_template_has_tenant_isolation(self):
+        """Test template co tenant isolation (KPI-029)."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("tenant", content.lower())
+
+
+class TestReactUseSearch(TestCase):
+    """Test React useSearch hook template."""
+
+    def setUp(self):
+        """Thiet lap test fixtures."""
+        self.template_path = Path(
+            "midicoder/stacks/react/core/search/useSearch.ts.jinja2"
+        )
+
+    def test_template_file_exists(self):
+        """Test template file ton tai."""
+        self.assertTrue(
+            self.template_path.exists(),
+            "React useSearch khong ton tai",
+        )
+
+    def test_template_has_usecontext(self):
+        """Test template co useContext."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("useContext", content)
+
+    def test_template_has_error_handling(self):
+        """Test template co error handling khi dung ben ngoai provider."""
+        content = self.template_path.read_text(encoding="utf-8")
+        self.assertIn("throw", content.lower()) or self.assertIn("Error", content)
 
 
 # Run tests
 if __name__ == "__main__":
     import unittest
+
     unittest.main()

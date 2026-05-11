@@ -445,7 +445,16 @@ class ErrorCode(str, Enum):
     CP09_KEY_EMPTY = "MDC-CP09-003"
     CP09_PATTERN_INVALID = "MDC-CP09-004"
     CP09_SERIALIZATION_FAILED = "MDC-CP09-005"
-    
+
+    # =========================================================================
+    # CP10: Search & Indexing Errors
+    # =========================================================================
+    CP10_EMPTY_INDEX_NAME = "MDC-CP10-001"
+    CP10_INVALID_PROVIDER = "MDC-CP10-002"
+    CP10_SYNC_STRATEGY_INVALID = "MDC-CP10-003"
+    CP10_INVALID_COLUMN_TYPE = "MDC-CP10-004"
+    CP10_INDEX_CREATE_FAILED = "MDC-CP10-005"
+
     # =========================================================================
     # CP12: Notification & Communication Errors
     # =========================================================================
@@ -819,7 +828,14 @@ class MidicoderErrorManager:
         ErrorCode.CP09_KEY_EMPTY: "Cache key không được đặt trống.",
         ErrorCode.CP09_PATTERN_INVALID: "Pattern invalidation không hợp lệ. Sử dụng glob format.",
         ErrorCode.CP09_SERIALIZATION_FAILED: "Serialize cache data thất bại. Kiểm tra serializer.",
-        
+
+        # CP10: Search & Indexing Error Templates
+        ErrorCode.CP10_EMPTY_INDEX_NAME: "Search index id không được để trống.",
+        ErrorCode.CP10_INVALID_PROVIDER: "Search provider không hợp lệ. Chọn trong elasticsearch hoặc meilisearch.",
+        ErrorCode.CP10_SYNC_STRATEGY_INVALID: "Sync strategy không hợp lệ. Chọn trong realtime, near_realtime, hoặc batch.",
+        ErrorCode.CP10_INVALID_COLUMN_TYPE: "Column type không hợp lệ. Chọn trong text, keyword, numeric, date, hoặc geo.",
+        ErrorCode.CP10_INDEX_CREATE_FAILED: "Tạo search index thất bại. Kiểm tra configuration.",
+
         # CP14 Audit Trail & Compliance Errors
         ErrorCode.CP14_AUDIT_EMPTY_ID: "ID không được để trống (audit_rule/compliance_control).",
         ErrorCode.CP14_AUDIT_INVALID_ACTION: "Audit action type không hợp lệ.",
@@ -1000,7 +1016,30 @@ class MidicoderErrorManager:
         ],
         ErrorCode.CP09_SERIALIZATION_FAILED: [
             "Kiểm tra data cần serialize phải JSON-serializable",
-            "Đổi serializer sang pickle nếu dụ liệu phức tạp",
+            "Đổi serializer sang pickle nếu dữ liệu phức tạp",
+        ],
+
+        # CP10: Search & Indexing Suggestions
+        ErrorCode.CP10_EMPTY_INDEX_NAME: [
+            "Cung cấp index id khác trống (ví dụ: 'products', 'orders')",
+            "Sử dụng snake_case cho index id",
+        ],
+        ErrorCode.CP10_INVALID_PROVIDER: [
+            "Kiểm tra provider nằm trong catalog: elasticsearch, meilisearch",
+            "Elasticsearch là provider mặc định",
+        ],
+        ErrorCode.CP10_SYNC_STRATEGY_INVALID: [
+            "Kiểm tra sync_strategy nằm trong catalog: realtime, near_realtime, batch",
+            "near_realtime là strategy khuyến nghị cho hầu hết use cases",
+        ],
+        ErrorCode.CP10_INVALID_COLUMN_TYPE: [
+            "Kiểm tra column_type nằm trong catalog: text, keyword, numeric, date, geo",
+            "Dùng 'text' cho full-text search, 'keyword' cho exact match",
+        ],
+        ErrorCode.CP10_INDEX_CREATE_FAILED: [
+            "Kiểm tra Elasticsearch server đang chạy",
+            "Đảm bảo connection config (ELASTICSEARCH_URL) đúng",
+            "Kiểm tra index mappings hợp lệ",
         ],
 
         ErrorCode.CP14_AUDIT_INVALID_ACTION: [

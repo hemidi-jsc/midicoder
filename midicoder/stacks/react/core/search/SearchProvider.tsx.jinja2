@@ -1,0 +1,152 @@
+/**
+ * Search Provider - CP10.
+ *
+ * React context de cung cap search capabilities cho toan bo app.
+ * KPI-029: Tenant-aware search.
+ *
+ * CP10: Search & Indexing
+ */
+
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  ReactNode,
+} from "react";
+
+/** Ket qua tu search operation */
+export interface SearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+}
+
+/** Tu search query */
+export interface SearchOptions {
+  query: string;
+  index?: string;
+  size?: number;
+  from?: number;
+  filters?: Record<string, any>;
+  sort?: Array<{ field: string; order?: "asc" | "desc" }>;
+  highlight?: boolean;
+  tenantId?: string; // KPI-029
+}
+
+/** Context type cho SearchProvider */
+export interface SearchContextType {
+  search: <T = any>(options: SearchOptions) => Promise<SearchResult<T>>;
+  indexDocument: <T = any>(
+    index: string,
+    id: string,
+    document: T,
+  ) => Promise<void>;
+  deleteDocument: (index: string, id: string) => Promise<void>;
+  tenantId: string | undefined;
+  setTenantId: (id: string | undefined) => void;
+}
+
+const SearchContext = createContext<SearchContextType | undefined>(undefined);
+
+export interface SearchProviderProps {
+  children: ReactNode;
+  apiUrl?: string;
+  initialTenantId?: string;
+}
+
+/** SearchProvider - wrap app de cung cap search context */
+export function SearchProvider({
+  children,
+  apiUrl = "/api/search",
+  initialTenantId,
+}: SearchProviderProps) {
+  const [tenantId, setTenantIdState] = useState<string | undefined>(
+    initialTenantId,
+  );
+
+  /** Thuc hien search (KPI-029: tenant-aware) */
+  const search = useCallback(
+    async <T = any>(options: SearchOptions): Promise<SearchResult<T>> => {
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+
+      // KPI-029: Them tenant ID
+      const effectiveTenantId = options.tenantId || tenantId;
+      if (effectiveTenantId) {
+        headers["x-tenant-id"] = effectiveTenantId;
+      }
+
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(options),
+      });
+      return response.json();
+    },
+    [apiUrl, tenantId],
+  );
+
+  /** Index document (KPI-029: tenant-aware) */
+  const indexDocument = useCallback(
+    async <T = any>(
+      index: string,
+      id: string,
+      document: T,
+    ): Promise<void> => {
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+
+      // KPI-029: Them tenant ID
+      if (tenantId) {
+        headers["x-tenant-id"] = tenantId;
+      }
+
+      await fetch(`${apiUrl}/${index}/${id}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(document),
+      });
+    },
+    [apiUrl, tenantId],
+  );
+
+  /** Xoa document (KPI-029: tenant-aware) */
+  const deleteDocument = useCallback(
+    async (index: string, id: string): Promise<void> => {
+      const headers: HeadersInit = {};
+
+      // KPI-029: Them tenant ID
+      if (tenantId) {
+        headers["x-tenant-id"] = tenantId;
+      }
+
+      await fetch(`${apiUrl}/${index}/${id}`, {
+        method: "DELETE",
+        headers,
+      });
+    },
+    [apiUrl, tenantId],
+  );
+
+  /** Dat tenant ID (KPI-029) */
+  const setTenantId = useCallback((id: string | undefined) => {
+    setTenantIdState(id);
+  }, []);
+
+  const value: SearchContextType = {
+    search,
+    indexDocument,
+    deleteDocument,
+    tenantId,
+    setTenantId,
+  };
+
+  return (
+    <SearchContext.Provider value={value}>{children}</SearchContext.Provider>
+  );
+}
+
+export { SearchContext };

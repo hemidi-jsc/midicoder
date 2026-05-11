@@ -1,0 +1,19 @@
+/**
+ * Search Module cho Angular.
+ *
+ * Module nay cung cap search services.
+ *
+ * KPI-029: Tenant Isolation - Ho tro tenant-aware search
+ * CP10: Search & Indexing
+ */
+
+import { NgModule } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { SearchService } from "./search.service";
+
+@NgModule({
+  imports: [CommonModule],
+  providers: [SearchService],
+  exports: [],
+})
+export class SearchNgModule {}

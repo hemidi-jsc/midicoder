@@ -1,0 +1,30 @@
+/**
+ * useSearch Hook - CP10.
+ *
+ * Custom hook de su dung search tu SearchProvider context.
+ * KPI-029: Tenant-aware search.
+ *
+ * CP10: Search & Indexing
+ */
+
+import { useContext } from "react";
+import { SearchContext, SearchContextType } from "./SearchProvider";
+
+/**
+ * Hook de truy cap search operations.
+ *
+ * @throws Error neu dung ben ngoai SearchProvider
+ *
+ * @example
+ *   const { search, indexDocument } = useSearch();
+ *   const results = await search({ query: 'laptop' });
+ */
+export function useSearch(): SearchContextType {
+  const context = useContext(SearchContext);
+
+  if (context === undefined) {
+    throw new Error("useSearch phai dung ben trong SearchProvider");
+  }
+
+  return context;
+}

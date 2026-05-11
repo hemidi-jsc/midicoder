@@ -1,6 +1,6 @@
 # coding: utf-8
 """
-Mô-đun models cho Search Emitter (CP10).
+Mô-đun models cho Search & Indexing Emitter (CP10).
 
 Định nghĩa các dataclass biểu diễn:
 - SearchProviderType: Enum các search providers (Elasticsearch, MeiliSearch)
@@ -10,7 +10,8 @@ Mô-đun models cho Search Emitter (CP10).
 - SearchIndex: Search index với provider, columns, sync config, tenant_isolated
 - SearchCollection: Collection chứa tất cả search indices
 
-KPI-029: Tenant Isolation - tenant_isolated=True mặc định
+KPI-029: Tenant Isolation — tenant_isolated=True mặc định cho mọi index.
+ValidationError: Dùng MDC-CP10 error codes (MDC-CP10-001 ~ MDC-CP10-005).
 
 Author: Midicoder Team
 Version: 1.0.0
@@ -22,9 +23,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
 
 class SearchProviderType(str, Enum):
-    """Enum các search providers."""
+    """Enum các search providers hỗ trợ."""
     ELASTICSEARCH = "elasticsearch"
     MEILISEARCH = "meilisearch"
 
@@ -42,19 +45,27 @@ class SyncTrigger(str, Enum):
     POLLING = "polling"
 
 
+# Danh sách các column types hợp lệ
+_VALID_COLUMN_TYPES = {"text", "keyword", "numeric", "date", "geo"}
+
+
 @dataclass
 class SearchIndexColumn:
     """
     Column trong search index.
 
     Attributes:
-        name: Tên column
-        column_type: Kiểu dữ liệu (text, keyword, numeric, date, geo)
-        searchable: Có tham gia full-text search không
-        filterable: Có dùng để filter không
-        sortable: Có dùng để sort không
-        analyser: Analyzer cho text columns (vi, en, vn)
-        description: Mô tả column
+        name: Tên column (không được để trống).
+        column_type: Kiểu dữ liệu (text, keyword, numeric, date, geo).
+        searchable: Có tham gia full-text search không.
+        filterable: Có dùng để filter không.
+        sortable: Có dùng để sort không.
+        analyser: Analyzer cho text columns (vi, en, vn).
+        description: Mô tả column.
+
+    Raises:
+        MidicoderError: Nếu name rỗng (MDC-CP10-001) hoặc
+            column_type không hợp lệ (MDC-CP10-004).
     """
     name: str
     column_type: str = "text"
@@ -63,6 +74,23 @@ class SearchIndexColumn:
     sortable: bool = False
     analyser: str = ""
     description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate các trường bắt buộc sau khi khởi tạo."""
+        # Kiểm tra name không được để trống
+        if not self.name or not self.name.strip():
+            EM.raise_error(
+                ErrorCode.CP10_EMPTY_INDEX_NAME,
+                name=self.name,
+            )
+        # Kiểm tra column_type hợp lệ
+        if self.column_type not in _VALID_COLUMN_TYPES:
+            EM.raise_error(
+                ErrorCode.CP10_INVALID_COLUMN_TYPE,
+                name=self.name,
+                column_type=self.column_type,
+                valid_types=list(_VALID_COLUMN_TYPES),
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Chuyển column sang dict format."""
@@ -96,13 +124,16 @@ class SearchIndex:
     Search index definition.
 
     Attributes:
-        id: Định danh duy nhất của index
-        provider: Search provider (ELASTICSEARCH, MEILISEARCH)
-        columns: Danh sách columns trong index
-        sync_strategy: Strategy đồng bộ data
-        sync_trigger: Trigger cho synchronization
-        tenant_isolated: Có enforce tenant isolation không (KPI-029)
-        description: Mô tả index
+        id: Định danh duy nhất của index (không được để trống).
+        provider: Search provider (ELASTICSEARCH, MEILISEARCH).
+        columns: Danh sách columns trong index.
+        sync_strategy: Strategy đồng bộ data (mac dinh: near_realtime).
+        sync_trigger: Trigger cho synchronization (mac dinh: event).
+        tenant_isolated: Co enforce tenant isolation khong (KPI-029, mac dinh: True).
+        description: Mô tả index.
+
+    Raises:
+        MidicoderError: Nếu id rỗng (MDC-CP10-001).
     """
     id: str
     provider: SearchProviderType = SearchProviderType.ELASTICSEARCH
@@ -111,6 +142,15 @@ class SearchIndex:
     sync_trigger: SyncTrigger = SyncTrigger.EVENT
     tenant_isolated: bool = True
     description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate các trường bắt buộc sau khi khởi tạo."""
+        # Kiểm tra id không được để trống
+        if not self.id or not self.id.strip():
+            EM.raise_error(
+                ErrorCode.CP10_EMPTY_INDEX_NAME,
+                index_id=self.id,
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Chuyển index sang dict format."""
@@ -144,28 +184,28 @@ class SearchCollection:
     Collection chứa tất cả search indices.
 
     Attributes:
-        indices: Danh sách search indices
+        indices: Danh sách search indices.
     """
     indices: list[SearchIndex] = field(default_factory=list)
 
     def add_index(self, index: SearchIndex) -> None:
-        """Them index vao collection."""
+        """Thêm index vào collection."""
         self.indices.append(index)
 
     @property
     def total_count(self) -> int:
-        """Tong so indices trong collection."""
+        """Tổng số indices trong collection."""
         return len(self.indices)
 
     def get_by_id(self, index_id: str) -> Optional[SearchIndex]:
-        """Tim index theo ID."""
+        """Tìm index theo ID."""
         for index in self.indices:
             if index.id == index_id:
                 return index
         return None
 
     def tenant_isolated_indices(self) -> list[SearchIndex]:
-        """Loc cac indices co tenant isolation (KPI-029)."""
+        """Lọc các indices có tenant isolation (KPI-029)."""
         return [i for i in self.indices if i.tenant_isolated]
 
     def to_dict(self) -> dict[str, Any]:

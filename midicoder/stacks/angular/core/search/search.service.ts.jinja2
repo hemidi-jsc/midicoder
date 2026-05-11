@@ -1,0 +1,140 @@
+/**
+ * Search Service cho Angular.
+ *
+ * Cung cap search operations qua HTTP client:
+ * - Full-text search
+ * - Document indexing
+ * - Document deletion
+ *
+ * KPI-029: Tenant Isolation - Ho tro tenant filtering trong search operations
+ * CP10: Search & Indexing
+ */
+
+import { Injectable } from "@angular/core";
+import { HttpClient, HttpHeaders } from "@angular/common/http";
+import { Observable } from "rxjs";
+
+/** Ket qua tu search operation */
+export interface SearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+}
+
+/** Tu search query */
+export interface SearchOptions {
+  query: string;
+  index?: string;
+  size?: number;
+  from?: number;
+  filters?: Record<string, any>;
+  sort?: Array<{ field: string; order?: "asc" | "desc" }>;
+  highlight?: boolean;
+  tenantId?: string; // KPI-029
+}
+
+/**
+ * Search Service.
+ *
+ * KPI-029: Ho tro tenant filtering de isolate search results theo tenant.
+ */
+@Injectable({
+  providedIn: "root",
+})
+export class SearchService {
+  private searchUrl = "/api/search";
+  private tenantId: string | undefined; // KPI-029
+
+  constructor(private http: HttpClient) {}
+
+  /**
+   * Dat tenant ID cho tenant isolation (KPI-029).
+   */
+  setTenantId(tenantId: string | undefined): void {
+    this.tenantId = tenantId;
+  }
+
+  /**
+   * Thuc hien full-text search.
+   *
+   * KPI-029: Support tenant filtering neu co tenant_id.
+   *
+   * @param options - Search options voi tenant_id
+   * @returns Search results
+   */
+  search<T = any>(options: SearchOptions): Observable<SearchResult<T>> {
+    let headers = new HttpHeaders();
+
+    // KPI-029: Lay tenant ID tu options hoac instance
+    const effectiveTenantId = options.tenantId || this.tenantId;
+    if (effectiveTenantId) {
+      headers = headers.set("x-tenant-id", effectiveTenantId);
+    }
+
+    return this.http.post<SearchResult<T>>(this.searchUrl, options, { headers });
+  }
+
+  /**
+   * Index mot document.
+   *
+   * KPI-029: Tu dong them tenant_id.
+   *
+   * @param index - Index name
+   * @param id - Document ID
+   * @param document - Document data
+   * @param tenantId KPI-029: Tenant ID (optional)
+   * @returns Index response
+   */
+  indexDocument<T = any>(
+    index: string,
+    id: string,
+    document: T,
+    tenantId?: string,
+  ): Observable<{ result: string }> {
+    let headers = new HttpHeaders();
+    headers.set("Content-Type", "application/json");
+
+    // KPI-029: Them tenant ID
+    const effectiveTenantId = tenantId || this.tenantId;
+    if (effectiveTenantId) {
+      headers = headers.set("x-tenant-id", effectiveTenantId);
+    }
+
+    return this.http.put<{ result: string }>(
+      `${this.searchUrl}/${index}/${id}`,
+      document,
+      { headers },
+    );
+  }
+
+  /**
+   * Xoa document.
+   *
+   * @param index - Index name
+   * @param id - Document ID
+   * @param tenantId KPI-029: Tenant ID (optional)
+   * @returns Delete response
+   */
+  deleteDocument(
+    index: string,
+    id: string,
+    tenantId?: string,
+  ): Observable<{ result: string }> {
+    let headers = new HttpHeaders();
+
+    // KPI-029: Them tenant ID
+    const effectiveTenantId = tenantId || this.tenantId;
+    if (effectiveTenantId) {
+      headers = headers.set("x-tenant-id", effectiveTenantId);
+    }
+
+    return this.http.delete<{ result: string }>(
+      `${this.searchUrl}/${index}/${id}`,
+      { headers },
+    );
+  }
+}
