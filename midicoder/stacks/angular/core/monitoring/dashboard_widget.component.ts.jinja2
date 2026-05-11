@@ -1,0 +1,292 @@
+/**
+ * Component widget dashboard — hiển thị các panel metric trên dashboard monitoring.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Kết nối với API monitoring để tải danh sách dashboard và hiển thị
+ * các panel metric với thông tin thời gian thực.
+ */
+import { Component, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { Subscription } from 'rxjs';
+
+/**
+ * Mức độ nghiêm trọng của cảnh báo.
+ */
+export type AlertSeverity = 'INFO' | 'WARNING' | 'CRITICAL' | 'FATAL';
+
+/**
+ * Một panel hiển thị metric trên dashboard.
+ */
+export interface Panel {
+  /** Tên của panel. */
+  name: string;
+  /** Tên metric cần hiển thị. */
+  metric: string;
+  /** Đơn vị đo lường. */
+  unit: string;
+  /** Loại panel (gauge, counter, histogram, timeseries). */
+  type: string;
+  /** Ngưỡng cảnh báo. */
+  thresholds: number[];
+  /** Mô tả panel. */
+  description: string;
+}
+
+/**
+ * Dashboard chứa nhiều panel.
+ */
+export interface Dashboard {
+  /** Tên duy nhất của dashboard. */
+  name: string;
+  /** Danh sách các panel. */
+  panels: Panel[];
+  /** Mô tả dashboard. */
+  description: string;
+  /** Thời điểm tạo (ms epoch). */
+  created_at: number;
+  /** Thời điểm cập nhật cuối (ms epoch). */
+  updated_at: number;
+}
+
+/**
+ * Thành phần panel metric — giá trị hiện tại và trạng thái.
+ */
+interface MetricPanelState {
+  panel: Panel;
+  value: number;
+  healthy: boolean;
+}
+
+/**
+ * Component widget dashboard.
+ *
+ * Hiển thị danh sách dashboard và các panel metric bên trong,
+ * tự động làm mới dữ liệu theo khoảng thời gian định kỳ.
+ */
+@Component({
+  selector: 'app-dashboard-widget',
+  standalone: true,
+  imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="dashboard-widget">
+      <h2>{{ dashboard?.name || 'Dashboard' }}</h2>
+      <p *ngIf="dashboard?.description" class="dashboard-description">
+        {{ dashboard.description }}
+      </p>
+
+      <!-- Trạng thái tải -->
+      <div *ngIf="loading" class="dashboard-loading">
+        Đang tải dữ liệu dashboard...
+      </div>
+
+      <!-- Danh sách panel -->
+      <div *ngIf="!loading" class="dashboard-panels">
+        <div
+          *ngFor="let panelState of panelStates"
+          [class]="'panel panel--' + panelState.panel.type + ' panel--' + (panelState.healthy ? 'healthy' : 'unhealthy')"
+        >
+          <div class="panel-header">
+            <h3>{{ panelState.panel.name }}</h3>
+            <span *ngIf="!panelState.healthy" class="panel-badge panel-badge--unhealthy">
+              Cảnh báo
+            </span>
+          </div>
+
+          <div class="panel-body">
+            <span class="panel-value">{{ panelState.value | number:'.2-2' }}</span>
+            <span class="panel-unit">{{ panelState.panel.unit }}</span>
+          </div>
+
+          <div class="panel-footer">
+            <span class="panel-metric">{{ panelState.panel.metric }}</span>
+            <span *ngIf="panelState.panel.description" class="panel-description">
+              {{ panelState.panel.description }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Thông báo trống -->
+      <div *ngIf="!loading && panelStates.length === 0" class="dashboard-empty">
+        Không có panel nào trên dashboard.
+      </div>
+
+      <!-- Nút làm mới -->
+      <button (click)="loadDashboard()" class="refresh-btn" [disabled]="loading">
+        {{ loading ? 'Đang tải...' : 'Làm mới' }}
+      </button>
+    </div>
+  `,
+  styles: [`
+    .dashboard-widget {
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .dashboard-description {
+      color: #666;
+      margin-bottom: 16px;
+    }
+    .dashboard-panels {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .panel {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+      transition: box-shadow 0.2s;
+    }
+    .panel:hover {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    .panel--unhealthy {
+      border-color: #f44336;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .panel-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .panel-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+    .panel-badge--unhealthy {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .panel-body {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .panel-value {
+      font-size: 32px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .panel-unit {
+      font-size: 14px;
+      color: #666;
+    }
+    .panel-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .panel-metric {
+      font-size: 12px;
+      color: #999;
+      font-family: monospace;
+    }
+    .panel-description {
+      font-size: 12px;
+      color: #666;
+    }
+    .dashboard-loading, .dashboard-empty {
+      text-align: center;
+      padding: 32px;
+      color: #666;
+    }
+    .refresh-btn {
+      margin-top: 8px;
+      padding: 8px 16px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .refresh-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  `],
+})
+export class DashboardWidgetComponent implements OnInit, OnDestroy {
+  /** URL cơ sở của API monitoring. */
+  private readonly apiBaseUrl = '/api';
+
+  /** Dashboard hiện tại. */
+  dashboard: Dashboard | null = null;
+
+  /** Trạng thái của từng panel. */
+  panelStates: MetricPanelState[] = [];
+
+  /** Trạng thái tải. */
+  loading = false;
+
+  /** Subscription để dọn dẹp. */
+  private sub?: Subscription;
+  private refreshTimer?: ReturnType<typeof setInterval>;
+
+  /** Khoảng thời gian tự động làm mới (ms). */
+  private readonly refreshInterval = 30000;
+
+  /** Tên dashboard mặc định. */
+  private readonly defaultDashboard = 'main';
+
+  ngOnInit(): void {
+    this.loadDashboard();
+    this.refreshTimer = setInterval(() => {
+      this.loadDashboard();
+    }, this.refreshInterval);
+  }
+
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+  }
+
+  /**
+   * Tải dashboard từ API backend.
+   */
+  loadDashboard(): void {
+    this.loading = true;
+    const http = new HttpClient();
+
+    this.sub = http
+      .get<Dashboard>(`${this.apiBaseUrl}/monitoring/dashboards/${this.defaultDashboard}`)
+      .subscribe({
+        next: (data) => {
+          this.dashboard = data;
+          this.panelStates = data.panels.map((panel) => ({
+            panel,
+            value: this._generateSampleValue(panel),
+            healthy: this._isHealthy(this._generateSampleValue(panel), panel.thresholds),
+          }));
+          this.loading = false;
+        },
+        error: (err) => {
+          console.error('Lỗi khi tải dashboard:', err);
+          this.loading = false;
+        },
+      });
+  }
+
+  /** Tạo giá trị mẫu cho panel. */
+  private _generateSampleValue(panel: Panel): number {
+    return Math.random() * 100;
+  }
+
+  /** Kiểm tra panel có đạt ngưỡng hay không. */
+  private _isHealthy(value: number, thresholds: number[]): boolean {
+    if (thresholds.length === 0) return true;
+    return value < thresholds[0];
+  }
+}

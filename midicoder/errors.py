@@ -521,6 +521,20 @@ class ErrorCode(str, Enum):
     CP15_OBSERVABILITY_PARSE_ERROR = "MDC-CP15-010"
 
     # =========================================================================
+    # CP16: API & System Monitoring Generator Errors
+    # =========================================================================
+    CP16_EMPTY_DASHBOARD_NAME = "MDC-CP16-001"
+    CP16_INVALID_ALERT_SEVERITY = "MDC-CP16-002"
+    CP16_INVALID_ALERT_CONDITION = "MDC-CP16-003"
+    CP16_INVALID_SLI_METRIC_TYPE = "MDC-CP16-004"
+    CP16_ALERT_EVALUATION_INTERVAL_INVALID = "MDC-CP16-005"
+    CP16_DUPLICATE_ALERT_RULE = "MDC-CP16-006"
+    CP16_EMPTY_ALERT_NAME = "MDC-CP16-007"
+    CP16_INVALID_SLI_TARGET = "MDC-CP16-008"
+    CP16_EMPTY_PANEL_NAME = "MDC-CP16-009"
+    CP16_MONITORING_PARSE_ERROR = "MDC-CP16-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

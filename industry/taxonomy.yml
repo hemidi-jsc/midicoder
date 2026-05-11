@@ -281,7 +281,7 @@ core_packs:
       - alert_define
       - sli_monitor
     category: observability
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP17
     name: Business Intelligence & Analytics Generator

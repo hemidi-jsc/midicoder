@@ -1,0 +1,239 @@
+"""Router monitoring cho FastAPI — endpoint REST cho dashboard, cảnh báo, SLI.
+
+{% if project_name %}
+Dự án: {{ project_name }}
+{% endif %}
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter
+
+# Import MonitoringService từ mô-đun service
+# Trong thực tế, service sẽ được inject qua dependency injection của FastAPI
+_monitoring_service: Optional["MonitoringService"] = None
+
+
+def set_monitoring_service(service: "MonitoringService") -> None:
+    """Đặt instance MonitoringService toàn cục cho router.
+
+    Args:
+        service: Instance của MonitoringService.
+    """
+    global _monitoring_service
+    _monitoring_service = service
+
+
+# Tạo router cho các endpoint monitoring
+router = APIRouter(prefix="/monitoring", tags=["monitoring"])
+
+
+@router.get("/dashboards")
+def list_dashboards() -> List[Dict[str, Any]]:
+    """Liệt kê tất cả dashboard.
+
+    Returns:
+        Danh sách dashboard dưới dạng dict.
+    """
+    service = _monitoring_service
+    if not service:
+        return []
+
+    dashboards = service.list_dashboards()
+    return [
+        {
+            "name": d.name,
+            "description": d.description,
+            "panels": [
+                {
+                    "name": p.name,
+                    "metric": p.metric,
+                    "unit": p.unit,
+                    "type": p.type,
+                    "description": p.description,
+                }
+                for p in d.panels
+            ],
+            "created_at": d.created_at,
+            "updated_at": d.updated_at,
+        }
+        for d in dashboards
+    ]
+
+
+@router.get("/dashboards/{name}")
+def get_dashboard(name: str) -> Optional[Dict[str, Any]]:
+    """Lấy thông tin chi tiết của một dashboard.
+
+    Args:
+        name: Tên của dashboard.
+
+    Returns:
+        Thông tin dashboard dưới dạng dict, hoặc None nếu không tìm thấy.
+    """
+    service = _monitoring_service
+    if not service:
+        return None
+
+    dashboard = service.get_dashboard(name)
+    if not dashboard:
+        return None
+
+    return {
+        "name": dashboard.name,
+        "description": dashboard.description,
+        "panels": [
+            {
+                "name": p.name,
+                "metric": p.metric,
+                "unit": p.unit,
+                "type": p.type,
+                "thresholds": p.thresholds,
+                "description": p.description,
+            }
+            for p in dashboard.panels
+        ],
+        "created_at": dashboard.created_at,
+        "updated_at": dashboard.updated_at,
+    }
+
+
+@router.post("/alerts")
+def add_alert_rule(
+    name: str,
+    metric: str,
+    operator: str,
+    threshold: float,
+    severity: str = "WARNING",
+    message: str = "",
+    evaluation_interval: int = 60,
+) -> Dict[str, Any]:
+    """Thêm quy tắc cảnh báo mới.
+
+    Args:
+        name: Tên duy nhất của quy tắc.
+        metric: Tên metric cần giám sát.
+        operator: Toán tử so sánh (> < >= <= == !=).
+        threshold: Ngưỡng kích hoạt cảnh báo.
+        severity: Mức độ nghiêm trọng.
+        message: Thông điệp cảnh báo tùy chỉnh.
+        evaluation_interval: Khoảng thời gian đánh giá (giây).
+
+    Returns:
+        Thông tin quy tắc đã thêm.
+    """
+    service = _monitoring_service
+    if not service:
+        return {"error": "Monitoring service không được cấu hình"}
+
+    from monitoring.monitoring_service import AlertRule, AlertSeverity
+
+    rule = AlertRule(
+        name=name,
+        metric=metric,
+        operator=operator,
+        threshold=threshold,
+        severity=AlertSeverity(severity),
+        message=message,
+        evaluation_interval=evaluation_interval,
+    )
+    service.add_alert_rule(rule)
+
+    return {
+        "name": rule.name,
+        "metric": rule.metric,
+        "operator": rule.operator,
+        "threshold": rule.threshold,
+        "severity": rule.severity.value,
+        "message": rule.message,
+        "evaluation_interval": rule.evaluation_interval,
+    }
+
+
+@router.get("/alerts")
+def get_fired_alerts() -> List[Dict[str, Any]]:
+    """Lấy tất cả cảnh báo đang kích hoạt.
+
+    Returns:
+        Danh sách cảnh báo đang kích hoạt dưới dạng dict.
+    """
+    service = _monitoring_service
+    if not service:
+        return []
+
+    alerts = service.get_fired_alerts()
+    return [
+        {
+            "id": a.id,
+            "rule_name": a.rule_name,
+            "severity": a.severity.value,
+            "status": a.status.value,
+            "message": a.message,
+            "current_value": a.current_value,
+            "threshold": a.threshold,
+            "fired_at": a.fired_at,
+            "acknowledged_at": a.acknowledged_at,
+            "resolved_at": a.resolved_at,
+        }
+        for a in alerts
+    ]
+
+
+@router.get("/slis")
+def get_sli_status() -> List[Dict[str, Any]]:
+    """Lấy trạng thái hiện tại của tất cả SLI.
+
+    Returns:
+        Danh sách trạng thái SLI dưới dạng dict.
+    """
+    service = _monitoring_service
+    if not service:
+        return []
+
+    statuses = service.check_slis()
+    return [
+        {
+            "name": s.name,
+            "current_value": s.current_value,
+            "target": s.target,
+            "healthy": s.healthy,
+            "window_start": s.window_start,
+            "window_end": s.window_end,
+            "samples": s.samples,
+        }
+        for s in statuses
+    ]
+
+
+@router.post("/alerts/evaluate")
+def evaluate_alerts(metrics: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+    """Đánh giá tất cả quy tắc cảnh báo với metric hiện tại.
+
+    Args:
+        metrics: Bản đồ metric theo tên và giá trị hiện tại (tùy chọn).
+
+    Returns:
+        Kết quả đánh giá với danh sách cảnh báo mới được kích hoạt.
+    """
+    service = _monitoring_service
+    if not service:
+        return {"error": "Monitoring service không được cấu hình"}
+
+    new_alerts = service.evaluate_alerts(metrics)
+    return {
+        "evaluated_at": __import__("time").time(),
+        "new_alerts_count": len(new_alerts),
+        "new_alerts": [
+            {
+                "id": a.id,
+                "rule_name": a.rule_name,
+                "severity": a.severity.value,
+                "message": a.message,
+                "current_value": a.current_value,
+                "threshold": a.threshold,
+            }
+            for a in new_alerts
+        ],
+    }

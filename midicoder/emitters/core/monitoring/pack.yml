@@ -1,0 +1,38 @@
+pack:
+  id: "CP16"
+  name: "API & System Monitoring Generator"
+  internal_id: "cp16-monitoring"
+  version: "1.0.0"
+  phase: "P2"
+  category: "observability"
+  status: "stable"
+  depends_on: ["CP15"]
+  definitions_count: 3
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-CP16"
+    range: "MDC-CP16-001 to MDC-CP16-010"
+  capabilities_provided:
+    - dashboard_create
+    - alert_define
+    - sli_monitor
+  models:
+    - DashboardProfile
+    - AlertRule
+    - SLIDefinition
+  enums:
+    - AlertSeverity
+    - AlertCondition
+    - SLIMetricType
+    - DashboardType
+  templates:
+    dashboard_create: "fastapi/core/monitoring/monitoring_service.py.jinja2"
+    alert_define: "nestjs/core/monitoring/monitoring.service.ts.jinja2"
+    sli_monitor: "nestjs/core/monitoring/monitoring.controller.ts.jinja2"
+  frontend_integration:
+    angular:
+      - DashboardWidget
+      - AlertPanel
+    react:
+      - DashboardPanel
+      - AlertBanner

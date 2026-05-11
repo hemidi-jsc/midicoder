@@ -1,0 +1,97 @@
+/**
+ * Controller monitoring — endpoint REST cho dashboard, cảnh báo, và SLI.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Cung cấp API cho phía client để truy vấn và quản lý
+ * dashboard, quy tắc cảnh báo, và trạng thái SLI.
+ */
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+} from '@nestjs/common';
+import { MonitoringService, Dashboard, FiredAlert, SLIStatus, AlertRule } from './monitoring.service';
+
+/**
+ * Controller cho endpoint monitoring.
+ *
+ * Quản lý các route REST để truy vấn dashboard,
+ * thêm/xóa quy tắc cảnh báo, và kiểm tra trạng thái SLI.
+ */
+@Controller('monitoring')
+export class MonitoringController {
+  constructor(private readonly monitoring: MonitoringService) {}
+
+  /**
+   * Liệt kê tất cả dashboard.
+   *
+   * @returns Mảng dashboard.
+   */
+  @Get('dashboards')
+  listDashboards(): Dashboard[] {
+    return this.monitoring.listDashboards();
+  }
+
+  /**
+   * Lấy thông tin chi tiết của một dashboard.
+   *
+   * @param name - Tên của dashboard.
+   * @returns Dashboard nếu tìm thấy, ngược lại undefined.
+   */
+  @Get('dashboards/:name')
+  getDashboard(@Param('name') name: string): Dashboard | undefined {
+    return this.monitoring.getDashboard(name);
+  }
+
+  /**
+   * Thêm quy tắc cảnh báo mới.
+   *
+   * @param rule - Quy tắc cảnh báo cần thêm.
+   * @returns Quy tắc đã thêm.
+   */
+  @Post('alerts')
+  addAlertRule(@Body() rule: AlertRule): AlertRule {
+    this.monitoring.addAlertRule(rule);
+    return rule;
+  }
+
+  /**
+   * Lấy tất cả cảnh báo đang kích hoạt.
+   *
+   * @returns Mảng cảnh báo đang kích hoạt.
+   */
+  @Get('alerts')
+  getFiredAlerts(): FiredAlert[] {
+    return this.monitoring.getFiredAlerts();
+  }
+
+  /**
+   * Đánh giá tất cả quy tắc cảnh báo với metric hiện tại.
+   *
+   * @param metrics - Bản đồ metric theo tên và giá trị.
+   * @returns Kết quả đánh giá với danh sách cảnh báo mới.
+   */
+  @Post('alerts/evaluate')
+  evaluateAlerts(@Body() metrics: Record<string, number>) {
+    const newAlerts = this.monitoring.evaluateAlerts(metrics);
+    return {
+      evaluatedAt: Date.now(),
+      newAlertsCount: newAlerts.length,
+      newAlerts,
+    };
+  }
+
+  /**
+   * Lấy trạng thái hiện tại của tất cả SLI.
+   *
+   * @returns Mảng trạng thái SLI.
+   */
+  @Get('slis')
+  getSLIStatus(): SLIStatus[] {
+    return this.monitoring.checkSlis();
+  }
+}

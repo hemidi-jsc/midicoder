@@ -1,0 +1,267 @@
+/**
+ * Component AlertBanner — hiển thị thông báo cảnh báo với màu sắc theo mức độ nghiêm trọng.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Kết nối với API monitoring để tải danh sách cảnh báo và hiển thị
+ * dưới dạng banner với khả năng lọc, xác nhận, và giải quyết cảnh báo.
+ */
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { AlertSeverity, AlertStatus, FiredAlert, SEVERITY_COLORS } from './types';
+
+/**
+ * Props cho AlertBanner component.
+ */
+interface AlertBannerProps {
+  /** URL cơ sở của API. */
+  apiBaseUrl?: string;
+  /** Khoảng thời gian tự động làm mới (ms). */
+  refreshInterval?: number;
+  /** Callback khi tải xong danh sách cảnh báo. */
+  onLoad?: (alerts: FiredAlert[]) => void;
+  /** Callback khi xác nhận cảnh báo. */
+  onAcknowledge?: (alertId: string) => void;
+  /** Callback khi giải quyết cảnh báo. */
+  onResolve?: (alertId: string) => void;
+}
+
+/**
+ * AlertBanner component.
+ *
+ * Hiển thị danh sách cảnh báo đang kích hoạt:
+ * - Badge màu theo mức độ nghiêm trọng (critical=đỏ, warning=vàng, info=xanh dương)
+ * - Lọc cảnh báo theo mức độ
+ * - Xác nhận và giải quyết cảnh báo
+ * - Tự động làm mới dữ liệu theo khoảng thời gian
+ */
+export const AlertBanner: React.FC<AlertBannerProps> = ({
+  apiBaseUrl = '/api',
+  refreshInterval = 15000,
+  onLoad,
+  onAcknowledge,
+  onResolve,
+}) => {
+  // Danh sách cảnh báo
+  const [alerts, setAlerts] = useState<FiredAlert[]>([]);
+  // Trạng thái tải
+  const [loading, setLoading] = useState(false);
+  // Lỗi nếu có
+  const [error, setError] = useState<Error | null>(null);
+  // Bộ lọc mức độ nghiêm trọng
+  const [severityFilter, setSeverityFilter] = useState<AlertSeverity | null>(null);
+
+  /**
+   * Tải danh sách cảnh báo từ API backend.
+   */
+  const loadAlerts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/monitoring/alerts`);
+
+      if (!response.ok) {
+        throw new Error(`Không thể tải cảnh báo: ${response.statusText}`);
+      }
+
+      const data: FiredAlert[] = await response.json();
+      setAlerts(data);
+      onLoad?.(data);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+      console.error('Lỗi khi tải cảnh báo:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBaseUrl, onLoad]);
+
+  // Tự động tải khi mount
+  useEffect(() => {
+    loadAlerts();
+  }, [loadAlerts]);
+
+  // Tự động làm mới dữ liệu
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadAlerts();
+    }, refreshInterval);
+    return () => clearInterval(timer);
+  }, [loadAlerts, refreshInterval]);
+
+  /**
+   * Danh sách cảnh báo đã lọc theo mức độ nghiêm trọng.
+   */
+  const filteredAlerts = useMemo(() => {
+    if (!severityFilter) return alerts;
+    return alerts.filter((a) => a.severity === severityFilter);
+  }, [alerts, severityFilter]);
+
+  /**
+   * Xử lý xác nhận cảnh báo.
+   */
+  const handleAcknowledge = useCallback((alertId: string) => {
+    setAlerts((prev) =>
+      prev.map((a) =>
+        a.id === alertId
+          ? { ...a, status: 'ACKNOWLEDGED' as AlertStatus, acknowledged_at: Date.now() }
+          : a
+      )
+    );
+    onAcknowledge?.(alertId);
+  }, [onAcknowledge]);
+
+  /**
+   * Xử lý giải quyết cảnh báo.
+   */
+  const handleResolve = useCallback((alertId: string) => {
+    setAlerts((prev) =>
+      prev.map((a) =>
+        a.id === alertId
+          ? { ...a, status: 'RESOLVED' as AlertStatus, resolved_at: Date.now() }
+          : a
+      )
+    );
+    onResolve?.(alertId);
+  }, [onResolve]);
+
+  /**
+   * Lấy màu sắc theo mức độ nghiêm trọng.
+   */
+  const getSeverityColor = (severity: AlertSeverity): string => {
+    return SEVERITY_COLORS[severity];
+  };
+
+  /**
+   * Định dạng thời gian kích hoạt cảnh báo.
+   */
+  const formatFiredAt = (timestamp: number): string => {
+    return new Date(timestamp).toLocaleString('vi-VN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  return (
+    <div className="alert-banner">
+      <h2>Cảnh Báo Đang Kích Hoạt</h2>
+
+      {/* Bộ lọc theo mức độ */}
+      <div className="alert-banner__filters">
+        <label htmlFor="severity-filter">
+          Mức độ:
+          <select
+            id="severity-filter"
+            value={severityFilter ?? ''}
+            onChange={(e) => setSeverityFilter(e.target.value as AlertSeverity || null)}
+          >
+            <option value="">Tất cả</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="CRITICAL">CRITICAL</option>
+            <option value="FATAL">FATAL</option>
+          </select>
+        </label>
+        <span className="alert-banner__count">
+          {filteredAlerts.length} cảnh báo
+        </span>
+      </div>
+
+      {/* Trạng thái tải */}
+      {loading && !error && (
+        <div className="alert-banner__loading">Đang tải cảnh báo...</div>
+      )}
+
+      {/* Thông báo lỗi */}
+      {error && (
+        <div className="alert-banner__error">
+          Lỗi: {error.message}
+          <button onClick={loadAlerts}>Thử lại</button>
+        </div>
+      )}
+
+      {/* Không có cảnh báo */}
+      {!loading && !error && filteredAlerts.length === 0 && (
+        <div className="alert-banner__empty">
+          Không có cảnh báo nào đang kích hoạt.
+        </div>
+      )}
+
+      {/* Danh sách cảnh báo */}
+      {!loading && filteredAlerts.length > 0 && (
+        <div className="alert-banner__list">
+          {filteredAlerts.map((alert) => (
+            <div
+              key={alert.id}
+              className={`alert-banner__item alert-banner__item--${alert.severity.toLowerCase()} ${alert.status === 'ACKNOWLEDGED' ? 'alert-banner__item--acknowledged' : ''}`}
+            >
+              {/* Badge mức độ nghiêm trọng */}
+              <span
+                className="alert-banner__severity-badge"
+                style={{
+                  borderColor: getSeverityColor(alert.severity),
+                  color: getSeverityColor(alert.severity),
+                }}
+              >
+                {alert.severity}
+              </span>
+
+              {/* Nội dung cảnh báo */}
+              <div className="alert-banner__content">
+                <div className="alert-banner__title">
+                  <span className="alert-banner__rule">{alert.rule_name}</span>
+                  {alert.status === 'ACKNOWLEDGED' && (
+                    <span className="alert-banner__ack-badge">Đã xác nhận</span>
+                  )}
+                </div>
+                <p className="alert-banner__message">{alert.message}</p>
+                <div className="alert-banner__details">
+                  <span>Giá trị: {alert.current_value}</span>
+                  <span>Ngưỡng: {alert.threshold}</span>
+                </div>
+                <div className="alert-banner__time">
+                  Kích hoạt: {formatFiredAt(alert.fired_at)}
+                </div>
+              </div>
+
+              {/* Hành động */}
+              <div className="alert-banner__actions">
+                {alert.status === 'ACTIVE' && (
+                  <button
+                    className="alert-banner__btn alert-banner__btn--ack"
+                    onClick={() => handleAcknowledge(alert.id)}
+                  >
+                    Xác nhận
+                  </button>
+                )}
+                {alert.status !== 'RESOLVED' && (
+                  <button
+                    className="alert-banner__btn alert-banner__btn--resolve"
+                    onClick={() => handleResolve(alert.id)}
+                  >
+                    Giải quyết
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Nút làm mới */}
+      <button
+        className="alert-banner__refresh"
+        onClick={loadAlerts}
+        disabled={loading}
+      >
+        {loading ? 'Đang tải...' : 'Làm mới'}
+      </button>
+    </div>
+  );
+};
+
+export default AlertBanner;
