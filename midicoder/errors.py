@@ -438,6 +438,15 @@ class ErrorCode(str, Enum):
     CP08_RUNTIME_DATASOURCE_ERROR = "MDC-CP08-010"
 
     # =========================================================================
+    # CP09: Caching & Performance Layer Errors
+    # =========================================================================
+    CP09_BACKEND_INVALID = "MDC-CP09-001"
+    CP09_TTL_INVALID = "MDC-CP09-002"
+    CP09_KEY_EMPTY = "MDC-CP09-003"
+    CP09_PATTERN_INVALID = "MDC-CP09-004"
+    CP09_SERIALIZATION_FAILED = "MDC-CP09-005"
+    
+    # =========================================================================
     # CP12: Notification & Communication Errors
     # =========================================================================
     CP12_NOTIFICATION_CHANNEL_NOT_SUPPORTED = "MDC-CP12-001"
@@ -472,6 +481,8 @@ class ErrorCode(str, Enum):
     CP53_DUPLICATE_DP_ID = "MDC-CP53-003"
     CP53_INVALID_BINDING_ID = "MDC-CP53-004"
     CP53_INVOKER_CONFIG_EMPTY = "MDC-CP53-005"
+
+
 class ExitCode(Enum):
     """
     Exit codes cho CLI commands.
@@ -802,6 +813,13 @@ class MidicoderErrorManager:
         ErrorCode.CP08_MIGRATION_ERROR: "Lỗi generate migration file.",
         ErrorCode.CP08_RUNTIME_DATASOURCE_ERROR: "Lỗi runtime datasource connection.",
 
+        # CP09: Caching & Performance Layer Error Templates
+        ErrorCode.CP09_BACKEND_INVALID: "Backend cache không hợp lệ. Chọn trong redis hoặc memory.",
+        ErrorCode.CP09_TTL_INVALID: "TTL phải lớn hơn 0 giây.",
+        ErrorCode.CP09_KEY_EMPTY: "Cache key không được đặt trống.",
+        ErrorCode.CP09_PATTERN_INVALID: "Pattern invalidation không hợp lệ. Sử dụng glob format.",
+        ErrorCode.CP09_SERIALIZATION_FAILED: "Serialize cache data thất bại. Kiểm tra serializer.",
+        
         # CP14 Audit Trail & Compliance Errors
         ErrorCode.CP14_AUDIT_EMPTY_ID: "ID không được để trống (audit_rule/compliance_control).",
         ErrorCode.CP14_AUDIT_INVALID_ACTION: "Audit action type không hợp lệ.",
@@ -961,6 +979,28 @@ class MidicoderErrorManager:
             "Kiểm tra connection_string hợp lệ",
             "Đảm bảo database server đang chạy",
             "Kiểm tra network connectivity",
+        ],
+        
+        # CP09: Caching & Performance Layer Suggestions
+        ErrorCode.CP09_BACKEND_INVALID: [
+            "Kiểm tra backend giả trị nằm trong catalog: redis, memory",
+            "Đối với redis, đảm bảo Redis server đang chạy",
+        ],
+        ErrorCode.CP09_TTL_INVALID: [
+            "Đặt ttl > 0 (đvị: giây)",
+            "TTL mặc định là 300 giây nếu không cần đặt đặc biệt",
+        ],
+        ErrorCode.CP09_KEY_EMPTY: [
+            "Cung cấp cache key khác trống",
+            "Đảm bảo key_prefix của profile không trống",
+        ],
+        ErrorCode.CP09_PATTERN_INVALID: [
+            "Sử dụng glob format: user:*, order:*, product:*",
+            "Tránh sử dụng ký tự đặc biệt không được hỗ trợ",
+        ],
+        ErrorCode.CP09_SERIALIZATION_FAILED: [
+            "Kiểm tra data cần serialize phải JSON-serializable",
+            "Đổi serializer sang pickle nếu dụ liệu phức tạp",
         ],
 
         ErrorCode.CP14_AUDIT_INVALID_ACTION: [

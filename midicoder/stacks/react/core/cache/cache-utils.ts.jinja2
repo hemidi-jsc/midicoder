@@ -1,0 +1,193 @@
+/**
+ * Cache Utilities cho React.
+ *
+ * Ham utility de quan ly cache.
+ * KPI-029: Tenant Isolation support.
+ *
+ * CP09: Caching & Performance Layer
+ */
+
+/**
+ * Tao cache key voi tenant prefix.
+ *
+ * KPI-029: Tenant Isolation - format: {tenantId}:{key}
+ *
+ * @param key - Cache key goc
+ * @param tenantId - Tenant ID (optional)
+ * @returns Cache key da duoc prefix
+ */
+export function buildCacheKey(key: string, tenantId?: string): string {
+  return tenantId ? `${tenantId}:${key}` : key;
+}
+
+/**
+ * Parse cache key de lay tenantId va key goc.
+ *
+ * KPI-029: Tenant Isolation
+ *
+ * @param fullKey - Cache key da duoc prefix
+ * @returns { tenantId, key }
+ */
+export function parseCacheKey(fullKey: string): {
+  tenantId: string | undefined;
+  key: string;
+} {
+  const parts = fullKey.split(':');
+  if (parts.length > 1 && !parts[1].includes('/')) {
+    return { tenantId: parts[0], key: parts.slice(1).join(':') };
+  }
+  return { tenantId: undefined, key: fullKey };
+}
+
+/**
+ * Kiem tra cache entry co bi expire khong.
+ *
+ * @param expiry - Timestamp expiry (ms)
+ * @returns True neu da bi expire
+ */
+export function isExpired(expiry: number): boolean {
+  return Date.now() > expiry;
+}
+
+/**
+ * Tinh toan expiry timestamp tu TTL.
+ *
+ * @param ttlMs - TTL (ms)
+ * @returns Timestamp expiry
+ */
+export function calculateExpiry(ttlMs: number): number {
+  return Date.now() + ttlMs;
+}
+
+/**
+ * Default TTL values (ms).
+ */
+export const DEFAULT_TTL = {
+  SHORT: 60000,      // 1 phut
+  MEDIUM: 300000,    // 5 phut
+  LONG: 900000,      // 15 phut
+  EXTREME: 3600000,  // 1 gio
+};
+
+/**
+ * Simple in-memory cache store.
+ */
+class SimpleCache {
+  private store: Map<string, { value: any; expiry: number }> = new Map();
+
+  /**
+   * Lay value tu cache.
+   *
+   * @param key - Cache key
+   * @param tenantId - Tenant ID (KPI-029)
+   * @returns Cached value hoac null
+   */
+  get<T>(key: string, tenantId?: string): T | null {
+    const fullKey = buildCacheKey(key, tenantId);
+    const entry = this.store.get(fullKey);
+
+    if (!entry) return null;
+    if (isExpired(entry.expiry)) {
+      this.store.delete(fullKey);
+      return null;
+    }
+
+    return entry.value as T;
+  }
+
+  /**
+   * Luu value vao cache.
+   *
+   * @param key - Cache key
+   * @param value - Value
+   * @param ttlMs - TTL (ms)
+   * @param tenantId - Tenant ID (KPI-029)
+   */
+  set(key: string, value: any, ttlMs: number = DEFAULT_TTL.MEDIUM, tenantId?: string): void {
+    const fullKey = buildCacheKey(key, tenantId);
+    this.store.set(fullKey, { value, expiry: calculateExpiry(ttlMs) });
+  }
+
+  /**
+   * Xoa key khoi cache.
+   *
+   * @param key - Cache key
+   * @param tenantId - Tenant ID (KPI-029)
+   * @returns True neu xoa thanh cong
+   */
+  delete(key: string, tenantId?: string): boolean {
+    const fullKey = buildCacheKey(key, tenantId);
+    return this.store.delete(fullKey);
+  }
+
+  /**
+   * Kiem tra key co trong cache.
+   *
+   * @param key - Cache key
+   * @param tenantId - Tenant ID (KPI-029)
+   * @returns True neu ton tai va chua expire
+   */
+  has(key: string, tenantId?: string): boolean {
+    const fullKey = buildCacheKey(key, tenantId);
+    const entry = this.store.get(fullKey);
+    if (!entry) return false;
+    if (isExpired(entry.expiry)) {
+      this.store.delete(fullKey);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Invalidate cache theo pattern.
+   *
+   * @param pattern - Pattern de match keys
+   * @param tenantId - Tenant ID (KPI-029)
+   * @returns So luong keys da xoa
+   */
+  invalidate(pattern: string, tenantId?: string): number {
+    const prefix = tenantId ? `${tenantId}:` : '';
+    let count = 0;
+
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix) && key.includes(pattern.replace('*', ''))) {
+        this.store.delete(key);
+        count++;
+      }
+    }
+
+    return count;
+  }
+
+  /**
+   * Xoa toan bo cache.
+   *
+   * @param tenantId - Chi xoa cache cua tenant neu co (KPI-029)
+   * @returns So luong keys da xoa
+   */
+  clear(tenantId?: string): number {
+    if (tenantId) {
+      let count = 0;
+      for (const key of this.store.keys()) {
+        if (key.startsWith(`${tenantId}:`)) {
+          this.store.delete(key);
+          count++;
+        }
+      }
+      return count;
+    }
+    const count = this.store.size;
+    this.store.clear();
+    return count;
+  }
+
+  /**
+   * So luong entries trong cache.
+   */
+  get size(): number {
+    return this.store.size;
+  }
+}
+
+// Export singleton instance
+export const cache = new SimpleCache();

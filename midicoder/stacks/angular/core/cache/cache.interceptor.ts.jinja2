@@ -1,0 +1,64 @@
+/**
+ * HTTP Cache Interceptor cho Angular.
+ *
+ * Tu dong cache HTTP GET responses.
+ * KPI-029: Tenant Isolation - Cache keys prefix voi tenantId.
+ *
+ * CP09: Caching & Performance Layer
+ */
+
+import {
+  Injectable,
+  HttpInterceptor,
+  HttpRequest,
+  HttpResponse,
+  HttpHandler,
+  HttpEvent,
+} from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { tap } from 'rxjs/operators';
+import { CacheService } from './cache.service';
+
+/**
+ * HTTP Cache Interceptor.
+ *
+ * Tu dong cache GET responses va bypass cache cho POST/PUT/DELETE.
+ * KPI-029: Tenant Isolation - cache keys co tenant prefix.
+ */
+@Injectable()
+export class CacheInterceptor implements HttpInterceptor {
+  constructor(private cacheService: CacheService) {}
+
+  intercept(
+    request: HttpRequest<any>,
+    next: HttpHandler
+  ): Observable<HttpEvent<any>> {
+    // Chi cache GET requests
+    if (request.method !== 'GET') {
+      this._invalidateRelated(request);
+      return next.handle(request);
+    }
+
+    // KPI-029: Tenant Isolation
+    const tenantId = request.headers.get('X-Tenant-Id');
+    const cacheKey = request.urlWithParams;
+
+    if (this.cacheService.has(cacheKey, tenantId)) {
+      return this.cacheService.get(cacheKey, tenantId);
+    }
+
+    return next.handle(request).pipe(
+      tap((event) => {
+        if (event instanceof HttpResponse && event.status === 200) {
+          this.cacheService.set(cacheKey, event.body, 300000, tenantId);
+        }
+      })
+    );
+  }
+
+  private _invalidateRelated(request: HttpRequest<any>): void {
+    const tenantId = request.headers.get('X-Tenant-Id');
+    const urlPrefix = request.url.split('?')[0];
+    this.cacheService.invalidate(`${urlPrefix}*`, tenantId);
+  }
+}

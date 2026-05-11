@@ -28,3 +28,6 @@ Thumbs.db
 bak/
 # Added by code-review-graph
 .code-review-graph/
+
+# Backlog / planning
+backlog/

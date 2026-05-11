@@ -1,0 +1,177 @@
+/**
+ * Cache Service cho Angular.
+ *
+ * Cung cấp cache operations với tenant isolation.
+ * KPI-029: Tenant Isolation - Cache keys prefix với tenantId.
+ *
+ * CP09: Caching & Performance Layer
+ */
+
+import { Injectable } from '@angular/core';
+import { Observable, of, from } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+
+/**
+ * Interface cho cache entry.
+ */
+interface CacheEntry<T> {
+  value: T;
+  expiry: number;
+}
+
+/**
+ * Cache Service.
+ *
+ * In-memory cache cho Angular frontend.
+ * KPI-029: Support tenant-aware cache keys.
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class CacheService {
+  private store: Map<string, CacheEntry<any>> = new Map();
+  private defaultTtl = 300000; // 5 phut (ms)
+
+  /**
+   * Tao cache key voi tenant prefix.
+   *
+   * KPI-029: Tenant Isolation - format: {tenantId}:{key}
+   *
+   * @param key - Cache key goc
+   * @param tenantId - Tenant ID (optional)
+   * @returns Cache key da duoc prefix
+   */
+  private buildKey(key: string, tenantId?: string): string {
+    return tenantId ? `${tenantId}:${key}` : key;
+  }
+
+  /**
+   * Lay gia tri tu cache.
+   *
+   * @param key - Cache key
+   * @param tenantId - Tenant ID (KPI-029)
+   * @returns Observable voi cached value hoac null
+   */
+  get(key: string, tenantId?: string): Observable<any | null> {
+    const fullKey = this.buildKey(key, tenantId);
+    const entry = this.store.get(fullKey);
+
+    if (!entry) {
+      return of(null);
+    }
+
+    // Kiem tra expiry
+    if (Date.now() > entry.expiry) {
+      this.store.delete(fullKey);
+      return of(null);
+    }
+
+    return of(entry.value);
+  }
+
+  /**
+   * Luu gia tri vao cache.
+   *
+   * @param key - Cache key
+   * @param value - Gia tri de luu
+   * @param ttlMs - Time-to-live (ms)
+   * @param tenantId - Tenant ID (KPI-029)
+   */
+  set(key: string, value: any, ttlMs?: number, tenantId?: string): void {
+    const fullKey = this.buildKey(key, tenantId);
+    const ttl = ttlMs || this.defaultTtl;
+    this.store.set(fullKey, {
+      value,
+      expiry: Date.now() + ttl,
+    });
+  }
+
+  /**
+   * Xoa key khoi cache.
+   *
+   * @param key - Cache key
+   * @param tenantId - Tenant ID (KPI-029)
+   * @returns True neu xoa thanh cong
+   */
+  delete(key: string, tenantId?: string): boolean {
+    const fullKey = this.buildKey(key, tenantId);
+    return this.store.delete(fullKey);
+  }
+
+  /**
+   * Xoa batch keys theo pattern.
+   *
+   * @param pattern - Glob pattern (vi du: user:*)
+   * @param tenantId - Tenant ID (KPI-029)
+   * @returns So luong keys da xoa
+   */
+  invalidate(pattern: string, tenantId?: string): number {
+    const prefix = tenantId ? `${tenantId}:` : '';
+    let count = 0;
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix) && this._matchPattern(key, pattern)) {
+        this.store.delete(key);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Xoa toan bo cache cua tenant.
+   *
+   * KPI-029: Chi xoa cache cua tenant duoc chi dinh.
+   *
+   * @param tenantId - Tenant ID
+   * @returns So luong keys da xoa
+   */
+  clearTenant(tenantId: string): number {
+    let count = 0;
+    for (const key of this.store.keys()) {
+      if (key.startsWith(`${tenantId}:`)) {
+        this.store.delete(key);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Xoa toan bo cache.
+   *
+   * CAN THAN: Chi dung cho development.
+   */
+  clearAll(): void {
+    this.store.clear();
+  }
+
+  /**
+   * Kiem tra key co trong cache va chua expire.
+   *
+   * @param key - Cache key
+   * @param tenantId - Tenant ID (KPI-029)
+   * @returns True neu key ton tai
+   */
+  has(key: string, tenantId?: string): boolean {
+    const fullKey = this.buildKey(key, tenantId);
+    const entry = this.store.get(fullKey);
+    if (!entry) return false;
+    if (Date.now() > entry.expiry) {
+      this.store.delete(fullKey);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Simple pattern matching (glob-style).
+   *
+   * @param key - Key de kiem tra
+   * @param pattern - Pattern glob
+   * @returns True neu match
+   */
+  private _matchPattern(key: string, pattern: string): boolean {
+    const regex = new RegExp(`^${pattern.replace(/\*/g, '.*')}$`);
+    return regex.test(key);
+  }
+}

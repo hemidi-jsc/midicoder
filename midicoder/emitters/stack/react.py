@@ -24,6 +24,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from midicoder.emitters.core.cache import (
+    CacheParser,
+    ReactEmitter as CacheReactEmitter,
+)
 from midicoder.pipeline.mir import MIR
 
 
@@ -188,6 +192,11 @@ class ReactEmitter:
         if authnz:
             files.extend(self._emit_auth(authnz, src_dir))
 
+        # Emit cache module (CP09)
+        cache_profiles_data = mir.metadata.get("cache_profiles", [])
+        if cache_profiles_data:
+            files.extend(self._emit_cache(cache_profiles_data, src_dir))
+
         # FR7: Emit routing
         if routes or entities:
             files.extend(self._emit_routing(routes, entities, authnz, src_dir))
@@ -340,6 +349,53 @@ class ReactEmitter:
             content=self._generate_redux_store(entities),
             output_dir=store_dir,
         ))
+
+        return files
+
+    def _emit_cache(
+        self,
+        cache_profiles_data: list[dict[str, Any]],
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """
+        Emit cache module (CP09: Caching & Performance Layer).
+
+        Su dung CacheReactEmitter de generate cache code.
+
+        KPI-029: Tenant-aware caching.
+
+        Args:
+            cache_profiles_data: List cua cache profiles tu MIR metadata
+            output_dir: Output directory
+
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+
+        try:
+            # Parse cache config tu metadata
+            parser = CacheParser()
+            metadata = {"cache_profiles": cache_profiles_data}
+            collection = parser.parse_from_metadata(metadata)
+
+            if not collection.profiles:
+                return files
+
+            # Tao emitter va emit files
+            cache_emitter = CacheReactEmitter(self.stack_dir)
+            emitted_files = cache_emitter.emit(collection, output_dir)
+
+            # Chuyen doi sang GeneratedFile cua ReactEmitter
+            for emitted in emitted_files:
+                files.append(GeneratedFile(
+                    path=emitted.path.relative_to(output_dir) if hasattr(emitted.path, 'relative_to') else emitted.path,
+                    content=emitted.content,
+                    template=emitted.template,
+                ))
+        except Exception as e:
+            import logging
+            logging.warning(f"CacheReactEmitter failed: {e}")
 
         return files
 

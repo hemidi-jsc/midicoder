@@ -1,0 +1,199 @@
+/**
+ * useCache Hook cho React.
+ *
+ * Custom hook de cache API responses.
+ * KPI-029: Tenant Isolation - Cache keys prefix voi tenantId.
+ *
+ * CP09: Caching & Performance Layer
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+/**
+ * Interface cho cache entry.
+ */
+interface CacheEntry<T> {
+  data: T | null;
+  expiry: number;
+}
+
+/**
+ * Interface cho ket qua cua useCache.
+ */
+interface UseCacheResult<T> {
+  /** Cached data */
+  data: T | null;
+  /** Dang load data */
+  loading: boolean;
+  ** Loi neu co */
+  error: Error | null;
+  /** Ham de fetch data moi */
+  refetch: () => Promise<void>;
+  /** Ham de invalidate cache */
+  invalidate: () => void;
+}
+
+// In-memory cache store
+const cacheStore: Map<string, CacheEntry<any>> = new Map();
+
+/**
+ * Tao cache key voi tenant prefix.
+ *
+ * KPI-029: Tenant Isolation
+ *
+ * @param key - Cache key goc
+ * @param tenantId - Tenant ID
+ * @returns Cache key da duoc prefix
+ */
+function buildKey(key: string, tenantId?: string): string {
+  return tenantId ? `${tenantId}:${key}` : key;
+}
+
+/**
+ * Custom hook de cache API responses.
+ *
+ * @template T - Kieu data
+ * @param key - Cache key
+ * @param fetcher - Ham de fetch data
+ * @param options - Tu chuan (ttl, tenantId)
+ * @returns UseCacheResult
+ *
+ * @example
+ * ```tsx
+ * const { data, loading, error, refetch } = useCache(
+ *   'users-list',
+ *   () => fetch('/api/users').then(r => r.json()),
+ *   { ttl: 300000 } // 5 phut
+ * );
+ * ```
+ */
+export function useCache<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  options: {
+    ttl?: number;
+    tenantId?: string;
+    enabled?: boolean;
+  } = {}
+): UseCacheResult<T> {
+  const { ttl = 300000, tenantId, enabled = true } = options;
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<Error | null>(null);
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
+
+  /**
+   * Fetch data va cache ket qua.
+   */
+  const fetchData = useCallback(async () => {
+    const fullKey = buildKey(key, tenantId);
+    const entry = cacheStore.get(fullKey);
+
+    // Cache hit va chua expire
+    if (entry && Date.now() < entry.expiry) {
+      setData(entry.data);
+      setLoading(false);
+      return;
+    }
+
+    // Cache miss
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await fetcherRef.current();
+      cacheStore.set(fullKey, { data: result, expiry: Date.now() + ttl });
+      setData(result);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [key, tenantId, ttl]);
+
+  /**
+   * Invalidate cache entry.
+   */
+  const invalidate = useCallback(() => {
+    const fullKey = buildKey(key, tenantId);
+    cacheStore.delete(fullKey);
+    setData(null);
+  }, [key, tenantId]);
+
+  useEffect(() => {
+    if (enabled) {
+      fetchData();
+    }
+  }, [fetchData, enabled]);
+
+  return { data, loading, error, refetch: fetchData, invalidate };
+}
+
+/**
+ * Hook de cache voi auto-refresh.
+ *
+ * @template T - Kieu data
+ * @param key - Cache key
+ * @param fetcher - Ham de fetch data
+ * @param options - Tu chuan (ttl, tenantId, refreshInterval)
+ * @returns UseCacheResult
+ */
+export function useCacheWithRefresh<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  options: {
+    ttl?: number;
+    tenantId?: string;
+    refreshInterval?: number;
+    enabled?: boolean;
+  } = {}
+): UseCacheResult<T> {
+  const { refreshInterval, ...cacheOptions } = options;
+  const result = useCache(key, fetcher, cacheOptions);
+  const refreshIntervalRef = useRef(refreshInterval);
+
+  useEffect(() => {
+    if (!refreshIntervalRef.current || !cacheOptions.enabled) return;
+
+    const interval = setInterval(() => {
+      result.refetch();
+    }, refreshIntervalRef.current);
+
+    return () => clearInterval(interval);
+  }, [refreshInterval, cacheOptions.enabled, result.refetch]);
+
+  return result;
+}
+
+/**
+ * Xoa cache theo pattern.
+ *
+ * @param pattern - Glob pattern
+ * @param tenantId - Tenant ID (KPI-029)
+ * @returns So luong keys da xoa
+ */
+export function invalidateCachePattern(
+  pattern: string,
+  tenantId?: string
+): number {
+  const prefix = tenantId ? `${tenantId}:` : '';
+  let count = 0;
+
+  for (const key of cacheStore.keys()) {
+    if (key.startsWith(prefix) && key.includes(pattern.replace('*', ''))) {
+      cacheStore.delete(key);
+      count++;
+    }
+  }
+
+  return count;
+}
+
+/**
+ * Xoa toan bo cache.
+ */
+export function clearAllCache(): void {
+  cacheStore.clear();
+}

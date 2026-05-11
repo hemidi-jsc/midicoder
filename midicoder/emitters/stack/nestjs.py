@@ -73,6 +73,11 @@ from midicoder.emitters.core.notification import (
     NestJSNotificationEmitter,
     parse_notifications,
 )
+from midicoder.emitters.core.cache import (
+    CacheParser,
+    NestJSCacheEmitter,
+    CacheCollection,
+)
 
 
 # ============================================================================
@@ -186,6 +191,11 @@ class BackendNestJSEmitter:
         if events_data:
             files.extend(self._emit_events(events_data, output_dir))
 
+
+        # Emit cache code từ MIR metadata (CP09)
+        cache_profiles_data = mir.metadata.get("cache_profiles", [])
+        if cache_profiles_data:
+            files.extend(self._emit_cache(mir.metadata, output_dir))
 
         # Emit notification code tu MIR metadata (CP12)
         notifications_data = mir.metadata.get('notifications', [])
@@ -1098,6 +1108,64 @@ class BackendNestJSEmitter:
             capability=capability,
         )
     
+
+    def _emit_cache(
+        self,
+        metadata: dict[str, Any],
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """
+        Emit cache code files (CP09: Caching & Performance Layer).
+
+        Su dung NestJSCacheEmitter de generate cache code.
+
+        Files duoc emit:
+        - src/cache/cache.module.ts
+        - src/cache/cache.service.ts
+        - src/cache/cache.interceptor.ts
+
+        KPI-029: Tenant-aware caching qua key prefix.
+
+        Args:
+            metadata: MIR metadata dict chua cache_profiles
+            output_dir: Output directory
+
+        Returns:
+            List of GeneratedFile
+        """
+        files: list[GeneratedFile] = []
+
+        try:
+            # Parse cache config tu metadata
+            parser = CacheParser()
+            collection = parser.parse_from_metadata(metadata)
+
+            if not collection.profiles:
+                return files
+
+            # Tao emitter va emit files
+            cache_emitter = NestJSCacheEmitter()
+            emitted = cache_emitter.generate(collection, stack="nestjs")
+
+            src_dir = output_dir / "src"
+
+            # Write files
+            for file_path_str, content in emitted.items():
+                file_path = src_dir / file_path_str
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_text(content, encoding="utf-8")
+
+                files.append(GeneratedFile(
+                    path=file_path.relative_to(output_dir),
+                    content=content,
+                    template="cache_emitter",
+                    capability="CP09",
+                ))
+        except Exception as e:
+            import logging
+            logging.warning(f"NestJSCacheEmitter failed: {e}")
+
+        return files
 
     def _emit_notifications(
         self,

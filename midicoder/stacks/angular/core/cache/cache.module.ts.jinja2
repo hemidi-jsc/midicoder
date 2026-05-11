@@ -1,0 +1,34 @@
+/**
+ * Cache Module cho Angular.
+ *
+ * Provider CacheService va CacheInterceptor.
+ * KPI-029: Tenant Isolation support.
+ *
+ * CP09: Caching & Performance Layer
+ */
+
+import { NgModule } from '@angular/core';
+import { HTTP_INTERCEPTORS } from '@angular/common/http';
+import { CacheService } from './cache.service';
+import { CacheInterceptor } from './cache.interceptor';
+
+@NgModule({
+  providers: [
+    CacheService,
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: CacheInterceptor,
+      multi: true,
+    },
+  ],
+})
+export class CacheNgModule {
+  /**
+   * Khoi tao module cache.
+   *
+   * KPI-029: Tenant Isolation duoc enable mac dinh.
+   */
+  constructor(private cacheService: CacheService) {
+    // Module initialized - cache ready
+  }
+}

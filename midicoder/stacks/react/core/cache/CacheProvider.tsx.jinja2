@@ -1,0 +1,198 @@
+/**
+ * Cache Provider cho React.
+ *
+ * Cung cap cache context cho toan bo app.
+ * KPI-029: Tenant Isolation - Cache keys prefix voi tenantId.
+ *
+ * CP09: Caching & Performance Layer
+ */
+
+import React, {
+  createContext,
+  useContext,
+  useCallback,
+  useMemo,
+  ReactNode,
+} from 'react';
+
+/**
+ * Interface cho cache context.
+ */
+interface CacheContextType {
+  /** Tenant ID hien tai (KPI-029) */
+  tenantId: string | undefined;
+  /** Lay data tu cache */
+  getCached: <T>(key: string) => T | null;
+  /** Luu data vao cache */
+  setCached: (key: string, value: any, ttl?: number) => void;
+  /** Xoa cache key */
+  deleteCached: (key: string) => boolean;
+  /** Invalidate cache theo pattern */
+  invalidatePattern: (pattern: string) => number;
+  /** Xoa toan bo cache */
+  clearAll: () => void;
+}
+
+/**
+ * Tao cache key voi tenant prefix.
+ *
+ * KPI-029: Tenant Isolation
+ */
+function buildKey(key: string, tenantId?: string): string {
+  return tenantId ? `${tenantId}:${key}` : key;
+}
+
+// Cache store
+const store: Map<string, { value: any; expiry: number }> = new Map();
+
+// Tao context
+const CacheContext = createContext<CacheContextType | null>(null);
+
+/**
+ * Props cho CacheProvider.
+ */
+interface CacheProviderProps {
+  /** Tenant ID cho tenant isolation (KPI-029) */
+  tenantId?: string;
+  /** Default TTL (ms) */
+  defaultTtl?: number;
+  /** Children components */
+  children: ReactNode;
+}
+
+/**
+ * CacheProvider Component.
+ *
+ * Bao quat app de cung cap cache context.
+ *
+ * @example
+ * ```tsx
+ * <CacheProvider tenantId="abc123">
+ *   <App />
+ * </CacheProvider>
+ * ```
+ */
+export function CacheProvider({
+  tenantId,
+  defaultTtl = 300000,
+  children,
+}: CacheProviderProps): JSX.Element {
+  /**
+   * Lay data tu cache.
+   */
+  const getCached = useCallback(<T>(key: string): T | null => {
+    const fullKey = buildKey(key, tenantId);
+    const entry = store.get(fullKey);
+
+    if (!entry) return null;
+    if (Date.now() > entry.expiry) {
+      store.delete(fullKey);
+      return null;
+    }
+
+    return entry.value as T;
+  }, [tenantId]);
+
+  /**
+   * Luu data vao cache.
+   */
+  const setCached = useCallback(
+    (key: string, value: any, ttl?: number) => {
+      const fullKey = buildKey(key, tenantId);
+      const actualTtl = ttl || defaultTtl;
+      store.set(fullKey, { value, expiry: Date.now() + actualTtl });
+    },
+    [tenantId, defaultTtl]
+  );
+
+  /**
+   * Xoa cache key.
+   */
+  const deleteCached = useCallback(
+    (key: string): boolean => {
+      const fullKey = buildKey(key, tenantId);
+      return store.delete(fullKey);
+    },
+    [tenantId]
+  );
+
+  /**
+   * Invalidate cache theo pattern.
+   */
+  const invalidatePattern = useCallback(
+    (pattern: string): number => {
+      const prefix = tenantId ? `${tenantId}:` : '';
+      let count = 0;
+
+      for (const key of store.keys()) {
+        if (key.startsWith(prefix) && key.includes(pattern.replace('*', ''))) {
+          store.delete(key);
+          count++;
+        }
+      }
+
+      return count;
+    },
+    [tenantId]
+  );
+
+  /**
+   * Xoa toan bo cache cua tenant.
+   */
+  const clearAll = useCallback(() => {
+    if (tenantId) {
+      // KPI-029: Chi xoa cache cua tenant
+      for (const key of store.keys()) {
+        if (key.startsWith(`${tenantId}:`)) {
+          store.delete(key);
+        }
+      }
+    } else {
+      store.clear();
+    }
+  }, [tenantId]);
+
+  /**
+   * Context value.
+   */
+  const value = useMemo(
+    () => ({
+      tenantId,
+      getCached,
+      setCached,
+      deleteCached,
+      invalidatePattern,
+      clearAll,
+    }),
+    [tenantId, getCached, setCached, deleteCached, invalidatePattern, clearAll]
+  );
+
+  return (
+    <CacheContext.Provider value={value}>
+      {children}
+    </CacheContext.Provider>
+  );
+}
+
+/**
+ * Hook de su dung cache context.
+ *
+ * @throws Error neu goi ben ngoai CacheProvider
+ *
+ * @example
+ * ```tsx
+ * const { getCached, setCached } = useCacheContext();
+ * const users = getCached<User[]>('users-list');
+ * ```
+ */
+export function useCacheContext(): CacheContextType {
+  const context = useContext(CacheContext);
+
+  if (!context) {
+    throw new Error('useCacheContext must be used within CacheProvider');
+  }
+
+  return context;
+}
+
+export default CacheProvider;
