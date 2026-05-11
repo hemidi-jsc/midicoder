@@ -1,5 +1,5 @@
 """
-Mô-đun Workflow Emitter cho CP01 Domain Model.
+Mô-đun Workflow Emitter cho CP13: Background Job & Workflow Generator.
 
 Module này cung cấp implementation cho State Machine workflows với:
 - DSL models (WorkflowDefinition, Transition, Guard, Effect)
@@ -8,6 +8,7 @@ Module này cung cấp implementation cho State Machine workflows với:
 - Event sourcing persistence
 - Guards (Permission, Business, Compliance, Role, State)
 - Effects (Event, Command, Notification, Audit, Compensation)
+- Job scheduling (JobDefinition, JobInstance, SchedulePolicy)
 
 Author: Midicoder Team
 Version: 1.0.0
@@ -22,6 +23,12 @@ from .models import (
     EffectType,
 )
 from .parser import WorkflowParser
+from .scheduler import (
+    JobPriority,
+    SchedulePolicy,
+    JobDefinition,
+    JobInstance,
+)
 from .fastapi import WorkflowFastAPIEmitter
 from .nestjs import WorkflowNestJSEmitter
 
@@ -33,6 +40,11 @@ __all__ = [
     "Effect",
     "GuardType",
     "EffectType",
+    # Scheduler
+    "JobPriority",
+    "SchedulePolicy",
+    "JobDefinition",
+    "JobInstance",
     # Parser
     "WorkflowParser",
     # Emitters

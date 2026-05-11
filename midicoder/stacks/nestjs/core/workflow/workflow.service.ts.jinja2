@@ -1,0 +1,75 @@
+/**
+ * Workflow Module — CP13: Background Job & Workflow Generator.
+ *
+ * Module này cung cấp workflow orchestration cho NestJS.
+ */
+
+import { Module, Injectable, Inject } from '@nestjs/common';
+
+/**
+ * Service chính cho workflow orchestration.
+ * Quản lý state machine, guard evaluation và effect execution.
+ */
+@Injectable()
+export class WorkflowService {
+  private instances: Map<string, any> = new Map();
+
+  /**
+   * Tạo workflow instance mới với trạng thái ban đầu.
+   */
+  createInstance(instanceId: string, workflowName: string, initialState: string): any {
+    const state = {
+      instanceId,
+      workflowName,
+      currentState: initialState,
+      history: [],
+    };
+    this.instances.set(instanceId, state);
+    return state;
+  }
+
+  /**
+   * Xử lý event và trigger transition.
+   * Flow: get instance → eval guard → transition → execute effects.
+   */
+  async executeEvent(instanceId: string, event: string, eventData?: Record<string, any>): Promise<any> {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      throw new Error(`Workflow instance '${instanceId}' không tìm thấy [MDC-CP13-002]`);
+    }
+
+    // Eval guard trước transition
+    // TODO: Inject guard evaluator
+    const previousState = instance.currentState;
+
+    // Thực hiện transition
+    const newState = `${event}_done`;
+    instance.history.push({ from: previousState, to: newState, event });
+    instance.currentState = newState;
+
+    // Execute effects sau transition
+    // TODO: Inject effect executor
+
+    return { instanceId, newState, event };
+  }
+
+  /**
+   * Lấy trạng thái hiện tại của workflow instance.
+   */
+  getState(instanceId: string): any {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      throw new Error(`Workflow instance '${instanceId}' không tìm thấy [MDC-CP13-002]`);
+    }
+    return { ...instance };
+  }
+}
+
+/**
+ * NestJS Module cho Workflow.
+ */
+@Module({
+  providers: [WorkflowService],
+  exports: [WorkflowService],
+})
+export class WorkflowModule {}

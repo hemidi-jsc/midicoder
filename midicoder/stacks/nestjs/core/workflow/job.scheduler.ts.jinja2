@@ -1,0 +1,128 @@
+/**
+ * Job Scheduler Module — CP13: Background Job & Workflow Generator.
+ *
+ * Module này quản lý background job scheduling cho NestJS
+ * sử dụng @nestjs/schedule hoặc Bull queue.
+ */
+
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Cron, Interval, Timeout } from '@nestjs/schedule';
+
+/**
+ * Đại diện cho một job đã được schedule.
+ */
+interface ScheduledJob {
+  jobId: string;
+  taskName: string;
+  cronExpr?: string;
+  intervalSeconds?: number;
+  enabled: boolean;
+  lastRunAt?: Date;
+  lastResult?: Record<string, any>;
+}
+
+/**
+ * Scheduler service cho background jobs.
+ *
+ * Support hai chế độ:
+ * - Cron: chạy theo cron expression
+ * - Interval: chạy định kỳ theo số giây
+ */
+@Injectable()
+export class JobSchedulerService implements OnModuleInit {
+  private readonly logger = new Logger(JobSchedulerService.name);
+  private jobs: Map<string, ScheduledJob> = new Map();
+  private executionLog: any[] = [];
+
+  onModuleInit() {
+    this.logger.log('Job Scheduler module khởi tạo');
+  }
+
+  /**
+   * Đăng ký job mới với scheduler.
+   */
+  registerJob(
+    jobId: string,
+    taskName: string,
+    cronExpr?: string,
+    intervalSeconds?: number,
+  ): ScheduledJob {
+    if (!cronExpr && !intervalSeconds) {
+      throw new Error('Phải cung cấp cronExpr hoặc intervalSeconds [MDC-CP13-007]');
+    }
+
+    const job: ScheduledJob = {
+      jobId,
+      taskName,
+      cronExpr,
+      intervalSeconds,
+      enabled: true,
+    };
+    this.jobs.set(jobId, job);
+    this.logger.log(`Job '${jobId}' đã đăng ký với schedule: ${cronExpr || intervalSeconds}`);
+    return job;
+  }
+
+  /**
+   * Tắt job — job vẫn tồn tại nhưng không chạy nữa.
+   */
+  disableJob(jobId: string): void {
+    const job = this.jobs.get(jobId);
+    if (!job) {
+      throw new Error(`Job '${jobId}' không tìm thấy [MDC-CP13-002]`);
+    }
+    job.enabled = false;
+    this.logger.log(`Job '${jobId}' đã tắt`);
+  }
+
+  /**
+   * Bật lại job đã bị tắt.
+   */
+  enableJob(jobId: string): void {
+    const job = this.jobs.get(jobId);
+    if (!job) {
+      throw new Error(`Job '${jobId}' không tìm thấy [MDC-CP13-002]`);
+    }
+    job.enabled = true;
+    this.logger.log(`Job '${jobId}' đã bật`);
+  }
+
+  /**
+   * Trigger job chạy ngay (manual trigger).
+   */
+  async triggerJob(jobId: string): Promise<Record<string, any>> {
+    const job = this.jobs.get(jobId);
+    if (!job) {
+      throw new Error(`Job '${jobId}' không tìm thấy [MDC-CP13-002]`);
+    }
+
+    job.lastRunAt = new Date();
+    this.logger.log(`Triggering job '${jobId}' (${job.taskName})`);
+
+    // TODO: Dispatch đến Bull queue hoặc task thực tế
+    const result = { jobId, status: 'queued', triggeredAt: job.lastRunAt.toISOString() };
+    this.executionLog.push(result);
+    return result;
+  }
+
+  /**
+   * Lấy thông tin job hiện tại.
+   */
+  getJobStatus(jobId: string): ScheduledJob | null {
+    return this.jobs.get(jobId) || null;
+  }
+
+  /**
+   * Liệt kê tất cả jobs đang được schedule.
+   */
+  listJobs(): ScheduledJob[] {
+    return Array.from(this.jobs.values());
+  }
+
+  /**
+   * Lấy log execution gần đây.
+   */
+  getExecutionLog(limit: number = 100): any[] {
+    return this.executionLog.slice(-limit);
+  }
+}

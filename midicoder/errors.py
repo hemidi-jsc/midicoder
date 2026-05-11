@@ -481,6 +481,18 @@ class ErrorCode(str, Enum):
     CP12_NOTIFICATION_INVALID_RECIPIENT = "MDC-CP12-007"
 
     # =========================================================================
+    # CP13: Background Job & Workflow Errors
+    # =========================================================================
+    CP13_JOB_SCHEDULE_FAILED = "MDC-CP13-001"
+    CP13_JOB_NOT_FOUND = "MDC-CP13-002"
+    CP13_WORKFLOW_INVALID_TRANSITION = "MDC-CP13-003"
+    CP13_WORKFLOW_GUARD_FAILED = "MDC-CP13-004"
+    CP13_WORKFLOW_EFFECT_FAILED = "MDC-CP13-005"
+    CP13_WORKFLOW_STATE_MACHINE_ERROR = "MDC-CP13-006"
+    CP13_SCHEDULE_POLICY_INVALID = "MDC-CP13-007"
+    CP13_JOB_RETRY_EXHAUSTED = "MDC-CP13-008"
+
+    # =========================================================================
     # CP14: Audit Trail & Compliance Errors
     # =========================================================================
     CP14_AUDIT_EMPTY_ID = "MDC-CP14-001"

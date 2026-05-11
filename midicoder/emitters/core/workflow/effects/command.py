@@ -8,47 +8,40 @@ Author: Midicoder Team
 Version: 1.0.0
 """
 
-from ..models import Effect, TransitionContext
+from typing import Any
+
 from .base import EffectResult
 
 
 class CommandEffect:
     """
     Effect executor cho command execution.
-    
+
     Execute commands khi transition fire.
-    
+
     Usage:
-        effect = CommandEffect()
-        result = await effect.execute(effect_def, context)
+        effect = CommandEffect(execute="approve_order")
+        result = effect.execute(data={"order_id": "123"})
     """
 
-    async def execute(self, effect: Effect, context: TransitionContext) -> EffectResult:
+    def __init__(self, execute: str | None = None) -> None:
+        self._command = execute
+
+    def execute(self, data: dict[str, Any]) -> EffectResult:
         """
         Execute command effect.
-        
+
         Args:
-            effect: Command effect definition
-            context: Transition context
-            
+            data: Data dictionary
+
         Returns:
             EffectResult với execution result
         """
         # TODO: Integrate với CP01 Commands
-        command_name = effect.execute
-        
-        # Command payload
-        payload = {
-            "entity_type": context.entity_type,
-            "entity_id": str(context.entity_id),
-            "user_id": str(context.user_id) if context.user_id else None,
-            "tenant_id": str(context.tenant_id) if context.tenant_id else None,
-            "metadata": context.metadata,
-        }
-        
+        command_name = self._command
+
         # Execute command (placeholder)
         return EffectResult.success(
-            effect.type.value,
+            data={"command": command_name, "payload": data},
             message=f"Executed command: {command_name}",
-            data={"command": command_name, "payload": payload},
         )

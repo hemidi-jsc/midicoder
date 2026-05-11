@@ -15,15 +15,16 @@ from typing import Any
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
-from ..models import Guard, TransitionContext
+from ..models import Guard, GuardType
+from ..engine.state_machine import TransitionContext
 
 
 class GuardEvaluator(ABC):
     """
     Abstract base class cho guard evaluation.
-    
+
     Tất cả guard evaluators phải implement method evaluate().
-    
+
     Usage:
         class MyGuard(GuardEvaluator):
             async def evaluate(self, guard: Guard, context: TransitionContext) -> bool:
@@ -34,30 +35,30 @@ class GuardEvaluator(ABC):
     async def evaluate(self, guard: Guard, context: TransitionContext) -> bool:
         """
         Evaluate guard và return kết quả.
-        
+
         Args:
             guard: Guard definition
             context: Transition context
-            
+
         Returns:
             True nếu guard pass, False nếu fail
-            
+
         Raises:
             MidicoderError: Nếu có lỗi khi evaluate
         """
         pass
 
     @classmethod
-    def create_evaluator(cls, guard: Guard) -> "GuardEvaluator":
+    def create_evaluator(cls, guard_type: GuardType) -> "GuardEvaluator":
         """
         Factory method để tạo evaluator phù hợp với guard type.
-        
+
         Args:
-            guard: Guard definition
-            
+            guard_type: GuardType enum value
+
         Returns:
             GuardEvaluator instance phù hợp
-            
+
         Raises:
             ValueError: Nếu guard type không được hỗ trợ
         """
@@ -68,12 +69,12 @@ class GuardEvaluator(ABC):
             "role": RoleEvaluator,
             "state": StateEvaluator,
         }
-        
-        evaluator_class = evaluators.get(guard.type.value)
+
+        evaluator_class = evaluators.get(guard_type.value)
         if evaluator_class is None:
             EM.raise_error(
                 ErrorCode.CP01_WORKFLOW_GUARD_FAILED,
-                guard_type=guard.type.value,
+                guard_type=guard_type.value,
             )
 
         return evaluator_class()

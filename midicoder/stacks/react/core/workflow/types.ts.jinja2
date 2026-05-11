@@ -1,0 +1,93 @@
+/**
+ * Workflow Types — CP13: Background Job & Workflow Generator.
+ *
+ * TypeScript interfaces và types cho workflow orchestration.
+ */
+
+/**
+ * Trạng thái hiện tại của workflow instance.
+ */
+export interface WorkflowState {
+  instanceId: string;
+  workflowName: string;
+  currentState: string;
+  history: WorkflowTransition[];
+}
+
+/**
+ * Một transition trong history của workflow.
+ */
+export interface WorkflowTransition {
+  from: string;
+  to: string;
+  event: string;
+  timestamp?: string;
+}
+
+/**
+ * Kết quả sau khi thực thi event.
+ */
+export interface EventResult {
+  instanceId: string;
+  newState: string;
+  event: string;
+  error?: string;
+}
+
+/**
+ * Request để tạo workflow instance mới.
+ */
+export interface CreateWorkflowRequest {
+  instanceId: string;
+  workflowName: string;
+  initialState: string;
+}
+
+/**
+ * Request để thực thi event.
+ */
+export interface ExecuteEventRequest {
+  event: string;
+  data?: Record<string, any>;
+}
+
+/**
+ * Thông tin của một background job.
+ */
+export interface JobInfo {
+  jobId: string;
+  taskName: string;
+  cronExpr?: string;
+  intervalSeconds?: number;
+  enabled: boolean;
+  lastRunAt?: string;
+  lastResult?: Record<string, any>;
+}
+
+/**
+ * Kết quả execution của job.
+ */
+export interface JobExecutionResult {
+  jobId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  triggeredAt: string;
+  completedAt?: string;
+  error?: string;
+  result?: Record<string, any>;
+}
+
+/**
+ * Trạng thái của job.
+ */
+export type JobStatus = JobExecutionResult['status'];
+
+/**
+ * Request để đăng ký job mới.
+ */
+export interface RegisterJobRequest {
+  jobId: string;
+  taskName: string;
+  cronExpr?: string;
+  intervalSeconds?: number;
+  enabled?: boolean;
+}

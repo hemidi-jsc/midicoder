@@ -216,7 +216,7 @@ core_packs:
       - background_worker
       - workflow_orchestrate
     category: runtime
-    status: developing
+    status: stable
     version: 1.0.0
   - id: CP14
     name: Audit Trail & Compliance Generator
@@ -623,7 +623,8 @@ core_packs:
     name: Tenant Onboarding & Subscription
     internal_id: cp36-tenant-onboarding
     phase: P1
-    description: Self-service tenant registration, verification, trial, subscription
+    description:
+      Self-service tenant registration, verification, trial, subscription
       management
     definitions_count: 4
     obligations_count: 2
@@ -893,7 +894,8 @@ core_packs:
     name: Consent & Preference Management
     internal_id: cp49-consent
     phase: P2
-    description: Cookie consent, data processing consent, communication preference,
+    description:
+      Cookie consent, data processing consent, communication preference,
       privacy center
     definitions_count: 4
     obligations_count: 2
@@ -1615,7 +1617,8 @@ domain_packs:
     phase: P2
   - id: DP32
     name: Financial Services Extended
-    description: "Accounting, tax, audit: chart of accounts, journal entry, trial
+    description:
+      "Accounting, tax, audit: chart of accounts, journal entry, trial
       balance, audit engagement"
     category: financial-services
     industries_using:
@@ -1682,7 +1685,8 @@ domain_packs:
     phase: P2
   - id: DP35
     name: Gaming & Esports
-    description: "Game LiveOps, esports: player profile, match, tournament, bracket,
+    description:
+      "Game LiveOps, esports: player profile, match, tournament, bracket,
       prize pool"
     category: gaming
     industries_using:

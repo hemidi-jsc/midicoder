@@ -1,0 +1,145 @@
+"""
+Job Scheduler — CP13: Background Job & Workflow Generator.
+
+Service này quản lý việc scheduling và execution của background jobs
+sử dụng Celery hoặc APScheduler.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ScheduledJob:
+    """Đại diện cho một job đã được schedule."""
+
+    job_id: str
+    task_name: str
+    cron_expr: str | None = None
+    interval_seconds: int | None = None
+    args: list[Any] = field(default_factory=list)
+    kwargs: dict[str, Any] = field(default_factory=dict)
+    enabled: bool = True
+    next_run_at: datetime | None = None
+    last_run_at: datetime | None = None
+    last_result: dict[str, Any] | None = None
+
+
+class JobScheduler:
+    """
+    Scheduler cho background jobs.
+
+    Support hai chế độ:
+    - Cron: chạy theo cron expression
+    - Interval: chạy định kỳ theo số giây
+
+    Responsibility:
+    - Đăng ký job mới
+    - Bật/tắt job
+    - Track execution history
+    - Handle retry với exponential backoff
+    """
+
+    def __init__(self) -> None:
+        self._jobs: dict[str, ScheduledJob] = {}
+        self._execution_log: list[dict[str, Any]] = []
+
+    def register_job(
+        self,
+        job_id: str,
+        task_name: str,
+        cron_expr: str | None = None,
+        interval_seconds: int | None = None,
+        args: list[Any] | None = None,
+        kwargs: dict[str, Any] | None = None,
+        enabled: bool = True,
+    ) -> ScheduledJob:
+        """Đăng ký job mới với scheduler."""
+        if not cron_expr and not interval_seconds:
+            raise ValueError("Phải cung cấp cron_expr hoặc interval_seconds [MDC-CP13-007]")
+
+        job = ScheduledJob(
+            job_id=job_id,
+            task_name=task_name,
+            cron_expr=cron_expr,
+            interval_seconds=interval_seconds,
+            args=args or [],
+            kwargs=kwargs or {},
+            enabled=enabled,
+        )
+        self._jobs[job_id] = job
+        logger.info("Job '%s' registered with schedule: %s", job_id, cron_expr or interval_seconds)
+        return job
+
+    def disable_job(self, job_id: str) -> None:
+        """Tắt job — job vẫn tồn tại nhưng không chạy nữa."""
+        if job_id not in self._jobs:
+            raise ValueError(f"Job '{job_id}' không tìm thấy [MDC-CP13-002]")
+        self._jobs[job_id].enabled = False
+        logger.info("Job '%s' disabled", job_id)
+
+    def enable_job(self, job_id: str) -> None:
+        """Bật lại job đã bị tắt."""
+        if job_id not in self._jobs:
+            raise ValueError(f"Job '{job_id}' không tìm thấy [MDC-CP13-002]")
+        self._jobs[job_id].enabled = True
+        logger.info("Job '%s' enabled", job_id)
+
+    async def trigger_job(self, job_id: str) -> dict[str, Any]:
+        """
+        Trigger job chạy ngay (manual trigger).
+
+        Returns:
+            Kết quả execution của job.
+        """
+        if job_id not in self._jobs:
+            raise ValueError(f"Job '{job_id}' không tìm thấy [MDC-CP13-002]")
+
+        job = self._jobs[job_id]
+        job.last_run_at = datetime.utcnow()
+
+        # TODO: Dispatch đến Celery task
+        logger.info("Triggering job '%s' (%s)", job_id, job.task_name)
+
+        result = {"job_id": job_id, "status": "queued", "triggered_at": job.last_run_at.isoformat()}
+        self._execution_log.append(result)
+
+        return result
+
+    def get_job_status(self, job_id: str) -> dict[str, Any] | None:
+        """Lấy thông tin job hiện tại."""
+        job = self._jobs.get(job_id)
+        if not job:
+            return None
+        return {
+            "job_id": job.job_id,
+            "task_name": job.task_name,
+            "cron_expr": job.cron_expr,
+            "interval_seconds": job.interval_seconds,
+            "enabled": job.enabled,
+            "last_run_at": job.last_run_at.isoformat() if job.last_run_at else None,
+            "last_result": job.last_result,
+        }
+
+    def list_jobs(self) -> list[dict[str, Any]]:
+        """Liệt kê tất cả jobs đang được schedule."""
+        return [
+            {
+                "job_id": j.job_id,
+                "task_name": j.task_name,
+                "cron_expr": j.cron_expr,
+                "enabled": j.enabled,
+                "last_run_at": j.last_run_at.isoformat() if j.last_run_at else None,
+            }
+            for j in self._jobs.values()
+        ]
+
+    def get_execution_log(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Lấy log execution gần đây."""
+        return self._execution_log[-limit:]

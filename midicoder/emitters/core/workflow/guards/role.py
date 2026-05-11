@@ -8,34 +8,34 @@ Author: Midicoder Team
 Version: 1.0.0
 """
 
-from ..models import Guard, TransitionContext
+from typing import Any
 
 
 class RoleGuard:
     """
     Guard evaluator cho role-based guards.
-    
+
     Kiểm tra user có thuộc một trong các roles yêu cầu không.
-    
+
     Usage:
-        guard = RoleGuard()
-        result = await guard.evaluate(guard_def, context)
+        guard = RoleGuard(roles=["admin", "manager"])
+        result = guard.evaluate(context={"user_roles": ["admin"]})
     """
 
-    async def evaluate(self, guard: Guard, context: TransitionContext) -> bool:
+    def __init__(self, roles: list[str] | None = None) -> None:
+        self.roles = roles or []
+
+    def evaluate(self, context: dict[str, Any]) -> bool:
         """
         Evaluate role guard.
-        
+
         Args:
-            guard: Role guard definition
-            context: Transition context
-            
+            context: Context dictionary
+
         Returns:
             True nếu user có ít nhất một role yêu cầu, False nếu không
         """
         # TODO: Integrate với CP04 RBAC system
-        required_roles = guard.roles or []
-        user_id = context.user_id
-        
+
         # Placeholder: return True (implement actual role check)
         return True

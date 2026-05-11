@@ -8,36 +8,35 @@ Author: Midicoder Team
 Version: 1.0.0
 """
 
-from ..models import Guard, TransitionContext
+from typing import Any
 
 
 class PermissionGuard:
     """
     Guard evaluator cho permission-based guards.
-    
+
     Kiểm tra user có permission cần thiết không trước khi transition.
-    
+
     Usage:
-        guard = PermissionGuard()
-        result = await guard.evaluate(guard_def, context)
+        guard = PermissionGuard(permission="read:orders")
+        result = guard.evaluate(context={})
     """
 
-    async def evaluate(self, guard: Guard, context: TransitionContext) -> bool:
+    def __init__(self, permission: str | None = None) -> None:
+        self.permission = permission
+
+    def evaluate(self, context: dict[str, Any]) -> bool:
         """
         Evaluate permission guard.
-        
+
         Args:
-            guard: Permission guard definition
-            context: Transition context
-            
+            context: Context dictionary
+
         Returns:
             True nếu user có permission, False nếu không
         """
         # TODO: Integrate với CP03/CP04 Auth system
         # Check if user has the required permission on the resource
-        permission = guard.permission
-        user_id = context.user_id
-        resource = f"{context.entity_type}:{context.entity_id}"
-        
+
         # Placeholder: return True (implement actual auth check)
         return True

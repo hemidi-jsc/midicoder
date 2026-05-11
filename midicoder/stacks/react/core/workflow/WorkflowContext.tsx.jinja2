@@ -1,0 +1,232 @@
+/**
+ * Workflow Context — CP13: Background Job & Workflow Generator.
+ *
+ * React Context Provider cho workflow state management.
+ * Cung cấp state và dispatch functions cho toàn bộ app.
+ */
+
+import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import {
+  WorkflowState,
+  EventResult,
+  CreateWorkflowRequest,
+  ExecuteEventRequest,
+  JobInfo,
+  JobExecutionResult,
+} from './types';
+
+/**
+ * Dạng action có thể dispatch đến workflow context.
+ */
+type WorkflowAction =
+  | { type: 'SET_STATE'; payload: WorkflowState }
+  | { type: 'TRANSITION'; payload: EventResult }
+  | { type: 'SET_JOBS'; payload: JobInfo[] }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: string | null };
+
+/**
+ * Value được cung cấp bởi WorkflowContext.
+ */
+interface WorkflowContextValue {
+  /** Trạng thái hiện tại của workflow instance đang xem. */
+  currentWorkflow: WorkflowState | null;
+  /** Danh sách jobs đang được schedule. */
+  jobs: JobInfo[];
+  /** Đang tải dữ liệu hay không. */
+  loading: boolean;
+  /** Lỗi (nếu có). */
+  error: string | null;
+
+  /** Tạo workflow instance mới. */
+  createInstance: (req: CreateWorkflowRequest) => Promise<WorkflowState>;
+
+  /** Lấy trạng thái workflow instance. */
+  getState: (instanceId: string) => Promise<WorkflowState>;
+
+  /** Thực thi event để trigger transition. */
+  executeEvent: (instanceId: string, req: ExecuteEventRequest) => Promise<EventResult>;
+
+  /** Liệt kê tất cả workflow instances. */
+  listInstances: () => Promise<WorkflowState[]>;
+
+  /** Trigger job chạy ngay. */
+  triggerJob: (jobId: string) => Promise<JobExecutionResult>;
+
+  /** Bật/tắt job. */
+  toggleJob: (jobId: string, enabled: boolean) => Promise<void>;
+
+  /** Làm mới danh sách jobs. */
+  refreshJobs: () => Promise<void>;
+}
+
+const WorkflowContext = createContext<WorkflowContextValue | null>(null);
+
+const API_BASE = '/api';
+
+/**
+ * Provider component cho WorkflowContext.
+ * Wrap ứng dụng hoặc phần của ứng dụng cần truy cập workflow.
+ */
+export function WorkflowProvider({ children }: { children: ReactNode }) {
+  const [currentWorkflow, setCurrentWorkflow] = useState<WorkflowState | null>(null);
+  const [jobs, setJobs] = useState<JobInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /** Tạo workflow instance mới. */
+  const createInstance = useCallback(async (req: CreateWorkflowRequest): Promise<WorkflowState> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/workflows`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: Không thể tạo workflow`);
+      const data = await res.json();
+      setCurrentWorkflow(data);
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Lỗi không xác định';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /** Lấy trạng thái workflow instance. */
+  const getState = useCallback(async (instanceId: string): Promise<WorkflowState> => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/workflows/${instanceId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: Không tìm thấy instance`);
+      const data = await res.json();
+      setCurrentWorkflow(data);
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /** Thực thi event để trigger transition. */
+  const executeEvent = useCallback(
+    async (instanceId: string, req: ExecuteEventRequest): Promise<EventResult> => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/workflows/${instanceId}/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: Không thể thực thi event`);
+        const data: EventResult = await res.json();
+        // Cập nhật local state sau transition
+        setCurrentWorkflow((prev) =>
+          prev
+            ? {
+                ...prev,
+                currentState: data.newState,
+                history: [
+                  ...prev.history,
+                  { from: prev.currentState, to: data.newState, event: data.event },
+                ],
+              }
+            : prev
+        );
+        return data;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  /** Liệt kê tất cả workflow instances. */
+  const listInstances = useCallback(async (): Promise<WorkflowState[]> => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/workflows`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /** Trigger job chạy ngay. */
+  const triggerJob = useCallback(async (jobId: string): Promise<JobExecutionResult> => {
+    try {
+      const res = await fetch(`${API_BASE}/jobs/${jobId}/trigger`, { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+      throw err;
+    }
+  }, []);
+
+  /** Bật/tắt job. */
+  const toggleJob = useCallback(async (jobId: string, enabled: boolean): Promise<void> => {
+    try {
+      const action = enabled ? 'enable' : 'disable';
+      const res = await fetch(`${API_BASE}/jobs/${jobId}/${action}`, { method: 'PUT' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Làm mới danh sách jobs
+      await refreshJobs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+      throw err;
+    }
+  }, []);
+
+  /** Làm mới danh sách jobs. */
+  const refreshJobs = useCallback(async (): Promise<void> => {
+    try {
+      const res = await fetch(`${API_BASE}/jobs`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setJobs(await res.json());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+    }
+  }, []);
+
+  const value: WorkflowContextValue = {
+    currentWorkflow,
+    jobs,
+    loading,
+    error,
+    createInstance,
+    getState,
+    executeEvent,
+    listInstances,
+    triggerJob,
+    toggleJob,
+    refreshJobs,
+  };
+
+  return <WorkflowContext.Provider value={value}>{children}</WorkflowContext.Provider>;
+}
+
+/**
+ * Hook để truy cập WorkflowContext từ component con.
+ * PHẢI được sử dụng bên trong WorkflowProvider.
+ */
+export function useWorkflowContext(): WorkflowContextValue {
+  const context = useContext(WorkflowContext);
+  if (!context) {
+    throw new Error('useWorkflowContext phải được dùng bên trong WorkflowProvider');
+  }
+  return context;
+}

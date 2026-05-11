@@ -1,0 +1,133 @@
+"""
+Workflow Service — CP13: Background Job & Workflow Generator.
+
+Service này quản lý workflow state machine, guard evaluation và effect execution.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class WorkflowState:
+    """Trạng thái hiện tại của workflow instance."""
+
+    instance_id: str
+    workflow_name: str
+    current_state: str
+    history: list[dict[str, Any]]
+
+    def transition(self, new_state: str, event: str) -> None:
+        """Chuyển sang trạng thái mới và ghi vào history."""
+        self.history.append(
+            {"from": self.current_state, "to": new_state, "event": event}
+        )
+        self.current_state = new_state
+
+
+class WorkflowService:
+    """
+    Service chính cho workflow orchestration.
+
+    Responsibility:
+    - Khởi tạo workflow instance mới
+    - Eval guard trước transition
+    - Execute effect sau transition
+    - Track state history cho audit trail
+    """
+
+    def __init__(self) -> None:
+        self._instances: dict[str, WorkflowState] = {}
+        # TODO: Inject từ dependency injection container
+        self._guard_evaluator: Any = None
+        self._effect_executor: Any = None
+
+    def create_instance(self, instance_id: str, workflow_name: str, initial_state: str) -> WorkflowState:
+        """Tạo workflow instance mới với trạng thái ban đầu."""
+        state = WorkflowState(
+            instance_id=instance_id,
+            workflow_name=workflow_name,
+            current_state=initial_state,
+            history=[],
+        )
+        self._instances[instance_id] = state
+        logger.info("Workflow instance %s created in state '%s'", instance_id, initial_state)
+        return state
+
+    async def execute_event(self, instance_id: str, event: str, event_data: dict[str, Any] | None = None) -> dict[str, Any]:
+        """
+        Xử lý event và trigger transition.
+
+        Flow:
+        1. Lấy workflow instance hiện tại
+        2. Find transition phù hợp với event
+        3. Eval guard (nếu có)
+        4. Thực hiện transition
+        5. Execute effects
+
+        Raises:
+            ValueError: Nếu instance không tồn tại hoặc transition không hợp lệ
+        """
+        if instance_id not in self._instances:
+            raise ValueError(f"Workflow instance '{instance_id}' không tìm thấy [MDC-CP13-002]")
+
+        instance = self._instances[instance_id]
+
+        # Eval guard trước transition
+        if self._guard_evaluator:
+            guard_result = await self._guard_evaluator.evaluate(instance.current_state, event)
+            if not guard_result:
+                logger.warning("Guard failed for instance %s, event %s", instance_id, event)
+                raise ValueError(f"Guard evaluation failed [MDC-CP13-004]")
+
+        # Thực hiện transition
+        new_state = self._resolve_next_state(instance.current_state, event)
+        instance.transition(new_state, event)
+
+        # Execute effects sau transition
+        if self._effect_executor:
+            try:
+                await self._effect_executor.execute(
+                    workflow_name=instance.workflow_name,
+                    from_state=instance.history[-1]["from"],
+                    to_state=new_state,
+                    event=event,
+                    data=event_data or {},
+                )
+            except Exception as exc:
+                logger.error("Effect execution failed: %s", exc)
+                raise ValueError(f"Effect execution failed [MDC-CP13-005]") from exc
+
+        return {
+            "instance_id": instance_id,
+            "new_state": new_state,
+            "event": event,
+        }
+
+    def get_state(self, instance_id: str) -> dict[str, Any]:
+        """Lấy trạng thái hiện tại của workflow instance."""
+        if instance_id not in self._instances:
+            raise ValueError(f"Workflow instance '{instance_id}' không tìm thấy [MDC-CP13-002]")
+
+        inst = self._instances[instance_id]
+        return {
+            "instance_id": inst.instance_id,
+            "workflow_name": inst.workflow_name,
+            "current_state": inst.current_state,
+            "history": inst.history,
+        }
+
+    def _resolve_next_state(self, current: str, event: str) -> str:
+        """
+        Resolve trạng thái tiếp theo dựa trên current state và event.
+
+        Note: Trong production, logic này sẽ đọc từ workflow definition.
+        """
+        # Placeholder — thực tế sẽ query từ workflow definition registry
+        logger.debug("Transition from '%s' on event '%s'", current, event)
+        return f"{event}_done"

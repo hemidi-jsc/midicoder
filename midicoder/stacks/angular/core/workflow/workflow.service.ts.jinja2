@@ -1,0 +1,84 @@
+/**
+ * Workflow Service — CP13: Background Job & Workflow Generator.
+ *
+ * Angular service cho workflow orchestration.
+ * Kết nối với backend API để quản lý workflow state và trigger events.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+
+/**
+ * Trạng thái của workflow instance.
+ */
+export interface WorkflowState {
+  instanceId: string;
+  workflowName: string;
+  currentState: string;
+  history: Array<{ from: string; to: string; event: string }>;
+}
+
+/**
+ * Kết quả sau khi thực thi event.
+ */
+export interface EventResult {
+  instanceId: string;
+  newState: string;
+  event: string;
+}
+
+/**
+ * Service để tương tác với Workflow API.
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class WorkflowService {
+  private readonly baseUrl = '/api/workflows';
+
+  constructor(private http: HttpClient) {}
+
+  /**
+   * Tạo workflow instance mới.
+   */
+  createInstance(
+    instanceId: string,
+    workflowName: string,
+    initialState: string
+  ): Observable<WorkflowState> {
+    return this.http.post<WorkflowState>(`${this.baseUrl}`, {
+      instanceId,
+      workflowName,
+      initialState,
+    });
+  }
+
+  /**
+   * Lấy trạng thái hiện tại của workflow instance.
+   */
+  getState(instanceId: string): Observable<WorkflowState> {
+    return this.http.get<WorkflowState>(`${this.baseUrl}/${instanceId}`);
+  }
+
+  /**
+   * Thực thi event để trigger transition.
+   */
+  executeEvent(
+    instanceId: string,
+    event: string,
+    data?: Record<string, any>
+  ): Observable<EventResult> {
+    return this.http.post<EventResult>(`${this.baseUrl}/${instanceId}/events`, {
+      event,
+      data,
+    });
+  }
+
+  /**
+   * Lấy danh sách tất cả workflow instances.
+   */
+  listInstances(): Observable<WorkflowState[]> {
+    return this.http.get<WorkflowState[]>(`${this.baseUrl}`);
+  }
+}

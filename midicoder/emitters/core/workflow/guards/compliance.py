@@ -8,34 +8,34 @@ Author: Midicoder Team
 Version: 1.0.0
 """
 
-from ..models import Guard, TransitionContext
+from typing import Any
 
 
 class ComplianceGuard:
     """
     Guard evaluator cho compliance guards.
-    
+
     Kiểm tra compliance requirements (RX01-RX12) trước khi transition.
-    
+
     Usage:
-        guard = ComplianceGuard()
-        result = await guard.evaluate(guard_def, context)
+        guard = ComplianceGuard(check="GDPR")
+        result = guard.evaluate(context={})
     """
 
-    async def evaluate(self, guard: Guard, context: TransitionContext) -> bool:
+    def __init__(self, check: str | None = None) -> None:
+        self.check = check
+
+    def evaluate(self, context: dict[str, Any]) -> bool:
         """
         Evaluate compliance guard.
-        
+
         Args:
-            guard: Compliance guard definition
-            context: Transition context
-            
+            context: Context dictionary
+
         Returns:
             True nếu compliance check pass, False nếu fail
         """
         # TODO: Integrate với RX01-RX12 compliance checks
-        check = guard.check
-        tenant_id = context.tenant_id
-        
+
         # Placeholder: return True (implement actual compliance check)
         return True

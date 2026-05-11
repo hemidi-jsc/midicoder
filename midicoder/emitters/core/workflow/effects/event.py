@@ -8,48 +8,40 @@ Author: Midicoder Team
 Version: 1.0.0
 """
 
-from ..models import Effect, TransitionContext
+from typing import Any
+
 from .base import EffectResult
 
 
 class EventEffect:
     """
     Effect executor cho event publishing.
-    
+
     Publish domain events khi transition fire.
-    
+
     Usage:
-        effect = EventEffect()
-        result = await effect.execute(effect_def, context)
+        effect = EventEffect(publish="order.created")
+        result = effect.execute(data={"order_id": "123"})
     """
 
-    async def execute(self, effect: Effect, context: TransitionContext) -> EffectResult:
+    def __init__(self, publish: str | None = None) -> None:
+        self.publish = publish
+
+    def execute(self, data: dict[str, Any]) -> EffectResult:
         """
         Execute event publishing effect.
-        
+
         Args:
-            effect: Event effect definition
-            context: Transition context
-            
+            data: Data dictionary
+
         Returns:
             EffectResult với publish result
         """
         # TODO: Integrate với CP05 Event Bus
-        event_name = effect.publish
-        
-        # Event payload
-        payload = {
-            "entity_type": context.entity_type,
-            "entity_id": str(context.entity_id),
-            "from_state": context.from_state,
-            "to_state": context.to_state,
-            "transition_id": context.transition.id,
-            "metadata": context.metadata,
-        }
-        
+        event_name = self.publish
+
         # Publish event (placeholder)
         return EffectResult.success(
-            effect.type.value,
+            data={"event": event_name, "payload": data},
             message=f"Published event: {event_name}",
-            data={"event": event_name, "payload": payload},
         )

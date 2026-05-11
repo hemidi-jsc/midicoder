@@ -1,0 +1,124 @@
+/**
+ * Job Status Component — CP13: Background Job & Workflow Generator.
+ *
+ * Angular component để hiển thị trạng thái của background jobs.
+ */
+
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Subscription } from 'rxjs';
+
+/**
+ * Thông tin của một job.
+ */
+interface JobInfo {
+  jobId: string;
+  taskName: string;
+  cronExpr?: string;
+  intervalSeconds?: number;
+  enabled: boolean;
+  lastRunAt?: string;
+  lastResult?: Record<string, any>;
+}
+
+/**
+ * Component hiển thị danh sách jobs và trạng thái của từng job.
+ * Cho phép bật/tắt job và trigger job chạy ngay.
+ */
+@Component({
+  selector: 'app-job-status',
+  template: `
+    <div class="job-status-panel">
+      <h3>Danh sách Background Jobs</h3>
+      <div *ngFor="let job of jobs" class="job-card">
+        <div class="job-header">
+          <strong>{{ job.taskName }}</strong>
+          <span class="job-id">{{ job.jobId }}</span>
+        </div>
+        <div class="job-details">
+          <span *ngIf="job.cronExpr">Cron: {{ job.cronExpr }}</span>
+          <span *ngIf="job.intervalSeconds">Interval: {{ job.intervalSeconds }}s</span>
+          <span class="status" [class.enabled]="job.enabled" [class.disabled]="!job.enabled">
+            {{ job.enabled ? 'Đang chạy' : 'Đã tắt' }}
+          </span>
+          <span *ngIf="job.lastRunAt">Lần chạy cuối: {{ job.lastRunAt }}</span>
+        </div>
+        <div class="job-actions">
+          <button (click)="toggleJob(job.jobId)">
+            {{ job.enabled ? 'Tắt' : 'Bật' }}
+          </button>
+          <button (click)="triggerJob(job.jobId)">Chạy ngay</button>
+        </div>
+      </div>
+      <div *ngIf="jobs.length === 0" class="no-jobs">
+        Chưa có job nào được đăng ký.
+      </div>
+    </div>
+  `,
+  styles: [`
+    .job-status-panel { padding: 16px; }
+    .job-card { border: 1px solid #ddd; padding: 12px; margin-bottom: 8px; border-radius: 4px; }
+    .job-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .job-id { color: #888; font-size: 0.85em; }
+    .job-details { margin-bottom: 8px; }
+    .job-details span { margin-right: 12px; }
+    .status.enabled { color: #2e7d32; font-weight: bold; }
+    .status.disabled { color: #c62828; font-weight: bold; }
+    .job-actions button { margin-right: 8px; padding: 4px 12px; cursor: pointer; }
+    .no-jobs { text-align: center; color: #999; padding: 24px; }
+  `],
+})
+export class JobStatusComponent implements OnInit, OnDestroy {
+  jobs: JobInfo[] = [];
+  private refreshSub?: Subscription;
+  private readonly baseUrl = '/api/jobs';
+
+  constructor(private http: HttpClient) {}
+
+  ngOnInit(): void {
+    this.loadJobs();
+    // Tự động làm mới danh sách job mỗi 30 giây
+    this.refreshSub = setInterval(() => this.loadJobs(), 30000);
+  }
+
+  ngOnDestroy(): void {
+    this.refreshSub?.unsubscribe();
+  }
+
+  /**
+   * Tải danh sách jobs từ backend.
+   */
+  loadJobs(): void {
+    this.http.get<JobInfo[]>(this.baseUrl).subscribe({
+      next: (data) => (this.jobs = data),
+      error: (err) => console.error('Không thể tải danh sách jobs', err),
+    });
+  }
+
+  /**
+   * Bật/tắt một job.
+   */
+  toggleJob(jobId: string): void {
+    const job = this.jobs.find((j) => j.jobId === jobId);
+    if (!job) return;
+
+    const url = job.enabled
+      ? `${this.baseUrl}/${jobId}/disable`
+      : `${this.baseUrl}/${jobId}/enable`;
+
+    this.http.put(url, {}).subscribe({
+      next: () => this.loadJobs(),
+      error: (err) => console.error('Không thể đổi trạng thái job', err),
+    });
+  }
+
+  /**
+   * Trigger job chạy ngay.
+   */
+  triggerJob(jobId: string): void {
+    this.http.post(`${this.baseUrl}/${jobId}/trigger`, {}).subscribe({
+      next: () => this.loadJobs(),
+      error: (err) => console.error('Không thể trigger job', err),
+    });
+  }
+}

@@ -8,34 +8,34 @@ Author: Midicoder Team
 Version: 1.0.0
 """
 
-from ..models import Guard, TransitionContext
+from typing import Any
 
 
 class StateGuard:
     """
     Guard evaluator cho state-based guards.
-    
+
     Kiểm tra state conditions trước khi transition.
-    
+
     Usage:
-        guard = StateGuard()
-        result = await guard.evaluate(guard_def, context)
+        guard = StateGuard(condition="state == 'submitted'")
+        result = guard.evaluate(context={"state": "submitted"})
     """
 
-    async def evaluate(self, guard: Guard, context: TransitionContext) -> bool:
+    def __init__(self, condition: str | None = None) -> None:
+        self.condition = condition
+
+    def evaluate(self, context: dict[str, Any]) -> bool:
         """
         Evaluate state guard.
-        
+
         Args:
-            guard: State guard definition
-            context: Transition context
-            
+            context: Context dictionary
+
         Returns:
             True nếu state condition pass, False nếu fail
         """
         # TODO: Implement state condition evaluation
-        condition = guard.condition
-        current_state = context.from_state
-        
+
         # Placeholder: return True (implement actual state check)
         return True
