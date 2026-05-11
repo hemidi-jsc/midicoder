@@ -1,0 +1,73 @@
+pack:
+  id: "CP11"
+  name: "File Storage & Media Processing Generator"
+  internal_id: "cp11-file-media"
+  version: "1.0.0"
+  phase: "P1"
+  category: "storage"
+  status: "developing"
+  depends_on:
+    - "CP01"
+  definitions_count: 3
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-CP11"
+    range: "MDC-CP11-001 to MDC-CP11-010"
+  capabilities_provided:
+    - file_upload
+    - file_download
+    - file_storage
+    - media_transform
+  capabilities:
+    - id: "s3-storage"
+      emitter: "fastapi, nestjs"
+    - id: "local-storage"
+      emitter: "fastapi, nestjs"
+    - id: "upload-policy"
+      emitter: "fastapi, nestjs"
+    - id: "media-transform"
+      emitter: "fastapi, nestjs"
+  emitters:
+    fastapi:
+      module: "midicoder.emitters.core.file_storage.fastapi:FastAPIFileStorageEmitter"
+      output_prefix: "storage/"
+      files:
+        - "storage/s3_config.py"
+        - "storage/file_upload_service.py"
+        - "storage/media_transform_service.py"
+        - "storage/storage_router.py"
+    nestjs:
+      module: "midicoder.emitters.core.file_storage.nestjs:NestJSFileStorageEmitter"
+      output_prefix: "storage/"
+      files:
+        - "storage/s3.module.ts"
+        - "storage/file-upload.service.ts"
+        - "storage/media-transform.service.ts"
+        - "storage/file-upload.controller.ts"
+    angular:
+      module: "midicoder.emitters.core.file_storage.angular:AngularFileStorageEmitter"
+      output_prefix: "src/app/core/storage/"
+      files:
+        - "file-storage.models.ts"
+        - "file-storage.service.ts"
+        - "file-upload.component.ts"
+        - "file-storage.module.ts"
+        - "index.ts"
+    react:
+      module: "midicoder.emitters.core.file_storage.react:ReactFileStorageEmitter"
+      output_prefix: "src/storage/"
+      files:
+        - "fileStorage.types.ts"
+        - "FileStorageProvider.tsx"
+        - "useFileStorage.ts"
+        - "FileUpload.tsx"
+        - "index.ts"
+  frontend_integration:
+    angular:
+      - "FileStorageService"
+      - "FileUploadComponent"
+      - "FileStorageNgModule"
+    react:
+      - "useFileStorage"
+      - "FileStorageProvider"
+      - "FileUpload"

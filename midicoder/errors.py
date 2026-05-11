@@ -456,6 +456,20 @@ class ErrorCode(str, Enum):
     CP10_INDEX_CREATE_FAILED = "MDC-CP10-005"
 
     # =========================================================================
+    # CP11: File Storage & Media Processing Errors
+    # =========================================================================
+    CP11_EMPTY_PROFILE_NAME = "MDC-CP11-001"
+    CP11_INVALID_BACKEND_TYPE = "MDC-CP11-002"
+    CP11_EMPTY_BUCKET_NAME = "MDC-CP11-003"
+    CP11_INVALID_CONTENT_TYPE = "MDC-CP11-004"
+    CP11_FILE_SIZE_EXCEEDED = "MDC-CP11-005"
+    CP11_INVALID_EXTENSION = "MDC-CP11-006"
+    CP11_DSL_PARSE_ERROR = "MDC-CP11-007"
+    CP11_MISSING_POLICY = "MDC-CP11-008"
+    CP11_TRANSFORM_INVALID_PARAM = "MDC-CP11-009"
+    CP11_PROVIDER_NOT_FOUND = "MDC-CP11-010"
+
+    # =========================================================================
     # CP12: Notification & Communication Errors
     # =========================================================================
     CP12_NOTIFICATION_CHANNEL_NOT_SUPPORTED = "MDC-CP12-001"

@@ -1,0 +1,497 @@
+/**
+ * File Upload Component - CP11.
+ *
+ * Angular component cho file upload voi drag-drop, progress bar, preview.
+ * KPI-029: Tenant-aware file upload qua input tenantId.
+ *
+ * Su dung @Input() de cau hinh accept, maxSize, multiple, folder, policyName.
+ * Emit UploadResult qua @Output() fileUploaded.
+ *
+ * {% if collection.profiles %}
+ * Backends: {{ collection.profiles | map(attribute='backend_type') | map(attribute='value') | list | tojson }}
+ * {% endif %}
+ * {% if collection.policies %}
+ * Policies: {{ collection.policies | map(attribute='name') | join(', ') }}
+ * {% endif %}
+ */
+
+import {
+  Component,
+  Input,
+  Output,
+  EventEmitter,
+  ChangeDetectorRef,
+  OnDestroy,
+  OnInit,
+} from "@angular/core";
+import { HttpEventType } from "@angular/common/http";
+import { Subscription } from "rxjs";
+import { FileStorageService } from "./file-storage.service";
+import { UploadResult, FileUploadProgress } from "./file-storage.models";
+
+/**
+ * File Upload Component.
+ *
+ * Component nay cho phep upload file qua drag-drop hoac file input.
+ * KPI-029: Tenant isolation qua input tenantId.
+ *
+ * Features:
+ * - Drag-drop zone voi visual feedback
+ * - Progress bar cho upload
+ * - File preview cho anh
+ * - Multiple file upload
+ * - Policy validation
+ * - Tenant-aware upload
+ */
+@Component({
+  selector: "mc-file-upload",
+  template: `
+    <div
+      class="mc-file-upload"
+      [class.dragging]="isDragging"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)"
+    >
+      <label class="mc-file-upload-label">
+        <input
+          type="file"
+          (change)="onFileSelected($event)"
+          [multiple]="multiple"
+          [accept]="accept"
+          style="display: none"
+        />
+        <span class="mc-file-upload-text">
+          {{ isDragging ? "Tha file vao day" : "Keo tha file hoac nhan de chon" }}
+        </span>
+      </label>
+
+      <!-- Progress bar -->
+      <div
+        *ngIf="progress > 0"
+        class="mc-progress-bar"
+        role="progressbar"
+        [attr.aria-valuenow]="progress"
+      >
+        <div class="mc-progress-fill" [style.width.%]="progress"></div>
+        <span class="mc-progress-text">{{ progress }}%</span>
+      </div>
+
+      <!-- Upload status -->
+      <div *ngIf="lastResult" class="mc-upload-result">
+        <span *ngIf="lastResult.success" class="mc-success">
+          Upload thanh cong: {{ lastResult.filename }}
+        </span>
+        <span *ngIf="!lastResult.success" class="mc-error">
+          Loi: {{ lastResult.error }}
+        </span>
+      </div>
+
+      <!-- File preview -->
+      <div *ngIf="previewUrl" class="mc-file-preview">
+        <img *ngIf="isImageFile" [src]="previewUrl" alt="Preview" />
+        <div *ngIf="!isImageFile" class="mc-preview-icon">
+          {{ selectedFile?.name }}
+        </div>
+      </div>
+    </div>
+  `,
+  styles: [
+    `
+      :host {
+        display: block;
+      }
+
+      .mc-file-upload {
+        border: 2px dashed #ccc;
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.2s, background-color 0.2s;
+      }
+
+      .mc-file-upload.dragging {
+        border-color: #0066cc;
+        background-color: #f0f7ff;
+      }
+
+      .mc-file-upload-label {
+        cursor: pointer;
+        display: block;
+      }
+
+      .mc-file-upload-text {
+        font-size: 1rem;
+        color: #666;
+      }
+
+      .mc-progress-bar {
+        margin-top: 1rem;
+        background: #e0e0e0;
+        border-radius: 4px;
+        height: 24px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .mc-progress-fill {
+        height: 100%;
+        background: #0066cc;
+        transition: width 0.3s ease;
+      }
+
+      .mc-progress-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 0.85rem;
+        font-weight: bold;
+        color: #fff;
+      }
+
+      .mc-upload-result {
+        margin-top: 0.5rem;
+        font-size: 0.9rem;
+      }
+
+      .mc-success {
+        color: #28a745;
+      }
+
+      .mc-error {
+        color: #dc3545;
+      }
+
+      .mc-file-preview {
+        margin-top: 1rem;
+        text-align: center;
+      }
+
+      .mc-file-preview img {
+        max-width: 200px;
+        max-height: 200px;
+        border-radius: 4px;
+      }
+
+      .mc-preview-icon {
+        font-size: 1rem;
+        color: #666;
+      }
+    `,
+  ],
+})
+export class FileUploadComponent implements OnInit, OnDestroy {
+  // =========================================================================
+  // Inputs
+  // =========================================================================
+
+  /** MIME types duoc phep (vi du: "image/*" hoac "application/pdf") */
+  @Input() accept: string = "*";
+
+  /** Kich co toi da cua file (bytes) - mac dinh 10MB */
+  @Input() maxSize: number = 10485760;
+
+  /** Cho phep chon nhieu file */
+  @Input() multiple: boolean = false;
+
+  /** Folder destination cho file */
+  @Input() folder: string = "";
+
+  /** Ten policy de validate file (tu dong lay tu collection) */
+  @Input() policyName: string = "";
+
+  /** Tenant ID cho tenant isolation (KPI-029) */
+  @Input() tenantId: string | undefined = undefined;
+
+  // =========================================================================
+  // Outputs
+  // =========================================================================
+
+  /** Emit UploadResult khi upload hoan tat */
+  @Output() fileUploaded = new EventEmitter<UploadResult>();
+
+  /** Emit FileUploadProgress khi co thay doi tien do */
+  @Output() progressChanged = new EventEmitter<FileUploadProgress>();
+
+  // =========================================================================
+  // Internal State
+  // =========================================================================
+
+  /** Tien do upload hien tai (phan tram) */
+  progress: number = 0;
+
+  /** Dang co file duoc keo vao vung drop */
+  isDragging: boolean = false;
+
+  /** File dang duoc chon */
+  selectedFile: File | null = null;
+
+  /** URL preview cho file anh */
+  previewUrl: string = "";
+
+  /** Ket qua upload cuoi cung */
+  lastResult: UploadResult | null = null;
+
+  /** Loai file co phai la image khong */
+  isImageFile: boolean = false;
+
+  /** Subscription de unsubscribe khi destroy */
+  private subscriptions: Subscription = new Subscription();
+
+  // =========================================================================
+  // Available profiles va policies tu collection
+  // =========================================================================
+
+{% if collection.profiles %}
+  /** Danh sach profiles duoc cho phep */
+  private availableProfiles: Readonly<string[]> = {{ collection.profiles | map(attribute='name') | list | tojson }};
+{% else %}
+  /** Danh sach profiles duoc cho phep (rong) */
+  private availableProfiles: Readonly<string[]> = [];
+{% endif %}
+
+{% if collection.policies %}
+  /** Danh sach policies duoc cho phep */
+  private availablePolicies: Readonly<string[]> = {{ collection.policies | map(attribute='name') | list | tojson }};
+{% else %}
+  /** Danh sach policies duoc cho phep (rong) */
+  private availablePolicies: Readonly<string[]> = [];
+{% endif %}
+
+  // =========================================================================
+  // Lifecycle
+  // =========================================================================
+
+  constructor(
+    private fileStorageService: FileStorageService,
+    private cdr: ChangeDetectorRef,
+  ) {}
+
+  /**
+   * OnInit - khoi tao component.
+   *
+   * KPI-029: Dat tenant ID neu co input.
+   */
+  ngOnInit(): void {
+    // KPI-029: Dat tenant ID cho service
+    if (this.tenantId) {
+      this.fileStorageService.setTenantId(this.tenantId);
+    }
+  }
+
+  /**
+   * OnDestroy - cleanup subscriptions.
+   */
+  ngOnDestroy(): void {
+    this.subscriptions.unsubscribe();
+  }
+
+  // =========================================================================
+  // Drag-Drop Handlers
+  // =========================================================================
+
+  /**
+   * Xu ly khi keo file vao vung drop.
+   *
+   * @param event - DragEvent
+   */
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = true;
+  }
+
+  /**
+   * Xu ly khi keo file ra khoi vung drop.
+   *
+   * @param event - DragEvent
+   */
+  onDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = false;
+  }
+
+  /**
+   * Xu ly khi tha file vao vung drop.
+   *
+   * @param event - DragEvent voi danh sach files
+   */
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = false;
+
+    const files = event.dataTransfer?.files;
+    if (files && files.length > 0) {
+      this.handleFiles(Array.from(files));
+    }
+  }
+
+  // =========================================================================
+  // File Input Handler
+  // =========================================================================
+
+  /**
+   * Xu ly khi chon file qua input.
+   *
+   * @param event - Event tu HTMLInputElement
+   */
+  onFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const files = input.files;
+    if (files && files.length > 0) {
+      this.handleFiles(Array.from(files));
+    }
+    // Reset input de cho phep chon cung file
+    input.value = "";
+  }
+
+  // =========================================================================
+  // File Processing
+  // =========================================================================
+
+  /**
+   * Xu ly danh sach files - validate va upload.
+   *
+   * @param files - Danh sach File can xu ly
+   */
+  private handleFiles(files: File[]): void {
+    for (const file of files) {
+      // Validate kich co
+      if (file.size > this.maxSize) {
+        const mbSize = (file.size / 1024 / 1024).toFixed(2);
+        const mbMax = (this.maxSize / 1024 / 1024).toFixed(2);
+        const error: UploadResult = {
+          key: "",
+          url: "",
+          size: file.size,
+          content_type: file.type,
+          filename: file.name,
+          success: false,
+          error: `File qua lon: ${mbSize}MB > ${mbMax}MB`,
+        };
+        this.fileUploaded.emit(error);
+        continue;
+      }
+
+      // Validate theo policy neu co
+      if (this.policyName) {
+        const isValid = this.fileStorageService.validateFile(
+          file,
+          this.policyName,
+        );
+        if (!isValid) {
+          const policyError: UploadResult = {
+            key: "",
+            url: "",
+            size: file.size,
+            content_type: file.type,
+            filename: file.name,
+            success: false,
+            error: `File khong phu hop voi policy: ${this.policyName}`,
+          };
+          this.fileUploaded.emit(policyError);
+          continue;
+        }
+      }
+
+      // Tao preview neu la image
+      this.createPreview(file);
+
+      // Upload file
+      this.uploadSingleFile(file);
+    }
+  }
+
+  /**
+   * Tao preview URL cho file anh.
+   *
+   * @param file - File de tao preview
+   */
+  private createPreview(file: File): void {
+    this.selectedFile = file;
+    if (file.type.startsWith("image/")) {
+      this.isImageFile = true;
+      const reader = new FileReader();
+      reader.onload = () => {
+        this.previewUrl = reader.result as string;
+        this.cdr.detectChanges();
+      };
+      reader.readAsDataURL(file);
+    } else {
+      this.isImageFile = false;
+      this.previewUrl = "";
+    }
+  }
+
+  /**
+   * Upload mot file don voi progress tracking.
+   *
+   * @param file - File can upload
+   */
+  private uploadSingleFile(file: File): void {
+    this.progress = 0;
+
+    const sub = this.fileStorageService
+      .uploadFileWithProgress(file, this.folder)
+      .subscribe({
+        next: (event) => {
+          if (
+            event.type === HttpEventType.UploadProgress &&
+            event.total
+          ) {
+            this.progress = Math.round((100 * event.loaded) / event.total);
+            this.progressChanged.emit({
+              key: "",
+              filename: file.name,
+              loaded: event.loaded,
+              total: event.total,
+              percentage: this.progress,
+              status: "uploading",
+            });
+          } else if (event.type === HttpEventType.Response) {
+            this.progress = 100;
+            const body = event.body as UploadResult;
+            this.lastResult = { ...body, success: true };
+            this.fileUploaded.emit(this.lastResult);
+            this.progressChanged.emit({
+              key: body.key,
+              filename: file.name,
+              loaded: body.size,
+              total: body.size,
+              percentage: 100,
+              status: "completed",
+            });
+          }
+        },
+        error: (error) => {
+          this.progress = 0;
+          const errorResult: UploadResult = {
+            key: "",
+            url: "",
+            size: file.size,
+            content_type: file.type,
+            filename: file.name,
+            success: false,
+            error: error.message || "Upload that bai",
+          };
+          this.lastResult = errorResult;
+          this.fileUploaded.emit(errorResult);
+          this.progressChanged.emit({
+            key: "",
+            filename: file.name,
+            loaded: 0,
+            total: file.size,
+            percentage: 0,
+            status: "error",
+            error: errorResult.error,
+          });
+        },
+      });
+
+    this.subscriptions.add(sub);
+  }
+}

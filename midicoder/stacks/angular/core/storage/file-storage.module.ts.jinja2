@@ -1,0 +1,46 @@
+/**
+ * File Storage Module - CP11.
+ *
+ * Module nay cung cap file storage services va components.
+ * KPI-029: Tenant-aware file storage.
+ *
+ * {% if collection.profiles %}
+ * Backends: {{ collection.profiles | map(attribute='backend_type') | map(attribute='value') | list | tojson }}
+ * {% endif %}
+ * {% if collection.policies %}
+ * Policies: {{ collection.policies | map(attribute='name') | join(', ') }}
+ * {% endif %}
+ */
+
+import { NgModule } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { HttpClientModule } from "@angular/common/http";
+import { FileStorageService } from "./file-storage.service";
+import { FileUploadComponent } from "./file-upload.component";
+
+/**
+ * File Storage NgModule.
+ *
+ * Export FileUploadComponent va cung cap FileStorageService.
+ * KPI-029: Tenant Isolation duoc enable mac dinh qua service.
+ *
+ * Import module nay vao module cha de su dung cac component
+ * va service cho file storage.
+ */
+@NgModule({
+  imports: [CommonModule, HttpClientModule],
+  declarations: [FileUploadComponent],
+  exports: [FileUploadComponent],
+  providers: [FileStorageService],
+})
+export class FileStorageModule {
+  /**
+   * Khoi tao module file storage.
+   *
+   * KPI-029: Tenant Isolation duoc enable mac dinh.
+   * Goi FileStorageService.setTenantId() sau khi user login.
+   */
+  constructor(private fileStorageService: FileStorageService) {
+    // Module initialized - file storage ready
+  }
+}

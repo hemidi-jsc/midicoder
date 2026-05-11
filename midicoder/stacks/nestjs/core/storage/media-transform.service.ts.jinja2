@@ -1,0 +1,271 @@
+/**
+ * Media Transform Service cho NestJS.
+ *
+ * Sử dụng Sharp để xử lý ảnh:
+ * - Resize image theo kích thước target
+ * - Tạo thumbnail với aspect ratio preserved
+ * - Chuyển đổi format ảnh
+ * - Tối ưu hóa chất lượng file
+ *
+ * KPI-029: Tenant Isolation - Transform kết hợp với tenant-specific key prefix
+ * CP11: File Storage & Media
+ */
+
+import { Injectable } from '@nestjs/common';
+import sharp from 'sharp';
+
+
+// Supported image formats
+const SUPPORTED_FORMATS = ["jpeg", "jpg", "png", "gif", "webp", "bmp", "tiff"];
+
+// Default quality setting
+const DEFAULT_QUALITY = 80;
+
+{% if collection.transforms %}
+/**
+ * Interface cho transform preset config.
+ */
+export interface TransformPreset {
+  type: "resize" | "thumbnail" | "transcode";
+  width?: number;
+  height?: number;
+  format?: string;
+  quality: number;
+}
+
+
+// Preset transforms - auto-generated từ MediaTransform collection
+export const TRANSFORM_PRESETS: Record<string, TransformPreset> = {
+{% for transform in collection.transforms %}
+{% if transform.transform_type in ["resize", "thumbnail"] %}
+  "{{ transform.name }}": {
+    type: "{{ transform.transform_type }}" as const,
+{% if transform.width %}
+    width: {{ transform.width }},
+{% endif %}
+{% if transform.height %}
+    height: {{ transform.height }},
+{% endif %}
+{% if transform.format %}
+    format: "{{ transform.format }}",
+{% endif %}
+    quality: {{ transform.quality }},
+  },
+{% endif %}
+{% endfor %}
+};
+
+{% endif %}
+/**
+ * Media Transform Service.
+ *
+ * Sử dụng Sharp cho high-performance image operations:
+ * - Resize: Resize ảnh theo kích thước cụ thể
+ * - Thumbnail: Tạo thumbnail giữ aspect ratio
+ * - Transcode: Chuyển đổi format
+ * - Optimize: Tối ưu hóa chất lượng
+ */
+@Injectable()
+export class MediaTransformService {
+
+  constructor(
+    private readonly defaultQuality: number = DEFAULT_QUALITY,
+  ) {}
+
+
+  /**
+   * Resize image theo kích thước target.
+   *
+   * @param imageBuffer - Nội dung ảnh dạng Buffer
+   * @param width - Width target (pixel)
+   * @param height - Height target (pixel)
+   * @param quality - Chất lượng output (1-100)
+   * @param format - Format output (jpeg, png, webp, v.v.)
+   * @param keepAspectRatio - Nếu true, giữ aspect ratio bằng crop center
+   * @returns Ảnh đã resize dạng Buffer
+   */
+  async resizeImage(
+    imageBuffer: Buffer,
+    width: number,
+    height: number,
+    quality: number = this.defaultQuality,
+    format: string = 'jpeg',
+    keepAspectRatio: boolean = false,
+  ): Promise<Buffer> {
+    let pipeline = sharp(imageBuffer);
+
+    if (keepAspectRatio) {
+      // Giữ aspect ratio: resize để vừa trong bounding box, rồi crop center
+      pipeline = pipeline.resize({
+        width,
+        height,
+        fit: 'cover',
+        position: 'center',
+      });
+    } else {
+      // Resize trực tiếp theo kích thước target
+      pipeline = pipeline.resize(width, height);
+    }
+
+    // Apply format-specific options
+    const formatOptions = this.getFormatOptions(format, quality);
+
+    const [outputBuffer, { format: outputFormat }] = await Promise.all([
+      pipeline.toBuffer(),
+      pipeline.metadata(),
+    ]);
+
+    // Re-process with correct format
+    let finalPipeline = sharp(imageBuffer);
+    if (keepAspectRatio) {
+      finalPipeline = finalPipeline.resize({ width, height, fit: 'cover', position: 'center' });
+    } else {
+      finalPipeline = finalPipeline.resize(width, height);
+    }
+
+    return finalPipeline.withMetadata().toFormat(format as any, formatOptions).toBuffer();
+  }
+
+
+  /**
+   * Tạo thumbnail giữ aspect ratio.
+   *
+   * Sử dụng Sharp resize với fit: 'inside' để thu nhỏ ảnh
+   * mà không phóng to nếu ảnh đã nhỏ hơn kích thước target.
+   *
+   * @param imageBuffer - Nội dung ảnh dạng Buffer
+   * @param maxWidth - Width tối đa (pixel)
+   * @param maxHeight - Height tối đa (pixel)
+   * @param quality - Chất lượng output (1-100)
+   * @param format - Format output
+   * @returns Thumbnail dạng Buffer
+   */
+  async createThumbnail(
+    imageBuffer: Buffer,
+    maxWidth: number,
+    maxHeight: number,
+    quality: number = this.defaultQuality,
+    format: string = 'jpeg',
+  ): Promise<Buffer> {
+    const formatOptions = this.getFormatOptions(format, quality);
+
+    return sharp(imageBuffer)
+      .resize({
+        width: maxWidth,
+        height: maxHeight,
+        fit: 'inside',
+      })
+      .withMetadata()
+      .toFormat(format as any, formatOptions)
+      .toBuffer();
+  }
+
+
+  /**
+   * Tối ưu hóa ảnh: resize nếu quá lớn + compression.
+   *
+   * Nếu ảnh có dimension lớn hơn maxDimension, sẽ resize
+   * để vừa với giới hạn trước khi áp dụng compression.
+   *
+   * @param imageBuffer - Nội dung ảnh dạng Buffer
+   * @param maxDimension - Kích thước tối đa cho chiều dài nhất
+   * @param quality - Chất lượng compression (1-100)
+   * @param format - Format output
+   * @returns Ảnh đã tối ưu hóa dạng Buffer
+   */
+  async optimizeImage(
+    imageBuffer: Buffer,
+    maxDimension?: number,
+    quality: number = this.defaultQuality,
+    format: string = 'jpeg',
+  ): Promise<Buffer> {
+    const metadata = await sharp(imageBuffer).metadata();
+    const { width, height } = metadata;
+
+    let pipeline = sharp(imageBuffer);
+
+    // Resize nếu quá lớn
+    if (maxDimension && (width! > maxDimension || height! > maxDimension)) {
+      const ratio = Math.min(maxDimension / width!, maxDimension / height!);
+      pipeline = pipeline.resize({
+        width: Math.round(width! * ratio),
+        height: Math.round(height! * ratio),
+      });
+    }
+
+    const formatOptions = this.getFormatOptions(format, quality);
+    return pipeline.toFormat(format as any, formatOptions).toBuffer();
+  }
+
+
+  /**
+   * Chuyển đổi format của ảnh.
+   *
+   * @param imageBuffer - Nội dung ảnh dạng Buffer
+   * @param targetFormat - Format đích (jpeg, png, webp, v.v.)
+   * @param quality - Chất lượng output (1-100)
+   * @returns Ảnh đã chuyển format dạng Buffer
+   */
+  async convertFormat(
+    imageBuffer: Buffer,
+    targetFormat: string = 'jpeg',
+    quality: number = this.defaultQuality,
+  ): Promise<Buffer> {
+    const formatOptions = this.getFormatOptions(targetFormat, quality);
+    return sharp(imageBuffer)
+      .toFormat(targetFormat as any, formatOptions)
+      .toBuffer();
+  }
+
+
+  /**
+   * Lấy thông tin metadata của ảnh.
+   *
+   * @param imageBuffer - Nội dung ảnh dạng Buffer
+   * @returns Dict chứa width, height, format, space, density
+   */
+  async getImageInfo(imageBuffer: Buffer): Promise<{
+    width: number;
+    height: number;
+    format: string | undefined;
+    space: string | undefined;
+    density: number;
+    size: number;
+  }> {
+    const metadata = await sharp(imageBuffer).metadata();
+    return {
+      width: metadata.width!,
+      height: metadata.height!,
+      format: metadata.format,
+      space: metadata.space,
+      density: metadata.density || 72,
+      size: imageBuffer.length,
+    };
+  }
+
+
+  /**
+   * Tạo format-specific options cho Sharp.
+   *
+   * @param format - Format output
+   * @param quality - Chất lượng (1-100)
+   * @returns Sharp format options
+   */
+  private getFormatOptions(
+    format: string,
+    quality: number,
+  ): Record<string, any> {
+    const lowerFormat = format.toLowerCase();
+
+    if (lowerFormat === 'jpeg' || lowerFormat === 'jpg') {
+      return { quality, mozjpeg: true } as any;
+    }
+    if (lowerFormat === 'webp') {
+      return { quality } as any;
+    }
+    if (lowerFormat === 'png') {
+      return { compressionLevel: 6 } as any;
+    }
+    return { quality } as any;
+  }
+}

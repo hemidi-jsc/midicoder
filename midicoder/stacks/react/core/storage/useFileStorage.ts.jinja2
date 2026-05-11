@@ -1,0 +1,245 @@
+/**
+* useFileStorage Hook cho React.
+* Custom hook de quan ly file storage operations.
+* Bao gom upload, download, delete, va lay presigned URL.
+*
+* KPI-029: Tenant Isolation - upload voi tenant_id.
+*
+* {{ collection }}: Storage Layer - CP11
+*/
+
+import { useCallback, useState } from 'react';
+
+import { createFileStorageClient } from './fileStorage';
+import {
+StorageConfig,
+UploadResult,
+UploadParams,
+DownloadParams,
+PresignedUrlParams,
+PresignedUrlResult,
+DeleteResult,
+StorageError,
+FileUploadProgress,
+DEFAULT_STORAGE_CONFIG,
+} from './fileStorage.types';
+
+interface UseFileStorageReturn {
+/** Ham upload file */
+upload: (params: UploadParams) => Promise<UploadResult>;
+    /** Ham download file (tra ve Blob) */
+    download: (params: DownloadParams) => Promise<Blob>;
+        /** Ham xoa file */
+        delete: (key: string, tenantId?: string) => Promise<DeleteResult>;
+            /** Ham lay presigned URL */
+            getPresignedUrl: (params: PresignedUrlParams) => Promise<PresignedUrlResult>;
+                /** Trang thai dang upload */
+                uploading: boolean;
+                /** Trang thai dang download */
+                downloading: boolean;
+                /** Trang thai dang xoa */
+                deleting: boolean;
+                /** Tien trinh upload hien tai */
+                progress: FileUploadProgress | null;
+                /** Loi hien tai (neu co) */
+                error: StorageError | null;
+                /** Xoa loi hien tai */
+                clearError: () => void;
+                }
+
+                /**
+                * Custom hook cho file storage operations.
+                *
+                * @param config - Cau hinh storage client
+                * @returns Cac ham operations va trang thai
+                */
+                export function useFileStorage(
+                config: Partial<StorageConfig> = {},
+                    ): UseFileStorageReturn {
+                    const [uploading, setUploading] = useState(false);
+                    const [downloading, setDownloading] = useState(false);
+                    const [deleting, setDeleting] = useState(false);
+                    const [progress, setProgress] = useState<FileUploadProgress | null>(null);
+                        const [error, setError] = useState<StorageError | null>(null);
+
+                            const storageConfig: StorageConfig = {
+                            ...DEFAULT_STORAGE_CONFIG,
+                            ...config,
+                            };
+
+                            const client = createFileStorageClient(storageConfig);
+
+                            /**
+                            * Upload file va cap nhat trang thai.
+                            */
+                            const upload = useCallback(
+                            async (params: UploadParams): Promise<UploadResult> => {
+                                setUploading(true);
+                                setError(null);
+                                setProgress({ percent: 0, loaded: 0, total: params.file.size, tenantId: params.tenantId
+                                });
+
+                                try {
+                                const result = await client.uploadFile(params);
+                                setProgress({ percent: 100, loaded: params.file.size, total: params.file.size, tenantId:
+                                params.tenantId });
+                                return result;
+                                } catch (err) {
+                                const storageError = err as StorageError;
+                                setError(storageError);
+                                throw storageError;
+                                } finally {
+                                setUploading(false);
+                                }
+                                },
+                                [client],
+                                );
+
+                                /**
+                                * Download file va cap nhat trang thai.
+                                */
+                                const download = useCallback(
+                                async (params: DownloadParams): Promise<Blob> => {
+                                    setDownloading(true);
+                                    setError(null);
+
+                                    try {
+                                    const blob = await client.downloadFile(params);
+                                    return blob;
+                                    } catch (err) {
+                                    const storageError = err as StorageError;
+                                    setError(storageError);
+                                    throw storageError;
+                                    } finally {
+                                    setDownloading(false);
+                                    }
+                                    },
+                                    [client],
+                                    );
+
+                                    /**
+                                    * Xoa file va cap nhat trang thai.
+                                    */
+                                    const doDelete = useCallback(
+                                    async (key: string, tenantId?: string): Promise<DeleteResult> => {
+                                        setDeleting(true);
+                                        setError(null);
+
+                                        try {
+                                        const result = await client.deleteFile(key, tenantId);
+                                        return result;
+                                        } catch (err) {
+                                        const storageError = err as StorageError;
+                                        setError(storageError);
+                                        throw storageError;
+                                        } finally {
+                                        setDeleting(false);
+                                        }
+                                        },
+                                        [client],
+                                        );
+
+                                        /**
+                                        * Lay presigned URL.
+                                        */
+                                        const getPresignedUrl = useCallback(
+                                        async (params: PresignedUrlParams): Promise<PresignedUrlResult> => {
+                                            setError(null);
+
+                                            try {
+                                            const result = await client.getPresignedUrl(params);
+                                            return result;
+                                            } catch (err) {
+                                            const storageError = err as StorageError;
+                                            setError(storageError);
+                                            throw storageError;
+                                            }
+                                            },
+                                            [client],
+                                            );
+
+                                            /**
+                                            * Xoa loi hien tai.
+                                            */
+                                            const clearError = useCallback(() => {
+                                            setError(null);
+                                            }, []);
+
+                                            return {
+                                            upload,
+                                            download,
+                                            delete: doDelete,
+                                            getPresignedUrl,
+                                            uploading,
+                                            downloading,
+                                            deleting,
+                                            progress,
+                                            error,
+                                            clearError,
+                                            };
+                                            }
+
+                                            /**
+                                            * Hook upload nhieu file.
+                                            */
+                                            export function useMultiUpload(config: Partial<StorageConfig> = {}) {
+                                                const { upload, uploading, error, clearError } = useFileStorage(config);
+                                                const [results, setResults] = useState<UploadResult[]>([]);
+                                                    const [current, setCurrent] = useState(0);
+                                                    const [total, setTotal] = useState(0);
+
+                                                    /**
+                                                    * Upload nhieu file lien tiep.
+                                                    */
+                                                    const uploadMultiple = useCallback(
+                                                    async (files: FileList | File[], folder = 'uploads', policyName?:
+                                                    string) => {
+                                                    const fileArray = Array.from(files);
+                                                    setTotal(fileArray.length);
+                                                    setCurrent(0);
+                                                    setResults([]);
+                                                    setError(null);
+
+                                                    const newResults: UploadResult[] = [];
+
+                                                    for (let i = 0; i < fileArray.length; i++) { try { const
+                                                        result=await upload({ file: fileArray[i], folder, policyName,
+                                                        tenantId: config.tenantId, }); newResults.push(result);
+                                                        setResults([...newResults]); setCurrent(i + 1); } catch { //
+                                                        Tich tuc upload cac file con lai setCurrent(i + 1); } } return
+                                                        newResults; }, [upload, config.tenantId], ); return {
+                                                        uploadMultiple, results, current, total, uploading, error,
+                                                        clearError, }; } /** * Hook preview file. */ export function
+                                                        useFilePreview() { const [previewUrl,
+                                                        setPreviewUrl]=useState<string | null>(null);
+
+                                                        /**
+                                                        * Tao preview URL tu file.
+                                                        */
+                                                        const createPreview = useCallback((file: File) => {
+                                                        if (file.type.startsWith('image/') ||
+                                                        file.type.startsWith('video/')) {
+                                                        const url = URL.createObjectURL(file);
+                                                        setPreviewUrl(url);
+                                                        return url;
+                                                        }
+                                                        setPreviewUrl(null);
+                                                        return null;
+                                                        }, []);
+
+                                                        /**
+                                                        * Xoa preview URL.
+                                                        */
+                                                        const clearPreview = useCallback(() => {
+                                                        if (previewUrl) {
+                                                        URL.revokeObjectURL(previewUrl);
+                                                        setPreviewUrl(null);
+                                                        }
+                                                        }, [previewUrl]);
+
+                                                        return {
+                                                        previewUrl,
+                                                        createPreview,
+                                                        clearPreview,
+                                                        };
+                                                        }

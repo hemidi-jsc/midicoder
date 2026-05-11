@@ -1,0 +1,270 @@
+/**
+* FileUpload Component cho React.
+* Component upload file voi drag-drop, preview, va progress bar.
+* KPI-029: Tenant Isolation - upload voi tenant_id.
+*
+* {{ collection }}: Storage Layer - CP11
+*/
+
+import React, { useCallback, useRef, useState } from 'react';
+
+import { useFileStorage, useFilePreview } from './useFileStorage';
+import { UploadResult } from './fileStorage.types';
+
+interface FileUploadProps {
+/** Thu muc luu tru */
+folder?: string;
+/** Ten UploadPolicy de enforce validation */
+policyName?: string;
+/** Tenant ID (KPI-029) */
+tenantId?: string;
+/** Kich thuoc file toi da (bytes) */
+maxSize?: number;
+/** Cac MIME type duoc phep */
+accept?: string;
+/** Cho phep chon nhieu file */
+multiple?: boolean;
+/** Callback khi upload thanh cong */
+onUploadComplete?: (result: UploadResult) => void;
+/** Callback khi upload that bai */
+onError?: (error: string) => void;
+}
+
+/**
+* Component upload file voi drag-drop, preview, va progress bar.
+*/
+export const FileUpload: React.FC<FileUploadProps> = ({
+    folder = 'uploads',
+    policyName,
+    tenantId,
+    maxSize = 100 * 1024 * 1024,
+    accept = 'image/*,application/pdf',
+    multiple = false,
+    onUploadComplete,
+    onError,
+    }) => {
+    const [isDragging, setIsDragging] = useState(false);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+        const [uploadProgress, setUploadProgress] = useState(0);
+        const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+            const fileInputRef = useRef<HTMLInputElement>(null);
+
+                const { upload, uploading, error, clearError } = useFileStorage({
+                tenantId,
+                });
+                const { previewUrl, createPreview, clearPreview } = useFilePreview();
+
+                /**
+                * Xu ly khi chon file.
+                */
+                const handleFileSelect = useCallback(
+                (file: File) => {
+                // Validate kich thuoc
+                if (file.size > maxSize) {
+                onError?.(`File qua lon: ${file.size} bytes`);
+                return;
+                }
+                setSelectedFile(file);
+                setUploadResult(null);
+                setUploadProgress(0);
+                createPreview(file);
+                },
+                [maxSize, onError, createPreview],
+                );
+
+                /**
+                * Xu ly khi dat file vao.
+                */
+                const handleDrop = useCallback(
+                (e: React.DragEvent) => {
+                e.preventDefault();
+                setIsDragging(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFileSelect(e.dataTransfer.files[0]);
+                }
+                },
+                [handleFileSelect],
+                );
+
+                /**
+                * Xu ly khi keo file qua.
+                */
+                const handleDragOver = useCallback((e: React.DragEvent) => {
+                e.preventDefault();
+                setIsDragging(true);
+                }, []);
+
+                /**
+                * Xu ly khi keo file ra khoi.
+                */
+                const handleDragLeave = useCallback((e: React.DragEvent) => {
+                e.preventDefault();
+                setIsDragging(false);
+                }, []);
+
+                /**
+                * Xu ly khi input file thay doi.
+                */
+                const handleInputChange = useCallback(
+                (e: React.ChangeEvent<HTMLInputElement>) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                    handleFileSelect(e.target.files[0]);
+                    }
+                    },
+                    [handleFileSelect],
+                    );
+
+                    /**
+                    * Xu ly bat dau upload.
+                    */
+                    const handleUpload = useCallback(async () => {
+                    if (!selectedFile) return;
+
+                    try {
+                    setUploadProgress(50);
+                    const result = await upload({
+                    file: selectedFile,
+                    folder,
+                    policyName,
+                    tenantId,
+                    });
+                    setUploadProgress(100);
+                    setUploadResult(result);
+                    onUploadComplete?.(result);
+                    } catch (err) {
+                    const errorMsg = (err as Error).message || 'Upload that bai';
+                    onError?.(errorMsg);
+                    }
+                    }, [selectedFile, folder, policyName, tenantId, upload, onUploadComplete, onError]);
+
+                    /**
+                    * Huy chon file.
+                    */
+                    const handleCancel = useCallback(() => {
+                    setSelectedFile(null);
+                    setUploadResult(null);
+                    setUploadProgress(0);
+                    clearPreview();
+                    clearError();
+                    }, [clearPreview, clearError]);
+
+                    /**
+                    * Mo o chon file.
+                    */
+                    const handleOpenFilePicker = useCallback(() => {
+                    fileInputRef.current?.click();
+                    }, []);
+
+                    // Format kich thuoc file
+                    const formatSize = (bytes: number): string => {
+                    if (bytes === 0) return '0 B';
+                    const units = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+                    };
+
+                    return (
+                    <div style={{ maxWidth: 500, margin: '0 auto' }}>
+                        {/* Khu vuc drag-drop */}
+                        <div role="button" tabIndex={0} aria-label="Khu vuc upload file" onDrop={handleDrop}
+                            onDragOver={handleDragOver} onDragLeave={handleDragLeave} onClick={handleOpenFilePicker}
+                            onKeyDown={(e)=> {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleOpenFilePicker();
+                            }
+                            }}
+                            style={{
+                            border: `2px dashed ${isDragging ? '#4caf50' : '#ccc'}`,
+                            borderRadius: 8,
+                            padding: 32,
+                            textAlign: 'center',
+                            cursor: 'pointer',
+                            backgroundColor: isDragging ? '#f0fff0' : '#fafafa',
+                            transition: 'all 0.2s',
+                            }}
+                            >
+                            <input ref={fileInputRef} type="file" accept={accept} multiple={multiple}
+                                onChange={handleInputChange} style={{ display: 'none' }} />
+                            <p>Keo tha file vao day hoac click de chon</p>
+                            <p style={{ fontSize: 12, color: '#888' }}>
+                                Toi da {formatSize(maxSize)}
+                            </p>
+                        </div>
+
+                        {/* Neu co file duoc chon */}
+                        {selectedFile && (
+                        <div style={{ marginTop: 16, padding: 16, border: '1px solid #eee' , borderRadius: 8 }}>
+                            {/* Preview hinh anh */}
+                            {previewUrl && (
+                            <img src={previewUrl} alt="Preview" style={{ maxWidth: '100%' , maxHeight: 200,
+                                marginBottom: 8 }} />
+                            )}
+
+                            {/* Thong tin file */}
+                            <p style={{ margin: '8px 0' }}>
+                                <strong>{selectedFile.name}</strong>
+                                <br />
+                                <span style={{ fontSize: 12, color: '#888' }}>
+                                    {formatSize(selectedFile.size)} — {selectedFile.type}
+                                </span>
+                            </p>
+
+                            {/* Progress bar */}
+                            {(uploading || uploadProgress > 0) && (
+                            <div style={{ marginTop: 8 }}>
+                                <div style={{ height: 8, backgroundColor: '#eee' , borderRadius: 4, overflow: 'hidden' ,
+                                    }}>
+                                    <div style={{ height: '100%' , width: `${uploadProgress}%`,
+                                        backgroundColor: '#4caf50' , transition: 'width 0.3s' , }} />
+                                </div>
+                                <p style={{ fontSize: 12, color: '#888' , margin: '4px 0 0' }}>
+                                    {uploadProgress}%
+                                </p>
+                            </div>
+                            )}
+
+                            {/* Ket qua upload thanh cong */}
+                            {uploadResult && (
+                            <div style={{ marginTop: 8, padding: 8, backgroundColor: '#e8f5e9' , borderRadius: 4 }}>
+                                <p style={{ fontSize: 14, margin: 0, color: '#2e7d32' }}>
+                                    ✓ Upload thanh cong
+                                </p>
+                                <p style={{ fontSize: 12, margin: '4px 0 0' , color: '#2e7d32' }}>
+                                    URL: {uploadResult.file.url}
+                                </p>
+                            </div>
+                            )}
+
+                            {/* Hien thi loi */}
+                            {error && (
+                            <div style={{ marginTop: 8, padding: 8, backgroundColor: '#ffebee' , borderRadius: 4 }}>
+                                <p style={{ fontSize: 14, margin: 0, color: '#c62828' }}>
+                                    ✗ {error.message}
+                                </p>
+                            </div>
+                            )}
+
+                            {/* Nut hanh dong */}
+                            <div style={{ marginTop: 12, display: 'flex' , gap: 8 }}>
+                                {!uploadResult && (
+                                <button type="button" onClick={handleUpload} disabled={uploading} style={{ flex: 1,
+                                    padding: '8px 16px' , backgroundColor: uploading ? '#ccc' : '#4caf50' ,
+                                    color: 'white' , border: 'none' , borderRadius: 4, cursor: uploading ? 'not-allowed'
+                                    : 'pointer' , }}>
+                                    {uploading ? 'Dang upload...' : 'Upload'}
+                                </button>
+                                )}
+                                <button type="button" onClick={handleCancel} disabled={uploading} style={{ flex: 1,
+                                    padding: '8px 16px' , backgroundColor: '#f44336' , color: 'white' , border: 'none' ,
+                                    borderRadius: 4, cursor: uploading ? 'not-allowed' : 'pointer' , }}>
+                                    Hủy
+                                </button>
+                            </div>
+                        </div>
+                        )}
+                    </div>
+                    );
+                    };
+
+                    export default FileUpload;

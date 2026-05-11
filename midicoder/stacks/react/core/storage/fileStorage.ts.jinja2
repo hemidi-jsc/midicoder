@@ -1,0 +1,216 @@
+/**
+* API Client cho File Storage.
+* Su dung Fetch API de goi cac endpoint cua storage.
+* KPI-029: Tenant Isolation - moi yeu cau deu go kem tenant_id.
+*
+* {{ collection }}: Storage Layer - CP11
+*/
+
+import {
+StorageConfig,
+UploadResult,
+UploadParams,
+DownloadParams,
+PresignedUrlParams,
+PresignedUrlResult,
+DeleteResult,
+StorageError,
+DEFAULT_STORAGE_CONFIG,
+} from './fileStorage.types';
+
+/**
+* Tao storage client tu config.
+*/
+export function createFileStorageClient(config: StorageConfig) {
+const baseUrl = config.baseUrl || DEFAULT_STORAGE_CONFIG.baseUrl;
+const tenantId = config.tenantId;
+const apiKey = config.apiKey;
+const timeout = config.timeout || DEFAULT_STORAGE_CONFIG.timeout;
+
+/**
+* Xay dung headers cho request.
+* KPI-029: them X-Tenant-ID header.
+*/
+function buildHeaders(extraHeaders: Record<string, string> = {}): Headers {
+    const headers = new Headers(extraHeaders);
+    if (tenantId) {
+    headers.set('X-Tenant-ID', tenantId);
+    }
+    if (apiKey) {
+    headers.set('Authorization', `Bearer ${apiKey}`);
+    }
+    return headers;
+    }
+
+    /**
+    * Xu ly phan hoi API.
+    * Neu loi, nem StorageError.
+    */
+    async function handleResponse<T>(response: Response): Promise<T> {
+            if (!response.ok) {
+            let errorData: StorageError = {
+            code: 'UNKNOWN',
+            message: response.statusText || 'Loi khong xac dinh',
+            statusCode: response.status,
+            tenantId,
+            };
+            try {
+            errorData = await response.json();
+            } catch {
+            // Gio error mac dinh
+            }
+            throw errorData;
+            }
+            return response.json();
+            }
+
+            /**
+            * Upload file len storage.
+            * Su dung FormData, ho tro progress tracking.
+            */
+            async function uploadFile(params: UploadParams): Promise<UploadResult> {
+                const { file, folder = 'uploads', policyName, tenantId: overrideTenantId } = params;
+
+                // Validate file size
+                if (file.size > 100 * 1024 * 1024) {
+                throw {
+                code: 'MDC-CP11-005',
+                message: `File qua lon: ${file.size} bytes`,
+                statusCode: 400,
+                tenantId: overrideTenantId,
+                };
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const headers = buildHeaders();
+
+                const queryParams = new URLSearchParams();
+                const effectiveTenantId = overrideTenantId || tenantId;
+                if (effectiveTenantId) queryParams.set('tenant_id', effectiveTenantId);
+                if (folder) queryParams.set('folder', folder);
+                if (policyName) queryParams.set('policy', policyName);
+
+                const url = `${baseUrl}/upload?${queryParams.toString()}`;
+
+                const response = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: formData,
+                });
+
+                return handleResponse<UploadResult>(response);
+                    }
+
+                    /**
+                    * Download file tu storage.
+                    * Tra ve Blob hoac trigger download tren trinh duyet.
+                    */
+                    async function downloadFile(params: DownloadParams): Promise<Blob> {
+                        const { key, tenantId: overrideTenantId, triggerDownload = false } = params;
+
+                        const headers = buildHeaders();
+
+                        const queryParams = new URLSearchParams();
+                        const effectiveTenantId = overrideTenantId || tenantId;
+                        if (effectiveTenantId) queryParams.set('tenant_id', effectiveTenantId);
+
+                        const url = `${baseUrl}/download/${encodeURIComponent(key)}?${queryParams.toString()}`;
+
+                        const response = await fetch(url, { headers });
+
+                        if (!response.ok) {
+                        throw {
+                        code: 'MDC-CP11-005',
+                        message: `Download that bai: ${response.statusText}`,
+                        statusCode: response.status,
+                        tenantId: effectiveTenantId,
+                        };
+                        }
+
+                        const blob = await response.blob();
+
+                        // Trigger download neu yeu cau
+                        if (triggerDownload) {
+                        const downloadUrl = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = downloadUrl;
+                        link.download = key.split('/').pop() || 'download';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(downloadUrl);
+                        }
+
+                        return blob;
+                        }
+
+                        /**
+                        * Xoa file khoi storage.
+                        */
+                        async function deleteFile(
+                        key: string,
+                        tenantId?: string,
+                        ): Promise<DeleteResult> {
+                            const headers = buildHeaders();
+
+                            const queryParams = new URLSearchParams();
+                            const effectiveTenantId = tenantId || tenantId;
+                            if (effectiveTenantId) queryParams.set('tenant_id', effectiveTenantId);
+
+                            const url = `${baseUrl}/delete/${encodeURIComponent(key)}?${queryParams.toString()}`;
+
+                            const response = await fetch(url, { method: 'DELETE', headers });
+
+                            return handleResponse<DeleteResult>(response);
+                                }
+
+                                /**
+                                * Lay presigned URL cho file.
+                                */
+                                async function getPresignedUrl(
+                                params: PresignedUrlParams,
+                                ): Promise<PresignedUrlResult> {
+                                    const { key, expiration = 3600, tenantId: overrideTenantId } = params;
+
+                                    const headers = buildHeaders();
+
+                                    const queryParams = new URLSearchParams();
+                                    const effectiveTenantId = overrideTenantId || tenantId;
+                                    if (effectiveTenantId) queryParams.set('tenant_id', effectiveTenantId);
+                                    queryParams.set('expiration', String(expiration));
+
+                                    const url =
+                                    `${baseUrl}/presigned/${encodeURIComponent(key)}?${queryParams.toString()}`;
+
+                                    const response = await fetch(url, { headers });
+
+                                    return handleResponse<PresignedUrlResult>(response);
+                                        }
+
+                                        return {
+                                        uploadFile,
+                                        downloadFile,
+                                        deleteFile,
+                                        getPresignedUrl,
+                                        };
+                                        }
+
+                                        /**
+                                        * Format kich thuoc file thanh chuoi de doc.
+                                        */
+                                        export function formatFileSize(bytes: number): string {
+                                        if (bytes === 0) return '0 B';
+                                        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+                                        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                                        return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+                                        }
+
+                                        /**
+                                        * Kiem tra file type co hop le khong.
+                                        */
+                                        export function isValidFileType(fileType: string, allowedTypes: string[]):
+                                        boolean {
+                                        return allowedTypes.includes(fileType);
+                                        }

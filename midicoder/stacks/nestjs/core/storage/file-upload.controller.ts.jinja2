@@ -1,0 +1,302 @@
+/**
+ * File Upload Controller cho NestJS.
+ *
+ * Cung cấp các REST endpoints:
+ * - POST /storage/upload - Upload file (image/video/document)
+ * - GET /storage/download/:key - Download file
+ * - DELETE /storage/delete/:key - Xóa file
+ * - GET /storage/presigned/:key - Lấy presigned URL để download
+ *
+ * Obligation: UploadPolicy validation mandatory trên mọi upload
+ * KPI-029: Tenant Isolation - tenantId qua header x-tenant-id
+ * CP11: File Storage & Media
+ */
+
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
+  Headers,
+  Res,
+  NotFoundException,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
+import { FileUploadService } from './file-upload.service';
+
+
+/**
+ * KPI-029: Controller cho file storage operations.
+ *
+ * Controller này:
+ * - Xử lý upload file với multer
+ * - Validate file theo UploadPolicy
+ * - Download file từ storage theo key
+ * - Xóa file khỏi storage
+ * - Generate presigned URL cho file access
+ *
+ * KPI-029: Tenant isolation được thực hiện qua tenant-specific folder prefix.
+ */
+@Controller('storage')
+export class FileUploadController {
+
+  constructor(
+    private readonly fileUploadService: FileUploadService,
+  ) {}
+
+
+  /**
+   * KPI-029: Lấy tenantId từ HTTP header hoặc query param.
+   *
+   * Priority: x-tenant-id header > tenantId query param
+   *
+   * @param xTenantId - Header x-tenant-id
+   * @param tenantId - Query param tenantId
+   * @returns Tenant ID hoặc undefined
+   */
+  private getTenantId(
+    @Headers('x-tenant-id') xTenantId?: string,
+    @Query('tenantId') tenantId?: string,
+  ): string | undefined {
+    return xTenantId || tenantId;
+  }
+
+
+  // =========================================================================
+  // Upload Endpoint
+  // =========================================================================
+
+
+  /**
+   * Upload file với validation và policy enforcement.
+   *
+   * Obligation: File sẽ được validate theo UploadPolicy.
+   * KPI-029: File được lưu với tenant-specific folder prefix.
+   *
+   * Supported file types:
+   * - Images: jpeg, png, gif, webp
+   * - Videos: mp4, webm
+   * - Documents: pdf, doc, docx
+   *
+   * @param file - File được upload qua multer
+   * @param folder - Folder destination (images/videos/documents)
+   * @param policy - UploadPolicy name để validate
+   * @param tenantId - Tenant ID từ query param
+   * @param xTenantId - Tenant ID từ header (KPI-029)
+   * @returns Upload result với key, url, size
+   */
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file'))
+  async upload(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('folder') folder?: string,
+    @Query('policy') policy?: string,
+    @Query('tenantId') tenantId?: string,
+    @Headers('x-tenant-id') xTenantId?: string,
+  ): Promise<{ key: string; url: string; size: number; tenantId?: string }> {
+    if (!file) {
+      throw new BadRequestException('Không có file được upload');
+    }
+
+    // KPI-029: Extract tenantId cho tenant isolation
+    const effectiveTenantId = xTenantId || tenantId;
+
+    // Xác định folder destination từ content type
+    const targetFolder = folder || this.determineFolder(file.mimetype);
+
+    // Obligation: Apply UploadPolicy validation nếu có policy được chỉ định
+    if (policy) {
+      await this.fileUploadService.validatePolicy(file, policy);
+    }
+
+    return this.fileUploadService.uploadFile(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+      targetFolder,
+      policy,
+      effectiveTenantId,
+    );
+  }
+
+
+  // =========================================================================
+  // Download Endpoint
+  // =========================================================================
+
+
+  /**
+   * Download file từ storage theo key.
+   *
+   * KPI-029: Tự động thêm tenant prefix nếu key không có.
+   *
+   * @param key - File key trong storage
+   * @param tenantId - Tenant ID từ query param
+   * @param xTenantId - Tenant ID từ header (KPI-029)
+   * @param res - Response object để stream file
+   */
+  @Get('download/:key')
+  async downloadFile(
+    @Param('key') key: string,
+    @Query('tenantId') tenantId?: string,
+    @Headers('x-tenant-id') xTenantId?: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const effectiveTenantId = xTenantId || tenantId;
+
+    try {
+      const buffer = await this.fileUploadService.getFile(key, effectiveTenantId);
+
+      // Xác định content type từ file extension
+      const contentType = this.getContentTypeFromKey(key);
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', buffer.length);
+      res.send(buffer);
+    } catch (error) {
+      throw new NotFoundException(`Không tìm thấy file với key: ${key}`);
+    }
+  }
+
+
+  // =========================================================================
+  // Delete Endpoint
+  // =========================================================================
+
+
+  /**
+   * Xóa file từ storage theo key.
+   *
+   * KPI-029: Tự động thêm tenant prefix nếu key không có.
+   *
+   * @param key - File key trong storage
+   * @param tenantId - Tenant ID từ query param
+   * @param xTenantId - Tenant ID từ header (KPI-029)
+   * @returns Delete result với status
+   */
+  @Delete('delete/:key')
+  async deleteFile(
+    @Param('key') key: string,
+    @Query('tenantId') tenantId?: string,
+    @Headers('x-tenant-id') xTenantId?: string,
+  ): Promise<{ status: string; key: string }> {
+    const effectiveTenantId = xTenantId || tenantId;
+
+    const success = await this.fileUploadService.deleteFile(key, effectiveTenantId);
+
+    return {
+      status: success ? 'deleted' : 'not_found',
+      key,
+    };
+  }
+
+
+  // =========================================================================
+  // Presigned URL Endpoint
+  // =========================================================================
+
+
+  /**
+   * Generate presigned URL để download file.
+   *
+   * URL có thời gian hiệu lực hạn chế, phù hợp cho việc chia sẻ
+   * file tạm thời mà không cần expose trực tiếp storage.
+   *
+   * KPI-029: Tự động thêm tenant prefix vào key nếu cần.
+   *
+   * @param key - File key trong storage
+   * @param expiration - Thời gian hiệu lực URL (giây, default 3600)
+   * @param tenantId - Tenant ID từ query param
+   * @param xTenantId - Tenant ID từ header (KPI-029)
+   * @returns Presigned URL với expiration info
+   */
+  @Get('presigned/:key')
+  async getPresignedUrl(
+    @Param('key') key: string,
+    @Query('expiration') expiration?: string,
+    @Query('tenantId') tenantId?: string,
+    @Headers('x-tenant-id') xTenantId?: string,
+  ): Promise<{ key: string; presignedUrl: string; expiration: number }> {
+    const exp = expiration ? parseInt(expiration, 10) : 3600;
+    const effectiveTenantId = xTenantId || tenantId;
+
+    const url = await this.fileUploadService.getPresignedUrl(
+      key, exp, effectiveTenantId,
+    );
+
+    return { key, presignedUrl: url, expiration: exp };
+  }
+
+
+  // =========================================================================
+  // Helper Methods
+  // =========================================================================
+
+
+  /**
+   * Xác định folder destination từ content type của file.
+   *
+   * @param mimetype - MIME type của file
+   * @returns Folder name (images/videos/documents)
+   */
+  private determineFolder(mimetype: string): string {
+    if (mimetype.startsWith('image/')) {
+      return 'images';
+    }
+    if (mimetype.startsWith('video/')) {
+      return 'videos';
+    }
+    // Mặc định là documents
+    return 'documents';
+  }
+
+
+  /**
+   * Xác định content type từ file key/extension.
+   *
+   * @param key - File key trong storage
+   * @returns Content type string
+   */
+  private getContentTypeFromKey(key: string): string {
+    const ext = key.split('.').pop()?.toLowerCase();
+
+    const contentTypeMap: Record<string, string> = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+      'svg': 'image/svg+xml',
+      'mp4': 'video/mp4',
+      'webm': 'video/webm',
+      'pdf': 'application/pdf',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+
+    return contentTypeMap[ext || ''] || 'application/octet-stream';
+  }
+
+
+  // =========================================================================
+  // Health Check
+  // =========================================================================
+
+
+  /**
+   * Health check endpoint cho storage service.
+   *
+   * @returns Health status
+   */
+  @Get('health')
+  async healthCheck(): Promise<{ status: string; component: string }> {
+    return { status: 'ok', component: 'storage' };
+  }
+}

@@ -1,0 +1,192 @@
+/**
+* Kieu du lieu cho File Storage.
+* Dinh nghia interfaces cho he thong quan ly file va upload.
+*
+* KPI-029: Tenant Isolation — moi kieu deu bao gom tenantId.
+*
+* {{ collection }}: Storage Layer - CP11
+*/
+
+/**
+* Kieu phep hoat dong tren file.
+*/
+export type FileOperation = 'read' | 'write' | 'delete' | 'list';
+
+/**
+* Trang thai upload file.
+*/
+export type UploadStatus =
+| 'idle'
+| 'preparing'
+| 'uploading'
+| 'processing'
+| 'completed'
+| 'failed'
+| 'cancelled';
+
+/**
+* Thong tin chi tiet cua mot file trong storage.
+*/
+export interface FileInfo {
+/** Key (path) cua file trong storage */
+key: string;
+/** Ten goc cua file */
+filename: string;
+/** URL truy cap file */
+url: string;
+/** Kich thuoc file (bytes) */
+size: number;
+/** MIME type cua file */
+type: string;
+/** Tenant ID (KPI-029) */
+tenantId?: string;
+/** Thoi gian tao (ISO 8601) */
+createdAt?: string;
+/** Thoi gian sua doi cuoi (ISO 8601) */
+lastModified?: string;
+}
+
+/**
+* Ket qua upload file.
+*/
+export interface UploadResult {
+/** File info sau khi upload */
+file: FileInfo;
+/** Tenant ID (KPI-029) */
+tenantId?: string;
+}
+
+/**
+* Cau hinh storage client.
+*/
+export interface StorageConfig {
+/** URL co ban cua API */
+baseUrl: string;
+/** Tenant ID (KPI-029) */
+tenantId?: string;
+/** API key (tuy chon) */
+apiKey?: string;
+/** Timeout (ms) */
+timeout?: number;
+}
+
+/**
+* Tien trinh upload file.
+*/
+export interface FileUploadProgress {
+/** Ty le phan tram (0-100) */
+percent: number;
+/** Bytes da upload */
+loaded: number;
+/** Tong bytes */
+total: number;
+/** Tenant ID (KPI-029) */
+tenantId?: string;
+}
+
+/**
+* Tham so upload.
+*/
+export interface UploadParams {
+/** File can upload */
+file: File;
+/** Thu muc luu tru */
+folder?: string;
+/** Ten UploadPolicy de enforce validation */
+policyName?: string;
+/** Tenant ID (KPI-029) */
+tenantId?: string;
+}
+
+/**
+* Tham so download.
+*/
+export interface DownloadParams {
+/** Key cua file can download */
+key: string;
+/** Tenant ID (KPI-029) */
+tenantId?: string;
+/** Co trigger download tren trinh duyet khong */
+triggerDownload?: boolean;
+}
+
+/**
+* Tham so presigned URL.
+*/
+export interface PresignedUrlParams {
+/** Key cua file */
+key: string;
+/** Thoi gian song (giay) */
+expiration?: number;
+/** Tenant ID (KPI-029) */
+tenantId?: string;
+}
+
+/**
+* Ket qua presigned URL.
+*/
+export interface PresignedUrlResult {
+/** URL da ky */
+url: string;
+/** Key cua file */
+key: string;
+/** Het han sau (giay) */
+expiration: number;
+}
+
+/**
+* Ket qua xoa file.
+*/
+export interface DeleteResult {
+/** Xoa thanh cong hay khong */
+success: boolean;
+/** Key cua file da xoa */
+key: string;
+}
+
+/**
+* Loi storage.
+*/
+export interface StorageError {
+/** Ma loi MDC-CP11 */
+code: string;
+/** Thong bao loi */
+message: string;
+/** Status code HTTP */
+statusCode?: number;
+/** Tenant ID (KPI-029) */
+tenantId?: string;
+}
+
+/**
+* Danh sach ma loi storage.
+*/
+export const STORAGE_ERROR_CODES = {
+EMPTY_PROFILE_NAME: 'MDC-CP11-001',
+INVALID_BACKEND_TYPE: 'MDC-CP11-002',
+EMPTY_BUCKET_NAME: 'MDC-CP11-003',
+INVALID_CONTENT_TYPE: 'MDC-CP11-004',
+FILE_SIZE_EXCEEDED: 'MDC-CP11-005',
+INVALID_EXTENSION: 'MDC-CP11-006',
+DSL_PARSE_ERROR: 'MDC-CP11-007',
+MISSING_POLICY: 'MDC-CP11-008',
+TRANSFORM_INVALID_PARAM: 'MDC-CP11-009',
+PROVIDER_NOT_FOUND: 'MDC-CP11-010',
+} as const;
+
+/**
+* MIME types thuong dung.
+*/
+export const COMMON_MIME_TYPES = {
+IMAGES: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const,
+VIDEOS: ['video/mp4', 'video/webm'] as const,
+DOCUMENTS: ['application/pdf', 'application/msword'] as const,
+} as const;
+
+/**
+* Cau hinh mac dinh.
+*/
+export const DEFAULT_STORAGE_CONFIG: StorageConfig = {
+baseUrl: '/api/storage',
+timeout: 60000,
+};
