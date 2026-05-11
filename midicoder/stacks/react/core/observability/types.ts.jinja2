@@ -1,0 +1,145 @@
+/**
+ * Định nghĩa TypeScript cho hệ thống observability phía client.
+ *
+ * Bao gồm giao diện cho log entry, tham số truy vấn,
+ * và cấu hình dịch vụ log.
+ */
+
+/**
+ * Mức độ log.
+ */
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
+
+/**
+ * Màu sắc tương ứng với mỗi mức độ log (để hiển thị trong giao diện).
+ */
+export const LOG_LEVEL_COLORS: Record<LogLevel, string> = {
+  DEBUG: '#6c757d',
+  INFO: '#0d6efd',
+  WARN: '#fd7e14',
+  ERROR: '#dc3545',
+  FATAL: '#660000',
+};
+
+/**
+ * Một entry log có cấu trúc.
+ */
+export interface LogEntry {
+  /** ID duy nhất của log entry. */
+  id: string;
+  /** Dấu thời gian (ms epoch). */
+  timestamp: number;
+  /** Mức độ log. */
+  level: LogLevel;
+  /** Tên dịch vụ tạo log. */
+  service: string;
+  /** Thông điệp chính. */
+  message: string;
+  /** Các trường metadata bổ sung. */
+  fields?: Record<string, unknown>;
+  /** Tên component (chỉ áp dụng cho log từ React component). */
+  component?: string;
+  /** Stack trace (chỉ cho lỗi). */
+  stack?: string;
+}
+
+/**
+ * Tham số truy vấn log từ API backend.
+ */
+export interface LogQueryParams {
+  /** Lọc theo mức độ log. */
+  level?: LogLevel;
+  /** Lọc theo tên dịch vụ. */
+  service?: string;
+  /** Tên component. */
+  component?: string;
+  /** Thời gian bắt đầu (ms epoch). */
+  from?: number;
+  /** Thời gian kết thúc (ms epoch). */
+  to?: number;
+  /** Số lượng entries trả về. */
+  limit?: number;
+  /** Offset để phân trang. */
+  offset?: number;
+  /** Từ khóa tìm kiếm trong message. */
+  search?: string;
+}
+
+/**
+ * Phản hồi phân trang từ API.
+ */
+export interface PaginatedLogResponse {
+  /** Danh sách log entries. */
+  entries: LogEntry[];
+  /** Tổng số entries phù hợp. */
+  total: number;
+  /** Offset hiện tại. */
+  offset: number;
+  /** Limit của trang hiện tại. */
+  limit: number;
+}
+
+/**
+ * Cấu hình dịch vụ log.
+ */
+export interface LoggingConfig {
+  /** URL cơ sở của API backend. */
+  apiBaseUrl: string;
+  /** Tên dịch vụ hiện tại. */
+  serviceName: string;
+  /** Số lượng log entries tối đa lưu local. */
+  maxLocalEntries: number;
+  /** Tự động gửi log về backend. */
+  autoSendToBackend: boolean;
+  /** Các mức độ log cần gửi về backend. */
+  backendLevels: LogLevel[];
+}
+
+/**
+ * Cấu hình mặc định.
+ */
+export const DEFAULT_LOGGING_CONFIG: LoggingConfig = {
+  apiBaseUrl: '/api',
+  serviceName: '{{ service_name | default("midicoder-react") }}',
+  maxLocalEntries: 500,
+  autoSendToBackend: true,
+  backendLevels: ['WARN', 'ERROR', 'FATAL'],
+};
+
+/**
+ * Trạng thái của hook useLogging.
+ */
+export interface UseLoggingState {
+  /** Danh sách log entries hiện tại. */
+  logs: LogEntry[];
+  /** Đang tải dữ liệu hay không. */
+  loading: boolean;
+  /** Lỗi nếu có. */
+  error: Error | null;
+  /** Tổng số entries (cho phân trang). */
+  total: number;
+}
+
+/**
+ * Trạng thái bộ lọc.
+ */
+export interface FilterState {
+  /** Mức độ log đang lọc. */
+  level: LogLevel | null;
+  /** Từ khóa tìm kiếm. */
+  search: string;
+  /** Số entries mỗi trang. */
+  pageSize: number;
+  /** Số trang hiện tại (bắt đầu từ 0). */
+  page: number;
+}
+
+/**
+ * Cấu hình mặc định cho bộ lọc.
+ */
+export const DEFAULT_FILTER: FilterState = {
+  level: null,
+  search: '',
+  pageSize: 20,
+  page: 0,
+};

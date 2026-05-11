@@ -1,0 +1,229 @@
+/**
+ * Dịch vụ ghi log cho Angular — ghi log client-side và truy vấn log từ API.
+ *
+ * Cung cấp khả năng ghi log cấu trúc trong trình duyệt và
+ * tải các log entry từ backend để hiển thị trong LogViewer.
+ */
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
+
+/**
+ * Mức độ log.
+ */
+export enum LogLevel {
+  DEBUG = 'DEBUG',
+  INFO = 'INFO',
+  WARN = 'WARN',
+  ERROR = 'ERROR',
+}
+
+/**
+ * Một entry log có cấu trúc.
+ */
+export interface LogEntry {
+  id?: string;
+  timestamp: number;
+  level: LogLevel;
+  service: string;
+  message: string;
+  fields?: Record<string, any>;
+}
+
+/**
+ * Tham số truy vấn log.
+ */
+export interface LogQueryParams {
+  level?: LogLevel;
+  service?: string;
+  from?: number;
+  to?: number;
+  limit?: number;
+  offset?: number;
+  search?: string;
+}
+
+/**
+ * Cấu hình dịch vụ log.
+ */
+interface LoggingConfig {
+  apiBaseUrl: string;
+  serviceName: string;
+  maxLocalEntries: number;
+}
+
+/**
+ * Cấu hình mặc định.
+ */
+const DEFAULT_CONFIG: LoggingConfig = {
+  apiBaseUrl: '/api',
+  serviceName: '{{ service_name | default("midicoder-angular") }}',
+  maxLocalEntries: 500,
+};
+
+/**
+ * Dịch vụ log cho Angular.
+ *
+ * Ghi log local trong trình duyệt và hỗ trợ truy vấn log
+ * từ API backend để hiển thị trong giao diện quản trị.
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class LoggingService {
+  private readonly http = inject(HttpClient);
+  private readonly config: LoggingConfig = DEFAULT_CONFIG;
+  private readonly localEntries: LogEntry[] = [];
+
+  /**
+   * Cấu hình dịch vụ log.
+   *
+   * @param config - Cấu hình tùy chỉnh.
+   */
+  configure(config?: Partial<LoggingConfig>): void {
+    Object.assign(this.config, config);
+  }
+
+  /**
+   * Ghi một log entry có cấu trúc.
+   *
+   * Lưu log vào bộ nhớ local và gửi về backend nếu có kết nối.
+   *
+   * @param level - Mức độ log.
+   * @param message - Thông điệp log.
+   * @param fields - Các trường metadata bổ sung.
+   */
+  log(level: LogLevel, message: string, fields?: Record<string, any>): void {
+    const entry: LogEntry = {
+      id: this._generateId(),
+      timestamp: Date.now(),
+      level,
+      service: this.config.serviceName,
+      message,
+      fields,
+    };
+
+    // Lưu vào bộ nhớ local
+    this.localEntries.push(entry);
+    if (this.localEntries.length > this.config.maxLocalEntries) {
+      this.localEntries.splice(0, this.localEntries.length - this.config.maxLocalEntries);
+    }
+
+    // Ghi log ra console theo mức độ
+    this._consoleLog(level, message, fields);
+
+    // Gửi về backend cho các mức WARN và ERROR
+    if (level === LogLevel.WARN || level === LogLevel.ERROR) {
+      this._sendToBackend(entry).subscribe({
+        error: (err) => console.error('Failed to send log to backend:', err),
+      });
+    }
+  }
+
+  /**
+   * Log mức DEBUG.
+   */
+  debug(message: string, fields?: Record<string, any>): void {
+    this.log(LogLevel.DEBUG, message, fields);
+  }
+
+  /**
+   * Log mức INFO.
+   */
+  info(message: string, fields?: Record<string, any>): void {
+    this.log(LogLevel.INFO, message, fields);
+  }
+
+  /**
+   * Log mức WARN.
+   */
+  warn(message: string, fields?: Record<string, any>): void {
+    this.log(LogLevel.WARN, message, fields);
+  }
+
+  /**
+   * Log mức ERROR.
+   */
+  error(message: string, error?: any, fields?: Record<string, any>): void {
+    this.log(LogLevel.ERROR, message, {
+      ...fields,
+      ...(error ? { error: error.message || String(error), stack: error?.stack } : {}),
+    });
+  }
+
+  /**
+   * Truy vấn log từ API backend.
+   *
+   * @param params - Các tham số truy vấn.
+   * @returns Observable chứa danh sách log entries.
+   */
+  queryLogs(params?: LogQueryParams): Observable<LogEntry[]> {
+    const queryParams: Record<string, string> = {};
+    if (params?.level) queryParams['level'] = params.level;
+    if (params?.service) queryParams['service'] = params.service;
+    if (params?.from) queryParams['from'] = String(params.from);
+    if (params?.to) queryParams['to'] = String(params.to);
+    if (params?.limit) queryParams['limit'] = String(params.limit);
+    if (params?.offset) queryParams['offset'] = String(params.offset);
+    if (params?.search) queryParams['search'] = params.search;
+
+    return this.http.get<LogEntry[]>(`${this.config.apiBaseUrl}/observability/logs`, {
+      params: queryParams,
+    });
+  }
+
+  /**
+   * Lấy các log entries local.
+   *
+   * @param level - Lọc theo mức độ (tùy chọn).
+   * @param limit - Số lượng tối đa.
+   * @returns Danh sách log entries.
+   */
+  getLocalLogs(level?: LogLevel, limit: number = 100): LogEntry[] {
+    let entries = this.localEntries;
+    if (level) {
+      entries = entries.filter((e) => e.level === level);
+    }
+    return entries.slice(-limit);
+  }
+
+  /**
+   * Xóa tất cả log entries local.
+   */
+  clearLocalLogs(): void {
+    this.localEntries.length = 0;
+  }
+
+  /**
+   * Ghi log ra console theo mức độ tương ứng.
+   */
+  private _consoleLog(level: LogLevel, message: string, fields?: Record<string, any>): void {
+    const prefix = `[${level}] ${this.config.serviceName}:`;
+    switch (level) {
+      case LogLevel.DEBUG:
+        console.debug(prefix, message, fields || `{}`);
+        break;
+      case LogLevel.INFO:
+        console.info(prefix, message, fields || `{}`);
+        break;
+      case LogLevel.WARN:
+        console.warn(prefix, message, fields || `{}`);
+        break;
+      case LogLevel.ERROR:
+        console.error(prefix, message, fields || `{}`);
+        break;
+    }
+  }
+
+  /**
+   * Gửi log entry về backend API.
+   */
+  private _sendToBackend(entry: LogEntry): Observable<void> {
+    return this.http.post<void>(`${this.config.apiBaseUrl}/observability/logs`, entry);
+  }
+
+  /** Tạo ID duy nhất. */
+  private _generateId(): string {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+}

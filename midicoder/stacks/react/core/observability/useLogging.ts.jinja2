@@ -1,0 +1,249 @@
+/**
+ * Custom hook useLogging — cung cấp khả năng ghi log và truy vấn log.
+ *
+ * Sử dụng trong các React component để ghi log có cấu trúc
+ * và tải danh sách log từ API backend.
+ */
+import { useState, useCallback, useEffect, useRef } from 'react';
+import {
+  LogEntry,
+  LogLevel,
+  LogQueryParams,
+  LoggingConfig,
+  UseLoggingState,
+  DEFAULT_LOGGING_CONFIG,
+} from './types';
+
+/**
+ * Hàm để gọi API (sẽ được replace bằng thực tế fetch/axios).
+ */
+async function fetchLogs(
+  baseUrl: string,
+  params: LogQueryParams
+): Promise<{ entries: LogEntry[]; total: number }> {
+  const queryParams = new URLSearchParams();
+  if (params.level) queryParams.set('level', params.level);
+  if (params.service) queryParams.set('service', params.service);
+  if (params.from) queryParams.set('from', String(params.from));
+  if (params.to) queryParams.set('to', String(params.to));
+  if (params.limit) queryParams.set('limit', String(params.limit));
+  if (params.offset) queryParams.set('offset', String(params.offset));
+  if (params.search) queryParams.set('search', params.search);
+
+  const url = `${baseUrl}/observability/logs?${queryParams.toString()}`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch logs: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Gửi một log entry về backend API.
+ */
+async function sendLogToBackend(
+  baseUrl: string,
+  entry: LogEntry
+): Promise<void> {
+  await fetch(`${baseUrl}/observability/logs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  });
+}
+
+/**
+ * Tạo ID duy nhất cho log entry.
+ */
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+}
+
+/**
+ * Custom hook để ghi log và truy vấn log từ backend.
+ *
+ * @param config - Cấu hình tùy chỉnh cho dịch vụ log.
+ * @returns Trạng thái log và các hàm thao tác.
+ *
+ * @example
+ * ```tsx
+ * const { logs, loading, log, queryLogs } = useLogging({
+ *   apiBaseUrl: '/api',
+ *   serviceName: 'my-app',
+ * });
+ * ```
+ */
+export function useLogging(config?: Partial<LoggingConfig>) {
+  const mergedConfig = { ...DEFAULT_LOGGING_CONFIG, ...config };
+  const localLogsRef = useRef<LogEntry[]>([]);
+
+  const [state, setState] = useState<UseLoggingState>({
+    logs: [],
+    loading: false,
+    error: null,
+    total: 0,
+  });
+
+  /**
+   * Ghi một log entry có cấu trúc.
+   *
+   * @param level - Mức độ log.
+   * @param message - Thông điệp log.
+   * @param fields - Các trường metadata bổ sung.
+   * @param component - Tên component (tùy chọn).
+   */
+  const log = useCallback(
+    (level: LogLevel, message: string, fields?: Record<string, unknown>, component?: string) => {
+      const entry: LogEntry = {
+        id: generateId(),
+        timestamp: Date.now(),
+        level,
+        service: mergedConfig.serviceName,
+        message,
+        fields,
+        component,
+      };
+
+      // Lưu vào local buffer
+      localLogsRef.current.push(entry);
+      if (localLogsRef.current.length > mergedConfig.maxLocalEntries) {
+        localLogsRef.current = localLogsRef.current.slice(-mergedConfig.maxLocalEntries);
+      }
+
+      // Ghi ra console theo mức độ
+      const prefix = `[${level}] ${mergedConfig.serviceName}${component ? ` (${component})` : ''}:`;
+      switch (level) {
+        case 'DEBUG':
+          console.debug(prefix, message, fields || {});
+          break;
+        case 'INFO':
+          console.info(prefix, message, fields || {});
+          break;
+        case 'WARN':
+          console.warn(prefix, message, fields || {});
+          break;
+        case 'ERROR':
+        case 'FATAL':
+          console.error(prefix, message, fields || {});
+          break;
+      }
+
+      // Gửi về backend nếu được cấu hình
+      if (
+        mergedConfig.autoSendToBackend &&
+        mergedConfig.backendLevels.includes(level)
+      ) {
+        sendLogToBackend(mergedConfig.apiBaseUrl, entry).catch((err) => {
+          console.error('Failed to send log to backend:', err);
+        });
+      }
+    },
+    [mergedConfig]
+  );
+
+  /**
+   * Truy vấn log từ API backend.
+   *
+   * @param params - Các tham số truy vấn.
+   */
+  const queryLogs = useCallback(
+    async (params?: Partial<LogQueryParams>) => {
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+
+      try {
+        const queryParams: LogQueryParams = {
+          level: params?.level,
+          service: params?.service || mergedConfig.serviceName,
+          limit: params?.limit || 20,
+          offset: params?.offset || 0,
+          search: params?.search,
+          from: params?.from,
+          to: params?.to,
+        };
+
+        const result = await fetchLogs(mergedConfig.apiBaseUrl, queryParams);
+        setState({
+          logs: result.entries,
+          loading: false,
+          error: null,
+          total: result.total,
+        });
+      } catch (err) {
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: err instanceof Error ? err : new Error(String(err)),
+        }));
+      }
+    },
+    [mergedConfig]
+  );
+
+  /**
+   * Lấy log entries lưu local.
+   *
+   * @param level - Lọc theo mức độ (tùy chọn).
+   * @param limit - Số lượng tối đa.
+   */
+  const getLocalLogs = useCallback(
+    (level?: LogLevel, limit: number = 100): LogEntry[] => {
+      let entries = localLogsRef.current;
+      if (level) {
+        entries = entries.filter((e) => e.level === level);
+      }
+      return entries.slice(-limit);
+    },
+    []
+  );
+
+  /**
+   * Xóa tất cả log entries local.
+   */
+  const clearLocalLogs = useCallback(() => {
+    localLogsRef.current = [];
+  }, []);
+
+  /**
+   * Các phương thức tiện ích cho từng mức độ.
+   */
+  const debug = useCallback(
+    (message: string, fields?: Record<string, unknown>, component?: string) =>
+      log('DEBUG', message, fields, component),
+    [log]
+  );
+
+  const info = useCallback(
+    (message: string, fields?: Record<string, unknown>, component?: string) =>
+      log('INFO', message, fields, component),
+    [log]
+  );
+
+  const warn = useCallback(
+    (message: string, fields?: Record<string, unknown>, component?: string) =>
+      log('WARN', message, fields, component),
+    [log]
+  );
+
+  const error = useCallback(
+    (message: string, error?: unknown, component?: string) =>
+      log('ERROR', message, {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }, component),
+    [log]
+  );
+
+  return {
+    ...state,
+    log,
+    debug,
+    info,
+    warn,
+    error,
+    queryLogs,
+    getLocalLogs,
+    clearLocalLogs,
+  };
+}

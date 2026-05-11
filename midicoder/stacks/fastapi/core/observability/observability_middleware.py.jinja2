@@ -1,0 +1,164 @@
+"""Middleware observability cho FastAPI — tự động ghi metric, log, và trace."""
+
+from __future__ import annotations
+
+import time
+from typing import Any, Callable, Dict, Optional
+
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
+
+
+# Import ObservabilityService từ mô-đun service
+# Trong thực tế, service sẽ được inject qua dependency injection của FastAPI
+_observability_service: Optional["ObservabilityService"] = None
+
+
+def set_observability_service(service: "ObservabilityService") -> None:
+    """Đặt instance ObservabilityService toàn cục cho middleware.
+
+    Args:
+        service: Instance của ObservabilityService.
+    """
+    global _observability_service
+    _observability_service = service
+
+
+class ObservabilityMiddleware(BaseHTTPMiddleware):
+    """Middleware tự động instrument các yêu cầu HTTP.
+
+    Ghi lại:
+    - Thời gian xử lý request (histogram)
+    - Số lượng request theo method và status (counter)
+    - Log cấu trúc cho mỗi request/response
+    - Trace span cho từng request
+    """
+
+    def __init__(
+        self,
+        app: Any,
+        service: Optional["ObservabilityService"] = None,
+        exclude_paths: Optional[list[str]] = None,
+    ) -> None:
+        """Khởi tạo ObservabilityMiddleware.
+
+        Args:
+            app: Ứng dụng ASGI.
+            service: Instance ObservabilityService (tùy chọn).
+            exclude_paths: Các đường dẫn cần loại trừ khỏi quan sát.
+        """
+        super().__init__(app)
+        self._service = service or _observability_service
+        self.exclude_paths = exclude_paths or ["/health", "/metrics"]
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        """Xử lý yêu cầu HTTP và tự động ghi observability data.
+
+        Args:
+            request: Yêu cầu HTTP đến.
+            call_next: Hàm gọi middleware/endpoint tiếp theo.
+
+        Returns:
+            Response từ ứng dụng.
+        """
+        # Bỏ qua các đường dẫn bị loại trừ
+        if request.url.path in self.exclude_paths:
+            return await call_next(request)
+
+        # Khởi tạo service nếu chưa có
+        service = self._service
+        if not service:
+            return await call_next(request)
+
+        # Bắt đầu trace span cho request này
+        span_id = service.start_span(
+            name=f"{request.method} {request.url.path}",
+            attributes={
+                "http.method": request.method,
+                "http.url": str(request.url),
+                "http.client_ip": request.client.host if request.client else None,
+            },
+        )
+
+        # Ghi log request đến
+        service.log(
+            "INFO",
+            f"Request received: {request.method} {request.url.path}",
+            fields={
+                "method": request.method,
+                "path": request.url.path,
+                "query_params": dict(request.query_params),
+                "content_type": request.headers.get("content-type"),
+                "user_agent": request.headers.get("user-agent"),
+            },
+        )
+
+        # Đo thời gian xử lý
+        start_time = time.time()
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            # Log lỗi và hoàn thành span
+            service.log(
+                "ERROR",
+                f"Request failed: {request.method} {request.url.path}",
+                fields={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+            )
+            if span_id:
+                span = service.finish_span(span_id)
+                if span:
+                    span.attributes["http.error"] = str(exc)
+            raise
+
+        # Tính thời gian xử lý
+        duration_ms = (time.time() - start_time) * 1000
+
+        # Ghi histogram cho thời gian request
+        service.observe_histogram(
+            "http_request_duration_ms",
+            duration_ms,
+            labels={
+                "method": request.method,
+                "path": request.url.path,
+                "status": str(response.status_code),
+            },
+        )
+
+        # Tăng counter cho số lượng request
+        service.increment_counter(
+            "http_requests_total",
+            labels={
+                "method": request.method,
+                "path": request.url.path,
+                "status": str(response.status_code),
+            },
+        )
+
+        # Log response
+        log_level = "WARNING" if response.status_code >= 500 else "INFO"
+        service.log(
+            log_level,
+            f"Request completed: {request.method} {request.url.path} -> {response.status_code}",
+            fields={
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": round(duration_ms, 2),
+                "response_content_length": response.headers.get("content-length"),
+            },
+        )
+
+        # Hoàn thành trace span
+        if span_id:
+            span = service.finish_span(span_id)
+            if span:
+                span.attributes["http.status_code"] = response.status_code
+                span.attributes["http.duration_ms"] = round(duration_ms, 2)
+
+        return response

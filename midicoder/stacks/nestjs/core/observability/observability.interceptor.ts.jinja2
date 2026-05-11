@@ -1,0 +1,127 @@
+/**
+ * Interceptor quan sát cho {{ service_name|default('midicoder') }} — tự động ghi metric, log, và trace cho mỗi request HTTP.
+ *
+ * Đo lường thời gian xử lý, ghi nhận histogram và counter,
+ * đồng thời tạo trace span cho từng yêu cầu.
+ */
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+} from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { tap, finalize } from 'rxjs/operators';
+import { ObservabilityService, LogLevel } from './observability.service';
+
+/**
+ * Các đường dẫn mặc định bị loại trừ khỏi quan sát.
+ */
+const DEFAULT_EXCLUDE_PATHS = ['/health', '/metrics'];
+
+/**
+ * Interceptor quan sát toàn cầu.
+ *
+ * Tự động thêm vào pipeline của NestJS thông qua APP_INTERCEPTOR token.
+ */
+@Injectable()
+export class ObservabilityInterceptor implements NestInterceptor {
+  /** Các đường dẫn bị loại trừ. */
+  private readonly excludePaths: string[] = DEFAULT_EXCLUDE_PATHS;
+
+  constructor(private readonly observability: ObservabilityService) {}
+
+  /**
+   * Xử lý yêu cầu và tự động ghi observability data.
+   *
+   * @param context - Ngữ cảnh thực thi hiện tại.
+   * @param next - Handler tiếp theo trong pipeline.
+   * @returns Observable của response đã được quan sát.
+   */
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const path = request.url || request.originalUrl || '/';
+
+    // Bỏ qua các đường dẫn bị loại trừ
+    if (this.excludePaths.includes(path)) {
+      return next.handle();
+    }
+
+    const method = request.method || 'UNKNOWN';
+    const spanId = this.observability.startSpan(`${method} ${path}`, {
+      'http.method': method,
+      'http.url': path,
+      'http.client_ip': request.ip,
+    });
+
+    // Ghi log request đến
+    this.observability.log(LogLevel.LOG, `Request received: ${method} ${path}`, {
+      method,
+      path,
+      query: request.query,
+      contentType: request.headers['content-type'],
+      userAgent: request.headers['user-agent'],
+    });
+
+    // Đo thời gian xử lý
+    const startTime = Date.now();
+
+    return next.handle().pipe(
+      tap((response) => {
+        // Tính thời gian xử lý
+        const durationMs = Date.now() - startTime;
+        const statusCode = this._getStatusCode(response);
+
+        // Ghi histogram cho thời gian request
+        this.observability.observeHistogram('http_request_duration_ms', durationMs, {
+          method,
+          path,
+          status: String(statusCode),
+        });
+
+        // Tăng counter cho số lượng request
+        this.observability.incrementCounter('http_requests_total', 1, {
+          method,
+          path,
+          status: String(statusCode),
+        });
+
+        // Log response
+        this.observability.log(
+          statusCode >= 500 ? LogLevel.ERROR : LogLevel.LOG,
+          `Request completed: ${method} ${path} -> ${statusCode}`,
+          {
+            method,
+            path,
+            statusCode,
+            durationMs,
+          },
+        );
+      }),
+      finalize(() => {
+        // Hoàn thành trace span
+        const span = this.observability.finishSpan(spanId);
+        if (span) {
+          span.attributes = {
+            ...span.attributes,
+            'http.duration_ms': span.durationMs,
+          };
+        }
+      }),
+    );
+  }
+
+  /**
+   * Trích xuất mã trạng thái HTTP từ response.
+   *
+   * @param response - Response object từ NestJS.
+   * @returns Mã trạng thái HTTP.
+   */
+  private _getStatusCode(response: any): number {
+    if (typeof response === 'object' && response !== null) {
+      if (typeof response.status === 'number') return response.status;
+      if (typeof response.statusCode === 'number') return response.statusCode;
+    }
+    return 200;
+  }
+}

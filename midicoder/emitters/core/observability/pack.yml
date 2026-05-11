@@ -1,0 +1,37 @@
+pack:
+  id: "CP15"
+  name: "Observability Stack Generator"
+  internal_id: "cp15-observability"
+  version: "1.0.0"
+  phase: "P1"
+  category: "observability"
+  status: "stable"
+  depends_on: ["CP07"]
+  definitions_count: 3
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP15"
+    range: "MDC-CP15-001 to MDC-CP15-010"
+  capabilities_provided:
+    - emit_metric
+    - structured_logging
+    - distributed_tracing
+  models:
+    - MetricProfile
+    - StructuredLogConfig
+    - TraceConfig
+  enums:
+    - MetricType
+    - LogLevel
+    - TracePropagationFormat
+  templates:
+    emit_metric: "fastapi/core/observability/observability_service.py.jinja2"
+    structured_logging: "fastapi/core/observability/observability_middleware.py.jinja2"
+    distributed_tracing: "nestjs/core/observability/observability.module.ts.jinja2"
+  frontend_integration:
+    angular:
+      - LoggingService
+      - LogViewerComponent
+    react:
+      - useLogging
+      - LogViewer

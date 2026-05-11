@@ -506,7 +506,19 @@ class ErrorCode(str, Enum):
     CP14_AUDIT_CONTROL_INVALID_ENFORCEMENT = "MDC-CP14-009"
     CP14_AUDIT_HASH_VERIFICATION_FAILED = "MDC-CP14-010"
 
-
+    # =========================================================================
+    # CP15: Observability Stack Generator Errors
+    # =========================================================================
+    CP15_EMPTY_METRIC_NAME = "MDC-CP15-001"
+    CP15_INVALID_METRIC_TYPE = "MDC-CP15-002"
+    CP15_INVALID_LOG_LEVEL = "MDC-CP15-003"
+    CP15_METRIC_RETENTION_INVALID = "MDC-CP15-004"
+    CP15_DUPLICATE_METRIC_NAME = "MDC-CP15-005"
+    CP15_EMPTY_LOG_MESSAGE = "MDC-CP15-006"
+    CP15_EMPTY_TRACE_NAME = "MDC-CP15-007"
+    CP15_INVALID_TRACE_FORMAT = "MDC-CP15-008"
+    CP15_LOG_HASH_VERIFICATION_FAILED = "MDC-CP15-009"
+    CP15_OBSERVABILITY_PARSE_ERROR = "MDC-CP15-010"
 
     # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors

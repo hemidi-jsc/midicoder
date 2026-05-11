@@ -248,7 +248,7 @@ core_packs:
       - structured_logging
       - distributed_tracing
     category: observability
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP23
     name: Testing Framework Generator

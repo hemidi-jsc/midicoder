@@ -84,14 +84,22 @@ class QueryEffects:
     ) -> None:
         """
         Record metric cho observability.
-        
+
         Theo CP15: Observability Stack Generator.
-        
+        Wire vào MetricRegistry để ghi metric thực tế.
+
         Args:
             effect: QueryEffect với effect_type=RECORD_METRIC
-            context: Execution context
+            context: Execution context với metric_name, metric_value
         """
-        # Placeholder: Metric sẽ được record vào monitoring system
-        # effect.metric_name: Tên metric (ví dụ: "query.duration")
-        # effect.metric_value: Giá trị metric
-        pass
+        from midicoder.emitters.core.observability.metrics import MetricRegistry
+
+        metric_name = getattr(effect, "metric_name", "query.duration")
+        metric_value = float(getattr(effect, "metric_value", 1) or 1)
+        labels = {
+            "query_id": context.get("query_id", ""),
+            "user_id": context.get("user_id", ""),
+            "tenant_id": context.get("tenant_id", ""),
+        }
+        registry = MetricRegistry()
+        registry.record(metric_name, metric_value, labels)

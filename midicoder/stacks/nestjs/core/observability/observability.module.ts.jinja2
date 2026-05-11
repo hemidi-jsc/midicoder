@@ -1,0 +1,26 @@
+/**
+ * Module quan sát cho {{ service_name|default('midicoder') }} — cung cấp dịch vụ metric, log cấu trúc, và trace cho toàn ứng dụng.
+ *
+ * Xuất ObservabilityService để các module khác có thể inject và sử dụng.
+ */
+import { Module, Global } from '@nestjs/common';
+import { ObservabilityService } from './observability.service';
+import { ObservabilityInterceptor } from './observability.interceptor';
+
+/**
+ * Module quan sát toàn cục.
+ *
+ * Tự động đăng ký ObservabilityInterceptor cho mọi route.
+ */
+@Global()
+@Module({
+  providers: [
+    ObservabilityService,
+    {
+      provide: 'APP_INTERCEPTOR',
+      useClass: ObservabilityInterceptor,
+    },
+  ],
+  exports: [ObservabilityService],
+})
+export class ObservabilityModule {}

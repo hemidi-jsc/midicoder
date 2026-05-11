@@ -345,8 +345,14 @@ class CommandEffects:
         effect: CommandEffect,
         data: dict[str, Any],
     ) -> bool:
-        """Record metric effect."""
-        # Placeholder for metric recording
+        """Record metric effect — wire vào CP15 MetricRegistry."""
+        from midicoder.emitters.core.observability.metrics import MetricRegistry
+
+        metric_name = getattr(effect, "metric_name", "command.duration")
+        metric_value = float(getattr(effect, "metric_value", 1) or 1)
+        labels = getattr(effect, "metric_labels", {}) or {}
+        registry = MetricRegistry()
+        registry.record(metric_name, metric_value, labels)
         return True
 
     async def _check_compliance(
