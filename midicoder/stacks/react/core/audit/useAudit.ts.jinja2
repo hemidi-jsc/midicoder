@@ -1,0 +1,163 @@
+/**
+* useAudit Hook - CP14.
+*
+* Custom hook để ghi audit log và query audit history.
+* Sử dụng fetch API cho HTTP operations.
+* Auto-includes tenant ID trong headers (nếu có).
+*/
+
+import {
+useCallback,
+useState,
+useMemo,
+} from "react";
+import {
+AuditLogPayload,
+AuditQueryParams,
+AuditQueryResult,
+AuditLogEntry,
+UseAuditReturn,
+} from "./types";
+
+/**
+* Hook để truy cập audit operations.
+*
+* @param apiBase - API base URL (mặc định "/api/v1")
+* @param initialTenantId - Tenant ID ban đầu (optional)
+*
+* @example
+* const { log, query, tenantId, setTenantId } = useAudit("/api/v1");
+* await log({
+* action: "CREATE",
+* entity_type: "Order",
+* entity_id: "order_123",
+* actor_id: "user_456",
+* });
+*/
+export function useAudit(
+apiBase: string = "/api/v1",
+initialTenantId?: string,
+): UseAuditReturn {
+const [tenantId, setTenantIdState] = useState<string | undefined>(initialTenantId);
+
+    /**
+    * Xây dựng headers với tenant ID.
+    */
+    const buildHeaders = useCallback((): Record<string, string> => {
+        const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+            };
+            if (tenantId) {
+            headers["x-tenant-id"] = tenantId;
+            }
+            return headers;
+            }, [tenantId]);
+
+            /**
+            * Ghi audit log entry.
+            *
+            * @param payload - Payload chứa thông tin audit log
+            * @returns Entry ID
+            */
+            const log = useCallback(
+            async (payload: AuditLogPayload): Promise<string> => {
+                const response = await fetch(`${apiBase}/audit/log`, {
+                method: "POST",
+                headers: buildHeaders(),
+                body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Ghi audit log thất bại: ${response.status} - ${errorText}`);
+                }
+
+                return response.text();
+                },
+                [apiBase, buildHeaders],
+                );
+
+                /**
+                * Query audit logs với filters.
+                *
+                * @param params - Query params (entity_type, actor_id, tenant_id, action, limit, offset)
+                * @returns Audit query result
+                */
+                const query = useCallback(
+                async (params: AuditQueryParams = {}): Promise<AuditQueryResult> => {
+                    const queryParams = new URLSearchParams();
+                    if (params.entity_type) queryParams.set("entity_type", params.entity_type);
+                    if (params.actor_id) queryParams.set("actor_id", params.actor_id);
+                    if (params.tenant_id) queryParams.set("tenant_id", params.tenant_id);
+                    if (params.action) queryParams.set("action", params.action);
+                    if (params.limit) queryParams.set("limit", params.limit.toString());
+                    if (params.offset) queryParams.set("offset", params.offset.toString());
+
+                    const queryString = queryParams.toString();
+                    const url = queryString
+                    ? `${apiBase}/audit/query?${queryString}`
+                    : `${apiBase}/audit/query`;
+
+                    const response = await fetch(url, {
+                    method: "GET",
+                    headers: buildHeaders(),
+                    });
+
+                    if (!response.ok) {
+                    throw new Error(`Query audit logs thất bại: ${response.status}`);
+                    }
+
+                    return response.json();
+                    },
+                    [apiBase, buildHeaders],
+                    );
+
+                    /**
+                    * Lấy audit trail cho một entity cụ thể.
+                    *
+                    * @param entityType - Entity type
+                    * @param entityId - Entity ID
+                    * @param limit - Số lượng max (mặc định 100)
+                    * @returns Audit log entries
+                    */
+                    const getEntityAuditTrail = useCallback(
+                    async (
+                    entityType: string,
+                    entityId: string,
+                    limit: number = 100,
+                    ): Promise<AuditLogEntry[]> => {
+                        const response = await fetch(
+                        `${apiBase}/audit/entity/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}?limit=${limit}`,
+                        {
+                        method: "GET",
+                        headers: buildHeaders(),
+                        },
+                        );
+
+                        if (!response.ok) {
+                        throw new Error(`Lấy audit trail thất bại: ${response.status}`);
+                        }
+
+                        return response.json();
+                        },
+                        [apiBase, buildHeaders],
+                        );
+
+                        /**
+                        * Đặt tenant ID.
+                        */
+                        const setTenantId = useCallback((id: string | undefined) => {
+                        setTenantIdState(id);
+                        }, []);
+
+                        return useMemo(
+                        () => ({
+                        log,
+                        query,
+                        getEntityAuditTrail,
+                        tenantId,
+                        setTenantId,
+                        }),
+                        [log, query, getEntityAuditTrail, tenantId, setTenantId],
+                        );
+                        }

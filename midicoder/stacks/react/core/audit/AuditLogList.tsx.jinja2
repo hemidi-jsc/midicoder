@@ -1,0 +1,389 @@
+/**
+ * Audit Log List Component - CP14.
+ *
+ * React component hiển thị danh sách audit logs với filter và pagination.
+ * Cho phép lọc theo entity_type, actor_id, action.
+ * Hiển thị thông tin chi tiết của mỗi audit entry.
+ */
+
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useAudit } from "./useAudit";
+import {
+  AuditLogEntry,
+  AuditQueryParams,
+  AuditLogListProps,
+} from "./types";
+
+export function AuditLogList({
+  defaultEntityType = "",
+  defaultTenantId,
+  pageSize = 50,
+  apiBase,
+}: AuditLogListProps) {
+  const audit = useAudit(apiBase, defaultTenantId);
+
+  // State cho danh sách và pagination
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // State cho filters
+  const [filterEntityType, setFilterEntityType] = useState(defaultEntityType);
+  const [filterActorId, setFilterActorId] = useState("");
+  const [filterAction, setFilterAction] = useState("");
+
+  /**
+   * Load audit log entries từ API.
+   */
+  const loadEntries = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    const params: AuditQueryParams = {
+      limit: pageSize,
+      offset,
+    };
+    if (filterEntityType) params.entity_type = filterEntityType;
+    if (filterActorId) params.actor_id = filterActorId;
+    if (filterAction) params.action = filterAction;
+    if (defaultTenantId) params.tenant_id = defaultTenantId;
+
+    try {
+      const result = await audit.query(params);
+      setEntries(result.entries);
+      setTotal(result.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi tải audit logs");
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [audit, pageSize, offset, filterEntityType, filterActorId, filterAction, defaultTenantId]);
+
+  // Load khi mount hoặc khi filters thay đổi
+  useEffect(() => {
+    loadEntries();
+  }, [loadEntries]);
+
+  /** CSS class cho action type */
+  const getActionClass = (action: string): string => {
+    return `audit-log-list__entry-action audit-log-list__entry-action--${action.toLowerCase()}`;
+  };
+
+  /** Các action có thể filter */
+  const actionOptions = useMemo(
+    () => [
+      { value: "", label: "Tất cả actions" },
+      { value: "CREATE", label: "CREATE" },
+      { value: "UPDATE", label: "UPDATE" },
+      { value: "DELETE", label: "DELETE" },
+      { value: "READ", label: "READ" },
+      { value: "LOGIN", label: "LOGIN" },
+      { value: "LOGOUT", label: "LOGOUT" },
+      { value: "EXPORT", label: "EXPORT" },
+      { value: "APPROVE", label: "APPROVE" },
+      { value: "REJECT", label: "REJECT" },
+      { value: "CUSTOM", label: "CUSTOM" },
+    ],
+    [],
+  );
+
+  return (
+    <div className="audit-log-list">
+      {/* Header */}
+      <div className="audit-log-list__header">
+        <h2 className="audit-log-list__title">Audit Logs</h2>
+        <span className="audit-log-list__count">Tổng: {total} entries</span>
+      </div>
+
+      {/* Filters */}
+      <div className="audit-log-list__filters">
+        <input
+          type="text"
+          placeholder="Filter theo entity type..."
+          value={filterEntityType}
+          onChange={(e) => {
+            setFilterEntityType(e.target.value);
+            setOffset(0);
+          }}
+          className="audit-log-list__filter-input"
+        />
+        <input
+          type="text"
+          placeholder="Filter theo actor ID..."
+          value={filterActorId}
+          onChange={(e) => {
+            setFilterActorId(e.target.value);
+            setOffset(0);
+          }}
+          className="audit-log-list__filter-input"
+        />
+        <select
+          value={filterAction}
+          onChange={(e) => {
+            setFilterAction(e.target.value);
+            setOffset(0);
+          }}
+          className="audit-log-list__filter-select"
+        >
+          {actionOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="audit-log-list__loading">Đang tải audit logs...</div>
+      )}
+
+      {/* Error */}
+      {error && <div className="audit-log-list__error">{error}</div>}
+
+      {/* Entries */}
+      {!loading && !error && (
+        <div className="audit-log-list__entries">
+          {entries.map((entry) => (
+            <div
+              key={entry.id}
+              className={`audit-log-list__entry ${
+                entry.immutable_hash && entry.immutable_hash.length === 64
+                  ? "audit-log-list__entry--valid"
+                  : "audit-log-list__entry--invalid"
+              }`}
+            >
+              {/* Entry header */}
+              <div className="audit-log-list__entry-header">
+                <span className={getActionClass(entry.action)}>{entry.action}</span>
+                <span className="audit-log-list__entry-entity">
+                  {entry.entity_type}:{entry.entity_id}
+                </span>
+                <span className="audit-log-list__entry-timestamp">
+                  {new Date(entry.timestamp).toLocaleString("vi-VN")}
+                </span>
+                <span className="audit-log-list__entry-actor">
+                  {entry.actor_type}: {entry.actor_id}
+                </span>
+              </div>
+
+              {/* Entry details */}
+              <div className="audit-log-list__entry-details">
+                {entry.old_values && Object.keys(entry.old_values).length > 0 && (
+                  <div className="audit-log-list__entry-values">
+                    <strong>Giá trị cũ:</strong>
+                    <pre>{JSON.stringify(entry.old_values, null, 2)}</pre>
+                  </div>
+                )}
+                {entry.new_values && Object.keys(entry.new_values).length > 0 && (
+                  <div className="audit-log-list__entry-values">
+                    <strong>Giá trị mới:</strong>
+                    <pre>{JSON.stringify(entry.new_values, null, 2)}</pre>
+                  </div>
+                )}
+                {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+                  <div className="audit-log-list__entry-metadata">
+                    <strong>Metadata:</strong>
+                    <pre>{JSON.stringify(entry.metadata, null, 2)}</pre>
+                  </div>
+                )}
+              </div>
+
+              {/* Hash */}
+              <div className="audit-log-list__entry-hash">
+                <span className="audit-log-list__entry-hash-label">Hash: </span>
+                <span className="audit-log-list__entry-hash-value">
+                  {entry.immutable_hash}
+                </span>
+              </div>
+            </div>
+          ))}
+
+          {/* Empty state */}
+          {entries.length === 0 && (
+            <div className="audit-log-list__empty">Không có audit logs nào.</div>
+          )}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && !error && total > pageSize && (
+        <div className="audit-log-list__pagination">
+          <button
+            onClick={() => setOffset((o) => Math.max(0, o - pageSize))}
+            disabled={offset === 0}
+            className="audit-log-list__pagination-btn"
+          >
+            ← Trước
+          </button>
+          <span className="audit-log-list__pagination-info">
+            {offset + 1}-{Math.min(offset + pageSize, total)} / {total}
+          </span>
+          <button
+            onClick={() => setOffset((o) => o + pageSize)}
+            disabled={offset + entries.length >= total}
+            className="audit-log-list__pagination-btn"
+          >
+            Sau →
+          </button>
+        </div>
+      )}
+
+      {/* Inline styles */}
+      <style>{`
+        .audit-log-list {
+          font-family: system-ui, -apple-system, sans-serif;
+        }
+        .audit-log-list__header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
+          padding-bottom: 0.5rem;
+          border-bottom: 1px solid #e0e0e0;
+        }
+        .audit-log-list__title {
+          margin: 0;
+          font-size: 1.25rem;
+          font-weight: 600;
+        }
+        .audit-log-list__count {
+          color: #666;
+          font-size: 0.875rem;
+        }
+        .audit-log-list__filters {
+          display: flex;
+          gap: 0.5rem;
+          margin-bottom: 1rem;
+        }
+        .audit-log-list__filter-input {
+          flex: 1;
+          padding: 0.5rem;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+          font-size: 0.875rem;
+        }
+        .audit-log-list__filter-select {
+          padding: 0.5rem;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+          font-size: 0.875rem;
+          background: white;
+        }
+        .audit-log-list__loading {
+          text-align: center;
+          padding: 2rem;
+          color: #666;
+        }
+        .audit-log-list__error {
+          padding: 1rem;
+          background: #fff0f0;
+          border: 1px solid #ffcdd2;
+          border-radius: 4px;
+          color: #c62828;
+        }
+        .audit-log-list__entries {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .audit-log-list__entry {
+          padding: 0.75rem;
+          border: 1px solid #e0e0e0;
+          border-radius: 4px;
+          border-left: 3px solid #4caf50;
+        }
+        .audit-log-list__entry--invalid {
+          border-left-color: #f44336;
+        }
+        .audit-log-list__entry-header {
+          display: flex;
+          gap: 1rem;
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: 0.5rem;
+        }
+        .audit-log-list__entry-action {
+          padding: 0.125rem 0.5rem;
+          border-radius: 3px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: white;
+        }
+        .audit-log-list__entry-action--create { background: #4caf50; }
+        .audit-log-list__entry-action--update { background: #2196f3; }
+        .audit-log-list__entry-action--delete { background: #f44336; }
+        .audit-log-list__entry-action--read { background: #9e9e9e; }
+        .audit-log-list__entry-action--login { background: #ff9800; }
+        .audit-log-list__entry-action--logout { background: #795548; }
+        .audit-log-list__entry-action--export { background: #607d8b; }
+        .audit-log-list__entry-action--approve { background: #009688; }
+        .audit-log-list__entry-action--reject { background: #e91e63; }
+        .audit-log-list__entry-action--custom { background: #3f51b5; }
+        .audit-log-list__entry-entity,
+        .audit-log-list__entry-timestamp,
+        .audit-log-list__entry-actor {
+          font-size: 0.875rem;
+          color: #555;
+        }
+        .audit-log-list__entry-details {
+          margin-top: 0.5rem;
+          padding-top: 0.5rem;
+          border-top: 1px solid #f0f0f0;
+        }
+        .audit-log-list__entry-values {
+          margin-bottom: 0.5rem;
+        }
+        .audit-log-list__entry-values pre {
+          margin: 0.25rem 0;
+          padding: 0.5rem;
+          background: #f5f5f5;
+          border-radius: 3px;
+          font-size: 0.8rem;
+          overflow-x: auto;
+        }
+        .audit-log-list__entry-hash {
+          margin-top: 0.5rem;
+          font-size: 0.75rem;
+          color: #999;
+          word-break: break-all;
+        }
+        .audit-log-list__empty {
+          text-align: center;
+          padding: 2rem;
+          color: #999;
+        }
+        .audit-log-list__pagination {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 1rem;
+          margin-top: 1rem;
+          padding-top: 1rem;
+          border-top: 1px solid #e0e0e0;
+        }
+        .audit-log-list__pagination-btn {
+          padding: 0.5rem 1rem;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+          background: white;
+          cursor: pointer;
+          font-size: 0.875rem;
+        }
+        .audit-log-list__pagination-btn:disabled {
+          cursor: not-allowed;
+          opacity: 0.5;
+        }
+        .audit-log-list__pagination-info {
+          font-size: 0.875rem;
+          color: #666;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+export default AuditLogList;

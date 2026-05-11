@@ -1,0 +1,404 @@
+/**
+* Audit Log List Component - CP14.
+*
+* Angular component hiển thị danh sách audit logs với filter và pagination.
+* Cho phép lọc theo entity_type, actor_id, action.
+* Hiển thị thông tin chi tiết của mỗi audit entry.
+*/
+
+import {
+Component,
+OnInit,
+Input,
+ChangeDetectorRef,
+} from "@angular/core";
+import { AuditLoggerService, AuditLogEntry, AuditQueryParams } from "./audit_logger_service";
+
+@Component({
+selector: "app-audit-log-list",
+template: `
+<div class="audit-log-list">
+    <!-- Header -->
+    <div class="audit-log-list__header">
+        <h2 class="audit-log-list__title">Audit Logs</h2>
+        <span class="audit-log-list__count">Tổng: {{ total }} entries</span>
+    </div>
+
+    <!-- Filters -->
+    <div class="audit-log-list__filters">
+        <input type="text" placeholder="Filter theo entity type..." [value]="filterEntityType"
+            (input)="onFilterEntityType($event)" class="audit-log-list__filter-input" />
+        <input type="text" placeholder="Filter theo actor ID..." [value]="filterActorId"
+            (input)="onFilterActorId($event)" class="audit-log-list__filter-input" />
+        <select [value]="filterAction" (change)="onFilterAction($event)" class="audit-log-list__filter-select">
+            <option value="">Tất cả actions</option>
+            <option value="CREATE">CREATE</option>
+            <option value="UPDATE">UPDATE</option>
+            <option value="DELETE">DELETE</option>
+            <option value="READ">READ</option>
+            <option value="LOGIN">LOGIN</option>
+            <option value="LOGOUT">LOGOUT</option>
+            <option value="EXPORT">EXPORT</option>
+            <option value="APPROVE">APPROVE</option>
+            <option value="REJECT">REJECT</option>
+            <option value="CUSTOM">CUSTOM</option>
+        </select>
+    </div>
+
+    <!-- Loading -->
+    <div *ngIf="loading" class="audit-log-list__loading">
+        Đang tải audit logs...
+    </div>
+
+    <!-- Error -->
+    <div *ngIf="error" class="audit-log-list__error">
+        {{ error }}
+    </div>
+
+    <!-- Audit log entries -->
+    <div *ngIf="!loading && !error" class="audit-log-list__entries">
+        <div *ngFor="let entry of entries" class="audit-log-list__entry"
+            [class.audit-log-list__entry--valid]="entry.immutable_hash && entry.immutable_hash.length === 64"
+            [class.audit-log-list__entry--invalid]="!entry.immutable_hash || entry.immutable_hash.length !== 64">
+            <!-- Entry header -->
+            <div class="audit-log-list__entry-header">
+                <span class="audit-log-list__entry-action" [class]="getActionClass(entry.action)">
+                    {{ entry.action }}
+                </span>
+                <span class="audit-log-list__entry-entity">
+                    {{ entry.entity_type }}:{{ entry.entity_id }}
+                </span>
+                <span class="audit-log-list__entry-timestamp">
+                    {{ entry.timestamp | date:'yyyy-MM-dd HH:mm:ss' }}
+                </span>
+                <span class="audit-log-list__entry-actor">
+                    {{ entry.actor_type }}: {{ entry.actor_id }}
+                </span>
+            </div>
+
+            <!-- Entry details -->
+            <div class="audit-log-list__entry-details">
+                <div *ngIf="entry.old_values && Object.keys(entry.old_values).length > 0"
+                    class="audit-log-list__entry-values">
+                    <strong>Giá trị cũ:</strong>
+                    <pre>{{ entry.old_values | json }}</pre>
+                </div>
+                <div *ngIf="entry.new_values && Object.keys(entry.new_values).length > 0"
+                    class="audit-log-list__entry-values">
+                    <strong>Giá trị mới:</strong>
+                    <pre>{{ entry.new_values | json }}</pre>
+                </div>
+                <div *ngIf="entry.metadata && Object.keys(entry.metadata).length > 0"
+                    class="audit-log-list__entry-metadata">
+                    <strong>Metadata:</strong>
+                    <pre>{{ entry.metadata | json }}</pre>
+                </div>
+            </div>
+
+            <!-- Hash verification -->
+            <div class="audit-log-list__entry-hash">
+                <span class="audit-log-list__entry-hash-label">Hash:</span>
+                <span class="audit-log-list__entry-hash-value">{{ entry.immutable_hash }}</span>
+            </div>
+        </div>
+
+        <!-- Empty state -->
+        <div *ngIf="entries.length === 0" class="audit-log-list__empty">
+            Không có audit logs nào.
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <div *ngIf="!loading && !error && total > limit" class="audit-log-list__pagination">
+        <button (click)="loadPreviousPage()" [disabled]="offset === 0" class="audit-log-list__pagination-btn">
+            ← Trước
+        </button>
+        <span class="audit-log-list__pagination-info">
+            {{ offset + 1 }}-{{ offset + entries.length }} / {{ total }}
+        </span>
+        <button (click)="loadNextPage()" [disabled]="offset + entries.length >= total"
+            class="audit-log-list__pagination-btn">
+            Sau →
+        </button>
+    </div>
+</div>
+`,
+styles: [`
+:host {
+display: block;
+font-family: system-ui, -apple-system, sans-serif;
+}
+.audit-log-list__header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 1rem;
+padding-bottom: 0.5rem;
+border-bottom: 1px solid #e0e0e0;
+}
+.audit-log-list__title {
+margin: 0;
+font-size: 1.25rem;
+font-weight: 600;
+}
+.audit-log-list__count {
+color: #666;
+font-size: 0.875rem;
+}
+.audit-log-list__filters {
+display: flex;
+gap: 0.5rem;
+margin-bottom: 1rem;
+}
+.audit-log-list__filter-input {
+flex: 1;
+padding: 0.5rem;
+border: 1px solid #ccc;
+border-radius: 4px;
+font-size: 0.875rem;
+}
+.audit-log-list__filter-select {
+padding: 0.5rem;
+border: 1px solid #ccc;
+border-radius: 4px;
+font-size: 0.875rem;
+background: white;
+}
+.audit-log-list__loading {
+text-align: center;
+padding: 2rem;
+color: #666;
+}
+.audit-log-list__error {
+padding: 1rem;
+background: #fff0f0;
+border: 1px solid #ffcdd2;
+border-radius: 4px;
+color: #c62828;
+}
+.audit-log-list__entries {
+display: flex;
+flex-direction: column;
+gap: 0.5rem;
+}
+.audit-log-list__entry {
+padding: 0.75rem;
+border: 1px solid #e0e0e0;
+border-radius: 4px;
+border-left: 3px solid #4caf50;
+}
+.audit-log-list__entry--invalid {
+border-left-color: #f44336;
+}
+.audit-log-list__entry-header {
+display: flex;
+gap: 1rem;
+align-items: center;
+flex-wrap: wrap;
+margin-bottom: 0.5rem;
+}
+.audit-log-list__entry-action {
+padding: 0.125rem 0.5rem;
+border-radius: 3px;
+font-size: 0.75rem;
+font-weight: 600;
+color: white;
+}
+.action-CREATE { background: #4caf50; }
+.action-UPDATE { background: #2196f3; }
+.action-DELETE { background: #f44336; }
+.action-READ { background: #9e9e9e; }
+.action-LOGIN { background: #ff9800; }
+.action-LOGOUT { background: #795548; }
+.action-EXPORT { background: #607d8b; }
+.action-APPROVE { background: #009688; }
+.action-REJECT { background: #e91e63; }
+.action-CUSTOM { background: #3f51b5; }
+.audit-log-list__entry-entity,
+.audit-log-list__entry-timestamp,
+.audit-log-list__entry-actor {
+font-size: 0.875rem;
+color: #555;
+}
+.audit-log-list__entry-details {
+margin-top: 0.5rem;
+padding-top: 0.5rem;
+border-top: 1px solid #f0f0f0;
+}
+.audit-log-list__entry-values {
+margin-bottom: 0.5rem;
+}
+.audit-log-list__entry-values pre {
+margin: 0.25rem 0;
+padding: 0.5rem;
+background: #f5f5f5;
+border-radius: 3px;
+font-size: 0.8rem;
+overflow-x: auto;
+}
+.audit-log-list__entry-hash {
+margin-top: 0.5rem;
+font-size: 0.75rem;
+color: #999;
+word-break: break-all;
+}
+.audit-log-list__empty {
+text-align: center;
+padding: 2rem;
+color: #999;
+}
+.audit-log-list__pagination {
+display: flex;
+justify-content: center;
+align-items: center;
+gap: 1rem;
+margin-top: 1rem;
+padding-top: 1rem;
+border-top: 1px solid #e0e0e0;
+}
+.audit-log-list__pagination-btn {
+padding: 0.5rem 1rem;
+border: 1px solid #ccc;
+border-radius: 4px;
+background: white;
+cursor: pointer;
+font-size: 0.875rem;
+}
+.audit-log-list__pagination-btn:disabled {
+cursor: not-allowed;
+opacity: 0.5;
+}
+.audit-log-list__pagination-info {
+font-size: 0.875rem;
+color: #666;
+}
+`],
+})
+export class AuditLogListComponent implements OnInit {
+/** Entity type để filter (từ parent) */
+@Input() defaultEntityType: string = "";
+
+/** Tenant ID để filter (từ parent) */
+@Input() defaultTenantId: string = "";
+
+/** Số lượng entries mỗi page */
+@Input() limit: number = 50;
+
+/** Danh sách audit log entries */
+entries: AuditLogEntry[] = [];
+
+/** Tổng số entries */
+total: number = 0;
+
+/** Offset hiện tại cho pagination */
+offset: number = 0;
+
+/** Đang loading không */
+loading: boolean = false;
+
+/** Error message */
+error: string = "";
+
+/** Filter theo entity type */
+filterEntityType: string = "";
+
+/** Filter theo actor ID */
+filterActorId: string = "";
+
+/** Filter theo action */
+filterAction: string = "";
+
+constructor(
+private auditLogger: AuditLoggerService,
+private cdr: ChangeDetectorRef,
+) {}
+
+/**
+* Lifecycle hook - init component.
+*/
+ngOnInit(): void {
+this.filterEntityType = this.defaultEntityType;
+if (this.defaultTenantId) {
+this.auditLogger.setTenantId(this.defaultTenantId);
+}
+this.loadEntries();
+}
+
+/**
+* Load audit log entries từ API.
+*/
+loadEntries(): void {
+this.loading = true;
+this.error = "";
+
+const params: AuditQueryParams = {
+limit: this.limit,
+offset: this.offset,
+};
+if (this.filterEntityType) params.entity_type = this.filterEntityType;
+if (this.filterActorId) params.actor_id = this.filterActorId;
+if (this.filterAction) params.action = this.filterAction;
+if (this.defaultTenantId) params.tenant_id = this.defaultTenantId;
+
+this.auditLogger.query(params).subscribe({
+next: (result) => {
+this.entries = result.entries;
+this.total = result.total;
+this.loading = false;
+this.cdr.detectChanges();
+},
+error: (err) => {
+this.error = `Lỗi tải audit logs: ${err.message || "Không rõ lỗi"}`;
+this.loading = false;
+this.entries = [];
+this.cdr.detectChanges();
+},
+});
+}
+
+/**
+* Xử lý filter theo entity type.
+*/
+onFilterEntityType(event: Event): void {
+const input = event.target as HTMLInputElement;
+this.filterEntityType = input.value;
+this.offset = 0;
+this.loadEntries();
+}
+
+/**
+* Xử lý filter theo actor ID.
+*/
+onFilterActorId(event: Event): void {
+const input = event.target as HTMLInputElement;
+this.filterActorId = input.value;
+this.offset = 0;
+this.loadEntries();
+}
+
+/**
+* Xử lý filter theo action.
+*/
+onFilterAction(event: Event): void {
+const select = event.target as HTMLSelectElement;
+this.filterAction = select.value;
+this.offset = 0;
+this.loadEntries();
+}
+
+/**
+* Load page trước.
+*/
+loadPreviousPage(): void {
+if (this.offset > 0) {
+this.offset -= this.limit;
+this.loadEntries();
+}
+}
+
+/**
+* Load page sau.
+*/
+loadNextPage(): void {
+if (this.offset + this.entries.length < this.total) { this.offset +=this.limit; this.loadEntries(); } } /** * Lấy CSS
+    class cho action type. */ getActionClass(action: string): string { return `action-${action}`; } }

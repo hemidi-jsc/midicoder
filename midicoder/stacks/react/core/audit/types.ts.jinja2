@@ -1,0 +1,122 @@
+/**
+* Audit Types - CP14.
+*
+* TypeScript interfaces cho audit trail layer.
+* Dùng cho React frontend audit logging và query.
+*/
+
+/** Hành động audit */
+export enum AuditAction {
+CREATE = "CREATE",
+UPDATE = "UPDATE",
+DELETE = "DELETE",
+READ = "READ",
+LOGIN = "LOGIN",
+LOGOUT = "LOGOUT",
+EXPORT = "EXPORT",
+APPROVE = "APPROVE",
+REJECT = "REJECT",
+CUSTOM = "CUSTOM",
+}
+
+/** Loại actor thực hiện hành động */
+export type ActorType = "user" | "system" | "background_job";
+
+/** Payload để ghi audit log */
+export interface AuditLogPayload {
+action: string;
+entity_type: string;
+entity_id: string;
+actor_id: string;
+actor_type?: ActorType;
+tenant_id?: string;
+old_values?: Record<string, any>;
+    new_values?: Record<string, any>;
+        metadata?: Record<string, any>;
+            }
+
+            /** Audit log entry trả về từ API */
+            export interface AuditLogEntry {
+            id: string;
+            timestamp: string;
+            action: string;
+            entity_type: string;
+            entity_id: string;
+            actor_id: string;
+            actor_type: string;
+            tenant_id: string;
+            old_values?: Record<string, any>;
+                new_values?: Record<string, any>;
+                    metadata?: Record<string, any>;
+                        immutable_hash: string;
+                        }
+
+                        /** Query params để lọc audit logs */
+                        export interface AuditQueryParams {
+                        entity_type?: string;
+                        actor_id?: string;
+                        tenant_id?: string;
+                        action?: string;
+                        limit?: number;
+                        offset?: number;
+                        }
+
+                        /** Kết quả query audit logs */
+                        export interface AuditQueryResult {
+                        entries: AuditLogEntry[];
+                        total: number;
+                        limit: number;
+                        offset: number;
+                        }
+
+                        /** Context type cho AuditProvider */
+                        export interface AuditContextType {
+                        /** Ghi audit log */
+                        log: (payload: AuditLogPayload) => Promise<string>;
+                            /** Query audit logs */
+                            query: (params?: AuditQueryParams) => Promise<AuditQueryResult>;
+                                /** Lấy audit trail cho entity */
+                                getEntityAuditTrail: (
+                                entityType: string,
+                                entityId: string,
+                                limit?: number,
+                                ) => Promise<AuditLogEntry[]>;
+                                    /** Tenant ID hiện tại */
+                                    tenantId: string | undefined;
+                                    /** Đặt tenant ID */
+                                    setTenantId: (id: string | undefined) => void;
+                                    /** API base URL */
+                                    apiBase: string;
+                                    }
+
+                                    /** Props cho AuditProvider */
+                                    export interface AuditProviderProps {
+                                    children: React.ReactNode;
+                                    apiBase?: string;
+                                    initialTenantId?: string;
+                                    }
+
+                                    /** Return type của useAudit hook */
+                                    export interface UseAuditReturn {
+                                    log: (payload: AuditLogPayload) => Promise<string>;
+                                        query: (params?: AuditQueryParams) => Promise<AuditQueryResult>;
+                                            getEntityAuditTrail: (
+                                            entityType: string,
+                                            entityId: string,
+                                            limit?: number,
+                                            ) => Promise<AuditLogEntry[]>;
+                                                tenantId: string | undefined;
+                                                setTenantId: (id: string | undefined) => void;
+                                                }
+
+                                                /** Props cho AuditLogList component */
+                                                export interface AuditLogListProps {
+                                                /** Entity type mặc định để filter */
+                                                defaultEntityType?: string;
+                                                /** Tenant ID mặc định để filter */
+                                                defaultTenantId?: string;
+                                                /** Số lượng entries mỗi page */
+                                                pageSize?: number;
+                                                /** API base URL (nếu không dùng context) */
+                                                apiBase?: string;
+                                                }

@@ -5,18 +5,17 @@ pack:
   version: "1.0.0"
   phase: "P1"
   category: "compliance"
-  status: "developing"
+  status: "stable"
   depends_on: ["CP01"]
   definitions_count: 3
   obligations_count: 1
   error_codes:
     prefix: "CP14"
     range: "CP14001-CP14010"
-  capabilities:
-    - id: "audit_logging"
-      emitter: "fastapi, nestjs"
-    - id: "compliance_enforcement"
-      emitter: "fastapi, nestjs"
+  capabilities_provided:
+    - write_audit_log
+    - audit_query
+    - compliance_report
   models:
     - AuditTrail
     - AuditRule
@@ -28,3 +27,14 @@ pack:
     - ControlType
     - EnforcementLevel
     - StandardType
+  templates:
+    write_audit_log: "fastapi/core/audit/audit_logger.py.jinja2"
+    audit_query: "fastapi/core/audit/audit_middleware.py.jinja2"
+    compliance_report: "nestjs/core/audit/audit.module.ts.jinja2"
+  frontend_integration:
+    angular:
+      - AuditLoggerService
+      - AuditLogListComponent
+    react:
+      - useAudit
+      - AuditLogList
