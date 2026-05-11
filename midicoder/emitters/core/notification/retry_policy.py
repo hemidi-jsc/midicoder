@@ -2,9 +2,6 @@
 Mô-đun Chính Sách Thử Lại.
 
 Module này cung cấp RetryPolicy với exponential backoff.
-
-Author: Midicoder Team
-Version: 1.0.0
 """
 
 from __future__ import annotations
@@ -14,14 +11,13 @@ import time
 from typing import Any, Callable
 
 from midicoder.emitters.core.notification.models import DispatchResult
-from midicoder.errors import MidicoderError
 
 logger = logging.getLogger(__name__)
 
 
 class RetryPolicy:
     """
-    Retry policy voi exponential backoff cho notification dispatch.
+    Retry policy với exponential backoff cho notification dispatch.
     """
 
     def __init__(
@@ -31,12 +27,12 @@ class RetryPolicy:
         max_delay: float = 60.0,
     ) -> None:
         """
-        Khoi tao RetryPolicy.
+        Khởi tạo RetryPolicy.
 
         Args:
-            max_retries: So lan retry toi da (default: 3)
-            base_delay: Delay ban dau tinh giay (default: 1.0)
-            max_delay: Delay toi da tinh giay (default: 60.0)
+            max_retries: Số lần retry tối đa (default: 3)
+            base_delay: Delay ban đầu tính giây (default: 1.0)
+            max_delay: Delay tối đa tính giây (default: 60.0)
         """
         self._max_retries = max_retries
         self._base_delay = base_delay
@@ -49,18 +45,18 @@ class RetryPolicy:
         **kwargs: Any,
     ) -> DispatchResult:
         """
-        Execute function voi retry policy.
+        Execute function với retry policy.
 
         Args:
-            func: Function can execute (phai return DispatchResult)
+            func: Function cần execute (phải return DispatchResult)
             *args: Positional arguments cho func
             **kwargs: Keyword arguments cho func
 
         Returns:
-            DispatchResult tu func
+            DispatchResult từ func
 
         Raises:
-            Exception: Exception cuoi cung neu tat ca retries fail
+            Exception: Exception cuối cùng nếu tất cả retries fail
         """
         last_exception: Exception | None = None
 
@@ -103,22 +99,22 @@ class RetryPolicy:
 
     @property
     def max_retries(self) -> int:
-        """So lan retry toi da."""
+        """Số lần retry tối đa."""
         return self._max_retries
 
     @property
     def base_delay(self) -> float:
-        """Base delay tinh giay."""
+        """Base delay tính giây."""
         return self._base_delay
 
     def get_delay_for_attempt(self, attempt: int) -> float:
         """
-        Tinh delay cho attempt cu the.
+        Tính delay cho attempt cụ thể.
 
         Args:
             attempt: Attempt number (0-based)
 
         Returns:
-            Delay tinh giay
+            Delay tính giây
         """
         return min(self._base_delay * (2 ** attempt), self._max_delay)

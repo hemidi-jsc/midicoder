@@ -1,0 +1,213 @@
+/**
+ * Notification Context - CP12: Notification & Communication
+ *
+ * Context provider cho notification state management.
+ * Support toast notifications, dispatch tracking.
+ */
+
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import {
+  ToastMessage,
+  ToastLevel,
+  DispatchRequest,
+  DispatchResponse,
+  NotificationState,
+} from './types';
+
+interface NotificationContextType extends NotificationState {
+  /** Hiển thị toast notification. */
+  showToast: (level: ToastLevel, title: string, message: string, duration?: number) => void;
+  /**Dismiss toast theo ID. */
+  dismissToast: (id: string) => void;
+  /**Dispatch notification. */
+  dispatch: (request: DispatchRequest) => Promise<DispatchResponse>;
+}
+
+const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+
+interface NotificationProviderProps {
+  /** API base URL. */
+  apiBaseUrl?: string;
+  children: React.ReactNode;
+}
+
+/**
+ * Provider cho notification context.
+ *
+ * Quản lý toast notifications và dispatch state.
+ */
+export function NotificationProvider({
+  children,
+  apiBaseUrl = '/api/notifications',
+}: NotificationProviderProps): JSX.Element {
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [dispatching, setDispatching] = useState(false);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const idCounter = useRef(0);
+
+  /** Hiển thị toast notification. */
+  const showToast = useCallback(
+    (level: ToastLevel, title: string, message: string, duration: number = 5000) => {
+      const id = `toast-${++idCounter.current}`;
+      const toast: ToastMessage = { id, level, title, message, duration };
+
+      setToasts((prev) => [...prev, toast]);
+
+      if (duration > 0) {
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, duration);
+      }
+    },
+    [],
+  );
+
+  /**Dismiss toast theo ID. */
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  /**Dispatch notification qua API. */
+  const dispatch = useCallback(
+    async (request: DispatchRequest): Promise<DispatchResponse> => {
+      setDispatching(true);
+      setDispatchError(null);
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/dispatch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const errorMessage = errorData.detail || errorData.message || `HTTP ${response.status}`;
+          throw new Error(errorMessage);
+        }
+
+        const result: DispatchResponse = await response.json();
+        showToast('success', 'Gửi thành công', result.message || 'Notification đã được gửi.');
+        return result;
+      } catch (error: any) {
+        const errorMsg = error.message || 'Gửi notification thất bại.';
+        setDispatchError(errorMsg);
+        showToast('error', 'Gửi thất bại', errorMsg);
+        throw error;
+      } finally {
+        setDispatching(false);
+      }
+    },
+    [apiBaseUrl, showToast],
+  );
+
+  const value: NotificationContextType = {
+    toasts,
+    dispatching,
+    dispatchError,
+    showToast,
+    dismissToast,
+    dispatch,
+  };
+
+  return (
+    <NotificationContext.Provider value={value}>
+      {children}
+      {/* Toast container */}
+      <div style={{ position: 'fixed', top: 20, right: 20, zIndex: 9999 }}>
+        {toasts.map((toast) => (
+          <Toast key={toast.id} toast={toast} onDismiss={dismissToast} />
+        ))}
+      </div>
+    </NotificationContext.Provider>
+  );
+}
+
+/**
+ * Hook để sử dụng notification context.
+ *
+ * @throws Error nếu sử dụng ngoài NotificationProvider
+ */
+export function useNotificationContext(): NotificationContextType {
+  const context = useContext(NotificationContext);
+  if (context === undefined) {
+    throw new Error('useNotificationContext must be used within a NotificationProvider');
+  }
+  return context;
+}
+
+/** Toast component. */
+function Toast({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastMessage;
+  onDismiss: (id: string) => void;
+}): JSX.Element {
+  const bgColor =
+    toast.level === 'success'
+      ? '#d4edda'
+      : toast.level === 'error'
+      ? '#f8d7da'
+      : toast.level === 'warning'
+      ? '#fff3cd'
+      : '#d1ecf1';
+
+  const borderColor =
+    toast.level === 'success'
+      ? '#28a745'
+      : toast.level === 'error'
+      ? '#dc3545'
+      : toast.level === 'warning'
+      ? '#ffc107'
+      : '#17a2b8';
+
+  return (
+    <div
+      style={{
+        minWidth: 300,
+        maxWidth: 450,
+        padding: 16,
+        marginBottom: 8,
+        borderRadius: 8,
+        background: bgColor,
+        borderLeft: `4px solid ${borderColor}`,
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12,
+      }}
+    >
+      <span style={{ fontSize: 20, flexShrink: 0 }}>
+        {toast.level === 'success'
+          ? '✓'
+          : toast.level === 'error'
+          ? '✕'
+          : toast.level === 'warning'
+          ? '⚠'
+          : 'ℹ'}
+      </span>
+      <div style={{ flex: 1 }}>
+        {toast.title && <strong style={{ display: 'block', marginBottom: 4 }}>{toast.title}</strong>}
+        <p style={{ margin: 0, fontSize: 14 }}>{toast.message}</p>
+      </div>
+      <button
+        onClick={() => onDismiss(toast.id)}
+        style={{
+          background: 'none',
+          border: 'none',
+          fontSize: 20,
+          cursor: 'pointer',
+          opacity: 0.6,
+          padding: 0,
+          lineHeight: 1,
+        }}
+        aria-label="Đóng notification"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+export { NotificationContext };

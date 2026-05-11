@@ -8,11 +8,11 @@ Module này cung cấp các class để generate notification code:
 - I18n: I18nTemplateRegistry cho multi-language templates
 - Rate Limiter: RateLimiter cho rate limiting per recipient
 - Retry Policy: RetryPolicy với exponential backoff
-- Providers: SendGrid, AWS SES, Twilio, Firebase FCM
-- FastAPI Emitter: Generate notification service, controller, celery tasks
-- NestJS Emitter: Generate NotificationModule, Service, Controller
+- Providers: EmailGateway, SmsGateway, PushGateway (ABC) + SmtpEmailGateway
+- FastAPI Emitter: Generate notification service, router, models, tasks
+- NestJS Emitter: Generate NotificationModule, Service, Controller, DTOs
 
-CP12 depends on CP05 (Event-Driven Architecture).
+CP12 depends on CP01 (Domain Model) và CP05 (Event-Driven Architecture).
 """
 
 from midicoder.emitters.core.notification.models import (
@@ -35,19 +35,15 @@ from midicoder.emitters.core.notification.template_engine import (
 from midicoder.emitters.core.notification.i18n import I18nTemplateRegistry
 from midicoder.emitters.core.notification.rate_limiter import RateLimiter
 from midicoder.emitters.core.notification.retry_policy import RetryPolicy
-from midicoder.emitters.core.notification.fastapi import (
-    FastAPINotificationEmitter,
-)
-from midicoder.emitters.core.notification.nestjs import (
-    NestJSNotificationEmitter,
-)
+from midicoder.emitters.core.notification.fastapi import FastAPINotificationEmitter
+from midicoder.emitters.core.notification.nestjs import NestJSNotificationEmitter
 from midicoder.emitters.core.notification.providers import (
     EmailGateway,
     SmsGateway,
     PushGateway,
+    SmtpEmailGateway,
     SendGridEmailGateway,
     AwsSesEmailGateway,
-    TwilioSmsGateway,
     FirebasePushGateway,
 )
 
@@ -76,9 +72,9 @@ __all__ = [
     "EmailGateway",
     "SmsGateway",
     "PushGateway",
+    "SmtpEmailGateway",
     "SendGridEmailGateway",
     "AwsSesEmailGateway",
-    "TwilioSmsGateway",
     "FirebasePushGateway",
     # Emitters
     "FastAPINotificationEmitter",

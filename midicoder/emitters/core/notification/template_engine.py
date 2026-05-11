@@ -10,9 +10,6 @@ Support:
 - Simple variables: {{name}}
 - Nested variables: {{user.name}}, {{order.items.0.price}}
 - Filters: {{price|currency}}, {{name|uppercase}}, {{date|format:'%Y-%m-%d'}}
-
-Author: Midicoder Team
-Version: 1.0.0
 """
 
 from __future__ import annotations
@@ -29,7 +26,6 @@ from midicoder.emitters.core.notification.models import NotificationTemplate
 # Built-in Filters
 # ============================================================================
 
-# Filter registry: filter_name -> callable
 _FILTER_REGISTRY: dict[str, Any] = {}
 
 
@@ -115,10 +111,18 @@ class RenderedTemplate:
 # TemplateRenderer
 # ============================================================================
 
-# Pattern cho variable: {{name}}, {{user.name}}, {{price|currency}}, {{date|format:'%Y-%m-%d'}}
-_VARIABLE_PATTERN = re.compile(
-    r"\{\{([^}]+)\}\}"  # {{...}}
-)
+_VARIABLE_PATTERN = re.compile(r"\{\{([^}]+)\}\}")
+
+
+class _UnresolvedSentinel:
+    """Sentinel object đánh dấu variable không thể resolve."""
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<UNRESOLVED>"
+
+
+_UNRESOLVED = _UnresolvedSentinel()
 
 
 class TemplateRenderer:
@@ -130,20 +134,11 @@ class TemplateRenderer:
     - Nested variables: {{user.name}}, {{order.items.0.price}}
     - Filters: {{price|currency}}, {{name|uppercase}}
     - Filter với args: {{date|format:'%Y-%m-%d'}}, {{name|default:'N/A'}}
-
-    Example:
-        >>> renderer = TemplateRenderer()
-        >>> result = renderer.render_string("Xin chào {{name|uppercase}}!", {"name": "minh"})
-        >>> print(result)
-        Xin chào MINH!
     """
 
     def render_string(self, template: str, data: dict[str, Any]) -> str:
         """
         Render string template với variable interpolation.
-
-        Thay thế các {{variable}} trong template bằng values từ data dict.
-        Support nested variables và filters.
 
         Args:
             template: Template string chứa {{variable}} placeholders
@@ -153,10 +148,8 @@ class TemplateRenderer:
             Template string đã render
         """
         def _replace_var(match: re.Match) -> str:
-            """Thay thế một variable match bằng giá trị tương ứng."""
             expression = match.group(1).strip()
 
-            # Parse filter (nếu có)
             filter_name = None
             filter_arg = None
             var_name = expression
@@ -166,7 +159,6 @@ class TemplateRenderer:
                 var_name = parts[0].strip()
                 filter_expr = parts[1].strip()
 
-                # Parse filter args: format:'%Y-%m-%d' hoặc default:'N/A'
                 if ":" in filter_expr:
                     filter_parts = filter_expr.split(":", 1)
                     filter_name = filter_parts[0].strip()
@@ -174,14 +166,11 @@ class TemplateRenderer:
                 else:
                     filter_name = filter_expr
 
-            # Resolve variable value từ data (support nested)
             value = self._resolve_variable(var_name, data)
 
-            # Nếu không resolve được, giữ nguyên template
             if value is _UNRESOLVED:
                 return match.group(0)
 
-            # Apply filter (nếu có)
             if filter_name and filter_name in _FILTER_REGISTRY:
                 try:
                     if filter_arg is not None:
@@ -189,10 +178,8 @@ class TemplateRenderer:
                     else:
                         value = _FILTER_REGISTRY[filter_name](value)
                 except (ValueError, TypeError, KeyError):
-                    # Filter fail -> giữ nguyên template
                     return match.group(0)
             elif filter_name:
-                # Filter không tồn tại trong registry -> giữ nguyên
                 return match.group(0)
 
             return str(value)
@@ -206,8 +193,6 @@ class TemplateRenderer:
     ) -> RenderedTemplate:
         """
         Render NotificationTemplate hoàn chỉnh.
-
-        Render subject, body_html, body_text với variable values.
 
         Args:
             template: NotificationTemplate cần render
@@ -223,18 +208,9 @@ class TemplateRenderer:
             body_text=self.render_string(template.body_text, data),
         )
 
-    def _resolve_variable(
-        self,
-        var_name: str,
-        data: dict[str, Any],
-    ) -> Any:
+    def _resolve_variable(self, var_name: str, data: dict[str, Any]) -> Any:
         """
         Resolve variable name thành value, support nested access.
-
-        Support:
-        - Simple: "name" -> data["name"]
-        - Nested: "user.name" -> data["user"]["name"]
-        - Index: "items.0.name" -> data["items"][0]["name"]
 
         Args:
             var_name: Tên variable (có thể nested)
@@ -253,7 +229,6 @@ class TemplateRenderer:
                 else:
                     return _UNRESOLVED
             elif isinstance(current, (list, tuple)):
-                # Support index access: "items.0.name"
                 try:
                     index = int(part)
                     current = current[index]
@@ -265,23 +240,10 @@ class TemplateRenderer:
         return current
 
 
-# Sentinel value cho unresolved variables
-class _UnresolvedSentinel:
-    """Sentinel object đánh dấu variable không thể resolve."""
-    __slots__ = ()
-
-    def __repr__(self) -> str:
-        return "<UNRESOLVED>"
-
-
-_UNRESOLVED = _UnresolvedSentinel()
-
-
 # ============================================================================
 # TemplateValidator
 # ============================================================================
 
-# Pattern để extract variables (cả có và không có filter)
 _EXTRACT_VAR_PATTERN = re.compile(r"\{\{([^}|]+)(?:\|[^}]*)?\}\}")
 
 
@@ -290,24 +252,14 @@ class TemplateValidator:
     Validator cho notification templates.
 
     Cung cấp:
-    - validate_syntax(): Kiểm tra syntax errors (unclosed variables, ...)
+    - validate_syntax(): Kiểm tra syntax errors
     - extract_variables(): Extract danh sách variables từ template
     - validate_payload(): Kiểm tra payload có đầy đủ required variables
-
-    Example:
-        >>> validator = TemplateValidator()
-        >>> errors = validator.validate_syntax("Xin chào {{name}")
-        >>> print(errors)
-        ['Variable không đóng: {{name']
     """
 
     def validate_syntax(self, template: str) -> list[str]:
         """
         Validate template syntax.
-
-        Kiểm tra các lỗi:
-        - Variable không đóng ({{name thay vì {{name}})
-        - Pattern không hợp lệ
 
         Args:
             template: Template string cần validate
@@ -317,7 +269,6 @@ class TemplateValidator:
         """
         errors: list[str] = []
 
-        # Kiểm tra unclosed variables: có {{ nhưng không có }}, tương ứng
         open_count = template.count("{{")
         close_count = template.count("}}")
 
@@ -328,18 +279,15 @@ class TemplateValidator:
                 "Kiểm tra biến không đóng (unclosed variable)."
             )
 
-        # Kiểm tra các unclosed patterns cụ thể
         unclosed_pattern = re.compile(r"\{\{[^}]*$")
         if unclosed_pattern.search(template):
-            # Tìm variable cụ thể bị unclosed
             match = unclosed_pattern.search(template)
             if match:
                 errors.append(
                     f"Variable không đóng (unclosed): '{match.group(0)}'. "
-                    f"Hãy đóng bằng }} }}"
+                    "Hãy đóng bằng } }"
                 )
 
-        # Kiểm tra invalid filters
         full_var_pattern = re.compile(r"\{\{([^}]+)\}\}")
         for match in full_var_pattern.finditer(template):
             expression = match.group(1).strip()
@@ -360,8 +308,6 @@ class TemplateValidator:
         """
         Extract danh sách variable names từ template string.
 
-        Parse template và trả về list của variable names (loại bỏ filter part).
-
         Args:
             template: Template string
 
@@ -372,7 +318,6 @@ class TemplateValidator:
 
         for match in _EXTRACT_VAR_PATTERN.finditer(template):
             var_expr = match.group(1).strip()
-            # Loại bỏ filter part (nếu có)
             if "|" in var_expr:
                 var_name = var_expr.split("|")[0].strip()
             else:
@@ -392,9 +337,6 @@ class TemplateValidator:
         """
         Validate payload có đầy đủ required variables.
 
-        Kiểm tra xem payload dict có chứa tất cả các variables
-        được yêu cầu bởi template không.
-
         Args:
             template_string: Template string (để extract variables)
             payload: Payload dict chứa variable values
@@ -405,13 +347,10 @@ class TemplateValidator:
         """
         errors: list[str] = []
 
-        # Nếu không cung cấp required_variables, extract từ template
         if required_variables is None:
             required_variables = self.extract_variables(template_string)
 
-        # Kiểm tra mỗi required variable có trong payload
         for var_name in required_variables:
-            # Support nested: check top-level key
             top_key = var_name.split(".")[0]
 
             if top_key not in payload:

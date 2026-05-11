@@ -1,0 +1,128 @@
+/**
+ * useNotification Hook - CP12: Notification & Communication
+ *
+ * Custom hook để sử dụng notification features dễ dàng.
+ * Cung cấp convenience methods cho email, sms, push dispatch.
+ */
+
+import { useCallback } from 'react';
+import { useNotificationContext } from './NotificationContext';
+import { ToastLevel, DispatchResponse } from './types';
+
+interface UseNotificationReturn {
+  /** Hiển thị toast notification. */
+  showToast: (level: ToastLevel, title: string, message: string, duration?: number) => void;
+  /**Dismiss toast theo ID. */
+  dismissToast: (id: string) => void;
+  /**Dispatch notification tổng quát. */
+  dispatch: (templateId: string, recipient: string, channel?: string, payload?: Record<string, any>) => Promise<DispatchResponse>;
+  /** Gửi email notification. */
+  sendEmail: (templateId: string, recipient: string, payload?: Record<string, any>) => Promise<DispatchResponse>;
+  /** Gửi SMS notification. */
+  sendSMS: (templateId: string, recipient: string, payload?: Record<string, any>) => Promise<DispatchResponse>;
+  /** Gửi push notification. */
+  sendPush: (templateId: string, userId: string, payload?: Record<string, any>) => Promise<DispatchResponse>;
+  /** Hiển thị success toast. */
+  success: (title: string, message: string, duration?: number) => void;
+  /** Hiển thị error toast. */
+  error: (title: string, message: string, duration?: number) => void;
+  /** Hiển thị warning toast. */
+  warning: (title: string, message: string, duration?: number) => void;
+  /** Hiển thị info toast. */
+  info: (title: string, message: string, duration?: number) => void;
+  /** Đang dispatch? */
+  dispatching: boolean;
+  /** Error message cuối cùng. */
+  dispatchError: string | null;
+}
+
+/**
+ * Custom hook cho notification features.
+ *
+ * @example
+ * ```tsx
+ * const { sendEmail, sendSMS, success, error } = useNotification();
+ *
+ * await sendEmail('welcome_email', 'user@example.com', { name: 'Minh' });
+ * success('Đã gửi', 'Email chào mừng đã được gửi.');
+ * ```
+ */
+export function useNotification(): UseNotificationReturn {
+  const context = useNotificationContext();
+
+  const dispatch = useCallback(
+    async (
+      templateId: string,
+      recipient: string,
+      channel: string = 'email',
+      payload?: Record<string, any>,
+    ): Promise<DispatchResponse> => {
+      return context.dispatch({ template_id: templateId, recipient, channel, payload });
+    },
+    [context],
+  );
+
+  const sendEmail = useCallback(
+    async (templateId: string, recipient: string, payload?: Record<string, any>): Promise<DispatchResponse> => {
+      return dispatch(templateId, recipient, 'email', payload);
+    },
+    [dispatch],
+  );
+
+  const sendSMS = useCallback(
+    async (templateId: string, recipient: string, payload?: Record<string, any>): Promise<DispatchResponse> => {
+      return dispatch(templateId, recipient, 'sms', payload);
+    },
+    [dispatch],
+  );
+
+  const sendPush = useCallback(
+    async (templateId: string, userId: string, payload?: Record<string, any>): Promise<DispatchResponse> => {
+      return dispatch(templateId, userId, 'push', payload);
+    },
+    [dispatch],
+  );
+
+  const success = useCallback(
+    (title: string, message: string, duration?: number) => {
+      context.showToast('success', title, message, duration);
+    },
+    [context],
+  );
+
+  const error = useCallback(
+    (title: string, message: string, duration?: number) => {
+      context.showToast('error', title, message, duration);
+    },
+    [context],
+  );
+
+  const warning = useCallback(
+    (title: string, message: string, duration?: number) => {
+      context.showToast('warning', title, message, duration);
+    },
+    [context],
+  );
+
+  const info = useCallback(
+    (title: string, message: string, duration?: number) => {
+      context.showToast('info', title, message, duration);
+    },
+    [context],
+  );
+
+  return {
+    showToast: context.showToast,
+    dismissToast: context.dismissToast,
+    dispatch,
+    sendEmail,
+    sendSMS,
+    sendPush,
+    success,
+    error,
+    warning,
+    info,
+    dispatching: context.dispatching,
+    dispatchError: context.dispatchError,
+  };
+}

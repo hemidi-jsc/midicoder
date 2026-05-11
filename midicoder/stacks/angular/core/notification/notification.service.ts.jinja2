@@ -1,0 +1,109 @@
+/**
+ * Notification Service - CP12: Notification & Communication
+ *
+ * HTTP client service cho notification API endpoints.
+ * Support dispatch notification, template management, và dispatch log.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable } from 'rxjs';
+
+export interface DispatchRequest {
+  template_id: string;
+  recipient: string;
+  channel: 'email' | 'sms' | 'push' | 'webhook' | 'in_app';
+  payload?: Record<string, any>;
+}
+
+export interface DispatchResponse {
+  status: string;
+  recipient: string;
+  channel: string;
+  message?: string;
+}
+
+export interface TemplateRequest {
+  template_id: string;
+  channel: 'email' | 'sms' | 'push' | 'webhook' | 'in_app';
+  subject?: string;
+  body_html?: string;
+  body_text?: string;
+  variables?: string[];
+  locale?: string;
+}
+
+export interface DispatchLogEntry {
+  template_id: string;
+  recipient: string;
+  channel: string;
+  status: string;
+  timestamp: string;
+}
+
+@Injectable({
+  providedIn: 'root',
+})
+export class NotificationService {
+  private readonly baseUrl = '/api/notifications';
+
+  constructor(private http: HttpClient) {}
+
+  /**
+   * Dispatch notification qua channel cụ thể.
+   *
+   * @param request - Dispatch request với template_id, recipient, channel
+   */
+  dispatch(request: DispatchRequest): Observable<DispatchResponse> {
+    return this.http.post<DispatchResponse>(`${this.baseUrl}/dispatch`, request);
+  }
+
+  /** Gửi email notification. */
+  sendEmail(
+    templateId: string,
+    recipient: string,
+    payload?: Record<string, any>,
+  ): Observable<DispatchResponse> {
+    return this.dispatch({ template_id: templateId, recipient, channel: 'email', payload });
+  }
+
+  /** Gửi SMS notification. */
+  sendSMS(
+    templateId: string,
+    recipient: string,
+    payload?: Record<string, any>,
+  ): Observable<DispatchResponse> {
+    return this.dispatch({ template_id: templateId, recipient, channel: 'sms', payload });
+  }
+
+  /** Gửi push notification. */
+  sendPush(
+    templateId: string,
+    userId: string,
+    payload?: Record<string, any>,
+  ): Observable<DispatchResponse> {
+    return this.dispatch({ template_id: templateId, recipient: userId, channel: 'push', payload });
+  }
+
+  /** Liệt kê tất cả notification templates. */
+  listTemplates(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/templates`);
+  }
+
+  /** Đăng ký notification template mới. */
+  registerTemplate(request: TemplateRequest): Observable<any> {
+    return this.http.post<any>(`${this.baseUrl}/templates`, request);
+  }
+
+  /** Lấy dispatch log gần đây. */
+  getDispatchLog(limit?: number): Observable<{ log: DispatchLogEntry[]; total: number }> {
+    let params = new HttpParams();
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+    return this.http.get<{ log: DispatchLogEntry[]; total: number }>(
+      `${this.baseUrl}/log`,
+      { params },
+    );
+  }
+}

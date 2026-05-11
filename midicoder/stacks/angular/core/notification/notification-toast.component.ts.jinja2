@@ -1,0 +1,140 @@
+/**
+ * Notification Toast Component - CP12: Notification & Communication
+ *
+ * Toast component cho in-app notifications.
+ * Support success, error, warning, info levels.
+ */
+
+import {
+  Component,
+  Input,
+  Output,
+  EventEmitter,
+  OnChanges,
+  SimpleChanges,
+} from '@angular/core';
+
+export type ToastLevel = 'success' | 'error' | 'warning' | 'info';
+
+export interface ToastMessage {
+  id: string;
+  level: ToastLevel;
+  title: string;
+  message: string;
+  duration?: number;
+}
+
+@Component({
+  selector: 'app-notification-toast',
+  template: `
+    <div
+      *ngIf="visible"
+      class="notification-toast"
+      [class]="getToastClass()"
+      role="alert"
+      aria-live="polite"
+    >
+      <div class="toast-content">
+        <span class="toast-icon" [innerHTML]="getIcon()"></span>
+        <div class="toast-body">
+          <strong *ngIf="message?.title">{{ message.title }}</strong>
+          <p>{{ message?.message }}</p>
+        </div>
+        <button
+          class="toast-close"
+          (click)="dismiss()"
+          aria-label="Đóng notification"
+        >
+          &times;
+        </button>
+      </div>
+    </div>
+  `,
+  styles: [`
+    .notification-toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      min-width: 300px;
+      max-width: 450px;
+      padding: 16px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 9999;
+      animation: slide-in 0.3s ease-out;
+    }
+    .notification-toast.success { background: #d4edda; border-left: 4px solid #28a745; }
+    .notification-toast.error { background: #f8d7da; border-left: 4px solid #dc3545; }
+    .notification-toast.warning { background: #fff3cd; border-left: 4px solid #ffc107; }
+    .notification-toast.info { background: #d1ecf1; border-left: 4px solid #17a2b8; }
+    .toast-content { display: flex; align-items: flex-start; gap: 12px; }
+    .toast-icon { font-size: 20px; flex-shrink: 0; }
+    .toast-body { flex: 1; }
+    .toast-body strong { display: block; margin-bottom: 4px; }
+    .toast-body p { margin: 0; font-size: 14px; }
+    .toast-close {
+      background: none; border: none; font-size: 20px; cursor: pointer;
+      color: inherit; opacity: 0.6; padding: 0; line-height: 1;
+    }
+    .toast-close:hover { opacity: 1; }
+    @keyframes slide-in {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  `],
+})
+export class NotificationToastComponent implements OnChanges {
+  /** Toast message hiện tại. */
+  @Input() message: ToastMessage | null = null;
+  /** Thời gian tự động ẩn (ms), 0 = không tự ẩn. */
+  @Input() autoDismissDuration: number = 5000;
+  /** Event khi dismiss toast. */
+  @Output() dismissed = new EventEmitter<string>();
+
+  visible: boolean = false;
+  private dismissTimer: any = null;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['message'] && this.message) {
+      this.visible = true;
+      this.clearTimer();
+
+      const duration = this.message.duration || this.autoDismissDuration;
+      if (duration > 0) {
+        this.dismissTimer = setTimeout(() => this.dismiss(), duration);
+      }
+    }
+  }
+
+  /** Dismiss toast và emit event. */
+  dismiss(): void {
+    this.clearTimer();
+    this.visible = false;
+    if (this.message?.id) {
+      this.dismissed.emit(this.message.id);
+    }
+    this.message = null;
+  }
+
+  /** Lấy CSS class cho toast theo level. */
+  getToastClass(): string {
+    return `notification-toast ${this.message?.level || 'info'}`;
+  }
+
+  /** Lấy icon HTML theo level. */
+  getIcon(): string {
+    switch (this.message?.level) {
+      case 'success': return '✓';
+      case 'error': return '✕';
+      case 'warning': return '⚠';
+      default: return 'ℹ';
+    }
+  }
+
+  private clearTimer(): void {
+    if (this.dismissTimer) {
+      clearTimeout(this.dismissTimer);
+      this.dismissTimer = null;
+    }
+  }
+}

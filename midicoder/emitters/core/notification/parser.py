@@ -1,13 +1,10 @@
 """
-Notification Parser Module.
+Mô-đun Notification Parser.
 
 Module này parse YAML notification definitions thành các models:
 - parse_notifications(): Parse notification templates từ YAML
 - parse_channels(): Parse channel configuration từ YAML
 - parse_providers(): Parse provider configuration từ YAML
-
-Author: Midicoder Team
-Version: 1.0.0
 """
 
 from __future__ import annotations
@@ -38,14 +35,6 @@ def parse_notifications(data: dict[str, Any]) -> list[NotificationTemplate]:
 
     Returns:
         List của NotificationTemplate objects
-
-    Example:
-        >>> data = {
-        ...     "notifications": [
-        ...         {"template_id": "welcome", "channel": "email", "subject": "Chào {{name}}"}
-        ...     ]
-        ... }
-        >>> templates = parse_notifications(data)
     """
     templates: list[NotificationTemplate] = []
     notifications_list = data.get("notifications", [])
@@ -85,15 +74,6 @@ def parse_channels(data: dict[str, Any]) -> dict[str, Any]:
 
     Returns:
         Dictionary mapping channel name -> configuration dict
-
-    Example:
-        >>> data = {
-        ...     "channels": {
-        ...         "email": {"rate_limit": 100, "enabled": True},
-        ...         "sms": {"rate_limit": 10, "enabled": True}
-        ...     }
-        ... }
-        >>> config = parse_channels(data)
     """
     result: dict[str, Any] = {}
     channels_data = data.get("channels", {})
@@ -102,7 +82,6 @@ def parse_channels(data: dict[str, Any]) -> dict[str, Any]:
         if isinstance(channel_config, dict):
             result[channel_name] = channel_config
         else:
-            # Nếu không phải dict, treat như enabled flag
             result[channel_name] = {"enabled": bool(channel_config)}
 
     return result
@@ -125,14 +104,6 @@ def parse_providers(data: dict[str, Any]) -> list[NotificationProvider]:
 
     Returns:
         List của NotificationProvider objects (sorted by priority ascending)
-
-    Example:
-        >>> data = {
-        ...     "providers": [
-        ...         {"provider_id": "sendgrid", "channel": "email", "priority": 1}
-        ...     ]
-        ... }
-        >>> providers = parse_providers(data)
     """
     providers: list[NotificationProvider] = []
     providers_list = data.get("providers", [])

@@ -595,13 +595,13 @@ class TestFastAPINotificationEmitter:
         assert "send_sms" in code
 
     def test_emitter_generate_controller(self):
-        """Emitter generate notification controller code."""
+        """Emitter generate notification router code."""
         from midicoder.emitters.core.notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
         emitter = FastAPINotificationEmitter()
-        code = emitter.generate_controller()
+        code = emitter.generate_router()
         assert "/notifications" in code
         assert "dispatch" in code
 
@@ -616,14 +616,14 @@ class TestFastAPINotificationEmitter:
         assert "BaseModel" in code
         assert "DispatchRequest" in code or "dispatch" in code.lower()
 
-    def test_emitter_generate_celery_tasks(self):
-        """Emitter generate Celery background tasks."""
+    def test_emitter_generate_tasks(self):
+        """Emitter generate background tasks."""
         from midicoder.emitters.core.notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
         emitter = FastAPINotificationEmitter()
-        code = emitter.generate_celery_tasks()
+        code = emitter.generate_tasks()
         assert "celery" in code.lower() or "@task" in code.lower() or "async" in code
 
     def test_emitter_has_send_email(self):
@@ -637,14 +637,14 @@ class TestFastAPINotificationEmitter:
         assert "async def send_email" in code or "def send_email" in code
 
     def test_emitter_has_render_template(self):
-        """Service code chứa render_template method."""
+        """Service code chứa render method."""
         from midicoder.emitters.core.notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
         emitter = FastAPINotificationEmitter()
         code = emitter.generate_service()
-        assert "render_template" in code
+        assert "render" in code
 
     def test_emitter_vietnamese_comments(self):
         """Generated code có comments tiếng Việt."""
@@ -740,16 +740,16 @@ class TestNestJSNotificationEmitter:
         assert "@Controller" in code
         assert "notifications" in code
 
-    def test_emitter_generate_interfaces(self):
-        """Emitter generate gateway interfaces."""
+    def test_emitter_generate_dto(self):
+        """Emitter generate DTOs."""
         from midicoder.emitters.core.notification.nestjs import (
             NestJSNotificationEmitter,
         )
 
         emitter = NestJSNotificationEmitter()
-        code = emitter.generate_interfaces()
-        assert "interface" in code
-        assert "Gateway" in code
+        code = emitter.generate_dto()
+        assert "class" in code
+        assert "Dto" in code
 
     def test_emitter_vietnamese_comments(self):
         """Generated code có comments tiếng Việt."""

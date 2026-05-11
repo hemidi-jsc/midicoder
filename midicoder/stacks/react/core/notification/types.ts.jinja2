@@ -1,0 +1,96 @@
+/**
+ * Notification Types - CP12: Notification & Communication
+ *
+ * TypeScript interfaces và types cho notification system.
+ */
+
+/** Các kênh notification được hỗ trợ. */
+export type NotificationChannel = 'email' | 'sms' | 'push' | 'webhook' | 'in_app';
+
+/** Toast notification level. */
+export type ToastLevel = 'success' | 'error' | 'warning' | 'info';
+
+/** Request để dispatch notification. */
+export interface DispatchRequest {
+  /** ID của template. */
+  template_id: string;
+  /** Người nhận (email, phone, user_id). */
+  recipient: string;
+  /** Channel để gửi. */
+  channel: NotificationChannel;
+  /** Variable values cho template rendering. */
+  payload?: Record<string, any>;
+}
+
+/** Response sau khi dispatch notification. */
+export interface DispatchResponse {
+  /** Status kết quả (sent, failed, bounced). */
+  status: string;
+  /** Người nhận. */
+  recipient: string;
+  /** Channel đã sử dụng. */
+  channel: NotificationChannel;
+  /** Message bổ sung. */
+  message?: string;
+  /** Error code nếu failed. */
+  error_code?: string;
+}
+
+/** Request để đăng ký template mới. */
+export interface TemplateRequest {
+  /** ID duy nhất của template. */
+  template_id: string;
+  /** Channel của template. */
+  channel: NotificationChannel;
+  /** Subject line. */
+  subject?: string;
+  /** HTML body content. */
+  body_html?: string;
+  /** Plain text body content. */
+  body_text?: string;
+  /** Variable names trong template. */
+  variables?: string[];
+  /** Locale code. */
+  locale?: string;
+}
+
+/** Notification template. */
+export interface NotificationTemplate {
+  template_id: string;
+  channel: NotificationChannel;
+  subject: string;
+  body_html: string;
+  body_text: string;
+  variables?: string[];
+  locale: string;
+}
+
+/** Dispatch log entry. */
+export interface DispatchLogEntry {
+  template_id: string;
+  recipient: string;
+  channel: NotificationChannel;
+  status: string;
+  timestamp: string;
+}
+
+/** Toast message. */
+export interface ToastMessage {
+  /** Unique ID. */
+  id: string;
+  /** Toast level. */
+  level: ToastLevel;
+  /** Tiêu đề. */
+  title: string;
+  /** Nội dung. */
+  message: string;
+  /** Thời gian tự động ẩn (ms). */
+  duration?: number;
+}
+
+/** Notification state. */
+export interface NotificationState {
+  toasts: ToastMessage[];
+  dispatching: boolean;
+  dispatchError: string | null;
+}

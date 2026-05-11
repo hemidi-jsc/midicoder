@@ -5,9 +5,6 @@ Module này định nghĩa các abstract gateway interfaces:
 - EmailGateway: Interface cho email providers
 - SmsGateway: Interface cho SMS providers
 - PushGateway: Interface cho push notification providers
-
-Author: Midicoder Team
-Version: 1.0.0
 """
 
 from __future__ import annotations
@@ -19,11 +16,7 @@ from midicoder.emitters.core.notification.models import DispatchResult
 
 
 class EmailGateway(ABC):
-    """
-    Abstract gateway cho email providers.
-
-    Các concrete email provider (SendGrid, SES, SMTP) implement interface này.
-    """
+    """Abstract gateway cho email providers."""
 
     @abstractmethod
     def send(
@@ -51,11 +44,7 @@ class EmailGateway(ABC):
 
 
 class SmsGateway(ABC):
-    """
-    Abstract gateway cho SMS providers.
-
-    Các concrete SMS provider (Twilio, Vonage) implement interface này.
-    """
+    """Abstract gateway cho SMS providers."""
 
     @abstractmethod
     def send(
@@ -79,11 +68,7 @@ class SmsGateway(ABC):
 
 
 class PushGateway(ABC):
-    """
-    Abstract gateway cho push notification providers.
-
-    Các concrete push provider (Firebase FCM, APNs) implement interface này.
-    """
+    """Abstract gateway cho push notification providers."""
 
     @abstractmethod
     def send(

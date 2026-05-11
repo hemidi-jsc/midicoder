@@ -1,0 +1,29 @@
+pack:
+  id: "CP12"
+  name: "Notification & Communication Generator"
+  internal_id: "cp12-notification"
+  version: "1.0.0"
+  phase: "P1"
+  category: "communication"
+  status: "stable"
+  depends_on: ["CP01", "CP05"]
+  definitions_count: 3
+  obligations_count: 2
+  error_codes:
+    prefix: "NTF"
+    range: "MDC-CP12-001~007"
+  capabilities_provided:
+    - send_notification
+    - email_dispatch
+    - sms_dispatch
+    - push_notification
+  templates:
+    send_notification: "fastapi/notification_service.py.jinja2"
+    email_dispatch: "fastapi/email_service.py.jinja2"
+  frontend_integration:
+    angular:
+      - NotificationService
+      - NotificationToastComponent
+    react:
+      - useNotification
+      - NotificationContext

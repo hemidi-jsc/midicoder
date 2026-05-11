@@ -5,9 +5,6 @@ Module này cung cấp RateLimiter:
 - In-memory rate tracking per recipient per channel
 - Configurable limits (vd: 3 emails/hour per recipient)
 - Raise CP12_NOTIFICATION_RATE_LIMIT_EXCEEDED khi vượt quota
-
-Author: Midicoder Team
-Version: 1.0.0
 """
 
 from __future__ import annotations
@@ -33,13 +30,6 @@ class RateLimiter:
 
     Track số lượng dispatch per recipient per channel trong time window.
     Khi vượt quota, raise CP12_NOTIFICATION_RATE_LIMIT_EXCEEDED.
-
-    Example:
-        >>> limiter = RateLimiter(default_limit=3, window_seconds=3600)
-        >>> limiter.check_limit("user@example.com", "email")  # True
-        >>> limiter.check_limit("user@example.com", "email")  # True
-        >>> limiter.check_limit("user@example.com", "email")  # True
-        >>> limiter.check_limit("user@example.com", "email")  # Raises!
     """
 
     def __init__(
@@ -60,25 +50,11 @@ class RateLimiter:
         self._custom_limits: dict[str, int] = {}
 
     def set_channel_limit(self, channel: str, limit: int) -> None:
-        """
-        Set custom limit cho channel cụ thể.
-
-        Args:
-            channel: Channel name (email, sms, push)
-            limit: Số dispatch tối đa per window
-        """
+        """Set custom limit cho channel cụ thể."""
         self._custom_limits[channel] = limit
 
     def get_limit(self, channel: str) -> int:
-        """
-        Lấy limit cho channel (custom hoặc default).
-
-        Args:
-            channel: Channel name
-
-        Returns:
-            Số dispatch tối đa cho channel
-        """
+        """Lấy limit cho channel (custom hoặc default)."""
         return self._custom_limits.get(channel, self._default_limit)
 
     def check_limit(self, recipient: str, channel: str) -> bool:
@@ -124,23 +100,13 @@ class RateLimiter:
         return True
 
     def get_remaining(self, recipient: str, channel: str) -> int:
-        """
-        Lấy số dispatch còn lại cho recipient trong current window.
-
-        Args:
-            recipient: Recipient identifier
-            channel: Channel name
-
-        Returns:
-            Số dispatch còn lại (0 nếu hết quota)
-        """
+        """Lấy số dispatch còn lại cho recipient trong current window."""
         key = (recipient, channel)
         limit = self.get_limit(channel)
         now = time.time()
 
         record = self._records[key]
 
-        # Reset window nếu đã quá time window
         if now - record.window_start >= self._window_seconds:
             return limit
 
@@ -148,13 +114,7 @@ class RateLimiter:
         return max(0, remaining)
 
     def reset(self, recipient: str | None = None, channel: str | None = None) -> None:
-        """
-        Reset rate records.
-
-        Args:
-            recipient: Nếu có, reset chỉ recipient này. Nếu None, reset tất cả.
-            channel: Nếu có, reset chỉ channel này.
-        """
+        """Reset rate records."""
         if recipient is None:
             self._records.clear()
         else:
@@ -164,16 +124,7 @@ class RateLimiter:
                     del self._records[key]
 
     def get_stats(self, recipient: str, channel: str) -> dict[str, Any]:
-        """
-        Lấy rate stats cho recipient.
-
-        Args:
-            recipient: Recipient identifier
-            channel: Channel name
-
-        Returns:
-            Dict với count, limit, remaining, window_seconds
-        """
+        """Lấy rate stats cho recipient."""
         key = (recipient, channel)
         limit = self.get_limit(channel)
         remaining = self.get_remaining(recipient, channel)

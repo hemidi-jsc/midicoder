@@ -1,626 +1,446 @@
 """
-NestJS Notification Emitter Module.
+NestJS Notification Emitter.
 
 Module này generate NestJS code cho CP12 Notification Emitter:
-- NotificationModule: NestJS module với providers
-- NotificationService: Service class mirroring FastAPI service
-- NotificationController: REST endpoints
-- Gateway interfaces: EmailGateway, SmsGateway, PushGateway
-
-Author: Midicoder Team
-Version: 1.0.0
+- NotificationModule: NestJS module
+- NotificationService: Service class
+- NotificationController: REST controller
+- DTOs: Request/Response schemas
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-from midicoder.emitters.core.notification.models import (
-    NotificationChannel,
-    NotificationTemplate,
-)
+import textwrap
+from dataclasses import dataclass
+from pathlib import Path
 
 
-# ============================================================================
-# NestJS Notification Emitter
-# ============================================================================
+@dataclass
+class GeneratedFile:
+    """File đã generate từ emitter."""
+    path: Path
+    content: str
+    template: str
+    capability: str = "CP12"
 
 
 class NestJSNotificationEmitter:
     """
-    Emitter cho NestJS notification code.
+    Emitter generate NestJS code cho notification.
 
-    Generate các file TypeScript cho notification system bao gồm:
-    - Module (NotificationModule)
-    - Service (NotificationService)
-    - Controller (NotificationController)
-    - Gateway interfaces
+    Generate:
+    - notification.module.ts: NestJS module
+    - notification.service.ts: Service class
+    - notification.controller.ts: REST controller
+    - notification.dto.ts: DTOs
     """
-
-    def generate_module(self) -> str:
-        """
-        Generate NotificationModule.
-
-        Returns:
-            String chứa TypeScript code cho NotificationModule
-        """
-        return '''"""
-Notification Module.
-
-Module NestJS cho notification system bao gồm:
-- NotificationService
-- NotificationController
-- Gateway providers
-
-Author: Midicoder Team
-Version: 1.0.0
-"""
-
-import { Module, Global } from "@nestjs/common";
-import { EventsModule } from "@nestjs/event-emitter";
-
-import { NotificationService } from "./notification.service";
-import { NotificationController } from "./notification.controller";
-
-@Global()
-@Module({
-  imports: [EventsModule],
-  providers: [NotificationService],
-  controllers: [NotificationController],
-  exports: [NotificationService],
-})
-export class NotificationModule {}
-'''
-
-    def generate_service(self) -> str:
-        """
-        Generate NotificationService class.
-
-        Returns:
-            String chứa TypeScript code cho NotificationService
-        """
-        return '''"""
-Notification Service.
-
-Service chính cho notification system trong NestJS.
-Quản lý templates, providers, va dispatch notifications.
-
-Author: Midicoder Team
-Version: 1.0.0
-"""
-
-import { Injectable, Logger } from "@nestjs/common";
-import { EventEmitter2 } from "@nestjs/event-emitter";
-import { v4 as uuidv4 } from "uuid";
-
-// ============================================================================
-// Enums & Interfaces
-// ============================================================================
-
-export enum NotificationChannel {
-  EMAIL = "email",
-  SMS = "sms",
-  PUSH = "push",
-  WEBHOOK = "webhook",
-  IN_APP = "in_app",
-}
-
-export interface DispatchResult {
-  dispatch_id: string;
-  status: "pending" | "sent" | "failed" | "bounced";
-  provider_response?: Record<string, any>;
-  error_code?: string;
-}
-
-export interface NotificationTemplate {
-  template_id: string;
-  channel: NotificationChannel;
-  subject: string;
-  body_html: string;
-  body_text: string;
-  variables: string[];
-  locale: string;
-}
-
-export interface NotificationGateway {
-  send(
-    recipient: string,
-    subject: string,
-    body: string,
-    metadata?: Record<string, any>,
-  ): Promise<DispatchResult>;
-}
-
-// ============================================================================
-// NotificationService
-// ============================================================================
-
-@Injectable()
-export class NotificationService {
-  private readonly logger = new Logger(NotificationService.name);
-  private templates: Map<string, NotificationTemplate> = new Map();
-  private gateways: Map<NotificationChannel, NotificationGateway[]> = new Map();
-  private rateLimits: Record<string, number> = {
-    email: 100,
-    sms: 10,
-    push: 1000,
-    webhook: 100,
-    in_app: 1000,
-  };
-
-  constructor(private eventEmitter: EventEmitter2) {}
-
-  /**
-   * Dang ky notification template.
-   */
-  registerTemplate(template: NotificationTemplate): void {
-    this.templates.set(template.template_id, template);
-    this.logger.log(\`Template registered: \${template.template_id}\`);
-  }
-
-  /**
-   * Render template voi variable values.
-   * Thay the {{variable}} trong template bang values tu data.
-   */
-  renderTemplate(
-    templateId: string,
-    data: Record<string, any>,
-  ): { subject: string; body_html: string; body_text: string } {
-    const template = this.templates.get(templateId);
-    if (!template) {
-      throw new Error(\`MDC-CP12-002: Template not found: \${templateId}\`);
-    }
-
-    const render = (text: string): string =>
-      text.replace(/\\{\\{(\\w+)\\}\\}/g, (match, varName) =>
-        data[varName] !== undefined ? String(data[varName]) : match,
-      );
-
-    return {
-      subject: render(template.subject),
-      body_html: render(template.body_html),
-      body_text: render(template.body_text),
-    };
-  }
-
-  /**
-   * Gui email notification.
-   */
-  async sendEmail(
-    recipient: string,
-    subject: string,
-    bodyHtml: string,
-  ): Promise<DispatchResult> {
-    const dispatchId = \`email_\${uuidv4()}\`;
-    const gateways = this.gateways.get(NotificationChannel.EMAIL) || [];
-
-    if (gateways.length === 0) {
-      return {
-        dispatch_id: dispatchId,
-        status: "failed",
-        error_code: "MDC-CP12-004",
-      };
-    }
-
-    try {
-      const result = await gateways[0].send(recipient, subject, bodyHtml);
-      result.dispatch_id = dispatchId;
-      this.logger.log(\`Email sent: \${dispatchId} to \${recipient}\`);
-      this.eventEmitter.emit("notification.sent", result);
-      return result;
-    } catch (error) {
-      this.logger.error(\`Email dispatch failed: \${error.message}\`);
-      return {
-        dispatch_id: dispatchId,
-        status: "failed",
-        error_code: "MDC-CP12-005",
-      };
-    }
-  }
-
-  /**
-   * Gui SMS notification.
-   */
-  async sendSms(recipient: string, bodyText: string): Promise<DispatchResult> {
-    const dispatchId = \`sms_\${uuidv4()}\`;
-    const gateways = this.gateways.get(NotificationChannel.SMS) || [];
-
-    if (gateways.length === 0) {
-      return {
-        dispatch_id: dispatchId,
-        status: "failed",
-        error_code: "MDC-CP12-004",
-      };
-    }
-
-    try {
-      const result = await gateways[0].send(recipient, "", bodyText);
-      result.dispatch_id = dispatchId;
-      this.logger.log(\`SMS sent: \${dispatchId} to \${recipient}\`);
-      this.eventEmitter.emit("notification.sent", result);
-      return result;
-    } catch (error) {
-      this.logger.error(\`SMS dispatch failed: \${error.message}\`);
-      return {
-        dispatch_id: dispatchId,
-        status: "failed",
-        error_code: "MDC-CP12-005",
-      };
-    }
-  }
-
-  /**
-   * Gui push notification.
-   */
-  async sendPush(
-    recipient: string,
-    title: string,
-    body: string,
-  ): Promise<DispatchResult> {
-    const dispatchId = \`push_\${uuidv4()}\`;
-    const gateways = this.gateways.get(NotificationChannel.PUSH) || [];
-
-    if (gateways.length === 0) {
-      return {
-        dispatch_id: dispatchId,
-        status: "failed",
-        error_code: "MDC-CP12-004",
-      };
-    }
-
-    try {
-      const result = await gateways[0].send(recipient, title, body);
-      result.dispatch_id = dispatchId;
-      this.logger.log(\`Push sent: \${dispatchId} to \${recipient}\`);
-      this.eventEmitter.emit("notification.sent", result);
-      return result;
-    } catch (error) {
-      this.logger.error(\`Push dispatch failed: \${error.message}\`);
-      return {
-        dispatch_id: dispatchId,
-        status: "failed",
-        error_code: "MDC-CP12-005",
-      };
-    }
-  }
-
-  /**
-   * Dispatch notification dua tren template.
-   */
-  async dispatch(
-    templateId: string,
-    recipient: string,
-    payload: Record<string, any>,
-    channel?: NotificationChannel,
-  ): Promise<DispatchResult> {
-    const rendered = this.renderTemplate(templateId, payload);
-    const template = this.templates.get(templateId);
-    const targetChannel = channel || template.channel;
-
-    switch (targetChannel) {
-      case NotificationChannel.EMAIL:
-        return this.sendEmail(recipient, rendered.subject, rendered.body_html);
-      case NotificationChannel.SMS:
-        return this.sendSms(recipient, rendered.body_text);
-      case NotificationChannel.PUSH:
-        return this.sendPush(recipient, rendered.subject, rendered.body_text);
-      default:
-        throw new Error(\`MDC-CP12-001: Channel not supported: \${targetChannel}\`);
-    }
-  }
-}
-'''
-
-    def generate_controller(self) -> str:
-        """
-        Generate NotificationController.
-
-        Returns:
-            String chứa TypeScript code cho NotificationController
-        """
-        return '''"""
-Notification Controller.
-
-Controller cho notification REST endpoints:
-- POST /api/notifications/dispatch - Dispatch single notification
-- POST /api/notifications/batch - Batch dispatch notifications  
-- GET /api/notifications/:dispatchId - Get dispatch status
-
-Author: Midicoder Team
-Version: 1.0.0
-"""
-
-import {
-  Controller,
-  Post,
-  Get,
-  Body,
-  Param,
-  HttpCode,
-  HttpStatus,
-} from "@nestjs/common";
-
-import { NotificationService, DispatchResult } from "./notification.service";
-
-@Controller("api/notifications")
-export class NotificationController {
-  constructor(private readonly notificationService: NotificationService) {}
-
-  /**
-   * Dispatch single notification.
-   */
-  @Post("dispatch")
-  @HttpCode(HttpStatus.ACCEPTED)
-  async dispatchNotification(
-    @Body() body: { template_id: string; recipient: string; payload: Record<string, any>; channel?: string },
-  ): Promise<DispatchResult> {
-    return this.notificationService.dispatch(
-      body.template_id,
-      body.recipient,
-      body.payload,
-      body.channel ? (body.channel as any) : undefined,
-    );
-  }
-
-  /**
-   * Batch dispatch notifications.
-   */
-  @Post("batch")
-  @HttpCode(HttpStatus.ACCEPTED)
-  async batchDispatch(
-    @Body() body: { dispatches: Array<{ template_id: string; recipient: string; payload: Record<string, any>; channel?: string }> },
-  ): Promise<DispatchResult[]> {
-    const results: DispatchResult[] = [];
-    for (const item of body.dispatches) {
-      const result = await this.notificationService.dispatch(
-        item.template_id,
-        item.recipient,
-        item.payload,
-        item.channel ? (item.channel as any) : undefined,
-      );
-      results.push(result);
-    }
-    return results;
-  }
-
-  /**
-   * Get dispatch status.
-   */
-  @Get(":dispatchId")
-  async getDispatchStatus(
-    @Param("dispatchId") dispatchId: string,
-  ): Promise<DispatchResult> {
-    // TODO: Query dispatch log tu database
-    return {
-      dispatch_id: dispatchId,
-      status: "pending",
-    };
-  }
-}
-'''
-
-    def generate_interfaces(self) -> str:
-        """
-        Generate gateway interfaces.
-
-        Returns:
-            String chua TypeScript code cho gateway interfaces
-        """
-        return '''"""
-Notification Gateway Interfaces.
-
-Cac interface cho notification provider gateways.
-Cac concrete provider (SendGrid, Twilio, Firebase) implement cac interface nay.
-
-Tich hop:
-- Concrete provider interfaces: SendGrid, AWS SES, Twilio, Firebase FCM
-- Template rendering service
-- Rate limiting interceptor
-- Retry policy with exponential backoff
-
-Author: Midicoder Team
-Version: 1.0.0
-"""
-
-import { DispatchResult } from "./notification.service";
-
-// ============================================================================
-// Gateway Interfaces
-// ============================================================================
-
-/**
- * Email Gateway Interface.
- * Implement de gui email (SendGrid, SES, v.v.).
- */
-export interface EmailGateway {
-  send(
-    to: string,
-    subject: string,
-    bodyHtml: string,
-    bodyText?: string,
-    options?: {
-      from?: string;
-      replyTo?: string;
-      attachments?: Array<{ filename: string; content: Buffer; contentType: string }>;
-    },
-  ): Promise<DispatchResult>;
-}
-
-/**
- * SMS Gateway Interface.
- * Implement de gui SMS (Twilio, v.v.).
- */
-export interface SmsGateway {
-  send(
-    to: string,
-    message: string,
-    options?: {
-      from?: string;
-    },
-  ): Promise<DispatchResult>;
-}
-
-/**
- * Push Gateway Interface.
- * Implement de gui push notification (Firebase, APNs).
- */
-export interface PushGateway {
-  send(
-    deviceToken: string,
-    title: string,
-    body: string,
-    options?: {
-      badge?: number;
-      sound?: string;
-      data?: Record<string, any>;
-    },
-  ): Promise<DispatchResult>;
-}
-
-/**
- * Webhook Gateway Interface.
- * Implement de gui webhook HTTP POST.
- */
-export interface WebhookGateway {
-  send(
-    url: string,
-    payload: Record<string, any>,
-    options?: {
-      headers?: Record<string, string>;
-      timeout?: number;
-    },
-  ): Promise<DispatchResult>;
-}
-
-// ============================================================================
-# Concrete Provider Interfaces
-# ============================================================================
-
-/**
- * SendGrid provider config.
- */
-export interface SendGridConfig {
-  apiKey: string;
-  fromEmail: string;
-  fromName?: string;
-}
-
-/**
- * AWS SES provider config.
- */
-export interface AwsSesConfig {
-  accessKeyId: string;
-  secretAccessKey: string;
-  fromEmail: string;
-  region?: string;
-}
-
-/**
- * Twilio provider config.
- */
-export interface TwilioConfig {
-  accountSid: string;
-  authToken: string;
-  fromPhone: string;
-}
-
-/**
- * Firebase FCM provider config.
- */
-export interface FirebaseConfig {
-  projectId: string;
-  accessToken: string;
-}
-
-// ============================================================================
-# Template Rendering Service Interface
-# ============================================================================
-
-/**
- * Rendered template result.
- */
-export interface RenderedTemplate {
-  template_id: string;
-  subject: string;
-  body_html: string;
-  body_text: string;
-}
-
-/**
- * Template rendering service interface.
- * Support {{variable}} interpolation, filters, va nested variables.
- */
-export interface TemplateRenderer {
-  render(template: NotificationTemplate, data: Record<string, any>): RenderedTemplate;
-  renderString(template: string, data: Record<string, any>): string;
-}
-
-/**
- * Template validator interface.
- */
-export interface TemplateValidator {
-  validate(template: string): string[];
-  extractVariables(template: string): string[];
-}
-
-// ============================================================================
-# Rate Limiter Interface
-# ============================================================================
-
-/**
- * Rate limiter interface.
- * Kiem tra rate limit per recipient per channel.
- */
-export interface RateLimiter {
-  checkLimit(recipient: string, channel: string): boolean;
-  getRemaining(recipient: string, channel: string): number;
-  reset(recipient?: string, channel?: string): void;
-}
-
-/**
- * Rate limit interceptor for NestJS.
- * Kiem tra rate limit truoc khi dispatch notification.
- */
-export interface RateLimitInterceptor {
-  intercept(
-    recipient: string,
-    channel: string,
-  ): Promise<boolean>;
-}
-
-// ============================================================================
-# Retry Policy Interface
-# ============================================================================
-
-/**
- * Retry policy config.
- */
-export interface RetryPolicyConfig {
-  maxRetries: number;
-  baseDelay: number; // seconds
-  maxDelay: number; // seconds
-}
-
-/**
- * Retry policy interface with exponential backoff.
- */
-export interface RetryPolicy {
-  executeWithRetry<T>(
-    fn: () => Promise<T>,
-  ): Promise<T>;
-}
-'''
 
     def generate(self) -> dict[str, str]:
         """
-        Generate toan bo notification files.
+        Generate toàn bộ NestJS notification code.
 
         Returns:
-            Dictionary mapping file path -> code content
+            Dict mapping file_path -> code content
         """
         return {
-            "notification/notification.module.ts": self.generate_module(),
-            "notification/notification.service.ts": self.generate_service(),
-            "notification/notification.controller.ts": self.generate_controller(),
-            "notification/gateways.ts": self.generate_interfaces(),
+            "src/notification/notification.module.ts": self.generate_module(),
+            "src/notification/notification.service.ts": self.generate_service(),
+            "src/notification/notification.controller.ts": self.generate_controller(),
+            "src/notification/notification.dto.ts": self.generate_dto(),
         }
+
+    def generate_module(self) -> str:
+        """Generate NotificationModule."""
+        return textwrap.dedent('''\
+            /**
+             * Notification Module - CP12: Notification & Communication
+             *
+             * NestJS module cho notification dispatch đa kênh.
+             */
+
+            import { Module } from '@nestjs/common';
+            import { NotificationService } from './notification.service';
+            import { NotificationController } from './notification.controller';
+
+            @Module({
+              providers: [NotificationService],
+              controllers: [NotificationController],
+              exports: [NotificationService],
+            })
+            export class NotificationModule {}
+            ''')
+
+    def generate_service(self) -> str:
+        """Generate NotificationService."""
+        return textwrap.dedent('''\
+            /**
+             * Notification Service - CP12: Notification & Communication
+             *
+             * Service này xử lý notification dispatch cho đa kênh (email, SMS, push).
+             * Support template rendering, rate limiting, và multi-channel dispatch.
+             */
+
+            import { Injectable, BadRequestException } from '@nestjs/common';
+
+            export enum NotificationChannel {
+              EMAIL = 'email',
+              SMS = 'sms',
+              PUSH = 'push',
+              WEBHOOK = 'webhook',
+              IN_APP = 'in_app',
+            }
+
+            export interface NotificationTemplate {
+              templateId: string;
+              channel: NotificationChannel;
+              subject: string;
+              bodyHtml: string;
+              bodyText: string;
+              variables?: string[];
+              locale?: string;
+            }
+
+            export interface DispatchResult {
+              status: string;
+              recipient: string;
+              channel: string;
+              timestamp: string;
+            }
+
+            @Injectable()
+            export class NotificationService {
+              private templates: Map<string, NotificationTemplate> = new Map();
+              private dispatchLog: DispatchResult[] = [];
+              private rateLimits: Map<string, { count: number; windowStart: number }> = new Map();
+
+              /** Đăng ký notification template. */
+              registerTemplate(template: NotificationTemplate): void {
+                this.templates.set(template.templateId, template);
+              }
+
+              /** Lấy template theo ID. */
+              getTemplate(templateId: string): NotificationTemplate | undefined {
+                return this.templates.get(templateId);
+              }
+
+              /** Liệt kê tất cả templates. */
+              listTemplates(): NotificationTemplate[] {
+                return Array.from(this.templates.values());
+              }
+
+              /**
+               * Gửi email notification.
+               *
+               * @param recipient - Email address người nhận
+               * @param templateId - ID của template
+               * @param payload - Variable values cho template rendering
+               */
+              async sendEmail(
+                recipient: string,
+                templateId: string,
+                payload?: Record<string, any>,
+              ): Promise<DispatchResult> {
+                const template = this.templates.get(templateId);
+                if (!template) {
+                  throw new Error(`MDC-CP12-002: Template not found: ${templateId}`);
+                }
+
+                this.checkRateLimit(recipient, 'email');
+                const rendered = this.renderTemplate(template, payload || {});
+
+                const result = await this.dispatchEmail(recipient, rendered);
+                this.logDispatch(templateId, recipient, 'email', result.status);
+                return result;
+              }
+
+              /**
+               * Gửi SMS notification.
+               *
+               * @param recipient - Số điện thoại người nhận
+               * @param templateId - ID của template
+               * @param payload - Variable values cho template rendering
+               */
+              async sendSMS(
+                recipient: string,
+                templateId: string,
+                payload?: Record<string, any>,
+              ): Promise<DispatchResult> {
+                const template = this.templates.get(templateId);
+                if (!template) {
+                  throw new Error(`MDC-CP12-002: Template not found: ${templateId}`);
+                }
+
+                this.checkRateLimit(recipient, 'sms');
+                const rendered = this.renderTemplate(template, payload || {});
+
+                const result = await this.dispatchSMS(recipient, rendered);
+                this.logDispatch(templateId, recipient, 'sms', result.status);
+                return result;
+              }
+
+              /**
+               * Gửi push notification.
+               *
+               * @param userId - User/device ID
+               * @param templateId - ID của template
+               * @param payload - Variable values cho template rendering
+               */
+              async sendPush(
+                userId: string,
+                templateId: string,
+                payload?: Record<string, any>,
+              ): Promise<DispatchResult> {
+                const template = this.templates.get(templateId);
+                if (!template) {
+                  throw new Error(`MDC-CP12-002: Template not found: ${templateId}`);
+                }
+
+                this.checkRateLimit(userId, 'push');
+                const rendered = this.renderTemplate(template, payload || {});
+
+                const result = await this.dispatchPush(userId, rendered);
+                this.logDispatch(templateId, userId, 'push', result.status);
+                return result;
+              }
+
+              /** Lấy dispatch log gần đây. */
+              getDispatchLog(limit = 100): DispatchResult[] {
+                return this.dispatchLog.slice(-limit);
+              }
+
+              /** Kiểm tra rate limit per recipient per channel. */
+              private checkRateLimit(recipient: string, channel: string): void {
+                const key = `${recipient}:${channel}`;
+                const now = Date.now();
+                const record = this.rateLimits.get(key);
+
+                if (!record || now - record.windowStart >= 3600000) {
+                  this.rateLimits.set(key, { count: 1, windowStart: now });
+                  return;
+                }
+
+                if (record.count >= 10) {
+                  throw new Error(
+                    `MDC-CP12-006: Rate limit exceeded for ${recipient} on ${channel}`,
+                  );
+                }
+
+                record.count += 1;
+              }
+
+              /** Render template với variable interpolation. */
+              private renderTemplate(
+                template: NotificationTemplate,
+                payload: Record<string, any>,
+              ): { subject: string; bodyHtml: string; bodyText: string } {
+                const replaceVars = (text: string) => {
+                  return text.replace(/\\{\\{(\\w+)\\}\\}/g, (match, varName) => {
+                    return payload[varName] !== undefined ? String(payload[varName]) : match;
+                  });
+                };
+                return {
+                  subject: replaceVars(template.subject),
+                  bodyHtml: replaceVars(template.bodyHtml),
+                  bodyText: replaceVars(template.bodyText),
+                };
+              }
+
+              private async dispatchEmail(
+                recipient: string,
+                rendered: any,
+              ): Promise<DispatchResult> {
+                // TODO: Integrate với email provider (SMTP/SendGrid/SES)
+                return { status: 'sent', recipient, channel: 'email', timestamp: new Date().toISOString() };
+              }
+
+              private async dispatchSMS(
+                recipient: string,
+                rendered: any,
+              ): Promise<DispatchResult> {
+                // TODO: Integrate với SMS provider (Twilio)
+                return { status: 'sent', recipient, channel: 'sms', timestamp: new Date().toISOString() };
+              }
+
+              private async dispatchPush(
+                userId: string,
+                rendered: any,
+              ): Promise<DispatchResult> {
+                // TODO: Integrate với push provider (Firebase FCM)
+                return { status: 'sent', recipient: userId, channel: 'push', timestamp: new Date().toISOString() };
+              }
+
+              private logDispatch(
+                templateId: string,
+                recipient: string,
+                channel: string,
+                status: string,
+              ): void {
+                this.dispatchLog.push({
+                  status,
+                  recipient,
+                  channel,
+                  timestamp: new Date().toISOString(),
+                });
+              }
+            }
+            ''')
+
+    def generate_controller(self) -> str:
+        """Generate NotificationController."""
+        return textwrap.dedent('''\
+            /**
+             * Notification Controller - CP12: Notification & Communication
+             *
+             * REST endpoints cho notification operations.
+             */
+
+            import {
+              Controller,
+              Post,
+              Get,
+              Body,
+              Query,
+              BadRequestException,
+            } from '@nestjs/common';
+            import { NotificationService } from './notification.service';
+            import { DispatchRequestDto, TemplateRequestDto } from './notification.dto';
+
+            @Controller('notifications')
+            export class NotificationController {
+              constructor(private readonly notificationService: NotificationService) {}
+
+              /**
+               * Dispatch notification qua channel cụ thể.
+               * Support: email, sms, push
+               */
+              @Post('dispatch')
+              async dispatch(@Body() request: DispatchRequestDto) {
+                try {
+                  if (request.channel === 'email') {
+                    const result = await this.notificationService.sendEmail(
+                      request.recipient,
+                      request.templateId,
+                      request.payload,
+                    );
+                    return { ...result, message: 'Dispatch thành công' };
+                  } else if (request.channel === 'sms') {
+                    const result = await this.notificationService.sendSMS(
+                      request.recipient,
+                      request.templateId,
+                      request.payload,
+                    );
+                    return { ...result, message: 'Dispatch thành công' };
+                  } else if (request.channel === 'push') {
+                    const result = await this.notificationService.sendPush(
+                      request.recipient,
+                      request.templateId,
+                      request.payload,
+                    );
+                    return { ...result, message: 'Dispatch thành công' };
+                  } else {
+                    throw new BadRequestException(
+                      `MDC-CP12-001: Channel không được hỗ trợ: ${request.channel}`,
+                    );
+                  }
+                } catch (error) {
+                  if (error.message.includes('MDC-')) {
+                    throw new BadRequestException(error.message);
+                  }
+                  throw error;
+                }
+              }
+
+              /** Liệt kê tất cả notification templates. */
+              @Get('templates')
+              async listTemplates() {
+                return this.notificationService.listTemplates();
+              }
+
+              /** Đăng ký notification template mới. */
+              @Post('templates')
+              async registerTemplate(@Body() request: TemplateRequestDto) {
+                this.notificationService.registerTemplate(request as any);
+                return { status: 'registered', templateId: request.templateId };
+              }
+
+              /** Lấy dispatch log gần đây. */
+              @Get('log')
+              async getDispatchLog(@Query('limit') limit?: number) {
+                const log = this.notificationService.getDispatchLog(limit || 50);
+                return { log, total: log.length };
+              }
+            }
+            ''')
+
+    def generate_dto(self) -> str:
+        """Generate DTOs cho notification."""
+        return textwrap.dedent('''\
+            /**
+             * Notification DTOs - CP12: Request/Response schemas.
+             */
+
+            import { IsString, IsOptional, IsEnum, IsObject, IsArray } from 'class-validator';
+            import { ApiProperty } from '@nestjs/swagger';
+
+            export enum ChannelType {
+              EMAIL = 'email',
+              SMS = 'sms',
+              PUSH = 'push',
+              WEBHOOK = 'webhook',
+              IN_APP = 'in_app',
+            }
+
+            export class DispatchRequestDto {
+              @ApiProperty({ description: 'ID của template' })
+              @IsString()
+              templateId: string;
+
+              @ApiProperty({ description: 'Người nhận (email, phone, user_id)' })
+              @IsString()
+              recipient: string;
+
+              @ApiProperty({ enum: ChannelType, default: ChannelType.EMAIL })
+              @IsEnum(ChannelType)
+              channel: ChannelType;
+
+              @ApiProperty({ required: false })
+              @IsOptional()
+              @IsObject()
+              payload?: Record<string, any>;
+            }
+
+            export class TemplateRequestDto {
+              @ApiProperty({ description: 'ID duy nhất của template' })
+              @IsString()
+              templateId: string;
+
+              @ApiProperty({ enum: ChannelType })
+              @IsEnum(ChannelType)
+              channel: ChannelType;
+
+              @ApiProperty({ required: false })
+              @IsOptional()
+              @IsString()
+              subject?: string;
+
+              @ApiProperty({ required: false })
+              @IsOptional()
+              @IsString()
+              bodyHtml?: string;
+
+              @ApiProperty({ required: false })
+              @IsOptional()
+              @IsString()
+              bodyText?: string;
+
+              @ApiProperty({ required: false })
+              @IsOptional()
+              @IsArray()
+              variables?: string[];
+
+              @ApiProperty({ default: 'en' })
+              @IsOptional()
+              @IsString()
+              locale?: string;
+            }
+            ''')

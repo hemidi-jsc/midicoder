@@ -2,24 +2,16 @@
 I18n Template Registry Module.
 
 Module này cung cấp I18nTemplateRegistry:
-- register(): Dang ky template theo locale
-- resolve(): Resolve template voi fallback chain (vi-VN -> en -> default)
+- register(): Đăng ký template theo locale
+- resolve(): Resolve template với fallback chain (vi-VN -> en -> default)
 - Support BCP 47 locale codes (vi-VN, en-US, fr-FR, etc.)
-
-Author: Midicoder Team
-Version: 1.0.0
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-from midicoder.emitters.core.notification.models import (
-    NotificationTemplate,
-)
+from midicoder.emitters.core.notification.models import NotificationTemplate
 
 
-# Template key format: (template_id, locale)
 _TEMPLATE_KEY = tuple[str, str]
 
 
@@ -31,12 +23,6 @@ class I18nTemplateRegistry:
     - vi-VN -> vi -> en -> default template
     - fr-CA -> fr -> en -> default template
     - en-US -> en -> default template
-
-    Example:
-        >>> registry = I18nTemplateRegistry()
-        >>> registry.register("welcome", "vi-VN", template_vi)
-        >>> registry.register("welcome", "en", template_en)
-        >>> result = registry.resolve("welcome", "vi-VN")
     """
 
     def __init__(self) -> None:
@@ -61,7 +47,6 @@ class I18nTemplateRegistry:
         key: _TEMPLATE_KEY = (template_id, locale)
         self._templates[key] = template
 
-        # Nếu locale là "en", cũng xem là default fallback
         if locale == "en":
             self._default_templates[template_id] = template
 
@@ -72,9 +57,6 @@ class I18nTemplateRegistry:
     ) -> None:
         """
         Đăng ký default template (fallback cuối cùng).
-
-        Default template được sử dụng khi không tìm thấy
-        template cho locale cụ thể.
 
         Args:
             template_id: Định danh duy nhất của template
@@ -103,19 +85,19 @@ class I18nTemplateRegistry:
         Returns:
             NotificationTemplate nếu tìm thấy, None nếu không có template nào
         """
-        # 1. Exact match: vi-VN
+        # 1. Exact match
         exact_key: _TEMPLATE_KEY = (template_id, preferred_locale)
         if exact_key in self._templates:
             return self._templates[exact_key]
 
-        # 2. Language only: vi-VN -> vi
+        # 2. Language only
         if "-" in preferred_locale:
             language_only = preferred_locale.split("-")[0]
             lang_key: _TEMPLATE_KEY = (template_id, language_only)
             if lang_key in self._templates:
                 return self._templates[lang_key]
 
-        # 3. English fallback: en
+        # 3. English fallback
         en_key: _TEMPLATE_KEY = (template_id, "en")
         if en_key in self._templates:
             return self._templates[en_key]
@@ -163,7 +145,6 @@ class I18nTemplateRegistry:
             key: _TEMPLATE_KEY = (template_id, locale)
             return key in self._templates
 
-        # Kiểm tra bất kỳ locale nào
         for (tid, _locale) in self._templates.keys():
             if tid == template_id:
                 return True
@@ -184,7 +165,6 @@ class I18nTemplateRegistry:
             1 for (tid, _locale) in self._templates.keys() if tid == template_id
         )
         if template_id in self._default_templates:
-            # Default template được tính nếu không trùng với locales khác
             default_locale = self._default_templates[template_id].locale
             if (template_id, default_locale) not in self._templates:
                 count += 1

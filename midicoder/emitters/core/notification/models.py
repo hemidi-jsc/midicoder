@@ -1,15 +1,12 @@
 """
-Notification Models Module.
+Mô-đun Notification Models.
 
 Module này định nghĩa các data models cho CP12 Notification Emitter:
-- NotificationChannel: Enum các kênh notification (EMAIL, SMS, PUSH, WEBHOOK, IN_APP)
+- NotificationChannel: Enum các kênh notification
 - NotificationTemplate: Template cho notification với variable interpolation
 - NotificationDispatch: Dispatch request cho notification
-- NotificationProvider: Provider config (SendGrid, Twilio, Firebase, etc.)
-- DispatchResult: Kết quả sau khi dispatch notification
-
-Author: Midicoder Team
-Version: 1.0.0
+- NotificationProvider: Provider config
+- DispatchResult: Kết quả sau khi dispatch
 """
 
 from __future__ import annotations
@@ -66,15 +63,6 @@ class NotificationTemplate:
         body_text: Plain text body content, support {{variable}}
         variables: Danh sách variable names trong template
         locale: Locale code (default: "en")
-
-    Example:
-        >>> template = NotificationTemplate(
-        ...     template_id="welcome_email",
-        ...     channel=NotificationChannel.EMAIL,
-        ...     subject="Chào mừng {{name}}",
-        ...     body_html="<h1>Xin chào {{name}}</h1>",
-        ...     variables=["name"],
-        ... )
     """
 
     template_id: str
@@ -84,6 +72,11 @@ class NotificationTemplate:
     body_text: str = ""
     variables: list[str] = field(default_factory=list)
     locale: str = "en"
+
+    def __post_init__(self) -> None:
+        """Kiểm tra template_id không được rỗng."""
+        if not self.template_id or not self.template_id.strip():
+            raise ValueError("template_id không được để rỗng")
 
     def render(self, data: dict[str, Any]) -> dict[str, Any]:
         """
@@ -105,7 +98,6 @@ class NotificationTemplate:
             "body_text": self.body_text,
         }
 
-        # Tìm tất cả {{variable}} patterns trong template
         pattern = re.compile(r"\{\{(\w+)\}\}")
 
         for key in ["subject", "body_html", "body_text"]:
@@ -115,7 +107,6 @@ class NotificationTemplate:
                 var_name = match.group(1)
                 if var_name in data:
                     return str(data[var_name])
-                # Giữ nguyên variable nếu không có value
                 return match.group(0)
 
             result[key] = pattern.sub(_replacer, text)
@@ -151,7 +142,6 @@ class NotificationTemplate:
             NotificationTemplate instance
         """
         channel_value = data.get("channel", "email")
-        # Resolve channel từ string value
         channel = NotificationChannel(channel_value)
 
         return cls(
@@ -181,22 +171,13 @@ class NotificationDispatch:
     Attributes:
         dispatch_id: Định danh duy nhất của dispatch
         template_ref: Reference đến template_id
-        recipient: Người nhận (email, phone number, user_id, webhook_url)
+        recipient: Người nhận (email, phone number, user_id)
         channel: Channel để gửi notification
         payload: Variable values cho template rendering
         status: Status hiện tại (pending, sent, failed, bounced)
         scheduled_at: Thời gian scheduled (optional)
         sent_at: Thời gian đã gửi (nullable)
         error_message: Error message nếu failed (nullable)
-
-    Example:
-        >>> dispatch = NotificationDispatch(
-        ...     dispatch_id="disp_001",
-        ...     template_ref="welcome_email",
-        ...     recipient="user@example.com",
-        ...     channel=NotificationChannel.EMAIL,
-        ...     payload={"name": "Minh"},
-        ... )
     """
 
     dispatch_id: str
@@ -208,6 +189,13 @@ class NotificationDispatch:
     scheduled_at: datetime | None = None
     sent_at: datetime | None = None
     error_message: str | None = None
+
+    def __post_init__(self) -> None:
+        """Kiểm tra dispatch_id và recipient không được rỗng."""
+        if not self.dispatch_id or not self.dispatch_id.strip():
+            raise ValueError("dispatch_id không được để rỗng")
+        if not self.recipient or not self.recipient.strip():
+            raise ValueError("recipient không được để rỗng")
 
     def mark_sent(self) -> None:
         """Mark dispatch đã được gửi thành công."""
@@ -267,14 +255,6 @@ class NotificationProvider:
         config: Configuration dictionary cho provider
         enabled: Provider có được enabled không
         priority: Priority order (nhỏ hơn = ưu tiên hơn)
-
-    Example:
-        >>> provider = NotificationProvider(
-        ...     provider_id="sendgrid_prod",
-        ...     channel=NotificationChannel.EMAIL,
-        ...     config={"api_key": "SG.xxx", "from_email": "noreply@test.com"},
-        ...     priority=1,
-        ... )
     """
 
     provider_id: str
@@ -282,6 +262,11 @@ class NotificationProvider:
     config: dict[str, Any] = field(default_factory=dict)
     enabled: bool = True
     priority: int = 99
+
+    def __post_init__(self) -> None:
+        """Kiểm tra provider_id không được rỗng."""
+        if not self.provider_id or not self.provider_id.strip():
+            raise ValueError("provider_id không được để rỗng")
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -339,13 +324,6 @@ class DispatchResult:
         status: Status kết quả (sent, failed, bounced)
         provider_response: Response từ provider (optional)
         error_code: Error code nếu failed (optional)
-
-    Example:
-        >>> result = DispatchResult(
-        ...     dispatch_id="disp_001",
-        ...     status="sent",
-        ...     provider_response={"message_id": "msg_123"},
-        ... )
     """
 
     dispatch_id: str
