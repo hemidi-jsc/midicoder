@@ -6,8 +6,8 @@ pack:
   status: "stable"
   category: "architecture"
   depends_on: ["CP01"]
-  definitions_count: 4
-  obligations_count: 1
+  definitions_count: 8
+  obligations_count: 4
   error_codes:
     prefix: "MDC-CP05"
     range: "MDC-CP05-001 to MDC-CP05-010"
@@ -15,12 +15,21 @@ pack:
     - publish_event
     - subscribe_event
     - event_outbox
+    - event_sourcing
+    - transport_abstraction
+    - dead_letter_queue
   capabilities:
     - id: "event_publisher"
       emitter: "fastapi, nestjs"
     - id: "event_subscriber"
       emitter: "fastapi, nestjs"
     - id: "outbox_pattern"
+      emitter: "fastapi, nestjs"
+    - id: "transport_abstraction"
+      emitter: "fastapi, nestjs"
+    - id: "dlq"
+      emitter: "fastapi, nestjs"
+    - id: "event_sourcing"
       emitter: "fastapi, nestjs"
   definitions:
     - name: "EventTopic"
@@ -31,9 +40,23 @@ pack:
       description: "Wrapper with metadata for published events"
     - name: "OutboxConfig"
       description: "Transactional outbox settings for reliable delivery"
+    - name: "TransportConfig"
+      description: "Abstract message transport (Kafka, RabbitMQ, SQS, SNS, Redis)"
+    - name: "DLQConfig"
+      description: "Dead letter queue with alerting and retention policy"
+    - name: "EventStoreConfig"
+      description: "Event sourcing backbone with snapshot and optimistic locking"
+    - name: "RetryPolicy"
+      description: "Retry strategy (exponential backoff with jitter, fibonacci)"
   obligations:
     - name: "EventOrdering"
       description: "Events from same aggregate must maintain causal order"
+    - name: "EventImmutability"
+      description: "Published events must never be modified after publish"
+    - name: "DLQMonitoring"
+      description: "DLQ must be monitored and alerted on accumulation"
+    - name: "TransportReliability"
+      description: "Transport must enforce configured delivery guarantee"
   frontend_integration:
     angular:
       - EventService
