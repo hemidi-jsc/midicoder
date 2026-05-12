@@ -417,6 +417,8 @@ class CommandParams(TypedDict, total=False):
     writes_to: list[str]
     datasource: str
     transaction: bool
+    transaction_required: bool
+    on_error: str
     tenant_scope: str
     source: str
     tags: list[str]
@@ -427,7 +429,7 @@ class QueryParams(TypedDict, total=False):
     Tham số cho Query nodes.
 
     Query đại diện cho các thao tác read trong hệ thống.
-    Mỗi query có input, fetches, guards, và returns.
+    Mỗi query có input, fetches, guards, effects, và returns.
 
     Fields:
         id: Định danh của query
@@ -435,6 +437,7 @@ class QueryParams(TypedDict, total=False):
         input: Các tham số đầu vào (filters, pagination)
         fetches: Danh sách entities cần load
         guards: Các guards cần kiểm tra
+        effects: Side effects (audit_log, record_metric, v.v.)
         returns: Dữ liệu trả về
         category: Phân loại query (find_by_id, list, search, etc.)
         reads_from: Danh sách entities sẽ đọc
@@ -451,6 +454,7 @@ class QueryParams(TypedDict, total=False):
     input: list[dict[str, Any]]
     fetches: list[str]
     guards: list[dict[str, Any]]
+    effects: list[dict[str, Any]]
     returns: list[dict[str, Any]]
     category: str
     reads_from: list[str]
@@ -578,6 +582,201 @@ class EffectParams(TypedDict, total=False):
     async_: bool
     retry_policy: dict[str, Any]
     tags: list[str]
+
+
+# ============================================================================
+# CP01-aligned TypedDicts — advanced domain patterns
+# ============================================================================
+# These TypedDicts correspond to CP01 definitions that previously had no
+# canonical DSL representation.  Added so that the DSL parser can produce
+# typed ProjectionNode.params for every definition declared in pack.yml.
+
+
+class ValueObjectParams(TypedDict, total=False):
+    """
+    Tham số cho Value Object nodes (canonical).
+
+    Value Object là immutable, equality-by-value domain primitive.
+    Đây là TypedDict canonical — ExtendedValueObjectParams vẫn giữ cho
+    backward compatibility nhưng ValueObjectParams là default.
+
+    Fields:
+        id: Định danh của VO
+        description: Mô tả VO
+        extends: Parent VO ID (cho inheritance)
+        fields: Danh sách FieldDefinition
+        methods: Danh sách MethodDefinition
+        validation_rules: Danh sách ValidationRule
+        immutable: Có bất biến không (default: True)
+        comparable: Có thể so sánh không
+        tags: Danh sách tags
+        compliance: Compliance requirements
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    extends: str
+    fields: list[FieldDefinition]
+    methods: list[MethodDefinition]
+    validation_rules: list[ValidationRule]
+    immutable: bool
+    comparable: bool
+    tags: list[str]
+    compliance: list[dict[str, Any]]
+    source: str
+
+
+class EventSourcedAggregateParams(TypedDict, total=False):
+    """
+    Tham số cho Event-Sourced Aggregate nodes.
+
+    Aggregate reconstructs state từ sequence của domain events.
+    Không lưu current state — chỉ lưu event log.
+
+    Fields:
+        id: Định danh của aggregate
+        description: Mô tả aggregate
+        root_entity: Entity là root của aggregate
+        events: Danh sách event IDs mà aggregate emit
+        eventing_strategy: Chiến lược lưu trữ ("append_only"|"snapshot"|"compression")
+        snapshot_interval: Số events giữa các snapshots (0 = no snapshot)
+        versioned: Optimistic concurrency control qua version column
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    root_entity: str
+    events: list[str]
+    eventing_strategy: str
+    snapshot_interval: int
+    versioned: bool
+    tags: list[str]
+    source: str
+
+
+class TemporalEntityParams(TypedDict, total=False):
+    """
+    Tham số cho Temporal Entity nodes.
+
+    Entity tracking state theo thời gian (SCD Type 2).
+    Hỗ trợ query "state tại thời điểm T" và "lịch sử thay đổi".
+
+    Fields:
+        id: Định danh của entity
+        description: Mô tả entity
+        fields: Danh sách fields
+        valid_from_field: Tên field cho start of validity period
+        valid_to_field: Tên field cho end of validity period
+        granularity: Mức độ granularity ("second"|"minute"|"day"|"month")
+        current_predicate: Predicate để xác định bản ghi hiện tại
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    fields: list[dict[str, Any]]
+    valid_from_field: str
+    valid_to_field: str
+    granularity: str
+    current_predicate: str
+    tags: list[str]
+    source: str
+
+
+class PolymorphicEntityParams(TypedDict, total=False):
+    """
+    Tham số cho Polymorphic Entity nodes.
+
+    Entity có thể tồn tại ở nhiều subtype — inherit fields từ base.
+    Support Single-table, Joined-table, Concrete-table inheritance.
+
+    Fields:
+        id: Định danh của base entity
+        description: Mô tả entity
+        polymorphism_type: Chiến lược inheritance ("single_table"|"joined_table"|"concrete_table")
+        discriminator_field: Column dùng để phân biệt subtype
+        base_fields: Fields của base entity
+        subtypes: Danh sách subtype definitions ({name, fields})
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    polymorphism_type: str
+    discriminator_field: str
+    base_fields: list[dict[str, Any]]
+    subtypes: list[dict[str, Any]]
+    tags: list[str]
+    source: str
+
+
+class SagaParams(TypedDict, total=False):
+    """
+    Tham số cho Saga nodes.
+
+    Long-running business transaction spanning multiple aggregates.
+    Mỗi step có action + compensating action cho rollback.
+
+    Fields:
+        id: Định danh của saga
+        description: Mô tả saga
+        orchestration: Chế độ điều phối ("choreography"|"orchestration")
+        steps: Danh sách saga step definitions
+        timeout_seconds: Timeout tối đa cho toàn bộ saga
+        retry_policy: Policy retry khi step thất bại
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    orchestration: str
+    steps: list[dict[str, Any]]
+    timeout_seconds: int
+    retry_policy: str
+    tags: list[str]
+    source: str
+
+
+class AggregationQueryParams(TypedDict, total=False):
+    """
+    Tham số cho Aggregation Query nodes.
+
+    Query với group-by, having, và aggregate functions (SUM, AVG, COUNT).
+    Mở rộng QueryParams với aggregation-specific fields.
+
+    Fields:
+        id: Định danh của query
+        description: Mô tả query
+        aggregation: Danh sách aggregate functions ({function, field, alias})
+        group_by: Danh sách group-by fields
+        having: Danh sách having conditions
+        reads_from: Danh sách entities sẽ đọc
+        filters: Pre-aggregation filters
+        pagination: Pagination config
+        required_permissions: Permissions cần thiết
+        tenant_scope: Phạm vi multi-tenancy
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    aggregation: list[dict[str, Any]]
+    group_by: list[str]
+    having: list[dict[str, Any]]
+    reads_from: list[str]
+    filters: list[dict[str, Any]]
+    pagination: dict[str, Any]
+    required_permissions: list[str]
+    tenant_scope: str
+    tags: list[str]
+    source: str
 
 
 class HTTPRouteParams(TypedDict, total=False):

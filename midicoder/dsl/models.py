@@ -31,9 +31,14 @@ from midicoder.dsl.projection import (
     EnumParams,
     ErrorParams,
     EventParams,
+    EventSourcedAggregateParams,
+    PolymorphicEntityParams,
+    SagaParams,
+    TemporalEntityParams,
     ValueObjectParams,
-    
+
     # Application Layer
+    AggregationQueryParams,
     CommandParams,
     EffectParams,
     GuardParams,
@@ -190,8 +195,13 @@ __all__ = [
     "EnumParams",
     "ErrorParams",
     "EventParams",
-    
+    "EventSourcedAggregateParams",
+    "PolymorphicEntityParams",
+    "SagaParams",
+    "TemporalEntityParams",
+
     # Application Layer Params
+    "AggregationQueryParams",
     "CommandParams",
     "QueryParams",
     "WorkflowParams",
