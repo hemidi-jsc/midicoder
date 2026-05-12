@@ -8,6 +8,7 @@ pack:
   depends_on: []
   definitions_count: 14
   obligations_count: 4
+  recipes_count: 10
   error_codes:
     prefix: "MDC-CP01"
     range: "MDC-CP01-001 to MDC-CP01-005"
@@ -15,6 +16,9 @@ pack:
     - dsl_parsing
     - projection_tree_build
     - ir_build
+    - domain_model_recipes
+    - cqrs_recipes
+    - event_sourcing_recipes
   capabilities:
     - id: "entity_modeling"
       emitter: "fastapi, nestjs"
@@ -35,6 +39,8 @@ pack:
     - id: "polymorphic_entity"
       emitter: "fastapi, nestjs"
     - id: "saga"
+      emitter: "fastapi, nestjs"
+    - id: "recipes"
       emitter: "fastapi, nestjs"
   definitions:
     - name: "Entity"
@@ -65,6 +71,27 @@ pack:
       description: "Query with group-by, having, and aggregate functions"
     - name: "FilterGroup"
       description: "Nested filter expressions with AND/OR logic"
+  recipes:
+    - name: "SimpleEntityRecipe"
+      description: "CRUD entity with UUID, tenant_id, timestamps, lifecycle hooks"
+    - name: "AggregateRootRecipe"
+      description: "Consistency boundary with strict eventual relaxed options"
+    - name: "TemporalEntityRecipe"
+      description: "SCD Type 2 with valid_from/valid_to, range query index"
+    - name: "CQRSCommandRecipe"
+      description: "Write operation with auth + tenant guards + transaction"
+    - name: "CQRSQueryRecipe"
+      description: "Read operation with auth + tenant guards + pagination + sort"
+    - name: "EventSourcedAggregateRecipe"
+      description: "Event-sourced aggregate with snapshot strategy + versioned OCC"
+    - name: "SagaRecipe"
+      description: "Long-running transaction with compensating steps (orchestration)"
+    - name: "PolymorphicEntityRecipe"
+      description: "Subtype inheritance with discriminator column (STI/CTI/JTI)"
+    - name: "ProjectionRecipe"
+      description: "CQRS read model subscribing to domain events"
+    - name: "ValueObjectRecipe"
+      description: "Immutable, equality-by-value domain primitive"
   obligations:
     - name: "EntityIdentity"
       description: "Every entity must have unique, non-null identifier"

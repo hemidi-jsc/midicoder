@@ -149,6 +149,22 @@ from .vo_inheritance import InheritanceResolver, InheritanceChain
 from .vo_computed import ComputedFieldEvaluator, FormulaError
 
 # ===========================================================================
+# Recipes
+# ===========================================================================
+from .recipes import (
+    SimpleEntityRecipe,
+    AggregateRootRecipe,
+    TemporalEntityRecipe,
+    PolymorphicEntityRecipe,
+    CQRSCommandRecipe,
+    CQRSQueryRecipe,
+    EventSourcedAggregateRecipe,
+    SagaRecipe,
+    ProjectionRecipe,
+    ValueObjectRecipe,
+)
+
+# ===========================================================================
 # Public API
 # ===========================================================================
 __all__ = [
@@ -249,4 +265,15 @@ __all__ = [
     "InheritanceChain",
     "ComputedFieldEvaluator",
     "FormulaError",
+    # -- Recipes --
+    "SimpleEntityRecipe",
+    "AggregateRootRecipe",
+    "TemporalEntityRecipe",
+    "PolymorphicEntityRecipe",
+    "CQRSCommandRecipe",
+    "CQRSQueryRecipe",
+    "EventSourcedAggregateRecipe",
+    "SagaRecipe",
+    "ProjectionRecipe",
+    "ValueObjectRecipe",
 ]
