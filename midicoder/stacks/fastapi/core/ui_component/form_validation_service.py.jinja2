@@ -1,0 +1,114 @@
+"""FastAPI Form Validation Service — Pydantic schemas với field-level validation.
+
+Module này cung cấp Pydantic models cho form validation, tự động generate từ FormFieldSpec.
+Mỗi entity có một Pydantic model tương ứng với các validators theo field type.
+
+CP19: UI Component Generator
+"""
+
+from pydantic import BaseModel, EmailStr, Field
+from typing import Any, Optional, List
+
+
+class FormValidationService:
+    """Service cung cấp form validation schemas."""
+
+    @staticmethod
+    def get_field_type_annotation(field_spec: dict) -> Any:
+        """
+        Lấy type annotation Pydantic tương ứng với field type.
+
+        Args:
+            field_spec: FormFieldSpec dict
+
+        Returns:
+            Type annotation cho Pydantic field
+        """
+        field_type = field_spec.get("field_type", "text")
+        required = field_spec.get("required", False)
+
+        type_map = {
+            "text": str,
+            "number": float,
+            "email": EmailStr if required else Optional[EmailStr],
+            "date": str,  # ISO format
+            "boolean": bool,
+            "select": str,
+            "textarea": str,
+            "radio": str,
+            "switch": bool,
+        }
+
+        return type_map.get(field_type, str)
+
+    @staticmethod
+    def create_pydantic_model(entity_id: str, fields: List[dict]) -> type:
+        """
+        Tạo Pydantic model từ danh sách FormFieldSpec.
+
+        Args:
+            entity_id: Tên entity (ví dụ: "Order")
+            fields: Danh sách FormFieldSpec dicts
+
+        Returns:
+            Pydantic model class
+        """
+        fields_dict = {}
+        for f in fields:
+            field_name = f["field_name"]
+            field_type = f.get("field_type", "text")
+            required = f.get("required", False)
+            min_val = f.get("min_value")
+            max_val = f.get("max_value")
+            options = f.get("options", [])
+
+            type_map = {
+                "text": str,
+                "number": float,
+                "email": str,  # EmailStr cần email-validator
+                "date": str,
+                "boolean": bool,
+                "select": str,
+                "textarea": str,
+                "radio": str,
+                "switch": bool,
+            }
+            annotation = type_map.get(field_type, str)
+
+            field_kwargs = {
+                "title": f.get("label", field_name),
+                "description": f.get("binding_path", ""),
+            }
+
+            if min_val is not None:
+                field_kwargs["ge"] = min_val
+            if max_val is not None:
+                field_kwargs["le"] = max_val
+            if options:
+                field_kwargs["description"] += f" Options: {', '.join(options)}"
+
+            if required:
+                fields_dict[field_name] = (annotation, Field(**field_kwargs))
+            else:
+                fields_dict[field_name] = (Optional[annotation], Field(default=None, **field_kwargs))
+
+        model_class = type(entity_id + "FormSchema", (BaseModel,), fields_dict)
+        return model_class
+
+    @staticmethod
+    def validate_form_data(schema: type, data: dict) -> dict:
+        """
+        Validate form data với Pydantic schema.
+
+        Args:
+            schema: Pydantic model class
+            data: Form data dict
+
+        Returns:
+            Validated data dict
+
+        Raises:
+            ValidationError: Nếu data không hợp lệ
+        """
+        instance = schema(**data)
+        return instance.model_dump()

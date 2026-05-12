@@ -1,0 +1,185 @@
+/** Data Table Component - Sortable/paginated data table. */
+
+import React, { useState, useMemo } from "react";
+{% if ui_framework == "material" %}
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, TableSortLabel, Paper } from
+"@mui/material";
+{% endif %}
+
+export interface TableColumnDef {
+field: string;
+label: string;
+sortable?: boolean;
+filterable?: boolean;
+}
+
+export interface DataTableProps<T=any> {
+    data: T[];
+    columns: TableColumnDef[];
+    sortable?: boolean;
+    paginated?: boolean;
+    pageSize?: number;
+    onRowClick?: (row: T) => void;
+    }
+
+    export const DataTable = <T extends Record<string, any>>({
+        data,
+        columns,
+        sortable = true,
+        paginated = true,
+        pageSize = 20,
+        onRowClick,
+        }: DataTableProps<T>) => {
+            const [sortField, setSortField] = useState<string>('');
+                const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+                    const [page, setPage] = useState(0);
+
+                    const sortedData = useMemo(() => {
+                    if (!sortField) return data;
+                    return [...data].sort((a, b) => {
+                    const aVal = a[sortField];
+                    const bVal = b[sortField];
+                    if (aVal < bVal) return sortDirection==='asc' ? -1 : 1; if (aVal> bVal) return sortDirection ===
+                        'asc' ? 1 : -1;
+                        return 0;
+                        });
+                        }, [data, sortField, sortDirection]);
+
+                        const paginatedData = useMemo(() => {
+                        if (!paginated) return sortedData;
+                        const start = page * pageSize;
+                        return sortedData.slice(start, start + pageSize);
+                        }, [sortedData, page, pageSize, paginated]);
+
+                        const handleSort = (field: string) => {
+                        if (!sortable) return;
+                        if (sortField === field) {
+                        setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                        } else {
+                        setSortField(field);
+                        setSortDirection('asc');
+                        }
+                        };
+
+                        {% if ui_framework == "material" %}
+                        return (
+                        <TableContainer component={Paper}>
+                            <Table>
+                                <TableHead>
+                                    <TableRow>
+                                        {columns.map((col) => (
+                                        <TableCell key={col.field}>
+                                            {sortable && col.sortable ? (
+                                            <TableSortLabel active={sortField===col.field}
+                                                direction={sortField===col.field ? sortDirection : 'asc' } onClick={()=>
+                                                handleSort(col.field)}
+                                                >
+                                                {col.label}
+                                            </TableSortLabel>
+                                            ) : (
+                                            col.label
+                                            )}
+                                        </TableCell>
+                                        ))}
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {paginatedData.map((row, idx) => (
+                                    <TableRow key={idx} onClick={()=> onRowClick?.(row)}
+                                        {% raw %}sx={{ cursor: onRowClick ? 'pointer' : 'default' }}{% endraw %}
+                                        >
+                                        {columns.map((col) => (
+                                        <TableCell key={col.field}>{row[col.field]}</TableCell>
+                                        ))}
+                                    </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                            {paginated && (
+                            <TablePagination component="div" count={data.length} page={page} onPageChange={(_,
+                                newPage)=> setPage(newPage)}
+                                rowsPerPage={pageSize}
+                                />
+                                )}
+                        </TableContainer>
+                        );
+                        {% elif ui_framework == "tailwind" %}
+                        return (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        {columns.map((col) => (
+                                        <th key={col.field} onClick={()=> handleSort(col.field)}
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase
+                                            tracking-wider cursor-pointer select-none"
+                                            >
+                                            {col.label}
+                                            {sortField === col.field && (
+                                            <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                                            )}
+                                        </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {paginatedData.map((row, idx) => (
+                                    <tr key={idx} onClick={()=> onRowClick?.(row)}
+                                        className="hover:bg-gray-50 cursor-pointer"
+                                        >
+                                        {columns.map((col) => (
+                                        <td key={col.field}
+                                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            {row[col.field]}
+                                        </td>
+                                        ))}
+                                    </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {paginated && (
+                            <div className="flex items-center justify-between px-6 py-3 border-t">
+                                <button onClick={()=> setPage(p => Math.max(0, p - 1))}
+                                    disabled={page === 0}
+                                    className="px-3 py-1 border rounded disabled:opacity-50"
+                                    >
+                                    Prev
+                                </button>
+                                <span className="text-sm">Page {page + 1}</span>
+                                <button onClick={()=> setPage(p => p + 1)}
+                                    disabled={(page + 1) * pageSize >= data.length}
+                                    className="px-3 py-1 border rounded disabled:opacity-50"
+                                    >
+                                    Next
+                                </button>
+                            </div>
+                            )}
+                        </div>
+                        );
+                        {% else %}
+                        return (
+                        <table className="data-table">
+                            <thead>
+                                <tr>
+                                    {columns.map((col) => (
+                                    <th key={col.field} onClick={()=> handleSort(col.field)}>
+                                        {col.label}
+                                    </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {paginatedData.map((row, idx) => (
+                                <tr key={idx} onClick={()=> onRowClick?.(row)}>
+                                    {columns.map((col) => (
+                                    <td key={col.field}>{row[col.field]}</td>
+                                    ))}
+                                </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        );
+                        {% endif %}
+                        };
+
+                        export default DataTable;

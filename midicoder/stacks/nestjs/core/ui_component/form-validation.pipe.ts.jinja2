@@ -1,0 +1,83 @@
+/** NestJS Form Validation Pipe — ValidationPipe cho form data.
+
+Module này cung cấp custom ValidationPipe để validate form data tại controller level.
+
+CP19: UI Component Generator
+*/
+
+import { PipeTransform, Injectable, BadRequestException, ArgumentMetadata } from "@nestjs/common";
+
+@Injectable()
+export class FormValidationPipe implements PipeTransform {
+    transform(value: any, metadata: ArgumentMetadata): any {
+        if (!value) {
+            throw new BadRequestException("Form data is required");
+        }
+
+        // Kiểm tra type từ metadata
+        const metatype = metadata.metatype;
+
+        if (!metatype || !this.toValidate(metatype)) {
+            return value;
+        }
+
+        // Validate required fields
+        const errors: string[] = [];
+
+        for (const key of Object.keys(metatype.prototype)) {
+            if (key === 'constructor') continue;
+
+            const field = value[key];
+            const decorators = this.getValidationDecorators(metatype, key);
+
+            if (decorators.includes('required') && (field === undefined || field === null || field === '')) {
+                errors.push(`Field '${key}' is required`);
+            }
+
+            if (decorators.includes('email') && field && !this.isValidEmail(field)) {
+                errors.push(`Field '${key}' must be a valid email`);
+            }
+
+            if (decorators.includes('number') && field && typeof field !== 'number') {
+                errors.push(`Field '${key}' must be a number`);
+            }
+
+            if (decorators.includes('boolean') && field !== undefined && typeof field !== 'boolean') {
+                errors.push(`Field '${key}' must be a boolean`);
+            }
+        }
+
+        if (errors.length > 0) {
+            throw new BadRequestException({
+                message: "Form validation failed",
+                errors,
+            });
+        }
+
+        return value;
+    }
+
+    private toValidate(metatype: Function): boolean {
+        const types: Function[] = [String, Boolean, Number];
+        return !types.includes(metatype);
+    }
+
+    private getValidationDecorators(metatype: Function, key: string): string[] {
+        // Trong production, đọc từ class-validator metadata storage
+        // Đây là placeholder cho form validation
+        const validators: string[] = [];
+
+        // Kiểm tra từ prototype hoặc static metadata
+        const metadata = Reflect.getMetadata('validation:constraints', metatype.prototype);
+        if (metadata && metadata[key]) {
+            validators.push(...metadata[key]);
+        }
+
+        return validators;
+    }
+
+    private isValidEmail(email: string): boolean {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+}

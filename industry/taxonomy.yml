@@ -330,7 +330,7 @@ core_packs:
       - form_generate
       - table_generate
     category: frontend
-    status: developing
+    status: stable
     version: 1.0.0
   - id: CP20
     name: API Client & Integration Generator

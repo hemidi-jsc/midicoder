@@ -1,0 +1,104 @@
+/** NestJS Form Validation DTO — DTO class với class-validator decorators.
+
+Module này cung cấp DTO class cho form validation, tự động generate từ FormFieldSpec.
+Mỗi entity có một DTO class tương ứng với các validation decorators.
+
+CP19: UI Component Generator
+*/
+
+import { IsString, IsNumber, IsEmail, IsBoolean, IsOptional, IsIn, Min, Max, IsDateString } from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+export class FormValidationDto {
+    {% for field in fields %}
+    {% set required = field.required | default(false) %}
+    {% set ftype = field.field_type | default('text') %}
+
+    {% if ftype == 'text' %}
+    {% if required %}@IsString()
+    @ApiProperty({ description: "{{ field.label }}", example: "example"{% if field.field_name == 'password' %}, type: 'string', format: 'password'{% endif %} })
+    {% else %}@IsOptional()
+    @IsString()
+    @ApiPropertyOptional({ description: "{{ field.label }}" })
+    {% endif %}
+    {{ field.field_name }}: string;
+
+    {% elif ftype == 'number' %}
+    {% if required %}@IsNumber()
+    {% if field.min_value is not none %}@Min({{ field.min_value }}){% endif %}
+    {% if field.max_value is not none %}@Max({{ field.max_value }}){% endif %}
+    @ApiProperty({ description: "{{ field.label }}", type: 'number' {% if field.min_value is not none %}, minimum: {{ field.min_value }}{% endif %}{% if field.max_value is not none %}, maximum: {{ field.max_value }}{% endif %} })
+    {% else %}@IsOptional()
+    @IsNumber()
+    {% if field.min_value is not none %}@Min({{ field.min_value }}){% endif %}
+    {% if field.max_value is not none %}@Max({{ field.max_value }}){% endif %}
+    @ApiPropertyOptional({ description: "{{ field.label }}" })
+    {% endif %}
+    {{ field.field_name }}: number;
+
+    {% elif ftype == 'email' %}
+    {% if required %}@IsEmail()
+    @ApiProperty({ description: "{{ field.label }}", example: "user@example.com" })
+    {% else %}@IsOptional()
+    @IsEmail()
+    @ApiPropertyOptional({ description: "{{ field.label }}" })
+    {% endif %}
+    {{ field.field_name }}: string;
+
+    {% elif ftype == 'date' %}
+    {% if required %}@IsDateString()
+    @ApiProperty({ description: "{{ field.label }}", type: 'string', format: 'date' })
+    {% else %}@IsOptional()
+    @IsDateString()
+    @ApiPropertyOptional({ description: "{{ field.label }}" })
+    {% endif %}
+    {{ field.field_name }}: string;
+
+    {% elif ftype == 'boolean' or ftype == 'switch' %}
+    {% if required %}@IsBoolean()
+    @ApiProperty({ description: "{{ field.label }}", type: 'boolean' })
+    {% else %}@IsOptional()
+    @IsBoolean()
+    @ApiPropertyOptional({ description: "{{ field.label }}" })
+    {% endif %}
+    {{ field.field_name }}: boolean;
+
+    {% elif ftype == 'select' or ftype == 'radio' %}
+    {% if field.options and field.options|length > 0 %}
+    {% if required %}@IsIn([{% for opt in field.options %}"{{ opt }}"{% if not loop.last %}, {% endif %}{% endfor %}])
+    @ApiProperty({ description: "{{ field.label }}", enum: [{% for opt in field.options %}"{{ opt }}"{% if not loop.last %}, {% endif %}{% endfor %}] })
+    {% else %}@IsOptional()
+    @IsIn([{% for opt in field.options %}"{{ opt }}"{% if not loop.last %}, {% endif %}{% endfor %}])
+    @ApiPropertyOptional({ description: "{{ field.label }}", enum: [{% for opt in field.options %}"{{ opt }}"{% if not loop.last %}, {% endif %}{% endfor %}] })
+    {% endif %}
+    {% else %}
+    {% if required %}@IsString()
+    @ApiProperty({ description: "{{ field.label }}" })
+    {% else %}@IsOptional()
+    @IsString()
+    @ApiPropertyOptional({ description: "{{ field.label }}" })
+    {% endif %}
+    {% endif %}
+    {{ field.field_name }}: string;
+
+    {% elif ftype == 'textarea' %}
+    {% if required %}@IsString()
+    @ApiProperty({ description: "{{ field.label }}", type: 'string', minLength: 1 })
+    {% else %}@IsOptional()
+    @IsString()
+    @ApiPropertyOptional({ description: "{{ field.label }}" })
+    {% endif %}
+    {{ field.field_name }}: string;
+
+    {% else %}
+    {% if required %}@IsString()
+    @ApiProperty({ description: "{{ field.label }}" })
+    {% else %}@IsOptional()
+    @IsString()
+    @ApiPropertyOptional({ description: "{{ field.label }}" })
+    {% endif %}
+    {{ field.field_name }}: string;
+    {% endif %}
+
+    {% endfor %}
+}

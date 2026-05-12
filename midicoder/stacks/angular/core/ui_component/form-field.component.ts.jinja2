@@ -1,0 +1,87 @@
+/** Form Field Component - Generic form field với Material/Tailwind/Bootstrap support. */
+
+import { Component, Input, Output, EventEmitter, OnInit, forwardRef } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { ReactiveFormsModule, FormControl, NG_VALUE_ACCESSOR } from "@angular/forms";
+{% if ui_framework == "material" %}
+import { MatFormFieldModule } from "@angular/material/form-field";
+import { MatInputModule } from "@angular/material/input";
+import { MatSelectModule } from "@angular/material/select";
+import { MatCheckboxModule } from "@angular/material/checkbox";
+{% endif %}
+
+export type FieldType = 'text' | 'number' | 'email' | 'date' | 'boolean' | 'select' | 'textarea' | 'radio' | 'switch';
+
+@Component({
+selector: 'app-form-field',
+standalone: true,
+imports: [
+CommonModule,
+ReactiveFormsModule,
+{% if ui_framework == "material" %}
+MatFormFieldModule,
+MatInputModule,
+MatSelectModule,
+MatCheckboxModule,
+{% endif %}
+],
+providers: [
+{
+provide: NG_VALUE_ACCESSOR,
+useExisting: forwardRef(() => FormFieldComponent),
+multi: true,
+},
+],
+template: `
+{% if ui_framework == "material" %}
+<mat-form-field appearance="outline">
+    <mat-label>{% raw %}{{ label }}{% endraw %}</mat-label>
+    <input *ngIf="fieldType === 'text' || fieldType === 'email'" [type]="fieldType" [formControl]="control"
+        [required]="required" [placeholder]="label" />
+    <input *ngIf="fieldType === 'number'" type="number" [formControl]="control" [required]="required"
+        [placeholder]="label" />
+    <input *ngIf="fieldType === 'date'" type="date" [formControl]="control" [required]="required" />
+    <textarea *ngIf="fieldType === 'textarea'" [formControl]="control" [required]="required"
+        [placeholder]="label"></textarea>
+    <mat-select *ngIf="fieldType === 'select'" [formControl]="control" [required]="required">
+        <mat-option *ngFor="let opt of options" [value]="opt">{% raw %}{{ opt }}{% endraw %}</mat-option>
+    </mat-select>
+    <mat-checkbox *ngIf="fieldType === 'boolean'" [formControl]="control">
+        {% raw %}{{ label }}{% endraw %}
+    </mat-checkbox>
+</mat-form-field>
+{% elif ui_framework == "tailwind" %}
+<div class="form-field">
+    <label>{% raw %}{{ label }}{% endraw %}</label>
+    <input *ngIf="fieldType === 'text' || fieldType === 'email' || fieldType === 'number' || fieldType === 'date'"
+        [type]="fieldType" [formControl]="control" [required]="required" class="input" />
+    <textarea *ngIf="fieldType === 'textarea'" [formControl]="control" [required]="required"
+        class="textarea"></textarea>
+    <select *ngIf="fieldType === 'select'" [formControl]="control" [required]="required" class="select">
+        <option *ngFor="let opt of options" [value]="opt">{% raw %}{{ opt }}{% endraw %}</option>
+    </select>
+    <input *ngIf="fieldType === 'boolean'" type="checkbox" [formControl]="control" />
+</div>
+{% else %}
+<div class="form-field">
+    <label>{% raw %}{{ label }}{% endraw %}</label>
+    <input [type]="fieldType" [formControl]="control" [required]="required" />
+</div>
+{% endif %}
+`,
+})
+export class FormFieldComponent implements OnInit {
+@Input() label: string = '';
+@Input() fieldType: FieldType = 'text';
+@Input() required: boolean = false;
+@Input() options: string[] = [];
+@Output() valueChange = new EventEmitter<any>();
+
+    control = new FormControl(null);
+
+    ngOnInit() {
+    this.control.valueChanges.subscribe((value) => {
+    this.valueChange.emit(value);
+    });
+    }
+    }

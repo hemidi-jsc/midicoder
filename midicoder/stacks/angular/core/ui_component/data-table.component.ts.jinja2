@@ -1,0 +1,143 @@
+/** Data Table Component - Sortable/paginated data table. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatTableModule } from "@angular/material/table";
+import { MatPaginatorModule } from "@angular/material/paginator";
+import { MatSortModule } from "@angular/material/sort";
+import { MatIconModule } from "@angular/material/icon";
+{% endif %}
+
+export interface TableColumnDef {
+field: string;
+label: string;
+sortable?: boolean;
+filterable?: boolean;
+}
+
+@Component({
+selector: 'app-data-table',
+standalone: true,
+imports: [
+CommonModule,
+{% if ui_framework == "material" %}
+MatTableModule,
+MatPaginatorModule,
+MatSortModule,
+MatIconModule,
+{% endif %}
+],
+template: `
+{% if ui_framework == "material" %}
+<div class="data-table-container">
+    <table mat-table [dataSource]="dataSource" matSort>
+        <ng-container *ngFor="let col of columns" [matColumnDef]="col.field">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header [disabled]="!col.sortable">
+                {% raw %}{{ col.label }}{% endraw %}
+            </th>
+            <td mat-cell *matCellDef="let row">
+                {% raw %}{{ row[col.field] }}{% endraw %}
+            </td>
+        </ng-container>
+        <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns;" (click)="rowClick.emit(row)"></tr>
+    </table>
+    {% if paginated %}
+    <mat-paginator [pageSize]="pageSize" [pageSizeOptions]="[10, 20, 50, 100]"
+        (page)="pageChange.emit($event)"></mat-paginator>
+    {% endif %}
+</div>
+{% elif ui_framework == "tailwind" %}
+<div class="data-table-container overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th *ngFor="let col of columns"
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    (click)="col.sortable && sortColumn(col.field)">
+                    {% raw %}{{ col.label }}{% endraw %}
+                    {% raw %}<span *ngIf="sortField === col.field">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>{% endraw
+                    %}
+                </th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            <tr *ngFor="let row of paginatedData" (click)="rowClick.emit(row)" class="hover:bg-gray-50 cursor-pointer">
+                <td *ngFor="let col of columns" class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {% raw %}{{ row[col.field] }}{% endraw %}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+    {% if paginated %}
+    <div class="flex items-center justify-between px-6 py-3">
+        <button (click)="prevPage()" [disabled]="currentPage === 0" class="btn">Prev</button>
+        <span>Page {% raw %}{{ currentPage + 1 }}{% endraw %}</span>
+        <button (click)="nextPage()" [disabled]="!hasNextPage()" class="btn">Next</button>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th *ngFor="let col of columns">{% raw %}{{ col.label }}{% endraw %}</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr *ngFor="let row of data" (click)="rowClick.emit(row)">
+            <td *ngFor="let col of columns">{% raw %}{{ row[col.field] }}{% endraw %}</td>
+        </tr>
+    </tbody>
+</table>
+{% endif %}
+`,
+})
+export class DataTableComponent<T=any> implements OnInit {
+    @Input() data: T[] = [];
+    @Input() columns: TableColumnDef[] = [];
+    @Input() sortable: boolean = true;
+    @Input() paginated: boolean = true;
+    @Input() pageSize: number = 20;
+    @Output() rowClick = new EventEmitter<T>();
+        @Output() sortChange = new EventEmitter<{ field: string; direction: string }>();
+            @Output() pageChange = new EventEmitter<any>();
+
+                displayedColumns: string[] = [];
+                dataSource: T[] = [];
+                currentPage = 0;
+                sortField: string = '';
+                sortDir: 'asc' | 'desc' = 'asc';
+
+                ngOnInit() {
+                this.displayedColumns = this.columns.map(c => c.field);
+                this.dataSource = this.data;
+                }
+
+                sortColumn(field: string) {
+                if (this.sortField === field) {
+                this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                this.sortField = field;
+                this.sortDir = 'asc';
+                }
+                this.sortChange.emit({ field, direction: this.sortDir });
+                }
+
+                prevPage() {
+                if (this.currentPage > 0) {
+                this.currentPage--;
+                this.pageChange.emit({ page: this.currentPage });
+                }
+                }
+
+                nextPage() {
+                this.currentPage++;
+                this.pageChange.emit({ page: this.currentPage });
+                }
+
+                hasNextPage(): boolean {
+                return (this.currentPage + 1) * this.pageSize < this.data.length; } get paginatedData(): T[] { if
+                    (!this.paginated) return this.data; const start=this.currentPage * this.pageSize; return
+                    this.data.slice(start, start + this.pageSize); } }

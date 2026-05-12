@@ -568,6 +568,15 @@ class ErrorCode(str, Enum):
     CP18_INVALID_ROUTER_STRATEGY = "MDC-CP18-010"
 
     # =========================================================================
+    # CP19: UI Component Generator Errors
+    # =========================================================================
+    CP19_INVALID_COMPONENT_TYPE = "MDC-CP19-001"
+    CP19_MISSING_FORM_BINDING = "MDC-CP19-002"
+    CP19_EMPTY_TABLE_COLUMNS = "MDC-CP19-003"
+    CP19_INVALID_FIELD_TYPE = "MDC-CP19-004"
+    CP19_SCHEMA_VALIDATION_FAILED = "MDC-CP19-005"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -952,6 +961,11 @@ class MidicoderErrorManager:
         ErrorCode.CP18_EMPTY_ROUTE_COMPONENT: "Route component name không được để trống.",
         ErrorCode.CP18_FRONTEND_PARSE_ERROR: "Lỗi parse YAML frontend config.",
         ErrorCode.CP18_INVALID_ROUTER_STRATEGY: "Router strategy không hợp lệ.",
+        ErrorCode.CP19_INVALID_COMPONENT_TYPE: "Component type không hợp lệ.",
+        ErrorCode.CP19_MISSING_FORM_BINDING: "Form field thiếu binding path.",
+        ErrorCode.CP19_EMPTY_TABLE_COLUMNS: "TableSpec không có columns.",
+        ErrorCode.CP19_INVALID_FIELD_TYPE: "Field type không được hỗ trợ.",
+        ErrorCode.CP19_SCHEMA_VALIDATION_FAILED: "Schema validation giữa form và entity thất bại.",
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",
         ErrorCode.CP53_DUPLICATE_DP_ID: "Domain pack ID trung lap.",
