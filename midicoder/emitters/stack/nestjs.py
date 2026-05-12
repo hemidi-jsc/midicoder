@@ -900,13 +900,9 @@ class BackendNestJSEmitter:
         commands_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            # Sử dụng NestJSCommandEmitter để generate command files
-            from midicoder.dsl.kernel import ProjectionNode
-            
-            # Build Command object từ dict
-            projection_node = ProjectionNode.from_dict(command)
-            command_obj = Command.from_projection_node(projection_node)
-            
+            # Build Command object từ dict (MIR metadata)
+            command_obj = Command.from_dict(command)
+
             # Tạo emitter và emit files
             command_emitter = NestJSCommandEmitter(stack_dir=self.stack_dir)
             emitted_files = command_emitter.emit(command_obj, commands_dir)
