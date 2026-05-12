@@ -1,0 +1,41 @@
+pack:
+  id: "CP17"
+  name: "Business Intelligence & Analytics Generator"
+  internal_id: "cp17-bi-analytics"
+  version: "1.0.0"
+  phase: "P2"
+  category: "analytics"
+  status: "stable"
+  depends_on: ["CP08", "CP15"]
+  definitions_count: 3
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP17"
+    range: "MDC-CP17-001 to MDC-CP17-015"
+  capabilities_provided:
+    - analytics_query
+    - dashboard_build
+    - report_schedule
+  models:
+    - AnalyticsModel
+    - DashboardDefinition
+    - ScheduledReport
+  enums:
+    - AnalyticsSourceType
+    - AggregationType
+    - VisualizationType
+    - ReportFrequency
+    - ReportFormat
+    - SchedulePolicy
+  templates:
+    analytics_query: "fastapi/core/analytics/analytics_service.py.jinja2"
+    dashboard_build: "fastapi/core/analytics/analytics_router.py.jinja2"
+    report_schedule: "nestjs/core/analytics/analytics.service.ts.jinja2"
+  frontend_integration:
+    angular:
+      - AnalyticsWidget
+      - ReportViewer
+    react:
+      - AnalyticsChart
+      - ReportTable
+      - types

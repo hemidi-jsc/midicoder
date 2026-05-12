@@ -1,0 +1,371 @@
+/**
+ * Component ReportTable — hiển thị báo cáo phân tích dưới dạng bảng cho {{ service_name|default('analytics') }}.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Kết nối với API analytics để tải danh sách báo cáo và hiển thị
+ * dữ liệu báo cáo dưới dạng bảng có thể sắp xếp, lọc, và tìm kiếm.
+ */
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Report, ReportRow } from './types';
+
+/**
+ * Props cho ReportTable component.
+ */
+interface ReportTableProps {
+  /** URL cơ sở của API. */
+  apiBaseUrl?: string;
+  /** Khoảng thời gian tự động làm mới (ms). */
+  refreshInterval?: number;
+  /** Callback khi tải xong. */
+  onLoad?: (report: Report) => void;
+}
+
+/**
+ * Hướng sắp xếp.
+ */
+type SortDirection = 'asc' | 'desc' | null;
+
+/**
+ * ReportTable component.
+ *
+ * Hiển thị báo cáo phân tích dưới dạng bảng:
+ * - Chọn báo cáo từ danh sách dropdown
+ * - Hiển thị dữ liệu báo cáo với các cột động
+ * - Sắp xếp theo cột bằng cách nhấp vào tiêu đề
+ * - Tìm kiếm theo nhãn
+ * - Hiển thị thông tin metadata của báo cáo
+ */
+export const ReportTable: React.FC<ReportTableProps> = ({
+  apiBaseUrl = '/api',
+  refreshInterval = 60000,
+  onLoad,
+}) => {
+  // Danh sách báo cáo
+  const [reports, setReports] = useState<Report[]>([]);
+  // Báo cáo hiện tại
+  const [report, setReport] = useState<Report | null>(null);
+  // Tên báo cáo đang chọn
+  const [selectedReportName, setSelectedReportName] = useState<string | null>(null);
+  // Bộ lọc theo nhãn
+  const [filterText, setFilterText] = useState('');
+  // Cột đang sắp xếp
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  // Hướng sắp xếp
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  // Trạng thái tải
+  const [loading, setLoading] = useState(false);
+  // Lỗi nếu có
+  const [error, setError] = useState<Error | null>(null);
+
+  /**
+   * Tải danh sách báo cáo từ API backend.
+   */
+  const loadReports = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/analytics/reports`);
+
+      if (!response.ok) {
+        throw new Error(`Không thể tải báo cáo: ${response.statusText}`);
+      }
+
+      const data: Report[] = await response.json();
+      setReports(data);
+
+      // Tự động chọn báo cáo đầu tiên nếu chưa chọn
+      if (data.length > 0 && !selectedReportName) {
+        setSelectedReportName(data[0].name);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+      console.error('Lỗi khi tải danh sách báo cáo:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBaseUrl, selectedReportName]);
+
+  /**
+   * Tải chi tiết báo cáo theo tên.
+   */
+  const loadReport = useCallback(async (name: string) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/analytics/reports/${name}`);
+
+      if (!response.ok) {
+        throw new Error(`Không thể tải báo cáo ${name}: ${response.statusText}`);
+      }
+
+      const data: Report = await response.json();
+      setReport(data);
+      setFilterText('');
+      setSortColumn(null);
+      setSortDirection(null);
+      onLoad?.(data);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+      console.error('Lỗi khi tải báo cáo:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBaseUrl, onLoad]);
+
+  // Tự động tải danh sách khi mount
+  useEffect(() => {
+    loadReports();
+  }, [loadReports]);
+
+  // Tự động tải báo cáo khi thay đổi selection
+  useEffect(() => {
+    if (selectedReportName) {
+      loadReport(selectedReportName);
+    }
+  }, [selectedReportName, loadReport]);
+
+  // Tự động làm mới dữ liệu
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadReports();
+      if (selectedReportName) {
+        loadReport(selectedReportName);
+      }
+    }, refreshInterval);
+    return () => clearInterval(timer);
+  }, [loadReports, loadReport, selectedReportName, refreshInterval]);
+
+  /**
+   * Xử lý khi thay đổi báo cáo được chọn.
+   */
+  const handleReportChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedReportName(e.target.value || null);
+  }, []);
+
+  /**
+   * Xử lý khi nhấp vào tiêu đề cột để sắp xếp.
+   */
+  const handleSort = useCallback((column: string) => {
+    if (sortColumn === column) {
+      // Chuyển đổi hướng sắp xếp
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else if (sortDirection === 'desc') {
+        setSortColumn(null);
+        setSortDirection(null);
+      }
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  }, [sortColumn, sortDirection]);
+
+  /**
+   * Các hàng đã lọc và sắp xếp.
+   */
+  const filteredRows = useMemo<ReportRow[]>(() => {
+    if (!report) return [];
+
+    let rows = [...report.rows];
+
+    // Lọc theo nhãn
+    if (filterText) {
+      const lower = filterText.toLowerCase();
+      rows = rows.filter((r) => r.label.toLowerCase().includes(lower));
+    }
+
+    // Sắp xếp
+    if (sortColumn && sortDirection) {
+      const col = sortColumn;
+      const dir = sortDirection === 'asc' ? 1 : -1;
+      rows.sort((a, b) => {
+        const va = a.values[col] ?? 0;
+        const vb = b.values[col] ?? 0;
+        return (va - vb) * dir;
+      });
+    }
+
+    return rows;
+  }, [report, filterText, sortColumn, sortDirection]);
+
+  /**
+   * Định dạng giá trị hiển thị.
+   */
+  const formatValue = (value: number): string => {
+    if (Math.abs(value) >= 1000000) {
+      return `${(value / 1000000).toFixed(1)}M`;
+    }
+    if (Math.abs(value) >= 1000) {
+      return `${(value / 1000).toFixed(1)}K`;
+    }
+    return value.toFixed(2);
+  };
+
+  /**
+   * Định dạng thời gian.
+   */
+  const formatTime = (timestamp?: number): string => {
+    if (!timestamp) return '';
+    return new Date(timestamp).toLocaleString('vi-VN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  return (
+    <div className="report-table">
+      {/* Header */}
+      <div className="report-table__header">
+        <h2>Báo Cáo Phân Tích</h2>
+        <div className="report-table__controls">
+          {/* Chọn báo cáo */}
+          <select
+            className="report-table__select"
+            value={selectedReportName || ''}
+            onChange={handleReportChange}
+            disabled={loading || reports.length === 0}
+          >
+            <option value="">-- Chọn báo cáo --</option>
+            {reports.map((r) => (
+              <option key={r.id} value={r.name}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <button
+            className="report-table__btn report-table__btn--refresh"
+            onClick={loadReports}
+            disabled={loading}
+          >
+            Làm mới
+          </button>
+        </div>
+      </div>
+
+      {/* Trạng thái tải */}
+      {loading && !report && (
+        <div className="report-table__loading">Đang tải báo cáo...</div>
+      )}
+
+      {/* Thông báo lỗi */}
+      {error && (
+        <div className="report-table__error">
+          Lỗi: {error.message}
+          <button onClick={() => selectedReportName ? loadReport(selectedReportName) : loadReports()}>
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {/* Chưa chọn báo cáo */}
+      {!loading && !error && !report && reports.length > 0 && (
+        <div className="report-table__empty">
+          Hãy chọn một báo cáo từ danh sách bên trên.
+        </div>
+      )}
+
+      {/* Không có báo cáo */}
+      {!loading && !error && reports.length === 0 && (
+        <div className="report-table__empty">
+          Chưa có báo cáo nào. Hãy tạo báo cáo từ API trước.
+        </div>
+      )}
+
+      {/* Thông tin báo cáo */}
+      {report && (
+        <>
+          <div className="report-table__info">
+            <h3>{report.name}</h3>
+            {report.description && (
+              <p className="report-table__description">{report.description}</p>
+            )}
+            <div className="report-table__meta">
+              <span>Đơn vị: {report.time_grain}</span>
+              {report.start_time && <span>Từ: {formatTime(report.start_time)}</span>}
+              {report.end_time && <span>Đến: {formatTime(report.end_time)}</span>}
+              <span>{report.rows.length} hàng</span>
+            </div>
+          </div>
+
+          {/* Bộ lọc */}
+          <div className="report-table__filter">
+            <input
+              type="text"
+              className="report-table__filter-input"
+              placeholder="Tìm kiếm theo nhãn..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+            />
+            <span className="report-table__filter-count">
+              {filteredRows.length} / {report.rows.length} hàng
+            </span>
+          </div>
+
+          {/* Bảng dữ liệu */}
+          <div className="report-table__wrapper">
+            <table className="report-table__table">
+              <thead>
+                <tr>
+                  <th className="report-table__th report-table__th--label">
+                    Nhãn
+                  </th>
+                  {report.columns.map((col) => (
+                    <th
+                      key={col}
+                      className={`report-table__th report-table__th--sortable ${sortColumn === col ? 'report-table__th--sorted' : ''}`}
+                      onClick={() => handleSort(col)}
+                    >
+                      {col}
+                      {sortColumn === col && (
+                        <span className="report-table__sort-icon">
+                          {sortDirection === 'asc' ? ' ↑' : ' ↓'}
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row, i) => (
+                  <tr key={i}>
+                    <td className="report-table__td report-table__td--label">
+                      {row.label}
+                    </td>
+                    {report.columns.map((col) => (
+                      <td key={col} className="report-table__td report-table__td--value">
+                        {formatValue(row.values[col] ?? 0)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Không có dữ liệu phù hợp */}
+          {!loading && filteredRows.length === 0 && report.rows.length > 0 && (
+            <div className="report-table__empty">
+              Không có dữ liệu phù hợp với bộ lọc.
+            </div>
+          )}
+
+          {/* Không có hàng trong báo cáo */}
+          {!loading && report.rows.length === 0 && (
+            <div className="report-table__empty">
+              Báo cáo này chưa có dữ liệu.
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+export default ReportTable;

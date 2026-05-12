@@ -535,6 +535,25 @@ class ErrorCode(str, Enum):
     CP16_MONITORING_PARSE_ERROR = "MDC-CP16-010"
 
     # =========================================================================
+    # CP17: Business Intelligence & Analytics Generator Errors
+    # =========================================================================
+    CP17_EMPTY_MODEL_NAME = "MDC-CP17-001"
+    CP17_INVALID_AGGREGATION_TYPE = "MDC-CP17-002"
+    CP17_INVALID_REPORT_FREQUENCY = "MDC-CP17-003"
+    CP17_INVALID_VISUALIZATION_TYPE = "MDC-CP17-004"
+    CP17_DATA_FRESHNESS_VIOLATED = "MDC-CP17-005"
+    CP17_DUPLICATE_ANALYTICS_MODEL = "MDC-CP17-006"
+    CP17_EMPTY_REPORT_NAME = "MDC-CP17-007"
+    CP17_INVALID_SOURCE_TYPE = "MDC-CP17-008"
+    CP17_EMPTY_DASHBOARD_NAME = "MDC-CP17-009"
+    CP17_ANALYTICS_PARSE_ERROR = "MDC-CP17-010"
+    CP17_INVALID_STALE_SECONDS = "MDC-CP17-011"
+    CP17_INVALID_REFRESH_INTERVAL = "MDC-CP17-012"
+    CP17_MISSING_NEXT_RUN = "MDC-CP17-013"
+    CP17_INVALID_OUTPUT_FORMAT = "MDC-CP17-014"
+    CP17_DUPLICATE_MODEL_NAME = "MDC-CP17-015"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -899,6 +918,16 @@ class MidicoderErrorManager:
         ErrorCode.CP14_AUDIT_CONTROL_INVALID_TYPE: "Control type không hợp lệ.",
         ErrorCode.CP14_AUDIT_CONTROL_INVALID_ENFORCEMENT: "Enforcement level không hợp lệ.",
         ErrorCode.CP14_AUDIT_HASH_VERIFICATION_FAILED: "Xác minh hash integrity thất bại.",
+        ErrorCode.CP17_EMPTY_MODEL_NAME: "Analytics model name không được để trống.",
+        ErrorCode.CP17_INVALID_SOURCE_TYPE: "Analytics source type không hợp lệ.",
+        ErrorCode.CP17_INVALID_AGGREGATION_TYPE: "Aggregation type không hợp lệ.",
+        ErrorCode.CP17_INVALID_REPORT_FREQUENCY: "Report frequency không hợp lệ.",
+        ErrorCode.CP17_INVALID_VISUALIZATION_TYPE: "Visualization type không hợp lệ.",
+        ErrorCode.CP17_DUPLICATE_MODEL_NAME: "Analytics model name trùng lặp.",
+        ErrorCode.CP17_EMPTY_DASHBOARD_NAME: "Dashboard name không được để trống.",
+        ErrorCode.CP17_EMPTY_REPORT_NAME: "Report name không được để trống.",
+        ErrorCode.CP17_INVALID_OUTPUT_FORMAT: "Report output format không hợp lệ.",
+        ErrorCode.CP17_ANALYTICS_PARSE_ERROR: "Lỗi parse YAML analytics.",
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",
         ErrorCode.CP53_DUPLICATE_DP_ID: "Domain pack ID trung lap.",
@@ -1125,6 +1154,27 @@ class MidicoderErrorManager:
         ErrorCode.CP14_AUDIT_HASH_VERIFICATION_FAILED: [
             "Kiểm tra audit log không bị tamper",
             "Xét lại storage integrity của audit logs",
+        ],
+        ErrorCode.CP17_INVALID_SOURCE_TYPE: [
+            "Kiểm tra source_type nằm trong catalog: metric_registry, database, external_api, custom",
+            "Xem documentation cho supported analytics source types",
+        ],
+        ErrorCode.CP17_INVALID_AGGREGATION_TYPE: [
+            "Kiểm tra aggregation nằm trong catalog: sum, average, max, min, count, percentage",
+            "Xem documentation cho supported aggregation types",
+        ],
+        ErrorCode.CP17_INVALID_REPORT_FREQUENCY: [
+            "Kiểm tra frequency nằm trong catalog: hourly, daily, weekly, monthly",
+            "Xem documentation cho supported report frequencies",
+        ],
+        ErrorCode.CP17_INVALID_VISUALIZATION_TYPE: [
+            "Kiểm tra visualization_type nằm trong catalog: line_chart, bar_chart, pie_chart, table, gauge, heatmap",
+            "Xem documentation cho supported visualization types",
+        ],
+        ErrorCode.CP17_ANALYTICS_PARSE_ERROR: [
+            "Kiểm tra YAML syntax (sử dụng YAML validator online)",
+            "Đảm bảo indentation đúng (2 spaces, không dùng tabs)",
+            "Kiểm tra quotes cho strings có special characters",
         ],
     }
 

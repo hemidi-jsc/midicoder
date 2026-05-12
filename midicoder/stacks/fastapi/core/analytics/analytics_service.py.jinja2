@@ -1,0 +1,608 @@
+"""Dịch vụ analytics cho {{ service_name|default('analytics') }} — thu thập, phân tích, và báo cáo metric doanh nghiệp.
+
+{% if project_name %}
+Dự án: {{ project_name }}
+{% endif %}
+Cung cấp giao diện thống nhất để ghi nhận sự kiện, tính toán KPI,
+và tạo báo cáo theo thời gian thực trong ứng dụng FastAPI.
+"""
+
+from __future__ import annotations
+
+import time
+import uuid
+from collections import defaultdict
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+
+class EventType(str, Enum):
+    """Các loại sự kiện analytics."""
+    PAGE_VIEW = "PAGE_VIEW"
+    CLICK = "CLICK"
+    CONVERSION = "CONVERSION"
+    REVENUE = "REVENUE"
+    ERROR = "ERROR"
+    CUSTOM = "CUSTOM"
+
+
+class AggregationType(str, Enum):
+    """Các loại tổng hợp metric."""
+    SUM = "SUM"
+    AVG = "AVG"
+    COUNT = "COUNT"
+    MIN = "MIN"
+    MAX = "MAX"
+    PERCENTILE = "PERCENTILE"
+
+
+class TimeGrain(str, Enum):
+    """Đơn vị thời gian cho báo cáo."""
+    MINUTE = "MINUTE"
+    HOUR = "HOUR"
+    DAY = "DAY"
+    WEEK = "WEEK"
+    MONTH = "MONTH"
+
+
+@dataclass
+class AnalyticsEvent:
+    """Một sự kiện analytics — đại diện cho hành động của người dùng hoặc hệ thống."""
+    id: str
+    event_type: EventType
+    entity_id: str  # user_id, session_id, hoặc order_id
+    properties: Dict[str, Any] = field(default_factory=dict)
+    timestamp: float = field(default_factory=time.time)
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
+    metadata: Dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = str(uuid.uuid4())
+
+
+@dataclass
+class KPIDefinition:
+    """Định nghĩa chỉ số KPI — tên, công thức tính toán, và ngưỡng."""
+    name: str
+    metric: str
+    aggregation: AggregationType
+    filter_properties: Dict[str, Any] = field(default_factory=dict)
+    target: Optional[float] = None
+    unit: str = ""
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.description:
+            self.description = f"KPI: {self.name} ({self.aggregation.value} of {self.metric})"
+
+
+@dataclass
+class KPIResult:
+    """Kết quả tính toán KPI."""
+    name: str
+    current_value: float
+    target: Optional[float]
+    unit: str
+    healthy: bool
+    change_percent: float  # so với chu kỳ trước
+    samples: int
+    computed_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class ReportRow:
+    """Một hàng dữ liệu trong báo cáo."""
+    label: str
+    values: Dict[str, float] = field(default_factory=dict)
+    timestamp: Optional[float] = None
+
+
+@dataclass
+class Report:
+    """Báo cáo phân tích — chứa tiêu đề, metadata, và hàng dữ liệu."""
+    id: str
+    name: str
+    description: str = ""
+    rows: List[ReportRow] = field(default_factory=list)
+    columns: List[str] = field(default_factory=list)
+    time_grain: TimeGrain = TimeGrain.DAY
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    created_at: float = field(default_factory=time.time)
+
+
+class EventCollector:
+    """Bộ thu thập sự kiện — lưu trữ và truy vấn sự kiện analytics."""
+
+    def __init__(self, max_events: int = 10000) -> None:
+        """Khởi tạo EventCollector với giới hạn số lượng sự kiện tối đa.
+
+        Args:
+            max_events: Số lượng sự kiện tối đa để lưu trữ.
+        """
+        self._max_events = max_events
+        self._events: List[AnalyticsEvent] = []
+        self._event_index: Dict[str, List[int]] = defaultdict(list)  # event_type -> indices
+
+    def record(self, event: AnalyticsEvent) -> None:
+        """Ghi nhận một sự kiện analytics mới.
+
+        Args:
+            event: Sự kiện cần ghi nhận.
+        """
+        if len(self._events) >= self._max_events:
+            # Loại bỏ 10% sự kiện cũ nhất khi đạt giới hạn
+            remove_count = max(1, self._max_events // 10)
+            self._events = self._events[remove_count:]
+            self._rebuild_index()
+
+        idx = len(self._events)
+        self._events.append(event)
+        self._event_index[event.event_type.value].append(idx)
+
+    def get_events(
+        self,
+        event_type: Optional[EventType] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+        limit: int = 100,
+    ) -> List[AnalyticsEvent]:
+        """Lấy danh sách sự kiện với bộ lọc.
+
+        Args:
+            event_type: Lọc theo loại sự kiện.
+            user_id: Lọc theo ID người dùng.
+            session_id: Lọc theo ID phiên.
+            start_time: Thời gian bắt đầu (epoch).
+            end_time: Thời gian kết thúc (epoch).
+            limit: Số lượng sự kiện tối đa.
+
+        Returns:
+            Danh sách sự kiện đã lọc.
+        """
+        candidates = self._events
+        if event_type:
+            indices = self._event_index.get(event_type.value, [])
+            candidates = [self._events[i] for i in indices if i < len(self._events)]
+
+        results = []
+        for e in candidates:
+            if user_id and e.user_id != user_id:
+                continue
+            if session_id and e.session_id != session_id:
+                continue
+            if start_time and e.timestamp < start_time:
+                continue
+            if end_time and e.timestamp > end_time:
+                continue
+            results.append(e)
+            if len(results) >= limit:
+                break
+
+        return results
+
+    def count_events(
+        self,
+        event_type: Optional[EventType] = None,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+    ) -> int:
+        """Đếm số lượng sự kiện trong khoảng thời gian.
+
+        Args:
+            event_type: Lọc theo loại sự kiện.
+            start_time: Thời gian bắt đầu (epoch).
+            end_time: Thời gian kết thúc (epoch).
+
+        Returns:
+            Số lượng sự kiện.
+        """
+        events = self.get_events(event_type=event_type, start_time=start_time, end_time=end_time, limit=999999)
+        return len(events)
+
+    def _rebuild_index(self) -> None:
+        """Xây dựng lại chỉ mục sự kiện sau khi xóa."""
+        self._event_index.clear()
+        for i, event in enumerate(self._events):
+            self._event_index[event.event_type.value].append(i)
+
+
+class KPIEngine:
+    """Động cơ tính toán KPI — định nghĩa và tính toán chỉ số hiệu suất."""
+
+    def __init__(self) -> None:
+        """Khởi tạo KPIEngine."""
+        self._definitions: Dict[str, KPIDefinition] = {}
+        self._history: Dict[str, List[float]] = defaultdict(list)
+
+    def add_definition(self, kpi: KPIDefinition) -> None:
+        """Thêm định nghĩa KPI mới.
+
+        Args:
+            kpi: Định nghĩa KPI cần thêm.
+        """
+        self._definitions[kpi.name] = kpi
+
+    def compute_all(
+        self,
+        collector: EventCollector,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+    ) -> List[KPIResult]:
+        """Tính toán tất cả KPI dựa trên sự kiện thu thập được.
+
+        Args:
+            collector: Bộ thu thập sự kiện để trích xuất dữ liệu.
+            start_time: Thời gian bắt đầu (epoch).
+            end_time: Thời gian kết thúc (epoch).
+
+        Returns:
+            Danh sách kết quả KPI.
+        """
+        results: List[KPIResult] = []
+        now = time.time()
+
+        for name, kpi in self._definitions.items():
+            # Lấy sự kiện liên quan đến metric này
+            events = collector.get_events(
+                event_type=EventType(kpi.metric) if kpi.metric in EventType.__members__ else None,
+                start_time=start_time,
+                end_time=end_time,
+                limit=999999,
+            )
+
+            # Trích xuất giá trị số từ properties
+            values: List[float] = []
+            for event in events:
+                value = event.properties.get("value")
+                if value is not None and isinstance(value, (int, float)):
+                    # Áp dụng filter_properties
+                    match = all(
+                        event.properties.get(k) == v
+                        for k, v in kpi.filter_properties.items()
+                    )
+                    if match:
+                        values.append(float(value))
+
+            # Tính toán theo loại tổng hợp
+            current = self._aggregate(values, kpi.aggregation)
+            previous = self._get_previous_value(name, current)
+
+            self._history[name].append(current)
+
+            change_pct = 0.0
+            if previous and previous != 0:
+                change_pct = ((current - previous) / previous) * 100
+
+            healthy = True
+            if kpi.target is not None:
+                healthy = current >= kpi.target
+
+            results.append(KPIResult(
+                name=name,
+                current_value=current,
+                target=kpi.target,
+                unit=kpi.unit,
+                healthy=healthy,
+                change_percent=round(change_pct, 2),
+                samples=len(values),
+            ))
+
+        return results
+
+    def get_definitions(self) -> List[KPIDefinition]:
+        """Lấy tất cả định nghĩa KPI.
+
+        Returns:
+            Danh sách định nghĩa KPI.
+        """
+        return list(self._definitions.values())
+
+    @staticmethod
+    def _aggregate(values: List[float], agg_type: AggregationType) -> float:
+        """Tính toán giá trị tổng hợp.
+
+        Args:
+            values: Danh sách giá trị cần tổng hợp.
+            agg_type: Loại tổng hợp.
+
+        Returns:
+            Giá trị tổng hợp.
+        """
+        if not values:
+            return 0.0
+
+        if agg_type == AggregationType.SUM:
+            return sum(values)
+        elif agg_type == AggregationType.AVG:
+            return sum(values) / len(values)
+        elif agg_type == AggregationType.COUNT:
+            return float(len(values))
+        elif agg_type == AggregationType.MIN:
+            return min(values)
+        elif agg_type == AggregationType.MAX:
+            return max(values)
+        elif agg_type == AggregationType.PERCENTILE:
+            sorted_vals = sorted(values)
+            idx = int(len(sorted_vals) * 0.95)
+            return sorted_vals[min(idx, len(sorted_vals) - 1)]
+
+        return 0.0
+
+    def _get_previous_value(self, name: str, current: float) -> Optional[float]:
+        """Lấy giá trị trước đó của KPI để tính phần trăm thay đổi.
+
+        Args:
+            name: Tên của KPI.
+            current: Giá trị hiện tại.
+
+        Returns:
+            Giá trị trước đó hoặc None.
+        """
+        history = self._history.get(name, [])
+        if len(history) >= 2:
+            return history[-2]
+        return current if history else None
+
+
+class ReportBuilder:
+    """Trình tạo báo cáo — xây dựng báo cáo từ sự kiện analytics."""
+
+    def __init__(self) -> None:
+        """Khởi tạo ReportBuilder."""
+        self._reports: Dict[str, Report] = {}
+
+    def build(
+        self,
+        name: str,
+        collector: EventCollector,
+        event_type: EventType,
+        group_by: str,
+        time_grain: TimeGrain = TimeGrain.DAY,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+        description: str = "",
+    ) -> Report:
+        """Xây dựng báo cáo từ sự kiện đã thu thập.
+
+        Args:
+            name: Tên duy nhất của báo cáo.
+            collector: Bộ thu thập sự kiện.
+            event_type: Loại sự kiện cần báo cáo.
+            group_by: Thuộc tính để nhóm dữ liệu (ví dụ: "page", "category").
+            time_grain: Đơn vị thời gian.
+            start_time: Thời gian bắt đầu (epoch).
+            end_time: Thời gian kết thúc (epoch).
+            description: Mô tả báo cáo.
+
+        Returns:
+            Báo cáo đã xây dựng.
+        """
+        events = collector.get_events(
+            event_type=event_type,
+            start_time=start_time,
+            end_time=end_time,
+            limit=999999,
+        )
+
+        # Nhóm sự kiện theo thuộc tính group_by
+        groups: Dict[str, List[AnalyticsEvent]] = defaultdict(list)
+        for event in events:
+            key = str(event.properties.get(group_by, "unknown"))
+            groups[key].append(event)
+
+        # Tạo hàng dữ liệu
+        rows: List[ReportRow] = []
+        columns = ["count", "total_value"]
+        for label, group_events in sorted(groups.items()):
+            total = sum(
+                e.properties.get("value", 0)
+                for e in group_events
+                if isinstance(e.properties.get("value"), (int, float))
+            )
+            rows.append(ReportRow(
+                label=label,
+                values={"count": float(len(group_events)), "total_value": total},
+            ))
+
+        report = Report(
+            id=str(uuid.uuid4()),
+            name=name,
+            description=description or f"Báo cáo {event_type.value} theo {group_by}",
+            rows=rows,
+            columns=columns,
+            time_grain=time_grain,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        self._reports[name] = report
+        return report
+
+    def get_report(self, name: str) -> Optional[Report]:
+        """Lấy báo cáo theo tên.
+
+        Args:
+            name: Tên của báo cáo.
+
+        Returns:
+            Báo cáo nếu tìm thấy, ngược lại None.
+        """
+        return self._reports.get(name)
+
+    def list_reports(self) -> List[Report]:
+        """Lấy tất cả báo cáo.
+
+        Returns:
+            Danh sách tất cả báo cáo.
+        """
+        return list(self._reports.values())
+
+
+class AnalyticsService:
+    """Dịch vụ chính cho analytics — tích hợp thu thập sự kiện, tính toán KPI, và tạo báo cáo.
+
+    Cung cấp giao diện thống nhất để ghi nhận hành vi người dùng,
+    tính toán chỉ số hiệu suất, và tạo báo cáo phân tích trong ứng dụng FastAPI.
+    """
+
+    def __init__(self, max_events: int = 10000) -> None:
+        """Khởi tạo AnalyticsService với các thành phần con.
+
+        Args:
+            max_events: Số lượng sự kiện tối đa để lưu trữ.
+        """
+        self.event_collector = EventCollector(max_events)
+        self.kpi_engine = KPIEngine()
+        self.report_builder = ReportBuilder()
+
+    def track_event(
+        self,
+        event_type: EventType,
+        entity_id: str,
+        properties: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> AnalyticsEvent:
+        """Ghi nhận một sự kiện analytics.
+
+        Args:
+            event_type: Loại sự kiện.
+            entity_id: ID của thực thể (người dùng, phiên, đơn hàng).
+            properties: Các thuộc tính đi kèm sự kiện.
+            session_id: ID của phiên người dùng.
+            user_id: ID của người dùng.
+            metadata: Metadata bổ sung.
+
+        Returns:
+            Sự kiện đã được ghi nhận.
+        """
+        event = AnalyticsEvent(
+            id="",
+            event_type=event_type,
+            entity_id=entity_id,
+            properties=properties or {},
+            session_id=session_id,
+            user_id=user_id,
+            metadata=metadata or {},
+        )
+        self.event_collector.record(event)
+        return event
+
+    def get_events(
+        self,
+        event_type: Optional[EventType] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+        limit: int = 100,
+    ) -> List[AnalyticsEvent]:
+        """Lấy danh sách sự kiện với bộ lọc.
+
+        Args:
+            event_type: Lọc theo loại sự kiện.
+            user_id: Lọc theo ID người dùng.
+            session_id: Lọc theo ID phiên.
+            start_time: Thời gian bắt đầu (epoch).
+            end_time: Thời gian kết thúc (epoch).
+            limit: Số lượng sự kiện tối đa.
+
+        Returns:
+            Danh sách sự kiện đã lọc.
+        """
+        return self.event_collector.get_events(
+            event_type=event_type,
+            user_id=user_id,
+            session_id=session_id,
+            start_time=start_time,
+            end_time=end_time,
+            limit=limit,
+        )
+
+    def compute_kpis(
+        self,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+    ) -> List[KPIResult]:
+        """Tính toán tất cả KPI đã định nghĩa.
+
+        Args:
+            start_time: Thời gian bắt đầu (epoch).
+            end_time: Thời gian kết thúc (epoch).
+
+        Returns:
+            Danh sách kết quả KPI.
+        """
+        return self.kpi_engine.compute_all(
+            self.event_collector,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+    def add_kpi(self, kpi: KPIDefinition) -> None:
+        """Thêm định nghĩa KPI mới.
+
+        Args:
+            kpi: Định nghĩa KPI cần thêm.
+        """
+        self.kpi_engine.add_definition(kpi)
+
+    def build_report(
+        self,
+        name: str,
+        event_type: EventType,
+        group_by: str,
+        time_grain: TimeGrain = TimeGrain.DAY,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+        description: str = "",
+    ) -> Report:
+        """Xây dựng báo cáo phân tích.
+
+        Args:
+            name: Tên duy nhất của báo cáo.
+            event_type: Loại sự kiện cần báo cáo.
+            group_by: Thuộc tính để nhóm dữ liệu.
+            time_grain: Đơn vị thời gian.
+            start_time: Thời gian bắt đầu (epoch).
+            end_time: Thời gian kết thúc (epoch).
+            description: Mô tả báo cáo.
+
+        Returns:
+            Báo cáo đã xây dựng.
+        """
+        return self.report_builder.build(
+            name=name,
+            collector=self.event_collector,
+            event_type=event_type,
+            group_by=group_by,
+            time_grain=time_grain,
+            start_time=start_time,
+            end_time=end_time,
+            description=description,
+        )
+
+    def get_report(self, name: str) -> Optional[Report]:
+        """Lấy báo cáo theo tên.
+
+        Args:
+            name: Tên của báo cáo.
+
+        Returns:
+            Báo cáo nếu tìm thấy, ngược lại None.
+        """
+        return self.report_builder.get_report(name)
+
+    def list_reports(self) -> List[Report]:
+        """Lấy tất cả báo cáo.
+
+        Returns:
+            Danh sách tất cả báo cáo.
+        """
+        return self.report_builder.list_reports()

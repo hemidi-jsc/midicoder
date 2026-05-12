@@ -1,0 +1,376 @@
+/**
+ * Component AnalyticsChart — hiển thị biểu đồ KPI cho {{ service_name|default('analytics') }}.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Kết nối với API analytics để tải danh sách KPI và hiển thị
+ * dưới dạng biểu đồ cột hoặc đường với khả năng chuyển đổi loại biểu đồ.
+ */
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { KPIResult, ChartDataPoint, KPI_STATUS_COLORS } from './types';
+
+/**
+ * Props cho AnalyticsChart component.
+ */
+interface AnalyticsChartProps {
+  /** URL cơ sở của API. */
+  apiBaseUrl?: string;
+  /** Khoảng thời gian tự động làm mới (ms). */
+  refreshInterval?: number;
+  /** Callback khi tải xong. */
+  onLoad?: (kpis: KPIResult[]) => void;
+}
+
+/**
+ * Loại biểu đồ.
+ */
+type ChartType = 'bar' | 'line' | 'area';
+
+/**
+ * AnalyticsChart component.
+ *
+ * Hiển thị KPI dưới dạng biểu đồ:
+ * - Biểu đồ cột (bar), đường (line), hoặc diện tích (area)
+ * - Chuyển đổi loại biểu đồ bằng nút toggle
+ * - Màu sắc theo trạng thái sức khỏe (xanh = đạt, đỏ = chưa đạt)
+ * - Hiển thị giá trị mục tiêu dưới dạng ngưỡng
+ * - Tự động làm mới dữ liệu theo khoảng thời gian
+ */
+export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
+  apiBaseUrl = '/api',
+  refreshInterval = 30000,
+  onLoad,
+}) => {
+  // Danh sách KPI
+  const [kpis, setKpis] = useState<KPIResult[]>([]);
+  // Trạng thái tải
+  const [loading, setLoading] = useState(false);
+  // Lỗi nếu có
+  const [error, setError] = useState<Error | null>(null);
+  // Loại biểu đồ hiện tại
+  const [chartType, setChartType] = useState<ChartType>('bar');
+
+  /**
+   * Tải danh sách KPI từ API backend.
+   */
+  const loadKPIs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/analytics/kpis`);
+
+      if (!response.ok) {
+        throw new Error(`Không thể tải KPI: ${response.statusText}`);
+      }
+
+      const data: KPIResult[] = await response.json();
+      setKpis(data);
+      onLoad?.(data);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+      console.error('Lỗi khi tải KPI:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBaseUrl, onLoad]);
+
+  // Tự động tải khi mount
+  useEffect(() => {
+    loadKPIs();
+  }, [loadKPIs]);
+
+  // Tự động làm mới dữ liệu
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadKPIs();
+    }, refreshInterval);
+    return () => clearInterval(timer);
+  }, [loadKPIs, refreshInterval]);
+
+  /**
+   * Chuyển đổi loại biểu đồ.
+   */
+  const cycleChartType = useCallback(() => {
+    setChartType((prev) => {
+      if (prev === 'bar') return 'line';
+      if (prev === 'line') return 'area';
+      return 'bar';
+    });
+  }, []);
+
+  /**
+   * Dữ liệu điểm cho biểu đồ từ danh sách KPI.
+   */
+  const chartData = useMemo<ChartDataPoint[]>(() => {
+    return kpis.map((kpi) => ({
+      label: kpi.name,
+      value: kpi.current_value,
+      color: kpi.healthy
+        ? KPI_STATUS_COLORS.healthy
+        : KPI_STATUS_COLORS.unhealthy,
+    }));
+  }, [kpis]);
+
+  /**
+   * Giá trị tối đa để tính tỷ lệ hiển thị.
+   */
+  const maxValue = useMemo(() => {
+    if (!chartData.length) return 100;
+    const maxFromData = Math.max(...chartData.map((d) => d.value));
+    // Lấy max giữa giá trị thực và mục tiêu
+    const maxTarget = Math.max(...kpis.map((k) => k.target ?? 0));
+    return Math.max(maxFromData, maxTarget, 1);
+  }, [chartData, kpis]);
+
+  /**
+   * Định dạng giá trị hiển thị.
+   */
+  const formatValue = (value: number): string => {
+    if (Math.abs(value) >= 1000000) {
+      return `${(value / 1000000).toFixed(1)}M`;
+    }
+    if (Math.abs(value) >= 1000) {
+      return `${(value / 1000).toFixed(1)}K`;
+    }
+    return value.toFixed(2);
+  };
+
+  return (
+    <div className="analytics-chart">
+      {/* Header */}
+      <div className="analytics-chart__header">
+        <h2>Biểu Đồ KPI</h2>
+        <div className="analytics-chart__controls">
+          <button
+            className="analytics-chart__btn analytics-chart__btn--type"
+            onClick={cycleChartType}
+            title={`Loại biểu đồ hiện tại: ${chartType}`}
+          >
+            Biểu đồ: {chartType === 'bar' ? 'Cột' : chartType === 'line' ? 'Đường' : 'Diện tích'}
+          </button>
+          <button
+            className="analytics-chart__btn analytics-chart__btn--refresh"
+            onClick={loadKPIs}
+            disabled={loading}
+          >
+            {loading ? 'Đang tải...' : 'Làm mới'}
+          </button>
+        </div>
+      </div>
+
+      {/* Trạng thái tải */}
+      {loading && !kpis.length && (
+        <div className="analytics-chart__loading">Đang tải dữ liệu KPI...</div>
+      )}
+
+      {/* Thông báo lỗi */}
+      {error && (
+        <div className="analytics-chart__error">
+          Lỗi: {error.message}
+          <button onClick={loadKPIs}>Thử lại</button>
+        </div>
+      )}
+
+      {/* Không có dữ liệu */}
+      {!loading && !error && kpis.length === 0 && (
+        <div className="analytics-chart__empty">
+          Chưa có KPI nào được định nghĩa.
+        </div>
+      )}
+
+      {/* Biểu đồ */}
+      {!loading && kpis.length > 0 && (
+        <div className="analytics-chart__container">
+          {/* Trục Y - nhãn giá trị */}
+          <div className="analytics-chart__y-axis">
+            <span>{formatValue(maxValue)}</span>
+            <span>{formatValue(maxValue * 0.75)}</span>
+            <span>{formatValue(maxValue * 0.5)}</span>
+            <span>{formatValue(maxValue * 0.25)}</span>
+            <span>{formatValue(0)}</span>
+          </div>
+
+          {/* Khu vực biểu đồ */}
+          <div className="analytics-chart__plot">
+            {/* Đường lưới ngang */}
+            <div className="analytics-chart__grid">
+              <div className="analytics-chart__grid-line" style={{ top: '0%' }} />
+              <div className="analytics-chart__grid-line" style={{ top: '25%' }} />
+              <div className="analytics-chart__grid-line" style={{ top: '50%' }} />
+              <div className="analytics-chart__grid-line" style={{ top: '75%' }} />
+              <div className="analytics-chart__grid-line" style={{ top: '100%' }} />
+            </div>
+
+            {/* Dữ liệu biểu đồ */}
+            {chartType === 'bar' && (
+              <div className="analytics-chart__bars">
+                {chartData.map((point, i) => {
+                  const heightPercent = maxValue > 0 ? (point.value / maxValue) * 100 : 0;
+                  return (
+                    <div
+                      key={i}
+                      className="analytics-chart__bar-wrapper"
+                      title={`${point.label}: ${formatValue(point.value)}`}
+                    >
+                      {/* Thanh mục tiêu */}
+                      {kpis[i]?.target !== null && (
+                        <div
+                          className="analytics-chart__target-line"
+                          style={{
+                            bottom: `${maxValue > 0 ? (kpis[i].target / maxValue) * 100 : 0}%`,
+                          }}
+                          title={`Mục tiêu: ${formatValue(kpis[i].target)}`}
+                        />
+                      )}
+                      {/* Thanh giá trị */}
+                      <div
+                        className="analytics-chart__bar"
+                        style={{
+                          height: `${heightPercent}%`,
+                          backgroundColor: point.color,
+                        }}
+                      >
+                        <span className="analytics-chart__bar-value">
+                          {formatValue(point.value)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Biểu đồ đường / diện tích */}
+            {(chartType === 'line' || chartType === 'area') && (
+              <svg
+                className="analytics-chart__svg"
+                viewBox={`0 0 ${chartData.length * 80 + 40} 300`}
+                preserveAspectRatio="none"
+              >
+                {/* Grid lines */}
+                {[0, 0.25, 0.5, 0.75, 1].map((pct, i) => (
+                  <line
+                    key={i}
+                    x1="0"
+                    y1={300 * pct}
+                    x2={chartData.length * 80 + 40}
+                    y2={300 * pct}
+                    stroke="#e0e0e0"
+                    strokeDasharray="4,4"
+                  />
+                ))}
+
+                {/* Area fill */}
+                {chartType === 'area' && (
+                  <path
+                    d={chartData
+                      .map((point, i) => {
+                        const x = 20 + i * 80;
+                        const y = maxValue > 0 ? 300 - (point.value / maxValue) * 300 : 300;
+                        return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+                      })
+                      .join(' ') + ` L ${20 + (chartData.length - 1) * 80} 300 L 20 300 Z`}
+                    fill="rgba(33, 150, 243, 0.15)"
+                  />
+                )}
+
+                {/* Line path */}
+                <path
+                  d={chartData
+                    .map((point, i) => {
+                      const x = 20 + i * 80;
+                      const y = maxValue > 0 ? 300 - (point.value / maxValue) * 300 : 300;
+                      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+                    })
+                    .join(' ')}
+                  fill="none"
+                  stroke="#2196f3"
+                  strokeWidth="2"
+                />
+
+                {/* Data points */}
+                {chartData.map((point, i) => {
+                  const x = 20 + i * 80;
+                  const y = maxValue > 0 ? 300 - (point.value / maxValue) * 300 : 300;
+                  return (
+                    <g key={i}>
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="4"
+                        fill={point.color || '#2196f3'}
+                      />
+                      {/* Label */}
+                      <text
+                        x={x}
+                        y={y - 10}
+                        textAnchor="middle"
+                        fontSize="11"
+                        fill="#333"
+                      >
+                        {formatValue(point.value)}
+                      </text>
+                      {/* Name */}
+                      <text
+                        x={x}
+                        y={295}
+                        textAnchor="middle"
+                        fontSize="10"
+                        fill="#666"
+                      >
+                        {point.label}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Danh sách KPI chi tiết bên dưới */}
+      {!loading && kpis.length > 0 && (
+        <div className="analytics-chart__details">
+          {kpis.map((kpi) => (
+            <div
+              key={kpi.name}
+              className={`analytics-chart__kpi-item analytics-chart__kpi-item--${kpi.healthy ? 'healthy' : 'unhealthy'}`}
+            >
+              <div className="analytics-chart__kpi-header">
+                <span className="analytics-chart__kpi-name">{kpi.name}</span>
+                <span
+                  className="analytics-chart__kpi-change"
+                  style={{
+                    color: kpi.change_percent >= 0 ? KPI_STATUS_COLORS.healthy : KPI_STATUS_COLORS.unhealthy,
+                  }}
+                >
+                  {kpi.change_percent >= 0 ? '+' : ''}
+                  {kpi.change_percent.toFixed(1)}%
+                </span>
+              </div>
+              <div className="analytics-chart__kpi-body">
+                <span className="analytics-chart__kpi-value">
+                  {formatValue(kpi.current_value)}
+                  {kpi.unit ? ` ${kpi.unit}` : ''}
+                </span>
+                {kpi.target !== null && (
+                  <span className="analytics-chart__kpi-target">
+                    / {formatValue(kpi.target)}
+                  </span>
+                )}
+                <span className="analytics-chart__kpi-samples">
+                  ({kpi.samples} mẫu)
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default AnalyticsChart;

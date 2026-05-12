@@ -1,0 +1,230 @@
+/**
+ * Controller analytics — endpoint REST cho sự kiện, KPI, và báo cáo phân tích.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Cung cấp API cho phía client để ghi nhận sự kiện, truy vấn KPI,
+ * và tải báo cáo phân tích.
+ */
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+} from '@nestjs/common';
+import {
+  AnalyticsService,
+  AnalyticsEvent,
+  KPIDefinition,
+  KPIResult,
+  Report,
+  EventType,
+  TimeGrain,
+  AggregationType,
+} from './analytics.service';
+
+/**
+ * DTO cho việc ghi nhận sự kiện.
+ */
+export interface TrackEventDto {
+  /** Loại sự kiện. */
+  event_type: string;
+  /** ID của thực thể. */
+  entity_id: string;
+  /** Các thuộc tính đi kèm. */
+  properties?: Record<string, any>;
+  /** ID phiên người dùng. */
+  session_id?: string;
+  /** ID người dùng. */
+  user_id?: string;
+  /** Metadata bổ sung. */
+  metadata?: Record<string, string>;
+}
+
+/**
+ * DTO cho định nghĩa KPI.
+ */
+export interface AddKPIDefinitionDto {
+  /** Tên duy nhất của KPI. */
+  name: string;
+  /** Tên metric cần tính toán. */
+  metric: string;
+  /** Loại tổng hợp. */
+  aggregation: string;
+  /** Bộ lọc thuộc tính. */
+  filter_properties?: Record<string, any>;
+  /** Ngưỡng mục tiêu. */
+  target?: number;
+  /** Đơn vị đo lường. */
+  unit?: string;
+  /** Mô tả KPI. */
+  description?: string;
+}
+
+/**
+ * DTO cho việc xây dựng báo cáo.
+ */
+export interface BuildReportDto {
+  /** Tên duy nhất của báo cáo. */
+  name: string;
+  /** Loại sự kiện cần báo cáo. */
+  event_type: string;
+  /** Thuộc tính để nhóm dữ liệu. */
+  group_by: string;
+  /** Đơn vị thời gian. */
+  time_grain?: string;
+  /** Thời gian bắt đầu (ms epoch). */
+  start_time?: number;
+  /** Thời gian kết thúc (ms epoch). */
+  end_time?: number;
+  /** Mô tả báo cáo. */
+  description?: string;
+}
+
+/**
+ * Controller cho endpoint analytics.
+ *
+ * Quản lý các route REST để ghi nhận sự kiện,
+ * tính toán KPI, và tạo/truy vấn báo cáo phân tích.
+ */
+@Controller('analytics')
+export class AnalyticsController {
+  constructor(private readonly analytics: AnalyticsService) {}
+
+  /**
+   * Ghi nhận một sự kiện analytics mới.
+   *
+   * @param dto - Thông tin sự kiện.
+   * @returns Sự kiện đã ghi nhận.
+   */
+  @Post('events')
+  trackEvent(@Body() dto: TrackEventDto): AnalyticsEvent {
+    return this.analytics.trackEvent(
+      dto.event_type as EventType,
+      dto.entity_id,
+      dto.properties || {},
+      dto.session_id,
+      dto.user_id,
+      dto.metadata || {},
+    );
+  }
+
+  /**
+   * Lấy danh sách sự kiện với bộ lọc.
+   *
+   * @param eventType - Lọc theo loại sự kiện.
+   * @param userId - Lọc theo ID người dùng.
+   * @param sessionId - Lọc theo ID phiên.
+   * @param startTime - Thời gian bắt đầu.
+   * @param endTime - Thời gian kết thúc.
+   * @param limit - Số lượng tối đa.
+   * @returns Mảng sự kiện.
+   */
+  @Get('events')
+  getEvents(
+    @Query('event_type') eventType?: string,
+    @Query('user_id') userId?: string,
+    @Query('session_id') sessionId?: string,
+    @Query('start_time') startTime?: number,
+    @Query('end_time') endTime?: number,
+    @Query('limit') limit?: number,
+  ): AnalyticsEvent[] {
+    return this.analytics.getEvents({
+      eventType: eventType as EventType,
+      userId,
+      sessionId,
+      startTime,
+      endTime,
+      limit,
+    });
+  }
+
+  /**
+   * Tính toán và trả về tất cả KPI đã định nghĩa.
+   *
+   * @param startTime - Thời gian bắt đầu.
+   * @param endTime - Thời gian kết thúc.
+   * @returns Mảng kết quả KPI.
+   */
+  @Get('kpis')
+  getKPIs(
+    @Query('start_time') startTime?: number,
+    @Query('end_time') endTime?: number,
+  ): KPIResult[] {
+    return this.analytics.computeKPIs(startTime, endTime);
+  }
+
+  /**
+   * Thêm định nghĩa KPI mới.
+   *
+   * @param dto - Thông tin định nghĩa KPI.
+   * @returns Định nghĩa KPI đã thêm.
+   */
+  @Post('kpis/definitions')
+  addKPIDefinition(@Body() dto: AddKPIDefinitionDto): KPIDefinition {
+    const kpi: KPIDefinition = {
+      name: dto.name,
+      metric: dto.metric,
+      aggregation: dto.aggregation as AggregationType,
+      filterProperties: dto.filter_properties || {},
+      target: dto.target,
+      unit: dto.unit || '',
+      description: dto.description || `KPI: ${dto.name}`,
+    };
+    this.analytics.addKPIDefinition(kpi);
+    return kpi;
+  }
+
+  /**
+   * Lấy tất cả định nghĩa KPI.
+   *
+   * @returns Mảng định nghĩa KPI.
+   */
+  @Get('kpis/definitions')
+  listKPIDefinitions(): KPIDefinition[] {
+    return this.analytics.getKPIDefinitions();
+  }
+
+  /**
+   * Liệt kê tất cả báo cáo đã tạo.
+   *
+   * @returns Mảng báo cáo.
+   */
+  @Get('reports')
+  listReports(): Report[] {
+    return this.analytics.listReports();
+  }
+
+  /**
+   * Lấy thông tin chi tiết của một báo cáo.
+   *
+   * @param name - Tên của báo cáo.
+   * @returns Báo cáo nếu tìm thấy, ngược lại undefined.
+   */
+  @Get('reports/:name')
+  getReport(@Param('name') name: string): Report | undefined {
+    return this.analytics.getReport(name);
+  }
+
+  /**
+   * Xây dựng báo cáo phân tích mới.
+   *
+   * @param dto - Thông tin báo cáo.
+   * @returns Báo cáo đã xây dựng.
+   */
+  @Post('reports')
+  buildReport(@Body() dto: BuildReportDto): Report {
+    return this.analytics.buildReport(
+      dto.name,
+      dto.event_type as EventType,
+      dto.group_by,
+      (dto.time_grain || 'DAY') as TimeGrain,
+      dto.start_time,
+      dto.end_time,
+      dto.description || '',
+    );
+  }
+}

@@ -1,0 +1,380 @@
+/**
+ * Component widget analytics — hiển thị KPI và sự kiện gần đây cho {{ service_name|default('analytics') }}.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Kết nối với API analytics để tải danh sách KPI và hiển thị
+ * giá trị chỉ số, trạng thái sức khỏe, và phần trăm thay đổi.
+ */
+import { Component, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { Subscription } from 'rxjs';
+
+/**
+ * Màu sắc tương ứng với trạng thái KPI.
+ */
+const KPI_COLORS: Record<'healthy' | 'unhealthy', string> = {
+  healthy: '#4caf50',
+  unhealthy: '#f44336',
+};
+
+/**
+ * Kết quả KPI từ API backend.
+ */
+export interface KPIResult {
+  /** Tên của KPI. */
+  name: string;
+  /** Giá trị hiện tại. */
+  current_value: number;
+  /** Ngưỡng mục tiêu. */
+  target: number | null;
+  /** Đơn vị đo lường. */
+  unit: string;
+  /** Có đạt mục tiêu hay không. */
+  healthy: boolean;
+  /** Phần trăm thay đổi so với chu kỳ trước. */
+  change_percent: number;
+  /** Số lượng mẫu dữ liệu. */
+  samples: number;
+  /** Thời điểm tính toán (ms epoch). */
+  computed_at: number;
+}
+
+/**
+ * Một sự kiện analytics.
+ */
+export interface AnalyticsEvent {
+  /** ID duy nhất của sự kiện. */
+  id: string;
+  /** Loại sự kiện. */
+  event_type: string;
+  /** ID của thực thể. */
+  entity_id: string;
+  /** Các thuộc tính đi kèm. */
+  properties: Record<string, any>;
+  /** Thời gian xảy ra (ms epoch). */
+  timestamp: number;
+  /** ID phiên người dùng. */
+  session_id?: string;
+  /** ID người dùng. */
+  user_id?: string;
+}
+
+/**
+ * Component widget analytics.
+ *
+ * Hiển thị tổng quan analytics với:
+ * - Thẻ KPI hiển thị giá trị, mục tiêu, và xu hướng
+ * - Danh sách sự kiện gần đây
+ * - Tự động làm mới dữ liệu theo khoảng thời gian định kỳ
+ */
+@Component({
+  selector: 'app-analytics-widget',
+  standalone: true,
+  imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="analytics-widget">
+      <h2>Tổng Quan Analytics</h2>
+
+      <!-- Trạng thái tải -->
+      <div *ngIf="loading" class="analytics-loading">
+        Đang tải dữ liệu analytics...
+      </div>
+
+      <!-- Lỗi -->
+      <div *ngIf="error" class="analytics-error">
+        Lỗi: {{ error.message }}
+        <button (click)="loadAll()">Thử lại</button>
+      </div>
+
+      <!-- Danh sách KPI -->
+      <div *ngIf="!loading && !error" class="kpi-grid">
+        <div
+          *ngFor="let kpi of kpis"
+          [class]="'kpi-card kpi-card--' + (kpi.healthy ? 'healthy' : 'unhealthy')"
+        >
+          <div class="kpi-header">
+            <h3>{{ kpi.name }}</h3>
+            <span
+              class="kpi-badge"
+              [class]="'kpi-badge--' + (kpi.healthy ? 'healthy' : 'unhealthy')"
+            >
+              {{ kpi.healthy ? 'Đạt' : 'Chưa đạt' }}
+            </span>
+          </div>
+
+          <div class="kpi-body">
+            <span class="kpi-value">{{ kpi.current_value | number:'.2-2' }}</span>
+            <span class="kpi-unit">{{ kpi.unit }}</span>
+          </div>
+
+          <div class="kpi-footer">
+            <span class="kpi-target" *ngIf="kpi.target !== null">
+              Mục tiêu: {{ kpi.target | number:'.2-2' }}
+            </span>
+            <span
+              class="kpi-change"
+              [class]="'kpi-change--' + (kpi.change_percent >= 0 ? 'up' : 'down')"
+            >
+              {{ kpi.change_percent >= 0 ? '+' : '' }}{{ kpi.change_percent | number:'.1-1' }}%
+            </span>
+            <span class="kpi-samples">{{ kpi.samples }} mẫu</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Không có KPI -->
+      <div *ngIf="!loading && !error && kpis.length === 0" class="analytics-empty">
+        Chưa có KPI nào được định nghĩa.
+      </div>
+
+      <!-- Sự kiện gần đây -->
+      <div *ngIf="!loading && recentEvents.length > 0" class="recent-events">
+        <h3>Sự Kiện Gần Đây</h3>
+        <div class="event-list">
+          <div *ngFor="let event of recentEvents" class="event-item">
+            <span class="event-type">{{ event.event_type }}</span>
+            <span class="event-entity">{{ event.entity_id }}</span>
+            <span class="event-time">{{ event.timestamp | date:'medium' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Nút làm mới -->
+      <button (click)="loadAll()" class="refresh-btn" [disabled]="loading">
+        {{ loading ? 'Đang tải...' : 'Làm mới' }}
+      </button>
+    </div>
+  `,
+  styles: [`
+    .analytics-widget {
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .analytics-widget h2 {
+      margin: 0 0 16px;
+      font-size: 20px;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+      transition: box-shadow 0.2s;
+    }
+    .kpi-card:hover {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    .kpi-card--unhealthy {
+      border-color: #f44336;
+    }
+    .kpi-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .kpi-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .kpi-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+    .kpi-badge--healthy {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .kpi-badge--unhealthy {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .kpi-body {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .kpi-value {
+      font-size: 32px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .kpi-unit {
+      font-size: 14px;
+      color: #666;
+    }
+    .kpi-footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 12px;
+      color: #666;
+    }
+    .kpi-target {
+      font-family: monospace;
+    }
+    .kpi-change {
+      font-weight: 600;
+    }
+    .kpi-change--up {
+      color: #2e7d32;
+    }
+    .kpi-change--down {
+      color: #c62828;
+    }
+    .kpi-samples {
+      color: #999;
+    }
+    .recent-events {
+      margin-top: 16px;
+    }
+    .recent-events h3 {
+      font-size: 16px;
+      margin: 0 0 8px;
+    }
+    .event-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .event-item {
+      display: flex;
+      gap: 16px;
+      padding: 8px 12px;
+      border: 1px solid #f0f0f0;
+      border-radius: 4px;
+      font-size: 13px;
+      align-items: center;
+    }
+    .event-type {
+      font-family: monospace;
+      font-weight: 600;
+      min-width: 100px;
+      color: #1976d2;
+    }
+    .event-entity {
+      flex: 1;
+      font-family: monospace;
+      color: #666;
+    }
+    .event-time {
+      color: #999;
+      font-size: 12px;
+    }
+    .analytics-loading, .analytics-empty {
+      text-align: center;
+      padding: 32px;
+      color: #666;
+    }
+    .analytics-error {
+      padding: 16px;
+      background: #ffebee;
+      border-radius: 8px;
+      color: #c62828;
+      margin-bottom: 16px;
+    }
+    .analytics-error button {
+      margin-left: 8px;
+      padding: 4px 12px;
+      border: 1px solid #c62828;
+      border-radius: 4px;
+      background: #fff;
+      color: #c62828;
+      cursor: pointer;
+    }
+    .refresh-btn {
+      margin-top: 16px;
+      padding: 8px 16px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .refresh-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  `],
+})
+export class AnalyticsWidgetComponent implements OnInit, OnDestroy {
+  /** URL cơ sở của API analytics. */
+  private readonly apiBaseUrl = '/api';
+
+  /** Danh sách KPI. */
+  kpis: KPIResult[] = [];
+
+  /** Danh sách sự kiện gần đây. */
+  recentEvents: AnalyticsEvent[] = [];
+
+  /** Trạng thái tải. */
+  loading = false;
+
+  /** Lỗi nếu có. */
+  error: Error | null = null;
+
+  /** Subscription để dọn dẹp. */
+  private sub?: Subscription;
+  private refreshTimer?: ReturnType<typeof setInterval>;
+
+  /** Khoảng thời gian tự động làm mới (ms). */
+  private readonly refreshInterval = 30000;
+
+  ngOnInit(): void {
+    this.loadAll();
+    this.refreshTimer = setInterval(() => {
+      this.loadAll();
+    }, this.refreshInterval);
+  }
+
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+  }
+
+  /**
+   * Tải tất cả dữ liệu analytics (KPI và sự kiện gần đây).
+   */
+  loadAll(): void {
+    this.loading = true;
+    this.error = null;
+    const http = new HttpClient();
+
+    this.sub = http.get<KPIResult[]>(`${this.apiBaseUrl}/analytics/kpis`).subscribe({
+      next: (kpis) => {
+        this.kpis = kpis;
+        // Tải sự kiện gần đây
+        http.get<AnalyticsEvent[]>(`${this.apiBaseUrl}/analytics/events?limit=10`).subscribe({
+          next: (events) => {
+            this.recentEvents = events.sort(
+              (a, b) => b.timestamp - a.timestamp
+            ).slice(0, 10);
+            this.loading = false;
+          },
+          error: (err) => {
+            console.error('Lỗi khi tải sự kiện:', err);
+            this.loading = false;
+          },
+        });
+      },
+      error: (err) => {
+        this.error = err instanceof Error ? err : new Error(String(err));
+        console.error('Lỗi khi tải KPI:', err);
+        this.loading = false;
+      },
+    });
+  }
+}

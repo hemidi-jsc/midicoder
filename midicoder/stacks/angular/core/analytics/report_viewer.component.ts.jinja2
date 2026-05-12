@@ -1,0 +1,526 @@
+/**
+ * Component xem báo cáo — hiển thị báo cáo phân tích dưới dạng bảng dữ liệu cho {{ service_name|default('analytics') }}.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Kết nối với API analytics để tải danh sách báo cáo và hiển thị
+ * dữ liệu báo cáo dưới dạng bảng có thể sắp xếp và lọc.
+ */
+import { Component, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
+import { Subscription } from 'rxjs';
+
+/**
+ * Đơn vị thời gian cho báo cáo.
+ */
+export type TimeGrain = 'MINUTE' | 'HOUR' | 'DAY' | 'WEEK' | 'MONTH';
+
+/**
+ * Một hàng dữ liệu trong báo cáo.
+ */
+export interface ReportRow {
+  /** Nhãn của hàng (giá trị nhóm). */
+  label: string;
+  /** Bản đồ giá trị theo cột. */
+  values: Record<string, number>;
+  /** Thời gian của hàng (nếu có). */
+  timestamp?: number;
+}
+
+/**
+ * Báo cáo phân tích từ API backend.
+ */
+export interface Report {
+  /** ID duy nhất của báo cáo. */
+  id: string;
+  /** Tên của báo cáo. */
+  name: string;
+  /** Mô tả báo cáo. */
+  description: string;
+  /** Danh sách hàng dữ liệu. */
+  rows: ReportRow[];
+  /** Danh sách tên cột. */
+  columns: string[];
+  /** Đơn vị thời gian. */
+  time_grain: TimeGrain;
+  /** Thời gian bắt đầu (ms epoch). */
+  start_time?: number;
+  /** Thời gian kết thúc (ms epoch). */
+  end_time?: number;
+  /** Thời điểm tạo (ms epoch). */
+  created_at: number;
+  /** Số lượng hàng. */
+  row_count?: number;
+}
+
+/**
+ * Hướng sắp xếp cột.
+ */
+type SortDirection = 'asc' | 'desc' | null;
+
+/**
+ * Trạng thái sắp xếp của cột.
+ */
+interface ColumnSort {
+  column: string;
+  direction: SortDirection;
+}
+
+/**
+ * Component xem báo cáo.
+ *
+ * Hiển thị danh sách báo cáo và dữ liệu báo cáo:
+ * - Chọn báo cáo từ danh sách
+ * - Hiển thị dữ liệu dưới dạng bảng
+ * - Sắp xếp theo cột
+ * - Lọc theo nhãn
+ * - Xây dựng báo cáo mới
+ */
+@Component({
+  selector: 'app-report-viewer',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="report-viewer">
+      <h2>Báo Cáo Phân Tích</h2>
+
+      <!-- Chọn báo cáo -->
+      <div class="report-selector">
+        <label for="report-select">
+          Chọn báo cáo:
+          <select
+            id="report-select"
+            [(ngModel)]="selectedReportName"
+            (change)="onReportChange()"
+          >
+            <option [ngValue]="null">-- Chọn báo cáo --</option>
+            <option *ngFor="let r of reports" [ngValue]="r.name">
+              {{ r.name }}
+            </option>
+          </select>
+        </label>
+        <button (click)="loadReports()" class="btn" [disabled]="loading">
+          Làm mới danh sách
+        </button>
+      </div>
+
+      <!-- Trạng thái tải -->
+      <div *ngIf="loading" class="report-loading">
+        Đang tải báo cáo...
+      </div>
+
+      <!-- Thông tin báo cáo -->
+      <div *ngIf="report && !loading" class="report-info">
+        <h3>{{ report.name }}</h3>
+        <p *ngIf="report.description" class="report-description">
+          {{ report.description }}
+        </p>
+        <div class="report-meta">
+          <span>Đơn vị thời gian: {{ report.time_grain }}</span>
+          <span *ngIf="report.start_time">
+            Từ: {{ report.start_time | date:'medium' }}
+          </span>
+          <span *ngIf="report.end_time">
+            Đến: {{ report.end_time | date:'medium' }}
+          </span>
+          <span>{{ report.rows.length }} hàng</span>
+        </div>
+      </div>
+
+      <!-- Bộ lọc -->
+      <div *ngIf="report" class="report-filter">
+        <label for="filter-input">
+          Lọc theo nhãn:
+          <input
+            id="filter-input"
+            type="text"
+            [(ngModel)]="filterText"
+            (input)="onFilterChange()"
+            placeholder="Nhập từ khóa..."
+          />
+        </label>
+      </div>
+
+      <!-- Bảng dữ liệu -->
+      <div *ngIf="report && !loading" class="report-table-wrapper">
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th class="report-table__label">Nhãn</th>
+              <th
+                *ngFor="let col of report.columns"
+                class="report-table__header"
+                (click)="onSortColumn(col)"
+                [class.sorted]="sortColumn?.column === col"
+              >
+                {{ col }}
+                <span *ngIf="sortColumn?.column === col" class="sort-icon">
+                  {{ sortColumn?.direction === 'asc' ? '↑' : '↓' }}
+                </span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of filteredRows">
+              <td class="report-table__label">{{ row.label }}</td>
+              <td *ngFor="let col of report.columns" class="report-table__value">
+                {{ row.values[col] | number:'.2-2' }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Không có dữ liệu -->
+      <div *ngIf="report && !loading && filteredRows.length === 0" class="report-empty">
+        Không có dữ liệu phù hợp với bộ lọc.
+      </div>
+
+      <!-- Chưa chọn báo cáo -->
+      <div *ngIf="!report && !loading" class="report-empty">
+        Hãy chọn một báo cáo từ danh sách bên trên.
+      </div>
+
+      <!-- Xây dựng báo cáo mới -->
+      <div class="build-report">
+        <h3>Xây Dựng Báo Cáo Mới</h3>
+        <div class="build-form">
+          <input
+            [(ngModel)]="newReportName"
+            placeholder="Tên báo cáo"
+            class="input"
+          />
+          <select [(ngModel)]="newReportEventType" class="input">
+            <option value="PAGE_VIEW">PAGE_VIEW</option>
+            <option value="CLICK">CLICK</option>
+            <option value="CONVERSION">CONVERSION</option>
+            <option value="REVENUE">REVENUE</option>
+            <option value="CUSTOM">CUSTOM</option>
+          </select>
+          <input
+            [(ngModel)]="newReportGroupBy"
+            placeholder="Nhóm theo (vd: page, category)"
+            class="input"
+          />
+          <button (click)="buildNewReport()" class="btn btn--primary" [disabled]="!newReportName || !newReportGroupBy">
+            Tạo báo cáo
+          </button>
+        </div>
+      </div>
+    </div>
+  `,
+  styles: [`
+    .report-viewer {
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .report-viewer h2 {
+      margin: 0 0 16px;
+      font-size: 20px;
+    }
+    .report-selector {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .report-selector select {
+      padding: 6px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      min-width: 200px;
+    }
+    .report-info {
+      margin-bottom: 16px;
+    }
+    .report-info h3 {
+      margin: 0 0 4px;
+      font-size: 16px;
+    }
+    .report-description {
+      color: #666;
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+    .report-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: #999;
+    }
+    .report-filter {
+      margin-bottom: 16px;
+    }
+    .report-filter input {
+      padding: 6px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-left: 8px;
+      min-width: 200px;
+    }
+    .report-table-wrapper {
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
+    .report-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .report-table th,
+    .report-table td {
+      padding: 8px 12px;
+      border: 1px solid #e0e0e0;
+      text-align: left;
+    }
+    .report-table th {
+      background: #f5f5f5;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .report-table th:hover {
+      background: #eeeeee;
+    }
+    .report-table th.sorted {
+      background: #e3f2fd;
+    }
+    .report-table__label {
+      font-weight: 500;
+    }
+    .report-table__value {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    .sort-icon {
+      margin-left: 4px;
+      font-size: 12px;
+    }
+    .report-loading, .report-empty {
+      text-align: center;
+      padding: 32px;
+      color: #666;
+    }
+    .build-report {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid #e0e0e0;
+    }
+    .build-report h3 {
+      margin: 0 0 12px;
+      font-size: 16px;
+    }
+    .build-form {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .input {
+      padding: 6px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      min-width: 150px;
+    }
+    .btn {
+      padding: 6px 16px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn--primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+  `],
+})
+export class ReportViewerComponent implements OnInit, OnDestroy {
+  /** URL cơ sở của API analytics. */
+  private readonly apiBaseUrl = '/api';
+
+  /** Danh sách báo cáo. */
+  reports: Report[] = [];
+
+  /** Tên báo cáo đang chọn. */
+  selectedReportName: string | null = null;
+
+  /** Báo cáo hiện tại. */
+  report: Report | null = null;
+
+  /** Các hàng đã lọc. */
+  filteredRows: ReportRow[] = [];
+
+  /** Bộ lọc theo nhãn. */
+  filterText = '';
+
+  /** Trạng thái sắp xếp. */
+  sortColumn: ColumnSort | null = null;
+
+  /** Trạng thái tải. */
+  loading = false;
+
+  /** Form xây dựng báo cáo mới. */
+  newReportName = '';
+  newReportEventType = 'PAGE_VIEW';
+  newReportGroupBy = '';
+
+  /** Subscription để dọn dẹp. */
+  private sub?: Subscription;
+
+  ngOnInit(): void {
+    this.loadReports();
+  }
+
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+  }
+
+  /**
+   * Tải danh sách báo cáo từ API backend.
+   */
+  loadReports(): void {
+    this.loading = true;
+    const http = new HttpClient();
+
+    this.sub = http.get<Report[]>(`${this.apiBaseUrl}/analytics/reports`).subscribe({
+      next: (data) => {
+        this.reports = data;
+        this.loading = false;
+        // Tự động chọn báo cáo đầu tiên nếu có
+        if (this.reports.length > 0 && !this.selectedReportName) {
+          this.selectedReportName = this.reports[0].name;
+          this.onReportChange();
+        }
+      },
+      error: (err) => {
+        console.error('Lỗi khi tải danh sách báo cáo:', err);
+        this.loading = false;
+      },
+    });
+  }
+
+  /**
+   * Xử lý khi thay đổi báo cáo được chọn.
+   */
+  onReportChange(): void {
+    if (!this.selectedReportName) {
+      this.report = null;
+      this.filteredRows = [];
+      return;
+    }
+
+    this.loading = true;
+    const http = new HttpClient();
+
+    this.sub = http.get<Report>(
+      `${this.apiBaseUrl}/analytics/reports/${this.selectedReportName}`
+    ).subscribe({
+      next: (data) => {
+        this.report = data;
+        this.filterText = '';
+        this.sortColumn = null;
+        this._applyFilter();
+        this.loading = false;
+      },
+      error: (err) => {
+        console.error('Lỗi khi tải báo cáo:', err);
+        this.loading = false;
+      },
+    });
+  }
+
+  /**
+   * Xử lý khi bộ lọc thay đổi.
+   */
+  onFilterChange(): void {
+    this._applyFilter();
+  }
+
+  /**
+   * Áp dụng bộ lọc và sắp xếp lên dữ liệu.
+   */
+  private _applyFilter(): void {
+    if (!this.report) {
+      this.filteredRows = [];
+      return;
+    }
+
+    let rows = [...this.report.rows];
+
+    // Lọc theo nhãn
+    if (this.filterText) {
+      const lower = this.filterText.toLowerCase();
+      rows = rows.filter((r) => r.label.toLowerCase().includes(lower));
+    }
+
+    // Sắp xếp
+    if (this.sortColumn?.column && this.sortColumn.direction) {
+      const col = this.sortColumn.column;
+      const dir = this.sortColumn.direction === 'asc' ? 1 : -1;
+      rows.sort((a, b) => {
+        const va = a.values[col] ?? 0;
+        const vb = b.values[col] ?? 0;
+        return (va - vb) * dir;
+      });
+    }
+
+    this.filteredRows = rows;
+  }
+
+  /**
+   * Xử lý khi nhấp vào tiêu đề cột để sắp xếp.
+   */
+  onSortColumn(column: string): void {
+    if (this.sortColumn?.column === column) {
+      // Chuyển đổi hướng sắp xếp
+      if (this.sortColumn.direction === 'asc') {
+        this.sortColumn.direction = 'desc';
+      } else if (this.sortColumn.direction === 'desc') {
+        this.sortColumn = null;
+      }
+    } else {
+      this.sortColumn = { column, direction: 'asc' };
+    }
+    this._applyFilter();
+  }
+
+  /**
+   * Xây dựng báo cáo mới từ form.
+   */
+  buildNewReport(): void {
+    if (!this.newReportName || !this.newReportGroupBy) return;
+
+    this.loading = true;
+    const http = new HttpClient();
+
+    this.sub = http.post<Report>(`${this.apiBaseUrl}/analytics/reports`, {
+      name: this.newReportName,
+      event_type: this.newReportEventType,
+      group_by: this.newReportGroupBy,
+      time_grain: 'DAY',
+    }).subscribe({
+      next: (report) => {
+        // Làm mới danh sách báo cáo và tự động chọn báo cáo mới
+        this.newReportName = '';
+        this.newReportGroupBy = '';
+        this.selectedReportName = report.name;
+        this.loadReports();
+      },
+      error: (err) => {
+        console.error('Lỗi khi tạo báo cáo:', err);
+        this.loading = false;
+      },
+    });
+  }
+}
