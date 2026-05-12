@@ -31,7 +31,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 
-from .query_models import Query, AggregationQuery
+from .models import Query, AggregationQuery
 
 
 def _to_snake_case(name: str) -> str:

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from midicoder.emitters.core.cp06_api_gateway.route_models import (
+from midicoder.emitters.core.cp06_api_gateway.models import (
     Route,
     RouteCollection,
     GraphQLResolver,

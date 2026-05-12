@@ -25,10 +25,10 @@ import yaml
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
-from .entity_models import (
+from .models import (
     Entity,
-    Field,
-    FieldType,
+    EntityField as Field,
+    EntityFieldType as FieldType,
     Relationship,
     RelationshipType,
     Constraint,

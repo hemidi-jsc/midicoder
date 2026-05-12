@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from .command_models import Command, CommandEffect, EffectType
+from .models import Command, CommandEffect, EffectType
 
 
 class CommandEffects:

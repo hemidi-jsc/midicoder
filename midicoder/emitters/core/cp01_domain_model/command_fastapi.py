@@ -21,7 +21,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 
-from .command_models import Command
+from .models import Command
 
 
 def _to_snake_case(name: str) -> str:

@@ -25,7 +25,7 @@ from typing import Any
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
-from .vo_models import ValueObject, VOField, VOFieldType
+from .models import ValueObject, VOField, VOFieldType
 
 
 # ============================================================================

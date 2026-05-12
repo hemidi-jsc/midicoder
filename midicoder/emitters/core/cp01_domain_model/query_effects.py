@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .query_models import Query, QueryEffectType
+from .models import Query, QueryEffectType
 
 
 class QueryEffects:

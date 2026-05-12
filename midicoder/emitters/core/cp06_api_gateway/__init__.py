@@ -44,7 +44,7 @@ from midicoder.emitters.core.cp06_api_gateway.kong_gateway import KongGatewayEmi
 # ===========================================================================
 # Route Models (merged from route/)
 # ===========================================================================
-from midicoder.emitters.core.cp06_api_gateway.route_models import (
+from midicoder.emitters.core.cp06_api_gateway.models import (
     Route,
     RouteCollection,
     RouteAuthConfig,

@@ -26,7 +26,7 @@ from typing import Any
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
-from .query_models import Query, QueryGuardType
+from .models import Query, QueryGuardType
 
 
 class QueryGuards:

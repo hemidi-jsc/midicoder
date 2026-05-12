@@ -17,7 +17,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 
-from .entity_models import Entity
+from .models import Entity
 
 
 class EntityEmitter(ABC):

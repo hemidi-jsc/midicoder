@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
-from .command_models import Command, CommandGuard, GuardType
+from .models import Command, CommandGuard, GuardType
 
 
 class CommandGuards:

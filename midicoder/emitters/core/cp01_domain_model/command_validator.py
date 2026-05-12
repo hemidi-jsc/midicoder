@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
-from .command_models import Command, Field, ValidationResult
+from .models import Command, CommandField as Field, ValidationResult
 
 
 class CommandValidator:

@@ -25,10 +25,10 @@ Version: 3.0.0
 # ===========================================================================
 # Entity
 # ===========================================================================
-from .entity_models import (
+from .models import (
     Entity,
-    Field,
-    FieldType as EntityFieldType,
+    EntityField as Field,
+    EntityFieldType as FieldType,
     Relationship,
     RelationshipType,
     Constraint,
@@ -36,6 +36,8 @@ from .entity_models import (
     Index,
     LifecycleHook,
     LifecycleEvent,
+    EntityField,
+    EntityFieldType,
 )
 from .entity_parser import EntityParser
 from .entity_emitter import EntityEmitter
@@ -45,10 +47,10 @@ from .entity_nestjs import NestJSEntityEmitter
 # ===========================================================================
 # Command
 # ===========================================================================
-from .command_models import (
+from .models import (
     Command,
-    Field as CommandField,
-    FieldType as CommandFieldType,
+    CommandField,
+    CommandFieldType,
     EffectType,
     GuardType,
     CommandGuard,
@@ -67,7 +69,7 @@ from .command_nestjs import NestJSCommandEmitter
 # ===========================================================================
 # Query
 # ===========================================================================
-from .query_models import (
+from .models import (
     Query,
     AggregationQuery,
     QueryField,
@@ -103,7 +105,7 @@ from .query_nestjs import NestJSQueryEmitter
 # ===========================================================================
 # Value Object
 # ===========================================================================
-from .vo_models import (
+from .models import (
     ValueObject,
     VOField,
     VOFieldType,

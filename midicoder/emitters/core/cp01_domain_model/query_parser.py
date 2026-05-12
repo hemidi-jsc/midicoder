@@ -18,7 +18,7 @@ from typing import Any
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
-from .query_models import (
+from .models import (
     FilterExpression,
     FilterOp,
     PaginationConfig,

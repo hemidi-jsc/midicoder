@@ -20,7 +20,7 @@ from typing import Any
 
 from jinja2 import Environment, DictLoader
 
-from midicoder.emitters.core.cp06_api_gateway.route_models import (
+from midicoder.emitters.core.cp06_api_gateway.models import (
     Route,
     RouteCollection,
     RouteAuthConfig,

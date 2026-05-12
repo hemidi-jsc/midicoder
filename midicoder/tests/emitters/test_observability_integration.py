@@ -51,7 +51,7 @@ class TestQueryEffectsIntegration:
     def test_query_effects_execute_record_metric(self):
         """QueryEffects.execute_all() phải chạy _record_metric thành công."""
         from midicoder.emitters.core.cp01_domain_model.query_effects import QueryEffects
-        from midicoder.emitters.core.cp01_domain_model.query_models import Query, QueryEffect, QueryEffectType
+        from midicoder.emitters.core.cp01_domain_model.models import Query, QueryEffect, QueryEffectType
 
         effect = QueryEffect(
             effect_type=QueryEffectType.RECORD_METRIC,
@@ -104,7 +104,7 @@ class TestCommandEffectsIntegration:
     def test_command_effects_execute_record_metric(self):
         """CommandEffects.execute() phải chạy _record_metric thành công."""
         from midicoder.emitters.core.cp01_domain_model.command_effects import CommandEffects, CommandEffect
-        from midicoder.emitters.core.cp01_domain_model.command_models import Command, EffectType
+        from midicoder.emitters.core.cp01_domain_model.models import Command, EffectType
 
         # CommandEffect lacks metric_name/metric_value fields; use MagicMock
         effect = MagicMock(spec=CommandEffect)

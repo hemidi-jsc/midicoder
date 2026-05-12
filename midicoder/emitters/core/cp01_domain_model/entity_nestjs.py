@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from .entity_emitter import EntityEmitter
-from .entity_models import Entity, Field, FieldType, Relationship
+from .models import Entity, EntityField as Field, EntityFieldType as FieldType, Relationship
 
 
 class NestJSEntityEmitter(EntityEmitter):

@@ -14,7 +14,7 @@ Version: 1.0.0
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from midicoder.emitters.core.cp01_domain_model.command_models import Command, CommandGuard, GuardType
+from midicoder.emitters.core.cp01_domain_model.models import Command, CommandGuard, GuardType
 from midicoder.emitters.core.cp01_domain_model.command_guards import CommandGuards
 from midicoder.emitters.core.cp01_domain_model.command_validator import CommandValidator
 from midicoder.errors import ErrorCode, MidicoderError

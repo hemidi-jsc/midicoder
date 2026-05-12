@@ -19,10 +19,10 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.emitters.core.cp01_domain_model.entity_models import (
+from midicoder.emitters.core.cp01_domain_model.models import (
     Entity,
-    Field,
-    FieldType,
+    EntityField as Field,
+    EntityFieldType as FieldType,
     Relationship,
     RelationshipType,
     Constraint,

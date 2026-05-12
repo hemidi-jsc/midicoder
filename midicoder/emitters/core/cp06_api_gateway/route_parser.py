@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from midicoder.dsl.projection import ProjectionTree, NodeKind, ProjectionNode
-from midicoder.emitters.core.cp06_api_gateway.route_models import (
+from midicoder.emitters.core.cp06_api_gateway.models import (
     Route,
     RouteCollection,
     RouteAuthConfig,

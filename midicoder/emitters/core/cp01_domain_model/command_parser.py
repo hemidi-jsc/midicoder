@@ -24,7 +24,7 @@ from typing import Any
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
-from .command_models import Command, Field, FieldType
+from .models import Command, CommandField as Field, CommandFieldType as FieldType
 
 
 # ============================================================================

@@ -15,7 +15,7 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.emitters.core.cp01_domain_model.vo_models import (
+from midicoder.emitters.core.cp01_domain_model.models import (
     ValueObject,
     VOField,
     VOFieldType,
