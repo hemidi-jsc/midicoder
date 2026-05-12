@@ -34,9 +34,17 @@ class AuthProviderType(str, Enum):
 
     jwt: JWT-based authentication (stateless token)
     oauth2: OAuth2 flow authentication (authorization code, client credentials)
+    saml: SAML 2.0 authentication (enterprise SSO)
+    ldap: LDAP/Active Directory authentication
+    mtls: Mutual TLS authentication (mTLS, machine-to-machine)
+    session: Stateful session-based authentication (server-side sessions)
     """
     JWT = "jwt"
     OAUTH2 = "oauth2"
+    SAML = "saml"
+    LDAP = "ldap"
+    MTLS = "mtls"
+    SESSION = "session"
 
 
 # ============================================================================
