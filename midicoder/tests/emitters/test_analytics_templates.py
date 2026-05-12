@@ -20,19 +20,19 @@ if PACKAGE_ROOT not in sys.path:
 # Định nghĩa danh sách templates mong đợi
 EXPECTED_TEMPLATES = [
     # FastAPI (2 templates)
-    "midicoder/stacks/fastapi/core/analytics/analytics_service.py.jinja2",
-    "midicoder/stacks/fastapi/core/analytics/analytics_router.py.jinja2",
+    "midicoder/stacks/fastapi/core/cp17_bi_analytics/analytics_service.py.jinja2",
+    "midicoder/stacks/fastapi/core/cp17_bi_analytics/analytics_router.py.jinja2",
     # NestJS (3 templates)
-    "midicoder/stacks/nestjs/core/analytics/analytics.module.ts.jinja2",
-    "midicoder/stacks/nestjs/core/analytics/analytics.service.ts.jinja2",
-    "midicoder/stacks/nestjs/core/analytics/analytics.controller.ts.jinja2",
+    "midicoder/stacks/nestjs/core/cp17_bi_analytics/analytics.module.ts.jinja2",
+    "midicoder/stacks/nestjs/core/cp17_bi_analytics/analytics.service.ts.jinja2",
+    "midicoder/stacks/nestjs/core/cp17_bi_analytics/analytics.controller.ts.jinja2",
     # Angular (2 templates)
-    "midicoder/stacks/angular/core/analytics/analytics_widget.component.ts.jinja2",
-    "midicoder/stacks/angular/core/analytics/report_viewer.component.ts.jinja2",
+    "midicoder/stacks/angular/core/cp17_bi_analytics/analytics_widget.component.ts.jinja2",
+    "midicoder/stacks/angular/core/cp17_bi_analytics/report_viewer.component.ts.jinja2",
     # React (3 templates)
-    "midicoder/stacks/react/core/analytics/types.ts.jinja2",
-    "midicoder/stacks/react/core/analytics/AnalyticsChart.tsx.jinja2",
-    "midicoder/stacks/react/core/analytics/ReportTable.tsx.jinja2",
+    "midicoder/stacks/react/core/cp17_bi_analytics/types.ts.jinja2",
+    "midicoder/stacks/react/core/cp17_bi_analytics/AnalyticsChart.tsx.jinja2",
+    "midicoder/stacks/react/core/cp17_bi_analytics/ReportTable.tsx.jinja2",
 ]
 
 
@@ -68,7 +68,7 @@ class TestTemplateContent:
 
     def test_fastapi_service_has_analytics_class(self):
         """FastAPI service template phải có AnalyticsService class."""
-        content = self._read_template("midicoder/stacks/fastapi/core/analytics/analytics_service.py.jinja2")
+        content = self._read_template("midicoder/stacks/fastapi/core/cp17_bi_analytics/analytics_service.py.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "AnalyticsService" in content, "Thiếu class AnalyticsService"
         assert "def " in content, "Thiếu method definition"
@@ -76,7 +76,7 @@ class TestTemplateContent:
 
     def test_fastapi_router_has_router(self):
         """FastAPI router template phải có APIRouter và route handlers."""
-        content = self._read_template("midicoder/stacks/fastapi/core/analytics/analytics_router.py.jinja2")
+        content = self._read_template("midicoder/stacks/fastapi/core/cp17_bi_analytics/analytics_router.py.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "APIRouter" in content, "Thiếu APIRouter"
         assert "router" in content, "Thiếu router variable"
@@ -86,7 +86,7 @@ class TestTemplateContent:
 
     def test_nestjs_module_has_module_decorator(self):
         """NestJS module template phải có @Module và @Global decorator."""
-        content = self._read_template("midicoder/stacks/nestjs/core/analytics/analytics.module.ts.jinja2")
+        content = self._read_template("midicoder/stacks/nestjs/core/cp17_bi_analytics/analytics.module.ts.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "@Module" in content, "Thiếu @Module decorator"
         assert "AnalyticsModule" in content, "Thiếu AnalyticsModule class"
@@ -94,14 +94,14 @@ class TestTemplateContent:
 
     def test_nestjs_service_has_injectable(self):
         """NestJS service template phải có @Injectable."""
-        content = self._read_template("midicoder/stacks/nestjs/core/analytics/analytics.service.ts.jinja2")
+        content = self._read_template("midicoder/stacks/nestjs/core/cp17_bi_analytics/analytics.service.ts.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "@Injectable" in content, "Thiếu @Injectable decorator"
         assert "AnalyticsService" in content, "Thiếu AnalyticsService class"
 
     def test_nestjs_controller_has_controller_decorator(self):
         """NestJS controller template phải có @Controller."""
-        content = self._read_template("midicoder/stacks/nestjs/core/analytics/analytics.controller.ts.jinja2")
+        content = self._read_template("midicoder/stacks/nestjs/core/cp17_bi_analytics/analytics.controller.ts.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "@Controller" in content, "Thiếu @Controller decorator"
         assert "AnalyticsController" in content, "Thiếu AnalyticsController class"
@@ -110,14 +110,14 @@ class TestTemplateContent:
 
     def test_angular_widget_has_component(self):
         """Angular AnalyticsWidgetComponent phải có @Component."""
-        content = self._read_template("midicoder/stacks/angular/core/analytics/analytics_widget.component.ts.jinja2")
+        content = self._read_template("midicoder/stacks/angular/core/cp17_bi_analytics/analytics_widget.component.ts.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "@Component" in content, "Thiếu @Component decorator"
         assert "AnalyticsWidgetComponent" in content or "analytics-widget" in content, "Thiếu component identifier"
 
     def test_angular_report_viewer_has_component(self):
         """Angular ReportViewerComponent phải có @Component."""
-        content = self._read_template("midicoder/stacks/angular/core/analytics/report_viewer.component.ts.jinja2")
+        content = self._read_template("midicoder/stacks/angular/core/cp17_bi_analytics/report_viewer.component.ts.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "@Component" in content, "Thiếu @Component decorator"
         assert "ReportViewerComponent" in content or "report-viewer" in content, "Thiếu component identifier"
@@ -126,14 +126,14 @@ class TestTemplateContent:
 
     def test_react_types_has_interfaces(self):
         """React types template phải có exported interfaces."""
-        content = self._read_template("midicoder/stacks/react/core/analytics/types.ts.jinja2")
+        content = self._read_template("midicoder/stacks/react/core/cp17_bi_analytics/types.ts.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "interface" in content, "Thiếu interface declaration"
         assert "export" in content, "Thiếu export statement"
 
     def test_react_chart_has_component(self):
         """React AnalyticsChart phải có exported React.FC component."""
-        content = self._read_template("midicoder/stacks/react/core/analytics/AnalyticsChart.tsx.jinja2")
+        content = self._read_template("midicoder/stacks/react/core/cp17_bi_analytics/AnalyticsChart.tsx.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "AnalyticsChart" in content, "Thiếu AnalyticsChart component"
         assert "function" in content or "React.FC" in content or "=> {" in content, "Thiếu function component declaration"
@@ -141,7 +141,7 @@ class TestTemplateContent:
 
     def test_react_table_has_component(self):
         """React ReportTable phải có exported React.FC component."""
-        content = self._read_template("midicoder/stacks/react/core/analytics/ReportTable.tsx.jinja2")
+        content = self._read_template("midicoder/stacks/react/core/cp17_bi_analytics/ReportTable.tsx.jinja2")
         assert len(content) > 10, "Template quá ngắn hoặc rỗng"
         assert "ReportTable" in content, "Thiếu ReportTable component"
         assert "function" in content or "React.FC" in content or "=> {" in content, "Thiếu function component declaration"

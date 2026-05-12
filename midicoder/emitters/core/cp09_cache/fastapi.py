@@ -27,7 +27,7 @@ class FastAPICacheEmitter:
     Emitter để sinh cache files cho FastAPI.
 
     Render cache config từ CacheCollection sang Python files
-    sử dụng Jinja2 templates tại stacks/fastapi/core/cache/.
+    sử dụng Jinja2 templates tại stacks/fastapi/core/cp09_cache/.
 
     KPI-029: Tenant isolation qua key prefix.
     """

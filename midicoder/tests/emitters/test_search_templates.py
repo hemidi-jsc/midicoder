@@ -23,7 +23,7 @@ class TestFastApiElasticsearchConfig(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/fastapi/core/search/elasticsearch.py.jinja2"
+            "midicoder/stacks/fastapi/core/cp10_search/elasticsearch.py.jinja2"
         )
 
     def test_template_file_exists(self):
@@ -55,7 +55,7 @@ class TestFastApiSearchService(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/fastapi/core/search/search_service.py.jinja2"
+            "midicoder/stacks/fastapi/core/cp10_search/search_service.py.jinja2"
         )
 
     def test_template_file_exists(self):
@@ -82,7 +82,7 @@ class TestFastApiIndexManager(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/fastapi/core/search/index_manager.py.jinja2"
+            "midicoder/stacks/fastapi/core/cp10_search/index_manager.py.jinja2"
         )
 
     def test_template_file_exists(self):
@@ -109,7 +109,7 @@ class TestNestJsSearchModule(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/nestjs/core/search/search.module.ts.jinja2"
+            "midicoder/stacks/nestjs/core/cp10_search/search.module.ts.jinja2"
         )
 
     def test_template_file_exists(self):
@@ -138,7 +138,7 @@ class TestNestJsSearchService(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/nestjs/core/search/search.service.ts.jinja2"
+            "midicoder/stacks/nestjs/core/cp10_search/search.service.ts.jinja2"
         )
 
     def test_template_file_exists(self):
@@ -165,7 +165,7 @@ class TestNestJsSearchDecorators(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/nestjs/core/search/search.decorators.ts.jinja2"
+            "midicoder/stacks/nestjs/core/cp10_search/search.decorators.ts.jinja2"
         )
 
     def test_template_file_exists(self):
@@ -187,7 +187,7 @@ class TestAngularSearchService(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/angular/core/search/search.service.ts.jinja2"
+            "midicoder/stacks/angular/core/cp10_search/search.service.ts.jinja2"
         )
 
     def test_template_file_exists(self):
@@ -219,7 +219,7 @@ class TestAngularSearchModule(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/angular/core/search/search.module.ts.jinja2"
+            "midicoder/stacks/angular/core/cp10_search/search.module.ts.jinja2"
         )
 
     def test_template_file_exists(self):
@@ -241,7 +241,7 @@ class TestReactSearchProvider(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/react/core/search/SearchProvider.tsx.jinja2"
+            "midicoder/stacks/react/core/cp10_search/SearchProvider.tsx.jinja2"
         )
 
     def test_template_file_exists(self):
@@ -273,7 +273,7 @@ class TestReactUseSearch(TestCase):
     def setUp(self):
         """Thiet lap test fixtures."""
         self.template_path = Path(
-            "midicoder/stacks/react/core/search/useSearch.ts.jinja2"
+            "midicoder/stacks/react/core/cp10_search/useSearch.ts.jinja2"
         )
 
     def test_template_file_exists(self):

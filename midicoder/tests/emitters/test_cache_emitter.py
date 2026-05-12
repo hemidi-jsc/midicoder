@@ -764,23 +764,23 @@ class TestAngularCacheTemplates:
 
     def test_cache_service_template_exists(self):
         """Cache service template ton tai."""
-        template_path = Path("midicoder/stacks/angular/core/cache/cache.service.ts.jinja2")
+        template_path = Path("midicoder/stacks/angular/core/cp09_cache/cache.service.ts.jinja2")
         assert template_path.exists()
 
     def test_cache_service_has_tenant(self):
         """Cache service co tenant reference."""
-        template_path = Path("midicoder/stacks/angular/core/cache/cache.service.ts.jinja2")
+        template_path = Path("midicoder/stacks/angular/core/cp09_cache/cache.service.ts.jinja2")
         content = template_path.read_text(encoding="utf-8")
         assert "tenantId" in content
 
     def test_cache_interceptor_template_exists(self):
         """Cache interceptor template ton tai."""
-        template_path = Path("midicoder/stacks/angular/core/cache/cache.interceptor.ts.jinja2")
+        template_path = Path("midicoder/stacks/angular/core/cp09_cache/cache.interceptor.ts.jinja2")
         assert template_path.exists()
 
     def test_cache_module_template_exists(self):
         """Cache module template ton tai."""
-        template_path = Path("midicoder/stacks/angular/core/cache/cache.module.ts.jinja2")
+        template_path = Path("midicoder/stacks/angular/core/cp09_cache/cache.module.ts.jinja2")
         assert template_path.exists()
 
 
@@ -794,23 +794,23 @@ class TestReactCacheTemplates:
 
     def test_use_cache_template_exists(self):
         """useCache template ton tai."""
-        template_path = Path("midicoder/stacks/react/core/cache/useCache.ts.jinja2")
+        template_path = Path("midicoder/stacks/react/core/cp09_cache/useCache.ts.jinja2")
         assert template_path.exists()
 
     def test_use_cache_has_tenant(self):
         """useCache co tenant reference."""
-        template_path = Path("midicoder/stacks/react/core/cache/useCache.ts.jinja2")
+        template_path = Path("midicoder/stacks/react/core/cp09_cache/useCache.ts.jinja2")
         content = template_path.read_text(encoding="utf-8")
         assert "tenantId" in content
 
     def test_cache_provider_template_exists(self):
         """CacheProvider template ton tai."""
-        template_path = Path("midicoder/stacks/react/core/cache/CacheProvider.tsx.jinja2")
+        template_path = Path("midicoder/stacks/react/core/cp09_cache/CacheProvider.tsx.jinja2")
         assert template_path.exists()
 
     def test_cache_utils_template_exists(self):
         """cacheUtils template ton tai."""
-        template_path = Path("midicoder/stacks/react/core/cache/cache-utils.ts.jinja2")
+        template_path = Path("midicoder/stacks/react/core/cp09_cache/cache-utils.ts.jinja2")
         assert template_path.exists()
 
 
@@ -858,12 +858,12 @@ class TestPackYml:
 
     def test_pack_yml_exists(self):
         """pack.yml ton tai."""
-        pack_path = Path("midicoder/emitters/core/cache/pack.yml")
+        pack_path = Path("midicoder/emitters/core/cp09_cache/pack.yml")
         assert pack_path.exists()
 
     def test_changelog_exists(self):
         """CHANGELOG.md ton tai."""
-        changelog_path = Path("midicoder/emitters/core/cache/CHANGELOG.md")
+        changelog_path = Path("midicoder/emitters/core/cp09_cache/CHANGELOG.md")
         assert changelog_path.exists()
 
 

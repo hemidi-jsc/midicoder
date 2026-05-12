@@ -20,19 +20,19 @@ if PACKAGE_ROOT not in sys.path:
 # Định nghĩa danh sách templates mong đợi
 EXPECTED_TEMPLATES = [
     # FastAPI (2 templates)
-    "midicoder/stacks/fastapi/core/observability/observability_service.py.jinja2",
-    "midicoder/stacks/fastapi/core/observability/observability_middleware.py.jinja2",
+    "midicoder/stacks/fastapi/core/cp15_observability/observability_service.py.jinja2",
+    "midicoder/stacks/fastapi/core/cp15_observability/observability_middleware.py.jinja2",
     # NestJS (3 templates)
-    "midicoder/stacks/nestjs/core/observability/observability.module.ts.jinja2",
-    "midicoder/stacks/nestjs/core/observability/observability.service.ts.jinja2",
-    "midicoder/stacks/nestjs/core/observability/observability.interceptor.ts.jinja2",
+    "midicoder/stacks/nestjs/core/cp15_observability/observability.module.ts.jinja2",
+    "midicoder/stacks/nestjs/core/cp15_observability/observability.service.ts.jinja2",
+    "midicoder/stacks/nestjs/core/cp15_observability/observability.interceptor.ts.jinja2",
     # Angular (2 templates)
-    "midicoder/stacks/angular/core/observability/logging_service.ts.jinja2",
-    "midicoder/stacks/angular/core/observability/log_viewer.component.ts.jinja2",
+    "midicoder/stacks/angular/core/cp15_observability/logging_service.ts.jinja2",
+    "midicoder/stacks/angular/core/cp15_observability/log_viewer.component.ts.jinja2",
     # React (3 templates)
-    "midicoder/stacks/react/core/observability/types.ts.jinja2",
-    "midicoder/stacks/react/core/observability/useLogging.ts.jinja2",
-    "midicoder/stacks/react/core/observability/LogViewer.tsx.jinja2",
+    "midicoder/stacks/react/core/cp15_observability/types.ts.jinja2",
+    "midicoder/stacks/react/core/cp15_observability/useLogging.ts.jinja2",
+    "midicoder/stacks/react/core/cp15_observability/LogViewer.tsx.jinja2",
 ]
 
 
@@ -66,43 +66,43 @@ class TestTemplateContent:
 
     def test_fastapi_service_has_observability_class(self):
         """FastAPI service template phải có ObservabilityService class."""
-        content = self._read_template("midicoder/stacks/fastapi/core/observability/observability_service.py.jinja2")
+        content = self._read_template("midicoder/stacks/fastapi/core/cp15_observability/observability_service.py.jinja2")
         assert "ObservabilityService" in content, "Thiếu class ObservabilityService"
         assert "record_metric" in content or "counter" in content or "metric" in content.lower()
 
     def test_fastapi_middleware_has_middleware_class(self):
         """FastAPI middleware template phải có middleware class."""
-        content = self._read_template("midicoder/stacks/fastapi/core/observability/observability_middleware.py.jinja2")
+        content = self._read_template("midicoder/stacks/fastapi/core/cp15_observability/observability_middleware.py.jinja2")
         assert "Middleware" in content or "middleware" in content.lower()
         assert "__call__" in content or "request" in content.lower()
 
     def test_nestjs_module_has_module_decorator(self):
         """NestJS module template phải có @Module decorator."""
-        content = self._read_template("midicoder/stacks/nestjs/core/observability/observability.module.ts.jinja2")
+        content = self._read_template("midicoder/stacks/nestjs/core/cp15_observability/observability.module.ts.jinja2")
         assert "@Module" in content, "Thiếu @Module decorator"
         assert "ObservabilityModule" in content or "Module" in content
 
     def test_nestjs_service_has_injectable(self):
         """NestJS service template phải có @Injectable."""
-        content = self._read_template("midicoder/stacks/nestjs/core/observability/observability.service.ts.jinja2")
+        content = self._read_template("midicoder/stacks/nestjs/core/cp15_observability/observability.service.ts.jinja2")
         assert "@Injectable" in content, "Thiếu @Injectable decorator"
         assert "ObservabilityService" in content or "Service" in content
 
     def test_nestjs_interceptor_has_interceptor(self):
         """NestJS interceptor template phải có interceptor."""
-        content = self._read_template("midicoder/stacks/nestjs/core/observability/observability.interceptor.ts.jinja2")
+        content = self._read_template("midicoder/stacks/nestjs/core/cp15_observability/observability.interceptor.ts.jinja2")
         assert "Interceptor" in content or "intercept" in content.lower()
         assert "Observable" in content
 
     def test_angular_logging_service_has_injectable(self):
         """Angular LoggingService phải có @Injectable."""
-        content = self._read_template("midicoder/stacks/angular/core/observability/logging_service.ts.jinja2")
+        content = self._read_template("midicoder/stacks/angular/core/cp15_observability/logging_service.ts.jinja2")
         assert "@Injectable" in content, "Thiếu @Injectable decorator"
         assert "LoggingService" in content or "Service" in content
 
     def test_angular_log_viewer_has_component(self):
         """Angular LogViewer component phải có @Component."""
-        content = self._read_template("midicoder/stacks/angular/core/observability/log_viewer.component.ts.jinja2")
+        content = self._read_template("midicoder/stacks/angular/core/cp15_observability/log_viewer.component.ts.jinja2")
         assert "@Component" in content, "Thiếu @Component decorator"
         assert "LogViewer" in content or "Component" in content
 

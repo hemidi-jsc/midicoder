@@ -18,7 +18,7 @@ class TestFastApiS3Config(TestCase):
     """Test FastAPI S3 configuration template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/fastapi/core/storage/s3.py.jinja2")
+        self.template_path = Path("midicoder/stacks/fastapi/core/cp11_file_media/s3.py.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "S3 config không tồn tại")
@@ -41,7 +41,7 @@ class TestFastApiFileUpload(TestCase):
     """Test FastAPI file upload template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/fastapi/core/storage/file_upload.py.jinja2")
+        self.template_path = Path("midicoder/stacks/fastapi/core/cp11_file_media/file_upload.py.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "File upload không tồn tại")
@@ -63,7 +63,7 @@ class TestNestJsS3Module(TestCase):
     """Test NestJS S3 module template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/nestjs/core/storage/s3.module.ts.jinja2")
+        self.template_path = Path("midicoder/stacks/nestjs/core/cp11_file_media/s3.module.ts.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "S3 module không tồn tại")
@@ -81,7 +81,7 @@ class TestNestJsFileUpload(TestCase):
     """Test NestJS file upload template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/nestjs/core/storage/file-upload.service.ts.jinja2")
+        self.template_path = Path("midicoder/stacks/nestjs/core/cp11_file_media/file-upload.service.ts.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "File upload không tồn tại")

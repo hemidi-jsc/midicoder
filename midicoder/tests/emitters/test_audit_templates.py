@@ -18,7 +18,7 @@ class TestFastApiAuditLogger(TestCase):
     """Test FastAPI audit logger template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/fastapi/core/audit/audit_logger.py.jinja2")
+        self.template_path = Path("midicoder/stacks/fastapi/core/cp14_audit_compliance/audit_logger.py.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Audit logger template không tồn tại")
@@ -40,7 +40,7 @@ class TestFastApiAuditMiddleware(TestCase):
     """Test FastAPI audit middleware template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/fastapi/core/audit/audit_middleware.py.jinja2")
+        self.template_path = Path("midicoder/stacks/fastapi/core/cp14_audit_compliance/audit_middleware.py.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Audit middleware template không tồn tại")
@@ -58,7 +58,7 @@ class TestNestJsAuditModule(TestCase):
     """Test NestJS audit module template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/nestjs/core/audit/audit.module.ts.jinja2")
+        self.template_path = Path("midicoder/stacks/nestjs/core/cp14_audit_compliance/audit.module.ts.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Audit module template không tồn tại")
@@ -76,7 +76,7 @@ class TestAngularAuditLoggerService(TestCase):
     """Test Angular audit logger service template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/angular/core/audit/audit_logger_service.ts.jinja2")
+        self.template_path = Path("midicoder/stacks/angular/core/cp14_audit_compliance/audit_logger_service.ts.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Audit logger service template không tồn tại")
@@ -98,7 +98,7 @@ class TestAngularAuditLogListComponent(TestCase):
     """Test Angular audit log list component template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/angular/core/audit/audit_log_list.component.ts.jinja2")
+        self.template_path = Path("midicoder/stacks/angular/core/cp14_audit_compliance/audit_log_list.component.ts.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Audit log list component template không tồn tại")
@@ -116,7 +116,7 @@ class TestReactUseAuditHook(TestCase):
     """Test React useAudit hook template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/react/core/audit/useAudit.ts.jinja2")
+        self.template_path = Path("midicoder/stacks/react/core/cp14_audit_compliance/useAudit.ts.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "useAudit hook template không tồn tại")
@@ -135,7 +135,7 @@ class TestReactAuditLogListComponent(TestCase):
     """Test React AuditLogList component template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/react/core/audit/AuditLogList.tsx.jinja2")
+        self.template_path = Path("midicoder/stacks/react/core/cp14_audit_compliance/AuditLogList.tsx.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "AuditLogList component template không tồn tại")
@@ -153,7 +153,7 @@ class TestReactAuditTypes(TestCase):
     """Test React audit types template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/react/core/audit/types.ts.jinja2")
+        self.template_path = Path("midicoder/stacks/react/core/cp14_audit_compliance/types.ts.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Audit types template không tồn tại")

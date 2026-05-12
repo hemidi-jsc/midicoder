@@ -201,47 +201,47 @@ class TestTemplateFiles:
 
     def test_fastapi_gate_middleware_template_exists(self) -> None:
         """Kiem tra FastAPI gate middleware template ton tai."""
-        template = ROOT / "stacks/fastapi/core/invariant/gate_middleware.py.jinja2"
+        template = ROOT / "stacks/fastapi/core/cp52_invariant/gate_middleware.py.jinja2"
         assert template.exists(), f"Template khong ton tai: {template}"
 
     def test_fastapi_runtime_guard_template_exists(self) -> None:
         """Kiem tra FastAPI runtime guard template ton tai."""
-        template = ROOT / "stacks/fastapi/core/invariant/runtime_guard.py.jinja2"
+        template = ROOT / "stacks/fastapi/core/cp52_invariant/runtime_guard.py.jinja2"
         assert template.exists(), f"Template khong ton tai: {template}"
 
     def test_nestjs_gate_pipe_template_exists(self) -> None:
         """Kiem tra NestJS gate pipe template ton tai."""
-        template = ROOT / "stacks/nestjs/core/invariant/gate.pipe.ts.jinja2"
+        template = ROOT / "stacks/nestjs/core/cp52_invariant/gate.pipe.ts.jinja2"
         assert template.exists(), f"Template khong ton tai: {template}"
 
     def test_nestjs_runtime_guard_template_exists(self) -> None:
         """Kiem tra NestJS runtime guard template ton tai."""
-        template = ROOT / "stacks/nestjs/core/invariant/runtime.guard.ts.jinja2"
+        template = ROOT / "stacks/nestjs/core/cp52_invariant/runtime.guard.ts.jinja2"
         assert template.exists(), f"Template khong ton tai: {template}"
 
     def test_angular_compliance_interceptor_template_exists(self) -> None:
         """Kiem tra Angular compliance interceptor template ton tai."""
-        template = ROOT / "stacks/angular/core/invariant/compliance.interceptor.ts.jinja2"
+        template = ROOT / "stacks/angular/core/cp52_invariant/compliance.interceptor.ts.jinja2"
         assert template.exists(), f"Template khong ton tai: {template}"
 
     def test_angular_consent_guard_template_exists(self) -> None:
         """Kiem tra Angular consent guard template ton tai."""
-        template = ROOT / "stacks/angular/core/invariant/consent.guard.ts.jinja2"
+        template = ROOT / "stacks/angular/core/cp52_invariant/consent.guard.ts.jinja2"
         assert template.exists(), f"Template khong ton tai: {template}"
 
     def test_angular_audit_service_template_exists(self) -> None:
         """Kiem tra Angular audit service template ton tai."""
-        template = ROOT / "stacks/angular/core/invariant/audit.service.ts.jinja2"
+        template = ROOT / "stacks/angular/core/cp52_invariant/audit.service.ts.jinja2"
         assert template.exists(), f"Template khong ton tai: {template}"
 
     def test_react_use_invariant_template_exists(self) -> None:
         """Kiem tra React useInvariant template ton tai."""
-        template = ROOT / "stacks/react/core/invariant/useInvariant.ts.jinja2"
+        template = ROOT / "stacks/react/core/cp52_invariant/useInvariant.ts.jinja2"
         assert template.exists(), f"Template khong ton tai: {template}"
 
     def test_react_invariant_context_template_exists(self) -> None:
         """Kiem tra React InvariantContext template ton tai."""
-        template = ROOT / "stacks/react/core/invariant/InvariantContext.tsx.jinja2"
+        template = ROOT / "stacks/react/core/cp52_invariant/InvariantContext.tsx.jinja2"
         assert template.exists(), f"Template khong ton tai: {template}"
 
 

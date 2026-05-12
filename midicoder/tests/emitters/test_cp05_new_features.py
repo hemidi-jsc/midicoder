@@ -228,24 +228,24 @@ class TestOutboxTemplateGeneration:
 
     def test_fastapi_outbox_template_exists(self):
         """FastAPI outbox template file tồn tại."""
-        template_path = Path("midicoder/stacks/fastapi/core/event/event_outbox.py.jinja2")
+        template_path = Path("midicoder/stacks/fastapi/core/cp05_event_driven/event_outbox.py.jinja2")
         assert template_path.exists()
 
     def test_nestjs_outbox_template_exists(self):
         """NestJS outbox template file tồn tại."""
-        template_path = Path("midicoder/stacks/nestjs/core/event/event-outbox.service.ts.jinja2")
+        template_path = Path("midicoder/stacks/nestjs/core/cp05_event_driven/event-outbox.service.ts.jinja2")
         assert template_path.exists()
 
     def test_fastapi_outbox_template_content(self):
         """FastAPI outbox template có nội dung đúng."""
-        template_path = Path("midicoder/stacks/fastapi/core/event/event_outbox.py.jinja2")
+        template_path = Path("midicoder/stacks/fastapi/core/cp05_event_driven/event_outbox.py.jinja2")
         content = template_path.read_text(encoding="utf-8")
         assert "EventOutbox" in content
         assert "OutboxEntry" in content
 
     def test_nestjs_outbox_template_content(self):
         """NestJS outbox template có nội dung đúng."""
-        template_path = Path("midicoder/stacks/nestjs/core/event/event-outbox.service.ts.jinja2")
+        template_path = Path("midicoder/stacks/nestjs/core/cp05_event_driven/event-outbox.service.ts.jinja2")
         content = template_path.read_text(encoding="utf-8")
         assert "EventOutboxService" in content
         assert "OutboxEntry" in content
@@ -350,7 +350,7 @@ class TestCoverageGaps:
             gf = emitter._render_file(
                 template_name="nonexistent.py.jinja2",
                 filename="nonexistent.py",
-                output_dir=Path(tmpdir) / "app" / "core" / "event",
+                output_dir=Path(tmpdir) / "app" / "core" / "cp05_event_driven",
                 context={"events": events},
             )
             assert "auto-generated" in gf.content
@@ -369,7 +369,7 @@ class TestCoverageGaps:
             gf = emitter._render_file(
                 template_name="nonexistent.ts.jinja2",
                 filename="nonexistent.ts",
-                output_dir=Path(tmpdir) / "core" / "event",
+                output_dir=Path(tmpdir) / "core" / "cp05_event_driven",
                 context={"events": events},
             )
             assert "auto-generated" in gf.content
