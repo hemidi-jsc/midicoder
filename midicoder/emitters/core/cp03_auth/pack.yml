@@ -6,8 +6,8 @@ pack:
   status: "stable"
   category: "security"
   depends_on: ["CP01", "CP02"]
-  definitions_count: 2
-  obligations_count: 2
+  definitions_count: 6
+  obligations_count: 4
   error_codes:
     prefix: "MDC-CP03"
     range: "MDC-CP03-001 to MDC-CP03-006"
@@ -19,20 +19,40 @@ pack:
       emitter: "fastapi, nestjs, angular, react"
     - id: "oauth2_auth"
       emitter: "fastapi, nestjs, angular, react"
+    - id: "saml_sso"
+      emitter: "fastapi, nestjs"
+    - id: "ldap_auth"
+      emitter: "fastapi, nestjs"
+    - id: "mtls_auth"
+      emitter: "fastapi, nestjs"
+    - id: "stateful_session"
+      emitter: "fastapi, nestjs"
     - id: "session_management"
       emitter: "fastapi, nestjs"
     - id: "permission_authorization"
       emitter: "fastapi, nestjs, angular, react"
   definitions:
     - name: "AuthProvider"
-      description: "Authentication provider (JWT, OAuth2, Session)"
+      description: "Authentication provider (JWT, OAuth2, SAML, LDAP, mTLS, Session)"
     - name: "Permission"
       description: "Fine-grained permission with resource and action"
+    - name: "SAMLAuthConfig"
+      description: "SAML 2.0 enterprise SSO configuration (IdP metadata, SP entity, signing)"
+    - name: "LDAPOAuthConfig"
+      description: "LDAP/Active Directory authentication (server, bind DN, search filters)"
+    - name: "MTLSAuthConfig"
+      description: "Mutual TLS authentication for machine-to-machine (CA, certs, verification)"
+    - name: "StatefulSessionConfig"
+      description: "Stateful session with configurable store (database, Redis, Memcached)"
   obligations:
     - name: "AuthRequired"
       description: "All protected endpoints must enforce authentication"
     - name: "TokenExpiry"
       description: "Auth tokens must have configurable expiration"
+    - name: "SAMLSignatureValidation"
+      description: "SAML assertions must be signature-verified before trust"
+    - name: "LDAPSecureBind"
+      description: "LDAP connections must use LDAPS or StartTLS"
   frontend_integration:
     angular:
       - AuthService

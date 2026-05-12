@@ -130,6 +130,257 @@ class OAuth2AuthConfig:
 
 
 # ============================================================================
+# SAML 2.0 Auth Config
+# ============================================================================
+
+
+class NameIDFormat(str, Enum):
+    """
+    Định dạng NameID trong SAML assertion.
+
+    - email: Email address (vd: user@example.com)
+    - persistent: Persistent identifier (stable, unlinkable across IdPs)
+    - transient: Transient identifier (changes per SP)
+    - windows: Windows UUID
+    - unspecified: Không xác định
+    """
+    EMAIL = "email"
+    PERSISTENT = "persistent"
+    TRANSIENT = "transient"
+    WINDOWS = "windows"
+    UNSPECIFIED = "unspecified"
+
+
+@dataclass
+class SAMLAuthConfig:
+    """
+    Cấu hình SAML 2.0 Authentication (enterprise SSO).
+
+    SAML 2.0 cho phép user authenticate qua IdP (Identity Provider) enterprise
+    như ADFS, Okta, OneLogin, PingIdentity.
+
+    Attributes:
+        idp_metadata_url: URL đến SAML metadata XML của IdP (bắt buộc)
+        idp_metadata_xml: Nội dung metadata XML trực tiếp (alternative cho URL)
+        sp_entity_id: Entity ID của Service Provider (vd: https://app.example.com/saml)
+        sp_assertion_consumer_url: URL ACS endpoint nhận SAML response
+        name_id_format: Định dạng NameID (persistent, email, transient, ...)
+        want_authn_requests_signed: Có ký AuthnRequest không
+        want_response_signed: Có yêu cầu response được ký không
+        want_assertion_signed: Có yêu cầu assertion được ký không
+        cert: SP certificate string (PEM) cho signing
+        key: SP private key string (PEM) cho signing
+    """
+    idp_metadata_url: str = ""
+    idp_metadata_xml: str = ""
+    sp_entity_id: str = ""
+    sp_assertion_consumer_url: str = ""
+    name_id_format: NameIDFormat = NameIDFormat.PERSISTENT
+    want_authn_requests_signed: bool = False
+    want_response_signed: bool = True
+    want_assertion_signed: bool = True
+    cert: str = ""
+    key: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate cấu hình SAML 2.0 sau khi khởi tạo."""
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        if not self.idp_metadata_url and not self.idp_metadata_xml:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="Phải cung cấp idp_metadata_url HOẶC idp_metadata_xml cho SAML provider",
+            )
+        if not self.sp_entity_id:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="sp_entity_id bắt buộc cho SAML provider",
+            )
+
+
+# ============================================================================
+# LDAP Auth Config
+# ============================================================================
+
+
+class LDAPReferralMode(str, Enum):
+    """
+    Chế độ xử lý LDAP referrals.
+
+    - follow: Tự động follow referrals
+    - ignore: Bỏ qua referrals
+    - throw: Throw exception khi gặp referral
+    """
+    FOLLOW = "follow"
+    IGNORE = "ignore"
+    THROW = "throw"
+
+
+@dataclass
+class LDAPOAuthConfig:
+    """
+    Cấu hình LDAP Authentication (Active Directory / OpenLDAP).
+
+    Connect đến LDAP directory để authenticate user enterprise.
+
+    Attributes:
+        server: Server URL (vd: ldap://dc01.example.com:389 hoặc ldaps://...:636)
+        use_ssl: Kết nối qua SSL/TLS
+        base_dn: Base DN cho search (vd: dc=example,dc=com)
+        user_search_base: DN để search users (vd: ou=users,dc=example,dc=com)
+        group_search_base: DN để search groups (vd: ou=groups,dc=example,dc=com)
+        user_search_filter: LDAP filter tìm user (vd: (sAMAccountName={login}))
+        group_search_filter: LDAP filter tìm group (vd: (member={dn}))
+        bind_dn: DN dùng để bind & search (service account)
+        bind_password: Password của bind_dn (set ở runtime)
+        referral_mode: Chế độ xử lý referrals
+        attributes: Attributes cần fetch (vd: [cn, mail, memberOf])
+    """
+    server: str
+    use_ssl: bool = False
+    base_dn: str = ""
+    user_search_base: str = ""
+    group_search_base: str = ""
+    user_search_filter: str = "(sAMAccountName={login})"
+    group_search_filter: str = "(member={dn})"
+    bind_dn: str = ""
+    bind_password: str = ""
+    referral_mode: LDAPReferralMode = LDAPReferralMode.IGNORE
+    attributes: list[str] = field(default_factory=lambda: ["cn", "mail", "memberOf"])
+
+    def __post_init__(self) -> None:
+        """Validate cấu hình LDAP sau khi khởi tạo."""
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        if not self.server:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="server URL bắt buộc cho LDAP provider",
+            )
+        if not self.base_dn:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="base_dn bắt buộc cho LDAP provider",
+            )
+
+
+# ============================================================================
+# mTLS Auth Config
+# ============================================================================
+
+
+class MTLSVerificationMode(str, Enum):
+    """
+    Chế độ verification cho mTLS.
+
+    - required: Bắt buộc client certificate (deny nếu không có)
+    - optional: Chấp nhận với hoặc không có client certificate
+    - request: Yêu cầu nhưng không enforce (kiểm tra ở application layer)
+    """
+    REQUIRED = "required"
+    OPTIONAL = "optional"
+    REQUEST = "request"
+
+
+@dataclass
+class MTLSAuthConfig:
+    """
+    Cấu hình Mutual TLS Authentication (mTLS).
+
+    mTLS dùng cho machine-to-machine authentication — cả server và client
+    đều phải verify lẫn nhau qua X.509 certificates.
+
+    Attributes:
+        ca_cert_path: Path đến CA certificate dùng để verify client certs
+        server_cert_path: Path đến server certificate
+        server_key_path: Path đến server private key
+        verification_mode: Chế độ verification (required, optional, request)
+        allowed_cn_patterns: Allowed Common Name patterns cho client certs
+        allowed_ou_patterns: Allowed Organizational Unit patterns
+        allowed_o_patterns: Allowed Organization patterns
+    """
+    ca_cert_path: str
+    server_cert_path: str = ""
+    server_key_path: str = ""
+    verification_mode: MTLSVerificationMode = MTLSVerificationMode.REQUIRED
+    allowed_cn_patterns: list[str] = field(default_factory=list)
+    allowed_ou_patterns: list[str] = field(default_factory=list)
+    allowed_o_patterns: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate cấu hình mTLS sau khi khởi tạo."""
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        if not self.ca_cert_path:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="ca_cert_path bắt buộc cho mTLS provider",
+            )
+
+
+# ============================================================================
+# Stateful Session Config (extended)
+# ============================================================================
+
+
+class SessionStoreType(str, Enum):
+    """
+    Loại session store cho stateful session.
+
+    - database: Lưu sessions vào database (durable, cross-process)
+    - redis: Lưu sessions vào Redis (fast, distributed)
+    - memcached: Lưu sessions vào Memcached (fast, in-memory)
+    - file: Lưu sessions vào file system (single-process)
+    """
+    DATABASE = "database"
+    REDIS = "redis"
+    MEMCACHED = "memcached"
+    FILE = "file"
+
+
+@dataclass
+class StatefulSessionConfig:
+    """
+    Cấu hình stateful session authentication.
+
+    Sessions được lưu server-side — cookie chỉ chứa session ID.
+
+    Attributes:
+        store_type: Loại session store (database, redis, memcached, file)
+        store_connection_string: Connection string cho store (Redis URL, DB URL, ...)
+        cookie_name: Tên session cookie
+        cookie_secure: Chỉ set cookie trên HTTPS
+        cookie_http_only: Không access cookie từ JavaScript
+        cookie_samesite: SameSite attribute (strict, lax, none)
+        ttl_seconds: TTL của session (seconds)
+        idle_timeout_seconds: Idle timeout (session invalidate sau bao lâu không hoạt động)
+    """
+    store_type: SessionStoreType = SessionStoreType.DATABASE
+    store_connection_string: str = ""
+    cookie_name: str = "session_id"
+    cookie_secure: bool = True
+    cookie_http_only: bool = True
+    cookie_samesite: str = "lax"
+    ttl_seconds: int = 86400
+    idle_timeout_seconds: int = 3600
+
+    def __post_init__(self) -> None:
+        """Validate cấu hình stateful session sau khi khởi tạo."""
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        if self.ttl_seconds <= 0:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="ttl_seconds phải lớn hơn 0 cho stateful session",
+            )
+        if self.cookie_samesite not in ("strict", "lax", "none"):
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="cookie_samesite phải là strict, lax, hoặc none",
+            )
+
+
+# ============================================================================
 # Auth Provider
 # ============================================================================
 
@@ -140,13 +391,13 @@ class AuthProvider:
     Authentication Provider.
 
     Attributes:
-        id: Provider identifier (ví dụ: jwt_auth, google_oauth2)
-        provider_type: Loại provider (jwt, oauth2)
-        config: Configuration cho provider (JWTAuthConfig hoặc OAuth2AuthConfig)
+        id: Provider identifier (ví dụ: jwt_auth, okta_saml, ad_ldap, service_mtls)
+        provider_type: Loại provider (jwt, oauth2, saml, ldap, mtls, session)
+        config: Configuration cho provider (union của các config types)
     """
     id: str
     provider_type: AuthProviderType
-    config: JWTAuthConfig | OAuth2AuthConfig
+    config: JWTAuthConfig | OAuth2AuthConfig | SAMLAuthConfig | LDAPOAuthConfig | MTLSAuthConfig | StatefulSessionConfig
 
     def __post_init__(self) -> None:
         """Validate auth provider sau khi khởi tạo."""
@@ -159,20 +410,21 @@ class AuthProvider:
             )
 
         # Validate config type matches provider type
-        if self.provider_type == AuthProviderType.JWT:
-            if not isinstance(self.config, JWTAuthConfig):
-                EM.raise_error(
-                    ErrorCode.CP03_AUTH_CONFIG_INVALID,
-                    provider_id=self.id,
-                    reason="JWT provider cần JWTAuthConfig",
-                )
-        elif self.provider_type == AuthProviderType.OAUTH2:
-            if not isinstance(self.config, OAuth2AuthConfig):
-                EM.raise_error(
-                    ErrorCode.CP03_AUTH_CONFIG_INVALID,
-                    provider_id=self.id,
-                    reason="OAuth2 provider cần OAuth2AuthConfig",
-                )
+        expected = {
+            AuthProviderType.JWT: JWTAuthConfig,
+            AuthProviderType.OAUTH2: OAuth2AuthConfig,
+            AuthProviderType.SAML: SAMLAuthConfig,
+            AuthProviderType.LDAP: LDAPOAuthConfig,
+            AuthProviderType.MTLS: MTLSAuthConfig,
+            AuthProviderType.SESSION: StatefulSessionConfig,
+        }
+        exp_cls = expected.get(self.provider_type)
+        if exp_cls and not isinstance(self.config, exp_cls):
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                provider_id=self.id,
+                reason=f"{self.provider_type.value} provider cần {exp_cls.__name__}",
+            )
 
 
 # ============================================================================
@@ -372,9 +624,17 @@ class AuthValidationResult:
 __all__ = [
     # Enums
     "AuthProviderType",
+    "NameIDFormat",
+    "LDAPReferralMode",
+    "MTLSVerificationMode",
+    "SessionStoreType",
     # Config classes
     "JWTAuthConfig",
     "OAuth2AuthConfig",
+    "SAMLAuthConfig",
+    "LDAPOAuthConfig",
+    "MTLSAuthConfig",
+    "StatefulSessionConfig",
     "SessionConfig",
     # Main models
     "AuthProvider",
