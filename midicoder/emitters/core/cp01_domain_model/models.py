@@ -299,6 +299,393 @@ FieldType = EntityFieldType
 
 
 # ===========================================================================
+# Advanced Domain Patterns
+# ===========================================================================
+
+
+class DomainEventType(str, Enum):
+    """
+    Loại sự kiện domain.
+
+    - fact: Đã xảy ra, không thể undo (ví dụ: OrderPlaced, PaymentReceived)
+    - intention: 의도, có thể bị hủy (ví dụ: OrderCancelled, PaymentRefunded)
+    - state_change: Thay đổi trạng thái (ví dụ: OrderShipped, UserDeactivated)
+    """
+    FACT = "fact"
+    INTENTION = "intention"
+    STATE_CHANGE = "state_change"
+
+
+@dataclass
+class DomainEvent:
+    """
+    Đại diện cho một Domain Event — thứ gì đó đã xảy ra trong domain.
+
+    immutability: Domain event một khi đã emit thì không thể thay đổi.
+
+    Attributes:
+        id: Event name (PascalCase, Past Tense, ví dụ: "OrderPlaced")
+        event_type: Loại sự kiện (fact, intention, state_change)
+        aggregate_id: Tên aggregate root emit event này
+        fields: Danh sách fields mang dữ kiện của event
+        description: Mô tả event
+
+    Ví dụ:
+        >>> event = DomainEvent(
+        ...     id="OrderPlaced",
+        ...     event_type=DomainEventType.FACT,
+        ...     aggregate_id="Order",
+        ...     fields=[
+        ...         EntityField(name="order_id", field_type=EntityFieldType.UUID),
+        ...         EntityField(name="total_amount", field_type=EntityFieldType.DECIMAL),
+        ...     ],
+        ... )
+    """
+    id: str
+    event_type: DomainEventType = DomainEventType.FACT
+    aggregate_id: str | None = None
+    fields: list[EntityField] = field(default_factory=list)
+    description: str | None = None
+
+
+class ConsistencyLevel(str, Enum):
+    """
+    Mức độ consistency của Aggregate Root.
+
+    - strict: Tất cả operations trong aggregate phải atomic (ACID)
+    - eventual: Cho phép eventual consistency giữa các aggregate
+    - relaxed: Chỉ consistency ở level business rule
+    """
+    STRICT = "strict"
+    EVENTUAL = "eventual"
+    RELAXED = "relaxed"
+
+
+@dataclass
+class AggregateRoot:
+    """
+    Boundary cho một consistency domain — nhóm entities phải được thao tác cùng nhau.
+
+    Aggregate Root quy định:
+    - Chỉ root có thể được truy cập trực tiếp từ bên ngoài
+    - Các entities con chỉ truy cập qua root
+    - Tất cả changes trong aggregate phải atomic
+    - Root publish domain events khi state thay đổi
+
+    Attributes:
+        id: Aggregate name (PascalCase, ví dụ: "Order")
+        root_entity: Tên entity là root của aggregate
+        child_entities: Danh sách entities nằm trong aggregate boundary
+        events: Danh sách domain events mà aggregate này emit
+        consistency: Mức độ consistency (strict, eventual, relaxed)
+        invariants: Danh sách business rules phải luôn đúng
+        description: Mô tả aggregate
+
+    Ví dụ:
+        >>> agg = AggregateRoot(
+        ...     id="Order",
+        ...     root_entity="Order",
+        ...     child_entities=["OrderItem"],
+        ...     events=["OrderPlaced", "OrderCancelled", "OrderShipped"],
+        ...     consistency=ConsistencyLevel.STRICT,
+        ...     invariants=["total_price >= 0", "items must not be empty"],
+        ... )
+    """
+    id: str
+    root_entity: str
+    child_entities: list[str] = field(default_factory=list)
+    events: list[str] = field(default_factory=list)
+    consistency: ConsistencyLevel = ConsistencyLevel.STRICT
+    invariants: list[str] = field(default_factory=list)
+    description: str | None = None
+
+
+class ProjectionType(str, Enum):
+    """
+    Loại projection cho CQRS read model.
+
+    - denormalized: Dữ liệu đã được flatten, optimized cho read
+    - materialized_view: View được compute trước và cache
+    - search_index: Projection phục vụ tìm kiếm (Elasticsearch, v.v.)
+    - graph: Projection phục vụ query graph/relationship
+    """
+    DENORMALIZED = "denormalized"
+    MATERIALIZED_VIEW = "materialized_view"
+    SEARCH_INDEX = "search_index"
+    GRAPH = "graph"
+
+
+@dataclass
+class Projection:
+    """
+    CQRS read model — bản chiếu của write model, tối ưu cho query.
+
+    Projection subscribe vào domain events và update read model.
+
+    Attributes:
+        id: Projection name (PascalCase, ví dụ: "OrderSummary")
+        projection_type: Loại projection
+        source_aggregate: Aggregate root mà projection subscribe vào
+        source_events: Danh sách events trigger projection update
+        fields: Danh sách fields trong read model
+        description: Mô tả projection
+
+    Ví dụ:
+        >>> proj = Projection(
+        ...     id="OrderSummary",
+        ...     projection_type=ProjectionType.DENORMALIZED,
+        ...     source_aggregate="Order",
+        ...     source_events=["OrderPlaced", "OrderCancelled"],
+        ...     fields=[
+        ...         EntityField(name="order_id", field_type=EntityFieldType.UUID),
+        ...         EntityField(name="status", field_type=EntityFieldType.STRING),
+        ...         EntityField(name="total", field_type=EntityFieldType.DECIMAL),
+        ...     ],
+        ... )
+    """
+    id: str
+    projection_type: ProjectionType = ProjectionType.DENORMALIZED
+    source_aggregate: str | None = None
+    source_events: list[str] = field(default_factory=list)
+    fields: list[EntityField] = field(default_factory=list)
+    description: str | None = None
+
+
+class EventTypeingStrategy(str, Enum):
+    """
+    Chiến lược lưu trữ events cho Event-Sourced Aggregate.
+
+    - append_only: chỉ append, không ever xóa/update
+    - snapshot: Periodic snapshot + events từ snapshot
+    - compression: Compress events cũ thành snapshot
+    """
+    APPEND_ONLY = "append_only"
+    SNAPSHOT = "snapshot"
+    COMPRESSION = "compression"
+
+
+@dataclass
+class EventSourcedAggregate:
+    """
+    Aggregate root lưu state thông qua sequence của domain events.
+
+    Thay vì lưu current state, lưu tất cả events → replay để tái tạo state.
+
+    Attributes:
+        id: Aggregate name (PascalCase, ví dụ: "BankAccount")
+        root_entity: Tên entity là root
+        events: Danh sách domain events mà aggregate emit
+        eventing_strategy: Chiến lược lưu trữ events
+        snapshot_interval: Số events giữa các snapshots (0 = không snapshot)
+        versioned: Có optimistic concurrency control qua version không
+        description: Mô tả aggregate
+
+    Ví dụ:
+        >>> esa = EventSourcedAggregate(
+        ...     id="BankAccount",
+        ...     root_entity="BankAccount",
+        ...     events=["Deposited", "Withdrawn", "Transferred"],
+        ...     eventing_strategy=EventTypeingStrategy.SNAPSHOT,
+        ...     snapshot_interval=100,
+        ...     versioned=True,
+        ... )
+    """
+    id: str
+    root_entity: str
+    events: list[str] = field(default_factory=list)
+    eventing_strategy: EventTypeingStrategy = EventTypeingStrategy.APPEND_ONLY
+    snapshot_interval: int = 0
+    versioned: bool = True
+    description: str | None = None
+
+
+class TemporalGranularity(str, Enum):
+    """
+    Mức độ granularity của temporal tracking.
+
+    - second: Tracking chính xác đến giây
+    - minute: Tracking theo phút
+    - day: Tracking theo ngày
+    - month: Tracking theo tháng
+    """
+    SECOND = "second"
+    MINUTE = "minute"
+    DAY = "day"
+    MONTH = "month"
+
+
+@dataclass
+class TemporalEntity:
+    """
+    Entity có khả năng tracking state theo thời gian.
+
+    Hỗ trợ query "state tại thời điểm T", "lịch sử thay đổi", v.v.
+
+    Attributes:
+        id: Entity name (PascalCase, ví dụ: "PriceHistory")
+        fields: Danh sách fields hiện tại
+        valid_from_field: Field name cho thời điểm bắt đầu有效
+        valid_to_field: Field name cho thời điểm kết thúc有效
+        granularity: Mức độ granularity của temporal tracking
+        current_predicate: Cách xác định bản ghi hiện tại ("valid_to IS NULL", v.v.)
+        description: Mô tả entity
+
+    Ví dụ:
+        >>> temporal = TemporalEntity(
+        ...     id="PriceHistory",
+        ...     fields=[
+        ...         EntityField(name="product_id", field_type=EntityFieldType.UUID),
+        ...         EntityField(name="price", field_type=EntityFieldType.DECIMAL),
+        ...     ],
+        ...     valid_from_field="valid_from",
+        ...     valid_to_field="valid_to",
+        ...     granularity=TemporalGranularity.DAY,
+        ...     current_predicate="valid_to IS NULL",
+        ... )
+    """
+    id: str
+    fields: list[EntityField] = field(default_factory=list)
+    valid_from_field: str = "valid_from"
+    valid_to_field: str = "valid_to"
+    granularity: TemporalGranularity = TemporalGranularity.SECOND
+    current_predicate: str = "valid_to IS NULL"
+    description: str | None = None
+
+
+class PolymorphismType(str, Enum):
+    """
+    Loại polymorphism.
+
+    - single_table: Tất cả types trong cùng 1 bảng, discriminator column
+    - joined_table: Mỗi type 1 bảng, join qua primary key
+    - concrete_table: Mỗi type 1 bảng độc lập, không inherit columns
+    """
+    SINGLE_TABLE = "single_table"
+    JOINED_TABLE = "joined_table"
+    CONCRETE_TABLE = "concrete_table"
+
+
+@dataclass
+class PolymorphicEntity:
+    """
+    Entity có thể tồn tại ở nhiều subtype — inherit fields từ base.
+
+    Attributes:
+        id: Base entity name (PascalCase, ví dụ: "Payment")
+        polymorphism_type: Loại polymorphism (single_table, joined_table, concrete_table)
+        discriminator_field: Column dùng để phân biệt subtype
+        base_fields: Fields của base entity
+        subtypes: Danh sách subtype definitions
+        description: Mô tả entity
+
+    Ví dụ:
+        >>> poly = PolymorphicEntity(
+        ...     id="Payment",
+        ...     polymorphism_type=PolymorphismType.SINGLE_TABLE,
+        ...     discriminator_field="payment_type",
+        ...     base_fields=[
+        ...         EntityField(name="amount", field_type=EntityFieldType.DECIMAL),
+        ...     ],
+        ...     subtypes=[
+        ...         {"name": "CreditCardPayment", "fields": ["card_number", "expiry"]},
+        ...         {"name": "BankTransferPayment", "fields": ["account_number", "bank_code"]},
+        ...     ],
+        ... )
+    """
+    id: str
+    polymorphism_type: PolymorphismType = PolymorphismType.SINGLE_TABLE
+    discriminator_field: str = "type"
+    base_fields: list[EntityField] = field(default_factory=list)
+    subtypes: list[dict[str, Any]] = field(default_factory=list)
+    description: str | None = None
+
+
+class SagaOrchestration(str, Enum):
+    """
+    Chế độ điều phối saga.
+
+    - choreography: Mỗi event trigger step tiếp theo (decentralized)
+    - orchestration: Orchestrator trung tâm điều khiển sequence (centralized)
+    """
+    CHOREOGRAPHY = "choreography"
+    ORCHESTRATION = "orchestration"
+
+
+class CompensatingActionType(str, Enum):
+    """
+    Loại compensating action khi saga rollback.
+
+    - undo: Undo thay đổi đã làm (reverse operation)
+    - noop: Không làm gì (idempotent, không cần undo)
+    - notify: Gửi notification về failure
+    """
+    UNDO = "undo"
+    NOOP = "noop"
+    NOTIFY = "notify"
+
+
+@dataclass
+class SagaStep:
+    """
+    Một bước trong saga workflow.
+
+    Attributes:
+        name: Tên bước (ví dụ: "ReserveInventory")
+        action: Command để thực hiện (ví dụ: "reserve_inventory")
+        compensating_action: Command để rollback (ví dụ: "release_inventory")
+        compensating_type: Loại compensating action
+        on_success_event: Event emit khi bước thành công
+        on_failure_event: Event emit khi bước thất bại
+        description: Mô tả bước
+    """
+    name: str
+    action: str
+    compensating_action: str = ""
+    compensating_type: CompensatingActionType = CompensatingActionType.UNDO
+    on_success_event: str = ""
+    on_failure_event: str = ""
+    description: str | None = None
+
+
+@dataclass
+class Saga:
+    """
+    Long-running business transaction spanning multiple aggregates.
+
+    Saga đảm bảo eventual consistency khi 1 operation cần modify nhiều aggregate.
+
+    Attributes:
+        id: Saga name (PascalCase, ví dụ: "OrderFulfillment")
+        orchestration: Chế độ điều phối (choreography, orchestration)
+        steps: Sequence của các bước trong saga
+        timeout_seconds: Timeout tối đa cho toàn bộ saga
+        retry_policy: Policy retry khi bước thất bại (ví dụ: "3x, exponential")
+        description: Mô tả saga
+
+    Ví dụ:
+        >>> saga = Saga(
+        ...     id="OrderFulfillment",
+        ...     orchestration=SagaOrchestration.ORCHESTRATION,
+        ...     steps=[
+        ...         SagaStep(name="ReserveInventory", action="reserve_inventory",
+        ...                   compensating_action="release_inventory"),
+        ...         SagaStep(name="ProcessPayment", action="charge_payment",
+        ...                   compensating_action="refund_payment"),
+        ...         SagaStep(name="ShipOrder", action="ship_order",
+        ...                   compensating_action="cancel_shipment"),
+        ...     ],
+        ...     timeout_seconds=3600,
+        ... )
+    """
+    id: str
+    orchestration: SagaOrchestration = SagaOrchestration.ORCHESTRATION
+    steps: list[SagaStep] = field(default_factory=list)
+    timeout_seconds: int = 3600
+    retry_policy: str = ""
+    description: str | None = None
+
+
+# ===========================================================================
 # Command Models
 # ===========================================================================
 
@@ -2056,6 +2443,23 @@ __all__ = [
     # -- Entity Models (backward-compatible aliases) --
     "Field",
     "FieldType",
+    # -- Advanced Domain Patterns --
+    "DomainEventType",
+    "DomainEvent",
+    "ConsistencyLevel",
+    "AggregateRoot",
+    "ProjectionType",
+    "Projection",
+    "EventTypeingStrategy",
+    "EventSourcedAggregate",
+    "TemporalGranularity",
+    "TemporalEntity",
+    "PolymorphismType",
+    "PolymorphicEntity",
+    "SagaOrchestration",
+    "CompensatingActionType",
+    "SagaStep",
+    "Saga",
     # -- Command Models (canonical names) --
     "EffectType",
     "GuardType",

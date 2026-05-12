@@ -23,6 +23,30 @@ Version: 3.0.0
 """
 
 # ===========================================================================
+# Advanced Domain Patterns
+# ===========================================================================
+from .models import (
+    DomainEventType,
+    DomainEvent,
+    ConsistencyLevel,
+    AggregateRoot,
+    ProjectionType,
+    Projection,
+    EventTypeingStrategy,
+    EventSourcedAggregate,
+    TemporalGranularity,
+    TemporalEntity,
+    PolymorphismType,
+    PolymorphicEntity,
+    SagaOrchestration,
+    CompensatingActionType,
+    SagaStep,
+    Saga,
+    EntityField,
+    EntityFieldType,
+)
+
+# ===========================================================================
 # Entity
 # ===========================================================================
 from .models import (
@@ -128,6 +152,23 @@ from .vo_computed import ComputedFieldEvaluator, FormulaError
 # Public API
 # ===========================================================================
 __all__ = [
+    # -- Advanced Domain Patterns --
+    "DomainEventType",
+    "DomainEvent",
+    "ConsistencyLevel",
+    "AggregateRoot",
+    "ProjectionType",
+    "Projection",
+    "EventTypeingStrategy",
+    "EventSourcedAggregate",
+    "TemporalGranularity",
+    "TemporalEntity",
+    "PolymorphismType",
+    "PolymorphicEntity",
+    "SagaOrchestration",
+    "CompensatingActionType",
+    "SagaStep",
+    "Saga",
     # -- Entity --
     "Entity",
     "Field",
