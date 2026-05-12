@@ -26,7 +26,7 @@ class TestQueryEffectsIntegration:
 
     def test_record_metric_imports_metric_registry(self):
         """_record_metric phải import từ CP15."""
-        from midicoder.emitters.core.query.effects import QueryEffects
+        from midicoder.emitters.core.domain_model.query_effects import QueryEffects
         import inspect
         source = inspect.getsource(QueryEffects._record_metric)
         assert "MetricRegistry" in source, "_record_metric phải sử dụng MetricRegistry"
@@ -35,7 +35,7 @@ class TestQueryEffectsIntegration:
     def test_record_metric_calls_registry_record(self):
         """_record_metric phải gọi registry.record()."""
         import inspect
-        from midicoder.emitters.core.query.effects import QueryEffects
+        from midicoder.emitters.core.domain_model.query_effects import QueryEffects
         source = inspect.getsource(QueryEffects._record_metric)
         assert "registry.record" in source or "registry = MetricRegistry" in source, \
             "_record_metric phải gọi registry.record()"
@@ -43,15 +43,15 @@ class TestQueryEffectsIntegration:
     def test_record_metric_no_placeholder(self):
         """_record_metric không còn placeholder."""
         import inspect
-        from midicoder.emitters.core.query.effects import QueryEffects
+        from midicoder.emitters.core.domain_model.query_effects import QueryEffects
         source = inspect.getsource(QueryEffects._record_metric)
         assert "placeholder" not in source.lower(), "_record_metric không được có placeholder"
         assert "pass" not in source.strip().split("\n")[-1].strip(), "_record_metric không được chỉ có pass"
 
     def test_query_effects_execute_record_metric(self):
         """QueryEffects.execute_all() phải chạy _record_metric thành công."""
-        from midicoder.emitters.core.query.effects import QueryEffects
-        from midicoder.emitters.core.query.models import Query, QueryEffect, QueryEffectType
+        from midicoder.emitters.core.domain_model.query_effects import QueryEffects
+        from midicoder.emitters.core.domain_model.query_models import Query, QueryEffect, QueryEffectType
 
         effect = QueryEffect(
             effect_type=QueryEffectType.RECORD_METRIC,
@@ -79,7 +79,7 @@ class TestCommandEffectsIntegration:
 
     def test_record_metric_imports_metric_registry(self):
         """_record_metric phải import từ CP15."""
-        from midicoder.emitters.core.command.effects import CommandEffects
+        from midicoder.emitters.core.domain_model.command_effects import CommandEffects
         import inspect
         source = inspect.getsource(CommandEffects._record_metric)
         assert "MetricRegistry" in source, "_record_metric phải sử dụng MetricRegistry"
@@ -88,7 +88,7 @@ class TestCommandEffectsIntegration:
     def test_record_metric_calls_registry_record(self):
         """_record_metric phải gọi registry.record()."""
         import inspect
-        from midicoder.emitters.core.command.effects import CommandEffects
+        from midicoder.emitters.core.domain_model.command_effects import CommandEffects
         source = inspect.getsource(CommandEffects._record_metric)
         assert "registry.record" in source or "registry = MetricRegistry" in source, \
             "_record_metric phải gọi registry.record()"
@@ -96,15 +96,15 @@ class TestCommandEffectsIntegration:
     def test_record_metric_no_placeholder(self):
         """_record_metric không còn placeholder."""
         import inspect
-        from midicoder.emitters.core.command.effects import CommandEffects
+        from midicoder.emitters.core.domain_model.command_effects import CommandEffects
         source = inspect.getsource(CommandEffects._record_metric)
         assert "placeholder" not in source.lower(), "_record_metric không được có placeholder"
         assert "# Placeholder" not in source, "_record_metric không được có comment placeholder"
 
     def test_command_effects_execute_record_metric(self):
         """CommandEffects.execute() phải chạy _record_metric thành công."""
-        from midicoder.emitters.core.command.effects import CommandEffects, CommandEffect
-        from midicoder.emitters.core.command.models import Command, EffectType
+        from midicoder.emitters.core.domain_model.command_effects import CommandEffects, CommandEffect
+        from midicoder.emitters.core.domain_model.command_models import Command, EffectType
 
         # CommandEffect lacks metric_name/metric_value fields; use MagicMock
         effect = MagicMock(spec=CommandEffect)

@@ -39,20 +39,16 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
-from midicoder.emitters.core.value_object import NestJSValueObjectEmitter
-from midicoder.emitters.core.command import (
+from midicoder.emitters.core.domain_model import (
+    NestJSValueObjectEmitter,
     NestJSCommandEmitter,
     Command,
-)
-from midicoder.emitters.core.query import (
     NestJSQueryEmitter,
     Query,
     QueryGuard,
     QueryEffect,
     QueryGuardType,
     QueryEffectType,
-)
-from midicoder.emitters.core.entity import (
     EntityParser,
     NestJSEntityEmitter,
 )
@@ -783,7 +779,7 @@ class BackendNestJSEmitter:
         Returns:
             Dictionary với Query hoặc AggregationQuery instance
         """
-        from midicoder.emitters.core.query import (
+        from midicoder.emitters.core.domain_model import (
             QueryField, FilterExpression, FilterOp,
             PaginationConfig, PaginationType, ProjectionConfig,
             SortExpression, SortDirection,

@@ -8,8 +8,8 @@ Module này cung cấp QueryEffects class để execute query effects:
 Theo clarification Q1: Query cần subset effects (WRITE_AUDIT_LOG, RECORD_METRIC).
 
 Usage:
-    from midicoder.emitters.core.query import QueryEffects
-    
+    from midicoder.emitters.core.domain_model import QueryEffects
+
     effects = QueryEffects(query)
     await effects.execute_all(context)
 

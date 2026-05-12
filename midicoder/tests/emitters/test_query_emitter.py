@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from midicoder.emitters.core.query import (
+from midicoder.emitters.core.domain_model import (
     AggregationConfig,
     AggregationQuery,
     AggFunction,

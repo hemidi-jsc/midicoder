@@ -39,20 +39,16 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
-from midicoder.emitters.core.value_object import FastAPIValueObjectEmitter
-from midicoder.emitters.core.command import (
+from midicoder.emitters.core.domain_model import (
+    FastAPIValueObjectEmitter,
     FastAPICommandEmitter,
     Command,
-)
-from midicoder.emitters.core.query import (
     FastAPIQueryEmitter,
     Query,
     QueryGuard,
     QueryEffect,
     QueryGuardType,
     QueryEffectType,
-)
-from midicoder.emitters.core.entity import (
     EntityParser,
     FastAPIEntityEmitter,
 )
@@ -747,7 +743,7 @@ class BackendFastAPIEmitter:
         Returns:
             Dictionary với Query hoặc AggregationQuery instance
         """
-        from midicoder.emitters.core.query import (
+        from midicoder.emitters.core.domain_model import (
             QueryField, FilterExpression, FilterOp,
             PaginationConfig, PaginationType, ProjectionConfig,
             SortExpression, SortDirection,
@@ -1086,7 +1082,7 @@ class BackendFastAPIEmitter:
         files: list[GeneratedFile] = []
 
         try:
-            from midicoder.emitters.core.route import (
+            from midicoder.emitters.core.gateway import (
                 RouteParser,
                 FastAPIRouteEmitter,
                 FastAPIGraphQLResolverEmitter,

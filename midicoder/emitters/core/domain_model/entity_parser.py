@@ -6,8 +6,8 @@ Cung cấp:
 - Validation cho fields, relationships, constraints, lifecycle hooks
 
 Sử dụng:
-    from midicoder.emitters.core.entity import EntityParser
-    
+    from midicoder.emitters.core.domain_model import EntityParser
+
     parser = EntityParser()
     entities = parser.parse(yaml_string)
     # entities: list[Entity]

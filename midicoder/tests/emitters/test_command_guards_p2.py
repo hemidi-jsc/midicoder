@@ -15,9 +15,9 @@ Total: 48 tests
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from midicoder.emitters.core.command.models import Command, CommandGuard, GuardType, ValidationResult
-from midicoder.emitters.core.command.guards import CommandGuards
-from midicoder.emitters.core.command.validator import CommandValidator
+from midicoder.emitters.core.domain_model.command_models import Command, CommandGuard, GuardType, ValidationResult
+from midicoder.emitters.core.domain_model.command_guards import CommandGuards
+from midicoder.emitters.core.domain_model.command_validator import CommandValidator
 from midicoder.errors import ErrorCode, MidicoderError
 
 

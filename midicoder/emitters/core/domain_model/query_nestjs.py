@@ -14,8 +14,8 @@ Theo SoT E07, template-based code generation với Jinja2.
 Theo clarification Q6, rebuild templates để match Commands pattern.
 
 Usage:
-    from midicoder.emitters.core.query import NestJSQueryEmitter
-    
+    from midicoder.emitters.core.domain_model import NestJSQueryEmitter
+
     emitter = NestJSQueryEmitter(stack_dir=Path("midicoder/stacks/nestjs/templates"))
     files = emitter.emit(query, output_dir=Path("src/queries/get-order"))
 

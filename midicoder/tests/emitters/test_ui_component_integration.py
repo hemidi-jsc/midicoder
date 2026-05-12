@@ -22,8 +22,6 @@ class TestUIComponentIntegration:
     def test_full_workflow_angular_material(self, tmp_path: Path):
         """Test workflow đầy đủ: Angular + Material — sinh tất cả 4 components."""
         from midicoder.emitters.core.ui_component.angular import AngularUIEmitter
-
-        # Bước 1: Tạo component specs
         entity = {
             "id": "Order",
             "fields": [

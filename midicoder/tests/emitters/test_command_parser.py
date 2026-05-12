@@ -16,12 +16,12 @@ import pytest
 from dataclasses import dataclass, field
 
 # Import models trực tiếp từ models module
-from midicoder.emitters.core.command.models import (
+from midicoder.emitters.core.domain_model.command_models import (
     Command,
     Field as CommandField,
     FieldType as CommandFieldType,
 )
-from midicoder.emitters.core.command.parser import CommandParser
+from midicoder.emitters.core.domain_model.command_parser import CommandParser
 
 # Alias cho tests
 Field = CommandField

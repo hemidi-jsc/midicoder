@@ -17,7 +17,7 @@ import pytest
 from pathlib import Path
 from decimal import Decimal
 
-from midicoder.emitters.core.value_object import (
+from midicoder.emitters.core.domain_model import (
     NestJSValueObjectEmitter,
     EmittedValueObject,
 )

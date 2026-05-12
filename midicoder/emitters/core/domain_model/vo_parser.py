@@ -8,8 +8,8 @@ Module này cung cấp ValueObjectParser để parse Value Object DSL YAML:
 - Error handling với MidicoderError
 
 Sử dụng:
-    from midicoder.emitters.core.value_object.parser import ValueObjectParser
-    
+    from midicoder.emitters.core.domain_model import ValueObjectParser
+
     parser = ValueObjectParser()
     vos = parser.parse(yaml_string)
     # vos: list[ValueObject]

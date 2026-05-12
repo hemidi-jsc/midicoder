@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from midicoder.emitters.core.command import (
+from midicoder.emitters.core.domain_model import (
     Command,
     CommandEffect,
     CommandError,
@@ -549,7 +549,7 @@ class TestNestJSCommandEmitter:
 
     def test_to_snake_case(self):
         """Test: _to_snake_case() module function chuyển PascalCase sang snake_case đúng."""
-        from midicoder.emitters.core.command.nestjs import _to_snake_case
+        from midicoder.emitters.core.domain_model.command_nestjs import _to_snake_case
 
         assert _to_snake_case("CreateOrder") == "create_order"
         assert _to_snake_case("TransferMoney") == "transfer_money"
@@ -568,7 +568,7 @@ class TestTransactionManagerSQL:
     async def test_begin_transaction_with_sqlalchemy(self):
         """Test: Begin transaction với SQLAlchemy session."""
         from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-        from midicoder.emitters.core.command.transaction import TransactionManagerSQL
+        from midicoder.emitters.core.domain_model.command_transaction import TransactionManagerSQL
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         session_factory = async_sessionmaker(engine, class_=AsyncSession)
@@ -586,7 +586,7 @@ class TestTransactionManagerSQL:
     async def test_commit_transaction_with_sqlalchemy(self):
         """Test: Commit transaction với SQLAlchemy."""
         from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-        from midicoder.emitters.core.command.transaction import TransactionManagerSQL
+        from midicoder.emitters.core.domain_model.command_transaction import TransactionManagerSQL
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         session_factory = async_sessionmaker(engine, class_=AsyncSession)
@@ -603,7 +603,7 @@ class TestTransactionManagerSQL:
     async def test_rollback_transaction_with_sqlalchemy(self):
         """Test: Rollback transaction với SQLAlchemy."""
         from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-        from midicoder.emitters.core.command.transaction import TransactionManagerSQL
+        from midicoder.emitters.core.domain_model.command_transaction import TransactionManagerSQL
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         session_factory = async_sessionmaker(engine, class_=AsyncSession)
@@ -620,7 +620,7 @@ class TestTransactionManagerSQL:
     async def test_transaction_nested_with_sqlalchemy(self):
         """Test: Nested transactions với savepoints."""
         from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-        from midicoder.emitters.core.command.transaction import TransactionManagerSQL
+        from midicoder.emitters.core.domain_model.command_transaction import TransactionManagerSQL
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         session_factory = async_sessionmaker(engine, class_=AsyncSession)
@@ -643,7 +643,7 @@ class TestTransactionManagerSQL:
     async def test_transaction_error_rollback(self):
         """Test: Auto rollback khi có exception."""
         from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-        from midicoder.emitters.core.command.transaction import TransactionManagerSQL
+        from midicoder.emitters.core.domain_model.command_transaction import TransactionManagerSQL
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         session_factory = async_sessionmaker(engine, class_=AsyncSession)
@@ -665,7 +665,7 @@ class TestTransactionManagerSQL:
     async def test_transaction_concurrent_access(self):
         """Test: Concurrent transaction access handling."""
         from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-        from midicoder.emitters.core.command.transaction import TransactionManagerSQL
+        from midicoder.emitters.core.domain_model.command_transaction import TransactionManagerSQL
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         session_factory = async_sessionmaker(engine, class_=AsyncSession)
