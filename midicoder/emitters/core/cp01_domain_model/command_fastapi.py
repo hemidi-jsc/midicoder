@@ -64,7 +64,7 @@ class FastAPICommandEmitter:
         """
         self._stack_dir = stack_dir
         self._env = Environment(
-            loader=FileSystemLoader(str(stack_dir / "commands")),
+            loader=FileSystemLoader(str(stack_dir)),
             autoescape=True,
         )
 

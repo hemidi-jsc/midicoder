@@ -75,7 +75,7 @@ class FastAPIQueryEmitter:
         """
         self._stack_dir = stack_dir
         self._env = Environment(
-            loader=FileSystemLoader(str(stack_dir / "queries")),
+            loader=FileSystemLoader(str(stack_dir)),
             autoescape=True,
         )
 

@@ -86,15 +86,15 @@ def sample_email_vo():
 
 @pytest.fixture
 def fastapi_emitter():
-    """FastAPI emitter instance."""
-    stack_dir = Path("midicoder/stacks/fastapi/templates")
+    """FastAPI emitter instance with templates pointing to CP01's jinja2 dir."""
+    stack_dir = Path("midicoder/stacks/fastapi/core/cp01_domain_model")
     return BackendFastAPIEmitter(stack_dir=stack_dir)
 
 
 @pytest.fixture
 def nestjs_emitter():
-    """NestJS emitter instance."""
-    stack_dir = Path("midicoder/stacks/nestjs/templates")
+    """NestJS emitter instance with templates pointing to CP01's jinja2 dir."""
+    stack_dir = Path("midicoder/stacks/nestjs/core/cp01_domain_model")
     return BackendNestJSEmitter(stack_dir=stack_dir)
 
 

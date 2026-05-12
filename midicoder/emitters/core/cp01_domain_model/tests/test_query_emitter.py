@@ -114,14 +114,14 @@ def sample_count_orders_query():
 @pytest.fixture
 def fastapi_query_emitter():
     """FastAPI Query emitter instance."""
-    stack_dir = Path("midicoder/stacks/fastapi/templates")
+    stack_dir = Path("midicoder/stacks/fastapi/core/cp01_domain_model")
     return FastAPIQueryEmitter(stack_dir=stack_dir)
 
 
 @pytest.fixture
 def nestjs_query_emitter():
     """NestJS Query emitter instance."""
-    stack_dir = Path("midicoder/stacks/nestjs/templates")
+    stack_dir = Path("midicoder/stacks/nestjs/core/cp01_domain_model")
     return NestJSQueryEmitter(stack_dir=stack_dir)
 
 

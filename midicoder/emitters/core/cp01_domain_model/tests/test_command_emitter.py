@@ -138,14 +138,14 @@ def sample_transfer_money_command():
 @pytest.fixture
 def fastapi_command_emitter():
     """FastAPI Command emitter instance."""
-    stack_dir = Path("midicoder/stacks/fastapi/templates")
+    stack_dir = Path("midicoder/stacks/fastapi/core/cp01_domain_model")
     return FastAPICommandEmitter(stack_dir=stack_dir)
 
 
 @pytest.fixture
 def nestjs_command_emitter():
     """NestJS Command emitter instance."""
-    stack_dir = Path("midicoder/stacks/nestjs/templates")
+    stack_dir = Path("midicoder/stacks/nestjs/core/cp01_domain_model")
     return NestJSCommandEmitter(stack_dir=stack_dir)
 
 
