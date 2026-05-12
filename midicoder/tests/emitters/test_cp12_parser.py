@@ -25,8 +25,8 @@ class TestParseNotifications:
 
     def test_parse_single_notification(self):
         """Parse một notification template."""
-        from midicoder.emitters.core.notification.parser import parse_notifications
-        from midicoder.emitters.core.notification.models import NotificationChannel
+        from midicoder.emitters.core.cp12_notification.parser import parse_notifications
+        from midicoder.emitters.core.cp12_notification.models import NotificationChannel
 
         data = {
             "notifications": [
@@ -46,7 +46,7 @@ class TestParseNotifications:
 
     def test_parse_multiple_notifications(self):
         """Parse nhiều notification templates."""
-        from midicoder.emitters.core.notification.parser import parse_notifications
+        from midicoder.emitters.core.cp12_notification.parser import parse_notifications
 
         data = {
             "notifications": [
@@ -61,7 +61,7 @@ class TestParseNotifications:
 
     def test_parse_from_yaml_string(self):
         """Parse notifications từ YAML string."""
-        from midicoder.emitters.core.notification.parser import parse_notifications
+        from midicoder.emitters.core.cp12_notification.parser import parse_notifications
 
         yaml_str = """
 notifications:
@@ -83,7 +83,7 @@ notifications:
 
     def test_parse_empty_notifications(self):
         """Parse khi không có notifications."""
-        from midicoder.emitters.core.notification.parser import parse_notifications
+        from midicoder.emitters.core.cp12_notification.parser import parse_notifications
 
         data = {}
         templates = parse_notifications(data)
@@ -100,7 +100,7 @@ class TestParseChannels:
 
     def test_parse_channels_dict(self):
         """Parse channels với dict config."""
-        from midicoder.emitters.core.notification.parser import parse_channels
+        from midicoder.emitters.core.cp12_notification.parser import parse_channels
 
         data = {
             "channels": {
@@ -114,7 +114,7 @@ class TestParseChannels:
 
     def test_parse_channels_boolean(self):
         """Parse channels với boolean value."""
-        from midicoder.emitters.core.notification.parser import parse_channels
+        from midicoder.emitters.core.cp12_notification.parser import parse_channels
 
         data = {
             "channels": {
@@ -128,7 +128,7 @@ class TestParseChannels:
 
     def test_parse_channels_from_yaml(self):
         """Parse channels từ YAML string."""
-        from midicoder.emitters.core.notification.parser import parse_channels
+        from midicoder.emitters.core.cp12_notification.parser import parse_channels
 
         yaml_str = """
 channels:
@@ -141,7 +141,7 @@ channels:
 
     def test_parse_empty_channels(self):
         """Parse khi không có channels."""
-        from midicoder.emitters.core.notification.parser import parse_channels
+        from midicoder.emitters.core.cp12_notification.parser import parse_channels
 
         data = {}
         config = parse_channels(data)
@@ -158,9 +158,9 @@ class TestParseProviders:
 
     def test_parse_providers(self):
         """Parse providers từ YAML."""
-        from midicoder.emitters.core.notification.parser import parse_notifications
-        from midicoder.emitters.core.notification.parser import parse_providers
-        from midicoder.emitters.core.notification.models import NotificationChannel
+        from midicoder.emitters.core.cp12_notification.parser import parse_notifications
+        from midicoder.emitters.core.cp12_notification.parser import parse_providers
+        from midicoder.emitters.core.cp12_notification.models import NotificationChannel
 
         data = {
             "providers": [
@@ -175,7 +175,7 @@ class TestParseProviders:
 
     def test_parse_providers_sorted_by_priority(self):
         """Providers được sắp xếp theo priority."""
-        from midicoder.emitters.core.notification.parser import parse_providers
+        from midicoder.emitters.core.cp12_notification.parser import parse_providers
 
         data = {
             "providers": [
@@ -189,7 +189,7 @@ class TestParseProviders:
 
     def test_parse_providers_from_yaml(self):
         """Parse providers từ YAML string."""
-        from midicoder.emitters.core.notification.parser import parse_providers
+        from midicoder.emitters.core.cp12_notification.parser import parse_providers
 
         yaml_str = """
 providers:
@@ -210,7 +210,7 @@ providers:
 
     def test_parse_empty_providers(self):
         """Parse khi không có providers."""
-        from midicoder.emitters.core.notification.parser import parse_providers
+        from midicoder.emitters.core.cp12_notification.parser import parse_providers
 
         data = {}
         providers = parse_providers(data)

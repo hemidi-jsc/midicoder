@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest import TestCase
 
-from midicoder.emitters.core.file_storage.models import (
+from midicoder.emitters.core.cp11_file_media.models import (
     FileStorageCollection,
     MediaTransform,
     StorageBackend,
@@ -59,19 +59,19 @@ class TestAngularEmitterBasic(TestCase):
 
     def test_emitter_class_exists(self):
         """AngularFileStorageEmitter ton tai."""
-        from midicoder.emitters.core.file_storage.angular import AngularFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
         self.assertIsNotNone(AngularFileStorageEmitter)
 
     def test_emit_returns_list(self):
         """emit() tra ve list GeneratedFile."""
-        from midicoder.emitters.core.file_storage.angular import AngularFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
         emitter = AngularFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         self.assertIsInstance(files, list)
 
     def test_emit_has_service(self):
         """Sinh ra file-storage.service.ts."""
-        from midicoder.emitters.core.file_storage.angular import AngularFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
         emitter = AngularFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -79,7 +79,7 @@ class TestAngularEmitterBasic(TestCase):
 
     def test_emit_has_component(self):
         """Sinh ra file-upload.component.ts."""
-        from midicoder.emitters.core.file_storage.angular import AngularFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
         emitter = AngularFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -87,7 +87,7 @@ class TestAngularEmitterBasic(TestCase):
 
     def test_emit_has_module(self):
         """Sinh ra file-storage.module.ts."""
-        from midicoder.emitters.core.file_storage.angular import AngularFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
         emitter = AngularFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -95,7 +95,7 @@ class TestAngularEmitterBasic(TestCase):
 
     def test_emit_has_models(self):
         """Sinh ra file-storage.models.ts."""
-        from midicoder.emitters.core.file_storage.angular import AngularFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
         emitter = AngularFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -103,7 +103,7 @@ class TestAngularEmitterBasic(TestCase):
 
     def test_emit_has_index(self):
         """Sinh ra index.ts."""
-        from midicoder.emitters.core.file_storage.angular import AngularFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
         emitter = AngularFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -114,7 +114,7 @@ class TestAngularEmitterContent(TestCase):
     """Kiem tra noi dung Angular generated code."""
 
     def setUp(self):
-        from midicoder.emitters.core.file_storage.angular import AngularFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
         self.emitter = AngularFileStorageEmitter(stack_dir=Path('.'))
         self.files = self.emitter.emit(make_collection(), Path('/tmp'))
 
@@ -165,7 +165,7 @@ class TestAngularGeneratedFile(TestCase):
 
     def test_generated_file_has_capability(self):
         """GeneratedFile co capability = CP11."""
-        from midicoder.emitters.core.file_storage.angular import AngularFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
         emitter = AngularFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         for f in files:

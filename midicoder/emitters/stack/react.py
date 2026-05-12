@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from midicoder.emitters.core.cache import (
+from midicoder.emitters.core.cp09_cache import (
     CacheParser,
     ReactEmitter as CacheReactEmitter,
 )

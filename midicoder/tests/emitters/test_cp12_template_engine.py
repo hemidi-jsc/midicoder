@@ -25,7 +25,7 @@ class TestTemplateRenderer:
 
     def test_render_simple_variable(self):
         """Render simple variable {{name}}."""
-        from midicoder.emitters.core.notification.template_engine import TemplateRenderer
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateRenderer
 
         renderer = TemplateRenderer()
         result = renderer.render_string("Xin chào {{name}}!", {"name": "Minh"})
@@ -33,7 +33,7 @@ class TestTemplateRenderer:
 
     def test_render_multiple_variables(self):
         """Render nhiều variables."""
-        from midicoder.emitters.core.notification.template_engine import TemplateRenderer
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateRenderer
 
         renderer = TemplateRenderer()
         result = renderer.render_string(
@@ -45,7 +45,7 @@ class TestTemplateRenderer:
 
     def test_render_nested_variable(self):
         """Render nested variable {{user.name}}."""
-        from midicoder.emitters.core.notification.template_engine import TemplateRenderer
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateRenderer
 
         renderer = TemplateRenderer()
         result = renderer.render_string(
@@ -56,7 +56,7 @@ class TestTemplateRenderer:
 
     def test_render_filter_uppercase(self):
         """Render filter uppercase."""
-        from midicoder.emitters.core.notification.template_engine import TemplateRenderer
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateRenderer
 
         renderer = TemplateRenderer()
         result = renderer.render_string("{{name|uppercase}}", {"name": "minh"})
@@ -64,7 +64,7 @@ class TestTemplateRenderer:
 
     def test_render_filter_currency(self):
         """Render filter currency."""
-        from midicoder.emitters.core.notification.template_engine import TemplateRenderer
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateRenderer
 
         renderer = TemplateRenderer()
         result = renderer.render_string("{{price|currency}}", {"price": "1000"})
@@ -72,7 +72,7 @@ class TestTemplateRenderer:
 
     def test_render_missing_variable_keeps_original(self):
         """Giữ nguyên variable nếu không có trong data."""
-        from midicoder.emitters.core.notification.template_engine import TemplateRenderer
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateRenderer
 
         renderer = TemplateRenderer()
         result = renderer.render_string("{{missing}}", {})
@@ -80,8 +80,8 @@ class TestTemplateRenderer:
 
     def test_render_notification_template(self):
         """Render NotificationTemplate hoàn chỉnh."""
-        from midicoder.emitters.core.notification.template_engine import TemplateRenderer
-        from midicoder.emitters.core.notification.models import NotificationTemplate, NotificationChannel
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateRenderer
+        from midicoder.emitters.core.cp12_notification.models import NotificationTemplate, NotificationChannel
 
         renderer = TemplateRenderer()
         template = NotificationTemplate(
@@ -97,7 +97,7 @@ class TestTemplateRenderer:
 
     def test_render_no_variables(self):
         """Render string không có variable."""
-        from midicoder.emitters.core.notification.template_engine import TemplateRenderer
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateRenderer
 
         renderer = TemplateRenderer()
         result = renderer.render_string("Xin chào thế giới!", {})
@@ -114,7 +114,7 @@ class TestTemplateValidator:
 
     def test_validate_syntax_valid(self):
         """Validate syntax với template hợp lệ."""
-        from midicoder.emitters.core.notification.template_engine import TemplateValidator
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateValidator
 
         validator = TemplateValidator()
         errors = validator.validate_syntax("Xin chào {{name}}!")
@@ -122,7 +122,7 @@ class TestTemplateValidator:
 
     def test_validate_syntax_unclosed(self):
         """Validate syntax với template unclosed."""
-        from midicoder.emitters.core.notification.template_engine import TemplateValidator
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateValidator
 
         validator = TemplateValidator()
         errors = validator.validate_syntax("Xin chào {{name")
@@ -130,7 +130,7 @@ class TestTemplateValidator:
 
     def test_extract_variables(self):
         """Extract variables từ template."""
-        from midicoder.emitters.core.notification.template_engine import TemplateValidator
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateValidator
 
         validator = TemplateValidator()
         vars = validator.extract_variables("Xin chào {{name}}, email: {{email}}")
@@ -140,7 +140,7 @@ class TestTemplateValidator:
 
     def test_extract_variables_with_filters(self):
         """Extract variables có filter."""
-        from midicoder.emitters.core.notification.template_engine import TemplateValidator
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateValidator
 
         validator = TemplateValidator()
         vars = validator.extract_variables("{{price|currency}}, {{name|uppercase}}")
@@ -149,7 +149,7 @@ class TestTemplateValidator:
 
     def test_validate_payload_valid(self):
         """Validate payload đầy đủ."""
-        from midicoder.emitters.core.notification.template_engine import TemplateValidator
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateValidator
 
         validator = TemplateValidator()
         errors = validator.validate_payload(
@@ -160,7 +160,7 @@ class TestTemplateValidator:
 
     def test_validate_payload_missing(self):
         """Validate payload thiếu variable."""
-        from midicoder.emitters.core.notification.template_engine import TemplateValidator
+        from midicoder.emitters.core.cp12_notification.template_engine import TemplateValidator
 
         validator = TemplateValidator()
         errors = validator.validate_payload(
@@ -180,7 +180,7 @@ class TestRenderedTemplate:
 
     def test_rendered_template_creation(self):
         """Tạo RenderedTemplate."""
-        from midicoder.emitters.core.notification.template_engine import RenderedTemplate
+        from midicoder.emitters.core.cp12_notification.template_engine import RenderedTemplate
 
         rt = RenderedTemplate(
             template_id="welcome",
@@ -193,7 +193,7 @@ class TestRenderedTemplate:
 
     def test_rendered_template_to_dict(self):
         """RenderedTemplate.to_dict() trả về dict đúng."""
-        from midicoder.emitters.core.notification.template_engine import RenderedTemplate
+        from midicoder.emitters.core.cp12_notification.template_engine import RenderedTemplate
 
         rt = RenderedTemplate(
             template_id="t1",

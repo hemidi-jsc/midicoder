@@ -69,35 +69,35 @@ class TestNotificationChannel:
 
     def test_email_channel_exists(self):
         """NotificationChannel có EMAIL."""
-        from midicoder.emitters.core.notification.models import NotificationChannel
+        from midicoder.emitters.core.cp12_notification.models import NotificationChannel
 
         assert hasattr(NotificationChannel, "EMAIL")
         assert NotificationChannel.EMAIL.value == "email"
 
     def test_sms_channel_exists(self):
         """NotificationChannel có SMS."""
-        from midicoder.emitters.core.notification.models import NotificationChannel
+        from midicoder.emitters.core.cp12_notification.models import NotificationChannel
 
         assert hasattr(NotificationChannel, "SMS")
         assert NotificationChannel.SMS.value == "sms"
 
     def test_push_channel_exists(self):
         """NotificationChannel có PUSH."""
-        from midicoder.emitters.core.notification.models import NotificationChannel
+        from midicoder.emitters.core.cp12_notification.models import NotificationChannel
 
         assert hasattr(NotificationChannel, "PUSH")
         assert NotificationChannel.PUSH.value == "push"
 
     def test_webhook_channel_exists(self):
         """NotificationChannel có WEBHOOK."""
-        from midicoder.emitters.core.notification.models import NotificationChannel
+        from midicoder.emitters.core.cp12_notification.models import NotificationChannel
 
         assert hasattr(NotificationChannel, "WEBHOOK")
         assert NotificationChannel.WEBHOOK.value == "webhook"
 
     def test_in_app_channel_exists(self):
         """NotificationChannel có IN_APP."""
-        from midicoder.emitters.core.notification.models import NotificationChannel
+        from midicoder.emitters.core.cp12_notification.models import NotificationChannel
 
         assert hasattr(NotificationChannel, "IN_APP")
         assert NotificationChannel.IN_APP.value == "in_app"
@@ -108,7 +108,7 @@ class TestNotificationTemplate:
 
     def test_template_creation(self):
         """NotificationTemplate tạo với đủ thuộc tính."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationTemplate,
             NotificationChannel,
         )
@@ -129,7 +129,7 @@ class TestNotificationTemplate:
 
     def test_template_defaults(self):
         """NotificationTemplate có default values."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationTemplate,
             NotificationChannel,
         )
@@ -143,7 +143,7 @@ class TestNotificationTemplate:
 
     def test_template_render(self):
         """NotificationTemplate render variables đúng."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationTemplate,
             NotificationChannel,
         )
@@ -161,7 +161,7 @@ class TestNotificationTemplate:
 
     def test_template_render_missing_variable(self):
         """NotificationTemplate render giữ nguyên variable nếu thiếu."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationTemplate,
             NotificationChannel,
         )
@@ -177,7 +177,7 @@ class TestNotificationTemplate:
 
     def test_template_to_dict(self):
         """NotificationTemplate.to_dict() trả về dict đúng."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationTemplate,
             NotificationChannel,
         )
@@ -195,7 +195,7 @@ class TestNotificationTemplate:
 
     def test_template_from_dict(self):
         """NotificationTemplate.from_dict() tạo object đúng."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationTemplate,
             NotificationChannel,
         )
@@ -223,7 +223,7 @@ class TestNotificationDispatch:
 
     def test_dispatch_creation(self):
         """NotificationDispatch tạo với đủ thuộc tính."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationDispatch,
             NotificationChannel,
         )
@@ -241,7 +241,7 @@ class TestNotificationDispatch:
 
     def test_dispatch_status_update(self):
         """NotificationDispatch có thể update status."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationDispatch,
             NotificationChannel,
         )
@@ -258,7 +258,7 @@ class TestNotificationDispatch:
 
     def test_dispatch_to_dict(self):
         """NotificationDispatch.to_dict() trả về dict đúng."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationDispatch,
             NotificationChannel,
         )
@@ -285,7 +285,7 @@ class TestNotificationProvider:
 
     def test_provider_creation(self):
         """NotificationProvider tạo với config."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationProvider,
             NotificationChannel,
         )
@@ -303,7 +303,7 @@ class TestNotificationProvider:
 
     def test_provider_defaults(self):
         """NotificationProvider có default values."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationProvider,
             NotificationChannel,
         )
@@ -326,7 +326,7 @@ class TestDispatchResult:
 
     def test_result_sent(self):
         """DispatchResult với status sent."""
-        from midicoder.emitters.core.notification.models import DispatchResult
+        from midicoder.emitters.core.cp12_notification.models import DispatchResult
 
         result = DispatchResult(
             dispatch_id="disp_001",
@@ -338,7 +338,7 @@ class TestDispatchResult:
 
     def test_result_failed(self):
         """DispatchResult với status failed và error_code."""
-        from midicoder.emitters.core.notification.models import DispatchResult
+        from midicoder.emitters.core.cp12_notification.models import DispatchResult
 
         result = DispatchResult(
             dispatch_id="disp_002",
@@ -350,7 +350,7 @@ class TestDispatchResult:
 
     def test_result_to_dict_with_response(self):
         """DispatchResult.to_dict() với provider_response."""
-        from midicoder.emitters.core.notification.models import DispatchResult
+        from midicoder.emitters.core.cp12_notification.models import DispatchResult
 
         result = DispatchResult(
             dispatch_id="disp_001",
@@ -363,7 +363,7 @@ class TestDispatchResult:
 
     def test_result_to_dict_without_response(self):
         """DispatchResult.to_dict() không có provider_response."""
-        from midicoder.emitters.core.notification.models import DispatchResult
+        from midicoder.emitters.core.cp12_notification.models import DispatchResult
 
         result = DispatchResult(
             dispatch_id="disp_003",
@@ -379,7 +379,7 @@ class TestNotificationDispatchAdvanced:
 
     def test_dispatch_mark_failed(self):
         """NotificationDispatch mark_failed."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationDispatch,
             NotificationChannel,
         )
@@ -396,7 +396,7 @@ class TestNotificationDispatchAdvanced:
 
     def test_dispatch_mark_bounced(self):
         """NotificationDispatch mark_bounced."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationDispatch,
             NotificationChannel,
         )
@@ -413,7 +413,7 @@ class TestNotificationDispatchAdvanced:
 
     def test_dispatch_to_dict_with_sent_at(self):
         """NotificationDispatch.to_dict() với sent_at."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationDispatch,
             NotificationChannel,
         )
@@ -431,7 +431,7 @@ class TestNotificationDispatchAdvanced:
 
     def test_dispatch_to_dict_with_error(self):
         """NotificationDispatch.to_dict() với error_message."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationDispatch,
             NotificationChannel,
         )
@@ -452,7 +452,7 @@ class TestNotificationProviderAdvanced:
 
     def test_provider_from_dict(self):
         """NotificationProvider.from_dict() tạo object đúng."""
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationProvider,
             NotificationChannel,
         )
@@ -476,7 +476,7 @@ class TestNotificationParserAdvanced:
 
     def test_parse_channels_non_dict_value(self):
         """parse_channels() xử lý non-dict value."""
-        from midicoder.emitters.core.notification.parser import parse_channels
+        from midicoder.emitters.core.cp12_notification.parser import parse_channels
         import yaml
 
         yaml_str = """
@@ -500,7 +500,7 @@ class TestNotificationParser:
 
     def test_parse_templates_from_yaml(self):
         """parse_notifications() parse YAML thành list template."""
-        from midicoder.emitters.core.notification.parser import parse_notifications
+        from midicoder.emitters.core.cp12_notification.parser import parse_notifications
         import yaml
 
         yaml_str = """
@@ -525,7 +525,7 @@ notifications:
 
     def test_parse_channels(self):
         """parse_channels() parse channel config."""
-        from midicoder.emitters.core.notification.parser import parse_channels
+        from midicoder.emitters.core.cp12_notification.parser import parse_channels
         import yaml
 
         yaml_str = """
@@ -543,7 +543,7 @@ channels:
 
     def test_parse_providers(self):
         """parse_providers() parse provider config."""
-        from midicoder.emitters.core.notification.parser import parse_providers
+        from midicoder.emitters.core.cp12_notification.parser import parse_providers
         import yaml
 
         yaml_str = """
@@ -576,7 +576,7 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_class_exists(self):
         """FastAPINotificationEmitter class tồn tại."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
@@ -584,7 +584,7 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_generate_service(self):
         """Emitter generate notification service code."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
@@ -596,7 +596,7 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_generate_controller(self):
         """Emitter generate notification router code."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
@@ -607,7 +607,7 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_generate_models(self):
         """Emitter generate Pydantic models."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
@@ -618,7 +618,7 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_generate_tasks(self):
         """Emitter generate background tasks."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
@@ -628,7 +628,7 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_has_send_email(self):
         """Service code chứa send_email method."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
@@ -638,7 +638,7 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_has_render_template(self):
         """Service code chứa render method."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
@@ -648,7 +648,7 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_vietnamese_comments(self):
         """Generated code có comments tiếng Việt."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
@@ -660,7 +660,7 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_generate_full(self):
         """Emitter generate_full trả về dict với nhiều files."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
 
@@ -671,10 +671,10 @@ class TestFastAPINotificationEmitter:
 
     def test_emitter_with_templates(self):
         """Emitter nhận vào templates và generate code đúng."""
-        from midicoder.emitters.core.notification.fastapi import (
+        from midicoder.emitters.core.cp12_notification.fastapi import (
             FastAPINotificationEmitter,
         )
-        from midicoder.emitters.core.notification.models import (
+        from midicoder.emitters.core.cp12_notification.models import (
             NotificationTemplate,
             NotificationChannel,
         )
@@ -701,7 +701,7 @@ class TestNestJSNotificationEmitter:
 
     def test_emitter_class_exists(self):
         """NestJSNotificationEmitter class tồn tại."""
-        from midicoder.emitters.core.notification.nestjs import (
+        from midicoder.emitters.core.cp12_notification.nestjs import (
             NestJSNotificationEmitter,
         )
 
@@ -709,7 +709,7 @@ class TestNestJSNotificationEmitter:
 
     def test_emitter_generate_module(self):
         """Emitter generate NotificationModule."""
-        from midicoder.emitters.core.notification.nestjs import (
+        from midicoder.emitters.core.cp12_notification.nestjs import (
             NestJSNotificationEmitter,
         )
 
@@ -720,7 +720,7 @@ class TestNestJSNotificationEmitter:
 
     def test_emitter_generate_service(self):
         """Emitter generate NotificationService."""
-        from midicoder.emitters.core.notification.nestjs import (
+        from midicoder.emitters.core.cp12_notification.nestjs import (
             NestJSNotificationEmitter,
         )
 
@@ -731,7 +731,7 @@ class TestNestJSNotificationEmitter:
 
     def test_emitter_generate_controller(self):
         """Emitter generate NotificationController."""
-        from midicoder.emitters.core.notification.nestjs import (
+        from midicoder.emitters.core.cp12_notification.nestjs import (
             NestJSNotificationEmitter,
         )
 
@@ -742,7 +742,7 @@ class TestNestJSNotificationEmitter:
 
     def test_emitter_generate_dto(self):
         """Emitter generate DTOs."""
-        from midicoder.emitters.core.notification.nestjs import (
+        from midicoder.emitters.core.cp12_notification.nestjs import (
             NestJSNotificationEmitter,
         )
 
@@ -753,7 +753,7 @@ class TestNestJSNotificationEmitter:
 
     def test_emitter_vietnamese_comments(self):
         """Generated code có comments tiếng Việt."""
-        from midicoder.emitters.core.notification.nestjs import (
+        from midicoder.emitters.core.cp12_notification.nestjs import (
             NestJSNotificationEmitter,
         )
 
@@ -764,7 +764,7 @@ class TestNestJSNotificationEmitter:
 
     def test_emitter_generate_full(self):
         """Emitter generate_full trả về dict với nhiều files."""
-        from midicoder.emitters.core.notification.nestjs import (
+        from midicoder.emitters.core.cp12_notification.nestjs import (
             NestJSNotificationEmitter,
         )
 
@@ -775,7 +775,7 @@ class TestNestJSNotificationEmitter:
 
     def test_emitter_event_emitter_integration(self):
         """Service code integrate với NestJS EventEmitter."""
-        from midicoder.emitters.core.notification.nestjs import (
+        from midicoder.emitters.core.cp12_notification.nestjs import (
             NestJSNotificationEmitter,
         )
 

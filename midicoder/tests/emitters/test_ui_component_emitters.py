@@ -14,7 +14,7 @@ Version: 1.0.0
 
 import pytest
 from pathlib import Path
-from midicoder.emitters.core.ui_component.models import (
+from midicoder.emitters.core.cp19_ui_components.models import (
     ComponentSpec, ComponentType, FormFieldSpec, FieldType,
     TableSpec, TableColumn,
 )
@@ -25,25 +25,25 @@ class TestAngularUIEmitter:
 
     def test_angular_emitter_init_with_material(self):
         """Test khởi tạo AngularUIEmitter với material."""
-        from midicoder.emitters.core.ui_component.angular import AngularUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.angular import AngularUIEmitter
         emitter = AngularUIEmitter(ui_framework="material")
         assert emitter.ui_framework == "material"
 
     def test_angular_emitter_init_with_tailwind(self):
         """Test khởi tạo AngularUIEmitter với tailwind."""
-        from midicoder.emitters.core.ui_component.angular import AngularUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.angular import AngularUIEmitter
         emitter = AngularUIEmitter(ui_framework="tailwind")
         assert emitter.ui_framework == "tailwind"
 
     def test_angular_emitter_invalid_framework_raises(self):
         """Test framework không hợp lệ thì raise."""
-        from midicoder.emitters.core.ui_component.angular import AngularUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.angular import AngularUIEmitter
         with pytest.raises(ValueError):
             AngularUIEmitter(ui_framework="invalid")
 
     def test_angular_emitter_generate_form_field(self, tmp_path: Path):
         """Test generate form field component cho Angular."""
-        from midicoder.emitters.core.ui_component.angular import AngularUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.angular import AngularUIEmitter
         emitter = AngularUIEmitter(ui_framework="material")
         components = [
             ComponentSpec(
@@ -66,7 +66,7 @@ class TestAngularUIEmitter:
 
     def test_angular_emitter_generate_all_components(self, tmp_path: Path):
         """Test generate tất cả 4 components cho Angular."""
-        from midicoder.emitters.core.ui_component.angular import AngularUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.angular import AngularUIEmitter
         emitter = AngularUIEmitter(ui_framework="material")
         components = [
             ComponentSpec(component_type=ComponentType.FORM_FIELD, entity_id="User"),
@@ -90,25 +90,25 @@ class TestReactUIEmitter:
 
     def test_react_emitter_init_with_tailwind(self):
         """Test khởi tạo ReactUIEmitter với tailwind."""
-        from midicoder.emitters.core.ui_component.react import ReactUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.react import ReactUIEmitter
         emitter = ReactUIEmitter(ui_framework="tailwind")
         assert emitter.ui_framework == "tailwind"
 
     def test_react_emitter_init_with_material(self):
         """Test khởi tạo ReactUIEmitter với material."""
-        from midicoder.emitters.core.ui_component.react import ReactUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.react import ReactUIEmitter
         emitter = ReactUIEmitter(ui_framework="material")
         assert emitter.ui_framework == "material"
 
     def test_react_emitter_invalid_framework_raises(self):
         """Test framework không hợp lệ thì raise."""
-        from midicoder.emitters.core.ui_component.react import ReactUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.react import ReactUIEmitter
         with pytest.raises(ValueError):
             ReactUIEmitter(ui_framework="invalid")
 
     def test_react_emitter_generate_form_field(self, tmp_path: Path):
         """Test generate form field component cho React."""
-        from midicoder.emitters.core.ui_component.react import ReactUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.react import ReactUIEmitter
         emitter = ReactUIEmitter(ui_framework="tailwind")
         components = [
             ComponentSpec(
@@ -131,7 +131,7 @@ class TestReactUIEmitter:
 
     def test_react_emitter_generate_all_components(self, tmp_path: Path):
         """Test generate tất cả 4 components cho React."""
-        from midicoder.emitters.core.ui_component.react import ReactUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.react import ReactUIEmitter
         emitter = ReactUIEmitter(ui_framework="tailwind")
         components = [
             ComponentSpec(component_type=ComponentType.FORM_FIELD, entity_id="User"),
@@ -155,14 +155,14 @@ class TestFastAPIUIEmitter:
 
     def test_fastapi_emitter_init(self):
         """Test khởi tạo FastAPIUIEmitter."""
-        from midicoder.emitters.core.ui_component.fastapi import FastAPIUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.fastapi import FastAPIUIEmitter
         emitter = FastAPIUIEmitter()
         assert emitter.name == "fastapi-ui"
         assert emitter.language == "python"
 
     def test_fastapi_emitter_generate_form_validation(self, tmp_path: Path):
         """Test generate form validation service."""
-        from midicoder.emitters.core.ui_component.fastapi import FastAPIUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.fastapi import FastAPIUIEmitter
         emitter = FastAPIUIEmitter()
         components = [
             ComponentSpec(
@@ -186,7 +186,7 @@ class TestFastAPIUIEmitter:
 
     def test_fastapi_emitter_no_form_components(self, tmp_path: Path):
         """Test sinh service mặc định khi không có form component."""
-        from midicoder.emitters.core.ui_component.fastapi import FastAPIUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.fastapi import FastAPIUIEmitter
         emitter = FastAPIUIEmitter()
         files = emitter.generate([], tmp_path)
         assert len(files) == 1
@@ -197,14 +197,14 @@ class TestNestJSUIEmitter:
 
     def test_nestjs_emitter_init(self):
         """Test khởi tạo NestJSUIEmitter."""
-        from midicoder.emitters.core.ui_component.nestjs import NestJSUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.nestjs import NestJSUIEmitter
         emitter = NestJSUIEmitter()
         assert emitter.name == "nestjs-ui"
         assert emitter.language == "typescript"
 
     def test_nestjs_emitter_generate_dto_and_pipe(self, tmp_path: Path):
         """Test generate DTO + Pipe."""
-        from midicoder.emitters.core.ui_component.nestjs import NestJSUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.nestjs import NestJSUIEmitter
         emitter = NestJSUIEmitter()
         components = [
             ComponentSpec(
@@ -229,7 +229,7 @@ class TestNestJSUIEmitter:
 
     def test_nestjs_emitter_only_pipe_when_no_forms(self, tmp_path: Path):
         """Test chỉ sinh Pipe khi không có form component."""
-        from midicoder.emitters.core.ui_component.nestjs import NestJSUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.nestjs import NestJSUIEmitter
         emitter = NestJSUIEmitter()
         files = emitter.generate([], tmp_path)
         assert len(files) == 1

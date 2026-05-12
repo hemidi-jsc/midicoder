@@ -15,14 +15,14 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from midicoder.emitters.core.auth.models import (
+from midicoder.emitters.core.cp03_auth.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
     JWTAuthConfig,
     Permission,
 )
-from midicoder.emitters.core.auth.react import (
+from midicoder.emitters.core.cp03_auth.react import (
     ReactEmitter,
     GeneratedFile,
     emit_react_auth,

@@ -13,11 +13,11 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from midicoder.emitters.core.component.angular import AngularComponentEmitter
-from midicoder.emitters.core.component.react import ReactComponentEmitter
-from midicoder.emitters.core.component.fastapi import FastAPIFrontendEmitter
-from midicoder.emitters.core.component.nestjs import NestJSFrontendEmitter
-from midicoder.emitters.core.component.models import (
+from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
+from midicoder.emitters.core.cp18_frontend_framework.fastapi import FastAPIFrontendEmitter
+from midicoder.emitters.core.cp18_frontend_framework.nestjs import NestJSFrontendEmitter
+from midicoder.emitters.core.cp18_frontend_framework.models import (
     FrontendApp,
     FrontendFramework,
     RouteDefinition,
@@ -281,7 +281,7 @@ class TestEmitterCollaboration:
 
     def test_angular_emit_routes_from_parser(self):
         """Test Angular emit_routes từ parser result."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
 
         yaml_str = """
 name: test-app
@@ -304,7 +304,7 @@ routes:
 
     def test_react_emit_state_store_from_parser(self):
         """Test React emit_state_store từ parser result."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
 
         yaml_str = """
 name: test-app

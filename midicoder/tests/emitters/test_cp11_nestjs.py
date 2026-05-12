@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest import TestCase
 
-from midicoder.emitters.core.file_storage.models import (
+from midicoder.emitters.core.cp11_file_media.models import (
     FileStorageCollection,
     MediaTransform,
     StorageBackend,
@@ -59,12 +59,12 @@ class TestNestJSEmitterBasic(TestCase):
 
     def test_emitter_class_exists(self):
         """NestJSFileStorageEmitter ton tai."""
-        from midicoder.emitters.core.file_storage.nestjs import NestJSFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.nestjs import NestJSFileStorageEmitter
         self.assertIsNotNone(NestJSFileStorageEmitter)
 
     def test_generate_returns_dict(self):
         """Generate tra ve dict."""
-        from midicoder.emitters.core.file_storage.nestjs import NestJSFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.nestjs import NestJSFileStorageEmitter
         emitter = NestJSFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.generate(make_collection(), Path('/tmp'))
         self.assertIsInstance(files, dict)
@@ -74,7 +74,7 @@ class TestNestJSEmitterContent(TestCase):
     """Kiem tra noi dung NestJS generated code."""
 
     def setUp(self):
-        from midicoder.emitters.core.file_storage.nestjs import NestJSFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.nestjs import NestJSFileStorageEmitter
         self.emitter = NestJSFileStorageEmitter(stack_dir=Path('.'))
         self.files = self.emitter.generate(make_collection(), Path('/tmp'))
 

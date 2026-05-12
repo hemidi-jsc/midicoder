@@ -13,8 +13,8 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.emitters.core.monitoring.parser import MonitoringParser
-from midicoder.emitters.core.monitoring.models import (
+from midicoder.emitters.core.cp16_monitoring.parser import MonitoringParser
+from midicoder.emitters.core.cp16_monitoring.models import (
     AlertCondition,
     AlertRule,
     AlertSeverity,

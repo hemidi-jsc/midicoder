@@ -15,7 +15,7 @@ Version: 1.0.0
 """
 
 import pytest
-from midicoder.emitters.core.auth.models import (
+from midicoder.emitters.core.cp03_auth.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,

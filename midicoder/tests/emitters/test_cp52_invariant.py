@@ -26,19 +26,19 @@ class TestPackYml:
 
     def test_pack_yml_exists(self) -> None:
         """Kiem tra pack.yml ton tai."""
-        pack_yml = ROOT / "emitters/core/invariant/pack.yml"
+        pack_yml = ROOT / "emitters/core/cp52_invariant/pack.yml"
         assert pack_yml.exists(), f"pack.yml khong ton tai tai {pack_yml}"
 
     def test_pack_yml_has_correct_id(self) -> None:
         """Kiem tra pack.yml co id=CP52."""
-        pack_yml = ROOT / "emitters/core/invariant/pack.yml"
+        pack_yml = ROOT / "emitters/core/cp52_invariant/pack.yml"
         with open(pack_yml, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         assert data["pack"]["id"] == "CP52"
 
     def test_pack_yml_capabilities_match_taxonomy(self) -> None:
         """Kiem tra capabilities_provided trong pack.yml match taxonomy.yml."""
-        pack_yml = ROOT / "emitters/core/invariant/pack.yml"
+        pack_yml = ROOT / "emitters/core/cp52_invariant/pack.yml"
         taxonomy_yml = ROOT.parent / "industry/taxonomy.yml"
 
         with open(pack_yml, "r", encoding="utf-8") as f:
@@ -66,7 +66,7 @@ class TestPackYml:
 
     def test_pack_yml_capabilities_correct(self) -> None:
         """Kiem tra capabilities_provided dung: enforce_invariant, gate_check."""
-        pack_yml = ROOT / "emitters/core/invariant/pack.yml"
+        pack_yml = ROOT / "emitters/core/cp52_invariant/pack.yml"
         with open(pack_yml, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         caps = data["pack"]["capabilities_provided"]
@@ -75,7 +75,7 @@ class TestPackYml:
 
     def test_pack_yml_depends_on_cp51(self) -> None:
         """Kiem tra pack.yml depends_on CP51."""
-        pack_yml = ROOT / "emitters/core/invariant/pack.yml"
+        pack_yml = ROOT / "emitters/core/cp52_invariant/pack.yml"
         with open(pack_yml, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         assert "CP51" in data["pack"]["depends_on"]
@@ -86,25 +86,25 @@ class TestFastAPIInvariantEmitter:
 
     def setup_method(self) -> None:
         """Reset InvariantManager truoc moi test."""
-        from midicoder.emitters.core.invariant import InvariantManager
+        from midicoder.emitters.core.cp52_invariant import InvariantManager
         InvariantManager.reset()
 
     def test_emitter_class_exists(self) -> None:
         """Kiem tra FastAPIInvariantEmitter class ton tai."""
-        from midicoder.emitters.core.invariant.fastapi import FastAPIInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.fastapi import FastAPIInvariantEmitter
         emitter = FastAPIInvariantEmitter()
         assert emitter is not None
 
     def test_generate_returns_dict(self) -> None:
         """Kiem tra generate() tra ve dict."""
-        from midicoder.emitters.core.invariant.fastapi import FastAPIInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.fastapi import FastAPIInvariantEmitter
         emitter = FastAPIInvariantEmitter()
         result = emitter.generate()
         assert isinstance(result, dict)
 
     def test_generate_has_gate_middleware(self) -> None:
         """Kiem tra generate() co gate middleware file."""
-        from midicoder.emitters.core.invariant.fastapi import FastAPIInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.fastapi import FastAPIInvariantEmitter
         emitter = FastAPIInvariantEmitter()
         result = emitter.generate()
         middleware_key = "src/middleware/invariant_gate.py"
@@ -113,7 +113,7 @@ class TestFastAPIInvariantEmitter:
 
     def test_generate_has_invariant_utils(self) -> None:
         """Kiem tra generate() co invariant utils file."""
-        from midicoder.emitters.core.invariant.fastapi import FastAPIInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.fastapi import FastAPIInvariantEmitter
         emitter = FastAPIInvariantEmitter()
         result = emitter.generate()
         utils_key = "src/utils/invariant_utils.py"
@@ -122,7 +122,7 @@ class TestFastAPIInvariantEmitter:
 
     def test_generate_gate_middleware(self) -> None:
         """Kiem tra generate_gate_middleware() tra ve dung file."""
-        from midicoder.emitters.core.invariant.fastapi import FastAPIInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.fastapi import FastAPIInvariantEmitter
         emitter = FastAPIInvariantEmitter()
         result = emitter.generate_gate_middleware()
         assert len(result) >= 1
@@ -130,7 +130,7 @@ class TestFastAPIInvariantEmitter:
 
     def test_generate_runtime_guards_initializes_manager(self) -> None:
         """Kiem tra generate_runtime_guards() initialize manager."""
-        from midicoder.emitters.core.invariant.fastapi import FastAPIInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.fastapi import FastAPIInvariantEmitter
         emitter = FastAPIInvariantEmitter()
         result = emitter.generate_runtime_guards()
         assert isinstance(result, dict)
@@ -141,20 +141,20 @@ class TestNestJSInvariantEmitter:
 
     def test_emitter_class_exists(self) -> None:
         """Kiem tra NestJSInvariantEmitter class ton tai."""
-        from midicoder.emitters.core.invariant.nestjs import NestJSInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.nestjs import NestJSInvariantEmitter
         emitter = NestJSInvariantEmitter()
         assert emitter is not None
 
     def test_generate_returns_dict(self) -> None:
         """Kiem tra generate() tra ve dict."""
-        from midicoder.emitters.core.invariant.nestjs import NestJSInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.nestjs import NestJSInvariantEmitter
         emitter = NestJSInvariantEmitter()
         result = emitter.generate()
         assert isinstance(result, dict)
 
     def test_generate_has_gate_pipe(self) -> None:
         """Kiem tra generate() co gate pipe file."""
-        from midicoder.emitters.core.invariant.nestjs import NestJSInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.nestjs import NestJSInvariantEmitter
         emitter = NestJSInvariantEmitter()
         result = emitter.generate()
         pipe_key = "src/common/pipes/invariant-gate.pipe.ts"
@@ -163,7 +163,7 @@ class TestNestJSInvariantEmitter:
 
     def test_generate_has_runtime_guard(self) -> None:
         """Kiem tra generate() co runtime guard file."""
-        from midicoder.emitters.core.invariant.nestjs import NestJSInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.nestjs import NestJSInvariantEmitter
         emitter = NestJSInvariantEmitter()
         result = emitter.generate()
         guard_key = "src/common/guards/invariant.guard.ts"
@@ -172,7 +172,7 @@ class TestNestJSInvariantEmitter:
 
     def test_generate_has_invariant_service(self) -> None:
         """Kiem tra generate() co invariant service file."""
-        from midicoder.emitters.core.invariant.nestjs import NestJSInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.nestjs import NestJSInvariantEmitter
         emitter = NestJSInvariantEmitter()
         result = emitter.generate()
         service_key = "src/common/services/invariant.service.ts"
@@ -181,7 +181,7 @@ class TestNestJSInvariantEmitter:
 
     def test_generate_gate_pipe(self) -> None:
         """Kiem tra generate_gate_pipe() tra ve dung file."""
-        from midicoder.emitters.core.invariant.nestjs import NestJSInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.nestjs import NestJSInvariantEmitter
         emitter = NestJSInvariantEmitter()
         result = emitter.generate_gate_pipe()
         assert len(result) >= 1
@@ -189,7 +189,7 @@ class TestNestJSInvariantEmitter:
 
     def test_generate_runtime_guard(self) -> None:
         """Kiem tra generate_runtime_guard() tra ve dung file."""
-        from midicoder.emitters.core.invariant.nestjs import NestJSInvariantEmitter
+        from midicoder.emitters.core.cp52_invariant.nestjs import NestJSInvariantEmitter
         emitter = NestJSInvariantEmitter()
         result = emitter.generate_runtime_guard()
         assert len(result) >= 1
@@ -257,7 +257,7 @@ class TestBlueprintCompilerGate:
             InvariantsConfig,
             IndustryInfo,
         )
-        from midicoder.emitters.core.tenant.models import TenantConfig, TenantMode
+        from midicoder.emitters.core.cp02_multi_tenant.models import TenantConfig, TenantMode
 
         bp = CompiledBlueprint(
             industry=IndustryInfo(
@@ -280,7 +280,7 @@ class TestBlueprintCompilerGate:
 
     def setup_method(self) -> None:
         """Reset InvariantManager truoc moi test."""
-        from midicoder.emitters.core.invariant import InvariantManager
+        from midicoder.emitters.core.cp52_invariant import InvariantManager
         InvariantManager.reset()
 
     def test_compose_with_mir_does_not_crash(self) -> None:
@@ -326,58 +326,58 @@ class TestDirectoryStructure:
     """Tests cho directory structure cua CP52."""
 
     def test_emitter_directory_exists(self) -> None:
-        """Kiem tra directory emitters/core/invariant ton tai."""
-        d = ROOT / "emitters/core/invariant"
+        """Kiem tra directory emitters/core/cp52_invariant ton tai."""
+        d = ROOT / "emitters/core/cp52_invariant"
         assert d.is_dir(), f"Directory khong ton tai: {d}"
 
     def test_models_py_exists(self) -> None:
         """Kiem tra models.py ton tai."""
-        f = ROOT / "emitters/core/invariant/models.py"
+        f = ROOT / "emitters/core/cp52_invariant/models.py"
         assert f.is_file(), f"models.py khong ton tai: {f}"
 
     def test_registry_py_exists(self) -> None:
         """Kiem tra registry.py ton tai."""
-        f = ROOT / "emitters/core/invariant/registry.py"
+        f = ROOT / "emitters/core/cp52_invariant/registry.py"
         assert f.is_file(), f"registry.py khong ton tai: {f}"
 
     def test_manager_py_exists(self) -> None:
         """Kiem tra manager.py ton tai."""
-        f = ROOT / "emitters/core/invariant/manager.py"
+        f = ROOT / "emitters/core/cp52_invariant/manager.py"
         assert f.is_file(), f"manager.py khong ton tai: {f}"
 
     def test_fastapi_py_exists(self) -> None:
         """Kiem tra fastapi.py ton tai."""
-        f = ROOT / "emitters/core/invariant/fastapi.py"
+        f = ROOT / "emitters/core/cp52_invariant/fastapi.py"
         assert f.is_file(), f"fastapi.py khong ton tai: {f}"
 
     def test_nestjs_py_exists(self) -> None:
         """Kiem tra nestjs.py ton tai."""
-        f = ROOT / "emitters/core/invariant/nestjs.py"
+        f = ROOT / "emitters/core/cp52_invariant/nestjs.py"
         assert f.is_file(), f"nestjs.py khong ton tai: {f}"
 
     def test_business_checks_exists(self) -> None:
         """Kiem tra business/checks.py ton tai."""
-        f = ROOT / "emitters/core/invariant/business/checks.py"
+        f = ROOT / "emitters/core/cp52_invariant/business/checks.py"
         assert f.is_file(), f"business/checks.py khong ton tai: {f}"
 
     def test_compliance_checks_exists(self) -> None:
         """Kiem tra compliance/checks.py ton tai."""
-        f = ROOT / "emitters/core/invariant/compliance/checks.py"
+        f = ROOT / "emitters/core/cp52_invariant/compliance/checks.py"
         assert f.is_file(), f"compliance/checks.py khong ton tai: {f}"
 
     def test_failure_mode_checks_exists(self) -> None:
         """Kiem tra failure_mode/checks.py ton tai."""
-        f = ROOT / "emitters/core/invariant/failure_mode/checks.py"
+        f = ROOT / "emitters/core/cp52_invariant/failure_mode/checks.py"
         assert f.is_file(), f"failure_mode/checks.py khong ton tai: {f}"
 
     def test_runtime_emitter_exists(self) -> None:
         """Kiem tra runtime/emitter.py ton tai."""
-        f = ROOT / "emitters/core/invariant/runtime/emitter.py"
+        f = ROOT / "emitters/core/cp52_invariant/runtime/emitter.py"
         assert f.is_file(), f"runtime/emitter.py khong ton tai: {f}"
 
     def test_domain_banking_exists(self) -> None:
         """Kiem tra domain/banking.py ton tai."""
-        f = ROOT / "emitters/core/invariant/domain/banking.py"
+        f = ROOT / "emitters/core/cp52_invariant/domain/banking.py"
         assert f.is_file(), f"domain/banking.py khong ton tai: {f}"
 
     def test_old_directory_removed(self) -> None:

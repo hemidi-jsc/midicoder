@@ -13,8 +13,8 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.emitters.core.analytics.parser import AnalyticsParser
-from midicoder.emitters.core.analytics.models import (
+from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+from midicoder.emitters.core.cp17_bi_analytics.models import (
     AggregationType,
     AnalyticsModel,
     AnalyticsSourceType,

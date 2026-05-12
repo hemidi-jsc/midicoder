@@ -20,8 +20,8 @@ class TestFileStorageParser:
 
     def test_parse_yaml_string(self):
         """Parse YAML string thành FileStorageCollection."""
-        from midicoder.emitters.core.file_storage.parser import FileStorageParser
-        from midicoder.emitters.core.file_storage.models import StorageBackend, TransformType
+        from midicoder.emitters.core.cp11_file_media.parser import FileStorageParser
+        from midicoder.emitters.core.cp11_file_media.models import StorageBackend, TransformType
 
         yaml_str = """
 profiles:
@@ -51,8 +51,8 @@ transforms:
 
     def test_parse_from_metadata(self):
         """Parse từ MIR metadata dict."""
-        from midicoder.emitters.core.file_storage.parser import FileStorageParser
-        from midicoder.emitters.core.file_storage.models import StorageBackend
+        from midicoder.emitters.core.cp11_file_media.parser import FileStorageParser
+        from midicoder.emitters.core.cp11_file_media.models import StorageBackend
 
         metadata = {
             "profiles": [
@@ -81,7 +81,7 @@ transforms:
 
     def test_parse_empty_metadata(self):
         """Parse metadata rỗng → collection rỗng."""
-        from midicoder.emitters.core.file_storage.parser import FileStorageParser
+        from midicoder.emitters.core.cp11_file_media.parser import FileStorageParser
 
         parser = FileStorageParser()
         collection = parser.parse_from_metadata({})
@@ -92,7 +92,7 @@ transforms:
 
     def test_parse_invalid_yaml_raises_error(self):
         """YAML không hợp lệ → MDC-CP11-007."""
-        from midicoder.emitters.core.file_storage.parser import FileStorageParser
+        from midicoder.emitters.core.cp11_file_media.parser import FileStorageParser
 
         parser = FileStorageParser()
         with pytest.raises(MidicoderError) as exc_info:
@@ -101,7 +101,7 @@ transforms:
 
     def test_parse_yaml_not_dict_raises_error(self):
         """YAML không phải dict → MDC-CP11-007."""
-        from midicoder.emitters.core.file_storage.parser import FileStorageParser
+        from midicoder.emitters.core.cp11_file_media.parser import FileStorageParser
 
         parser = FileStorageParser()
         with pytest.raises(MidicoderError) as exc_info:
@@ -110,7 +110,7 @@ transforms:
 
     def test_parse_skips_invalid_profiles(self):
         """Profile invalid được skip (không throw)."""
-        from midicoder.emitters.core.file_storage.parser import FileStorageParser
+        from midicoder.emitters.core.cp11_file_media.parser import FileStorageParser
 
         metadata = {
             "profiles": [
@@ -129,7 +129,7 @@ transforms:
 
     def test_parse_full_collection(self):
         """Parse đầy đủ profiles, policies, transforms."""
-        from midicoder.emitters.core.file_storage.parser import FileStorageParser
+        from midicoder.emitters.core.cp11_file_media.parser import FileStorageParser
 
         yaml_str = """
 profiles:

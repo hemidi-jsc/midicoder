@@ -9,7 +9,7 @@ Kiểm tra các invariants:
 
 import pytest
 
-from midicoder.emitters.core.invariant.domain.healthcare import (
+from midicoder.emitters.core.cp52_invariant.domain.healthcare import (
     ValidationResult,
     phi_encryption_invariant,
     minimum_necessary_access_invariant,

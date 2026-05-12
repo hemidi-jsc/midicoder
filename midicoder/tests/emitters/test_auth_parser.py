@@ -14,12 +14,12 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from midicoder.emitters.core.auth.parser import (
+from midicoder.emitters.core.cp03_auth.parser import (
     AuthParser,
     parse_auth_dsl,
     validate_permission_format,
 )
-from midicoder.emitters.core.auth.models import (
+from midicoder.emitters.core.cp03_auth.models import (
     AuthIR,
     AuthProviderType,
 )

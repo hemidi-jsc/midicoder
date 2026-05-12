@@ -16,19 +16,19 @@ import time
 import unittest
 from datetime import datetime, timezone, timedelta
 
-from midicoder.emitters.core.observability.metrics import (
+from midicoder.emitters.core.cp15_observability.metrics import (
     MetricEntry,
     MetricRegistry,
 )
-from midicoder.emitters.core.observability.logging import (
+from midicoder.emitters.core.cp15_observability.logging import (
     LogEntry,
     StructuredLogger,
 )
-from midicoder.emitters.core.observability.tracing import (
+from midicoder.emitters.core.cp15_observability.tracing import (
     Span,
     TraceContext,
 )
-from midicoder.emitters.core.observability.models import (
+from midicoder.emitters.core.cp15_observability.models import (
     MetricType,
     LogLevel,
     TracePropagationFormat,

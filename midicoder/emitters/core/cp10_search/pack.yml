@@ -1,0 +1,70 @@
+pack:
+  id: "CP10"
+  name: "Search & Indexing Generator"
+  internal_id: "cp10-search"
+  version: "1.0.0"
+  phase: "P1"
+  category: "performance"
+  status: "developing"
+  depends_on:
+    - "CP01"
+    - "CP08"
+  definitions_count: 3
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP10"
+    range: "MDC-CP10-001 to MDC-CP10-005"
+  capabilities_provided:
+    - search_index
+    - search_query
+    - fulltext_search
+  capabilities:
+    - id: "elasticsearch"
+      emitter: "fastapi, nestjs"
+    - id: "meilisearch"
+      emitter: "fastapi, nestjs"
+    - id: "tenant-aware"
+      emitter: "fastapi, nestjs"
+    - id: "fulltext"
+      emitter: "fastapi, nestjs"
+  emitters:
+    fastapi:
+      module: "midicoder.emitters.core.cp10_search.fastapi:FastAPISearchEmitter"
+      output_prefix: "search/"
+      files:
+        - "search/__init__.py"
+        - "search/elasticsearch.py"
+        - "search/search_service.py"
+        - "search/index_manager.py"
+    nestjs:
+      module: "midicoder.emitters.core.cp10_search.nestjs:NestJSSearchEmitter"
+      output_prefix: "search/"
+      files:
+        - "search/search.module.ts"
+        - "search/search.service.ts"
+        - "search/search.decorators.ts"
+    angular:
+      module: "midicoder.emitters.core.cp10_search.angular:AngularEmitter"
+      output_prefix: "src/app/core/search/"
+      files:
+        - "search.models.ts"
+        - "search.service.ts"
+        - "search.module.ts"
+        - "index.ts"
+    react:
+      module: "midicoder.emitters.core.cp10_search.react:ReactEmitter"
+      output_prefix: "src/search/"
+      files:
+        - "search.types.ts"
+        - "SearchProvider.tsx"
+        - "useSearch.ts"
+        - "search-utils.ts"
+        - "index.ts"
+  frontend_integration:
+    angular:
+      - "SearchService"
+      - "SearchNgModule"
+    react:
+      - "useSearch"
+      - "SearchProvider"
+      - "searchUtils"

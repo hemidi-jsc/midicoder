@@ -17,8 +17,8 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.emitters.core.search.parser import SearchParser
-from midicoder.emitters.core.search.models import (
+from midicoder.emitters.core.cp10_search.parser import SearchParser
+from midicoder.emitters.core.cp10_search.models import (
     SearchCollection,
     SearchIndex,
     SearchIndexColumn,

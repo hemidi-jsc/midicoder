@@ -14,12 +14,12 @@ Version: 1.0.0
 import pytest
 from pathlib import Path
 
-from midicoder.emitters.core.search.models import (
+from midicoder.emitters.core.cp10_search.models import (
     SearchCollection,
     SearchIndex,
     SearchProviderType,
 )
-from midicoder.emitters.core.search.angular import (
+from midicoder.emitters.core.cp10_search.angular import (
     AngularEmitter,
     GeneratedFile,
 )

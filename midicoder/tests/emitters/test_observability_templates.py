@@ -124,7 +124,7 @@ class TestEmittersGenerateCorrectFiles:
 
     def test_fastapi_emitter_files(self):
         """FastAPI emitter phải generate đúng 2 file."""
-        from midicoder.emitters.core.observability.fastapi import FastAPIObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.fastapi import FastAPIObservabilityEmitter
         emitter = FastAPIObservabilityEmitter()
         result = emitter.generate()
         assert len(result) >= 2, f"FastAPI emitter chỉ generate {len(result)} file"
@@ -133,7 +133,7 @@ class TestEmittersGenerateCorrectFiles:
 
     def test_nestjs_emitter_files(self):
         """NestJS emitter phải generate đúng 3 file."""
-        from midicoder.emitters.core.observability.nestjs import NestJSObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.nestjs import NestJSObservabilityEmitter
         emitter = NestJSObservabilityEmitter()
         result = emitter.generate()
         assert len(result) >= 3, f"NestJS emitter chỉ generate {len(result)} file"
@@ -143,7 +143,7 @@ class TestEmittersGenerateCorrectFiles:
 
     def test_angular_emitter_files(self):
         """Angular emitter phải generate đúng 2 file."""
-        from midicoder.emitters.core.observability.angular import AngularObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.angular import AngularObservabilityEmitter
         emitter = AngularObservabilityEmitter()
         result = emitter.generate()
         assert len(result) >= 2, f"Angular emitter chỉ generate {len(result)} file"
@@ -152,7 +152,7 @@ class TestEmittersGenerateCorrectFiles:
 
     def test_react_emitter_files(self):
         """React emitter phải generate đúng 3 file."""
-        from midicoder.emitters.core.observability.react import ReactObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.react import ReactObservabilityEmitter
         emitter = ReactObservabilityEmitter()
         result = emitter.generate()
         assert len(result) >= 3, f"React emitter chỉ generate {len(result)} file"
@@ -166,7 +166,7 @@ class TestEmitterContentQuality:
 
     def test_fastapi_service_has_metric_method(self):
         """FastAPI service phải có method ghi metric."""
-        from midicoder.emitters.core.observability.fastapi import FastAPIObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.fastapi import FastAPIObservabilityEmitter
         emitter = FastAPIObservabilityEmitter()
         result = emitter.generate_service()
         code = list(result.values())[0]
@@ -174,7 +174,7 @@ class TestEmitterContentQuality:
 
     def test_nestjs_service_has_logging(self):
         """NestJS service phải có logging."""
-        from midicoder.emitters.core.observability.nestjs import NestJSObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.nestjs import NestJSObservabilityEmitter
         emitter = NestJSObservabilityEmitter()
         result = emitter.generate_service()
         code = list(result.values())[0]
@@ -182,10 +182,10 @@ class TestEmitterContentQuality:
 
     def test_emitters_return_dicts(self):
         """Tất cả emitters phải trả về Dict[str, str]."""
-        from midicoder.emitters.core.observability.fastapi import FastAPIObservabilityEmitter
-        from midicoder.emitters.core.observability.nestjs import NestJSObservabilityEmitter
-        from midicoder.emitters.core.observability.angular import AngularObservabilityEmitter
-        from midicoder.emitters.core.observability.react import ReactObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.fastapi import FastAPIObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.nestjs import NestJSObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.angular import AngularObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.react import ReactObservabilityEmitter
 
         for emitter_cls in [FastAPIObservabilityEmitter, NestJSObservabilityEmitter,
                             AngularObservabilityEmitter, ReactObservabilityEmitter]:

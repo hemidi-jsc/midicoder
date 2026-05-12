@@ -14,20 +14,20 @@ import pytest
 from pathlib import Path
 import tempfile
 
-from midicoder.emitters.core.rbac.models import (
+from midicoder.emitters.core.cp04_rbac.models import (
     Role, Policy, PolicyEffect,
     PolicyContext,
     PolicyDecision,
     PolicyRule,
     RBACConfig,
 )
-from midicoder.emitters.core.rbac.parser import RBACParser
-from midicoder.emitters.core.rbac.rbac_engine import RBACEngine
-from midicoder.emitters.core.rbac.policy_engine import PolicyEngine
-from midicoder.emitters.core.rbac.fastapi import FastAPIRBACEmitter
-from midicoder.emitters.core.rbac.nestjs import NestJSRBACEmitter
-from midicoder.emitters.core.rbac.angular import AngularRBACEmitter
-from midicoder.emitters.core.rbac.react import ReactRBACEmitter
+from midicoder.emitters.core.cp04_rbac.parser import RBACParser
+from midicoder.emitters.core.cp04_rbac.rbac_engine import RBACEngine
+from midicoder.emitters.core.cp04_rbac.policy_engine import PolicyEngine
+from midicoder.emitters.core.cp04_rbac.fastapi import FastAPIRBACEmitter
+from midicoder.emitters.core.cp04_rbac.nestjs import NestJSRBACEmitter
+from midicoder.emitters.core.cp04_rbac.angular import AngularRBACEmitter
+from midicoder.emitters.core.cp04_rbac.react import ReactRBACEmitter
 
 
 # ============================================================================

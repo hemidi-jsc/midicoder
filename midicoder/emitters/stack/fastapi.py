@@ -39,7 +39,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
-from midicoder.emitters.core.domain_model import (
+from midicoder.emitters.core.cp01_domain_model import (
     FastAPIValueObjectEmitter,
     FastAPICommandEmitter,
     Command,
@@ -52,24 +52,24 @@ from midicoder.emitters.core.domain_model import (
     EntityParser,
     FastAPIEntityEmitter,
 )
-from midicoder.emitters.core.auth import (
+from midicoder.emitters.core.cp03_auth import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
     FastAPIAuthEmitter,
     JWTAuthConfig,
 )
-from midicoder.emitters.core.tenant.models import TenantMode
-from midicoder.emitters.core.event import (
+from midicoder.emitters.core.cp02_multi_tenant.models import TenantMode
+from midicoder.emitters.core.cp05_event_driven import (
     FastAPIEventEmitter as CoreFastAPIEventEmitter,
     EventParser,
 )
 from midicoder.pipeline.mir import MIR
-from midicoder.emitters.core.notification import (
+from midicoder.emitters.core.cp12_notification import (
     FastAPINotificationEmitter,
     parse_notifications,
 )
-from midicoder.emitters.core.cache import (
+from midicoder.emitters.core.cp09_cache import (
     CacheParser,
     FastAPICacheEmitter,
     CacheCollection,
@@ -743,7 +743,7 @@ class BackendFastAPIEmitter:
         Returns:
             Dictionary với Query hoặc AggregationQuery instance
         """
-        from midicoder.emitters.core.domain_model import (
+        from midicoder.emitters.core.cp01_domain_model import (
             QueryField, FilterExpression, FilterOp,
             PaginationConfig, PaginationType, ProjectionConfig,
             SortExpression, SortDirection,
@@ -1082,7 +1082,7 @@ class BackendFastAPIEmitter:
         files: list[GeneratedFile] = []
 
         try:
-            from midicoder.emitters.core.gateway import (
+            from midicoder.emitters.core.cp06_api_gateway import (
                 RouteParser,
                 FastAPIRouteEmitter,
                 FastAPIGraphQLResolverEmitter,

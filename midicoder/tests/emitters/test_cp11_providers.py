@@ -15,8 +15,8 @@ from unittest import TestCase
 
 import pytest
 
-from midicoder.emitters.core.file_storage.providers.base import StorageProvider
-from midicoder.emitters.core.file_storage.providers.local import LocalProvider
+from midicoder.emitters.core.cp11_file_media.providers.base import StorageProvider
+from midicoder.emitters.core.cp11_file_media.providers.local import LocalProvider
 
 
 class TestStorageProviderABC(TestCase):
@@ -53,12 +53,12 @@ class TestS3ProviderImport(TestCase):
 
     def test_s3_provider_importable(self):
         """S3Provider import duoc ma khong can boto3."""
-        from midicoder.emitters.core.file_storage.providers.s3 import S3Provider
+        from midicoder.emitters.core.cp11_file_media.providers.s3 import S3Provider
         self.assertIsNotNone(S3Provider)
 
     def test_s3_provider_inherits_storage_provider(self):
         """S3Provider ke thua tu StorageProvider."""
-        from midicoder.emitters.core.file_storage.providers.s3 import S3Provider
+        from midicoder.emitters.core.cp11_file_media.providers.s3 import S3Provider
         self.assertTrue(issubclass(S3Provider, StorageProvider))
 
 

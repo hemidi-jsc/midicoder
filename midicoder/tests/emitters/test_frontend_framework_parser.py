@@ -18,7 +18,7 @@ class TestFrontendFrameworkParser:
 
     def test_parser_basic(self):
         """Test parse YAML cơ bản."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: my-app
@@ -32,21 +32,21 @@ ui_framework: material
 
     def test_parser_empty_input(self):
         """Test parse input rỗng trả về empty dict."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         result = parser.parse("")
         assert result == {"frontend_app": None, "routes": [], "state_store": None}
 
     def test_parser_whitespace_only(self):
         """Test parse whitespace-only trả về empty dict."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         result = parser.parse("   \n  ")
         assert result == {"frontend_app": None, "routes": [], "state_store": None}
 
     def test_parser_invalid_yaml_raises(self):
         """Test parse YAML không hợp lệ throw lỗi."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: my-app
@@ -59,7 +59,7 @@ name: my-app
 
     def test_parser_with_routes(self):
         """Test parse có routes."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: my-app
@@ -79,7 +79,7 @@ routes:
 
     def test_parser_with_nested_routes(self):
         """Test parse có nested routes (children)."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: my-app
@@ -100,7 +100,7 @@ routes:
 
     def test_parser_with_state_store(self):
         """Test parse có state_store config."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: my-app
@@ -122,7 +122,7 @@ state_store:
 
     def test_parser_with_layout(self):
         """Test parse có layout config."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: my-app
@@ -136,7 +136,7 @@ ui_framework: tailwind
 
     def test_parser_with_description(self):
         """Test parse có description."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: my-app
@@ -149,7 +149,7 @@ framework: react
 
     def test_parser_full_config(self):
         """Test parse cấu hình đầy đủ."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: ecommerce-app
@@ -180,7 +180,7 @@ state_store:
 
     def test_parser_yaml_comment_only(self):
         """Test parse YAML comment-only trả về empty."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 # Đây là comment
@@ -191,7 +191,7 @@ state_store:
 
     def test_parser_non_dict_yaml_raises(self):
         """Test parse YAML không phải mapping throw lỗi."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = "- just a list item"
         with pytest.raises(MidicoderError) as exc_info:
@@ -200,7 +200,7 @@ state_store:
 
     def test_parser_react_zustand_store(self):
         """Test parse React + Zustand config."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: react-app
@@ -217,7 +217,7 @@ state_store:
 
     def test_parser_invalid_route_path_raises(self):
         """Test parse route path không hợp lệ throw lỗi."""
-        from midicoder.emitters.core.component.parser import FrontendFrameworkParser
+        from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
         parser = FrontendFrameworkParser()
         yaml_str = """
 name: my-app
@@ -230,7 +230,7 @@ routes:
 
     def test_parser_convenience_function(self):
         """Test module-level convenience function."""
-        from midicoder.emitters.core.component.parser import parse_frontend_dsl
+        from midicoder.emitters.core.cp18_frontend_framework.parser import parse_frontend_dsl
         yaml_str = """
 name: test-app
 framework: angular

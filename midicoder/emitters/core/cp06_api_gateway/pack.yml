@@ -1,0 +1,77 @@
+name: "API Gateway & Service Mesh Generator"
+description: "HTTP REST, GraphQL, Webhook routes + Kong Gateway + Consul Service Mesh"
+type: capability
+version: "1.0.0"
+capability_id: CP06
+phase: P1
+status: stable
+capabilities_provided:
+  - "route_request"
+  - "gateway_binding"
+  - "service_mesh_config"
+created_date: "2026-05-12"
+author: "Midicoder Team"
+
+metadata:
+  capability_category: "architecture"
+  capability_type: "emitter"
+  language: "python"
+  runtime: "python3.12"
+  python:
+    requires:
+      - pyyaml
+      - jinja2
+  description: "Merged gateway/ (Kong + Consul) and route/ (HTTP/GraphQL/Webhook) into unified pack. Emits routing, gateway config, and service mesh for FastAPI and NestJS."
+  tags:
+    - "gateway"
+    - "routing"
+    - "graphql"
+    - "webhook"
+    - "kong"
+    - "consul"
+
+files:
+  core:
+    models:
+      - "midicoder/emitters/core/cp06_api_gateway/models.py"
+      - "midicoder/emitters/core/cp06_api_gateway/route_models.py"
+    package:
+      - "midicoder/emitters/core/cp06_api_gateway/__init__.py"
+  emitters:
+    backend:
+      - "midicoder/emitters/core/cp06_api_gateway/kong_gateway.py"
+      - "midicoder/emitters/core/cp06_api_gateway/route_fastapi.py"
+      - "midicoder/emitters/core/cp06_api_gateway/route_nestjs.py"
+  templates:
+    fastapi:
+      - "midicoder/stacks/fastapi/core/gateway/*.py.jinja2"
+    nestjs:
+      - "midicoder/stacks/nestjs/core/gateway/*.ts.jinja2"
+  tests:
+    - "midicoder/tests/emitters/test_gateway_*.py"
+
+dependencies:
+  packs:
+    - "CP01"
+  libraries:
+    - "pyyaml>=6.0.1"
+    - "jinja2>=3.1.0"
+
+error_codes:
+  - "MDC-CP06-001"
+  - "MDC-CP06-002"
+
+generator:
+  generator_id: "Gen-006"
+  generator_name: "API Gateway Generator"
+  description: "Generates HTTP/GraphQL/Webhook routes, Kong Gateway config, and Consul service mesh"
+  phases:
+    - "parse"
+    - "bind"
+    - "emit"
+
+acceptance_criteria:
+  - "All HTTP routes emit FastAPI/NestJS router files with auth guards and tenant scope"
+  - "GraphQL resolvers emit query/mutation/subscription handlers"
+  - "Webhook handlers emit HMAC-verified endpoints"
+  - "Kong Gateway config emits valid declarative configuration"

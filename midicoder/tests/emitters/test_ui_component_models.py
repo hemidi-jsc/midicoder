@@ -18,7 +18,7 @@ class TestComponentType:
 
     def test_component_type_values(self):
         """Test giá trị của ComponentType."""
-        from midicoder.emitters.core.ui_component.models import ComponentType
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentType
         assert ComponentType.FORM_FIELD.value == "form_field"
         assert ComponentType.DATA_TABLE.value == "data_table"
         assert ComponentType.CARD_LIST.value == "card_list"
@@ -26,7 +26,7 @@ class TestComponentType:
 
     def test_component_type_from_string(self):
         """Test tạo ComponentType từ string."""
-        from midicoder.emitters.core.ui_component.models import ComponentType
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentType
         assert ComponentType("form_field") == ComponentType.FORM_FIELD
         assert ComponentType("data_table") == ComponentType.DATA_TABLE
         assert ComponentType("card_list") == ComponentType.CARD_LIST
@@ -38,7 +38,7 @@ class TestFieldType:
 
     def test_field_type_values(self):
         """Test giá trị của FieldType."""
-        from midicoder.emitters.core.ui_component.models import FieldType
+        from midicoder.emitters.core.cp19_ui_components.models import FieldType
         assert FieldType.TEXT.value == "text"
         assert FieldType.NUMBER.value == "number"
         assert FieldType.EMAIL.value == "email"
@@ -51,7 +51,7 @@ class TestFieldType:
 
     def test_field_type_from_string(self):
         """Test tạo FieldType từ string."""
-        from midicoder.emitters.core.ui_component.models import FieldType
+        from midicoder.emitters.core.cp19_ui_components.models import FieldType
         assert FieldType("text") == FieldType.TEXT
         assert FieldType("select") == FieldType.SELECT
         assert FieldType("boolean") == FieldType.BOOLEAN
@@ -62,7 +62,7 @@ class TestFormFieldSpec:
 
     def test_form_field_spec_creation(self):
         """Test tạo FormFieldSpec hợp lệ."""
-        from midicoder.emitters.core.ui_component.models import FormFieldSpec, FieldType
+        from midicoder.emitters.core.cp19_ui_components.models import FormFieldSpec, FieldType
         spec = FormFieldSpec(
             field_name="email",
             field_type=FieldType.EMAIL,
@@ -78,7 +78,7 @@ class TestFormFieldSpec:
 
     def test_form_field_spec_with_validators(self):
         """Test FormFieldSpec với validators."""
-        from midicoder.emitters.core.ui_component.models import FormFieldSpec, FieldType
+        from midicoder.emitters.core.cp19_ui_components.models import FormFieldSpec, FieldType
         spec = FormFieldSpec(
             field_name="age",
             field_type=FieldType.NUMBER,
@@ -94,7 +94,7 @@ class TestFormFieldSpec:
 
     def test_form_field_spec_with_options(self):
         """Test FormFieldSpec select/radio có options."""
-        from midicoder.emitters.core.ui_component.models import FormFieldSpec, FieldType
+        from midicoder.emitters.core.cp19_ui_components.models import FormFieldSpec, FieldType
         spec = FormFieldSpec(
             field_name="status",
             field_type=FieldType.SELECT,
@@ -107,7 +107,7 @@ class TestFormFieldSpec:
 
     def test_form_field_spec_empty_name_raises(self):
         """Test FormFieldSpec name rỗng thì raise."""
-        from midicoder.emitters.core.ui_component.models import FormFieldSpec, FieldType
+        from midicoder.emitters.core.cp19_ui_components.models import FormFieldSpec, FieldType
         with pytest.raises(MidicoderError) as exc_info:
             FormFieldSpec(
                 field_name="",
@@ -119,7 +119,7 @@ class TestFormFieldSpec:
 
     def test_form_field_spec_empty_binding_path_raises(self):
         """Test FormFieldSpec binding_path rỗng thì raise."""
-        from midicoder.emitters.core.ui_component.models import FormFieldSpec, FieldType
+        from midicoder.emitters.core.cp19_ui_components.models import FormFieldSpec, FieldType
         with pytest.raises(MidicoderError) as exc_info:
             FormFieldSpec(
                 field_name="name",
@@ -131,7 +131,7 @@ class TestFormFieldSpec:
 
     def test_form_field_spec_to_dict(self):
         """Test serialise FormFieldSpec ra dict."""
-        from midicoder.emitters.core.ui_component.models import FormFieldSpec, FieldType
+        from midicoder.emitters.core.cp19_ui_components.models import FormFieldSpec, FieldType
         spec = FormFieldSpec(
             field_name="email",
             field_type=FieldType.EMAIL,
@@ -147,7 +147,7 @@ class TestFormFieldSpec:
 
     def test_form_field_spec_from_dict(self):
         """Test deserialise FormFieldSpec từ dict."""
-        from midicoder.emitters.core.ui_component.models import FormFieldSpec
+        from midicoder.emitters.core.cp19_ui_components.models import FormFieldSpec
         data = {
             "field_name": "password",
             "field_type": "text",
@@ -166,7 +166,7 @@ class TestTableColumn:
 
     def test_table_column_creation(self):
         """Test tạo TableColumn hợp lệ."""
-        from midicoder.emitters.core.ui_component.models import TableColumn
+        from midicoder.emitters.core.cp19_ui_components.models import TableColumn
         col = TableColumn(
             field_name="name",
             label="Tên",
@@ -180,7 +180,7 @@ class TestTableColumn:
 
     def test_table_column_default_values(self):
         """Test giá trị mặc định của TableColumn."""
-        from midicoder.emitters.core.ui_component.models import TableColumn
+        from midicoder.emitters.core.cp19_ui_components.models import TableColumn
         col = TableColumn(field_name="id", label="ID")
         assert col.sortable is True
         assert col.filterable is False
@@ -191,7 +191,7 @@ class TestTableSpec:
 
     def test_table_spec_creation(self):
         """Test tạo TableSpec hợp lệ."""
-        from midicoder.emitters.core.ui_component.models import TableSpec, TableColumn
+        from midicoder.emitters.core.cp19_ui_components.models import TableSpec, TableColumn
         spec = TableSpec(
             entity_id="Order",
             columns=[
@@ -210,21 +210,21 @@ class TestTableSpec:
 
     def test_table_spec_empty_entity_id_raises(self):
         """Test TableSpec entity_id rỗng thì raise."""
-        from midicoder.emitters.core.ui_component.models import TableSpec
+        from midicoder.emitters.core.cp19_ui_components.models import TableSpec
         with pytest.raises(MidicoderError) as exc_info:
             TableSpec(entity_id="", columns=[])
         assert exc_info.value.code == ErrorCode.CP19_EMPTY_TABLE_COLUMNS
 
     def test_table_spec_empty_columns_raises(self):
         """Test TableSpec không có columns thì raise."""
-        from midicoder.emitters.core.ui_component.models import TableSpec
+        from midicoder.emitters.core.cp19_ui_components.models import TableSpec
         with pytest.raises(MidicoderError) as exc_info:
             TableSpec(entity_id="Order", columns=[])
         assert exc_info.value.code == ErrorCode.CP19_EMPTY_TABLE_COLUMNS
 
     def test_table_spec_default_values(self):
         """Test giá trị mặc định của TableSpec."""
-        from midicoder.emitters.core.ui_component.models import TableSpec, TableColumn
+        from midicoder.emitters.core.cp19_ui_components.models import TableSpec, TableColumn
         spec = TableSpec(
             entity_id="Product",
             columns=[TableColumn(field_name="name", label="Tên")],
@@ -236,7 +236,7 @@ class TestTableSpec:
 
     def test_table_spec_to_dict(self):
         """Test serialise TableSpec ra dict."""
-        from midicoder.emitters.core.ui_component.models import TableSpec, TableColumn
+        from midicoder.emitters.core.cp19_ui_components.models import TableSpec, TableColumn
         spec = TableSpec(
             entity_id="Order",
             columns=[TableColumn(field_name="id", label="Mã")],
@@ -249,7 +249,7 @@ class TestTableSpec:
 
     def test_table_spec_from_dict(self):
         """Test deserialise TableSpec từ dict."""
-        from midicoder.emitters.core.ui_component.models import TableSpec
+        from midicoder.emitters.core.cp19_ui_components.models import TableSpec
         data = {
             "entity_id": "User",
             "columns": [
@@ -271,7 +271,7 @@ class TestComponentSpec:
 
     def test_component_spec_form_field(self):
         """Test tạo ComponentSpec cho form field."""
-        from midicoder.emitters.core.ui_component.models import (
+        from midicoder.emitters.core.cp19_ui_components.models import (
             ComponentSpec, ComponentType, FormFieldSpec, FieldType,
         )
         spec = ComponentSpec(
@@ -292,7 +292,7 @@ class TestComponentSpec:
 
     def test_component_spec_data_table(self):
         """Test tạo ComponentSpec cho data table."""
-        from midicoder.emitters.core.ui_component.models import (
+        from midicoder.emitters.core.cp19_ui_components.models import (
             ComponentSpec, ComponentType, TableSpec, TableColumn,
         )
         spec = ComponentSpec(
@@ -308,7 +308,7 @@ class TestComponentSpec:
 
     def test_component_spec_card_list(self):
         """Test tạo ComponentSpec cho card list."""
-        from midicoder.emitters.core.ui_component.models import ComponentSpec, ComponentType
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec, ComponentType
         spec = ComponentSpec(
             component_type=ComponentType.CARD_LIST,
             entity_id="User",
@@ -317,7 +317,7 @@ class TestComponentSpec:
 
     def test_component_spec_dialog(self):
         """Test tạo ComponentSpec cho dialog."""
-        from midicoder.emitters.core.ui_component.models import ComponentSpec, ComponentType
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec, ComponentType
         spec = ComponentSpec(
             component_type=ComponentType.DIALOG,
             entity_id="Order",
@@ -328,7 +328,7 @@ class TestComponentSpec:
 
     def test_component_spec_empty_entity_raises(self):
         """Test ComponentSpec entity_id rỗng thì raise."""
-        from midicoder.emitters.core.ui_component.models import ComponentSpec, ComponentType
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec, ComponentType
         with pytest.raises(MidicoderError) as exc_info:
             ComponentSpec(
                 component_type=ComponentType.FORM_FIELD,
@@ -339,14 +339,14 @@ class TestComponentSpec:
     def test_component_spec_invalid_component_type_raises(self):
         """Test ComponentSpec với component type không hợp lệ."""
         # This test validates that the enum constrains valid types
-        from midicoder.emitters.core.ui_component.models import ComponentType
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentType
         valid_types = ["form_field", "data_table", "card_list", "dialog"]
         for t in valid_types:
             assert ComponentType(t) is not None
 
     def test_component_spec_to_dict(self):
         """Test serialise ComponentSpec ra dict."""
-        from midicoder.emitters.core.ui_component.models import (
+        from midicoder.emitters.core.cp19_ui_components.models import (
             ComponentSpec, ComponentType, FormFieldSpec, FieldType,
         )
         spec = ComponentSpec(
@@ -368,7 +368,7 @@ class TestComponentSpec:
 
     def test_component_spec_from_dict(self):
         """Test deserialise ComponentSpec từ dict."""
-        from midicoder.emitters.core.ui_component.models import ComponentSpec, ComponentType
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec, ComponentType
         data = {
             "component_type": "card_list",
             "entity_id": "Product",
@@ -380,7 +380,7 @@ class TestComponentSpec:
 
     def test_component_spec_generate_form_fields_from_entity(self):
         """Test generate form fields tự động từ entity fields."""
-        from midicoder.emitters.core.ui_component.models import (
+        from midicoder.emitters.core.cp19_ui_components.models import (
             ComponentSpec, ComponentType,
         )
         entity = {
@@ -404,7 +404,7 @@ class TestComponentSpec:
 
     def test_component_spec_generate_table_from_entity(self):
         """Test generate table spec tự động từ entity fields."""
-        from midicoder.emitters.core.ui_component.models import ComponentSpec, ComponentType
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec, ComponentType
         entity = {
             "id": "Product",
             "fields": [
@@ -423,7 +423,7 @@ class TestObligationSchemaConsistency:
 
     def test_field_type_mismatch_raises(self):
         """Test lỗi khi field type trong form không khớp entity."""
-        from midicoder.emitters.core.ui_component.models import ComponentSpec
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec
         entity = {
             "id": "User",
             "fields": [
@@ -436,7 +436,7 @@ class TestObligationSchemaConsistency:
 
     def test_binding_path_follows_entity_id(self):
         """Test binding_path chứa entity_id."""
-        from midicoder.emitters.core.ui_component.models import ComponentSpec
+        from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec
         entity = {
             "id": "Order",
             "fields": [

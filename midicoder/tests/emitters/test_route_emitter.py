@@ -12,7 +12,7 @@ Bao gồm:
 
 import pytest
 from pathlib import Path
-from midicoder.emitters.core.gateway.route_models import (
+from midicoder.emitters.core.cp06_api_gateway.route_models import (
     Route,
     RouteCollection,
     RouteAuthConfig,
@@ -30,13 +30,13 @@ from midicoder.emitters.core.gateway.route_models import (
     WebhookPayloadField,
     WebhookAuthType,
 )
-from midicoder.emitters.core.gateway.route_parser import RouteParser
-from midicoder.emitters.core.gateway.route_fastapi import (
+from midicoder.emitters.core.cp06_api_gateway.route_parser import RouteParser
+from midicoder.emitters.core.cp06_api_gateway.route_fastapi import (
     FastAPIRouteEmitter,
     FastAPIGraphQLResolverEmitter,
     FastAPIWebhookEmitter,
 )
-from midicoder.emitters.core.gateway.route_nestjs import (
+from midicoder.emitters.core.cp06_api_gateway.route_nestjs import (
     NestJSRouteEmitter,
     NestJSGraphQLResolverEmitter,
     NestJSWebhookEmitter,

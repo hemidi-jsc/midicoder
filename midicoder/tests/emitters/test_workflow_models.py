@@ -15,7 +15,7 @@ import pytest
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from midicoder.emitters.core.workflow.models import (
+from midicoder.emitters.core.cp13_workflow_runtime.models import (
     WorkflowDefinition,
     Transition,
     Guard,

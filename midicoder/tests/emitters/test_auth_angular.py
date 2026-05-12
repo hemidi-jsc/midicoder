@@ -15,14 +15,14 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from midicoder.emitters.core.auth.models import (
+from midicoder.emitters.core.cp03_auth.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
     JWTAuthConfig,
     Permission,
 )
-from midicoder.emitters.core.auth.angular import (
+from midicoder.emitters.core.cp03_auth.angular import (
     AngularEmitter,
     GeneratedFile,
     emit_angular_auth,

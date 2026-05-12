@@ -17,7 +17,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from midicoder.emitters.core.audit.models import (
+from midicoder.emitters.core.cp14_audit_compliance.models import (
     AuditActionType,
     AuditComplianceCollection,
     AuditLevel,
@@ -28,7 +28,7 @@ from midicoder.emitters.core.audit.models import (
     EnforcementLevel,
     StandardType,
 )
-from midicoder.emitters.core.audit.audit_engine import (
+from midicoder.emitters.core.cp14_audit_compliance.audit_engine import (
     AuditLogger,
     AuditRuleEngine,
     ComplianceEnforcer,

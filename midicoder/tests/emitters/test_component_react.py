@@ -17,7 +17,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_basic(self):
         """Test emit cơ bản tạo được files."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -30,7 +30,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_list_view(self):
         """Test emit ListView Component."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -44,7 +44,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_detail_view(self):
         """Test emit DetailView Component."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -58,7 +58,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_form_view(self):
         """Test emit FormView Component có validation."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -72,7 +72,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_dashboard(self):
         """Test emit Dashboard Component."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -86,7 +86,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_layout(self):
         """Test emit Layout/Shell Component."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -100,7 +100,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_ui_framework(self):
         """Test emit với UI framework parameter."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -113,7 +113,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_functional_hooks(self):
         """Test emit là functional components với hooks."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -127,7 +127,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_multiple_entities(self):
         """Test emit nhiều entities."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -143,7 +143,7 @@ class TestReactComponentEmitter:
 
     def test_react_component_emitter_typescript_interfaces(self):
         """Test emit có TypeScript interfaces cho props."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -161,7 +161,7 @@ class TestReactComponentEmitterIntegration:
 
     def test_generated_files_written_to_disk(self):
         """Test files được ghi ra disk."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -176,7 +176,7 @@ class TestReactComponentEmitterIntegration:
 
     def test_template_files_structure(self):
         """Test cấu trúc files output hợp lý."""
-        from midicoder.emitters.core.component.react import ReactComponentEmitter
+        from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)

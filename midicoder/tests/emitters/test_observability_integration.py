@@ -26,7 +26,7 @@ class TestQueryEffectsIntegration:
 
     def test_record_metric_imports_metric_registry(self):
         """_record_metric phải import từ CP15."""
-        from midicoder.emitters.core.domain_model.query_effects import QueryEffects
+        from midicoder.emitters.core.cp01_domain_model.query_effects import QueryEffects
         import inspect
         source = inspect.getsource(QueryEffects._record_metric)
         assert "MetricRegistry" in source, "_record_metric phải sử dụng MetricRegistry"
@@ -35,7 +35,7 @@ class TestQueryEffectsIntegration:
     def test_record_metric_calls_registry_record(self):
         """_record_metric phải gọi registry.record()."""
         import inspect
-        from midicoder.emitters.core.domain_model.query_effects import QueryEffects
+        from midicoder.emitters.core.cp01_domain_model.query_effects import QueryEffects
         source = inspect.getsource(QueryEffects._record_metric)
         assert "registry.record" in source or "registry = MetricRegistry" in source, \
             "_record_metric phải gọi registry.record()"
@@ -43,15 +43,15 @@ class TestQueryEffectsIntegration:
     def test_record_metric_no_placeholder(self):
         """_record_metric không còn placeholder."""
         import inspect
-        from midicoder.emitters.core.domain_model.query_effects import QueryEffects
+        from midicoder.emitters.core.cp01_domain_model.query_effects import QueryEffects
         source = inspect.getsource(QueryEffects._record_metric)
         assert "placeholder" not in source.lower(), "_record_metric không được có placeholder"
         assert "pass" not in source.strip().split("\n")[-1].strip(), "_record_metric không được chỉ có pass"
 
     def test_query_effects_execute_record_metric(self):
         """QueryEffects.execute_all() phải chạy _record_metric thành công."""
-        from midicoder.emitters.core.domain_model.query_effects import QueryEffects
-        from midicoder.emitters.core.domain_model.query_models import Query, QueryEffect, QueryEffectType
+        from midicoder.emitters.core.cp01_domain_model.query_effects import QueryEffects
+        from midicoder.emitters.core.cp01_domain_model.query_models import Query, QueryEffect, QueryEffectType
 
         effect = QueryEffect(
             effect_type=QueryEffectType.RECORD_METRIC,
@@ -79,7 +79,7 @@ class TestCommandEffectsIntegration:
 
     def test_record_metric_imports_metric_registry(self):
         """_record_metric phải import từ CP15."""
-        from midicoder.emitters.core.domain_model.command_effects import CommandEffects
+        from midicoder.emitters.core.cp01_domain_model.command_effects import CommandEffects
         import inspect
         source = inspect.getsource(CommandEffects._record_metric)
         assert "MetricRegistry" in source, "_record_metric phải sử dụng MetricRegistry"
@@ -88,7 +88,7 @@ class TestCommandEffectsIntegration:
     def test_record_metric_calls_registry_record(self):
         """_record_metric phải gọi registry.record()."""
         import inspect
-        from midicoder.emitters.core.domain_model.command_effects import CommandEffects
+        from midicoder.emitters.core.cp01_domain_model.command_effects import CommandEffects
         source = inspect.getsource(CommandEffects._record_metric)
         assert "registry.record" in source or "registry = MetricRegistry" in source, \
             "_record_metric phải gọi registry.record()"
@@ -96,15 +96,15 @@ class TestCommandEffectsIntegration:
     def test_record_metric_no_placeholder(self):
         """_record_metric không còn placeholder."""
         import inspect
-        from midicoder.emitters.core.domain_model.command_effects import CommandEffects
+        from midicoder.emitters.core.cp01_domain_model.command_effects import CommandEffects
         source = inspect.getsource(CommandEffects._record_metric)
         assert "placeholder" not in source.lower(), "_record_metric không được có placeholder"
         assert "# Placeholder" not in source, "_record_metric không được có comment placeholder"
 
     def test_command_effects_execute_record_metric(self):
         """CommandEffects.execute() phải chạy _record_metric thành công."""
-        from midicoder.emitters.core.domain_model.command_effects import CommandEffects, CommandEffect
-        from midicoder.emitters.core.domain_model.command_models import Command, EffectType
+        from midicoder.emitters.core.cp01_domain_model.command_effects import CommandEffects, CommandEffect
+        from midicoder.emitters.core.cp01_domain_model.command_models import Command, EffectType
 
         # CommandEffect lacks metric_name/metric_value fields; use MagicMock
         effect = MagicMock(spec=CommandEffect)
@@ -130,8 +130,8 @@ class TestEndToEndPipeline:
 
     def test_parse_to_metric_registry(self):
         """DSL parse → MetricProfile → record metric thành công."""
-        from midicoder.emitters.core.observability.parser import ObservabilityParser
-        from midicoder.emitters.core.observability.metrics import MetricRegistry
+        from midicoder.emitters.core.cp15_observability.parser import ObservabilityParser
+        from midicoder.emitters.core.cp15_observability.metrics import MetricRegistry
 
         dsl = """
 metrics:
@@ -155,8 +155,8 @@ metrics:
 
     def test_parse_to_structured_logger(self):
         """DSL parse → StructuredLogConfig → log thành công."""
-        from midicoder.emitters.core.observability.parser import ObservabilityParser
-        from midicoder.emitters.core.observability.logging import StructuredLogger
+        from midicoder.emitters.core.cp15_observability.parser import ObservabilityParser
+        from midicoder.emitters.core.cp15_observability.logging import StructuredLogger
 
         dsl = """
 logging:
@@ -178,8 +178,8 @@ logging:
 
     def test_parse_to_trace_context(self):
         """DSL parse → TraceConfig → trace thành công."""
-        from midicoder.emitters.core.observability.parser import ObservabilityParser
-        from midicoder.emitters.core.observability.tracing import TraceContext
+        from midicoder.emitters.core.cp15_observability.parser import ObservabilityParser
+        from midicoder.emitters.core.cp15_observability.tracing import TraceContext
 
         dsl = """
 tracing:
@@ -198,8 +198,8 @@ tracing:
 
     def test_full_dsl_to_emitter(self):
         """Full DSL → Parse → Emit code thành công."""
-        from midicoder.emitters.core.observability.parser import ObservabilityParser
-        from midicoder.emitters.core.observability.fastapi import FastAPIObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.parser import ObservabilityParser
+        from midicoder.emitters.core.cp15_observability.fastapi import FastAPIObservabilityEmitter
 
         full_dsl = """
 metrics:
@@ -223,10 +223,10 @@ tracing:
 
     def test_all_4_emitters(self):
         """Tất cả 4 emitters phải generate thành công."""
-        from midicoder.emitters.core.observability.fastapi import FastAPIObservabilityEmitter
-        from midicoder.emitters.core.observability.nestjs import NestJSObservabilityEmitter
-        from midicoder.emitters.core.observability.angular import AngularObservabilityEmitter
-        from midicoder.emitters.core.observability.react import ReactObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.fastapi import FastAPIObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.nestjs import NestJSObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.angular import AngularObservabilityEmitter
+        from midicoder.emitters.core.cp15_observability.react import ReactObservabilityEmitter
 
         for cls in [FastAPIObservabilityEmitter, NestJSObservabilityEmitter,
                      AngularObservabilityEmitter, ReactObservabilityEmitter]:
@@ -240,7 +240,7 @@ class TestMetricRetentionObligation:
 
     def test_metric_entries_are_immutable(self):
         """MetricEntry không thể sửa đổi sau khi tạo."""
-        from midicoder.emitters.core.observability.metrics import MetricRegistry
+        from midicoder.emitters.core.cp15_observability.metrics import MetricRegistry
         registry = MetricRegistry()
         entry = registry.record("test_metric", 1.0)
         # MetricEntry là frozen dataclass, không thể sửa
@@ -249,7 +249,7 @@ class TestMetricRetentionObligation:
 
     def test_counter_append_only(self):
         """Counter chỉ append, không sửa entry cũ."""
-        from midicoder.emitters.core.observability.metrics import MetricRegistry
+        from midicoder.emitters.core.cp15_observability.metrics import MetricRegistry
         registry = MetricRegistry()
         registry.counter("req_count", {"method": "GET"})
         registry.counter("req_count", {"method": "GET"})
@@ -262,14 +262,14 @@ class TestLogImmutabilityObligation:
 
     def test_log_entry_hash_verified(self):
         """LogEntry hash verify phải trả về True."""
-        from midicoder.emitters.core.observability.logging import StructuredLogger
+        from midicoder.emitters.core.cp15_observability.logging import StructuredLogger
         logger = StructuredLogger(service_name="test")
         entry = logger.info("test message")
         assert entry.verify_hash() is True
 
     def test_log_entry_hash_detected_tampering(self):
         """LogEntry phát hiện tampering."""
-        from midicoder.emitters.core.observability.logging import StructuredLogger, LogEntry
+        from midicoder.emitters.core.cp15_observability.logging import StructuredLogger, LogEntry
         from datetime import datetime
         logger = StructuredLogger(service_name="test")
         entry = logger.info("test message")
@@ -289,7 +289,7 @@ class TestLogImmutabilityObligation:
 
     def test_log_entry_is_frozen(self):
         """LogEntry là frozen (immutable)."""
-        from midicoder.emitters.core.observability.logging import StructuredLogger
+        from midicoder.emitters.core.cp15_observability.logging import StructuredLogger
         logger = StructuredLogger(service_name="test")
         entry = logger.info("test")
         with pytest.raises(Exception):
@@ -301,7 +301,7 @@ class TestTracePropagation:
 
     def test_inject_extract_roundtrip(self):
         """Inject → Extract phải trả về đúng trace_id, span_id."""
-        from midicoder.emitters.core.observability.tracing import TraceContext
+        from midicoder.emitters.core.cp15_observability.tracing import TraceContext
         ctx = TraceContext(service_name="test")
         span = ctx.start_span("op1")
         headers = ctx.inject_trace_header()
@@ -312,7 +312,7 @@ class TestTracePropagation:
 
     def test_traceparent_w3c_format(self):
         """Traceparent phải đúng format W3C: 00-{trace_id}-{span_id}-{flags}."""
-        from midicoder.emitters.core.observability.tracing import TraceContext
+        from midicoder.emitters.core.cp15_observability.tracing import TraceContext
         ctx = TraceContext(service_name="test")
         ctx.start_span("op1")
         headers = ctx.inject_trace_header()
@@ -329,13 +329,13 @@ class TestPackTaxonomySync:
 
     def test_pack_yml_exists(self):
         """pack.yml phải tồn tại."""
-        pack_path = os.path.join(PROJECT_ROOT, "emitters", "core", "observability", "pack.yml")
+        pack_path = os.path.join(PROJECT_ROOT, "emitters", "core", "cp15_observability", "pack.yml")
         assert os.path.isfile(pack_path), "pack.yml missing"
 
     def test_pack_capabilities(self):
         """pack.yml capabilities_provided phải đúng."""
         import yaml
-        pack_path = os.path.join(PROJECT_ROOT, "emitters", "core", "observability", "pack.yml")
+        pack_path = os.path.join(PROJECT_ROOT, "emitters", "core", "cp15_observability", "pack.yml")
         with open(pack_path, "r") as f:
             pack = yaml.safe_load(f)
         caps = pack.get("pack", {}).get("capabilities_provided", [])
@@ -367,7 +367,7 @@ class TestInitExports:
 
     def test_all_models_exported(self):
         """Tất cả models phải được export."""
-        from midicoder.emitters.core.observability import (
+        from midicoder.emitters.core.cp15_observability import (
             MetricType, LogLevel, TracePropagationFormat,
             MetricProfile, StructuredLogConfig, TraceConfig,
         )
@@ -380,7 +380,7 @@ class TestInitExports:
 
     def test_all_emitters_exported(self):
         """Tất cả emitters phải được export."""
-        from midicoder.emitters.core.observability import (
+        from midicoder.emitters.core.cp15_observability import (
             FastAPIObservabilityEmitter,
             NestJSObservabilityEmitter,
             AngularObservabilityEmitter,
@@ -393,7 +393,7 @@ class TestInitExports:
 
     def test_engine_exported(self):
         """Tất cả engine phải được export."""
-        from midicoder.emitters.core.observability import (
+        from midicoder.emitters.core.cp15_observability import (
             MetricRegistry, StructuredLogger, TraceContext,
         )
         assert MetricRegistry is not None
@@ -402,7 +402,7 @@ class TestInitExports:
 
     def test_all_list_complete(self):
         """__all__ phải chứa tất cả exports."""
-        from midicoder.emitters.core.observability import __all__
+        from midicoder.emitters.core.cp15_observability import __all__
         expected = {
             "MetricType", "LogLevel", "TracePropagationFormat",
             "MetricProfile", "StructuredLogConfig", "TraceConfig",

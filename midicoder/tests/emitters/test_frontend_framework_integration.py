@@ -12,11 +12,11 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from midicoder.emitters.core.component.parser import FrontendFrameworkParser
-from midicoder.emitters.core.component.angular import AngularComponentEmitter
-from midicoder.emitters.core.component.react import ReactComponentEmitter
-from midicoder.emitters.core.component.fastapi import FastAPIFrontendEmitter
-from midicoder.emitters.core.component.nestjs import NestJSFrontendEmitter
+from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
+from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
+from midicoder.emitters.core.cp18_frontend_framework.fastapi import FastAPIFrontendEmitter
+from midicoder.emitters.core.cp18_frontend_framework.nestjs import NestJSFrontendEmitter
 
 
 class TestFrontendFrameworkIntegration:

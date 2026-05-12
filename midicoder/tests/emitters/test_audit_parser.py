@@ -10,8 +10,8 @@ Kiểm tra:
 
 import pytest
 
-from midicoder.emitters.core.audit.parser import AuditComplianceParser
-from midicoder.emitters.core.audit.models import (
+from midicoder.emitters.core.cp14_audit_compliance.parser import AuditComplianceParser
+from midicoder.emitters.core.cp14_audit_compliance.models import (
     AuditActionType,
     AuditComplianceCollection,
     AuditLevel,

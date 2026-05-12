@@ -28,7 +28,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
-from midicoder.emitters.core.cache import (
+from midicoder.emitters.core.cp09_cache import (
     CacheParser,
     AngularEmitter as CacheAngularEmitter,
 )

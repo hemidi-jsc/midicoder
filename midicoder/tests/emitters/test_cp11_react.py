@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest import TestCase
 
-from midicoder.emitters.core.file_storage.models import (
+from midicoder.emitters.core.cp11_file_media.models import (
     FileStorageCollection,
     MediaTransform,
     StorageBackend,
@@ -59,19 +59,19 @@ class TestReactEmitterBasic(TestCase):
 
     def test_emitter_class_exists(self):
         """ReactFileStorageEmitter ton tai."""
-        from midicoder.emitters.core.file_storage.react import ReactFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
         self.assertIsNotNone(ReactFileStorageEmitter)
 
     def test_emit_returns_list(self):
         """emit() tra ve list GeneratedFile."""
-        from midicoder.emitters.core.file_storage.react import ReactFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
         emitter = ReactFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         self.assertIsInstance(files, list)
 
     def test_emit_has_types(self):
         """Sinh ra fileStorage.types.ts."""
-        from midicoder.emitters.core.file_storage.react import ReactFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
         emitter = ReactFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -79,7 +79,7 @@ class TestReactEmitterBasic(TestCase):
 
     def test_emit_has_client(self):
         """Sinh ra FileStorageProvider.tsx (client)."""
-        from midicoder.emitters.core.file_storage.react import ReactFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
         emitter = ReactFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -87,7 +87,7 @@ class TestReactEmitterBasic(TestCase):
 
     def test_emit_has_hook(self):
         """Sinh ra useFileStorage.ts."""
-        from midicoder.emitters.core.file_storage.react import ReactFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
         emitter = ReactFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -95,7 +95,7 @@ class TestReactEmitterBasic(TestCase):
 
     def test_emit_has_component(self):
         """Sinh ra FileUpload.tsx."""
-        from midicoder.emitters.core.file_storage.react import ReactFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
         emitter = ReactFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -103,7 +103,7 @@ class TestReactEmitterBasic(TestCase):
 
     def test_emit_has_index(self):
         """Sinh ra index.ts."""
-        from midicoder.emitters.core.file_storage.react import ReactFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
         emitter = ReactFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         paths = [f.path.name for f in files]
@@ -114,7 +114,7 @@ class TestReactEmitterContent(TestCase):
     """Kiem tra noi dung React generated code."""
 
     def setUp(self):
-        from midicoder.emitters.core.file_storage.react import ReactFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
         self.emitter = ReactFileStorageEmitter(stack_dir=Path('.'))
         self.files = self.emitter.emit(make_collection(), Path('/tmp'))
 
@@ -175,7 +175,7 @@ class TestReactGeneratedFile(TestCase):
 
     def test_all_files_have_correct_capability(self):
         """Tat ca GeneratedFile co capability = CP11."""
-        from midicoder.emitters.core.file_storage.react import ReactFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
         emitter = ReactFileStorageEmitter(stack_dir=Path('.'))
         files = emitter.emit(make_collection(), Path('/tmp'))
         for f in files:

@@ -98,7 +98,7 @@ class TestParserEngineWiring:
 
     def test_parse_full_dsl_all_three_sections(self):
         """Parser phải parse đầy đủ 3 sections: analytics_models, dashboards, reports."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
 
         parser = AnalyticsParser()
         result = parser.parse(FULL_ANALYTICS_DSL)
@@ -113,8 +113,8 @@ class TestParserEngineWiring:
 
     def test_parse_models_registered_in_engine(self):
         """Models từ parser phải đăng ký thành công vào AnalyticsEngine."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
 
         parser = AnalyticsParser()
         result = parser.parse(FULL_ANALYTICS_DSL)
@@ -130,8 +130,8 @@ class TestParserEngineWiring:
 
     def test_parse_dashboards_created_in_builder(self):
         """Dashboards từ parser phải tạo thành công trong DashboardBuilder."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.dashboard_builder import DashboardBuilder
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.dashboard_builder import DashboardBuilder
 
         parser = AnalyticsParser()
         result = parser.parse(FULL_ANALYTICS_DSL)
@@ -147,8 +147,8 @@ class TestParserEngineWiring:
 
     def test_parse_reports_scheduled_in_scheduler(self):
         """Reports từ parser phải lập lịch thành công trong ReportScheduler."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.report_scheduler import ReportScheduler
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.report_scheduler import ReportScheduler
 
         parser = AnalyticsParser()
         result = parser.parse(FULL_ANALYTICS_DSL)
@@ -164,7 +164,7 @@ class TestParserEngineWiring:
 
     def test_parse_empty_dsl_returns_empty_lists(self):
         """Parser với DSL rỗng phải trả về danh sách rỗng."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
 
         parser = AnalyticsParser()
         result = parser.parse("")
@@ -175,7 +175,7 @@ class TestParserEngineWiring:
 
     def test_parse_whitespace_dsl_returns_empty_lists(self):
         """Parser với DSL chỉ whitespace phải trả về danh sách rỗng."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
 
         parser = AnalyticsParser()
         result = parser.parse("   \n  \n  ")
@@ -194,7 +194,7 @@ class TestAllEmittersProduceOutput:
 
     def test_fastapi_emitter_produces_files(self):
         """FastAPIAnalyticsEmitter phải generate các file Python."""
-        from midicoder.emitters.core.analytics.fastapi import FastAPIAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.fastapi import FastAPIAnalyticsEmitter
 
         emitter = FastAPIAnalyticsEmitter()
         result = emitter.generate()
@@ -208,7 +208,7 @@ class TestAllEmittersProduceOutput:
 
     def test_nestjs_emitter_produces_files(self):
         """NestJSAnalyticsEmitter phải generate các file TypeScript."""
-        from midicoder.emitters.core.analytics.nestjs import NestJSAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.nestjs import NestJSAnalyticsEmitter
 
         emitter = NestJSAnalyticsEmitter()
         result = emitter.generate()
@@ -222,7 +222,7 @@ class TestAllEmittersProduceOutput:
 
     def test_angular_emitter_produces_files(self):
         """AngularAnalyticsEmitter phải generate các file TypeScript."""
-        from midicoder.emitters.core.analytics.angular import AngularAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.angular import AngularAnalyticsEmitter
 
         emitter = AngularAnalyticsEmitter()
         result = emitter.generate()
@@ -236,7 +236,7 @@ class TestAllEmittersProduceOutput:
 
     def test_react_emitter_produces_files(self):
         """ReactAnalyticsEmitter phải generate các file TypeScript."""
-        from midicoder.emitters.core.analytics.react import ReactAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.react import ReactAnalyticsEmitter
 
         emitter = ReactAnalyticsEmitter()
         result = emitter.generate()
@@ -250,10 +250,10 @@ class TestAllEmittersProduceOutput:
 
     def test_all_4_emitters_non_empty(self):
         """Tất cả 4 emitters phải generate kết quả không rỗng."""
-        from midicoder.emitters.core.analytics.fastapi import FastAPIAnalyticsEmitter
-        from midicoder.emitters.core.analytics.nestjs import NestJSAnalyticsEmitter
-        from midicoder.emitters.core.analytics.angular import AngularAnalyticsEmitter
-        from midicoder.emitters.core.analytics.react import ReactAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.fastapi import FastAPIAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.nestjs import NestJSAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.angular import AngularAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.react import ReactAnalyticsEmitter
 
         for cls in [FastAPIAnalyticsEmitter, NestJSAnalyticsEmitter,
                      AngularAnalyticsEmitter, ReactAnalyticsEmitter]:
@@ -385,8 +385,8 @@ class TestCP15ToCP17DataFlow:
 
     def test_engine_query_reads_from_mock_registry(self):
         """AnalyticsEngine.query() phải đọc dữ liệu từ mock MetricRegistry."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
 
         # Parse model
         parser = AnalyticsParser()
@@ -417,8 +417,8 @@ class TestCP15ToCP17DataFlow:
 
     def test_engine_query_aggregation_from_registry(self):
         """Aggregation từ registry phải trả về kết quả đúng."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
 
         parser = AnalyticsParser()
         result = parser.parse(FULL_ANALYTICS_DSL)
@@ -448,8 +448,8 @@ class TestCP15ToCP17DataFlow:
 
     def test_engine_query_empty_registry(self):
         """Query với registry rỗng phải trả về aggregation = 0."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
 
         parser = AnalyticsParser()
         result = parser.parse(FULL_ANALYTICS_DSL)
@@ -468,8 +468,8 @@ class TestCP15ToCP17DataFlow:
 
     def test_engine_query_no_registry(self):
         """Query không có registry phải trả về kết quả rỗng."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
 
         parser = AnalyticsParser()
         result = parser.parse(FULL_ANALYTICS_DSL)
@@ -484,8 +484,8 @@ class TestCP15ToCP17DataFlow:
 
     def test_engine_query_hash_immutability(self):
         """QueryResult hash_value phải khác nhau khi dữ liệu thay đổi."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
 
         parser = AnalyticsParser()
         result = parser.parse(FULL_ANALYTICS_DSL)
@@ -508,9 +508,9 @@ class TestCP15ToCP17DataFlow:
 
     def test_engine_query_max_min_aggregation(self):
         """Aggregation max/min phải trả về giá trị đúng."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
-        from midicoder.emitters.core.analytics.models import AggregationType
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.models import AggregationType
 
         parser = AnalyticsParser()
         result = parser.parse(FULL_ANALYTICS_DSL)
@@ -545,10 +545,10 @@ class TestFullPipeline:
 
     def test_full_pipeline_end_to_end(self):
         """Full pipeline: DSL → Engine → MockRegistry → Dashboard → Report → Snapshot."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
-        from midicoder.emitters.core.analytics.dashboard_builder import DashboardBuilder
-        from midicoder.emitters.core.analytics.report_scheduler import ReportScheduler
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.dashboard_builder import DashboardBuilder
+        from midicoder.emitters.core.cp17_bi_analytics.report_scheduler import ReportScheduler
 
         # --- Step 1: Parse DSL ---
         parser = AnalyticsParser()
@@ -631,8 +631,8 @@ class TestFullPipeline:
 
     def test_full_pipeline_snapshot_history(self):
         """Multiple report generations phải tạo multiple snapshots trong history."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.report_scheduler import ReportScheduler
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.report_scheduler import ReportScheduler
 
         parser = AnalyticsParser()
         parsed = parser.parse(FULL_ANALYTICS_DSL)
@@ -661,8 +661,8 @@ class TestFullPipeline:
 
     def test_full_pipeline_dashboard_refresh_from_registry(self):
         """Dashboard refresh phải lấy dữ liệu mới từ registry."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.dashboard_builder import DashboardBuilder
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.dashboard_builder import DashboardBuilder
 
         parser = AnalyticsParser()
         parsed = parser.parse(FULL_ANALYTICS_DSL)
@@ -698,8 +698,8 @@ class TestFullPipeline:
 
     def test_full_pipeline_engine_stale_check(self):
         """Engine stale check phải hoạt động đúng."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
 
         parser = AnalyticsParser()
         parsed = parser.parse(FULL_ANALYTICS_DSL)
@@ -721,8 +721,8 @@ class TestFullPipeline:
 
     def test_full_pipeline_model_unregister(self):
         """Unregister model phải xóa model và cache."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.analytics_engine import AnalyticsEngine
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import AnalyticsEngine
 
         parser = AnalyticsParser()
         parsed = parser.parse(FULL_ANALYTICS_DSL)
@@ -748,8 +748,8 @@ class TestFullPipeline:
 
     def test_full_pipeline_dashboard_export_structure(self):
         """Export dashboard JSON phải có cấu trúc đầy đủ."""
-        from midicoder.emitters.core.analytics.parser import AnalyticsParser
-        from midicoder.emitters.core.analytics.dashboard_builder import DashboardBuilder
+        from midicoder.emitters.core.cp17_bi_analytics.parser import AnalyticsParser
+        from midicoder.emitters.core.cp17_bi_analytics.dashboard_builder import DashboardBuilder
 
         parser = AnalyticsParser()
         parsed = parser.parse(FULL_ANALYTICS_DSL)
@@ -792,7 +792,7 @@ class TestQueryResultImmutability:
 
     def test_query_result_is_frozen(self):
         """QueryResult không thể sửa đổi sau khi tạo."""
-        from midicoder.emitters.core.analytics.analytics_engine import QueryResult
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import QueryResult
 
         qr = QueryResult(
             model_name="test",
@@ -807,7 +807,7 @@ class TestQueryResultImmutability:
 
     def test_query_result_to_dict(self):
         """QueryResult.to_dict() phải trả về dict đầy đủ."""
-        from midicoder.emitters.core.analytics.analytics_engine import QueryResult
+        from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import QueryResult
 
         qr = QueryResult(
             model_name="test_model",
@@ -835,7 +835,7 @@ class TestReportSnapshotImmutability:
 
     def test_report_snapshot_is_frozen(self):
         """ReportSnapshot không thể sửa đổi sau khi tạo."""
-        from midicoder.emitters.core.analytics.report_scheduler import ReportSnapshot
+        from midicoder.emitters.core.cp17_bi_analytics.report_scheduler import ReportSnapshot
 
         snap = ReportSnapshot(
             report_name="test_report",
@@ -852,7 +852,7 @@ class TestReportSnapshotImmutability:
 
     def test_report_snapshot_to_dict(self):
         """ReportSnapshot.to_dict() phải trả về dict đầy đủ."""
-        from midicoder.emitters.core.analytics.report_scheduler import ReportSnapshot
+        from midicoder.emitters.core.cp17_bi_analytics.report_scheduler import ReportSnapshot
 
         snap = ReportSnapshot(
             report_name="weekly_report",
@@ -880,7 +880,7 @@ class TestInitExports:
 
     def test_all_models_exported(self):
         """Tất cả models phải được export."""
-        from midicoder.emitters.core.analytics import (
+        from midicoder.emitters.core.cp17_bi_analytics import (
             AnalyticsModel,
             DashboardDefinition,
             ScheduledReport,
@@ -891,7 +891,7 @@ class TestInitExports:
 
     def test_all_enums_exported(self):
         """Tất cả enums phải được export."""
-        from midicoder.emitters.core.analytics import (
+        from midicoder.emitters.core.cp17_bi_analytics import (
             AnalyticsSourceType,
             AggregationType,
             VisualizationType,
@@ -908,7 +908,7 @@ class TestInitExports:
 
     def test_all_emitters_exported(self):
         """Tất cả emitters phải được export."""
-        from midicoder.emitters.core.analytics import (
+        from midicoder.emitters.core.cp17_bi_analytics import (
             FastAPIAnalyticsEmitter,
             NestJSAnalyticsEmitter,
             AngularAnalyticsEmitter,
@@ -921,7 +921,7 @@ class TestInitExports:
 
     def test_engine_exported(self):
         """Tất cả engine classes phải được export."""
-        from midicoder.emitters.core.analytics import (
+        from midicoder.emitters.core.cp17_bi_analytics import (
             AnalyticsEngine,
             QueryResult,
             DashboardBuilder,
@@ -938,7 +938,7 @@ class TestInitExports:
 
     def test_all_list_complete(self):
         """__all__ phải chứa tất cả exports."""
-        from midicoder.emitters.core.analytics import __all__
+        from midicoder.emitters.core.cp17_bi_analytics import __all__
         expected = {
             "AnalyticsModel", "DashboardDefinition", "ScheduledReport",
             "AnalyticsSourceType", "AggregationType", "VisualizationType",

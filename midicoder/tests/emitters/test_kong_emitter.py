@@ -16,7 +16,7 @@ from unittest import TestCase
 from pathlib import Path
 
 from midicoder.dsl.projection import ProjectionTree, NodeKind, ProjectionNode
-from midicoder.emitters.core.gateway.kong_gateway import KongGatewayEmitter
+from midicoder.emitters.core.cp06_api_gateway.kong_gateway import KongGatewayEmitter
 
 
 class TestKongGatewayEmitter(TestCase):

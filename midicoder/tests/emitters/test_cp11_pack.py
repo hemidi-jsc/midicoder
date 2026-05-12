@@ -16,7 +16,7 @@ import pathlib
 import pytest
 import yaml
 
-PACK_YML = pathlib.Path(__file__).resolve().parent.parent.parent / "emitters" / "core" / "file_storage" / "pack.yml"
+PACK_YML = pathlib.Path(__file__).resolve().parent.parent.parent / "emitters" / "core" / "cp11_file_media" / "pack.yml"
 TAXONOMY_YML = pathlib.Path(__file__).resolve().parent.parent.parent.parent / "industry" / "taxonomy.yml"
 
 
@@ -119,7 +119,7 @@ class TestPackTaxonomySync:
 
     def test_definitions_count_matches_models(self, pack):
         """Kiểm tra definitions_count khớp với số model classes."""
-        from midicoder.emitters.core.file_storage.models import (
+        from midicoder.emitters.core.cp11_file_media.models import (
             StorageProfile,
             UploadPolicy,
             MediaTransform,

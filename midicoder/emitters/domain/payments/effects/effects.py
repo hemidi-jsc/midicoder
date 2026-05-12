@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from midicoder.emitters.core.tenant.models import TenantContext
+from midicoder.emitters.core.cp02_multi_tenant.models import TenantContext
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
 

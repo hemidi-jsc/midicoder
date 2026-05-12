@@ -60,7 +60,7 @@ class TestEventModels:
 
     def test_event_definition_creation(self):
         """EventDefinition có thể tạo với event_name và payload_fields."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         event = EventDefinition(
             event_name="order.created",
@@ -74,7 +74,7 @@ class TestEventModels:
 
     def test_event_definition_defaults(self):
         """EventDefinition có default values."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         event = EventDefinition(event_name="test.event")
         assert event.event_name == "test.event"
@@ -83,7 +83,7 @@ class TestEventModels:
 
     def test_event_definition_dict_conversion(self):
         """EventDefinition.to_dict() trả về dict."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         event = EventDefinition(
             event_name="order.created",
@@ -97,7 +97,7 @@ class TestEventModels:
 
     def test_event_definition_from_dict(self):
         """EventDefinition.from_dict() tạo object từ dict."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         data = {
             "event_name": "payment.completed",
@@ -112,14 +112,14 @@ class TestEventModels:
 
     def test_event_definition_validation(self):
         """EventDefinition validate event_name không được empty."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         with pytest.raises((ValueError, MidicoderError)):
             EventDefinition(event_name="")
 
     def test_event_definition_with_tenant(self):
         """EventDefinition support tenant_id cho multi-tenant."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         event = EventDefinition(
             event_name="order.created",
@@ -130,7 +130,7 @@ class TestEventModels:
 
     def test_event_definition_schema_fields(self):
         """EventDefinition có schema_fields cho validation."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         schema = {
             "order_id": {"type": "string", "required": True},
@@ -145,7 +145,7 @@ class TestEventModels:
 
     def test_event_definition_equality(self):
         """EventDefinition equality based on event_name."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         e1 = EventDefinition(event_name="order.created", topic="orders")
         e2 = EventDefinition(event_name="order.created", topic="different")
@@ -162,7 +162,7 @@ class TestEventParser:
 
     def test_parse_single_event(self):
         """Parse 1 event từ YAML dict."""
-        from midicoder.emitters.core.event.parser import EventParser
+        from midicoder.emitters.core.cp05_event_driven.parser import EventParser
 
         yaml_data = {
             "event_name": "order.created",
@@ -176,7 +176,7 @@ class TestEventParser:
 
     def test_parse_multiple_events(self):
         """Parse nhiều events từ YAML dict."""
-        from midicoder.emitters.core.event.parser import EventParser
+        from midicoder.emitters.core.cp05_event_driven.parser import EventParser
 
         yaml_data = [
             {"event_name": "order.created", "payload_fields": ["order_id"]},
@@ -188,7 +188,7 @@ class TestEventParser:
 
     def test_parse_empty_list(self):
         """Parse empty list trả về empty list."""
-        from midicoder.emitters.core.event.parser import EventParser
+        from midicoder.emitters.core.cp05_event_driven.parser import EventParser
 
         parser = EventParser()
         events = parser.parse([])
@@ -196,7 +196,7 @@ class TestEventParser:
 
     def test_parse_with_topic(self):
         """Parse event với topic field."""
-        from midicoder.emitters.core.event.parser import EventParser
+        from midicoder.emitters.core.cp05_event_driven.parser import EventParser
 
         yaml_data = [{"event_name": "test.event", "topic": "custom_topic"}]
         parser = EventParser()
@@ -205,7 +205,7 @@ class TestEventParser:
 
     def test_parse_with_version(self):
         """Parse event với version field."""
-        from midicoder.emitters.core.event.parser import EventParser
+        from midicoder.emitters.core.cp05_event_driven.parser import EventParser
 
         yaml_data = [{"event_name": "test.event", "version": "2.0"}]
         parser = EventParser()
@@ -214,7 +214,7 @@ class TestEventParser:
 
     def test_parse_invalid_event_raises_error(self):
         """Parse event không có event_name raise error."""
-        from midicoder.emitters.core.event.parser import EventParser
+        from midicoder.emitters.core.cp05_event_driven.parser import EventParser
 
         yaml_data = [{"payload_fields": ["field1"]}]
         parser = EventParser()
@@ -232,7 +232,7 @@ class TestFastAPIEventEmitter:
 
     def test_emitter_init(self):
         """Emitter khởi tạo với stack_dir."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
 
         stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
@@ -240,15 +240,15 @@ class TestFastAPIEventEmitter:
 
     def test_emitter_init_invalid_dir(self):
         """Emitter khởi tạo với stack_dir không tồn tại raise error."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
 
         with pytest.raises(FileNotFoundError):
             FastAPIEventEmitter(stack_dir=Path("/nonexistent/path"))
 
     def test_emit_returns_files(self):
         """Emit trả về list of GeneratedFile."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
@@ -258,8 +258,8 @@ class TestFastAPIEventEmitter:
 
     def test_emit_creates_directories(self):
         """Emit tạo directories cho output."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -273,8 +273,8 @@ class TestFastAPIEventEmitter:
 
     def test_emit_generates_event_bus(self):
         """Emit generate event_bus.py."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -289,8 +289,8 @@ class TestFastAPIEventEmitter:
 
     def test_emit_with_multiple_events(self):
         """Emit với nhiều events."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
@@ -303,8 +303,8 @@ class TestFastAPIEventEmitter:
 
     def test_emit_with_tenant_events(self):
         """Emit với events có tenant_id."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
@@ -316,8 +316,8 @@ class TestFastAPIEventEmitter:
 
     def test_emit_with_schema_fields(self):
         """Emit với events có schema_fields."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
@@ -333,8 +333,8 @@ class TestFastAPIEventEmitter:
 
     def test_emit_generated_file_structure(self):
         """GeneratedFile có đúng structure."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
@@ -348,7 +348,7 @@ class TestFastAPIEventEmitter:
 
     def test_emit_with_empty_events(self):
         """Emit với empty list trả về base files."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
 
         stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
@@ -367,7 +367,7 @@ class TestNestJSEventEmitter:
 
     def test_emitter_init(self):
         """Emitter khởi tạo với stack_dir."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
 
         stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
@@ -375,15 +375,15 @@ class TestNestJSEventEmitter:
 
     def test_emitter_init_invalid_dir(self):
         """Emitter khởi tạo với stack_dir không tồn tại raise error."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
 
         with pytest.raises(FileNotFoundError):
             NestJSEventEmitter(stack_dir=Path("/nonexistent/path"))
 
     def test_emit_returns_files(self):
         """Emit trả về list of GeneratedFile."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
@@ -393,8 +393,8 @@ class TestNestJSEventEmitter:
 
     def test_emit_creates_directories(self):
         """Emit tạo directories cho output."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -407,8 +407,8 @@ class TestNestJSEventEmitter:
 
     def test_emit_generates_event_bus(self):
         """Emit generate event-bus.service.ts."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -422,8 +422,8 @@ class TestNestJSEventEmitter:
 
     def test_emit_with_multiple_events(self):
         """Emit với nhiều events."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
@@ -436,8 +436,8 @@ class TestNestJSEventEmitter:
 
     def test_emit_with_tenant_events(self):
         """Emit với events có tenant_id."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
@@ -449,8 +449,8 @@ class TestNestJSEventEmitter:
 
     def test_emit_generated_file_structure(self):
         """GeneratedFile có đúng structure."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
@@ -520,8 +520,8 @@ class TestEventIntegration:
 
     def test_event_parser_integration_with_emitter(self):
         """Event parser integration với FastAPIEventEmitter."""
-        from midicoder.emitters.core.event.parser import EventParser
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.parser import EventParser
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
 
         yaml_data = [
             {"event_name": "order.created", "payload_fields": ["order_id"], "topic": "orders"},
@@ -538,7 +538,7 @@ class TestEventIntegration:
 
     def test_event_tenant_isolation(self):
         """KPI-029: Event support tenant isolation."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         events = [
             EventDefinition(event_name="order.created", topic="orders", tenant_id="tenant_A"),

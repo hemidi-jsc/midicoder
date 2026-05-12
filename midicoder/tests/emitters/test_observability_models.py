@@ -13,7 +13,7 @@ Kiểm tra:
 
 import pytest
 
-from midicoder.emitters.core.observability.models import (
+from midicoder.emitters.core.cp15_observability.models import (
     LogLevel,
     MetricProfile,
     MetricType,

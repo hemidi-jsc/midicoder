@@ -12,7 +12,7 @@ Version: 1.0.0
 """
 
 import pytest
-from midicoder.emitters.core.gateway.models import (
+from midicoder.emitters.core.cp06_api_gateway.models import (
     KongGateway,
     KongService,
     KongRoute,

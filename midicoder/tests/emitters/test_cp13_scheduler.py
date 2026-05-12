@@ -11,22 +11,22 @@ class TestJobPriority(TestCase):
 
     def test_low_priority_exists(self):
         """JobPriority.LOW tồn tại."""
-        from midicoder.emitters.core.workflow.scheduler import JobPriority
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobPriority
         self.assertEqual(JobPriority.LOW.value, "low")
 
     def test_normal_priority_exists(self):
         """JobPriority.NORMAL tồn tại."""
-        from midicoder.emitters.core.workflow.scheduler import JobPriority
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobPriority
         self.assertEqual(JobPriority.NORMAL.value, "normal")
 
     def test_high_priority_exists(self):
         """JobPriority.HIGH tồn tại."""
-        from midicoder.emitters.core.workflow.scheduler import JobPriority
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobPriority
         self.assertEqual(JobPriority.HIGH.value, "high")
 
     def test_critical_priority_exists(self):
         """JobPriority.CRITICAL tồn tại."""
-        from midicoder.emitters.core.workflow.scheduler import JobPriority
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobPriority
         self.assertEqual(JobPriority.CRITICAL.value, "critical")
 
 
@@ -35,7 +35,7 @@ class TestSchedulePolicy(TestCase):
 
     def test_cron_policy_creation(self):
         """Tạo SchedulePolicy với cron expression."""
-        from midicoder.emitters.core.workflow.scheduler import SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import SchedulePolicy
         policy = SchedulePolicy(cron_expr="0 */5 * * * *")
         self.assertEqual(policy.cron_expr, "0 */5 * * * *")
         self.assertIsNone(policy.interval_seconds)
@@ -44,14 +44,14 @@ class TestSchedulePolicy(TestCase):
 
     def test_interval_policy_creation(self):
         """Tạo SchedulePolicy với interval_seconds."""
-        from midicoder.emitters.core.workflow.scheduler import SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import SchedulePolicy
         policy = SchedulePolicy(interval_seconds=300)
         self.assertEqual(policy.interval_seconds, 300)
         self.assertIsNone(policy.cron_expr)
 
     def test_policy_without_schedule_raises(self):
         """SchedulePolicy không có cron_expr cũng không có interval_seconds thì raise."""
-        from midicoder.emitters.core.workflow.scheduler import SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import SchedulePolicy
         from midicoder.errors import ErrorCode
         with self.assertRaises(ValueError) as ctx:
             SchedulePolicy(cron_expr=None, interval_seconds=None)
@@ -59,19 +59,19 @@ class TestSchedulePolicy(TestCase):
 
     def test_policy_custom_max_concurrent(self):
         """SchedulePolicy có max_concurrent tùy chỉnh."""
-        from midicoder.emitters.core.workflow.scheduler import SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import SchedulePolicy
         policy = SchedulePolicy(cron_expr="0 0 * * *", max_concurrent=5)
         self.assertEqual(policy.max_concurrent, 5)
 
     def test_policy_custom_timezone(self):
         """SchedulePolicy có timezone tùy chỉnh."""
-        from midicoder.emitters.core.workflow.scheduler import SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import SchedulePolicy
         policy = SchedulePolicy(cron_expr="0 0 * * *", timezone="Asia/Ho_Chi_Minh")
         self.assertEqual(policy.timezone, "Asia/Ho_Chi_Minh")
 
     def test_policy_to_dict(self):
         """SchedulePolicy.to_dict() trả về dict đầy đủ."""
-        from midicoder.emitters.core.workflow.scheduler import SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import SchedulePolicy
         policy = SchedulePolicy(cron_expr="*/10 * * * *", max_concurrent=3)
         d = policy.to_dict()
         self.assertEqual(d["cron_expr"], "*/10 * * * *")
@@ -79,7 +79,7 @@ class TestSchedulePolicy(TestCase):
 
     def test_policy_from_dict(self):
         """SchedulePolicy.from_dict() tái tạo policy từ dict."""
-        from midicoder.emitters.core.workflow.scheduler import SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import SchedulePolicy
         d = {"cron_expr": "0 0 * * *", "interval_seconds": None, "max_concurrent": 2, "timezone": "UTC"}
         policy = SchedulePolicy.from_dict(d)
         self.assertEqual(policy.cron_expr, "0 0 * * *")
@@ -91,7 +91,7 @@ class TestJobDefinition(TestCase):
 
     def test_job_definition_creation(self):
         """Tạo JobDefinition hợp lệ."""
-        from midicoder.emitters.core.workflow.scheduler import JobDefinition, SchedulePolicy, JobPriority
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobDefinition, SchedulePolicy, JobPriority
         job = JobDefinition(
             job_id="cleanup_sessions",
             name="Xóa session cũ",
@@ -106,7 +106,7 @@ class TestJobDefinition(TestCase):
 
     def test_job_definition_empty_id_raises(self):
         """JobDefinition với job_id rỗng thì raise."""
-        from midicoder.emitters.core.workflow.scheduler import JobDefinition, SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobDefinition, SchedulePolicy
         with self.assertRaises(ValueError) as ctx:
             JobDefinition(
                 job_id="",
@@ -118,7 +118,7 @@ class TestJobDefinition(TestCase):
 
     def test_job_definition_empty_task_type_raises(self):
         """JobDefinition với task_type rỗng thì raise."""
-        from midicoder.emitters.core.workflow.scheduler import JobDefinition, SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobDefinition, SchedulePolicy
         with self.assertRaises(ValueError) as ctx:
             JobDefinition(
                 job_id="test_job",
@@ -130,7 +130,7 @@ class TestJobDefinition(TestCase):
 
     def test_job_definition_with_all_fields(self):
         """JobDefinition với đầy đủ tùy chọn."""
-        from midicoder.emitters.core.workflow.scheduler import JobDefinition, SchedulePolicy, JobPriority
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobDefinition, SchedulePolicy, JobPriority
         job = JobDefinition(
             job_id="send_report",
             name="Gửi báo cáo hàng ngày",
@@ -148,7 +148,7 @@ class TestJobDefinition(TestCase):
 
     def test_job_definition_to_dict(self):
         """JobDefinition.to_dict() trả về dict đầy đủ."""
-        from midicoder.emitters.core.workflow.scheduler import JobDefinition, SchedulePolicy
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobDefinition, SchedulePolicy
         job = JobDefinition(
             job_id="test_job",
             name="Test Job",
@@ -161,7 +161,7 @@ class TestJobDefinition(TestCase):
 
     def test_job_definition_from_dict(self):
         """JobDefinition.from_dict() tái tạo từ dict."""
-        from midicoder.emitters.core.workflow.scheduler import JobDefinition
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobDefinition
         d = {
             "job_id": "import_data",
             "name": "Import dữ liệu",
@@ -183,7 +183,7 @@ class TestJobInstance(TestCase):
 
     def test_job_instance_creation(self):
         """Tạo JobInstance với status pending."""
-        from midicoder.emitters.core.workflow.scheduler import JobInstance
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobInstance
         inst = JobInstance(instance_id="inst-001", job_id="cleanup_sessions")
         self.assertEqual(inst.instance_id, "inst-001")
         self.assertEqual(inst.status, "pending")
@@ -193,21 +193,21 @@ class TestJobInstance(TestCase):
 
     def test_job_instance_empty_id_raises(self):
         """JobInstance với instance_id rỗng thì raise."""
-        from midicoder.emitters.core.workflow.scheduler import JobInstance
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobInstance
         with self.assertRaises(ValueError) as ctx:
             JobInstance(instance_id="", job_id="test")
         self.assertIn("MDC-CP13-002", str(ctx.exception))
 
     def test_job_instance_empty_job_id_raises(self):
         """JobInstance với job_id rỗng thì raise."""
-        from midicoder.emitters.core.workflow.scheduler import JobInstance
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobInstance
         with self.assertRaises(ValueError) as ctx:
             JobInstance(instance_id="inst-001", job_id="")
         self.assertIn("MDC-CP13-002", str(ctx.exception))
 
     def test_mark_running(self):
         """JobInstance.mark_running() set status và started_at."""
-        from midicoder.emitters.core.workflow.scheduler import JobInstance
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobInstance
         inst = JobInstance(instance_id="inst-001", job_id="test")
         inst.mark_running()
         self.assertEqual(inst.status, "running")
@@ -215,7 +215,7 @@ class TestJobInstance(TestCase):
 
     def test_mark_completed(self):
         """JobInstance.mark_completed() set status, completed_at, result."""
-        from midicoder.emitters.core.workflow.scheduler import JobInstance
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobInstance
         inst = JobInstance(instance_id="inst-001", job_id="test")
         inst.mark_completed(result={"rows_deleted": 150})
         self.assertEqual(inst.status, "completed")
@@ -224,7 +224,7 @@ class TestJobInstance(TestCase):
 
     def test_mark_failed(self):
         """JobInstance.mark_failed() set status và error."""
-        from midicoder.emitters.core.workflow.scheduler import JobInstance
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobInstance
         inst = JobInstance(instance_id="inst-001", job_id="test")
         inst.mark_failed(error="Connection timeout")
         self.assertEqual(inst.status, "failed")
@@ -232,7 +232,7 @@ class TestJobInstance(TestCase):
 
     def test_mark_failed_increments_retries(self):
         """JobInstance.mark_failed() tăng retry count."""
-        from midicoder.emitters.core.workflow.scheduler import JobInstance
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobInstance
         inst = JobInstance(instance_id="inst-001", job_id="test")
         inst.mark_failed(error="timeout")
         inst.mark_failed(error="timeout again")
@@ -240,7 +240,7 @@ class TestJobInstance(TestCase):
 
     def test_job_instance_to_dict(self):
         """JobInstance.to_dict() trả về dict đầy đủ."""
-        from midicoder.emitters.core.workflow.scheduler import JobInstance
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobInstance
         inst = JobInstance(instance_id="inst-001", job_id="test")
         inst.mark_completed(result={"ok": True})
         d = inst.to_dict()
@@ -250,7 +250,7 @@ class TestJobInstance(TestCase):
 
     def test_job_instance_cancelled_status(self):
         """JobInstance có thể được tạo với status cancelled."""
-        from midicoder.emitters.core.workflow.scheduler import JobInstance
+        from midicoder.emitters.core.cp13_workflow_runtime.scheduler import JobInstance
         inst = JobInstance(instance_id="inst-002", job_id="test")
         inst.status = "cancelled"
         self.assertEqual(inst.status, "cancelled")

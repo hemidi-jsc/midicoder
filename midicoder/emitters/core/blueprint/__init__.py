@@ -11,7 +11,7 @@ thành unified blueprint. Cung cấp:
 - Recipes: Pre-mixed concrete blueprints (FullStack, BackendOnly, v.v.)
 
 Sử dụng:
-    from midicoder.emitters.core.blueprint import (
+    from midicoder.emitters.core.cp51_blueprint import (
         CapabilityGraph,
         CapabilityNode,
         Resolution,
@@ -28,7 +28,7 @@ Version: 1.0.0
 
 from __future__ import annotations
 
-from midicoder.emitters.core.blueprint.models import (
+from midicoder.emitters.core.cp51_blueprint.models import (
     CapabilityNode,
     CapabilityGraph,
     ResolutionStatus,
@@ -40,7 +40,7 @@ from midicoder.emitters.core.blueprint.models import (
     VersionConstraint,
 )
 
-from midicoder.emitters.core.blueprint.recipes import (
+from midicoder.emitters.core.cp51_blueprint.recipes import (
     FullStackBlueprintRecipe,
     BackendOnlyRecipe,
     FrontendOnlyRecipe,

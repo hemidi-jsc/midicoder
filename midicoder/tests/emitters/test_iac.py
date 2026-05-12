@@ -27,7 +27,7 @@ class TestInfrastructureConfig:
 
     def test_create_default_config(self) -> None:
         """Test: Tạo config mặc định có đầy đủ services."""
-        from midicoder.emitters.core.iac.models import InfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.models import InfrastructureConfig
 
         config = InfrastructureConfig()
 
@@ -41,7 +41,7 @@ class TestInfrastructureConfig:
 
     def test_create_config_with_backend(self) -> None:
         """Test: Config với backend include service 'backend'."""
-        from midicoder.emitters.core.iac.models import InfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.models import InfrastructureConfig
 
         config = InfrastructureConfig(has_backend=True)
 
@@ -50,7 +50,7 @@ class TestInfrastructureConfig:
 
     def test_create_config_with_frontend(self) -> None:
         """Test: Config với frontend include service 'frontend'."""
-        from midicoder.emitters.core.iac.models import InfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.models import InfrastructureConfig
 
         config = InfrastructureConfig(has_frontend=True)
 
@@ -59,7 +59,7 @@ class TestInfrastructureConfig:
 
     def test_create_config_full_stack(self) -> None:
         """Test: Config đầy đủ backend + frontend + infra."""
-        from midicoder.emitters.core.iac.models import InfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.models import InfrastructureConfig
 
         config = InfrastructureConfig(
             has_backend=True,
@@ -86,7 +86,7 @@ class TestAWSInfrastructureConfig:
 
     def test_create_default_aws_config(self) -> None:
         """Test: Tạo AWS config mặc định."""
-        from midicoder.emitters.core.iac.models import AWSInfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.models import AWSInfrastructureConfig
 
         config = AWSInfrastructureConfig()
 
@@ -99,7 +99,7 @@ class TestAWSInfrastructureConfig:
 
     def test_create_custom_aws_config(self) -> None:
         """Test: Tạo AWS config với custom values."""
-        from midicoder.emitters.core.iac.models import AWSInfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.models import AWSInfrastructureConfig
 
         config = AWSInfrastructureConfig(
             app_name="my-ecommerce",
@@ -115,7 +115,7 @@ class TestAWSInfrastructureConfig:
 
     def test_secrets_auto_generated(self) -> None:
         """Test: Secrets tự động generate khi tạo config."""
-        from midicoder.emitters.core.iac.models import AWSInfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.models import AWSInfrastructureConfig
 
         config = AWSInfrastructureConfig()
 
@@ -137,7 +137,7 @@ class TestDockerComposeGenerator:
     def test_extract_infrastructure_from_mir_with_backend_ops(self) -> None:
         """Test: Extract detect backend khi MIR có API operations."""
         from midicoder.pipeline.mir import MIR
-        from midicoder.emitters.core.iac.docker import DockerComposeGenerator
+        from midicoder.emitters.core.cp07_iac.docker import DockerComposeGenerator
 
         # Tạo MIR với backend operations
         mir = MIR()
@@ -155,7 +155,7 @@ class TestDockerComposeGenerator:
     def test_extract_infrastructure_from_mir_with_frontend_ops(self) -> None:
         """Test: Extract detect frontend khi MIR có UI operations."""
         from midicoder.pipeline.mir import MIR
-        from midicoder.emitters.core.iac.docker import DockerComposeGenerator
+        from midicoder.emitters.core.cp07_iac.docker import DockerComposeGenerator
 
         mir = MIR()
         mir.operations.append(type('Operation', (), {
@@ -172,7 +172,7 @@ class TestDockerComposeGenerator:
     def test_extract_infrastructure_empty_mir(self) -> None:
         """Test: Extract với MIR trống chỉ có infra services."""
         from midicoder.pipeline.mir import MIR
-        from midicoder.emitters.core.iac.docker import DockerComposeGenerator
+        from midicoder.emitters.core.cp07_iac.docker import DockerComposeGenerator
 
         mir = MIR()  # Trống
         generator = DockerComposeGenerator()
@@ -186,7 +186,7 @@ class TestDockerComposeGenerator:
     def test_override_config_priority(self) -> None:
         """Test: Override config có ưu tiên cao nhất."""
         from midicoder.pipeline.mir import MIR
-        from midicoder.emitters.core.iac.docker import DockerComposeGenerator
+        from midicoder.emitters.core.cp07_iac.docker import DockerComposeGenerator
 
         mir = MIR(metadata={"backend_stack": "fastapi"})
         generator = DockerComposeGenerator()
@@ -207,7 +207,7 @@ class TestTerraformGenerator:
     def test_extract_aws_infrastructure_from_mir(self) -> None:
         """Test: Extract AWS infra từ MIR có đầy đủ operations."""
         from midicoder.pipeline.mir import MIR
-        from midicoder.emitters.core.iac.terraform import TerraformGenerator
+        from midicoder.emitters.core.cp07_iac.terraform import TerraformGenerator
 
         mir = MIR()
         # API operation
@@ -232,7 +232,7 @@ class TestTerraformGenerator:
     def test_extract_with_override_config(self) -> None:
         """Test: Extract với override config."""
         from midicoder.pipeline.mir import MIR
-        from midicoder.emitters.core.iac.terraform import TerraformGenerator
+        from midicoder.emitters.core.cp07_iac.terraform import TerraformGenerator
 
         mir = MIR()
         generator = TerraformGenerator()
@@ -245,7 +245,7 @@ class TestTerraformGenerator:
 
     def test_aws_config_defaults(self) -> None:
         """Test: AWS config default values đúng."""
-        from midicoder.emitters.core.iac.models import AWSInfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.models import AWSInfrastructureConfig
 
         config = AWSInfrastructureConfig()
 
@@ -383,18 +383,18 @@ class TestIacEmitters:
 
     def test_fastapi_emitter_exists(self) -> None:
         """Test: FastAPI IAC Emitter importable."""
-        from midicoder.emitters.core.iac.fastapi import FastAPIIacEmitter
+        from midicoder.emitters.core.cp07_iac.fastapi import FastAPIIacEmitter
         assert FastAPIIacEmitter is not None
 
     def test_nestjs_emitter_exists(self) -> None:
         """Test: NestJS IAC Emitter importable."""
-        from midicoder.emitters.core.iac.nestjs import NestJSIacEmitter
+        from midicoder.emitters.core.cp07_iac.nestjs import NestJSIacEmitter
         assert NestJSIacEmitter is not None
 
     def test_fastapi_emitter_generate(self) -> None:
         """Test: FastAPI emitter generate docker-compose."""
-        from midicoder.emitters.core.iac.fastapi import FastAPIIacEmitter
-        from midicoder.emitters.core.iac.models import InfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.fastapi import FastAPIIacEmitter
+        from midicoder.emitters.core.cp07_iac.models import InfrastructureConfig
 
         emitter = FastAPIIacEmitter()
         config = InfrastructureConfig(has_backend=True, backend_stack="fastapi")
@@ -406,8 +406,8 @@ class TestIacEmitters:
 
     def test_nestjs_emitter_generate(self) -> None:
         """Test: NestJS emitter generate docker-compose."""
-        from midicoder.emitters.core.iac.nestjs import NestJSIacEmitter
-        from midicoder.emitters.core.iac.models import InfrastructureConfig
+        from midicoder.emitters.core.cp07_iac.nestjs import NestJSIacEmitter
+        from midicoder.emitters.core.cp07_iac.models import InfrastructureConfig
 
         emitter = NestJSIacEmitter()
         config = InfrastructureConfig(has_backend=True, backend_stack="nestjs")
@@ -427,7 +427,7 @@ class TestModuleExports:
 
     def test_iac_init_exports(self) -> None:
         """Test: __init__.py export đúng classes."""
-        from midicoder.emitters.core.iac import (
+        from midicoder.emitters.core.cp07_iac import (
             InfrastructureConfig,
             AWSInfrastructureConfig,
             DockerComposeGenerator,

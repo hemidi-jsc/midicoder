@@ -13,7 +13,7 @@ Kiểm tra:
 import pytest
 from datetime import datetime, timezone
 
-from midicoder.emitters.core.analytics.models import (
+from midicoder.emitters.core.cp17_bi_analytics.models import (
     AnalyticsModel,
     DashboardDefinition,
     ReportFormat,

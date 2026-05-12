@@ -13,11 +13,11 @@ import tempfile
 import shutil
 import yaml
 
-from midicoder.emitters.core.auth.parser import AuthParser
-from midicoder.emitters.core.auth.fastapi import FastAPIAuthEmitter
-from midicoder.emitters.core.auth.nestjs import NestJSEmitter
-from midicoder.emitters.core.auth.angular import AngularEmitter
-from midicoder.emitters.core.auth.react import ReactEmitter
+from midicoder.emitters.core.cp03_auth.parser import AuthParser
+from midicoder.emitters.core.cp03_auth.fastapi import FastAPIAuthEmitter
+from midicoder.emitters.core.cp03_auth.nestjs import NestJSEmitter
+from midicoder.emitters.core.cp03_auth.angular import AngularEmitter
+from midicoder.emitters.core.cp03_auth.react import ReactEmitter
 
 
 @pytest.fixture
@@ -154,9 +154,9 @@ class TestAuthIntegration:
     def test_pack_self_contained(self):
         """Test: Pack khong import tu CP01, CP02, hay authnz/."""
         import importlib
-        auth_module = importlib.import_module("midicoder.emitters.core.auth")
-        models = importlib.import_module("midicoder.emitters.core.auth.models")
-        parser = importlib.import_module("midicoder.emitters.core.auth.parser")
+        auth_module = importlib.import_module("midicoder.emitters.core.cp03_auth")
+        models = importlib.import_module("midicoder.emitters.core.cp03_auth.models")
+        parser = importlib.import_module("midicoder.emitters.core.cp03_auth.parser")
         for mod in [auth_module, models, parser]:
             source = Path(mod.__file__).read_text(encoding="utf-8")
             assert "authnz" not in source.lower()

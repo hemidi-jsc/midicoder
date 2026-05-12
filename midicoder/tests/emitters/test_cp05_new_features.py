@@ -27,7 +27,7 @@ class TestOutboxEntryModel:
 
     def test_outbox_entry_creation(self):
         """OutboxEntry có thể tạo với event_name và payload."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         entry = OutboxEntry(
             event_name="order.created",
@@ -41,7 +41,7 @@ class TestOutboxEntryModel:
 
     def test_outbox_entry_defaults(self):
         """OutboxEntry có default values."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         entry = OutboxEntry(event_name="test.event")
         assert entry.event_name == "test.event"
@@ -52,7 +52,7 @@ class TestOutboxEntryModel:
 
     def test_outbox_entry_with_transaction_id(self):
         """OutboxEntry support transaction_id."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         entry = OutboxEntry(
             event_name="order.created",
@@ -63,7 +63,7 @@ class TestOutboxEntryModel:
 
     def test_outbox_entry_with_visibility_delay(self):
         """OutboxEntry support visibility_delay."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         entry = OutboxEntry(
             event_name="order.created",
@@ -73,7 +73,7 @@ class TestOutboxEntryModel:
 
     def test_outbox_entry_to_dict(self):
         """OutboxEntry.to_dict() trả về dict."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         entry = OutboxEntry(
             event_name="order.created",
@@ -90,7 +90,7 @@ class TestOutboxEntryModel:
 
     def test_outbox_entry_from_dict(self):
         """OutboxEntry.from_dict() tạo object từ dict."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         data = {
             "event_name": "payment.completed",
@@ -109,7 +109,7 @@ class TestOutboxEntryModel:
 
     def test_outbox_entry_status_update(self):
         """OutboxEntry có thể update status."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         entry = OutboxEntry(event_name="test.event")
         assert entry.status == "pending"
@@ -118,7 +118,7 @@ class TestOutboxEntryModel:
 
     def test_outbox_entry_published_at(self):
         """OutboxEntry có published_at khi publish thành công."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         entry = OutboxEntry(event_name="test.event")
         assert entry.published_at is None
@@ -136,14 +136,14 @@ class TestPackManifest:
 
     def test_pack_yml_exists(self):
         """pack.yml tồn tại trong event directory."""
-        pack_path = Path("midicoder/emitters/core/event/pack.yml")
+        pack_path = Path("midicoder/emitters/core/cp05_event_driven/pack.yml")
         assert pack_path.exists()
 
     def test_pack_yml_has_correct_id(self):
         """pack.yml có id là CP05."""
         import yaml
 
-        pack_path = Path("midicoder/emitters/core/event/pack.yml")
+        pack_path = Path("midicoder/emitters/core/cp05_event_driven/pack.yml")
         with open(pack_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         assert data["pack"]["id"] == "CP05"
@@ -152,7 +152,7 @@ class TestPackManifest:
         """pack.yml có name là Event-Driven Architecture Generator."""
         import yaml
 
-        pack_path = Path("midicoder/emitters/core/event/pack.yml")
+        pack_path = Path("midicoder/emitters/core/cp05_event_driven/pack.yml")
         with open(pack_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         assert "Event-Driven" in data["pack"]["name"]
@@ -161,7 +161,7 @@ class TestPackManifest:
         """pack.yml có capabilities_provided đúng."""
         import yaml
 
-        pack_path = Path("midicoder/emitters/core/event/pack.yml")
+        pack_path = Path("midicoder/emitters/core/cp05_event_driven/pack.yml")
         with open(pack_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         caps = data["pack"]["capabilities_provided"]
@@ -173,7 +173,7 @@ class TestPackManifest:
         """pack.yml có status là stable."""
         import yaml
 
-        pack_path = Path("midicoder/emitters/core/event/pack.yml")
+        pack_path = Path("midicoder/emitters/core/cp05_event_driven/pack.yml")
         with open(pack_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         assert data["pack"]["status"] == "stable"
@@ -182,7 +182,7 @@ class TestPackManifest:
         """pack.yml có error_codes prefix là MDC-EVT."""
         import yaml
 
-        pack_path = Path("midicoder/emitters/core/event/pack.yml")
+        pack_path = Path("midicoder/emitters/core/cp05_event_driven/pack.yml")
         with open(pack_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         assert data["pack"]["error_codes"]["prefix"] == "MDC-EVT"
@@ -198,8 +198,8 @@ class TestOutboxTemplateGeneration:
 
     def test_fastapi_emitter_generates_outbox_file(self):
         """FastAPIEventEmitter generate event_outbox.py."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -213,8 +213,8 @@ class TestOutboxTemplateGeneration:
 
     def test_nestjs_emitter_generates_outbox_file(self):
         """NestJSEventEmitter generate event-outbox.service.ts."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -252,13 +252,13 @@ class TestOutboxTemplateGeneration:
 
     def test_outbox_in_init_exports(self):
         """__init__.py export OutboxEntry."""
-        from midicoder.emitters.core.event import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven import OutboxEntry
         assert OutboxEntry is not None
 
     def test_fastapi_emit_includes_5_files(self):
         """FastAPIEventEmitter.emit() trả về 5 files (bus, publisher, subscriber, outbox, init)."""
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/fastapi/core")
         emitter = FastAPIEventEmitter(stack_dir=stack_dir)
@@ -268,8 +268,8 @@ class TestOutboxTemplateGeneration:
 
     def test_nestjs_emit_includes_6_files(self):
         """NestJSEventEmitter.emit() trả về 6 files (bus, publisher, subscriber, outbox, module, index)."""
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         stack_dir = Path("midicoder/stacks/nestjs/core")
         emitter = NestJSEventEmitter(stack_dir=stack_dir)
@@ -288,7 +288,7 @@ class TestCoverageGaps:
 
     def test_event_definition_to_dict_with_tenant_and_schema(self):
         """EventDefinition.to_dict() include tenant_id và schema_fields khi có giá trị."""
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         event = EventDefinition(
             event_name="order.created",
@@ -302,7 +302,7 @@ class TestCoverageGaps:
 
     def test_outbox_entry_to_dict_with_all_fields(self):
         """OutboxEntry.to_dict() include tất cả optional fields khi có giá trị."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         entry = OutboxEntry(
             event_name="test.event",
@@ -320,7 +320,7 @@ class TestCoverageGaps:
 
     def test_outbox_entry_to_dict_with_zero_delay(self):
         """OutboxEntry.to_dict() không include visibility_delay khi = 0."""
-        from midicoder.emitters.core.event.models import OutboxEntry
+        from midicoder.emitters.core.cp05_event_driven.models import OutboxEntry
 
         entry = OutboxEntry(
             event_name="test.event",
@@ -339,8 +339,8 @@ class TestCoverageGaps:
     def test_fastapi_template_not_found_fallback(self):
         """FastAPIEventEmitter _render_file fallback khi template không tồn tại."""
         import tempfile
-        from midicoder.emitters.core.event.fastapi import FastAPIEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.fastapi import FastAPIEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         with tempfile.TemporaryDirectory() as tmpdir:
             stack_dir = Path("midicoder/stacks/fastapi/core")
@@ -358,8 +358,8 @@ class TestCoverageGaps:
     def test_nestjs_template_not_found_fallback(self):
         """NestJSEventEmitter _render_file fallback khi template không tồn tại."""
         import tempfile
-        from midicoder.emitters.core.event.nestjs import NestJSEventEmitter
-        from midicoder.emitters.core.event.models import EventDefinition
+        from midicoder.emitters.core.cp05_event_driven.nestjs import NestJSEventEmitter
+        from midicoder.emitters.core.cp05_event_driven.models import EventDefinition
 
         with tempfile.TemporaryDirectory() as tmpdir:
             stack_dir = Path("midicoder/stacks/nestjs/core")
@@ -376,7 +376,7 @@ class TestCoverageGaps:
 
     def test_init_exports_all_symbols(self):
         """__init__.py export tất cả symbols."""
-        from midicoder.emitters.core.event import (
+        from midicoder.emitters.core.cp05_event_driven import (
             EventDefinition,
             OutboxEntry,
             EventParser,

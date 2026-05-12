@@ -13,7 +13,7 @@ import pytest
 from datetime import date
 from decimal import Decimal
 
-from midicoder.emitters.core.invariant.domain.banking import (
+from midicoder.emitters.core.cp52_invariant.domain.banking import (
     ValidationResult,
     double_entry_balance_invariant,
     transaction_immutability_invariant,

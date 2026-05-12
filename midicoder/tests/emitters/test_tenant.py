@@ -22,16 +22,16 @@ import pytest
 from pathlib import Path
 
 # Import models CP02
-from midicoder.emitters.core.tenant.models import (
+from midicoder.emitters.core.cp02_multi_tenant.models import (
     TenantMode,
     TenantConfig,
     TenantContext,
     TenantResolver,
 )
-from midicoder.emitters.core.tenant.fastapi import FastAPITenantEmitter
-from midicoder.emitters.core.tenant.nestjs import NestJSTenantEmitter
-from midicoder.emitters.core.tenant.angular import AngularTenantEmitter
-from midicoder.emitters.core.tenant.react import ReactTenantEmitter
+from midicoder.emitters.core.cp02_multi_tenant.fastapi import FastAPITenantEmitter
+from midicoder.emitters.core.cp02_multi_tenant.nestjs import NestJSTenantEmitter
+from midicoder.emitters.core.cp02_multi_tenant.angular import AngularTenantEmitter
+from midicoder.emitters.core.cp02_multi_tenant.react import ReactTenantEmitter
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 

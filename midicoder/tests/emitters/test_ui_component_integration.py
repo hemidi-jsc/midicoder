@@ -10,7 +10,7 @@ Version: 1.0.0
 
 import pytest
 from pathlib import Path
-from midicoder.emitters.core.ui_component.models import (
+from midicoder.emitters.core.cp19_ui_components.models import (
     ComponentSpec, ComponentType, FormFieldSpec, FieldType,
     TableSpec, TableColumn,
 )
@@ -21,7 +21,7 @@ class TestUIComponentIntegration:
 
     def test_full_workflow_angular_material(self, tmp_path: Path):
         """Test workflow đầy đủ: Angular + Material — sinh tất cả 4 components."""
-        from midicoder.emitters.core.ui_component.angular import AngularUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.angular import AngularUIEmitter
         entity = {
             "id": "Order",
             "fields": [
@@ -57,7 +57,7 @@ class TestUIComponentIntegration:
 
     def test_full_workflow_react_tailwind(self, tmp_path: Path):
         """Test workflow đầy đủ: React + Tailwind — sinh tất cả 4 components."""
-        from midicoder.emitters.core.ui_component.react import ReactUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.react import ReactUIEmitter
 
         entity = {
             "id": "Product",
@@ -86,7 +86,7 @@ class TestUIComponentIntegration:
 
     def test_backend_fastapi_integration(self, tmp_path: Path):
         """Test backend FastAPI: sinh form validation service."""
-        from midicoder.emitters.core.ui_component.fastapi import FastAPIUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.fastapi import FastAPIUIEmitter
 
         components = [
             ComponentSpec(
@@ -120,7 +120,7 @@ class TestUIComponentIntegration:
 
     def test_backend_nestjs_integration(self, tmp_path: Path):
         """Test backend NestJS: sinh DTO + Pipe."""
-        from midicoder.emitters.core.ui_component.nestjs import NestJSUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.nestjs import NestJSUIEmitter
 
         components = [
             ComponentSpec(
@@ -173,8 +173,8 @@ class TestUIComponentIntegration:
 
     def test_all_ui_frameworks_supported(self):
         """Test tất cả 5 UI frameworks đều được support."""
-        from midicoder.emitters.core.ui_component.angular import AngularUIEmitter
-        from midicoder.emitters.core.ui_component.react import ReactUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.angular import AngularUIEmitter
+        from midicoder.emitters.core.cp19_ui_components.react import ReactUIEmitter
 
         frameworks = ["material", "tailwind", "bootstrap", "antd", "carbon"]
         for fw in frameworks:

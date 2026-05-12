@@ -23,7 +23,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from midicoder.emitters.core.cache.models import (
+from midicoder.emitters.core.cp09_cache.models import (
     CacheProfile,
     CacheStrategy,
     CacheInvalidationRule,
@@ -33,18 +33,18 @@ from midicoder.emitters.core.cache.models import (
     InvalidationStrategy,
     CacheCollection,
 )
-from midicoder.emitters.core.cache.parser import CacheParser
-from midicoder.emitters.core.cache.fastapi import FastAPICacheEmitter
-from midicoder.emitters.core.cache.nestjs import NestJSCacheEmitter
-from midicoder.emitters.core.cache.cache_decorator import (
+from midicoder.emitters.core.cp09_cache.parser import CacheParser
+from midicoder.emitters.core.cp09_cache.fastapi import FastAPICacheEmitter
+from midicoder.emitters.core.cp09_cache.nestjs import NestJSCacheEmitter
+from midicoder.emitters.core.cp09_cache.cache_decorator import (
     cache,
     cache_tenant,
     cache_disable,
     clear_cache,
 )
-from midicoder.emitters.core.cache.warm_up import CacheWarmer
-from midicoder.emitters.core.cache.providers.redis import RedisCacheProvider
-from midicoder.emitters.core.cache.providers.memory import MemoryCacheProvider
+from midicoder.emitters.core.cp09_cache.warm_up import CacheWarmer
+from midicoder.emitters.core.cp09_cache.providers.redis import RedisCacheProvider
+from midicoder.emitters.core.cp09_cache.providers.memory import MemoryCacheProvider
 from midicoder.errors import ErrorCode, MidicoderError
 
 
@@ -914,12 +914,12 @@ class TestAngularCacheEmitter:
 
     def test_angular_emitter_import(self):
         """AngularEmitter co the import."""
-        from midicoder.emitters.core.cache.angular import AngularEmitter
+        from midicoder.emitters.core.cp09_cache.angular import AngularEmitter
         assert AngularEmitter is not None
 
     def test_angular_emitter_emit_files(self, tmp_path):
         """Emit tao cac file cache cho Angular."""
-        from midicoder.emitters.core.cache.angular import AngularEmitter
+        from midicoder.emitters.core.cp09_cache.angular import AngularEmitter
 
         collection = CacheCollection()
         collection.add_profile(
@@ -937,7 +937,7 @@ class TestAngularCacheEmitter:
 
     def test_angular_emitter_has_tenant(self, tmp_path):
         """Emit bao gom tenant reference (KPI-029)."""
-        from midicoder.emitters.core.cache.angular import AngularEmitter
+        from midicoder.emitters.core.cp09_cache.angular import AngularEmitter
 
         collection = CacheCollection()
         collection.add_profile(
@@ -951,7 +951,7 @@ class TestAngularCacheEmitter:
 
     def test_angular_emitter_empty_raises(self):
         """Emit voi collection rong phai raise error."""
-        from midicoder.emitters.core.cache.angular import AngularEmitter
+        from midicoder.emitters.core.cp09_cache.angular import AngularEmitter
 
         emitter = AngularEmitter(stack_dir=Path("midicoder/stacks/angular"))
         with pytest.raises(MidicoderError):
@@ -968,12 +968,12 @@ class TestReactCacheEmitter:
 
     def test_react_emitter_import(self):
         """ReactEmitter co the import."""
-        from midicoder.emitters.core.cache.react import ReactEmitter
+        from midicoder.emitters.core.cp09_cache.react import ReactEmitter
         assert ReactEmitter is not None
 
     def test_react_emitter_emit_files(self, tmp_path):
         """Emit tao cac file cache cho React."""
-        from midicoder.emitters.core.cache.react import ReactEmitter
+        from midicoder.emitters.core.cp09_cache.react import ReactEmitter
 
         collection = CacheCollection()
         collection.add_profile(
@@ -992,7 +992,7 @@ class TestReactCacheEmitter:
 
     def test_react_emitter_has_tenant(self, tmp_path):
         """Emit bao gom tenant reference (KPI-029)."""
-        from midicoder.emitters.core.cache.react import ReactEmitter
+        from midicoder.emitters.core.cp09_cache.react import ReactEmitter
 
         collection = CacheCollection()
         collection.add_profile(
@@ -1006,7 +1006,7 @@ class TestReactCacheEmitter:
 
     def test_react_emitter_empty_raises(self):
         """Emit voi collection rong phai raise error."""
-        from midicoder.emitters.core.cache.react import ReactEmitter
+        from midicoder.emitters.core.cp09_cache.react import ReactEmitter
 
         emitter = ReactEmitter(stack_dir=Path("midicoder/stacks/react"))
         with pytest.raises(MidicoderError):
@@ -1023,7 +1023,7 @@ class TestConvenienceFunctions:
 
     def test_emit_angular_cache_function(self, tmp_path):
         """emit_angular_cache function co the goi duoc."""
-        from midicoder.emitters.core.cache import emit_angular_cache
+        from midicoder.emitters.core.cp09_cache import emit_angular_cache
 
         collection = CacheCollection()
         collection.add_profile(
@@ -1039,7 +1039,7 @@ class TestConvenienceFunctions:
 
     def test_emit_react_cache_function(self, tmp_path):
         """emit_react_cache function co the goi duoc."""
-        from midicoder.emitters.core.cache import emit_react_cache
+        from midicoder.emitters.core.cp09_cache import emit_react_cache
 
         collection = CacheCollection()
         collection.add_profile(

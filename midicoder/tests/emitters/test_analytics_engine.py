@@ -21,19 +21,19 @@ import unittest
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, field
 
-from midicoder.emitters.core.analytics.analytics_engine import (
+from midicoder.emitters.core.cp17_bi_analytics.analytics_engine import (
     QueryResult,
     AnalyticsEngine,
 )
-from midicoder.emitters.core.analytics.dashboard_builder import (
+from midicoder.emitters.core.cp17_bi_analytics.dashboard_builder import (
     Widget,
     DashboardBuilder,
 )
-from midicoder.emitters.core.analytics.report_scheduler import (
+from midicoder.emitters.core.cp17_bi_analytics.report_scheduler import (
     ReportSnapshot,
     ReportScheduler,
 )
-from midicoder.emitters.core.analytics.models import (
+from midicoder.emitters.core.cp17_bi_analytics.models import (
     AnalyticsModel,
     AnalyticsSourceType,
     DashboardDefinition,

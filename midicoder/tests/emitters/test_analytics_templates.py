@@ -167,7 +167,7 @@ class TestEmittersGenerateCorrectFiles:
 
     def test_fastapi_emitter_files(self):
         """FastAPI emitter phải generate đúng 2 file."""
-        from midicoder.emitters.core.analytics.fastapi import FastAPIAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.fastapi import FastAPIAnalyticsEmitter
         emitter = FastAPIAnalyticsEmitter()
         result = emitter.generate()
         assert len(result) >= 2, f"FastAPI emitter chỉ generate {len(result)} file"
@@ -176,7 +176,7 @@ class TestEmittersGenerateCorrectFiles:
 
     def test_nestjs_emitter_files(self):
         """NestJS emitter phải generate đúng 3 file."""
-        from midicoder.emitters.core.analytics.nestjs import NestJSAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.nestjs import NestJSAnalyticsEmitter
         emitter = NestJSAnalyticsEmitter()
         result = emitter.generate()
         assert len(result) >= 3, f"NestJS emitter chỉ generate {len(result)} file"
@@ -186,7 +186,7 @@ class TestEmittersGenerateCorrectFiles:
 
     def test_angular_emitter_files(self):
         """Angular emitter phải generate đúng 2 file."""
-        from midicoder.emitters.core.analytics.angular import AngularAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.angular import AngularAnalyticsEmitter
         emitter = AngularAnalyticsEmitter()
         result = emitter.generate()
         assert len(result) >= 2, f"Angular emitter chỉ generate {len(result)} file"
@@ -195,7 +195,7 @@ class TestEmittersGenerateCorrectFiles:
 
     def test_react_emitter_files(self):
         """React emitter phải generate đúng 3 file."""
-        from midicoder.emitters.core.analytics.react import ReactAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.react import ReactAnalyticsEmitter
         emitter = ReactAnalyticsEmitter()
         result = emitter.generate()
         assert len(result) >= 3, f"React emitter chỉ generate {len(result)} file"
@@ -209,7 +209,7 @@ class TestEmitterContentQuality:
 
     def test_fastapi_service_has_analytics_method(self):
         """FastAPI service phải có method analytics."""
-        from midicoder.emitters.core.analytics.fastapi import FastAPIAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.fastapi import FastAPIAnalyticsEmitter
         emitter = FastAPIAnalyticsEmitter()
         result = emitter.generate_service()
         code = list(result.values())[0]
@@ -217,7 +217,7 @@ class TestEmitterContentQuality:
 
     def test_nestjs_service_has_analytics(self):
         """NestJS service phải có analytics service content."""
-        from midicoder.emitters.core.analytics.nestjs import NestJSAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.nestjs import NestJSAnalyticsEmitter
         emitter = NestJSAnalyticsEmitter()
         result = emitter.generate_service()
         code = list(result.values())[0]
@@ -225,10 +225,10 @@ class TestEmitterContentQuality:
 
     def test_emitters_return_dicts(self):
         """Tất cả emitters phải trả về Dict[str, str]."""
-        from midicoder.emitters.core.analytics.fastapi import FastAPIAnalyticsEmitter
-        from midicoder.emitters.core.analytics.nestjs import NestJSAnalyticsEmitter
-        from midicoder.emitters.core.analytics.angular import AngularAnalyticsEmitter
-        from midicoder.emitters.core.analytics.react import ReactAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.fastapi import FastAPIAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.nestjs import NestJSAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.angular import AngularAnalyticsEmitter
+        from midicoder.emitters.core.cp17_bi_analytics.react import ReactAnalyticsEmitter
 
         for emitter_cls in [FastAPIAnalyticsEmitter, NestJSAnalyticsEmitter,
                             AngularAnalyticsEmitter, ReactAnalyticsEmitter]:

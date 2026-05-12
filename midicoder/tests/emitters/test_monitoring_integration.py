@@ -6,11 +6,11 @@ Kiểm tra integration giữa CP15 MetricRegistry và CP16 engine.
 import time
 import pytest
 
-from midicoder.emitters.core.observability.metrics import MetricRegistry
-from midicoder.emitters.core.monitoring.dashboard import DashboardManager, Panel
-from midicoder.emitters.core.monitoring.alert import AlertEngine
-from midicoder.emitters.core.monitoring.sli import SLIMonitor
-from midicoder.emitters.core.monitoring.models import (
+from midicoder.emitters.core.cp15_observability.metrics import MetricRegistry
+from midicoder.emitters.core.cp16_monitoring.dashboard import DashboardManager, Panel
+from midicoder.emitters.core.cp16_monitoring.alert import AlertEngine
+from midicoder.emitters.core.cp16_monitoring.sli import SLIMonitor
+from midicoder.emitters.core.cp16_monitoring.models import (
     DashboardProfile,
     DashboardType,
     AlertRule,

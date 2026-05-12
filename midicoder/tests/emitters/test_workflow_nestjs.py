@@ -17,8 +17,8 @@ import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from midicoder.emitters.core.workflow.nestjs import WorkflowNestJSEmitter
-from midicoder.emitters.core.workflow.models import (
+from midicoder.emitters.core.cp13_workflow_runtime.nestjs import WorkflowNestJSEmitter
+from midicoder.emitters.core.cp13_workflow_runtime.models import (
     WorkflowDefinition,
     Transition,
     Guard,

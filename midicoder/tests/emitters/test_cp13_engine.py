@@ -10,7 +10,7 @@ class TestStateMachine(TestCase):
 
     def _make_workflow(self):
         """Tạo WorkflowDefinition đơn giản để test."""
-        from midicoder.emitters.core.workflow.models import WorkflowDefinition, Transition
+        from midicoder.emitters.core.cp13_workflow_runtime.models import WorkflowDefinition, Transition
         transitions = [
             Transition(from_state="draft", to_state="submitted", event="submit"),
             Transition(from_state="submitted", to_state="approved", event="approve"),
@@ -25,14 +25,14 @@ class TestStateMachine(TestCase):
 
     def test_state_machine_creation(self):
         """Tạo StateMachine với WorkflowDefinition."""
-        from midicoder.emitters.core.workflow.engine.state_machine import StateMachine
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.state_machine import StateMachine
         wf = self._make_workflow()
         sm = StateMachine(wf)
         self.assertEqual(sm.workflow.name, "order")
 
     def test_create_instance(self):
         """Tạo instance mới từ StateMachine."""
-        from midicoder.emitters.core.workflow.engine.state_machine import StateMachine
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.state_machine import StateMachine
         wf = self._make_workflow()
         sm = StateMachine(wf)
         entity_id = uuid4()
@@ -42,7 +42,7 @@ class TestStateMachine(TestCase):
 
     def test_get_state(self):
         """Lấy trạng thái của instance."""
-        from midicoder.emitters.core.workflow.engine.state_machine import StateMachine
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.state_machine import StateMachine
         wf = self._make_workflow()
         sm = StateMachine(wf)
         instance_id = sm.create_instance("order", uuid4())
@@ -51,7 +51,7 @@ class TestStateMachine(TestCase):
 
     def test_transition_success(self):
         """Transition thành công giữa hai states."""
-        from midicoder.emitters.core.workflow.engine.state_machine import StateMachine
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.state_machine import StateMachine
         wf = self._make_workflow()
         sm = StateMachine(wf)
         instance_id = sm.create_instance("order", uuid4())
@@ -61,7 +61,7 @@ class TestStateMachine(TestCase):
 
     def test_transition_updates_state(self):
         """Transition cập nhật current_state của instance."""
-        from midicoder.emitters.core.workflow.engine.state_machine import StateMachine
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.state_machine import StateMachine
         wf = self._make_workflow()
         sm = StateMachine(wf)
         instance_id = sm.create_instance("order", uuid4())
@@ -71,7 +71,7 @@ class TestStateMachine(TestCase):
 
     def test_get_event_log(self):
         """Lấy log events của instance."""
-        from midicoder.emitters.core.workflow.engine.state_machine import StateMachine
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.state_machine import StateMachine
         wf = self._make_workflow()
         sm = StateMachine(wf)
         instance_id = sm.create_instance("order", uuid4())
@@ -81,7 +81,7 @@ class TestStateMachine(TestCase):
 
     def test_rebuild_state(self):
         """Rebuild state từ event log."""
-        from midicoder.emitters.core.workflow.engine.state_machine import StateMachine
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.state_machine import StateMachine
         wf = self._make_workflow()
         sm = StateMachine(wf)
         instance_id = sm.create_instance("order", uuid4())
@@ -96,7 +96,7 @@ class TestEventStore(TestCase):
 
     def _make_event(self, instance_id=None, workflow_name="order", event_type="transition"):
         """Tạo WorkflowEvent để test."""
-        from midicoder.emitters.core.workflow.engine.event_store import WorkflowEvent
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.event_store import WorkflowEvent
         return WorkflowEvent(
             event_type=event_type,
             instance_id=instance_id or uuid4(),
@@ -106,7 +106,7 @@ class TestEventStore(TestCase):
 
     def test_append_event(self):
         """Thêm event vào store."""
-        from midicoder.emitters.core.workflow.engine.event_store import EventStore
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.event_store import EventStore
         store = EventStore()
         iid = uuid4()
         evt = self._make_event(instance_id=iid)
@@ -116,7 +116,7 @@ class TestEventStore(TestCase):
 
     def test_get_by_instance(self):
         """Lấy events theo instance_id."""
-        from midicoder.emitters.core.workflow.engine.event_store import EventStore
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.event_store import EventStore
         store = EventStore()
         iid = uuid4()
         store.append(self._make_event(instance_id=iid, event_type="submitted"))
@@ -127,7 +127,7 @@ class TestEventStore(TestCase):
 
     def test_get_by_workflow(self):
         """Lấy events theo workflow_name."""
-        from midicoder.emitters.core.workflow.engine.event_store import EventStore
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.event_store import EventStore
         store = EventStore()
         store.append(self._make_event(workflow_name="order", event_type="submitted"))
         store.append(self._make_event(workflow_name="invoice", event_type="created"))
@@ -136,7 +136,7 @@ class TestEventStore(TestCase):
 
     def test_get_by_type(self):
         """Lấy events theo event type."""
-        from midicoder.emitters.core.workflow.engine.event_store import EventStore
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.event_store import EventStore
         store = EventStore()
         store.append(self._make_event(event_type="submitted"))
         store.append(self._make_event(event_type="submitted"))
@@ -146,7 +146,7 @@ class TestEventStore(TestCase):
 
     def test_get_count(self):
         """Đếm số events."""
-        from midicoder.emitters.core.workflow.engine.event_store import EventStore
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.event_store import EventStore
         store = EventStore()
         store.append(self._make_event())
         store.append(self._make_event())
@@ -154,7 +154,7 @@ class TestEventStore(TestCase):
 
     def test_clear(self):
         """Xoá tất cả events."""
-        from midicoder.emitters.core.workflow.engine.event_store import EventStore
+        from midicoder.emitters.core.cp13_workflow_runtime.engine.event_store import EventStore
         store = EventStore()
         store.append(self._make_event())
         store.clear()

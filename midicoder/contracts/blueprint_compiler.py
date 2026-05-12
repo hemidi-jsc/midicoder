@@ -21,7 +21,7 @@ from typing import Any
 import yaml
 
 from midicoder.errors import MidicoderError, ErrorCode
-from midicoder.emitters.core.tenant.models import TenantConfig, TenantMode
+from midicoder.emitters.core.cp02_multi_tenant.models import TenantConfig, TenantMode
 from .artifact import ArtifactBase, ArtifactMetadata
 from .composition.models import CompositionPlan
 from .composition.engine import CompositionEngine

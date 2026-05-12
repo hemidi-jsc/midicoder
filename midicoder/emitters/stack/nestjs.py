@@ -39,7 +39,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 
-from midicoder.emitters.core.domain_model import (
+from midicoder.emitters.core.cp01_domain_model import (
     NestJSValueObjectEmitter,
     NestJSCommandEmitter,
     Command,
@@ -52,24 +52,24 @@ from midicoder.emitters.core.domain_model import (
     EntityParser,
     NestJSEntityEmitter,
 )
-from midicoder.emitters.core.auth import (
+from midicoder.emitters.core.cp03_auth import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
     JWTAuthConfig,
     NestJSEmitter as NestJSAuthEmitter,
 )
-from midicoder.emitters.core.tenant.models import TenantMode
-from midicoder.emitters.core.event import (
+from midicoder.emitters.core.cp02_multi_tenant.models import TenantMode
+from midicoder.emitters.core.cp05_event_driven import (
     NestJSEventEmitter as CoreNestJSEventEmitter,
     EventParser,
 )
 from midicoder.pipeline.mir import MIR
-from midicoder.emitters.core.notification import (
+from midicoder.emitters.core.cp12_notification import (
     NestJSNotificationEmitter,
     parse_notifications,
 )
-from midicoder.emitters.core.cache import (
+from midicoder.emitters.core.cp09_cache import (
     CacheParser,
     NestJSCacheEmitter,
     CacheCollection,
@@ -779,7 +779,7 @@ class BackendNestJSEmitter:
         Returns:
             Dictionary với Query hoặc AggregationQuery instance
         """
-        from midicoder.emitters.core.domain_model import (
+        from midicoder.emitters.core.cp01_domain_model import (
             QueryField, FilterExpression, FilterOp,
             PaginationConfig, PaginationType, ProjectionConfig,
             SortExpression, SortDirection,

@@ -15,7 +15,7 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from midicoder.emitters.core.auth.models import (
+from midicoder.emitters.core.cp03_auth.models import (
     AuthIR,
     AuthProvider,
     AuthProviderType,
@@ -24,7 +24,7 @@ from midicoder.emitters.core.auth.models import (
     Permission,
     SessionConfig,
 )
-from midicoder.emitters.core.auth.fastapi import (
+from midicoder.emitters.core.cp03_auth.fastapi import (
     FastAPIAuthEmitter,
     GeneratedFile,
     emit_fastapi_auth,

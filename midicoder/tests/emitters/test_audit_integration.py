@@ -12,10 +12,10 @@ Kiểm tra:
 import tempfile
 import pytest
 
-from midicoder.emitters.core.audit.audit_engine import AuditLogger
-from midicoder.emitters.core.audit.models import AuditActionType, AuditTrail
-from midicoder.emitters.core.workflow.effects.audit import AuditEffect
-from midicoder.emitters.core.workflow.effects.base import EffectResult
+from midicoder.emitters.core.cp14_audit_compliance.audit_engine import AuditLogger
+from midicoder.emitters.core.cp14_audit_compliance.models import AuditActionType, AuditTrail
+from midicoder.emitters.core.cp13_workflow_runtime.effects.audit import AuditEffect
+from midicoder.emitters.core.cp13_workflow_runtime.effects.base import EffectResult
 
 
 class TestAuditEffectIntegration:

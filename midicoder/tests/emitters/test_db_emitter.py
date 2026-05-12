@@ -17,7 +17,7 @@ import pytest
 from pathlib import Path
 from typing import Any, Dict
 
-from midicoder.emitters.core.db.models import (
+from midicoder.emitters.core.cp08_database.models import (
     DataModel,
     ColumnDef,
     Relationship,
@@ -29,10 +29,10 @@ from midicoder.emitters.core.db.models import (
     DatabaseEngine,
     ReplicaConfig,
 )
-from midicoder.emitters.core.db.parser import DBParser
+from midicoder.emitters.core.cp08_database.parser import DBParser
 from midicoder.errors import ErrorCode, MidicoderError, MidicoderErrorManager as EM
-from midicoder.emitters.core.db.fastapi import SQLAlchemyEmitter
-from midicoder.emitters.core.db.nestjs import TypeORMEmitter
+from midicoder.emitters.core.cp08_database.fastapi import SQLAlchemyEmitter
+from midicoder.emitters.core.cp08_database.nestjs import TypeORMEmitter
 
 
 # ============================================================================

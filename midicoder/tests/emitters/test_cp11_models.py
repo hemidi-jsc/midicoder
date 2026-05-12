@@ -23,7 +23,7 @@ class TestStorageProfile:
 
     def test_create_valid_s3_profile(self):
         """Tạo StorageProfile S3 hợp lệ."""
-        from midicoder.emitters.core.file_storage.models import StorageProfile, StorageBackend
+        from midicoder.emitters.core.cp11_file_media.models import StorageProfile, StorageBackend
 
         profile = StorageProfile(
             name="primary-s3",
@@ -39,7 +39,7 @@ class TestStorageProfile:
 
     def test_create_valid_local_profile(self):
         """Tạo StorageProfile local hợp lệ."""
-        from midicoder.emitters.core.file_storage.models import StorageProfile, StorageBackend
+        from midicoder.emitters.core.cp11_file_media.models import StorageProfile, StorageBackend
 
         profile = StorageProfile(
             name="local-dev",
@@ -50,7 +50,7 @@ class TestStorageProfile:
 
     def test_empty_name_raises_error(self):
         """Tên profile rỗng → MDC-CP11-001."""
-        from midicoder.emitters.core.file_storage.models import StorageProfile, StorageBackend
+        from midicoder.emitters.core.cp11_file_media.models import StorageProfile, StorageBackend
 
         with pytest.raises(MidicoderError) as exc_info:
             StorageProfile(
@@ -62,7 +62,7 @@ class TestStorageProfile:
 
     def test_invalid_backend_type_raises_error(self):
         """Backend type không hợp lệ → MDC-CP11-002."""
-        from midicoder.emitters.core.file_storage.models import StorageProfile
+        from midicoder.emitters.core.cp11_file_media.models import StorageProfile
 
         with pytest.raises(MidicoderError) as exc_info:
             StorageProfile(
@@ -73,7 +73,7 @@ class TestStorageProfile:
 
     def test_s3_without_bucket_raises_error(self):
         """S3 không có bucket → MDC-CP11-003."""
-        from midicoder.emitters.core.file_storage.models import StorageProfile, StorageBackend
+        from midicoder.emitters.core.cp11_file_media.models import StorageProfile, StorageBackend
 
         with pytest.raises(MidicoderError) as exc_info:
             StorageProfile(
@@ -85,7 +85,7 @@ class TestStorageProfile:
 
     def test_local_without_bucket_is_valid(self):
         """Local backend không cần bucket."""
-        from midicoder.emitters.core.file_storage.models import StorageProfile, StorageBackend
+        from midicoder.emitters.core.cp11_file_media.models import StorageProfile, StorageBackend
 
         profile = StorageProfile(
             name="local",
@@ -95,7 +95,7 @@ class TestStorageProfile:
 
     def test_to_dict(self):
         """Chuyển StorageProfile sang dict."""
-        from midicoder.emitters.core.file_storage.models import StorageProfile, StorageBackend
+        from midicoder.emitters.core.cp11_file_media.models import StorageProfile, StorageBackend
 
         profile = StorageProfile(
             name="test-s3",
@@ -112,7 +112,7 @@ class TestStorageProfile:
 
     def test_from_dict(self):
         """Tạo StorageProfile từ dict."""
-        from midicoder.emitters.core.file_storage.models import StorageProfile, StorageBackend
+        from midicoder.emitters.core.cp11_file_media.models import StorageProfile, StorageBackend
 
         data = {
             "name": "from-dict",
@@ -131,7 +131,7 @@ class TestUploadPolicy:
 
     def test_create_valid_policy(self):
         """Tạo UploadPolicy hợp lệ."""
-        from midicoder.emitters.core.file_storage.models import UploadPolicy
+        from midicoder.emitters.core.cp11_file_media.models import UploadPolicy
 
         policy = UploadPolicy(
             name="images-policy",
@@ -146,7 +146,7 @@ class TestUploadPolicy:
 
     def test_empty_name_raises_error(self):
         """Tên policy rỗng → error."""
-        from midicoder.emitters.core.file_storage.models import UploadPolicy
+        from midicoder.emitters.core.cp11_file_media.models import UploadPolicy
 
         with pytest.raises(MidicoderError) as exc_info:
             UploadPolicy(
@@ -159,7 +159,7 @@ class TestUploadPolicy:
 
     def test_empty_content_types_raises_error(self):
         """Danh sách content types rỗng → MDC-CP11-004."""
-        from midicoder.emitters.core.file_storage.models import UploadPolicy
+        from midicoder.emitters.core.cp11_file_media.models import UploadPolicy
 
         with pytest.raises(MidicoderError) as exc_info:
             UploadPolicy(
@@ -172,7 +172,7 @@ class TestUploadPolicy:
 
     def test_zero_max_size_raises_error(self):
         """max_file_size <= 0 → MDC-CP11-005."""
-        from midicoder.emitters.core.file_storage.models import UploadPolicy
+        from midicoder.emitters.core.cp11_file_media.models import UploadPolicy
 
         with pytest.raises(MidicoderError) as exc_info:
             UploadPolicy(
@@ -185,7 +185,7 @@ class TestUploadPolicy:
 
     def test_empty_extensions_raises_error(self):
         """Danh sách extensions rỗng → MDC-CP11-006."""
-        from midicoder.emitters.core.file_storage.models import UploadPolicy
+        from midicoder.emitters.core.cp11_file_media.models import UploadPolicy
 
         with pytest.raises(MidicoderError) as exc_info:
             UploadPolicy(
@@ -198,7 +198,7 @@ class TestUploadPolicy:
 
     def test_to_dict(self):
         """Chuyển UploadPolicy sang dict."""
-        from midicoder.emitters.core.file_storage.models import UploadPolicy
+        from midicoder.emitters.core.cp11_file_media.models import UploadPolicy
 
         policy = UploadPolicy(
             name="docs",
@@ -214,7 +214,7 @@ class TestUploadPolicy:
 
     def test_from_dict(self):
         """Tạo UploadPolicy từ dict."""
-        from midicoder.emitters.core.file_storage.models import UploadPolicy
+        from midicoder.emitters.core.cp11_file_media.models import UploadPolicy
 
         data = {
             "name": "videos",
@@ -233,7 +233,7 @@ class TestMediaTransform:
 
     def test_create_valid_resize(self):
         """Tạo MediaTransform resize hợp lệ."""
-        from midicoder.emitters.core.file_storage.models import MediaTransform, TransformType
+        from midicoder.emitters.core.cp11_file_media.models import MediaTransform, TransformType
 
         transform = MediaTransform(
             name="thumbnail-100",
@@ -248,7 +248,7 @@ class TestMediaTransform:
 
     def test_create_valid_thumbnail(self):
         """Tạo MediaTransform thumbnail hợp lệ."""
-        from midicoder.emitters.core.file_storage.models import MediaTransform, TransformType
+        from midicoder.emitters.core.cp11_file_media.models import MediaTransform, TransformType
 
         transform = MediaTransform(
             name="thumb-50",
@@ -259,7 +259,7 @@ class TestMediaTransform:
 
     def test_create_valid_transcode(self):
         """Tạo MediaTransform transcode hợp lệ."""
-        from midicoder.emitters.core.file_storage.models import MediaTransform, TransformType
+        from midicoder.emitters.core.cp11_file_media.models import MediaTransform, TransformType
 
         transform = MediaTransform(
             name="mp4-h264",
@@ -272,7 +272,7 @@ class TestMediaTransform:
 
     def test_empty_name_raises_error(self):
         """Tên transform rỗng → error."""
-        from midicoder.emitters.core.file_storage.models import MediaTransform, TransformType
+        from midicoder.emitters.core.cp11_file_media.models import MediaTransform, TransformType
 
         with pytest.raises(MidicoderError) as exc_info:
             MediaTransform(
@@ -284,7 +284,7 @@ class TestMediaTransform:
 
     def test_invalid_transform_type_raises_error(self):
         """Transform type không hợp lệ → MDC-CP11-009."""
-        from midicoder.emitters.core.file_storage.models import MediaTransform
+        from midicoder.emitters.core.cp11_file_media.models import MediaTransform
 
         with pytest.raises(MidicoderError) as exc_info:
             MediaTransform(
@@ -295,7 +295,7 @@ class TestMediaTransform:
 
     def test_quality_out_of_range_raises_error(self):
         """Quality ngoài range 1-100 → MDC-CP11-009."""
-        from midicoder.emitters.core.file_storage.models import MediaTransform, TransformType
+        from midicoder.emitters.core.cp11_file_media.models import MediaTransform, TransformType
 
         with pytest.raises(MidicoderError) as exc_info:
             MediaTransform(
@@ -308,7 +308,7 @@ class TestMediaTransform:
 
     def test_resize_without_dimensions_raises_error(self):
         """Resize không có width/height → MDC-CP11-009."""
-        from midicoder.emitters.core.file_storage.models import MediaTransform, TransformType
+        from midicoder.emitters.core.cp11_file_media.models import MediaTransform, TransformType
 
         with pytest.raises(MidicoderError) as exc_info:
             MediaTransform(
@@ -319,7 +319,7 @@ class TestMediaTransform:
 
     def test_to_dict(self):
         """Chuyển MediaTransform sang dict."""
-        from midicoder.emitters.core.file_storage.models import MediaTransform, TransformType
+        from midicoder.emitters.core.cp11_file_media.models import MediaTransform, TransformType
 
         transform = MediaTransform(
             name="thumb",
@@ -335,7 +335,7 @@ class TestMediaTransform:
 
     def test_from_dict(self):
         """Tạo MediaTransform từ dict."""
-        from midicoder.emitters.core.file_storage.models import MediaTransform, TransformType
+        from midicoder.emitters.core.cp11_file_media.models import MediaTransform, TransformType
 
         data = {
             "name": "resize-800",
@@ -355,7 +355,7 @@ class TestFileStorageCollection:
 
     def test_add_profiles(self):
         """Thêm profiles vào collection."""
-        from midicoder.emitters.core.file_storage.models import (
+        from midicoder.emitters.core.cp11_file_media.models import (
             FileStorageCollection,
             StorageProfile,
             StorageBackend,
@@ -368,7 +368,7 @@ class TestFileStorageCollection:
 
     def test_get_by_id(self):
         """Tìm profile theo ID."""
-        from midicoder.emitters.core.file_storage.models import (
+        from midicoder.emitters.core.cp11_file_media.models import (
             FileStorageCollection,
             StorageProfile,
             StorageBackend,
@@ -382,7 +382,7 @@ class TestFileStorageCollection:
 
     def test_get_by_id_not_found(self):
         """Tìm profile không tồn tại → None."""
-        from midicoder.emitters.core.file_storage.models import FileStorageCollection
+        from midicoder.emitters.core.cp11_file_media.models import FileStorageCollection
 
         collection = FileStorageCollection()
         result = collection.get_by_id("nonexistent")
@@ -390,7 +390,7 @@ class TestFileStorageCollection:
 
     def test_add_policies(self):
         """Thêm policies vào collection."""
-        from midicoder.emitters.core.file_storage.models import (
+        from midicoder.emitters.core.cp11_file_media.models import (
             FileStorageCollection,
             UploadPolicy,
         )
@@ -406,7 +406,7 @@ class TestFileStorageCollection:
 
     def test_add_transforms(self):
         """Thêm transforms vào collection."""
-        from midicoder.emitters.core.file_storage.models import (
+        from midicoder.emitters.core.cp11_file_media.models import (
             FileStorageCollection,
             MediaTransform,
             TransformType,
@@ -422,7 +422,7 @@ class TestFileStorageCollection:
 
     def test_to_dict_from_dict(self):
         """Serialization round-trip."""
-        from midicoder.emitters.core.file_storage.models import (
+        from midicoder.emitters.core.cp11_file_media.models import (
             FileStorageCollection,
             StorageProfile,
             StorageBackend,

@@ -12,8 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest import TestCase
 
-from midicoder.emitters.core.file_storage.fastapi import FastAPIFileStorageEmitter
-from midicoder.emitters.core.file_storage.models import (
+from midicoder.emitters.core.cp11_file_media.fastapi import FastAPIFileStorageEmitter
+from midicoder.emitters.core.cp11_file_media.models import (
     FileStorageCollection,
     MediaTransform,
     StorageBackend,

@@ -18,7 +18,7 @@ from pathlib import Path
 from decimal import Decimal
 from typing import Any
 
-from midicoder.emitters.core.domain_model import (
+from midicoder.emitters.core.cp01_domain_model import (
     FastAPIValueObjectEmitter,
     EmittedValueObject,
 )

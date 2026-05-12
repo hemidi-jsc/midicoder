@@ -14,7 +14,7 @@ Kiểm tra:
 
 import pytest
 
-from midicoder.emitters.core.monitoring.models import (
+from midicoder.emitters.core.cp16_monitoring.models import (
     AlertCondition,
     AlertRule,
     AlertSeverity,

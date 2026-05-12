@@ -17,8 +17,8 @@ import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from midicoder.emitters.core.workflow.fastapi import WorkflowFastAPIEmitter
-from midicoder.emitters.core.workflow.models import (
+from midicoder.emitters.core.cp13_workflow_runtime.fastapi import WorkflowFastAPIEmitter
+from midicoder.emitters.core.cp13_workflow_runtime.models import (
     WorkflowDefinition,
     Transition,
     Guard,

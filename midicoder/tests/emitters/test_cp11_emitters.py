@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from midicoder.emitters.core.file_storage.fastapi import FastAPIFileStorageEmitter
-from midicoder.emitters.core.file_storage.models import (
+from midicoder.emitters.core.cp11_file_media.fastapi import FastAPIFileStorageEmitter
+from midicoder.emitters.core.cp11_file_media.models import (
     FileStorageCollection,
     MediaTransform,
     StorageBackend,
@@ -107,11 +107,11 @@ class TestNestJSFileStorageEmitter:
     """Kiểm tra NestJSFileStorageEmitter sinh output đúng."""
 
     def test_nestjs_imports(self):
-        from midicoder.emitters.core.file_storage.nestjs import NestJSFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.nestjs import NestJSFileStorageEmitter
         assert NestJSFileStorageEmitter is not None
 
     def test_nestjs_generate(self, collection):
-        from midicoder.emitters.core.file_storage.nestjs import NestJSFileStorageEmitter
+        from midicoder.emitters.core.cp11_file_media.nestjs import NestJSFileStorageEmitter
 
         emitter = NestJSFileStorageEmitter(stack_dir=Path("."))
         files = emitter.generate(collection, Path("/tmp"))

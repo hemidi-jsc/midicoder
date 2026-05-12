@@ -12,7 +12,7 @@ Kiểm tra:
 import pytest
 from datetime import datetime, timezone
 
-from midicoder.emitters.core.audit.models import (
+from midicoder.emitters.core.cp14_audit_compliance.models import (
     AuditActionType,
     AuditComplianceCollection,
     AuditLevel,

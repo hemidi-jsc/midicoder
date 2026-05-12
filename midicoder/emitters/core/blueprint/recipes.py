@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from midicoder.emitters.core.blueprint.models import (
+from midicoder.emitters.core.cp51_blueprint.models import (
     BlueprintSchema,
     CapabilityGraph,
     CapabilityNode,
