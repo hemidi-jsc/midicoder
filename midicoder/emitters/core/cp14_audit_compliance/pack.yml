@@ -6,8 +6,8 @@ pack:
   status: "stable"
   category: "compliance"
   depends_on: ["CP01"]
-  definitions_count: 3
-  obligations_count: 1
+  definitions_count: 10
+  obligations_count: 4
   error_codes:
     prefix: "MDC-CP14"
     range: "MDC-CP14-001 to MDC-CP14-010"
@@ -15,12 +15,18 @@ pack:
     - write_audit_log
     - audit_query
     - compliance_report
+    - immutable_ledger
+    - compliance_reporting
   capabilities:
     - id: "audit_logger"
       emitter: "fastapi, nestjs"
     - id: "audit_query_engine"
       emitter: "fastapi, nestjs"
     - id: "compliance_checker"
+      emitter: "fastapi, nestjs"
+    - id: "immutable_ledger"
+      emitter: "fastapi, nestjs"
+    - id: "compliance_report"
       emitter: "fastapi, nestjs"
   definitions:
     - name: "AuditTrail"
@@ -29,9 +35,29 @@ pack:
       description: "Policy defining which actions require audit logging"
     - name: "ComplianceControl"
       description: "Regulatory control with enforcement level"
+    - name: "LedgerEntry"
+      description: "Chained hash entry in immutable audit ledger (prev_hash link)"
+    - name: "ImmutableLedgerConfig"
+      description: "Immutable ledger with hash chain, merkle tree, digital signature"
+    - name: "ComplianceReportConfig"
+      description: "Report generation (PDF/CSV/JSON/HTML/XLSX) for SOC2/GDPR/HIPAA/PCI-DSS"
+    - name: "ReportSummary"
+      description: "Summary stats (events_by_action, violations, ledger verification)"
+    - name: "ComplianceStandard"
+      description: "Compliance framework (SOC2, GDPR, HIPAA, PCI-DSS, ISO27001, SOX)"
+    - name: "ReportFormat"
+      description: "Output format for compliance reports (pdf, csv, json, html, xlsx)"
+    - name: "LedgerVerificationMode"
+      description: "Verification mode (hash_chain, merkle_tree, digital_signature, combined)"
   obligations:
     - name: "AuditImmutability"
       description: "Audit logs must be append-only and tamper-proof"
+    - name: "LedgerChainIntegrity"
+      description: "Ledger hash chain must be verified on read; breaks must be alerted"
+    - name: "ComplianceEvidence"
+      description: "Compliance reports must include evidence (old/new values)"
+    - name: "ReportGeneration"
+      description: "Auto-generated reports must be delivered to configured recipients"
   frontend_integration:
     angular:
       - AuditLoggerService
