@@ -342,13 +342,14 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
     # Tạo backend modules
     if target in ["backend", "all"]:
         backend_files = _plan_backend_files(mir)
-        
+
+        # BUG FIX: read entities from MIR.metadata (same fix as in _plan_backend_files)
+        metadata_dict = mir.get("metadata", {})
+        entities = metadata_dict.get("entities", [])
+
         # Nhóm files theo module
         core_files = [f for f in backend_files if f["type"] in ["main", "config", "database"]]
-        model_files = [f for f in backend_files if f["type"] == "model"]
-        schema_files = [f for f in backend_files if f["type"] == "schema"]
-        route_files = [f for f in backend_files if f["type"] == "route"]
-        
+
         # Core module
         if core_files:
             core_specs = [FileSpec(
@@ -357,7 +358,7 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
                 template=f["template"],
                 context=f.get("context", {}),
                 dependencies=[],
-                metadata={}
+                metadata=f.get("metadata", {})
             ) for f in core_files]
             plan.add_module(ModuleSpec(
                 name="core",
@@ -365,15 +366,15 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
                 files=core_specs,
                 dependencies=[]
             ))
-        
+
         # Entity modules (models, schemas, routes per entity)
-        for entity in mir.get("entities", []):
+        for entity in entities:
             entity_name = entity.get("id", "").lower()
             entity_files = [
-                f for f in backend_files 
+                f for f in backend_files
                 if entity_name in f["path"] or f["type"] in ["model", "schema", "route", "repository"]
             ]
-            
+
             if entity_files:
                 entity_specs = [FileSpec(
                     path=f["path"],
@@ -381,7 +382,7 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
                     template=f["template"],
                     context=f.get("context", {}),
                     dependencies=[],
-                    metadata={}
+                    metadata=f.get("metadata", {})
                 ) for f in entity_files]
                 plan.add_module(ModuleSpec(
                     name=entity_name,
@@ -389,18 +390,18 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
                     files=entity_specs,
                     dependencies=["core"]
                 ))
-    
+
     # Tạo frontend modules
     if target in ["frontend", "all"]:
         frontend_files = _plan_frontend_files(mir)
-        
+
         frontend_specs = [FileSpec(
             path=f["path"],
             file_type=f["type"],
             template=f["template"],
             context=f.get("context", {}),
             dependencies=[],
-            metadata={}
+            metadata=f.get("metadata", {})
         ) for f in frontend_files]
         
         plan.add_module(ModuleSpec(
@@ -434,15 +435,27 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
 def _plan_backend_files(mir: dict) -> List[dict]:
     """
     Plan backend files từ MIR.
-    
+
+    Reads entities/commands/queries from mir["metadata"] (MIRBuilder stores
+    them there, not at the top level).  Entity model/schema FileSpecs carry
+    ``metadata.pack_emitter`` so that ``_generate_file()`` can dispatch to
+    the structured CP01 emitter instead of raw Jinja2.
+
     Args:
-        mir: MIR dictionary
-    
+        mir: MIR dictionary (as produced by MIR.to_dict())
+
     Returns:
         Danh sách backend file plans
     """
+    # BUG FIX: entities/commands/queries live inside MIR.metadata, not at
+    # the top level of the serialised MIR dict.
+    metadata = mir.get("metadata", {})
+    entities = metadata.get("entities", [])
+    commands = metadata.get("commands", [])
+    queries = metadata.get("queries", [])
+
     files = []
-    
+
     # Core files (luôn include)
     # Template paths là relative so với stacks/{stack}/core/
     files.extend([
@@ -465,23 +478,37 @@ def _plan_backend_files(mir: dict) -> List[dict]:
             "context": {},
         },
     ])
-    
-    # Models và schemas cho mỗi entity
-    for entity in mir.get("entities", []):
+
+    # Models, schemas, repositories cho mỗi entity — use pack emitter
+    for entity in entities:
         entity_name = entity.get("id", "").lower()
-        
+
         files.extend([
             {
                 "path": f"app/models/{entity_name}.py",
                 "type": "model",
-                "template": "entities/entity.py.jinja2",
-                "context": {"entity": entity},
+                "template": "cp01_domain_model/entity.py.jinja2",  # fallback
+                "context": {
+                    "entity": entity,
+                    "all_entities": entities,
+                },
+                "metadata": {
+                    "pack_emitter": "cp01.entity.fastapi",
+                    "stack": "fastapi",
+                },
             },
             {
                 "path": f"app/schemas/{entity_name}.py",
                 "type": "schema",
-                "template": "entities/entity.py.jinja2",
-                "context": {"entity": entity},
+                "template": "cp01_domain_model/entity.py.jinja2",  # fallback
+                "context": {
+                    "entity": entity,
+                    "all_entities": entities,
+                },
+                "metadata": {
+                    "pack_emitter": "cp01.entity.fastapi",
+                    "stack": "fastapi",
+                },
             },
             {
                 "path": f"app/repositories/{entity_name}_repo.py",
@@ -490,20 +517,20 @@ def _plan_backend_files(mir: dict) -> List[dict]:
                 "context": {"entity": entity},
             },
         ])
-    
+
     # Routes cho mỗi entity (CRUD)
-    for entity in mir.get("entities", []):
+    for entity in entities:
         entity_name = entity.get("id", "").lower()
-        
+
         files.append({
             "path": f"app/routes/{entity_name}.py",
             "type": "route",
             "template": "routes/http_route.py.jinja2",
             "context": {"entity": entity, "operation": "crud"},
         })
-    
+
     # Command handlers
-    for command in mir.get("commands", []):
+    for command in commands:
         command_name = command.get("id", "").lower()
         files.append({
             "path": f"app/commands/{command_name}_handler.py",
@@ -511,9 +538,9 @@ def _plan_backend_files(mir: dict) -> List[dict]:
             "template": "commands/command_handler.py.jinja2",
             "context": {"command": command},
         })
-    
+
     # Query handlers
-    for query in mir.get("queries", []):
+    for query in queries:
         query_name = query.get("id", "").lower()
         files.append({
             "path": f"app/queries/{query_name}_handler.py",
@@ -521,63 +548,76 @@ def _plan_backend_files(mir: dict) -> List[dict]:
             "template": "queries/query_handler.py.jinja2",
             "context": {"query": query},
         })
-    
+
     return files
 
 
 def _plan_frontend_files(mir: dict) -> List[dict]:
     """
     Plan frontend files từ MIR.
-    
+
+    Reads entities from mir["metadata"]["entities"].  Frontend FileSpecs
+    carry ``metadata.stack = "angular"`` so that ``_render_template()``
+    resolves the correct template directory.
+
     Args:
         mir: MIR dictionary
-    
+
     Returns:
         Danh sách frontend file plans
     """
+    # BUG FIX: entities live inside MIR.metadata
+    metadata = mir.get("metadata", {})
+    entities = metadata.get("entities", [])
+
     files = []
-    
-    # Core files
+
+    # Core files — use angular stack
     files.extend([
         {
             "path": "src/app/app.module.ts",
             "type": "module",
             "template": "angular/module.ts.jinja2",
             "context": {},
+            "metadata": {"stack": "angular"},
         },
         {
             "path": "src/app/app.component.ts",
             "type": "app_component",
             "template": "angular/app.component.ts.jinja2",
             "context": {},
+            "metadata": {"stack": "angular"},
         },
     ])
-    
+
     # Components và services cho mỗi entity
-    for entity in mir.get("entities", []):
+    for entity in entities:
         entity_name = entity.get("id", "").lower()
-        
+
         files.extend([
             {
                 "path": f"src/app/features/{entity_name}/components/{entity_name}.component.ts",
                 "type": "component",
                 "template": "angular/component.ts.jinja2",
                 "context": {"entity": entity},
+                "metadata": {"stack": "angular"},
             },
             {
                 "path": f"src/app/features/{entity_name}/components/{entity_name}.component.html",
                 "type": "component_template",
                 "template": "angular/component.html.jinja2",
                 "context": {"entity": entity},
+                "metadata": {"stack": "angular"},
             },
             {
                 "path": f"src/app/features/{entity_name}/services/{entity_name}.service.ts",
                 "type": "service",
                 "template": "angular/service.ts.jinja2",
                 "context": {"entity": entity},
+                "metadata": {"stack": "angular"},
             },
         ])
-    
+
     return files
 
 
@@ -680,24 +720,25 @@ def _execute_gen(target: str = "all", dry_run: bool = False) -> None:
     else:
         docker_generator = None
     
-    # Bước 5: Generate files
+    # Bước 5: Generate files từ plan.modules
+    # BUG FIX: ImplementationPlan.to_json() serialises as {"modules": [...]},
+    # not {"backend_files": [...], "frontend_files": [...], "infra_files": [...]}.
     files_generated = []
-    
-    for file_plan in plan_data.get("backend_files", []):
-        if target in ["backend", "all"]:
-            generated = _generate_file(file_plan, output_dir, dry_run)
-            if generated:
-                files_generated.append(generated)
-    
-    for file_plan in plan_data.get("frontend_files", []):
-        if target in ["frontend", "all"]:
-            generated = _generate_file(file_plan, output_dir, dry_run)
-            if generated:
-                files_generated.append(generated)
-    
-    # Skip docker-compose.yml trong infra_files vì đã generate từ MIR
-    for file_plan in plan_data.get("infra_files", []):
-        if file_plan.get("path") != "docker-compose.yml":
+
+    for module in plan_data.get("modules", []):
+        module_type = module.get("module_type", "")
+
+        # Filter by target
+        if target == "backend" and module_type != "backend":
+            continue
+        if target == "frontend" and module_type != "frontend":
+            continue
+
+        for file_plan in module.get("files", []):
+            # Skip docker-compose.yml in infra — already generated from MIR
+            if file_plan.get("path") == "docker-compose.yml":
+                continue
+
             generated = _generate_file(file_plan, output_dir, dry_run)
             if generated:
                 files_generated.append(generated)
@@ -767,34 +808,65 @@ def _load_plan_from_artifacts(active_version: str) -> Optional[dict]:
 def _generate_file(file_plan: dict, output_dir: Path, dry_run: bool) -> Optional[GeneratedFile]:
     """
     Generate một file từ plan.
-    
+
+    Supports two rendering paths:
+    1. **Pack emitter dispatch** — if ``file_plan["metadata"]["pack_emitter"]``
+       is set, delegates to the structured pack emitter (e.g. CP01 EntityEmitter).
+    2. **Raw Jinja2** — falls back to ``Emitter.render()`` with the stack
+       determined by ``file_plan["metadata"]["stack"]`` (or config default).
+
     Args:
-        file_plan: File plan dictionary
+        file_plan: File plan dictionary (from ImplementationPlan JSON)
         output_dir: Output directory
         dry_run: Dry run mode
-    
+
     Returns:
         GeneratedFile hoặc None nếu lỗi
     """
     file_path = Path(file_plan.get("path", ""))
     template = file_plan.get("template", "")
     file_type = file_plan.get("type", "unknown")
-    
+    metadata = file_plan.get("metadata", {})
+
     try:
         # Tạo parent directories
         full_path = output_dir / file_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Generate content từ template
-        # TODO: Integrate với Jinja2 template engine
-        content = _render_template(template, file_plan.get("context", {}))
-        
+
+        # --- Pack emitter dispatch ---
+        pack_emitter = metadata.get("pack_emitter")
+        if pack_emitter:
+            from midicoder.pipeline.pack_emitter_router import PackEmitterRouter
+            stack = metadata.get("stack", _get_stack_from_config())
+            result_files = PackEmitterRouter.dispatch(
+                pack_emitter, file_plan, stack
+            )
+            # The router may return multiple files; write each.
+            generated = []
+            for rf in result_files:
+                out_path = output_dir / rf["path"]
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text(rf["content"], encoding="utf-8")
+                generated.append(GeneratedFile(
+                    path=rf["path"],
+                    content=rf["content"],
+                    type=file_type,
+                    template=f"pack_emitter:{pack_emitter}",
+                ))
+            # Return the first one (caller expects a single GeneratedFile)
+            return generated[0] if generated else None
+
+        # --- Raw Jinja2 fallback ---
+        # BUG FIX: per-file stack override (for frontend templates)
+        stack = metadata.get("stack", _get_stack_from_config())
+        content = _render_template(template, file_plan.get("context", {}), stack=stack)
+
         if not dry_run:
             full_path.write_text(content, encoding="utf-8")
         else:
             # Dry run: vẫn lưu để review
             full_path.write_text(content, encoding="utf-8")
-        
+
         return GeneratedFile(
             path=str(file_path),
             content=content,
@@ -817,23 +889,26 @@ def _get_stack_from_config() -> str:
     return config.get("stack", "fastapi")
 
 
-def _render_template(template_name: str, context: dict) -> str:
+def _render_template(template_name: str, context: dict, stack: str | None = None) -> str:
     """
     Render Jinja2 template với context bằng Emitter class.
-    
+
     Sử dụng Emitter để load và render template từ stack directory.
-    Stack target được đọc từ config file (mặc định: fastapi).
-    
+    Stack target được đọc từ config file (mặc định: fastapi) hoặc từ
+    tham số ``stack`` (per-file override cho frontend templates).
+
     Args:
         template_name: Tên template (ví dụ: main.py.jinja2)
         context: Template context (MIR metadata)
-    
+        stack: Stack override (ví dụ: "angular" cho frontend templates).
+               Nếu None, đọc từ config.
+
     Returns:
         Rendered content string
     """
-    # Lấy stack từ config
-    stack = _get_stack_from_config()
-    
+    if stack is None:
+        stack = _get_stack_from_config()
+
     # Tạo Emitter và render template
     from midicoder.pipeline.emitter import Emitter
     emitter = Emitter(stack=stack)
