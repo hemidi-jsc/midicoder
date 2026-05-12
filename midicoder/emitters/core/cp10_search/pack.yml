@@ -6,8 +6,8 @@ pack:
   status: "developing"
   category: "performance"
   depends_on: ["CP08"]
-  definitions_count: 3
-  obligations_count: 2
+  definitions_count: 9
+  obligations_count: 3
   error_codes:
     prefix: "MDC-CP10"
     range: "MDC-CP10-001 to MDC-CP10-005"
@@ -15,6 +15,9 @@ pack:
     - search_index
     - search_query
     - fulltext_search
+    - vector_search
+    - geo_search
+    - faceted_aggregation
   capabilities:
     - id: "elasticsearch"
       emitter: "fastapi, nestjs"
@@ -24,6 +27,12 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "fulltext"
       emitter: "fastapi, nestjs"
+    - id: "vector_similarity"
+      emitter: "fastapi, nestjs"
+    - id: "geospatial_search"
+      emitter: "fastapi, nestjs"
+    - id: "faceted_aggregation"
+      emitter: "fastapi, nestjs"
   definitions:
     - name: "SearchIndex"
       description: "Search index with field mappings and analyzers"
@@ -31,11 +40,25 @@ pack:
       description: "Query binding to search backend"
     - name: "SyncStrategy"
       description: "Index synchronization with source data"
+    - name: "VectorSearchIndex"
+      description: "Vector similarity search index (HNSW, IVF, cosine/euclidean/dot_product)"
+    - name: "VectorIndexColumn"
+      description: "Column containing embedding vectors with similarity metric"
+    - name: "GeoSearchIndex"
+      description: "Geospatial search index (circle, bounding_box, polygon, distance)"
+    - name: "FacetedSearchIndex"
+      description: "Search index with faceted aggregation for explore/filter"
+    - name: "Facet"
+      description: "Aggregation facet (term, range, histogram, date_histogram, geo_distance)"
+    - name: "GeoSearchColumn"
+      description: "Geospatial data column (point, polygon, line) with CRS"
   obligations:
     - name: "IndexSync"
       description: "Search index must stay in sync with source data"
     - name: "TenantAware"
       description: "Search results must respect tenant boundaries"
+    - name: "VectorDimensionMatch"
+      description: "Query vector dimensions must match index vector dimensions"
   frontend_integration:
     angular:
       - SearchService

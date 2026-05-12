@@ -46,7 +46,7 @@ class SyncTrigger(str, Enum):
 
 
 # Danh sách các column types hợp lệ
-_VALID_COLUMN_TYPES = {"text", "keyword", "numeric", "date", "geo"}
+_VALID_COLUMN_TYPES = {"text", "keyword", "numeric", "date", "geo", "vector"}
 
 
 @dataclass
@@ -220,3 +220,434 @@ class SearchCollection:
         result = cls()
         result.indices = [SearchIndex.from_dict(i) for i in data.get("indices", [])]
         return result
+
+
+# ===========================================================================
+# Vector Search
+# ===========================================================================
+
+
+class VectorSimilarityMetric(str, Enum):
+    """
+    Metric tính toán độ tương đồng vector.
+
+    - cosine: Cosine similarity ([-1, 1], 1 = cùng hướng) — phổ biến nhất
+    - euclidean: L2 distance (0 = identical, càng lớn càng xa)
+    - dot_product: Dot product (càng lớn càng tương đồng)
+    - manhattan: L1 distance (total absolute difference)
+    - hamming: Hamming distance (cho binary vectors)
+    """
+    COSINE = "cosine"
+    EUCLIDEAN = "euclidean"
+    DOT_PRODUCT = "dot_product"
+    MANHATTAN = "manhattan"
+    HAMMING = "hamming"
+
+
+class VectorIndexType(str, Enum):
+    """
+    Loại index cho vector similarity search.
+
+    - ivf_flat: Inverted File Flat (nhanh, memory-efficient)
+    - ivf_pq: Inverted File Product Quantization (tiết kiệm RAM, hơi kém chính xác)
+    - hnsw: HNSW graph (chính xác nhất, chậm hơn build nhưng fast query)
+    - ivf_hnsw: Hybrid IVF + HNSW
+    - flat: Brute-force (chính xác 100%, chậm, dùng cho tập nhỏ)
+    """
+    IVF_FLAT = "ivf_flat"
+    IVF_PQ = "ivf_pq"
+    HNSW = "hnsw"
+    IVF_HNSW = "ivf_hnsw"
+    FLAT = "flat"
+
+
+@dataclass
+class VectorIndexColumn:
+    """
+    Column chứa embedding vectors — dùng cho semantic search.
+
+    Attributes:
+        name: Tên column (vd: "title_embedding", "description_vector")
+        dimensions: Số chiều vector (vd: 768 cho sentence-transformers)
+        similarity_metric: Metric tính toán similarity (cosine, euclidean, dot_product, ...)
+        index_type: Loại vector index (hnsw, ivf_flat, ivf_pq, flat)
+        description: Mô tả column
+    """
+    name: str
+    dimensions: int
+    similarity_metric: VectorSimilarityMetric = VectorSimilarityMetric.COSINE
+    index_type: VectorIndexType = VectorIndexType.HNSW
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate vector index column sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(ErrorCode.CP10_EMPTY_INDEX_NAME, name=self.name)
+        if self.dimensions < 1:
+            EM.raise_error(ErrorCode.CP10_INVALID_COLUMN_TYPE, name=self.name, column_type="vector", valid_types="dimensions > 0")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển vector column sang dict format."""
+        return {
+            "name": self.name,
+            "dimensions": self.dimensions,
+            "similarity_metric": self.similarity_metric.value,
+            "index_type": self.index_type.value,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "VectorIndexColumn":
+        """Tạo VectorIndexColumn từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            dimensions=data.get("dimensions", 768),
+            similarity_metric=VectorSimilarityMetric(data.get("similarity_metric", "cosine")),
+            index_type=VectorIndexType(data.get("index_type", "hnsw")),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class VectorSearchIndex:
+    """
+    Search index chuyên dụng cho vector similarity search.
+
+    Hỗ trợ semantic search: tìm kiếm theo ý nghĩa, không theo keyword.
+    Ví dụ: "điện thoại pin lâu" → trả về sản phẩm phone có pin tốt.
+
+    Attributes:
+        id: Định danh duy nhất (vd: "product_semantic_search")
+        provider: Search provider hỗ trợ vector (ELASTICSEARCH 8+, MEILISEARCH)
+        vector_column: Column chứa embeddings
+        text_columns: Các text columns để kết hợp hybrid search (vector + BM25)
+        top_k: Số kết quả trả về mặc định
+        description: Mô tả index
+    """
+    id: str
+    provider: SearchProviderType = SearchProviderType.ELASTICSEARCH
+    vector_column: VectorIndexColumn | None = None
+    text_columns: list[SearchIndexColumn] = field(default_factory=list)
+    top_k: int = 10
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate vector search index sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(ErrorCode.CP10_EMPTY_INDEX_NAME, index_id=self.id)
+        if not self.vector_column:
+            EM.raise_error(ErrorCode.CP10_INVALID_COLUMN_TYPE, name=self.id, column_type="vector", valid_types="vector_column required")
+        if self.top_k < 1:
+            self.top_k = 10
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển vector search index sang dict format."""
+        return {
+            "id": self.id,
+            "provider": self.provider.value,
+            "vector_column": self.vector_column.to_dict() if self.vector_column else None,
+            "text_columns": [c.to_dict() for c in self.text_columns],
+            "top_k": self.top_k,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "VectorSearchIndex":
+        """Tạo VectorSearchIndex từ dict."""
+        vc_data = data.get("vector_column")
+        return cls(
+            id=data.get("id", ""),
+            provider=SearchProviderType(data.get("provider", "elasticsearch")),
+            vector_column=VectorIndexColumn.from_dict(vc_data) if vc_data else None,
+            text_columns=[SearchIndexColumn.from_dict(c) for c in data.get("text_columns", [])],
+            top_k=data.get("top_k", 10),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# Geospatial Search
+# ===========================================================================
+
+
+class GeoOperation(str, Enum):
+    """
+    Loại geospatial operation.
+
+    - bounding_box: Tìm trong rectangular area
+    - circle: Tìm trong bán kính từ trung tâm
+    - polygon: Tìm trong đa giác tùy ý
+    - distance: Sắp xếp theo khoảng cách từ điểm
+    """
+    BOUNDING_BOX = "bounding_box"
+    CIRCLE = "circle"
+    POLYGON = "polygon"
+    DISTANCE = "distance"
+
+
+@dataclass
+class GeoSearchColumn:
+    """
+    Column chứa geospatial data cho search.
+
+    Attributes:
+        name: Tên column (vd: "location", "coordinates")
+        geo_type: Loại geospatial (point, polygon, line)
+        crs: Coordinate Reference System (vd: "WGS84")
+        searchable: Có dùng trong geospatial queries không
+        filterable: Có dùng để filter theo region không
+        description: Mô tả column
+    """
+    name: str
+    geo_type: str = "point"
+    crs: str = "WGS84"
+    searchable: bool = True
+    filterable: bool = True
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate geospatial column sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(ErrorCode.CP10_EMPTY_INDEX_NAME, name=self.name)
+        if self.geo_type not in ("point", "polygon", "line", "multipoint", "multipolygon"):
+            EM.raise_error(ErrorCode.CP10_INVALID_COLUMN_TYPE, name=self.name, column_type=self.geo_type, valid_types=["point", "polygon", "line", "multipoint", "multipolygon"])
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển geospatial column sang dict format."""
+        return {
+            "name": self.name,
+            "geo_type": self.geo_type,
+            "crs": self.crs,
+            "searchable": self.searchable,
+            "filterable": self.filterable,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "GeoSearchColumn":
+        """Tạo GeoSearchColumn từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            geo_type=data.get("geo_type", "point"),
+            crs=data.get("crs", "WGS84"),
+            searchable=data.get("searchable", True),
+            filterable=data.get("filterable", True),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class GeoSearchIndex:
+    """
+    Search index chuyên dụng cho geospatial queries.
+
+    Hỗ trợ tìm kiếm theo vị trí: "cửa hàng gần tôi", "bất động sản trong khu vực".
+
+    Attributes:
+        id: Định danh duy nhất (vd: "store_locations")
+        provider: Search provider (ELASTICSEARCH, MEILISEARCH)
+        geo_column: Column chứa geospatial data
+        text_columns: Các text columns kết hợp (vd: tên cửa hàng, mô tả)
+        operations: Các geospatial operations được hỗ trợ
+        tenant_isolated: Có enforce tenant isolation không (KPI-029)
+        description: Mô tả index
+    """
+    id: str
+    provider: SearchProviderType = SearchProviderType.ELASTICSEARCH
+    geo_column: GeoSearchColumn | None = None
+    text_columns: list[SearchIndexColumn] = field(default_factory=list)
+    operations: list[GeoOperation] = field(default_factory=lambda: [GeoOperation.CIRCLE, GeoOperation.DISTANCE])
+    tenant_isolated: bool = True
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate geospatial search index sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(ErrorCode.CP10_EMPTY_INDEX_NAME, index_id=self.id)
+        if not self.geo_column:
+            EM.raise_error(ErrorCode.CP10_INVALID_COLUMN_TYPE, name=self.id, column_type="geo", valid_types="geo_column required")
+        if not self.operations:
+            self.operations = [GeoOperation.CIRCLE, GeoOperation.DISTANCE]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển geospatial search index sang dict format."""
+        return {
+            "id": self.id,
+            "provider": self.provider.value,
+            "geo_column": self.geo_column.to_dict() if self.geo_column else None,
+            "text_columns": [c.to_dict() for c in self.text_columns],
+            "operations": [op.value for op in self.operations],
+            "tenant_isolated": self.tenant_isolated,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "GeoSearchIndex":
+        """Tạo GeoSearchIndex từ dict."""
+        gc_data = data.get("geo_column")
+        return cls(
+            id=data.get("id", ""),
+            provider=SearchProviderType(data.get("provider", "elasticsearch")),
+            geo_column=GeoSearchColumn.from_dict(gc_data) if gc_data else None,
+            text_columns=[SearchIndexColumn.from_dict(c) for c in data.get("text_columns", [])],
+            operations=[GeoOperation(op) for op in data.get("operations", ["circle", "distance"])],
+            tenant_isolated=data.get("tenant_isolated", True),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# Faceted Aggregation
+# ===========================================================================
+
+
+class FacetType(str, Enum):
+    """
+    Loại facet cho aggregation.
+
+    - term: Group by discrete values (vd: category, brand, color)
+    - range: Group by numeric ranges (vd: price $0-100, $100-500, $500+)
+    - date_histogram: Group by time periods (vd: daily, weekly, monthly)
+    - histogram: Group by numeric intervals (vd: rating 1-5)
+    - geo_distance: Group by distance buckets (vd: 0-5km, 5-15km, 15km+)
+    """
+    TERM = "term"
+    RANGE = "range"
+    DATE_HISTOGRAM = "date_histogram"
+    HISTOGRAM = "histogram"
+    GEO_DISTANCE = "geo_distance"
+
+
+class AggregationFunction(str, Enum):
+    """
+    Hàm aggregation.
+
+    - count: Đếm số records
+    - avg: Giá trị trung bình
+    - sum: Tổng
+    - min/max: Giá trị nhỏ nhất / lớn nhất
+    - cardinality: Số giá trị unique (approximate distinct count)
+    - percentiles: Phân vị (p50, p90, p95, p99)
+    """
+    COUNT = "count"
+    AVG = "avg"
+    SUM = "sum"
+    MIN = "min"
+    MAX = "max"
+    CARDINALITY = "cardinality"
+    PERCENTILES = "percentiles"
+
+
+@dataclass
+class Facet:
+    """
+    Facet — phép phân nhóm dữ liệu cho filter/explore.
+
+    Ví dụ: thương mại điện tử có facets "Hãng", "Giá", "Đánh giá", "Màu sắc".
+
+    Attributes:
+        id: Facet identifier (vd: "brand", "price_range", "rating")
+        facet_type: Loại facet (term, range, date_histogram, histogram, geo_distance)
+        source_column: Tên column trong index để aggregate
+        agg_function: Hàm aggregation (count, avg, sum, cardinality, ...)
+        size: Số bucket lớn nhất trả về (cho term facets)
+        range_bounds: Range boundaries (cho range facets, vd: [0, 100, 500, 1000])
+        interval: Interval (cho histogram, vd: "1d", "1w", "1m")
+        description: Mô tả facet
+    """
+    id: str
+    facet_type: FacetType
+    source_column: str
+    agg_function: AggregationFunction = AggregationFunction.COUNT
+    size: int = 10
+    range_bounds: list[float] = field(default_factory=list)
+    interval: str = ""
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate facet sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(ErrorCode.CP10_EMPTY_INDEX_NAME, name=self.id)
+        if not self.source_column or not self.source_column.strip():
+            EM.raise_error(ErrorCode.CP10_INVALID_COLUMN_TYPE, name=self.id, column_type="facet", valid_types="source_column required")
+        if self.size < 1:
+            self.size = 10
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển facet sang dict format."""
+        return {
+            "id": self.id,
+            "facet_type": self.facet_type.value,
+            "source_column": self.source_column,
+            "agg_function": self.agg_function.value,
+            "size": self.size,
+            "range_bounds": self.range_bounds,
+            "interval": self.interval,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Facet":
+        """Tạo Facet từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            facet_type=FacetType(data.get("facet_type", "term")),
+            source_column=data.get("source_column", ""),
+            agg_function=AggregationFunction(data.get("agg_function", "count")),
+            size=data.get("size", 10),
+            range_bounds=data.get("range_bounds", []),
+            interval=data.get("interval", ""),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class FacetedSearchIndex:
+    """
+    Search index với faceted aggregation — cho phép explore/filter theo nhiều chiều.
+
+    Ví dụ: tìm kiếm sản phẩm với facets "Hãng", "Giá", "Đánh giá", "Màu sắc"
+    cho phép user drill-down qua từng dimension.
+
+    Attributes:
+        id: Định danh duy nhất (vd: "product_catalog_search")
+        provider: Search provider
+        columns: Các columns cơ bản trong index
+        facets: Danh sách facets cho aggregation
+        tenant_isolated: Có enforce tenant isolation không (KPI-029)
+        description: Mô tả index
+    """
+    id: str
+    provider: SearchProviderType = SearchProviderType.ELASTICSEARCH
+    columns: list[SearchIndexColumn] = field(default_factory=list)
+    facets: list[Facet] = field(default_factory=list)
+    tenant_isolated: bool = True
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate faceted search index sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(ErrorCode.CP10_EMPTY_INDEX_NAME, index_id=self.id)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển faceted search index sang dict format."""
+        return {
+            "id": self.id,
+            "provider": self.provider.value,
+            "columns": [c.to_dict() for c in self.columns],
+            "facets": [f.to_dict() for f in self.facets],
+            "tenant_isolated": self.tenant_isolated,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FacetedSearchIndex":
+        """Tạo FacetedSearchIndex từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            provider=SearchProviderType(data.get("provider", "elasticsearch")),
+            columns=[SearchIndexColumn.from_dict(c) for c in data.get("columns", [])],
+            facets=[Facet.from_dict(f) for f in data.get("facets", [])],
+            tenant_isolated=data.get("tenant_isolated", True),
+            description=data.get("description", ""),
+        )
