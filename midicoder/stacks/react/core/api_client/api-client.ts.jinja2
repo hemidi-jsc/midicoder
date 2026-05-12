@@ -1,0 +1,148 @@
+/** Typed API Client — Axios/fetch wrapper với interceptors.
+
+Module này cung cấp typed API client với auth injection,
+error mapping, và retry logic.
+
+CP20: API Client & Integration Generator
+*/
+
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+
+export interface ApiClientConfig {
+baseUrl: string;
+timeout?: number;
+retryCount?: number;
+authMode?: 'bearer' | 'cookie' | 'none';
+tokenHeader?: string;
+tokenPrefix?: string;
+}
+
+export interface ApiErrorResponse {
+status: number;
+message: string;
+error_code?: string;
+details?: Record<string, unknown>;
+    }
+
+    class ApiClient {
+    private client: AxiosInstance;
+    private config: ApiClientConfig;
+    private token: string | null = null;
+
+    constructor(config: ApiClientConfig) {
+    this.config = {
+    baseUrl: '',
+    timeout: 30000,
+    retryCount: 3,
+    authMode: 'none',
+    tokenHeader: 'Authorization',
+    tokenPrefix: 'Bearer',
+    ...config,
+    };
+
+    this.client = axios.create({
+    baseURL: this.config.baseUrl,
+    timeout: this.config.timeout,
+    });
+
+    this.setupInterceptors();
+    }
+
+    /** Set auth token. */
+    setToken(token: string): void {
+    this.token = token;
+    }
+
+    /** Clear auth token. */
+    clearToken(): void {
+    this.token = null;
+    }
+
+    /** Setup interceptors cho auth injection và error mapping. */
+    private setupInterceptors(): void {
+    // Auth injection interceptor (Obligation 3)
+    this.client.interceptors.request.use((config) => {
+    if (this.config.authMode === 'bearer' && this.token) {
+    config.headers[
+    this.config.tokenHeader || 'Authorization'
+    ] = `${this.config.tokenPrefix || 'Bearer'} ${this.token}`;
+    }
+    return config;
+    });
+
+    // Error mapping interceptor (Obligation 2)
+    this.client.interceptors.response.use(
+    (response) => response,
+    (error: AxiosError) => this.mapError(error),
+    );
+    }
+
+    /** Error mapping: Backend error → Client error (Obligation 2). */
+    private mapError(error: AxiosError): Promise<never> {
+        const apiError: ApiErrorResponse = {
+        status: error.response?.status || 500,
+        message: (error.response?.data as any)?.message || error.message,
+        error_code: (error.response?.data as any)?.error_code,
+        details: (error.response?.data as any)?.details,
+        };
+
+        if (apiError.status === 401) {
+        this.clearToken();
+        } else if (apiError.status === 403) {
+        console.warn('[ApiClient] Forbidden:', apiError.message);
+        } else if (apiError.status >= 500) {
+        console.error('[ApiClient] Server error:', apiError);
+        }
+
+        return Promise.reject(apiError);
+        }
+
+        /** GET request typed. */
+        async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
+                    const response = await this.client.get<T>(path, { params });
+                        return response.data;
+                        }
+
+                        /** POST request typed. */
+                        async post<T>(path: string, body?: unknown): Promise<T> {
+                                const response = await this.client.post<T>(path, body);
+                                    return response.data;
+                                    }
+
+                                    /** PUT request typed. */
+                                    async put<T>(path: string, body?: unknown): Promise<T> {
+                                            const response = await this.client.put<T>(path, body);
+                                                return response.data;
+                                                }
+
+                                                /** PATCH request typed. */
+                                                async patch<T>(path: string, body?: unknown): Promise<T> {
+                                                        const response = await this.client.patch<T>(path, body);
+                                                            return response.data;
+                                                            }
+
+                                                            /** DELETE request typed. */
+                                                            async delete<T>(path: string): Promise<T> {
+                                                                    const response = await this.client.delete<T>(path);
+                                                                        return response.data;
+                                                                        }
+                                                                        }
+
+                                                                        /** Singleton instance. */
+                                                                        let instance: ApiClient | null = null;
+
+                                                                        export function createApiClient(config:
+                                                                        ApiClientConfig): ApiClient {
+                                                                        instance = new ApiClient(config);
+                                                                        return instance;
+                                                                        }
+
+                                                                        export function getApiClient(): ApiClient {
+                                                                        if (!instance) {
+                                                                        throw new Error('ApiClient not initialized. Call
+                                                                        createApiClient() first.');
+                                                                        }
+                                                                        return instance;
+                                                                        }
+
+                                                                        export default ApiClient;

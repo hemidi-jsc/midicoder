@@ -1,0 +1,62 @@
+/** OpenAPI Binding — Auto-generated TypeScript interfaces từ OpenAPI spec.
+
+File này chứa TypeScript interfaces và types được generate từ backend OpenAPI spec.
+Không edit thủ công — file này được regenerate mỗi khi backend spec thay đổi.
+
+CP20: API Client & Integration Generator
+*/
+
+// ============================================================================
+// API Configuration
+// ============================================================================
+
+export interface ApiConfig {
+baseUrl: string;
+timeout: number;
+authMode: 'bearer' | 'cookie' | 'none';
+}
+
+// ============================================================================
+// Request/Response Types
+// ============================================================================
+
+{% for binding in bindings %}
+{% if binding.request_type %}
+/** Request type cho {{ binding.client_method }}. */
+export interface {{ binding.request_type }} {
+[key: string]: any;
+}
+
+{% endif %}
+{% if binding.response_type %}
+/** Response type cho {{ binding.client_method }}. */
+export interface {{ binding.response_type }} {
+[key: string]: any;
+}
+
+{% endif %}
+{% endfor %}
+
+// ============================================================================
+// API Endpoints
+// ============================================================================
+
+/** Map endpoints với config. */
+export const API_ENDPOINTS = {{ endpoints | tojson }};
+
+/** HTTP methods mapping. */
+export const HTTP_METHODS = {{ methods | tojson }};
+
+// ============================================================================
+// Realtime Channels
+// ============================================================================
+
+{% if bridge %}
+/** Realtime bridge config. */
+export const BRIDGE_CONFIG = {{ bridge | tojson }};
+
+/** Channel names. */
+export const CHANNELS = {{ channels | tojson }};
+{% else %}
+// No realtime bridge configured.
+{% endif %}

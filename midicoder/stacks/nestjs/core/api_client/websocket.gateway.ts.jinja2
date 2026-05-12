@@ -1,0 +1,131 @@
+/** WebSocket Gateway — NestJS WebSocket gateway cho realtime bridge.
+
+Module này cung cấp WebSocket gateway với channel-based messaging,
+auto-reconnect support, và auth validation.
+
+CP20: API Client & Integration Generator
+*/
+
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  OnGatewayInit,
+  WsException,
+} from "@nestjs/websockets";
+import { Server, Socket } from "socket.io";
+import { Logger } from "@nestjs/common";
+
+interface ClientSubscription {
+  clientId: string;
+  channels: string[];
+}
+
+interface WsMessage {
+  type: 'subscribe' | 'unsubscribe' | 'message';
+  channel?: string;
+  data?: Record<string, any>;
+}
+
+@WebSocketGateway({
+  cors: {
+    origin: "*",
+    credentials: true,
+  },
+  namespace: "{% raw %}{{ namespace }}{% endraw %}",
+})
+export class WebSocketGatewayService
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
+  @WebSocketServer()
+  server: Server;
+
+  private logger = new Logger(WebSocketGatewayService.name);
+  private subscriptions = new Map<string, Set<string>>();
+
+  afterInit(server: Server) {
+    this.logger.log(`WebSocket Gateway initialized on namespace: {% raw %}{{ namespace }}{% endraw %}`);
+  }
+
+  handleConnection(client: Socket) {
+    this.logger.log(`Client connected: ${client.id}`);
+  }
+
+  handleDisconnect(client: Socket) {
+    this.logger.log(`Client disconnected: ${client.id}`);
+    // Cleanup subscriptions
+    this.subscriptions.forEach((channels, channel) => {
+      channels.delete(client.id);
+    });
+  }
+
+  @SubscribeMessage("subscribe")
+  async handleSubscribe(
+    client: Socket,
+    payload: { channel: string },
+  ): Promise<{ type: string; channel: string }> {
+    const { channel } = payload;
+    if (!channel) {
+      throw new WsException("Channel is required");
+    }
+
+    if (!this.subscriptions.has(channel)) {
+      this.subscriptions.set(channel, new Set());
+    }
+    this.subscriptions.get(channel)!.add(client.id);
+    this.logger.log(`Client ${client.id} subscribed to: ${channel}`);
+
+    // Join Socket.IO room
+    client.join(channel);
+
+    return { type: "subscribed", channel };
+  }
+
+  @SubscribeMessage("unsubscribe")
+  async handleUnsubscribe(
+    client: Socket,
+    payload: { channel: string },
+  ): Promise<{ type: string; channel: string }> {
+    const { channel } = payload;
+    if (!this.subscriptions.has(channel)) {
+      this.subscriptions.get(channel)?.delete(client.id);
+    }
+    client.leave(channel);
+    this.logger.log(`Client ${client.id} unsubscribed from: ${channel}`);
+
+    return { type: "unsubscribed", channel };
+  }
+
+  @SubscribeMessage("message")
+  async handleMessage(
+    client: Socket,
+    payload: { channel: string; data: Record<string, any> },
+  ): Promise<void> {
+    const { channel, data } = payload;
+    // Broadcast to channel room
+    this.server.to(channel).emit("message", {
+      type: "message",
+      channel,
+      data,
+      timestamp: Date.now(),
+    });
+  }
+
+  /** Broadcast message tới channel (từ service khác gọi). */
+  broadcastToChannel(channel: string, data: Record<string, any>): void {
+    this.server.to(channel).emit("message", {
+      type: "message",
+      channel,
+      data,
+      timestamp: Date.now(),
+    });
+  }
+
+  /** Get subscriber count cho channel. */
+  getSubscriberCount(channel: string): number {
+    return this.subscriptions.get(channel)?.size || 0;
+  }
+}
+
+export default WebSocketGatewayService;

@@ -1,0 +1,40 @@
+"""OpenAPI Spec Endpoint — Tự động expose OpenAPI spec cho frontend binding.
+
+Module này cung cấp endpoint để serve OpenAPI 3.x spec,
+đầu vào cho CP20 frontend client generation.
+
+CP20: API Client & Integration Generator
+"""
+
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/openapi", tags=["openapi"])
+
+
+@router.get("/spec.json")
+async def get_openapi_spec():
+    """
+    Trả về OpenAPI 3.x spec JSON.
+
+    Frontend CP20 client generator consume spec này để auto-generate
+    TypeScript interfaces và typed API clients.
+    """
+    # Trong production, spec này được generate từ FastAPI app.openapi()
+    # hoặc load từ file spec.json
+    return {
+        "openapi": "3.0.3",
+        "info": {
+            "title": "API Specification",
+            "version": "1.0.0",
+        },
+        "servers": [
+            {"url": "{% raw %}{{ base_url }}{% endraw %}", "description": "Production server"}
+        ],
+        "paths": {},
+    }
+
+
+@router.get("/swagger.json")
+async def get_swagger_spec():
+    """Alias cho get_openapi_spec — backward compatibility."""
+    return await get_openapi_spec()

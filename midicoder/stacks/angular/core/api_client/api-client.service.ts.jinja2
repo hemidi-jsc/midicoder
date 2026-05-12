@@ -1,0 +1,191 @@
+/** Typed API Client Service — Auto-generated từ OpenAPI spec.
+
+Service này cung cấp typed HTTP client với auth interceptor,
+error mapping, và caching support.
+
+CP20: API Client & Integration Generator
+*/
+
+import { Injectable } from "@angular/core";
+import { HttpClient, HttpHeaders, HttpParams } from "@angular/common/http";
+import { Observable, throwError } from "rxjs";
+import { catchError, retry } from "rxjs/operators";
+
+export interface ApiClientConfig {
+baseUrl: string;
+timeout?: number;
+retryCount?: number;
+authMode?: 'bearer' | 'cookie' | 'none';
+tokenHeader?: string;
+tokenPrefix?: string;
+}
+
+export interface ApiErrorResponse {
+status: number;
+message: string;
+error_code?: string;
+details?: Record<string, any>;
+    }
+
+    @Injectable({
+    providedIn: "root",
+    })
+    export class ApiClientService {
+    private config: ApiClientConfig;
+    private token: string | null = null;
+
+    constructor(private http: HttpClient) {
+    this.config = {
+    baseUrl: '',
+    timeout: 30000,
+    retryCount: 3,
+    authMode: 'none',
+    tokenHeader: 'Authorization',
+    tokenPrefix: 'Bearer',
+    };
+    }
+
+    /** Khởi tạo config cho API client. */
+    init(config: ApiClientConfig): void {
+    this.config = { ...this.config, ...config };
+    }
+
+    /** Set auth token. */
+    setToken(token: string): void {
+    this.token = token;
+    }
+
+    /** Clear auth token. */
+    clearToken(): void {
+    this.token = null;
+    }
+
+    /** Build HTTP headers với auth injection. */
+    private buildHeaders(customHeaders?: Record<string, string>): HttpHeaders {
+        let headers = new HttpHeaders();
+        if (customHeaders) {
+        Object.entries(customHeaders).forEach(([key, value]) => {
+        headers = headers.set(key, value);
+        });
+        }
+        // Auth injection (Obligation 3)
+        if (this.config.authMode === 'bearer' && this.token) {
+        headers = headers.set(this.config.tokenHeader || 'Authorization',
+        `${this.config.tokenPrefix || 'Bearer'} ${this.token}`);
+        }
+        return headers;
+        }
+
+        /** GET request typed. */
+        get<T>(path: string, params?: Record<string, any>, headers?: Record<string, string>): Observable<T> {
+                        const url = `${this.config.baseUrl}${path}`;
+                        let httpParams = new HttpParams();
+                        if (params) {
+                        Object.entries(params).forEach(([key, value]) => {
+                        if (value !== undefined && value !== null) {
+                        httpParams = httpParams.set(key, String(value));
+                        }
+                        });
+                        }
+                        return this.http.get<T>(url, {
+                            headers: this.buildHeaders(headers),
+                            params: httpParams,
+                            }).pipe(
+                            retry(this.config.retryCount || 0),
+                            catchError(this.handleError.bind(this)),
+                            );
+                            }
+
+                            /** POST request typed. */
+                            post<T>(path: string, body?: any, headers?: Record<string, string>): Observable<T> {
+                                        const url = `${this.config.baseUrl}${path}`;
+                                        return this.http.post<T>(url, body, {
+                                            headers: this.buildHeaders(headers),
+                                            }).pipe(
+                                            retry(this.config.retryCount || 0),
+                                            catchError(this.handleError.bind(this)),
+                                            );
+                                            }
+
+                                            /** PUT request typed. */
+                                            put<T>(path: string, body?: any, headers?: Record<string, string>):
+                                                    Observable<T> {
+                                                        const url = `${this.config.baseUrl}${path}`;
+                                                        return this.http.put<T>(url, body, {
+                                                            headers: this.buildHeaders(headers),
+                                                            }).pipe(
+                                                            retry(this.config.retryCount || 0),
+                                                            catchError(this.handleError.bind(this)),
+                                                            );
+                                                            }
+
+                                                            /** PATCH request typed. */
+                                                            patch<T>(path: string, body?: any, headers?: Record<string,
+                                                                    string>): Observable<T> {
+                                                                        const url = `${this.config.baseUrl}${path}`;
+                                                                        return this.http.patch<T>(url, body, {
+                                                                            headers: this.buildHeaders(headers),
+                                                                            }).pipe(
+                                                                            retry(this.config.retryCount || 0),
+                                                                            catchError(this.handleError.bind(this)),
+                                                                            );
+                                                                            }
+
+                                                                            /** DELETE request typed. */
+                                                                            delete<T>(path: string, headers?: Record
+                                                                                <string, string>): Observable<T> {
+                                                                                        const url =
+                                                                                        `${this.config.baseUrl}${path}`;
+                                                                                        return this.http.delete<T>(url,
+                                                                                            {
+                                                                                            headers:
+                                                                                            this.buildHeaders(headers),
+                                                                                            }).pipe(
+                                                                                            retry(this.config.retryCount
+                                                                                            || 0),
+                                                                                            catchError(this.handleError.bind(this)),
+                                                                                            );
+                                                                                            }
+
+                                                                                            /** Error mapping
+                                                                                            (Obligation 2): Backend
+                                                                                            error → Client error. */
+                                                                                            private handleError(error:
+                                                                                            any): Observable<never> {
+                                                                                                const apiError:
+                                                                                                ApiErrorResponse = {
+                                                                                                status: error.status ||
+                                                                                                500,
+                                                                                                message:
+                                                                                                error.error?.message ||
+                                                                                                error.statusText ||
+                                                                                                'Unknown error',
+                                                                                                error_code:
+                                                                                                error.error?.error_code,
+                                                                                                details:
+                                                                                                error.error?.details,
+                                                                                                };
+
+                                                                                                // Error mapping theo
+                                                                                                status code
+                                                                                                if (apiError.status ===
+                                                                                                401) {
+                                                                                                this.clearToken();
+                                                                                                } else if
+                                                                                                (apiError.status ===
+                                                                                                403) {
+                                                                                                console.warn('[ApiClient]
+                                                                                                Forbidden:',
+                                                                                                apiError.message);
+                                                                                                } else if
+                                                                                                (apiError.status >= 500)
+                                                                                                {
+                                                                                                console.error('[ApiClient]
+                                                                                                Server error:',
+                                                                                                apiError);
+                                                                                                }
+
+                                                                                                return throwError(() =>
+                                                                                                apiError);
+                                                                                                }
+                                                                                                }

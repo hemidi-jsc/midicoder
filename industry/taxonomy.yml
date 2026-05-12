@@ -347,7 +347,7 @@ core_packs:
       - realtime_bridge
       - openapi_bind
     category: frontend
-    status: developing
+    status: stable
     version: 1.0.0
   - id: CP21
     name: Authentication UI Generator

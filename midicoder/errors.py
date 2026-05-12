@@ -577,6 +577,15 @@ class ErrorCode(str, Enum):
     CP19_SCHEMA_VALIDATION_FAILED = "MDC-CP19-005"
 
     # =========================================================================
+    # CP20: API Client & Integration Generator Errors
+    # =========================================================================
+    CP20_OPENAPI_PARSE_ERROR = "MDC-CP20-001"
+    CP20_TYPE_MISMATCH = "MDC-CP20-002"
+    CP20_MISSING_AUTH_INJECT = "MDC-CP20-003"
+    CP20_BRIDGE_CONFIG_INVALID = "MDC-CP20-004"
+    CP20_ENDPOINT_DUPLICATE = "MDC-CP20-005"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -966,6 +975,11 @@ class MidicoderErrorManager:
         ErrorCode.CP19_EMPTY_TABLE_COLUMNS: "TableSpec không có columns.",
         ErrorCode.CP19_INVALID_FIELD_TYPE: "Field type không được hỗ trợ.",
         ErrorCode.CP19_SCHEMA_VALIDATION_FAILED: "Schema validation giữa form và entity thất bại.",
+        ErrorCode.CP20_OPENAPI_PARSE_ERROR: "Lỗi parse OpenAPI spec.",
+        ErrorCode.CP20_TYPE_MISMATCH: "Type mismatch giữa client và backend.",
+        ErrorCode.CP20_MISSING_AUTH_INJECT: "Thiếu auth injection trong client.",
+        ErrorCode.CP20_BRIDGE_CONFIG_INVALID: "Config realtime bridge không hợp lệ.",
+        ErrorCode.CP20_ENDPOINT_DUPLICATE: "Duplicate endpoint trong ApiSpec.",
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",
         ErrorCode.CP53_DUPLICATE_DP_ID: "Domain pack ID trung lap.",

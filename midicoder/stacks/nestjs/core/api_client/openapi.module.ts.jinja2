@@ -1,0 +1,47 @@
+/** OpenAPI Module — NestJS module cho OpenAPI spec.
+
+Module này cung cấp NestJS configuration cho Swagger/OpenAPI,
+đầu vào cho CP20 frontend client generation.
+
+CP20: API Client & Integration Generator
+*/
+
+import { Module } from "@nestjs/common";
+import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+
+@Module({
+  imports: [],
+  exports: [SwaggerModule],
+})
+export class OpenApiModule {
+  public setup(app: any): void {
+    const config = new DocumentBuilder()
+      .setTitle("{% raw %}{{ api_name }}{% endraw %}")
+      .setDescription("API Specification — Auto-generated")
+      .setVersion("{% raw %}{{ api_version }}{% endraw %}")
+      {% if auth_mode == "bearer" %}
+      .addBearerAuth({
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT",
+      })
+      {% endif %}
+      .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup("api/docs", app, document);
+  }
+
+  /** Trả về OpenAPI spec JSON. */
+  public async getSpec(app: any): Promise<Record<string, any>> {
+    const config = new DocumentBuilder()
+      .setTitle("{% raw %}{{ api_name }}{% endraw %}")
+      .setDescription("API Specification")
+      .setVersion("{% raw %}{{ api_version }}{% endraw %}")
+      .build();
+
+    return SwaggerModule.createDocument(app, config);
+  }
+}
+
+export default OpenApiModule;

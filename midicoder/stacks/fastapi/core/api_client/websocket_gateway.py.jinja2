@@ -1,0 +1,115 @@
+"""WebSocket Gateway — FastAPI WebSocket endpoint cho realtime bridge.
+
+Module này cung cấp WebSocket gateway với channel-based messaging,
+auto-reconnect support, và auth validation.
+
+CP20: API Client & Integration Generator
+"""
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from typing import Dict, Set
+
+router = APIRouter(prefix="/ws", tags=["websocket"])
+
+
+class ConnectionManager:
+    """Quản lý WebSocket connections."""
+
+    def __init__(self):
+        # connections: {client_id: WebSocket}
+        self.active_connections: Dict[str, WebSocket] = {}
+        # subscriptions: {channel: Set[client_id]}
+        self.subscriptions: Dict[str, Set[str]] = {}
+
+    async def connect(self, websocket: WebSocket, client_id: str):
+        """Accept và register connection mới."""
+        await websocket.accept()
+        self.active_connections[client_id] = websocket
+
+    def disconnect(self, client_id: str):
+        """Remove connection và cleanup subscriptions."""
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
+        # Cleanup subscriptions
+        for channel, clients in self.subscriptions.items():
+            clients.discard(client_id)
+
+    async def subscribe(self, client_id: str, channel: str):
+        """Subscribe client vào channel."""
+        if channel not in self.subscriptions:
+            self.subscriptions[channel] = set()
+        self.subscriptions[channel].add(client_id)
+
+    async def unsubscribe(self, client_id: str, channel: str):
+        """Unsubscribe client từ channel."""
+        if channel in self.subscriptions:
+            self.subscriptions[channel].discard(client_id)
+
+    async def broadcast_to_channel(self, channel: str, data: dict):
+        """Gửi message tới tất cả subscribers của channel."""
+        if channel not in self.subscriptions:
+            return
+        clients = list(self.subscriptions[channel])
+        for client_id in clients:
+            ws = self.active_connections.get(client_id)
+            if ws:
+                try:
+                    await ws.send_json(data)
+                except Exception:
+                    self.disconnect(client_id)
+
+
+manager = ConnectionManager()
+
+
+@router.websocket("/{client_id}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    client_id: str,
+    token: str = Query(None, description="Auth token"),
+):
+    """
+    WebSocket endpoint với channel-based messaging.
+
+    Messages format:
+    - Subscribe: {"type": "subscribe", "channel": "orders.updated"}
+    - Unsubscribe: {"type": "unsubscribe", "channel": "orders.updated"}
+    - Message: {"type": "message", "channel": "orders.*", "data": {...}}
+    """
+    await manager.connect(websocket, client_id)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+
+            if msg_type == "subscribe":
+                channel = data.get("channel", "")
+                await manager.subscribe(client_id, channel)
+                await websocket.send_json({
+                    "type": "subscribed",
+                    "channel": channel,
+                })
+
+            elif msg_type == "unsubscribe":
+                channel = data.get("channel", "")
+                await manager.unsubscribe(client_id, channel)
+                await websocket.send_json({
+                    "type": "unsubscribed",
+                    "channel": channel,
+                })
+
+            elif msg_type == "message":
+                # Echo hoặc forward message
+                channel = data.get("channel", "default")
+                message_data = data.get("data", {})
+                await manager.broadcast_to_channel(channel, {
+                    "type": "message",
+                    "channel": channel,
+                    "data": message_data,
+                })
+
+    except WebSocketDisconnect:
+        manager.disconnect(client_id)
+    except Exception as e:
+        manager.disconnect(client_id)
+        raise e

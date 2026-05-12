@@ -1,0 +1,240 @@
+/** Realtime Bridge Service — RxJS WebSocket/SSE bridge.
+
+Service này cung cấp realtime communication qua WebSocket hoặc SSE
+với auto-reconnect và channel-based messaging.
+
+CP20: API Client & Integration Generator
+*/
+
+import { Injectable, OnDestroy } from "@angular/core";
+import { Subject, Observable, interval, takeUntil, take, tap, catchError } from "rxjs";
+import { filter, map } from "rxjs/operators";
+
+export interface BridgeConfig {
+name: string;
+transport: 'websocket' | 'sse';
+url: string;
+channels?: string[];
+reconnectAttempts?: number;
+reconnectDelayMs?: number;
+authToken?: string;
+}
+
+export interface BridgeMessage {
+channel: string;
+data: any;
+timestamp: number;
+}
+
+export interface BridgeStatus {
+connected: boolean;
+currentAttempts: number;
+lastError?: string;
+}
+
+@Injectable({
+providedIn: "root",
+})
+export class RealtimeBridgeService implements OnDestroy {
+private config: BridgeConfig | null = null;
+private ws: WebSocket | null = null;
+private eventSource: EventSource | null = null;
+
+private messageSubject = new Subject<BridgeMessage>();
+    private statusSubject = new Subject<BridgeStatus>();
+        private destroySubject = new Subject<void>();
+
+            private reconnectAttempts = 0;
+            private maxReconnectAttempts = 5;
+            private reconnectDelayMs = 1000;
+
+            /** Observable cho messages nhận được. */
+            messages$: Observable<BridgeMessage> = this.messageSubject.asObservable();
+
+                /** Observable cho status changes. */
+                status$: Observable<BridgeStatus> = this.statusSubject.asObservable();
+
+                    /** Khởi tạo và kết nối bridge. */
+                    connect(config: BridgeConfig): void {
+                    this.config = config;
+                    this.maxReconnectAttempts = config.reconnectAttempts || 5;
+                    this.reconnectDelayMs = config.reconnectDelayMs || 1000;
+                    this.reconnectAttempts = 0;
+
+                    if (config.transport === 'websocket') {
+                    this.connectWebSocket(config.url);
+                    } else {
+                    this.connectSSE(config.url);
+                    }
+                    }
+
+                    /** Ngắt kết nối và cleanup. */
+                    disconnect(): void {
+                    if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
+                    }
+                    if (this.eventSource) {
+                    this.eventSource.close();
+                    this.eventSource = null;
+                    }
+                    this.updateStatus(false);
+                    }
+
+                    /** Subscribe vào channel. */
+                    subscribe(channel: string): void {
+                    if (!this.config) {
+                    console.warn('[RealtimeBridge] Not connected');
+                    return;
+                    }
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({ type: 'subscribe', channel }));
+                    }
+                    }
+
+                    /** Unsubscribe từ channel. */
+                    unsubscribe(channel: string): void {
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({ type: 'unsubscribe', channel }));
+                    }
+                    }
+
+                    /** Gửi message qua channel. */
+                    send(channel: string, data: any): void {
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({ type: 'message', channel, data }));
+                    }
+                    }
+
+                    /** Kết nối WebSocket. */
+                    private connectWebSocket(url: string): void {
+                    try {
+                    // Add auth token to WebSocket URL if provided
+                    let wsUrl = url;
+                    if (this.config?.authToken) {
+                    const separator = url.includes('?') ? '&' : '?';
+                    wsUrl = `${url}${separator}token=${this.config.authToken}`;
+                    }
+
+                    this.ws = new WebSocket(wsUrl);
+
+                    this.ws.onopen = () => {
+                    this.reconnectAttempts = 0;
+                    this.updateStatus(true);
+                    console.log(`[RealtimeBridge] ${this.config?.name} connected`);
+
+                    // Subscribe vào các channels
+                    if (this.config?.channels) {
+                    this.config.channels.forEach(channel => this.subscribe(channel));
+                    }
+                    };
+
+                    this.ws.onmessage = (event: MessageEvent) => {
+                    try {
+                    const msg: BridgeMessage = {
+                    channel: 'default',
+                    data: JSON.parse(event.data),
+                    timestamp: Date.now(),
+                    };
+                    if (msg.data?.channel) {
+                    msg.channel = msg.data.channel;
+                    }
+                    this.messageSubject.next(msg);
+                    } catch (e) {
+                    console.error('[RealtimeBridge] Parse error:', e);
+                    }
+                    };
+
+                    this.ws.onclose = (event: CloseEvent) => {
+                    this.updateStatus(false);
+                    if (!event.wasClean) {
+                    this.scheduleReconnect(url);
+                    }
+                    };
+
+                    this.ws.onerror = (error: Event) => {
+                    console.error('[RealtimeBridge] WebSocket error');
+                    this.updateStatus(false, 'WebSocket error');
+                    };
+                    } catch (e) {
+                    console.error('[RealtimeBridge] Connection failed:', e);
+                    this.scheduleReconnect(url);
+                    }
+                    }
+
+                    /** Kết nối SSE. */
+                    private connectSSE(url: string): void {
+                    try {
+                    let sseUrl = url;
+                    if (this.config?.authToken) {
+                    const separator = url.includes('?') ? '&' : '?';
+                    sseUrl = `${url}${separator}token=${this.config.authToken}`;
+                    }
+
+                    this.eventSource = new EventSource(sseUrl);
+
+                    this.eventSource.onmessage = (event: MessageEvent) => {
+                    try {
+                    const msg: BridgeMessage = {
+                    channel: event.type || 'default',
+                    data: JSON.parse(event.data),
+                    timestamp: Date.now(),
+                    };
+                    this.messageSubject.next(msg);
+                    } catch (e) {
+                    console.error('[RealtimeBridge] SSE parse error:', e);
+                    }
+                    };
+
+                    this.eventSource.onerror = () => {
+                    console.error('[RealtimeBridge] SSE error');
+                    this.eventSource?.close();
+                    this.scheduleSSEReconnect(url);
+                    };
+                    } catch (e) {
+                    console.error('[RealtimeBridge] SSE connection failed:', e);
+                    }
+                    }
+
+                    /** Schedule WebSocket reconnect. */
+                    private scheduleReconnect(url: string): void {
+                    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                    console.error('[RealtimeBridge] Max reconnect attempts reached');
+                    this.updateStatus(false, 'Max reconnect attempts reached');
+                    return;
+                    }
+                    this.reconnectAttempts++;
+                    setTimeout(() => {
+                    console.log(`[RealtimeBridge] Reconnect attempt ${this.reconnectAttempts}`);
+                    this.connectWebSocket(url);
+                    }, this.reconnectDelayMs * this.reconnectAttempts);
+                    }
+
+                    /** Schedule SSE reconnect. */
+                    private scheduleSSEReconnect(url: string): void {
+                    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                    console.error('[RealtimeBridge] Max SSE reconnect attempts reached');
+                    return;
+                    }
+                    this.reconnectAttempts++;
+                    setTimeout(() => {
+                    console.log(`[RealtimeBridge] SSE reconnect attempt ${this.reconnectAttempts}`);
+                    this.connectSSE(url);
+                    }, this.reconnectDelayMs * this.reconnectAttempts);
+                    }
+
+                    /** Update và broadcast status. */
+                    private updateStatus(connected: boolean, error?: string): void {
+                    this.statusSubject.next({
+                    connected,
+                    currentAttempts: this.reconnectAttempts,
+                    lastError: error,
+                    });
+                    }
+
+                    /** Cleanup. */
+                    ngOnDestroy(): void {
+                    this.destroySubject.next();
+                    this.disconnect();
+                    }
+                    }

@@ -1,0 +1,219 @@
+/** Realtime Hooks — Custom React hooks cho WebSocket/SSE.
+
+Module này cung cấp React hooks để connect và subscribe
+vào realtime channels qua WebSocket hoặc SSE.
+
+CP20: API Client & Integration Generator
+*/
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+export interface BridgeConfig {
+name: string;
+transport: 'websocket' | 'sse';
+url: string;
+channels?: string[];
+reconnectAttempts?: number;
+reconnectDelayMs?: number;
+authToken?: string;
+}
+
+export interface BridgeMessage {
+channel: string;
+data: unknown;
+timestamp: number;
+}
+
+export interface BridgeState {
+connected: boolean;
+messages: BridgeMessage[];
+error: string | null;
+}
+
+/** Hook cho WebSocket connection. */
+export function useWebSocket(config: BridgeConfig) {
+const [state, setState] = useState<BridgeState>({
+    connected: false,
+    messages: [],
+    error: null,
+    });
+    const wsRef = useRef<WebSocket | null>(null);
+        const reconnectAttemptsRef = useRef(0);
+        const maxAttempts = config.reconnectAttempts || 5;
+        const reconnectDelay = config.reconnectDelayMs || 1000;
+
+        useEffect(() => {
+        const connect = () => {
+        try {
+        let wsUrl = config.url;
+        if (config.authToken) {
+        const separator = config.url.includes('?') ? '&' : '?';
+        wsUrl = `${config.url}${separator}token=${config.authToken}`;
+        }
+
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+        reconnectAttemptsRef.current = 0;
+        setState((prev) => ({ ...prev, connected: true, error: null }));
+
+        // Subscribe vào các channels
+        if (config.channels) {
+        config.channels.forEach((channel) => {
+        ws.send(JSON.stringify({ type: 'subscribe', channel }));
+        });
+        }
+        };
+
+        ws.onmessage = (event) => {
+        try {
+        const msg: BridgeMessage = {
+        channel: 'default',
+        data: JSON.parse(event.data),
+        timestamp: Date.now(),
+        };
+        if (msg.data && typeof msg.data === 'object' && 'channel' in msg.data) {
+        msg.channel = (msg.data as Record<string, unknown>).channel as string;
+            }
+            setState((prev) => ({
+            ...prev,
+            messages: [...prev.messages, msg],
+            }));
+            } catch (e) {
+            console.error('[useWebSocket] Parse error:', e);
+            }
+            };
+
+            ws.onclose = (event) => {
+            setState((prev) => ({ ...prev, connected: false }));
+            if (!event.wasClean && reconnectAttemptsRef.current < maxAttempts) { reconnectAttemptsRef.current++;
+                setTimeout(connect, reconnectDelay * reconnectAttemptsRef.current); } }; ws.onerror=()=> {
+                setState((prev) => ({ ...prev, error: 'WebSocket error' }));
+                };
+                } catch (e) {
+                setState((prev) => ({ ...prev, error: String(e) }));
+                }
+                };
+
+                connect();
+
+                return () => {
+                wsRef.current?.close();
+                };
+                }, [config.url, config.channels, config.authToken]);
+
+                /** Gửi message qua channel. */
+                const send = useCallback(
+                (channel: string, data: unknown) => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'message', channel, data }));
+                }
+                },
+                [],
+                );
+
+                /** Subscribe vào channel. */
+                const subscribe = useCallback((channel: string) => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'subscribe', channel }));
+                }
+                }, []);
+
+                /** Unsubscribe từ channel. */
+                const unsubscribe = useCallback((channel: string) => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'unsubscribe', channel }));
+                }
+                }, []);
+
+                /** Clear messages. */
+                const clearMessages = useCallback(() => {
+                setState((prev) => ({ ...prev, messages: [] }));
+                }, []);
+
+                return {
+                ...state,
+                send,
+                subscribe,
+                unsubscribe,
+                clearMessages,
+                };
+                }
+
+                /** Hook cho SSE connection. */
+                export function useSSE(config: BridgeConfig) {
+                const [state, setState] = useState<BridgeState>({
+                    connected: false,
+                    messages: [],
+                    error: null,
+                    });
+                    const esRef = useRef<EventSource | null>(null);
+
+                        useEffect(() => {
+                        const connect = () => {
+                        try {
+                        let sseUrl = config.url;
+                        if (config.authToken) {
+                        const separator = config.url.includes('?') ? '&' : '?';
+                        sseUrl = `${config.url}${separator}token=${config.authToken}`;
+                        }
+
+                        const es = new EventSource(sseUrl);
+                        esRef.current = es;
+
+                        es.onopen = () => {
+                        setState((prev) => ({ ...prev, connected: true, error: null }));
+                        };
+
+                        es.onmessage = (event) => {
+                        try {
+                        const msg: BridgeMessage = {
+                        channel: event.type || 'default',
+                        data: JSON.parse(event.data),
+                        timestamp: Date.now(),
+                        };
+                        setState((prev) => ({
+                        ...prev,
+                        messages: [...prev.messages, msg],
+                        }));
+                        } catch (e) {
+                        console.error('[useSSE] Parse error:', e);
+                        }
+                        };
+
+                        es.onerror = () => {
+                        setState((prev) => ({ ...prev, connected: false, error: 'SSE error' }));
+                        es.close();
+                        };
+                        } catch (e) {
+                        setState((prev) => ({ ...prev, error: String(e) }));
+                        }
+                        };
+
+                        connect();
+
+                        return () => {
+                        esRef.current?.close();
+                        };
+                        }, [config.url, config.authToken]);
+
+                        /** Clear messages. */
+                        const clearMessages = useCallback(() => {
+                        setState((prev) => ({ ...prev, messages: [] }));
+                        }, []);
+
+                        return {
+                        ...state,
+                        clearMessages,
+                        };
+                        }
+
+                        /** Hook universal cho realtime bridge. */
+                        export function useRealtimeBridge(config: BridgeConfig) {
+                        return config.transport === 'websocket'
+                        ? useWebSocket(config)
+                        : useSSE(config);
+                        }
+
+                        export default useRealtimeBridge;

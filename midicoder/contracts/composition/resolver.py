@@ -204,7 +204,7 @@ class PackResolver:
             "CP14": "audit",
             "CP18": "component",
             "CP19": "component",
-            "CP20": "client",
+            "CP20": "api_client",
             "CP23": "command",
         }
         return mapping.get(cp_id, cp_id.lower())
