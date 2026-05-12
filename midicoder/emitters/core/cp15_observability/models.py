@@ -261,3 +261,338 @@ class TraceConfig:
             sample_rate=data.get("sample_rate", 1.0),
             attributes=data.get("attributes", {}),
         )
+
+
+# ===========================================================================
+# OpenTelemetry
+# ===========================================================================
+
+
+class OTLPExportProtocol(str, Enum):
+    """
+    Protocol cho OTLP exporter.
+
+    - grpc: gRPC (nhanh, binary, streaming)
+    - http_json: HTTP/JSON (compat tốt, dễ debug)
+    - http_protobuf: HTTP/Protobuf (nhanh hơn JSON, nhẹ hơn gRPC)
+    """
+    GRPC = "grpc"
+    HTTP_JSON = "http_json"
+    HTTP_PROTOBUF = "http_protobuf"
+
+
+class SamplerType(str, Enum):
+    """
+    Loại sampler cho OpenTelemetry.
+
+    - always_on: Sample 100% traces
+    - always_off: Sample 0% traces
+    - traceid_ratio_based: Sample theo tỷ lệ dựa trên trace_id
+    - parent_based: Theo parent span, tự sample nếu root
+    """
+    ALWAYS_ON = "always_on"
+    ALWAYS_OFF = "always_off"
+    TRACEID_RATIO_BASED = "traceid_ratio_based"
+    PARENT_BASED = "parent_based"
+
+
+class SpanKind(str, Enum):
+    """
+    Loại span trong distributed tracing.
+
+    - internal: Internal operation trong service
+    - server: Server xử lý incoming request
+    - client: Client gửi outgoing request
+    - producer: Producer gửi message
+    - consumer: Consumer nhận message
+    """
+    INTERNAL = "internal"
+    SERVER = "server"
+    CLIENT = "client"
+    PRODUCER = "producer"
+    CONSUMER = "consumer"
+
+
+@dataclass
+class OTelExporterConfig:
+    """
+    Configuration cho OpenTelemetry OTLP exporter.
+
+    Export traces, metrics, và logs đến OTLP endpoint.
+
+    Attributes:
+        endpoint: OTLP endpoint (vd: "http://otel-collector:4317")
+        protocol: Protocol (grpc, http_json, http_protobuf)
+        timeout_ms: Timeout cho export request (milliseconds)
+        headers: Custom headers (vd: API key)
+        compression: Compression (gzip, none)
+        batch_size: Số spans trong 1 batch export
+        batch_timeout_ms: Timeout trước khi flush batch
+        retry_on_failure: Có retry khi export thất bại không
+        max_queue_size: Queue size tối đa cho spans chờ export
+        description: Mô tả exporter
+    """
+    endpoint: str = "http://localhost:4317"
+    protocol: OTLPExportProtocol = OTLPExportProtocol.GRPC
+    timeout_ms: int = 10000
+    headers: dict = field(default_factory=dict)
+    compression: str = "none"
+    batch_size: int = 512
+    batch_timeout_ms: int = 5000
+    retry_on_failure: bool = True
+    max_queue_size: int = 2048
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate OTLP exporter config sau khi khởi tạo."""
+        if not self.endpoint or not self.endpoint.strip():
+            EM.raise_error(
+                ErrorCode.CP15_OBSERVABILITY_PARSE_ERROR,
+                field="endpoint",
+                reason="OTLP endpoint không được để trống"
+            )
+        if self.timeout_ms < 1:
+            self.timeout_ms = 10000
+        if self.batch_size < 1:
+            self.batch_size = 512
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển OTLP exporter config sang dict format."""
+        return {
+            "endpoint": self.endpoint,
+            "protocol": self.protocol.value,
+            "timeout_ms": self.timeout_ms,
+            "headers": self.headers,
+            "compression": self.compression,
+            "batch_size": self.batch_size,
+            "batch_timeout_ms": self.batch_timeout_ms,
+            "retry_on_failure": self.retry_on_failure,
+            "max_queue_size": self.max_queue_size,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "OTelExporterConfig":
+        """Tạo OTelExporterConfig từ dict."""
+        return cls(
+            endpoint=data.get("endpoint", "http://localhost:4317"),
+            protocol=OTLPExportProtocol(data.get("protocol", "grpc")),
+            timeout_ms=data.get("timeout_ms", 10000),
+            headers=data.get("headers", {}),
+            compression=data.get("compression", "none"),
+            batch_size=data.get("batch_size", 512),
+            batch_timeout_ms=data.get("batch_timeout_ms", 5000),
+            retry_on_failure=data.get("retry_on_failure", True),
+            max_queue_size=data.get("max_queue_size", 2048),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class OpenTelemetryConfig:
+    """
+    Configuration cho OpenTelemetry SDK.
+
+    Unified config cho traces, metrics, và logs qua OpenTelemetry.
+
+    Attributes:
+        service_name: Tên service (resource attribute)
+        exporter: OTLP exporter config
+        sampler_type: Loại sampler
+        sampler_rate: Tỷ lệ sampling (0.0 - 1.0)
+        resource_attributes: Resource attributes bổ sung
+        enable_traces: Có enable trace collection không
+        enable_metrics: Có enable metric collection không
+        enable_logs: Có enable log collection không
+        description: Mô tả config
+    """
+    service_name: str = "midicoder"
+    exporter: OTelExporterConfig = field(default_factory=OTelExporterConfig)
+    sampler_type: SamplerType = SamplerType.TRACEID_RATIO_BASED
+    sampler_rate: float = 1.0
+    resource_attributes: dict = field(default_factory=dict)
+    enable_traces: bool = True
+    enable_metrics: bool = True
+    enable_logs: bool = True
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate OpenTelemetry config sau khi khởi tạo."""
+        if not self.service_name or not self.service_name.strip():
+            EM.raise_error(
+                ErrorCode.CP15_OBSERVABILITY_PARSE_ERROR,
+                field="service_name",
+                reason="Service name không được để trống"
+            )
+        if not (0.0 <= self.sampler_rate <= 1.0):
+            EM.raise_error(
+                ErrorCode.CP15_INVALID_TRACE_FORMAT,
+                sample_rate=self.sampler_rate
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển OpenTelemetry config sang dict format."""
+        return {
+            "service_name": self.service_name,
+            "exporter": self.exporter.to_dict(),
+            "sampler_type": self.sampler_type.value,
+            "sampler_rate": self.sampler_rate,
+            "resource_attributes": self.resource_attributes,
+            "enable_traces": self.enable_traces,
+            "enable_metrics": self.enable_metrics,
+            "enable_logs": self.enable_logs,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "OpenTelemetryConfig":
+        """Tạo OpenTelemetryConfig từ dict."""
+        exp_data = data.get("exporter")
+        return cls(
+            service_name=data.get("service_name", "midicoder"),
+            exporter=OTelExporterConfig.from_dict(exp_data) if exp_data else OTelExporterConfig(),
+            sampler_type=SamplerType(data.get("sampler_type", "traceid_ratio_based")),
+            sampler_rate=data.get("sampler_rate", 1.0),
+            resource_attributes=data.get("resource_attributes", {}),
+            enable_traces=data.get("enable_traces", True),
+            enable_metrics=data.get("enable_metrics", True),
+            enable_logs=data.get("enable_logs", True),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# Log Shipping
+# ===========================================================================
+
+
+class LogDestinationType(str, Enum):
+    """
+    Loại log destination.
+
+    - loki: Grafana Loki
+    - cloudwatch: AWS CloudWatch Logs
+    - datadog: Datadog Logs
+    - elasticsearch: Elasticsearch/OpenSearch
+    - splunk: Splunk HEC
+    - stdout: Standard output (development)
+    - file: File system
+    """
+    LOKI = "loki"
+    CLOUDWATCH = "cloudwatch"
+    DATADOG = "datadog"
+    ELASTICSEARCH = "elasticsearch"
+    SPLUNK = "splunk"
+    STDOUT = "stdout"
+    FILE = "file"
+
+
+@dataclass
+class LogShippingDestination:
+    """
+    Destination cho log shipping — nơi logs được ship đến.
+
+    Attributes:
+        destination_type: Loại destination (loki, cloudwatch, datadog, elasticsearch, ...)
+        endpoint: Endpoint URL (vd: "http://loki:3100/loki/api/v1/push")
+        auth_token: Auth token/API key (set ở runtime)
+        flush_interval_ms: Interval flush logs (milliseconds)
+        max_batch_size: Số logs trong 1 batch
+        compression: Compression (gzip, none)
+        labels: Labels/tags cho logs (vd: {"app": "midicoder", "env": "prod"})
+        filter_pattern: Log filter pattern (vd: "level >= warning")
+        description: Mô tả destination
+    """
+    destination_type: LogDestinationType
+    endpoint: str = ""
+    auth_token: str = ""
+    flush_interval_ms: int = 5000
+    max_batch_size: int = 1000
+    compression: str = "gzip"
+    labels: dict = field(default_factory=dict)
+    filter_pattern: str = ""
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate log shipping destination sau khi khởi tạo."""
+        if self.flush_interval_ms < 1:
+            self.flush_interval_ms = 5000
+        if self.max_batch_size < 1:
+            self.max_batch_size = 1000
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển log destination sang dict format."""
+        return {
+            "destination_type": self.destination_type.value,
+            "endpoint": self.endpoint,
+            "flush_interval_ms": self.flush_interval_ms,
+            "max_batch_size": self.max_batch_size,
+            "compression": self.compression,
+            "labels": self.labels,
+            "filter_pattern": self.filter_pattern,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LogShippingDestination":
+        """Tạo LogShippingDestination từ dict."""
+        return cls(
+            destination_type=LogDestinationType(data.get("destination_type", "loki")),
+            endpoint=data.get("endpoint", ""),
+            auth_token=data.get("auth_token", ""),
+            flush_interval_ms=data.get("flush_interval_ms", 5000),
+            max_batch_size=data.get("max_batch_size", 1000),
+            compression=data.get("compression", "gzip"),
+            labels=data.get("labels", {}),
+            filter_pattern=data.get("filter_pattern", ""),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class LogShippingConfig:
+    """
+    Configuration cho log shipping — ship logs đến external destinations.
+
+    Attributes:
+        enabled: Có enable log shipping không
+        destinations: Danh sách log destinations
+        async_shipping: Có ship logs async không (không block main thread)
+        max_queue_size: Queue size tối đa cho logs chờ ship
+        drop_on_overflow: Có drop logs khi queue overflow không
+        description: Mô tả log shipping config
+    """
+    enabled: bool = True
+    destinations: list[LogShippingDestination] = field(default_factory=list)
+    async_shipping: bool = True
+    max_queue_size: int = 10000
+    drop_on_overflow: bool = False
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate log shipping config sau khi khởi tạo."""
+        if self.max_queue_size < 1:
+            self.max_queue_size = 10000
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển log shipping config sang dict format."""
+        return {
+            "enabled": self.enabled,
+            "destinations": [d.to_dict() for d in self.destinations],
+            "async_shipping": self.async_shipping,
+            "max_queue_size": self.max_queue_size,
+            "drop_on_overflow": self.drop_on_overflow,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LogShippingConfig":
+        """Tạo LogShippingConfig từ dict."""
+        return cls(
+            enabled=data.get("enabled", True),
+            destinations=[LogShippingDestination.from_dict(d) for d in data.get("destinations", [])],
+            async_shipping=data.get("async_shipping", True),
+            max_queue_size=data.get("max_queue_size", 10000),
+            drop_on_overflow=data.get("drop_on_overflow", False),
+            description=data.get("description", ""),
+        )

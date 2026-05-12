@@ -6,8 +6,8 @@ pack:
   status: "stable"
   category: "observability"
   depends_on: ["CP07"]
-  definitions_count: 3
-  obligations_count: 2
+  definitions_count: 9
+  obligations_count: 5
   error_codes:
     prefix: "MDC-CP15"
     range: "MDC-CP15-001 to MDC-CP15-010"
@@ -15,12 +15,21 @@ pack:
     - emit_metric
     - structured_logging
     - distributed_tracing
+    - opentelemetry_export
+    - log_shipping
+    - span_propagation
   capabilities:
     - id: "metrics"
       emitter: "fastapi, nestjs"
     - id: "structured_logging"
       emitter: "fastapi, nestjs"
     - id: "tracing"
+      emitter: "fastapi, nestjs"
+    - id: "opentelemetry"
+      emitter: "fastapi, nestjs"
+    - id: "log_shipping"
+      emitter: "fastapi, nestjs"
+    - id: "span_propagation"
       emitter: "fastapi, nestjs"
   definitions:
     - name: "MetricProfile"
@@ -29,11 +38,29 @@ pack:
       description: "Log format, level, and output destination"
     - name: "TraceConfig"
       description: "Trace sampling, propagation, and exporter settings"
+    - name: "OpenTelemetryConfig"
+      description: "Unified OTel SDK config (traces/metrics/logs) with sampler"
+    - name: "OTelExporterConfig"
+      description: "OTLP exporter (gRPC, HTTP/JSON, HTTP/Protobuf) with batching"
+    - name: "LogShippingConfig"
+      description: "Ship logs to Loki, CloudWatch, Datadog, ES, Splunk"
+    - name: "LogShippingDestination"
+      description: "Individual log destination with labels, compression, filter"
+    - name: "SamplerType"
+      description: "Trace sampler (always_on/off, traceid_ratio, parent_based)"
+    - name: "SpanKind"
+      description: "Span classification (internal, server, client, producer, consumer)"
   obligations:
     - name: "LogStructured"
       description: "All logs must be structured JSON with correlation IDs"
     - name: "TracePropagation"
       description: "Trace context must propagate across service boundaries"
+    - name: "OTLPExporterConfigured"
+      description: "OTLP exporter must have valid endpoint and protocol"
+    - name: "LogDestinationValid"
+      description: "Each log shipping destination must have valid endpoint"
+    - name: "SamplingRateValid"
+      description: "Sampler rate must be in [0.0, 1.0] range"
   frontend_integration:
     angular:
       - LoggingService
