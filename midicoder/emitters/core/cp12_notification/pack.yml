@@ -6,8 +6,8 @@ pack:
   status: "stable"
   category: "communication"
   depends_on: ["CP05"]
-  definitions_count: 3
-  obligations_count: 2
+  definitions_count: 8
+  obligations_count: 4
   error_codes:
     prefix: "MDC-CP12"
     range: "MDC-CP12-001 to MDC-CP12-007"
@@ -16,6 +16,8 @@ pack:
     - email_dispatch
     - sms_dispatch
     - push_notification
+    - webhook_dispatch
+    - chat_integration
   capabilities:
     - id: "email"
       emitter: "fastapi, nestjs"
@@ -25,6 +27,10 @@ pack:
       emitter: "fastapi, nestjs, angular, react"
     - id: "template_engine"
       emitter: "fastapi, nestjs"
+    - id: "webhook"
+      emitter: "fastapi, nestjs"
+    - id: "chat_integration"
+      emitter: "fastapi, nestjs"
   definitions:
     - name: "NotificationChannel"
       description: "Channel type: email, sms, push, in_app"
@@ -32,11 +38,25 @@ pack:
       description: "Parameterized message template per channel"
     - name: "DispatchConfig"
       description: "Routing and retry settings for notification delivery"
+    - name: "WebhookConfig"
+      description: "Webhook channel with auth, retry, payload template"
+    - name: "WebhookDelivery"
+      description: "Webhook delivery record with attempts and response tracking"
+    - name: "ChatIntegrationConfig"
+      description: "Slack, Teams, Discord, MS Teams, Webex integration"
+    - name: "ChatPlatform"
+      description: "Chat platform enum (slack, teams, discord, msteams, webex)"
+    - name: "WebhookAuthType"
+      description: "Webhook auth (none, basic, bearer, hmac)"
   obligations:
     - name: "TemplateValidation"
       description: "Notification templates must have required variables"
     - name: "FallbackChannel"
       description: "Failed dispatch must retry on fallback channel"
+    - name: "WebhookReliability"
+      description: "Webhook deliveries must retry with backoff on failure"
+    - name: "ChatSecurity"
+      description: "Chat bot tokens must be stored securely, never in source code"
   frontend_integration:
     angular:
       - NotificationService

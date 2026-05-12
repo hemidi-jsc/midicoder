@@ -12,6 +12,7 @@ Module này định nghĩa các data models cho CP12 Notification Emitter:
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -350,6 +351,210 @@ class DispatchResult:
 
 
 # ============================================================================
+# Webhook Channel
+# ============================================================================
+
+
+class WebhookAuthType(str, Enum):
+    """Authentication cho webhook delivery."""
+    NONE = "none"
+    BASIC = "basic"
+    BEARER = "bearer"
+    HMAC = "hmac"
+
+
+@dataclass
+class WebhookConfig:
+    """Configuration cho webhook notification channel.
+
+    Attributes:
+        url: Webhook endpoint URL
+        method: HTTP method (POST, PUT, PATCH)
+        auth_type: Auth type (none, basic, bearer, hmac)
+        auth_header: Auth header (Bearer token, Basic credentials)
+        headers: Custom headers
+        timeout_seconds: HTTP timeout
+        max_retries: Số lần retry delivery
+        retry_backoff_seconds: Backoff giữa retries
+        payload_template: Template cho webhook payload
+        description: Mô tả webhook
+    """
+    url: str
+    method: str = "POST"
+    auth_type: WebhookAuthType = WebhookAuthType.NONE
+    auth_header: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
+    timeout_seconds: int = 30
+    max_retries: int = 3
+    retry_backoff_seconds: int = 10
+    payload_template: str = ""
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate webhook config."""
+        if not self.url or not self.url.strip():
+            EM.raise_error(ErrorCode.CP12_EMPTY_REQUIRED_FIELD, field="url")
+        if self.method.upper() not in ("POST", "PUT", "PATCH"):
+            EM.raise_error(ErrorCode.CP12_CHANNEL_CONFIG_INVALID, channel="webhook", field="method")
+        if self.timeout_seconds < 1:
+            self.timeout_seconds = 30
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển webhook config sang dict."""
+        return {
+            "url": self.url,
+            "method": self.method,
+            "auth_type": self.auth_type.value,
+            "auth_header": self.auth_header,
+            "headers": self.headers,
+            "timeout_seconds": self.timeout_seconds,
+            "max_retries": self.max_retries,
+            "retry_backoff_seconds": self.retry_backoff_seconds,
+            "payload_template": self.payload_template,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WebhookConfig":
+        """Tạo WebhookConfig từ dict."""
+        return cls(
+            url=data.get("url", ""),
+            method=data.get("method", "POST"),
+            auth_type=WebhookAuthType(data.get("auth_type", "none")),
+            auth_header=data.get("auth_header", ""),
+            headers=data.get("headers", {}),
+            timeout_seconds=data.get("timeout_seconds", 30),
+            max_retries=data.get("max_retries", 3),
+            retry_backoff_seconds=data.get("retry_backoff_seconds", 10),
+            payload_template=data.get("payload_template", ""),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class WebhookDelivery:
+    """Record cho webhook delivery (giống OutboxEntry nhưng cho webhooks).
+
+    Attributes:
+        delivery_id: UUID định danh duy nhất
+        webhook_url: URL được deliver
+        status: Trạng thái (pending, delivered, failed, retried)
+        attempts: Số lần thử delivery
+        last_response_code: HTTP response code cuối cùng
+        last_response_body: Response body cuối cùng
+        scheduled_at: Thời điểm scheduled delivery
+        delivered_at: Thời điểm delivered thành công
+    """
+    webhook_url: str
+    status: str = "pending"
+    attempts: int = 0
+    last_response_code: int = 0
+    last_response_body: str = ""
+    scheduled_at: str | None = None
+    delivered_at: str | None = None
+    delivery_id: str = field(default_factory=lambda: str(uuid4()))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển webhook delivery sang dict."""
+        return {
+            "delivery_id": self.delivery_id,
+            "webhook_url": self.webhook_url,
+            "status": self.status,
+            "attempts": self.attempts,
+            "last_response_code": self.last_response_code,
+            "last_response_body": self.last_response_body,
+            "scheduled_at": self.scheduled_at,
+            "delivered_at": self.delivered_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WebhookDelivery":
+        """Tạo WebhookDelivery từ dict."""
+        return cls(
+            delivery_id=data.get("delivery_id", ""),
+            webhook_url=data.get("webhook_url", ""),
+            status=data.get("status", "pending"),
+            attempts=data.get("attempts", 0),
+            last_response_code=data.get("last_response_code", 0),
+            last_response_body=data.get("last_response_body", ""),
+            scheduled_at=data.get("scheduled_at"),
+            delivered_at=data.get("delivered_at"),
+        )
+
+
+# ============================================================================
+# Chat Integration (Slack/Teams/Discord)
+# ============================================================================
+
+
+class ChatPlatform(str, Enum):
+    """Platform chat integration."""
+    SLACK = "slack"
+    TEAMS = "teams"
+    DISCORD = "discord"
+    MSTEAMS = "msteams"
+    WEBEX = "webex"
+
+
+@dataclass
+class ChatIntegrationConfig:
+    """Configuration cho chat integration (Slack, Teams, Discord, ...).
+
+    Attributes:
+        platform: Chat platform (slack, teams, discord, msteams, webex)
+        bot_token: Bot token/API key
+        webhook_url: Incoming webhook URL
+        channel_id: Channel/room ID để send messages
+        team_id: Team/organization ID
+        username: Bot username
+        icon_emoji: Icon emoji cho bot messages
+        enable_threading: Có reply trong threads không
+        mention_users: Danh sách users mention trong alert messages
+        description: Mô tả integration
+    """
+    platform: ChatPlatform
+    bot_token: str = ""
+    webhook_url: str = ""
+    channel_id: str = ""
+    team_id: str = ""
+    username: str = "Midicoder Bot"
+    icon_emoji: str = "🤖"
+    enable_threading: bool = False
+    mention_users: list[str] = field(default_factory=list)
+    description: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển chat config sang dict."""
+        return {
+            "platform": self.platform.value,
+            "webhook_url": self.webhook_url,
+            "channel_id": self.channel_id,
+            "team_id": self.team_id,
+            "username": self.username,
+            "icon_emoji": self.icon_emoji,
+            "enable_threading": self.enable_threading,
+            "mention_users": self.mention_users,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ChatIntegrationConfig":
+        """Tạo ChatIntegrationConfig từ dict."""
+        return cls(
+            platform=ChatPlatform(data.get("platform", "slack")),
+            bot_token=data.get("bot_token", ""),
+            webhook_url=data.get("webhook_url", ""),
+            channel_id=data.get("channel_id", ""),
+            team_id=data.get("team_id", ""),
+            username=data.get("username", "Midicoder Bot"),
+            icon_emoji=data.get("icon_emoji", "🤖"),
+            enable_threading=data.get("enable_threading", False),
+            mention_users=data.get("mention_users", []),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
 # Exports
 # ============================================================================
 
@@ -359,4 +564,8 @@ __all__ = [
     "NotificationDispatch",
     "NotificationProvider",
     "DispatchResult",
+    "WebhookConfig",
+    "WebhookDelivery",
+    "ChatIntegrationConfig",
+    "ChatPlatform",
 ]

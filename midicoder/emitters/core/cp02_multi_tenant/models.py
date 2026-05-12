@@ -275,3 +275,228 @@ class TenantResolver:
     def clear_cache(self) -> None:
         """Xóa cache tenant resolutions."""
         self._cache.clear()
+
+
+# ===========================================================================
+# Schema-Level Isolation
+# ===========================================================================
+
+
+class SchemaIsolationMode(str, Enum):
+    """
+    Chiều cách schema-level isolation.
+
+    - dedicated_schema: Mỗi tenant có PostgreSQL schema riêng
+    - dedicated_database: Mỗi tenant có database riêng (strongest isolation)
+    - shared_schema: Tất cả tenant chia schema (row-level isolation)
+    """
+    DEDICATED_SCHEMA = "dedicated_schema"
+    DEDICATED_DATABASE = "dedicated_database"
+    SHARED_SCHEMA = "shared_schema"
+
+
+@dataclass
+class SchemaIsolationConfig:
+    """
+    Configuration cho schema-level isolation — tenant data separation ở database level.
+
+    Attributes:
+        isolation_mode: Mode isolation (dedicated_schema, dedicated_database, shared_schema)
+        schema_prefix: Prefix cho schema/database names (vd: "t_")
+        create_on_first_access: Có auto-create schema/database khi tenant mới không
+        seed_data: Có seed initial data khi create schema không
+        migration_strategy: Migration strategy (flyway, alembic, raw_sql)
+        max_tenants_per_db: Số tenants tối đa trên 1 database (cho dedicated_schema)
+        enable_row_level_security: Có enable RLS PostgreSQL không (extra layer)
+        description: Mô tả schema isolation config
+    """
+    isolation_mode: SchemaIsolationMode = SchemaIsolationMode.DEDICATED_SCHEMA
+    schema_prefix: str = "t_"
+    create_on_first_access: bool = True
+    seed_data: bool = True
+    migration_strategy: str = "alembic"
+    max_tenants_per_db: int = 1000
+    enable_row_level_security: bool = False
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate schema isolation config sau khi khởi tạo."""
+        if not self.schema_prefix:
+            self.schema_prefix = "t_"
+        if self.max_tenants_per_db < 1:
+            self.max_tenants_per_db = 1000
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển schema isolation config sang dict."""
+        return {
+            "isolation_mode": self.isolation_mode.value,
+            "schema_prefix": self.schema_prefix,
+            "create_on_first_access": self.create_on_first_access,
+            "seed_data": self.seed_data,
+            "migration_strategy": self.migration_strategy,
+            "max_tenants_per_db": self.max_tenants_per_db,
+            "enable_row_level_security": self.enable_row_level_security,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SchemaIsolationConfig":
+        """Tạo SchemaIsolationConfig từ dict."""
+        return cls(
+            isolation_mode=SchemaIsolationMode(data.get("isolation_mode", "dedicated_schema")),
+            schema_prefix=data.get("schema_prefix", "t_"),
+            create_on_first_access=data.get("create_on_first_access", True),
+            seed_data=data.get("seed_data", True),
+            migration_strategy=data.get("migration_strategy", "alembic"),
+            max_tenants_per_db=data.get("max_tenants_per_db", 1000),
+            enable_row_level_security=data.get("enable_row_level_security", False),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# Tenant Provisioning
+# ===========================================================================
+
+
+class ProvisioningStrategy(str, Enum):
+    """
+    Chiến lược provisioning cho tenant mới.
+
+    - automatic: Auto-create schema/database, seed data, assign defaults
+    - manual_review: Create skeleton, require manual approval trước khi active
+    - api_driven: Provision qua REST API, trigger CI/CD pipeline
+    - terraform: Provision qua Terraform/IaC
+    """
+    AUTOMATIC = "automatic"
+    MANUAL_REVIEW = "manual_review"
+    API_DRIVEN = "api_driven"
+    TERRAFORM = "terraform"
+
+
+class TenantStatus(str, Enum):
+    """
+    Trạng thái tenant.
+
+    - provisioning: Đang provisioning resources
+    - active: Active, tenant có thể sử dụng
+    - suspended: Suspended, tenant không thể access
+    - deleted: Deleted, resources đang cleanup
+    """
+    PROVISIONING = "provisioning"
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    DELETED = "deleted"
+
+
+@dataclass
+class TenantProvisioningConfig:
+    """
+    Configuration cho tenant provisioning — auto-create tenant resources.
+
+    Attributes:
+        strategy: Provisioning strategy (automatic, manual_review, api_driven, terraform)
+        default_plan: Plan mặc định (free, starter, pro, enterprise)
+        default_features: Features mặc định
+        resource_limits: Resource limits (storage_gb, api_calls_per_month, max_users)
+        auto_activate: Có auto-activate tenant sau khi provision không
+        notification_email: Email notify admin khi tenant mới được provision
+        description: Mô tả provisioning config
+    """
+    strategy: ProvisioningStrategy = ProvisioningStrategy.AUTOMATIC
+    default_plan: str = "starter"
+    default_features: list[str] = field(default_factory=lambda: ["basic_api", "dashboard"])
+    resource_limits: dict[str, Any] = field(default_factory=lambda: {
+        "storage_gb": 10,
+        "api_calls_per_month": 100000,
+        "max_users": 50,
+    })
+    auto_activate: bool = True
+    notification_email: str = ""
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate provisioning config sau khi khởi tạo."""
+        if not self.default_features:
+            self.default_features = ["basic_api", "dashboard"]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển provisioning config sang dict."""
+        return {
+            "strategy": self.strategy.value,
+            "default_plan": self.default_plan,
+            "default_features": self.default_features,
+            "resource_limits": self.resource_limits,
+            "auto_activate": self.auto_activate,
+            "notification_email": self.notification_email,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TenantProvisioningConfig":
+        """Tạo TenantProvisioningConfig từ dict."""
+        return cls(
+            strategy=ProvisioningStrategy(data.get("strategy", "automatic")),
+            default_plan=data.get("default_plan", "starter"),
+            default_features=data.get("default_features", ["basic_api", "dashboard"]),
+            resource_limits=data.get("resource_limits", {"storage_gb": 10, "api_calls_per_month": 100000, "max_users": 50}),
+            auto_activate=data.get("auto_activate", True),
+            notification_email=data.get("notification_email", ""),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# Cross-Tenant Access
+# ===========================================================================
+
+
+@dataclass
+class CrossTenantAccessRule:
+    """
+    Rule cho phép cross-tenant data access (rare, strict control).
+
+    Dùng khi tenant A cần read data từ tenant B (vd: service provider,
+    platform admin, data sharing agreement).
+
+    Attributes:
+        source_tenant: Tenant ID của source (đọc data)
+        target_tenant: Tenant ID của target (bị đọc)
+        allowed_entities: Entities được phép access (vd: ["orders", "users"])
+        read_only: Có chỉ đọc không (không write)
+        requires_approval: Có cần approval không
+        expires_at: Thời điểm rule hết hiệu lực
+        description: Mô tả rule
+    """
+    source_tenant: str
+    target_tenant: str
+    allowed_entities: list[str] = field(default_factory=lambda: ["orders"])
+    read_only: bool = True
+    requires_approval: bool = True
+    expires_at: str = ""
+    description: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển cross-tenant rule sang dict."""
+        return {
+            "source_tenant": self.source_tenant,
+            "target_tenant": self.target_tenant,
+            "allowed_entities": self.allowed_entities,
+            "read_only": self.read_only,
+            "requires_approval": self.requires_approval,
+            "expires_at": self.expires_at,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CrossTenantAccessRule":
+        """Tạo CrossTenantAccessRule từ dict."""
+        return cls(
+            source_tenant=data.get("source_tenant", ""),
+            target_tenant=data.get("target_tenant", ""),
+            allowed_entities=data.get("allowed_entities", ["orders"]),
+            read_only=data.get("read_only", True),
+            requires_approval=data.get("requires_approval", True),
+            expires_at=data.get("expires_at", ""),
+            description=data.get("description", ""),
+        )

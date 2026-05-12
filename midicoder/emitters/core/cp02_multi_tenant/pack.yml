@@ -6,27 +6,52 @@ pack:
   status: "stable"
   category: "architecture"
   depends_on: ["CP01"]
-  definitions_count: 2
-  obligations_count: 1
+  definitions_count: 7
+  obligations_count: 4
   error_codes:
     prefix: "MDC-CP02"
     range: "MDC-CP02-001 to MDC-CP02-005"
   capabilities_provided:
     - enforce_tenant_scope
     - tenant_isolation
+    - schema_isolation
+    - tenant_provisioning
+    - cross_tenant_access
   capabilities:
     - id: "tenant_middleware"
       emitter: "fastapi, nestjs, angular, react"
     - id: "tenant_context"
       emitter: "fastapi, nestjs, angular, react"
+    - id: "schema_isolation"
+      emitter: "fastapi, nestjs"
+    - id: "tenant_provisioning"
+      emitter: "fastapi, nestjs"
+    - id: "cross_tenant_access"
+      emitter: "fastapi, nestjs"
   definitions:
     - name: "TenantConfig"
       description: "Tenant isolation strategy and provisioning settings"
     - name: "TenantScope"
       description: "Runtime scope enforcement for multi-tenancy"
+    - name: "SchemaIsolationConfig"
+      description: "Schema/database-level isolation with RLS, auto-create, migration"
+    - name: "TenantProvisioningConfig"
+      description: "Auto/manual provisioning with plans, features, resource limits"
+    - name: "CrossTenantAccessRule"
+      description: "Cross-tenant data sharing with approval and expiry"
+    - name: "ProvisioningStrategy"
+      description: "Provisioning mode (automatic, manual_review, api_driven, terraform)"
+    - name: "TenantStatus"
+      description: "Tenant lifecycle (provisioning, active, suspended, deleted)"
   obligations:
     - name: "TenantIsolation"
       description: "All data access must enforce tenant boundary"
+    - name: "SchemaProvisioning"
+      description: "New tenant schema must be provisioned before first access"
+    - name: "CrossTenantApproval"
+      description: "Cross-tenant access must be approved and time-limited"
+    - name: "ResourceLimits"
+      description: "Tenant resource consumption must not exceed plan limits"
   frontend_integration:
     angular:
       - TenantService

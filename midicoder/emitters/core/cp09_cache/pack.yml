@@ -6,8 +6,8 @@ pack:
   status: "developing"
   category: "performance"
   depends_on: ["CP08"]
-  definitions_count: 3
-  obligations_count: 2
+  definitions_count: 8
+  obligations_count: 4
   error_codes:
     prefix: "MDC-CP09"
     range: "MDC-CP09-001 to MDC-CP09-005"
@@ -16,6 +16,8 @@ pack:
     - cache_set
     - cache_invalidate
     - cache_warm
+    - cdn_cache
+    - stampede_prevention
   capabilities:
     - id: "redis"
       emitter: "fastapi, nestjs"
@@ -25,6 +27,10 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "invalidation"
       emitter: "fastapi, nestjs"
+    - id: "cdn"
+      emitter: "fastapi, nestjs"
+    - id: "stampede_prevention"
+      emitter: "fastapi, nestjs"
   definitions:
     - name: "CacheProfile"
       description: "Cache backend, TTL, and eviction strategy"
@@ -32,11 +38,25 @@ pack:
       description: "Binding between query patterns and cache keys"
     - name: "InvalidationStrategy"
       description: "Rule for cache invalidation on data mutations"
+    - name: "CDNCacheLayer"
+      description: "CDN edge cache with origin shield, purge API, cache-control headers"
+    - name: "StampedePrevention"
+      description: "Cache stampede/thundering-herd prevention (mutex, early-update, probabilistic)"
+    - name: "CacheTier"
+      description: "Multi-tier cache (L1=memory, L2=Redis, L3=database)"
+    - name: "CacheWarmupStrategy"
+      description: "Cache warmup strategy (scheduled, on_demand, background)"
+    - name: "CacheMetrics"
+      description: "Cache performance metrics (hit_rate, miss_rate, eviction_rate, latency)"
   obligations:
     - name: "CacheConsistency"
       description: "Cache must be invalidated on corresponding data mutation"
     - name: "TenantAware"
       description: "Cache keys must include tenant isolation"
+    - name: "StampedeProtection"
+      description: "High-concurrency cache misses must not cause thundering herd"
+    - name: "CDNCacheControl"
+      description: "CDN responses must have explicit Cache-Control headers"
   frontend_integration:
     angular:
       - CacheService

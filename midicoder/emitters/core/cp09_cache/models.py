@@ -562,3 +562,313 @@ class CacheCollection:
         ]
         result.metrics = [CacheMetrics.from_dict(m) for m in data.get("metrics", [])]
         return result
+
+
+# ============================================================================
+# CDN Cache Layer
+# ============================================================================
+
+
+class CDNCacheControlDirective(str, Enum):
+    """Cache-Control directives cho CDN responses."""
+    PUBLIC = "public"
+    PRIVATE = "private"
+    NO_CACHE = "no-cache"
+    NO_STORE = "no-store"
+    MUST_REVALIDATE = "must-revalidate"
+    PROXY_REVALIDATE = "proxy-revalidate"
+    IMMUTABLE = "immutable"
+    MAX_AGE = "max-age"
+    STALE_WHILE_REVALIDATE = "stale-while-revalidate"
+    STALE_IF_ERROR = "stale-if-error"
+
+
+@dataclass
+class CDNCacheLayer:
+    """CDN edge cache configuration.
+
+    Attributes:
+        provider: CDN provider (cloudflare, cloudfront, fastly, akamai)
+        zone_id: CDN zone/account ID
+        origin_url: Origin server URL
+        default_ttl: Default TTL (seconds) cho cached responses
+        max_ttl: Maximum TTL (seconds)
+        cache_control: Cache-Control directives
+        vary_headers: Headers để vary cache (Accept-Encoding, Cookie)
+        bypass_cookies: Cookies để bypass cache
+        bypass_query_params: Query params để bypass cache
+        enable_compression: Có enable gzip/brotli compression không
+        enable_origin_shield: Có enable origin shield không (reduce origin load)
+        purge_api_key: API key cho purge endpoint
+        description: Mô tả CDN cache layer
+    """
+    provider: str = "cloudflare"
+    zone_id: str = ""
+    origin_url: str = ""
+    default_ttl: int = 3600
+    max_ttl: int = 86400
+    cache_control: list[str] = field(default_factory=lambda: ["public", "must-revalidate"])
+    vary_headers: list[str] = field(default_factory=lambda: ["Accept-Encoding"])
+    bypass_cookies: list[str] = field(default_factory=lambda: ["session_id", "auth_token"])
+    bypass_query_params: list[str] = field(default_factory=lambda: ["nocache", "debug"])
+    enable_compression: bool = True
+    enable_origin_shield: bool = False
+    purge_api_key: str = ""
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate CDN cache layer sau khi khởi tạo."""
+        if self.default_ttl < 0:
+            self.default_ttl = 3600
+        if self.max_ttl < self.default_ttl:
+            self.max_ttl = max(self.max_ttl, self.default_ttl)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển CDN cache layer sang dict."""
+        return {
+            "provider": self.provider,
+            "zone_id": self.zone_id,
+            "origin_url": self.origin_url,
+            "default_ttl": self.default_ttl,
+            "max_ttl": self.max_ttl,
+            "cache_control": self.cache_control,
+            "vary_headers": self.vary_headers,
+            "bypass_cookies": self.bypass_cookies,
+            "bypass_query_params": self.bypass_query_params,
+            "enable_compression": self.enable_compression,
+            "enable_origin_shield": self.enable_origin_shield,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CDNCacheLayer":
+        """Tạo CDNCacheLayer từ dict."""
+        return cls(
+            provider=data.get("provider", "cloudflare"),
+            zone_id=data.get("zone_id", ""),
+            origin_url=data.get("origin_url", ""),
+            default_ttl=data.get("default_ttl", 3600),
+            max_ttl=data.get("max_ttl", 86400),
+            cache_control=data.get("cache_control", ["public", "must-revalidate"]),
+            vary_headers=data.get("vary_headers", ["Accept-Encoding"]),
+            bypass_cookies=data.get("bypass_cookies", ["session_id", "auth_token"]),
+            bypass_query_params=data.get("bypass_query_params", ["nocache", "debug"]),
+            enable_compression=data.get("enable_compression", True),
+            enable_origin_shield=data.get("enable_origin_shield", False),
+            purge_api_key=data.get("purge_api_key", ""),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
+# Stampede Prevention
+# ============================================================================
+
+
+class StampedePreventionStrategy(str, Enum):
+    """Chiến lược ngăn cache stampede (thundering herd)."""
+    MUTEX = "mutex"                     # Chỉ 1 request fetch, các request khác wait
+    EARLY_UPDATE = "early_update"       # Background refresh trước khi TTL hết
+    PROBABILITY = "probabilistic"       # Random % request fetch, các request dùng stale
+    LEASE = "lease"                     # Lease-based: chỉ holder fetch, others wait
+
+
+@dataclass
+class StampedePrevention:
+    """Configuration cho cache stampede/thundering-herd prevention.
+
+    Khi cache key expires, nhiều requests có thể đồng thời try to fetch từ backend.
+    Stampede prevention đảm bảo chỉ 1 request thực sự fetch, các request khác wait hoặc dùng stale.
+
+    Attributes:
+        enabled: Có enable stampede prevention không
+        strategy: Prevention strategy (mutex, early_update, probabilistic, lease)
+        lock_ttl: TTL của mutex lock (seconds)
+        lock_timeout: Timeout để acquire lock (seconds) — quá thời gian này fallback đến stale
+        early_refresh_threshold: Refresh cache trước TTL hết bao nhiêu %
+        probabilistic_threshold: % request fetch (0.0 - 1.0), còn lại dùng stale
+        max_waiters: Số requests tối đa chờ mutex
+        description: Mô tả stampede prevention config
+    """
+    enabled: bool = True
+    strategy: StampedePreventionStrategy = StampedePreventionStrategy.MUTEX
+    lock_ttl: int = 10
+    lock_timeout: int = 5
+    early_refresh_threshold: float = 0.8
+    probabilistic_threshold: float = 0.1
+    max_waiters: int = 100
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate stampede prevention config."""
+        if self.lock_ttl < 1:
+            self.lock_ttl = 10
+        if self.lock_timeout < 1:
+            self.lock_timeout = 5
+        if not (0.0 < self.early_refresh_threshold <= 1.0):
+            self.early_refresh_threshold = 0.8
+        if not (0.0 < self.probabilistic_threshold <= 1.0):
+            self.probabilistic_threshold = 0.1
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển stampede prevention sang dict."""
+        return {
+            "enabled": self.enabled,
+            "strategy": self.strategy.value,
+            "lock_ttl": self.lock_ttl,
+            "lock_timeout": self.lock_timeout,
+            "early_refresh_threshold": self.early_refresh_threshold,
+            "probabilistic_threshold": self.probabilistic_threshold,
+            "max_waiters": self.max_waiters,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StampedePrevention":
+        """Tạo StampedePrevention từ dict."""
+        return cls(
+            enabled=data.get("enabled", True),
+            strategy=StampedePreventionStrategy(data.get("strategy", "mutex")),
+            lock_ttl=data.get("lock_ttl", 10),
+            lock_timeout=data.get("lock_timeout", 5),
+            early_refresh_threshold=data.get("early_refresh_threshold", 0.8),
+            probabilistic_threshold=data.get("probabilistic_threshold", 0.1),
+            max_waiters=data.get("max_waiters", 100),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
+# Multi-Tier Cache
+# ============================================================================
+
+
+@dataclass
+class CacheTier:
+    """Configuration cho 1 tier trong multi-tier cache.
+
+    Multi-tier cache: L1=memory (nhất, nhỏ), L2=Redis (nhanh, vừa), L3=database (chậm, lớn).
+
+    Attributes:
+        tier_name: Tên tier (vd: "l1_memory", "l2_redis", "l3_database")
+        tier_order: Thứ tự tier (1 = gần nhất)
+        backend: Backend (memory, redis, database)
+        max_size: Max size (entries)
+        ttl: TTL (seconds)
+        eviction_policy: Eviction policy (lru, lfu, fifo, random)
+        description: Mô tả tier
+    """
+    tier_name: str
+    tier_order: int
+    backend: str = "memory"
+    max_size: int = 1000
+    ttl: int = 300
+    eviction_policy: str = "lru"
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate cache tier."""
+        if self.tier_order < 1:
+            self.tier_order = 1
+        if self.max_size < 1:
+            self.max_size = 1000
+        if self.ttl < 0:
+            self.ttl = 300
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển cache tier sang dict."""
+        return {
+            "tier_name": self.tier_name,
+            "tier_order": self.tier_order,
+            "backend": self.backend,
+            "max_size": self.max_size,
+            "ttl": self.ttl,
+            "eviction_policy": self.eviction_policy,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CacheTier":
+        """Tạo CacheTier từ dict."""
+        return cls(
+            tier_name=data.get("tier_name", ""),
+            tier_order=data.get("tier_order", 1),
+            backend=data.get("backend", "memory"),
+            max_size=data.get("max_size", 1000),
+            ttl=data.get("ttl", 300),
+            eviction_policy=data.get("eviction_policy", "lru"),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
+# Cache Warmup Strategy
+# ============================================================================
+
+
+class CacheWarmupStrategy(str, Enum):
+    """Chiến lược cache warmup."""
+    SCHEDULED = "scheduled"         # Warmup theo cron schedule
+    ON_DEMAND = "on_demand"         # Warmup khi request đầu tiên
+    BACKGROUND = "background"       # Warmup background continuously
+    ON_STARTUP = "on_startup"       # Warmup khi service khởi động
+
+
+@dataclass
+class CacheWarmupConfig:
+    """Configuration cho cache warmup.
+
+    Attributes:
+        strategy: Warmup strategy (scheduled, on_demand, background, on_startup)
+        schedule_cron: Cron expression (cho SCHEDULED)
+        warmup_keys: Danh sách keys để warmup
+        warmup_query: Query để fetch warmup data
+        batch_size: Batch size cho warmup
+        max_keys: Max keys để warmup (1 key)
+        parallelism: Số warmup jobs chạy song song
+        description: Mô tả cache warmup config
+    """
+    strategy: CacheWarmupStrategy = CacheWarmupStrategy.ON_STARTUP
+    schedule_cron: str = ""
+    warmup_keys: list[str] = field(default_factory=list)
+    warmup_query: str = ""
+    batch_size: int = 100
+    max_keys: int = 10000
+    parallelism: int = 4
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate cache warmup config."""
+        if self.batch_size < 1:
+            self.batch_size = 100
+        if self.max_keys < 1:
+            self.max_keys = 10000
+        if self.parallelism < 1:
+            self.parallelism = 4
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển cache warmup config sang dict."""
+        return {
+            "strategy": self.strategy.value,
+            "schedule_cron": self.schedule_cron,
+            "warmup_keys": self.warmup_keys,
+            "warmup_query": self.warmup_query,
+            "batch_size": self.batch_size,
+            "max_keys": self.max_keys,
+            "parallelism": self.parallelism,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CacheWarmupConfig":
+        """Tạo CacheWarmupConfig từ dict."""
+        return cls(
+            strategy=CacheWarmupStrategy(data.get("strategy", "on_startup")),
+            schedule_cron=data.get("schedule_cron", ""),
+            warmup_keys=data.get("warmup_keys", []),
+            warmup_query=data.get("warmup_query", ""),
+            batch_size=data.get("batch_size", 100),
+            max_keys=data.get("max_keys", 10000),
+            parallelism=data.get("parallelism", 4),
+            description=data.get("description", ""),
+        )

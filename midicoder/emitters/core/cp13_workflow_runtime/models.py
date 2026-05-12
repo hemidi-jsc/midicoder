@@ -422,3 +422,267 @@ class WorkflowDefinition:
             True nếu là final state
         """
         return len(self.get_transitions_from(state)) == 0
+
+
+# ===========================================================================
+# DAG Workflow Execution
+# ===========================================================================
+
+
+class DAGExecutionMode(str, Enum):
+    """
+    Chế độ thực thi DAG.
+
+    - sequential: Chạy nodes tuần tự theo topological order
+    - parallel: Chạy nodes independent song song
+    - parallel_with_fanin: Parallel branches, fan-in vào merge node
+    - dynamic: Dynamic node creation at runtime
+    """
+    SEQUENTIAL = "sequential"
+    PARALLEL = "parallel"
+    PARALLEL_WITH_FANIN = "parallel_with_fanin"
+    DYNAMIC = "dynamic"
+
+
+class DAGFailurePolicy(str, Enum):
+    """
+    Chính sách xử lý failure trong DAG.
+
+    - fail_fast: Stop toàn bộ DAG khi node fail
+    - skip_and_continue: Skip node fail, continue nodes khác
+    - retry_then_skip: Retry node, skip nếu vẫn fail
+    - compensate: Chạy compensation step (saga undo)
+    """
+    FAIL_FAST = "fail_fast"
+    SKIP_AND_CONTINUE = "skip_and_continue"
+    RETRY_THEN_SKIP = "retry_then_skip"
+    COMPENSATE = "compensate"
+
+
+@dataclass
+class DAGNode:
+    """
+    Node trong DAG workflow — step/operation cần thực hiện.
+
+    Attributes:
+        node_id: ID duy nhất của node
+        node_type: Loại node (task, branch, merge, wait, condition)
+        handler: Handler function/class để execute
+        inputs: Input parameters cho node
+        outputs: Output data từ node
+        depends_on: Danh sách node IDs mà node này phụ thuộc
+        timeout_seconds: Timeout cho node execution
+        retry_count: Số lần retry nếu fail
+        description: Mô tả node
+    """
+    node_id: str
+    node_type: str = "task"
+    handler: str = ""
+    inputs: dict[str, Any] = field(default_factory=dict)
+    outputs: list[str] = field(default_factory=list)
+    depends_on: list[str] = field(default_factory=list)
+    timeout_seconds: int = 300
+    retry_count: int = 0
+    description: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DAG node sang dict."""
+        return {
+            "node_id": self.node_id,
+            "node_type": self.node_type,
+            "handler": self.handler,
+            "inputs": self.inputs,
+            "outputs": self.outputs,
+            "depends_on": self.depends_on,
+            "timeout_seconds": self.timeout_seconds,
+            "retry_count": self.retry_count,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DAGNode":
+        """Tạo DAGNode từ dict."""
+        return cls(
+            node_id=data.get("node_id", ""),
+            node_type=data.get("node_type", "task"),
+            handler=data.get("handler", ""),
+            inputs=data.get("inputs", {}),
+            outputs=data.get("outputs", []),
+            depends_on=data.get("depends_on", []),
+            timeout_seconds=data.get("timeout_seconds", 300),
+            retry_count=data.get("retry_count", 0),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class DAGWorkflow:
+    """
+    DAG workflow — directed acyclic graph của các nodes.
+
+    Attributes:
+        workflow_id: ID duy nhất của workflow
+        name: Tên workflow
+        execution_mode: Chế độ execution (sequential, parallel, parallel_with_fanin, dynamic)
+        failure_policy: Failure policy (fail_fast, skip_and_continue, retry_then_skip, compensate)
+        nodes: Danh sách nodes trong DAG
+        entry_points: Node IDs bắt đầu (roots)
+        exit_points: Node IDs kết thúc (leaves)
+        max_parallelism: Số nodes tối đa chạy song song
+        description: Mô tả workflow
+    """
+    workflow_id: str
+    name: str
+    execution_mode: DAGExecutionMode = DAGExecutionMode.SEQUENTIAL
+    failure_policy: DAGFailurePolicy = DAGFailurePolicy.FAIL_FAST
+    nodes: list[DAGNode] = field(default_factory=list)
+    entry_points: list[str] = field(default_factory=list)
+    exit_points: list[str] = field(default_factory=list)
+    max_parallelism: int = 4
+    description: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DAG workflow sang dict."""
+        return {
+            "workflow_id": self.workflow_id,
+            "name": self.name,
+            "execution_mode": self.execution_mode.value,
+            "failure_policy": self.failure_policy.value,
+            "nodes": [n.to_dict() for n in self.nodes],
+            "entry_points": self.entry_points,
+            "exit_points": self.exit_points,
+            "max_parallelism": self.max_parallelism,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DAGWorkflow":
+        """Tạo DAGWorkflow từ dict."""
+        return cls(
+            workflow_id=data.get("workflow_id", ""),
+            name=data.get("name", ""),
+            execution_mode=DAGExecutionMode(data.get("execution_mode", "sequential")),
+            failure_policy=DAGFailurePolicy(data.get("failure_policy", "fail_fast")),
+            nodes=[DAGNode.from_dict(n) for n in data.get("nodes", [])],
+            entry_points=data.get("entry_points", []),
+            exit_points=data.get("exit_points", []),
+            max_parallelism=data.get("max_parallelism", 4),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# Saga Pattern
+# ===========================================================================
+
+
+class SagaCompensationStrategy(str, Enum):
+    """
+    Chiến lược compensation cho saga.
+
+    - backward: Undo steps từ cuối về đầu (reverse order)
+    - forward: Continue và fix (forward recovery)
+    - mixed: Kết hợp backward + forward
+    """
+    BACKWARD = "backward"
+    FORWARD = "forward"
+    MIXED = "mixed"
+
+
+@dataclass
+class SagaStep:
+    """
+    Step trong saga — action + compensation pair.
+
+    Mỗi step có action (làm) và compensation (undo). Khi step fail,
+    saga orchestration chạy compensation cho tất cả steps đã hoàn thành.
+
+    Attributes:
+        step_id: ID duy nhất của step
+        action: Action handler (làm)
+        compensation: Compensation handler (undo)
+        inputs: Input parameters
+        timeout_seconds: Timeout cho step
+        is_compensatable: Có thể compensate không (một số operations là idempotent)
+        description: Mô tả step
+    """
+    step_id: str
+    action: str
+    compensation: str = ""
+    inputs: dict[str, Any] = field(default_factory=dict)
+    timeout_seconds: int = 300
+    is_compensatable: bool = True
+    description: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển saga step sang dict."""
+        return {
+            "step_id": self.step_id,
+            "action": self.action,
+            "compensation": self.compensation,
+            "inputs": self.inputs,
+            "timeout_seconds": self.timeout_seconds,
+            "is_compensatable": self.is_compensatable,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SagaStep":
+        """Tạo SagaStep từ dict."""
+        return cls(
+            step_id=data.get("step_id", ""),
+            action=data.get("action", ""),
+            compensation=data.get("compensation", ""),
+            inputs=data.get("inputs", {}),
+            timeout_seconds=data.get("timeout_seconds", 300),
+            is_compensatable=data.get("is_compensatable", True),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class SagaDefinition:
+    """
+    Saga definition — sequence của steps với compensation.
+
+    Attributes:
+        saga_id: ID duy nhất của saga
+        name: Tên saga
+        steps: Danh sách saga steps (action + compensation)
+        compensation_strategy: Chiến lược compensation (backward, forward, mixed)
+        enable_saga_log: Có ghi saga log không (cho audit/debug)
+        max_retry_on_failure: Số lần retry toàn bộ saga
+        description: Mô tả saga
+    """
+    saga_id: str
+    name: str
+    steps: list[SagaStep] = field(default_factory=list)
+    compensation_strategy: SagaCompensationStrategy = SagaCompensationStrategy.BACKWARD
+    enable_saga_log: bool = True
+    max_retry_on_failure: int = 0
+    description: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển saga definition sang dict."""
+        return {
+            "saga_id": self.saga_id,
+            "name": self.name,
+            "steps": [s.to_dict() for s in self.steps],
+            "compensation_strategy": self.compensation_strategy.value,
+            "enable_saga_log": self.enable_saga_log,
+            "max_retry_on_failure": self.max_retry_on_failure,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SagaDefinition":
+        """Tạo SagaDefinition từ dict."""
+        return cls(
+            saga_id=data.get("saga_id", ""),
+            name=data.get("name", ""),
+            steps=[SagaStep.from_dict(s) for s in data.get("steps", [])],
+            compensation_strategy=SagaCompensationStrategy(data.get("compensation_strategy", "backward")),
+            enable_saga_log=data.get("enable_saga_log", True),
+            max_retry_on_failure=data.get("max_retry_on_failure", 0),
+            description=data.get("description", ""),
+        )

@@ -6,8 +6,8 @@ pack:
   status: "stable"
   category: "runtime"
   depends_on: ["CP05"]
-  definitions_count: 3
-  obligations_count: 1
+  definitions_count: 8
+  obligations_count: 4
   error_codes:
     prefix: "MDC-CP13"
     range: "MDC-CP13-001 to MDC-CP13-008"
@@ -15,12 +15,18 @@ pack:
     - schedule_job
     - background_worker
     - workflow_orchestrate
+    - dag_execution
+    - saga_orchestration
   capabilities:
     - id: "job_scheduler"
       emitter: "fastapi, nestjs"
     - id: "background_worker"
       emitter: "fastapi, nestjs"
     - id: "workflow_engine"
+      emitter: "fastapi, nestjs"
+    - id: "dag_executor"
+      emitter: "fastapi, nestjs"
+    - id: "saga_orchestrator"
       emitter: "fastapi, nestjs"
   definitions:
     - name: "JobSpec"
@@ -29,9 +35,25 @@ pack:
       description: "Ordered sequence of steps with conditional branching"
     - name: "WorkerConfig"
       description: "Worker pool size, concurrency, and queue binding"
+    - name: "DAGWorkflow"
+      description: "DAG execution with parallel branches, fan-in, dynamic nodes"
+    - name: "DAGNode"
+      description: "Node in DAG (task, branch, merge, wait, condition)"
+    - name: "SagaDefinition"
+      description: "Saga orchestration with action/compensation pairs"
+    - name: "SagaStep"
+      description: "Saga step with backward/forward/mixed compensation"
+    - name: "DAGFailurePolicy"
+      description: "Failure policy (fail_fast, skip_and_continue, retry_then_skip, compensate)"
   obligations:
     - name: "JobRetry"
       description: "Failed jobs must retry with exponential backoff"
+    - name: "SagaCompensation"
+      description: "Failed saga steps must trigger compensation chain"
+    - name: "DAGAcyclicity"
+      description: "DAG must have no cycles (topological order required)"
+    - name: "NodeTimeout"
+      description: "Each DAG node must have timeout to prevent hangs"
   frontend_integration:
     angular:
       - WorkflowService
