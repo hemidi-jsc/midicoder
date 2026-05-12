@@ -3,6 +3,7 @@
 ## [1.0.0] - 2026-05-07
 
 ### Added
+
 - Tách CP03 riêng từ authnz/ (trước đó gộp chung CP02+CP03+CP04)
 - Models: AuthProviderType, JWTAuthConfig, OAuth2AuthConfig, SessionConfig, Permission, AuthIR
 - Parser: AuthParser (YAML → AuthIR)

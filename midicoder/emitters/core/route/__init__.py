@@ -1,21 +1,12 @@
 # coding: utf-8
 """
-Core Route Emitter Package (CP06).
+Compat re-export for route/ — now part of CP06 gateway/.
 
-Package này chứa các models, parser và emitter cho API routes:
-- HTTP REST routes
-- GraphQL resolvers
-- Webhook handlers
-
-Exports:
-    Models: Route, GraphQLResolver, WebhookHandler, RouteCollection
-    Parser: RouteParser
-    FastAPI: FastAPIRouteEmitter, FastAPIGraphQLResolverEmitter, FastAPIWebhookEmitter
-    NestJS: NestJSRouteEmitter, NestJSGraphQLResolverEmitter, NestJSWebhookEmitter
+All imports from midicoder.emitters.core.route now resolve via gateway.
+This module exists solely as a migration bridge.
 """
 
-# Models
-from midicoder.emitters.core.route.models import (
+from midicoder.emitters.core.gateway.route_models import (
     Route,
     RouteCollection,
     RouteAuthConfig,
@@ -33,50 +24,24 @@ from midicoder.emitters.core.route.models import (
     WebhookPayloadField,
     WebhookAuthType,
 )
-
-# Parser
-from midicoder.emitters.core.route.parser import RouteParser
-
-# FastAPI Emitters
-from midicoder.emitters.core.route.fastapi import (
+from midicoder.emitters.core.gateway.route_parser import RouteParser
+from midicoder.emitters.core.gateway.route_fastapi import (
     FastAPIRouteEmitter,
     FastAPIGraphQLResolverEmitter,
     FastAPIWebhookEmitter,
 )
-
-# NestJS Emitters
-from midicoder.emitters.core.route.nestjs import (
+from midicoder.emitters.core.gateway.route_nestjs import (
     NestJSRouteEmitter,
     NestJSGraphQLResolverEmitter,
     NestJSWebhookEmitter,
 )
 
 __all__ = [
-    # Models
-    "Route",
-    "RouteCollection",
-    "RouteAuthConfig",
-    "RouteParam",
-    "QueryParam",
-    "SchemaField",
-    "HttpMethod",
-    "AuthMode",
-    "GraphQLResolver",
-    "GraphQLArg",
-    "GraphQLField",
-    "GraphQLOperation",
-    "WebhookHandler",
-    "WebhookAuthConfig",
-    "WebhookPayloadField",
-    "WebhookAuthType",
-    # Parser
+    "Route", "RouteCollection", "RouteAuthConfig", "RouteParam", "QueryParam",
+    "SchemaField", "HttpMethod", "AuthMode",
+    "GraphQLResolver", "GraphQLArg", "GraphQLField", "GraphQLOperation",
+    "WebhookHandler", "WebhookAuthConfig", "WebhookPayloadField", "WebhookAuthType",
     "RouteParser",
-    # FastAPI Emitters
-    "FastAPIRouteEmitter",
-    "FastAPIGraphQLResolverEmitter",
-    "FastAPIWebhookEmitter",
-    # NestJS Emitters
-    "NestJSRouteEmitter",
-    "NestJSGraphQLResolverEmitter",
-    "NestJSWebhookEmitter",
+    "FastAPIRouteEmitter", "FastAPIGraphQLResolverEmitter", "FastAPIWebhookEmitter",
+    "NestJSRouteEmitter", "NestJSGraphQLResolverEmitter", "NestJSWebhookEmitter",
 ]

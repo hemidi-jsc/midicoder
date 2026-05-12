@@ -1,20 +1,12 @@
 """
-Mô-đun Command Emitter cho CP01 Domain Model.
+Compat shim for midicoder.emitters.core.command.
 
-Module này cung cấp implementation hoàn chỉnh cho Command pattern với:
-- Transaction management (begin/commit/rollback)
-- Guards integration (auth, tenant_scope, compliance)
-- Đầy đủ Effect types (19+ types)
-- Complex validation (cross-field, business rules, formulas)
-- Compliance gates (RX01-RX12 support)
-- Error handling (retry, circuit breaker, compensation)
-
-Author: Midicoder Team
-Version: 2.0.0
+This module re-exports all symbols from the unified domain-model package
+for backward compatibility. All new code should import from
+midicoder.emitters.core.domain_model instead.
 """
 
-# Import models
-from .models import (
+from midicoder.emitters.core.domain_model.command_models import (
     Command,
     CommandEffect,
     CommandError as CommandErrorModel,
@@ -25,20 +17,12 @@ from .models import (
     FieldType,
     ValidationResult,
 )
-
-# Import validators và managers
-from .validator import CommandValidator
-from .transaction import TransactionManagerSQL
-from .guards import CommandGuards
-from .effects import CommandEffects
-
-# Import emitters
-try:
-    from .fastapi import FastAPICommandEmitter
-    from .nestjs import NestJSCommandEmitter
-except ImportError as e:
-    FastAPICommandEmitter = None
-    NestJSCommandEmitter = None
+from midicoder.emitters.core.domain_model.command_validator import CommandValidator
+from midicoder.emitters.core.domain_model.command_transaction import TransactionManagerSQL
+from midicoder.emitters.core.domain_model.command_guards import CommandGuards
+from midicoder.emitters.core.domain_model.command_effects import CommandEffects
+from midicoder.emitters.core.domain_model.command_fastapi import FastAPICommandEmitter
+from midicoder.emitters.core.domain_model.command_nestjs import NestJSCommandEmitter
 
 # CommandError alias (use model for tests compatibility)
 CommandError = CommandErrorModel
@@ -56,7 +40,7 @@ __all__ = [
     "CommandGuard",
     "CommandEffect",
     "CommandError",
-    # Managers và Validators
+    # Managers and Validators
     "CommandValidator",
     "TransactionManagerSQL",
     "CommandGuards",

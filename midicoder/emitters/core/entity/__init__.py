@@ -1,34 +1,12 @@
 """
-Mô-đun Entity Emitter cho CP01.
+Compat shim for midicoder.emitters.core.entity.
 
-Cung cấp:
-- EntityParser: Parse DSL YAML → Entity objects
-- EntityEmitter: Abstract base class
-- FastAPIEntityEmitter: FastAPI implementation
-- NestJSEntityEmitter: NestJS implementation
-
-Sử dụng:
-    from midicoder.emitters.core.entity import (
-        EntityParser,
-        FastAPIEntityEmitter,
-        NestJSEntityEmitter,
-    )
-    
-    # Parse DSL
-    parser = EntityParser()
-    entities = parser.parse(dsl_yaml)
-    
-    # Emit FastAPI code
-    emitter = FastAPIEntityEmitter(stack_dir=Path("midicoder/stacks/fastapi/templates"))
-    for entity in entities:
-        code = emitter.emit(entity)
-        # Write to file...
-
-Author: Midicoder Team
-Version: 1.0.0
+This module re-exports all symbols from the unified domain-model package
+for backward compatibility. All new code should import from
+midicoder.emitters.core.domain_model instead.
 """
 
-from .models import (
+from midicoder.emitters.core.domain_model.entity_models import (
     Entity,
     Field,
     FieldType,
@@ -40,10 +18,10 @@ from .models import (
     LifecycleHook,
     LifecycleEvent,
 )
-from .parser import EntityParser
-from .base import EntityEmitter
-from .fastapi import FastAPIEntityEmitter
-from .nestjs import NestJSEntityEmitter
+from midicoder.emitters.core.domain_model.entity_parser import EntityParser
+from midicoder.emitters.core.domain_model.entity_emitter import EntityEmitter
+from midicoder.emitters.core.domain_model.entity_fastapi import FastAPIEntityEmitter
+from midicoder.emitters.core.domain_model.entity_nestjs import NestJSEntityEmitter
 
 __all__ = [
     # Models

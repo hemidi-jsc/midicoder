@@ -1,44 +1,46 @@
 """
-Value Object Emitter Module
+Compat shim for midicoder.emitters.core.value_object.
 
-Module này cung cấp core emitter infrastructure cho Value Object generation.
-Support cho 100 industries với complex fields, inheritance, methods, và validation.
-
-Các thành phần chính:
-- Base Emitter: Abstract base class cho FastAPI/NestJS implementations
-- Type Resolver: Mapping từ DSL types → Python/TypeScript types
-- Inheritance Resolver: Resolution cho extends hierarchy
-- Computed Evaluator: Formula evaluation cho computed fields
-
-Author: Midicoder Team
-Version: 2.0.0
+This module re-exports all symbols from the unified domain-model package
+for backward compatibility. All new code should import from
+midicoder.emitters.core.domain_model instead.
 """
 
-from .base import (
+from midicoder.emitters.core.domain_model.vo_models import (
+    ValueObject,
+    VOField,
+    VOFieldType,
+)
+from midicoder.emitters.core.domain_model.vo_parser import ValueObjectParser
+from midicoder.emitters.core.domain_model.vo_emitter import (
     ValueObjectEmitter,
     EmittedValueObject,
     EmittedField,
     EmittedMethod,
     EmittedValidationRule,
 )
-from .type_resolver import TypeResolver, TypeMapping
-from .inheritance import InheritanceResolver, InheritanceChain
-from .computed import ComputedFieldEvaluator, FormulaError
-from .fastapi import FastAPIValueObjectEmitter
-from .nestjs import NestJSValueObjectEmitter
+from midicoder.emitters.core.domain_model.vo_fastapi import FastAPIValueObjectEmitter
+from midicoder.emitters.core.domain_model.vo_nestjs import NestJSValueObjectEmitter
+from midicoder.emitters.core.domain_model.vo_types import TypeResolver, TypeMapping
+from midicoder.emitters.core.domain_model.vo_inheritance import InheritanceResolver, InheritanceChain
+from midicoder.emitters.core.domain_model.vo_computed import ComputedFieldEvaluator, FormulaError
 
 __all__ = [
+    "ValueObject",
+    "VOField",
+    "VOFieldType",
+    "ValueObjectParser",
     "ValueObjectEmitter",
     "EmittedValueObject",
     "EmittedField",
     "EmittedMethod",
     "EmittedValidationRule",
+    "FastAPIValueObjectEmitter",
+    "NestJSValueObjectEmitter",
     "TypeResolver",
     "TypeMapping",
     "InheritanceResolver",
     "InheritanceChain",
     "ComputedFieldEvaluator",
     "FormulaError",
-    "FastAPIValueObjectEmitter",
-    "NestJSValueObjectEmitter",
 ]

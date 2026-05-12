@@ -190,12 +190,12 @@ class PackResolver:
     def _cp_id_to_dir_name(self, cp_id: str) -> str:
         """Map CP ID → directory name."""
         mapping = {
-            "CP01": "entity",
+            "CP01": "domain_model",
             "CP02": "tenant",
             "CP03": "auth",
             "CP04": "rbac",
             "CP05": "event",
-            "CP06": "route",
+            "CP06": "gateway",
             "CP07": "iac",
             "CP08": "db",
             "CP09": "cache",
@@ -205,7 +205,6 @@ class PackResolver:
             "CP18": "component",
             "CP19": "component",
             "CP20": "api_client",
-            "CP23": "command",
         }
         return mapping.get(cp_id, cp_id.lower())
 

@@ -1,32 +1,12 @@
 """
-Query Emitter Module.
+Compat shim for midicoder.emitters.core.query.
 
-Module này cung cấp các classes cho Query code generation:
-- Models: Query, AggregationQuery, và các enums
-- Guards: QueryGuards cho AUTH và TENANT_SCOPE validation
-- Effects: QueryEffects cho WRITE_AUDIT_LOG và RECORD_METRIC
-- Emitters: FastAPIQueryEmitter, NestJSQueryEmitter
-
-Theo SoT E03, authorized_query pattern:
-- authorize_permission
-- enforce_tenant_scope
-- query_records
-
-Theo SoT E06:
-- Every authorized_query must have enforce_tenant_scope
-- Query must filter by tenant_id
-
-Usage:
-    from midicoder.emitters.core.query import (
-        Query, QueryGuard, QueryEffect,
-        FastAPIQueryEmitter, NestJSQueryEmitter,
-    )
-
-Author: Midicoder Team
-Version: 1.0.0
+This module re-exports all symbols from the unified domain-model package
+for backward compatibility. All new code should import from
+midicoder.emitters.core.domain_model instead.
 """
 
-from .models import (
+from midicoder.emitters.core.domain_model.query_models import (
     # Enums
     FilterOp,
     PaginationType,
@@ -49,7 +29,7 @@ from .models import (
     Query,
     AggregationQuery,
 )
-from .parser import (
+from midicoder.emitters.core.domain_model.query_parser import (
     parse_filters,
     parse_pagination,
     parse_projection,
@@ -57,10 +37,10 @@ from .parser import (
     build_select_fields,
     VALID_OPERATORS,
 )
-from .guards import QueryGuards
-from .effects import QueryEffects
-from .fastapi import FastAPIQueryEmitter
-from .nestjs import NestJSQueryEmitter
+from midicoder.emitters.core.domain_model.query_guards import QueryGuards
+from midicoder.emitters.core.domain_model.query_effects import QueryEffects
+from midicoder.emitters.core.domain_model.query_fastapi import FastAPIQueryEmitter
+from midicoder.emitters.core.domain_model.query_nestjs import NestJSQueryEmitter
 
 __all__ = [
     # Enums
