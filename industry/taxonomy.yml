@@ -11,13 +11,16 @@ core_packs:
     phase: P0
     description: "Core domain primitives: entities, value objects, commands,
       queries, workflows"
-    definitions_count: 6
-    obligations_count: 2
+    definitions_count: 14
+    obligations_count: 4
     depends_on: []
     capabilities_provided:
       - dsl_parsing
       - projection_tree_build
       - ir_build
+      - domain_model_recipes
+      - cqrs_recipes
+      - event_sourcing_recipes
     category: domain-modeling
     status: stable
     version: 1.0.0

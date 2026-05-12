@@ -62,9 +62,8 @@ class FastAPIValueObjectEmitter(ValueObjectEmitter):
         self.computed_evaluator = ComputedFieldEvaluator()
 
         # Initialize Jinja2 environment
-        templates_dir = stack_dir / "value_objects"
         self.template_env = Environment(
-            loader=FileSystemLoader(str(templates_dir)),
+            loader=FileSystemLoader(str(stack_dir)),
             autoescape=True,
         )
 

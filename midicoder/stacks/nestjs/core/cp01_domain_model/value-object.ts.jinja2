@@ -1,4 +1,4 @@
-"""
+/**
 {{ vo.id }} Value Object.
 
 {{ vo.description or vo.id }}
@@ -8,9 +8,9 @@ CP01: Domain Model - Value Objects
 KPI-029: Tenant Isolation - Value Objects are tenant-scoped when used in tenant contexts
 
 {% if vo.tags %}Tags:
-{% for tag in vo.tags %}    {{ tag }}
+{% for tag in vo.tags %} {{ tag }}
 {% endfor %}{% endif %}
-"""
+**/
 
 {% for import_group in imports.validator %}{{ import_group }}
 {% endfor %}
@@ -26,89 +26,108 @@ KPI-029: Tenant Isolation - Value Objects are tenant-scoped when used in tenant 
 
 
 export class {{ vo.id }}{% if vo.extends %} extends {{ vo.extends }}{% endif %} {
-    /**
-     * {{ vo.description or vo.id }} Value Object
-     * 
-     * {% if vo.description %}{{ vo.description }}{% else %}Value Object: {{ vo.id }}{% endif %}
-     */
+/**
+* {{ vo.description or vo.id }} Value Object
+*
+* {% if vo.description %}{{ vo.description }}{% else %}Value Object: {{ vo.id }}{% endif %}
+*/
 
+{% for f in fields %}
+{% if not f.is_computed %}
+@IsOptional()
+{% if f.original.get('type') == 'string' %}
+@IsString()
+{% if f.original.get('min_length') %}@MinLength({{ f.original.get('min_length') }})
+{% endif %}{% if f.original.get('max_length') %}@MaxLength({{ f.original.get('max_length') }})
+{% endif %}{% endif %}
+{% if f.original.get('type') in ['integer', 'decimal', 'float'] %}
+@IsNumber()
+{% if f.original.get('min') and f.original.get('min') > 0 %}@Min({{ f.original.get('min') }})
+{% endif %}{% if f.original.get('max') %}@Max({{ f.original.get('max') }})
+{% endif %}{% endif %}
+{% if f.original.get('type') == 'boolean' %}
+@IsBoolean()
+{% endif %}
+{% if f.original.get('type') == 'datetime' %}
+@IsDate()
+{% endif %}
+readonly {{ f.name }}: {{ f.type_annotation }}{% if not f.is_required and not f.is_computed %} = undefined{% endif %};
+{% endif %}
+{% endfor %}
+
+/**
+* KPI-029: Lấy tenant_id nếu VO có tenant context.
+*
+* @returns Tenant ID nếu có，undefined nếu không
+*/
+getTenantId(): string | undefined {
+// KPI-029: Value Objects thường không có tenant_id trực tiếp
+// nhưng có thể được sử dụng trong tenant context
+return undefined;
+}
+
+/**
+* Convert to dictionary
+*/
+toDict(): Record<string, any> {
+    return {
     {% for f in fields %}
-    {% if not f.is_computed %}
-    @IsOptional()
-    {% if f.original.get('type') == 'string' %}
-    @IsString()
-    {% if f.original.get('min_length') %}@MinLength({{ f.original.get('min_length') }})
-    {% endif %}{% if f.original.get('max_length') %}@MaxLength({{ f.original.get('max_length') }})
-    {% endif %}{% endif %}
-    {% if f.original.get('type') in ['integer', 'decimal', 'float'] %}
-    @IsNumber()
-    {% if f.original.get('min') and f.original.get('min') > 0 %}@Min({{ f.original.get('min') }})
-    {% endif %}{% if f.original.get('max') %}@Max({{ f.original.get('max') }})
-    {% endif %}{% endif %}
-    {% if f.original.get('type') == 'boolean' %}
-    @IsBoolean()
-    {% endif %}
-    {% if f.original.get('type') == 'datetime' %}
-    @IsDate()
-    {% endif %}
-    {{ f.name }}: {{ f.type_annotation }}{% if not f.is_required and not f.is_computed %} = undefined{% endif %};
-    {% endif %}
+    {{ f.name }}: this.{{ f.name }},
     {% endfor %}
-
-    /**
-     * KPI-029: Lấy tenant_id nếu VO có tenant context.
-     * 
-     * @returns Tenant ID nếu có，undefined nếu không
-     */
-    getTenantId(): string | undefined {
-        // KPI-029: Value Objects thường không có tenant_id trực tiếp
-        // nhưng có thể được sử dụng trong tenant context
-        return undefined;
+    };
     }
 
     /**
-     * Convert to dictionary
-     */
-    toDict(): Record<string, any> {
-        return {
-        {% for f in fields %}
-            {{ f.name }}: this.{{ f.name }},
-        {% endfor %}
-        };
-    }
-
-    /**
-     * Create from dictionary
-     */
+    * Create from dictionary
+    */
     static fromDict(data: Record<string, any>): {{ vo.id }} {
-        const instance = new this();
+        return this.create(
         {% for f in fields %}
         {% if not f.is_computed %}
         {% set field_type = f.original.get('type', 'string') %}
         {% if field_type == 'decimal' %}
-        instance.{{ f.name }} = parseFloat(data['{{ f.name }}']);
+        new Decimal(data['{{ f.name }}']),
         {% elif field_type == 'datetime' %}
-        instance.{{ f.name }} = new Date(data['{{ f.name }}']);
+        new Date(data['{{ f.name }}']),
         {% else %}
-        instance.{{ f.name }} = data['{{ f.name }}'];
+        data['{{ f.name }}'],
         {% endif %}
         {% endif %}
         {% endfor %}
+        );
+        }
+
+        /**
+        * Factory method to create {{ vo.id }} instance
+        */
+        static create(
+        {% for f in fields %}
+        {% if not f.is_computed %}
+        {{ f.name }}: {{ f.type_annotation }},
+        {% endif %}
+        {% endfor %}
+        ): {{ vo.id }} {
+        const instance = new this();
+        {% for f in fields %}
+        {% if not f.is_computed %}
+        instance.{{ f.name }} = {{ f.name }};
+        {% endif %}
+        {% endfor %}
         return instance;
-    }
+        }
 
-    /**
-     * String representation
-     */
-    toString(): string {
+        /**
+        * String representation
+        */
+        toString(): string {
         return JSON.stringify(this.toDict());
-    }
+        }
 
-    {% for computed_prop in computed_getters %}
-    {{ computed_prop }}
-    {% endfor %}
+        {% for computed_prop in computed_getters %}
+        {{ computed_prop }}
+        {% endfor %}
 
-    {% for method in methods %}
-    {{ method }}
-    {% endfor %}
-}
+        {% for method in methods %}
+        {{ method }}
+        {% endfor %}
+        }

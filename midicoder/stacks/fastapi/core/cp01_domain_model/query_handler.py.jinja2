@@ -278,7 +278,7 @@ class {{ query_id }}Handler:
             (results, total)
         """
         # Decode cursor và apply filter
-        import base66
+        import base64
         import json
         
         if query_obj.cursor:

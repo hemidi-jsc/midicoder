@@ -21,13 +21,13 @@ class {{ query_id }}:
     KPI-029: Query này hỗ trợ tenant isolation thông qua tenant_id attribute.
     
     Attributes:
-{% for input_param in query_input %}
+{% for input_param in input_fields %}
         {{ input_param.name }}: {{ input_param.description|default(input_param.type) }}
 {% endfor %}
         tenant_id: KPI-029: Tenant ID để isolate query results
     """
-    
-{% for input_param in query_input %}
+
+{% for input_param in input_fields %}
     {{ input_param.name }}: {{ input_param.type }} = {{ input_param.default|default('None') }}
 {% endfor %}
 
@@ -59,7 +59,7 @@ class {{ query_id }}:
         """
         result: dict[str, Any] = {
             "query_id": "{{ query_id }}",
-{% for input_param in query_input %}
+{% for input_param in input_fields %}
             "{{ input_param.name }}": self.{{ input_param.name }},
 {% endfor %}
             "pagination": {

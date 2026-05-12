@@ -11,7 +11,7 @@ pack:
   recipes_count: 10
   error_codes:
     prefix: "MDC-CP01"
-    range: "MDC-CP01-001 to MDC-CP01-005"
+    range: "MDC-CP01-001 to MDC-CP01-099"
   capabilities_provided:
     - dsl_parsing
     - projection_tree_build

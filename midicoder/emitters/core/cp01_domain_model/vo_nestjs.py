@@ -62,9 +62,8 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
         self.computed_evaluator = ComputedFieldEvaluator()
 
         # Initialize Jinja2 environment
-        templates_dir = stack_dir / "value_objects"
         self.template_env = Environment(
-            loader=FileSystemLoader(str(templates_dir)),
+            loader=FileSystemLoader(str(stack_dir)),
             autoescape=True,
         )
 
@@ -98,7 +97,7 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
         context = self._build_template_context(vo)
 
         try:
-            template = self.template_env.get_template("value_object.ts.jinja2")
+            template = self.template_env.get_template("value-object.ts.jinja2")
             return template.render(**context)
         except Exception as e:
             # Fallback: Generate code manually
@@ -198,6 +197,14 @@ class NestJSValueObjectEmitter(ValueObjectEmitter):
             elif field_type == "ref" and original.get("ref_type") == "value_object":
                 ref_to = original.get("ref_to", "")
                 imports["domain"].append(f'import {{{ref_to}}} from "./{ref_to.lower()}";')
+
+        # Add Decimal import if any field is decimal type
+        has_decimal = any(
+            f.original.get("type") == "decimal"
+            for f in vo.fields
+        )
+        if has_decimal:
+            imports["standard"].append('import { Decimal } from "decimal.js";')
 
         # Build validator import
         validators = ['IsOptional']
