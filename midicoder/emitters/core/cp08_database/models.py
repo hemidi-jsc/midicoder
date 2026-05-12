@@ -569,3 +569,673 @@ class DataModelCollection:
         result.datasources = [Datasource.from_dict(d) for d in data.get("datasources", [])]
         result.models = [DataModel.from_dict(m) for m in data.get("models", [])]
         return result
+
+
+# ===========================================================================
+# Spatial Types
+# ===========================================================================
+
+
+class SpatialType(str, Enum):
+    """
+    Các loại spatial data được hỗ trợ.
+
+    Basic:
+        POINT: Một điểm (longitude, latitude)
+        LINESTRING: Chuỗi điểm nối nhau thành đường
+        POLYGON: Vùng kín được bao bởi linearring
+        MULTIPOINT: Nhiều điểm
+        MULTILINESTRING: Nhiều đường
+        MULTIPOLYGON: Nhiều vùng
+
+    Composite:
+        GEOMETRY: Generic spatial (PostGIS geometry — projected CRS)
+        GEOGRAPHY: Geographic coordinate (PostGIS geography — lon/lat on spheroid)
+        GEOMETRYCOLLECTION: Tập hợp mixed spatial types
+    """
+    POINT = "point"
+    LINESTRING = "linestring"
+    POLYGON = "polygon"
+    MULTIPOINT = "multipoint"
+    MULTILINESTRING = "multilinestring"
+    MULTIPOLYGON = "multipolygon"
+    GEOMETRY = "geometry"
+    GEOGRAPHY = "geography"
+    GEOMETRYCOLLECTION = "geometrycollection"
+
+
+@dataclass
+class SpatialColumn:
+    """
+    Column lưu trữ spatial data.
+
+    Attributes:
+        name: Tên column (vd: "location", "boundary")
+        spatial_type: Loại spatial data (POINT, POLYGON, GEOMETRY, ...)
+        srid: Spatial Reference System ID (mặc định: 4326 = WGS84)
+        description: Mô tả column
+    """
+    name: str
+    spatial_type: SpatialType
+    srid: int = 4326
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate spatial column sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="spatial_column.name")
+        if self.srid < 1:
+            self.srid = 4326
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển spatial column sang dict format."""
+        return {
+            "name": self.name,
+            "spatial_type": self.spatial_type.value,
+            "srid": self.srid,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SpatialColumn":
+        """Tạo SpatialColumn từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            spatial_type=SpatialType(data.get("spatial_type", "point")),
+            srid=data.get("srid", 4326),
+            description=data.get("description", ""),
+        )
+
+
+class SpatialIndexType(str, Enum):
+    """
+    Loại index cho spatial data.
+
+    - gist: GiST index (mặc định cho PostGIS, hỗ trợ đa dạng operators)
+    - spgist: SP-GiST index (tối ưu cho point data, equal/range queries)
+    - gin: GIN index (hỗ trợ containment, intersection)
+    - brin: BRIN index (mini bounding box, tối ưu cho large tables)
+    """
+    GIST = "gist"
+    SPGIST = "spgist"
+    GIN = "gin"
+    BRIN = "brin"
+
+
+@dataclass
+class SpatialIndex:
+    """
+    Index cho spatial column — tối ưu queries như contains, intersects, distance.
+
+    Attributes:
+        name: Tên index
+        column: Tên spatial column được index
+        index_type: Loại spatial index (GIST, SPGIST, GIN, BRIN)
+        description: Mô tả index
+    """
+    name: str
+    column: str
+    index_type: SpatialIndexType = SpatialIndexType.GIST
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate spatial index sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="spatial_index.name")
+        if not self.column or not self.column.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="spatial_index.column")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển spatial index sang dict format."""
+        return {
+            "name": self.name,
+            "column": self.column,
+            "index_type": self.index_type.value,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SpatialIndex":
+        """Tạo SpatialIndex từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            column=data.get("column", ""),
+            index_type=SpatialIndexType(data.get("index_type", "gist")),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# Time-Series
+# ===========================================================================
+
+
+class TimeSeriesGranularity(str, Enum):
+    """
+    Mức độ granularity của time-series data.
+
+    - second: Dữ liệu mỗi giây
+    - minute: Dữ liệu mỗi phút
+    - hour: Dữ liệu mỗi giờ
+    - day: Dữ liệu mỗi ngày
+    - week: Dữ liệu mỗi tuần
+    - month: Dữ liệu mỗi tháng
+    """
+    SECOND = "second"
+    MINUTE = "minute"
+    HOUR = "hour"
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+
+
+class RetentionPolicyType(str, Enum):
+    """
+    Chiến lược retention cho time-series data.
+
+    - time_based: Giữ data trong khoảng thời gian (vd: 90 ngày)
+    - count_based: Giữ N bản ghi mới nhất (vd: 10000 records)
+    - size_based: Giữ data dưới kích thước (vd: 10GB)
+    - partition_based: Drop partition cũ nhất khi vượt threshold
+    """
+    TIME_BASED = "time_based"
+    COUNT_BASED = "count_based"
+    SIZE_BASED = "size_based"
+    PARTITION_BASED = "partition_based"
+
+
+@dataclass
+class RetentionPolicy:
+    """
+    Chính sách lưu trữ data time-series — tự động dọn data cũ.
+
+    Attributes:
+        name: Tên policy (vd: "metrics_90d")
+        policy_type: Loại retention (time_based, count_based, size_based, partition_based)
+        threshold: Giá trị threshold (seconds, count, bytes, partitions)
+        partition_interval: Interval phân chia partition (vd: "day", "week", "month")
+        description: Mô tả policy
+    """
+    name: str
+    policy_type: RetentionPolicyType
+    threshold: int = 0
+    partition_interval: str = "month"
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate retention policy sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="retention_policy.name")
+        if self.threshold < 0:
+            self.threshold = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển retention policy sang dict format."""
+        return {
+            "name": self.name,
+            "policy_type": self.policy_type.value,
+            "threshold": self.threshold,
+            "partition_interval": self.partition_interval,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RetentionPolicy":
+        """Tạo RetentionPolicy từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            policy_type=RetentionPolicyType(data.get("policy_type", "time_based")),
+            threshold=data.get("threshold", 0),
+            partition_interval=data.get("partition_interval", "month"),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class TimeSeriesModel:
+    """
+    Model tối ưu cho time-series data — metrics, logs, events.
+
+    Hỗ trợ partitioning, compression, và retention policies.
+
+    Attributes:
+        id: Định danh duy nhất (vd: "cpu_metrics")
+        table_name: Tên bảng (vd: "cpu_metrics")
+        timestamp_column: Tên column lưu timestamp (vd: "recorded_at")
+        grain_columns: Columns phân tách grain (vd: ["host", "cpu_id"])
+        value_columns: Columns lưu giá trị (vd: ["usage_percent", "idle"])
+        granularity: Mức độ granularity của data
+        retention_policy: Policy tự động dọn data cũ
+        partition_interval: Interval phân chia partition (vd: "week")
+        description: Mô tả model
+    """
+    id: str
+    table_name: str
+    timestamp_column: str
+    grain_columns: list[str] = field(default_factory=list)
+    value_columns: list[str] = field(default_factory=list)
+    granularity: TimeSeriesGranularity = TimeSeriesGranularity.MINUTE
+    retention_policy: RetentionPolicy | None = None
+    partition_interval: str = "week"
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate time-series model sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="time_series.id")
+        if not self.table_name or not self.table_name.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="time_series.table_name")
+        if not self.timestamp_column or not self.timestamp_column.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="time_series.timestamp_column")
+        if not self.value_columns:
+            self.value_columns = []
+        if not self.grain_columns:
+            self.grain_columns = []
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển time-series model sang dict format."""
+        return {
+            "id": self.id,
+            "table_name": self.table_name,
+            "timestamp_column": self.timestamp_column,
+            "grain_columns": self.grain_columns,
+            "value_columns": self.value_columns,
+            "granularity": self.granularity.value,
+            "retention_policy": self.retention_policy.to_dict() if self.retention_policy else None,
+            "partition_interval": self.partition_interval,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TimeSeriesModel":
+        """Tạo TimeSeriesModel từ dict."""
+        rp_data = data.get("retention_policy")
+        return cls(
+            id=data.get("id", ""),
+            table_name=data.get("table_name", ""),
+            timestamp_column=data.get("timestamp_column", ""),
+            grain_columns=data.get("grain_columns", []),
+            value_columns=data.get("value_columns", []),
+            granularity=TimeSeriesGranularity(data.get("granularity", "minute")),
+            retention_policy=RetentionPolicy.from_dict(rp_data) if rp_data else None,
+            partition_interval=data.get("partition_interval", "week"),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# CQRS Read Models
+# ===========================================================================
+
+
+class ReadModelSource(str, Enum):
+    """
+    Nguồn dữ liệu cho read model.
+
+    - materialized_view: View được compute trước và cache
+    - denormalized_table: Bảng đã được flatten, optimized cho read
+    - search_index: Index ngoài (Elasticsearch, Meilisearch, ...)
+    - cached_computation: Cache kết quả tính toán
+    """
+    MATERIALIZED_VIEW = "materialized_view"
+    DENORMALIZED_TABLE = "denormalized_table"
+    SEARCH_INDEX = "search_index"
+    CACHED_COMPUTATION = "cached_computation"
+
+
+class RefreshStrategy(str, Enum):
+    """
+    Chiến lược refresh read model.
+
+    - real_time: Refresh ngay khi write model thay đổi
+    - batch: Refresh theo batch ở intervals cố định
+    - lazy: Refresh khi được query lần đầu (cache-aside)
+    - event_driven: Refresh khi nhận được domain event
+    """
+    REAL_TIME = "real_time"
+    BATCH = "batch"
+    LAZY = "lazy"
+    EVENT_DRIVEN = "event_driven"
+
+
+@dataclass
+class ReadModel:
+    """
+    CQRS read model — bản chiếu của write model, tối ưu cho query.
+
+    Read model được populate từ write model và chỉ dùng cho read operations.
+
+    Attributes:
+        id: Định danh duy nhất (vd: "order_summary_view")
+        table_name: Tên bảng/view (vd: "order_summary_view")
+        source: Nguồn dữ liệu (materialized_view, denormalized_table, ...)
+        source_models: Các DataModel nguồn cung cấp data cho read model
+        columns: Columns trong read model
+        refresh_strategy: Chiến lược refresh (real_time, batch, lazy, event_driven)
+        refresh_interval_seconds: Interval refresh (cho batch strategy)
+        description: Mô tả read model
+    """
+    id: str
+    table_name: str
+    source: ReadModelSource
+    source_models: list[str] = field(default_factory=list)
+    columns: list[ColumnDef] = field(default_factory=list)
+    refresh_strategy: RefreshStrategy = RefreshStrategy.EVENT_DRIVEN
+    refresh_interval_seconds: int = 300
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate read model sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="read_model.id")
+        if not self.table_name or not self.table_name.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="read_model.table_name")
+        if not self.source_models:
+            self.source_models = []
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển read model sang dict format."""
+        return {
+            "id": self.id,
+            "table_name": self.table_name,
+            "source": self.source.value,
+            "source_models": self.source_models,
+            "columns": [col.to_dict() for col in self.columns],
+            "refresh_strategy": self.refresh_strategy.value,
+            "refresh_interval_seconds": self.refresh_interval_seconds,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ReadModel":
+        """Tạo ReadModel từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            table_name=data.get("table_name", ""),
+            source=ReadModelSource(data.get("source", "materialized_view")),
+            source_models=data.get("source_models", []),
+            columns=[ColumnDef.from_dict(c) for c in data.get("columns", [])],
+            refresh_strategy=RefreshStrategy(data.get("refresh_strategy", "event_driven")),
+            refresh_interval_seconds=data.get("refresh_interval_seconds", 300),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# Distributed Transactions
+# ===========================================================================
+
+
+class DistributedTxProtocol(str, Enum):
+    """
+    Protocol cho distributed transaction.
+
+    - two_phase_commit: 2PC classical (prepare → commit/abort)
+    - saga: Choreographed/orchestrated saga với compensating actions
+    - outbox: Transactional outbox pattern (event + DB trong same tx)
+    - tcc: Try-Confirm-Cancel (3-phase compensation)
+    """
+    TWO_PHASE_COMMIT = "two_phase_commit"
+    SAGA = "saga"
+    OUTBOX = "outbox"
+    TCC = "tcc"
+
+
+class ParticipantStatus(str, Enum):
+    """Trạng thái của participant trong distributed transaction."""
+    PREPARED = "prepared"
+    COMMITTED = "committed"
+    ABORTED = "aborted"
+    TIMEOUT = "timeout"
+    COMPENSATED = "compensated"
+
+
+@dataclass
+class TransactionParticipant:
+    """
+    Participant trong distributed transaction — 1 datasource tham gia.
+
+    Attributes:
+        datasource_name: Tên datasource tham gia (phải match với Datasource.name)
+        role: Vai trò (coordinator, participant, observer)
+        timeout_seconds: Timeout cho participant này
+        can_compensate: Có thể rollback/compensate không
+        description: Mô tả participant
+    """
+    datasource_name: str
+    role: str = "participant"
+    timeout_seconds: int = 30
+    can_compensate: bool = True
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate participant sau khi khởi tạo."""
+        if not self.datasource_name or not self.datasource_name.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="transaction_participant.datasource_name")
+        if self.timeout_seconds < 1:
+            self.timeout_seconds = 30
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển participant sang dict format."""
+        return {
+            "datasource_name": self.datasource_name,
+            "role": self.role,
+            "timeout_seconds": self.timeout_seconds,
+            "can_compensate": self.can_compensate,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TransactionParticipant":
+        """Tạo TransactionParticipant từ dict."""
+        return cls(
+            datasource_name=data.get("datasource_name", ""),
+            role=data.get("role", "participant"),
+            timeout_seconds=data.get("timeout_seconds", 30),
+            can_compensate=data.get("can_compensate", True),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class DistributedTransaction:
+    """
+    Distributed transaction spanning multiple datasources.
+
+    Đảm bảo consistency khi 1 operation cần modify data ở nhiều datasource.
+
+    Attributes:
+        id: Định danh duy nhất (vd: "order_payment_tx")
+        protocol: Protocol distributed tx (two_phase_commit, saga, outbox, tcc)
+        coordinator_datasource: Datasource đóng vai trò coordinator
+        participants: Danh sách participants
+        timeout_seconds: Timeout tối đa cho toàn bộ tx
+        retry_count: Số lần retry khi prepare/commit thất bại
+        description: Mô tả transaction
+    """
+    id: str
+    protocol: DistributedTxProtocol
+    coordinator_datasource: str
+    participants: list[TransactionParticipant] = field(default_factory=list)
+    timeout_seconds: int = 60
+    retry_count: int = 3
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate distributed transaction sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="distributed_tx.id")
+        if not self.coordinator_datasource or not self.coordinator_datasource.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="distributed_tx.coordinator_datasource")
+        if self.timeout_seconds < 1:
+            self.timeout_seconds = 60
+        if self.retry_count < 0:
+            self.retry_count = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển distributed transaction sang dict format."""
+        return {
+            "id": self.id,
+            "protocol": self.protocol.value,
+            "coordinator_datasource": self.coordinator_datasource,
+            "participants": [p.to_dict() for p in self.participants],
+            "timeout_seconds": self.timeout_seconds,
+            "retry_count": self.retry_count,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DistributedTransaction":
+        """Tạo DistributedTransaction từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            protocol=DistributedTxProtocol(data.get("protocol", "saga")),
+            coordinator_datasource=data.get("coordinator_datasource", ""),
+            participants=[TransactionParticipant.from_dict(p) for p in data.get("participants", [])],
+            timeout_seconds=data.get("timeout_seconds", 60),
+            retry_count=data.get("retry_count", 3),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# JSONB Operations
+# ===========================================================================
+
+
+class JSONBIndexType(str, Enum):
+    """
+    Loại index cho JSONB column.
+
+    - gin: GIN index (mặc định, hỗ trợ @>, ?, ?|, ?&, jsonb_path_ops)
+    - gin_path_ops: GIN với jsonb_path_ops (nhỏ hơn, ít operators)
+    - gin_nulls_pruned: GIN bỏ qua null values (PostgreSQL 13+)
+    - btree: B-tree trên expression extracted từ JSONB
+    """
+    GIN = "gin"
+    GIN_PATH_OPS = "gin_path_ops"
+    GIN_NULLS_PRUNED = "gin_nulls_pruned"
+    BTREE = "btree"
+
+
+@dataclass
+class JSONBIndex:
+    """
+    Index cho JSONB column — tối ưu queries trên nested JSON data.
+
+    Attributes:
+        name: Tên index (vd: "idx_order_data_customer")
+        column: Tên JSONB column (vd: "data")
+        index_type: Loại JSONB index (GIN, gin_path_ops, ...)
+        path: JSON path expression (vd: "{customer,name}") — để trống = toàn bộ document
+        description: Mô tả index
+    """
+    name: str
+    column: str
+    index_type: JSONBIndexType = JSONBIndexType.GIN
+    path: str = ""
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate JSONB index sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="jsonb_index.name")
+        if not self.column or not self.column.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="jsonb_index.column")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển JSONB index sang dict format."""
+        return {
+            "name": self.name,
+            "column": self.column,
+            "index_type": self.index_type.value,
+            "path": self.path,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "JSONBIndex":
+        """Tạo JSONBIndex từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            column=data.get("column", ""),
+            index_type=JSONBIndexType(data.get("index_type", "gin")),
+            path=data.get("path", ""),
+            description=data.get("description", ""),
+        )
+
+
+class JSONBValidationMode(str, Enum):
+    """
+    Chế độ validation cho JSONB column.
+
+    - schema: Validate against JSON Schema
+    - check_constraint: Check constraint trên JSON path
+    - none: Không validate
+    """
+    SCHEMA = "schema"
+    CHECK_CONSTRAINT = "check_constraint"
+    NONE = "none"
+
+
+@dataclass
+class JSONBColumn:
+    """
+    Column lưu trữ JSONB data với validation và indexing.
+
+    JSONB (binary JSON) tối ưu hơn JSON text — hỗ trợ indexing, operators, containment.
+
+    Attributes:
+        name: Tên column (vd: "metadata", "attributes", "data")
+        validation_mode: Chế độ validation (schema, check_constraint, none)
+        json_schema: JSON Schema string để validate data
+        check_expression: Check constraint expression (vd: "data->>'status' IN ('active','pending')")
+        jsonb_indexes: Danh sách JSONB indexes
+        default: Giá trị mặc định (JSON string, vd: "{}" hoặc "[]")
+        required: Có bắt buộc không
+        description: Mô tả column
+    """
+    name: str
+    validation_mode: JSONBValidationMode = JSONBValidationMode.NONE
+    json_schema: str = ""
+    check_expression: str = ""
+    jsonb_indexes: list[JSONBIndex] = field(default_factory=list)
+    default: str = "{}"
+    required: bool = False
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate JSONB column sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(ErrorCode.CP08_EMPTY_NAME, field="jsonb_column.name")
+        if self.validation_mode == JSONBValidationMode.SCHEMA and not self.json_schema:
+            self.json_schema = "{}"
+        if self.validation_mode == JSONBValidationMode.CHECK_CONSTRAINT and not self.check_expression:
+            self.check_expression = "true"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển JSONB column sang dict format."""
+        return {
+            "name": self.name,
+            "validation_mode": self.validation_mode.value,
+            "json_schema": self.json_schema,
+            "check_expression": self.check_expression,
+            "jsonb_indexes": [idx.to_dict() for idx in self.jsonb_indexes],
+            "default": self.default,
+            "required": self.required,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "JSONBColumn":
+        """Tạo JSONBColumn từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            validation_mode=JSONBValidationMode(data.get("validation_mode", "none")),
+            json_schema=data.get("json_schema", ""),
+            check_expression=data.get("check_expression", ""),
+            jsonb_indexes=[JSONBIndex.from_dict(i) for i in data.get("jsonb_indexes", [])],
+            default=data.get("default", "{}"),
+            required=data.get("required", False),
+            description=data.get("description", ""),
+        )

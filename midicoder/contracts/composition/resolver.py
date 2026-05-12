@@ -188,23 +188,31 @@ class PackResolver:
         return f"{pack.pack_type}-{pack.id}"
 
     def _cp_id_to_dir_name(self, cp_id: str) -> str:
-        """Map CP ID → directory name."""
+        """Map CP ID → directory name (snake_case internal_id, matches folder name verbatim)."""
         mapping = {
-            "CP01": "domain_model",
-            "CP02": "tenant",
-            "CP03": "auth",
-            "CP04": "rbac",
-            "CP05": "event",
-            "CP06": "gateway",
-            "CP07": "iac",
-            "CP08": "db",
-            "CP09": "cache",
-            "CP10": "search",
-            "CP12": "notification",
-            "CP14": "audit",
-            "CP18": "component",
-            "CP19": "component",
-            "CP20": "api_client",
+            "CP01": "cp01_domain_model",
+            "CP02": "cp02_multi_tenant",
+            "CP03": "cp03_auth",
+            "CP04": "cp04_rbac",
+            "CP05": "cp05_event_driven",
+            "CP06": "cp06_api_gateway",
+            "CP07": "cp07_iac",
+            "CP08": "cp08_database",
+            "CP09": "cp09_cache",
+            "CP10": "cp10_search",
+            "CP11": "cp11_file_media",
+            "CP12": "cp12_notification",
+            "CP13": "cp13_workflow_runtime",
+            "CP14": "cp14_audit_compliance",
+            "CP15": "cp15_observability",
+            "CP16": "cp16_monitoring",
+            "CP17": "cp17_bi_analytics",
+            "CP18": "cp18_frontend_framework",
+            "CP19": "cp19_ui_components",
+            "CP20": "cp20_api_client",
+            "CP51": "cp51_blueprint",
+            "CP52": "cp52_invariant",
+            "CP53": "cp53_domain_bridge",
         }
         return mapping.get(cp_id, cp_id.lower())
 

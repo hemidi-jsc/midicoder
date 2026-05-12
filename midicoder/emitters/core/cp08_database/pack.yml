@@ -6,8 +6,8 @@ pack:
   status: "developing"
   category: "persistence"
   depends_on: ["CP01"]
-  definitions_count: 6
-  obligations_count: 1
+  definitions_count: 14
+  obligations_count: 3
   error_codes:
     prefix: "MDC-CP08"
     range: "MDC-CP08-001 to MDC-CP08-010"
@@ -28,6 +28,16 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "migration"
       emitter: "fastapi, nestjs"
+    - id: "spatial"
+      emitter: "fastapi, nestjs"
+    - id: "time_series"
+      emitter: "fastapi, nestjs"
+    - id: "cqrs_read_model"
+      emitter: "fastapi, nestjs"
+    - id: "distributed_transaction"
+      emitter: "fastapi, nestjs"
+    - id: "jsonb"
+      emitter: "fastapi, nestjs"
   definitions:
     - name: "DataSource"
       description: "Database connection configuration and profile"
@@ -41,6 +51,26 @@ pack:
       description: "ACID transaction boundary"
     - name: "Migration"
       description: "Schema versioning and migration script"
+    - name: "SpatialColumn"
+      description: "Column for geospatial data (POINT, POLYGON, GEOMETRY)"
+    - name: "SpatialIndex"
+      description: "GiST/SP-GiST/BRIN index for spatial queries"
+    - name: "TimeSeriesModel"
+      description: "Partitioned model for time-series data with retention policy"
+    - name: "ReadModel"
+      description: "CQRS read model (materialized view, denormalized table, search index)"
+    - name: "DistributedTransaction"
+      description: "Cross-datasource transaction (2PC, saga, outbox, TCC)"
+    - name: "JSONBColumn"
+      description: "Binary JSON column with GIN indexing and schema validation"
+    - name: "ReplicaConfig"
+      description: "Read replica with weighted load balancing"
+    - name: "RetentionPolicy"
+      description: "Auto-cleanup policy for time-series data"
   obligations:
     - name: "TenantScope"
       description: "All queries must enforce tenant scope automatically"
+    - name: "DistributedTxConsistency"
+      description: "Distributed transactions must ensure eventual consistency across participants"
+    - name: "SpatialSRID"
+      description: "All spatial columns must declare explicit SRID (default: 4326 WGS84)"
