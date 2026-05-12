@@ -1,94 +1,42 @@
-name: "Domain Model DSL & IR Builder"
-description: "Entity, Command, Query, Value Object — full DDD pattern vocabulary"
-type: capability
-version: "1.0.0"
-capability_id: CP01
-phase: P0
-status: stable
-capabilities_provided:
-  - "entity_modeling"
-  - "command_query_separation"
-  - "value_object"
-created_date: "2026-05-12"
-author: "Midicoder Team"
-
-metadata:
-  capability_category: "domain-modeling"
-  capability_type: "emitter"
-  language: "python"
-  runtime: "python3.12"
-  python:
-    requires:
-      - pyyaml
-      - jinja2
-  description: "Foundation pack — defines Entity, Command, Query, and Value Object patterns with parsers, validators, guards, effects, and emitters for FastAPI and NestJS."
-  tags:
-    - "ddd"
-    - "entity"
-    - "command"
-    - "query"
-    - "value-object"
-
-files:
-  core:
-    models:
-      - "midicoder/emitters/core/cp01_domain_model/entity_models.py"
-      - "midicoder/emitters/core/cp01_domain_model/command_models.py"
-      - "midicoder/emitters/core/cp01_domain_model/query_models.py"
-      - "midicoder/emitters/core/cp01_domain_model/vo_models.py"
-    package:
-      - "midicoder/emitters/core/cp01_domain_model/__init__.py"
-  emitters:
-    backend:
-      - "midicoder/emitters/core/cp01_domain_model/entity_fastapi.py"
-      - "midicoder/emitters/core/cp01_domain_model/entity_nestjs.py"
-      - "midicoder/emitters/core/cp01_domain_model/command_fastapi.py"
-      - "midicoder/emitters/core/cp01_domain_model/command_nestjs.py"
-      - "midicoder/emitters/core/cp01_domain_model/query_fastapi.py"
-      - "midicoder/emitters/core/cp01_domain_model/query_nestjs.py"
-      - "midicoder/emitters/core/cp01_domain_model/vo_fastapi.py"
-      - "midicoder/emitters/core/cp01_domain_model/vo_nestjs.py"
-  templates:
-    fastapi:
-      - "midicoder/stacks/fastapi/core/entities/entity.py.jinja2"
-      - "midicoder/stacks/fastapi/core/commands/*.py.jinja2"
-      - "midicoder/stacks/fastapi/core/queries/*.py.jinja2"
-      - "midicoder/stacks/fastapi/core/value_objects/*.py.jinja2"
-    nestjs:
-      - "midicoder/stacks/nestjs/core/entities/entity.ts.jinja2"
-      - "midicoder/stacks/nestjs/core/commands/*.ts.jinja2"
-      - "midicoder/stacks/nestjs/core/queries/*.ts.jinja2"
-      - "midicoder/stacks/nestjs/core/value-objects/*.ts.jinja2"
-  tests:
-    - "midicoder/tests/emitters/test_entity_models.py"
-    - "midicoder/tests/emitters/test_command_*.py"
-    - "midicoder/tests/emitters/test_query_emitter.py"
-    - "midicoder/tests/emitters/test_value_object_*.py"
-
-dependencies:
-  packs: []
-  libraries:
-    - "pyyaml>=6.0.1"
-    - "jinja2>=3.1.0"
-
-error_codes:
-  - "MDC-CP01-001"
-  - "MDC-CP01-002"
-  - "MDC-CP01-003"
-  - "MDC-CP01-004"
-  - "MDC-CP01-005"
-
-generator:
-  generator_id: "Gen-001"
-  generator_name: "Domain Model Generator"
-  description: "Generates entity models, command handlers, query handlers, and value objects for backend frameworks"
-  phases:
-    - "parse"
-    - "validate"
-    - "emit"
-
-acceptance_criteria:
-  - "All entities emit valid SQLAlchemy (FastAPI) and TypeORM (NestJS) models"
-  - "All commands emit handler, validator, guards, effects, and error classes"
-  - "All queries emit handler with pagination, filtering, and projection support"
-  - "All value objects emit frozen dataclasses (FastAPI) and immutable classes (NestJS)"
+pack:
+  id: "CP01"
+  name: "Domain Model DSL & IR Builder"
+  internal_id: "cp01_domain_model"
+  version: "1.0.0"
+  status: "stable"
+  category: "domain-modeling"
+  depends_on: []
+  definitions_count: 6
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP01"
+    range: "MDC-CP01-001 to MDC-CP01-005"
+  capabilities_provided:
+    - dsl_parsing
+    - projection_tree_build
+    - ir_build
+  capabilities:
+    - id: "entity_modeling"
+      emitter: "fastapi, nestjs"
+    - id: "command_query_separation"
+      emitter: "fastapi, nestjs"
+    - id: "value_object"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "Entity"
+      description: "Core domain entity with identity and lifecycle"
+    - name: "Command"
+      description: "Intent-carrying operation with validation and guards"
+    - name: "Query"
+      description: "Read-side operation with pagination and projection"
+    - name: "ValueObject"
+      description: "Immutable, equality-by-value domain primitive"
+    - name: "AggregateRoot"
+      description: "Consistency boundary for entity clusters"
+    - name: "DomainEvent"
+      description: "Immutable record of something that happened"
+  obligations:
+    - name: "EntityIdentity"
+      description: "Every entity must have unique, non-null identifier"
+    - name: "CommandValidation"
+      description: "All commands must be validated before execution"

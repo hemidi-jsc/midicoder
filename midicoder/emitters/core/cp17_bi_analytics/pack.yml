@@ -1,11 +1,10 @@
 pack:
   id: "CP17"
   name: "Business Intelligence & Analytics Generator"
-  internal_id: "cp17-bi-analytics"
+  internal_id: "cp17_bi_analytics"
   version: "1.0.0"
-  phase: "P2"
-  category: "analytics"
   status: "stable"
+  category: "analytics"
   depends_on: ["CP08", "CP15"]
   definitions_count: 3
   obligations_count: 2
@@ -16,21 +15,25 @@ pack:
     - analytics_query
     - dashboard_build
     - report_schedule
-  models:
-    - AnalyticsModel
-    - DashboardDefinition
-    - ScheduledReport
-  enums:
-    - AnalyticsSourceType
-    - AggregationType
-    - VisualizationType
-    - ReportFrequency
-    - ReportFormat
-    - SchedulePolicy
-  templates:
-    analytics_query: "fastapi/core/analytics/analytics_service.py.jinja2"
-    dashboard_build: "fastapi/core/analytics/analytics_router.py.jinja2"
-    report_schedule: "nestjs/core/analytics/analytics.service.ts.jinja2"
+  capabilities:
+    - id: "analytics_query_engine"
+      emitter: "fastapi, nestjs"
+    - id: "dashboard_builder"
+      emitter: "fastapi, nestjs"
+    - id: "report_scheduler"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "AnalyticsModel"
+      description: "Aggregation model with dimensions and measures"
+    - name: "DashboardDefinition"
+      description: "Visual dashboard with charts and filters"
+    - name: "ScheduledReport"
+      description: "Report with schedule, format, and delivery channel"
+  obligations:
+    - name: "DataFreshness"
+      description: "Analytics data must respect defined freshness SLA"
+    - name: "TenantIsolation"
+      description: "Analytics queries must enforce tenant-scoped data"
   frontend_integration:
     angular:
       - AnalyticsWidget
@@ -38,4 +41,3 @@ pack:
     react:
       - AnalyticsChart
       - ReportTable
-      - types

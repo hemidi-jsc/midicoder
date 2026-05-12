@@ -1,18 +1,43 @@
 pack:
   id: "CP05"
   name: "Event-Driven Architecture Generator"
-  internal_id: "cp5-event-driven"
+  internal_id: "cp05_event_driven"
   version: "1.0.0"
-  phase: "P1"
-  category: "architecture"
   status: "stable"
+  category: "architecture"
   depends_on: ["CP01"]
   definitions_count: 4
   obligations_count: 1
   error_codes:
-    prefix: "MDC-EVT"
-    range: "MDC-EVT-001 to MDC-EVT-010"
+    prefix: "MDC-CP05"
+    range: "MDC-CP05-001 to MDC-CP05-010"
   capabilities_provided:
     - publish_event
     - subscribe_event
     - event_outbox
+  capabilities:
+    - id: "event_publisher"
+      emitter: "fastapi, nestjs"
+    - id: "event_subscriber"
+      emitter: "fastapi, nestjs"
+    - id: "outbox_pattern"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "EventTopic"
+      description: "Named channel for event publication"
+    - name: "EventSubscription"
+      description: "Binding between topic and handler"
+    - name: "EventEnvelope"
+      description: "Wrapper with metadata for published events"
+    - name: "OutboxConfig"
+      description: "Transactional outbox settings for reliable delivery"
+  obligations:
+    - name: "EventOrdering"
+      description: "Events from same aggregate must maintain causal order"
+  frontend_integration:
+    angular:
+      - EventService
+      - EventSubscriber
+    react:
+      - useEvent
+      - EventListener

@@ -1,19 +1,33 @@
 pack:
   id: "CP51"
   name: "Blueprint Composition Engine"
-  internal_id: "cp51-blueprint"
+  internal_id: "cp51_blueprint"
   version: "1.0.0"
-  phase: "P0"
+  status: "stable"
   category: "compiler"
-  status: "developing"
-  depends_on: []
-  definitions_count: 8
+  depends_on: ["CP01"]
+  definitions_count: 4
   obligations_count: 3
   error_codes:
     prefix: "MDC-CP51"
     range: "MDC-CP51-001 to MDC-CP51-003"
   capabilities_provided:
     - compose_blueprint
-    - resolve_capabilities
-    - merge_pack_outputs
-    - blueprint_schema_validation
+    - validate_blueprint
+  capabilities: []
+  definitions:
+    - name: "Blueprint"
+      description: "Composed output of CPs + DPs + RXs into complete application spec"
+    - name: "PackReference"
+      description: "Reference to a core or domain pack with version constraint"
+    - name: "CompositionRule"
+      description: "Rule governing pack compatibility and merge strategy"
+    - name: "ValidationReport"
+      description: "Result of blueprint validation with errors and warnings"
+  obligations:
+    - name: "NoCircularDeps"
+      description: "Blueprint must not contain circular pack dependencies"
+    - name: "VersionCompat"
+      description: "All referenced packs must satisfy version constraints"
+    - name: "CapabilityCoverage"
+      description: "All requested capabilities must be resolvable to a pack"

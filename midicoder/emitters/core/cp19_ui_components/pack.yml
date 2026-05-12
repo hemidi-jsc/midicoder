@@ -1,132 +1,47 @@
-name: "CP19-ui-component-generator"
-description: "UI Component Generator — Reusable form fields, data tables, card lists, dialogs"
-type: capability
-version: "1.0.0"
-capability_id: CP19
-priority: P2
-status: active
-capabilities_provided:
-  - component_render
-  - form_generate
-  - table_generate
-created_date: "2025-07-26"
-author: "Midicoder Team"
-
-metadata:
-  capability_category: "frontend"
-  capability_type: "emitter"
-  language: "python"
-  runtime: "python3.12"
-  python:
-    requires:
-      - pyyaml
-      - jinja2
-  description: "Generate reusable UI components — form fields, data tables, card lists, dialogs (Angular, React, FastAPI, NestJS)"
-  tags:
-    - "frontend"
-    - "angular"
-    - "react"
-    - "fastapi"
-    - "nestjs"
-    - "ui_component"
-    - "form_field"
-    - "data_table"
-    - "card_list"
-    - "dialog"
-    - "form_validation"
-    - "pydantic"
-    - "class_validator"
-    - "tailwindcss"
-    - "angular_material"
-    - "mui"
-
-files:
-  core:
-    models:
-      - "midicoder/emitters/core/ui_component/models.py"
-    package:
-      - "midicoder/emitters/core/ui_component/__init__.py"
-  emitters:
-    frontend:
-      - "midicoder/emitters/core/ui_component/angular.py"
-      - "midicoder/emitters/core/ui_component/react.py"
-    backend:
-      - "midicoder/emitters/core/ui_component/fastapi.py"
-      - "midicoder/emitters/core/ui_component/nestjs.py"
-  templates:
+pack:
+  id: "CP19"
+  name: "UI Component Generator"
+  internal_id: "cp19_ui_components"
+  version: "1.0.0"
+  status: "stable"
+  category: "frontend"
+  depends_on: ["CP18"]
+  definitions_count: 3
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-CP19"
+    range: "MDC-CP19-001 to MDC-CP19-005"
+  capabilities_provided:
+    - component_render
+    - form_generate
+    - table_generate
+  capabilities:
+    - id: "form_fields"
+      emitter: "angular, react, fastapi, nestjs"
+    - id: "data_tables"
+      emitter: "angular, react"
+    - id: "card_lists"
+      emitter: "angular, react"
+    - id: "dialogs"
+      emitter: "angular, react"
+  definitions:
+    - name: "ComponentSpec"
+      description: "Specification for a reusable UI component"
+    - name: "FormFieldSpec"
+      description: "Form field with type, validation, and binding"
+    - name: "TableSpec"
+      description: "Data table with columns, sorting, and pagination"
+  obligations:
+    - name: "ComponentSchemaConsistency"
+      description: "Component schemas must match entity field types from CP01"
+  frontend_integration:
     angular:
-      - "midicoder/stacks/angular/core/ui_component/form-field.component.ts.jinja2"
-      - "midicoder/stacks/angular/core/ui_component/data-table.component.ts.jinja2"
-      - "midicoder/stacks/angular/core/ui_component/card-list.component.ts.jinja2"
-      - "midicoder/stacks/angular/core/ui_component/dialog.component.ts.jinja2"
+      - FormFieldComponent
+      - DataTableComponent
+      - CardListComponent
+      - DialogComponent
     react:
-      - "midicoder/stacks/react/core/ui_component/FormField.tsx.jinja2"
-      - "midicoder/stacks/react/core/ui_component/DataTable.tsx.jinja2"
-      - "midicoder/stacks/react/core/ui_component/CardList.tsx.jinja2"
-      - "midicoder/stacks/react/core/ui_component/Dialog.tsx.jinja2"
-    fastapi:
-      - "midicoder/stacks/fastapi/core/ui_component/form_validation_service.py.jinja2"
-    nestjs:
-      - "midicoder/stacks/nestjs/core/ui_component/form-validation.dto.ts.jinja2"
-      - "midicoder/stacks/nestjs/core/ui_component/form-validation.pipe.ts.jinja2"
-  tests:
-    models:
-      - "midicoder/tests/emitters/test_ui_component_models.py"
-    emitters:
-      - "midicoder/tests/emitters/test_ui_component_emitters.py"
-    integration:
-      - "midicoder/tests/emitters/test_ui_component_integration.py"
-
-models:
-  ComponentSpec: "midicoder/emitters/core/ui_component/models.py"
-  FormFieldSpec: "midicoder/emitters/core/ui_component/models.py"
-  TableSpec: "midicoder/emitters/core/ui_component/models.py"
-  TableColumn: "midicoder/emitters/core/ui_component/models.py"
-  ComponentType: "midicoder/emitters/core/ui_component/models.py"
-  FieldType: "midicoder/emitters/core/ui_component/models.py"
-
-emitters:
-  AngularUIEmitter: "midicoder/emitters/core/ui_component/angular.py"
-  ReactUIEmitter: "midicoder/emitters/core/ui_component/react.py"
-  FastAPIUIEmitter: "midicoder/emitters/core/ui_component/fastapi.py"
-  NestJSUIEmitter: "midicoder/emitters/core/ui_component/nestjs.py"
-
-dependencies:
-  packs:
-    - "CP18"
-  libraries:
-    - "pyyaml>=6.0.1"
-    - "jinja2>=3.1.0"
-
-error_codes:
-  - "MDC-CP19-001"
-  - "MDC-CP19-002"
-  - "MDC-CP19-003"
-  - "MDC-CP19-004"
-  - "MDC-CP19-005"
-
-generator:
-  generator_id: "Gen-005"
-  generator_name: "UI Component Generator"
-  description: "Generate reusable UI components — form fields, data tables, card lists, dialogs"
-  phases:
-    - "parse"
-    - "generate_form_fields"
-    - "generate_data_tables"
-    - "generate_card_lists"
-    - "generate_dialogs"
-    - "generate_form_validation"
-
-acceptance_criteria:
-  - "Generate FormFieldSpec từ entity fields của CP01"
-  - "Generate TableSpec từ entity fields của CP01"
-  - "Support 4 component types: form_field, data_table, card_list, dialog"
-  - "Support 9 field types: text, number, email, date, boolean, select, textarea, radio, switch"
-  - "Support 5 UI frameworks: material, tailwind, bootstrap, antd, carbon"
-  - "Emit Angular components (4 templates)"
-  - "Emit React components (4 templates)"
-  - "Emit FastAPI Pydantic schemas (1 template)"
-  - "Emit NestJS DTOs + ValidationPipe (2 templates)"
-  - "E2E test: entity → component spec → UI output"
-  - "Schema validation: form field types match entity field types"
-  - "Component schema consistency obligation enforced"
+      - FormField
+      - DataTable
+      - CardList
+      - Dialog

@@ -1,22 +1,28 @@
-# Changelog
+# Changelog — CP06 API Gateway & Service Mesh Generator
+
+All notable changes to this pack will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
-### Changed
-- Merged route/ into gateway/ — unified CP06 API Gateway & Service Mesh pack
-- Route models, parser, and emitters now reside as route_*.py within gateway/
-- Updated resolver.py mapping: CP06 → gateway (was route)
-- Added compat re-export in route/__init__.py for backward compatibility
-
-### Added
-- Route models: Route, GraphQLResolver, WebhookHandler, RouteCollection
-- Route emitters: FastAPIRouteEmitter, NestJSRouteEmitter (merged from route/)
 
 ## [1.0.0] - 2026-05-12
 
 ### Added
-- Kong Gateway configuration models (KongGateway, KongService, KongRoute, KongUpstream)
-- Consul Service Mesh models (ConsulService, ConsulHealthCheck, ConsulConnect)
-- HTTP REST route models with auth, tenant scope, request/response schemas
-- GraphQL resolver models (query/mutation/subscription)
-- Webhook handler models with HMAC signature verification
+
+- **Models**: GatewayProfile, RouteSpec
+- **FastAPI Emitter**: HTTP/GraphQL/Webhook route handlers, Kong Gateway config
+- **NestJS Emitter**: Route controllers, Kong Gateway module, Consul service mesh
+- **Kong Gateway**: Declarative configuration emission
+- **Consul Service Mesh**: Service discovery and mesh config
+
+---
+
+**Capabilities Provided:** `route_request`, `gateway_binding`, `service_mesh_config`
+
+**Capabilities (Runtime):** `kong_gateway`, `consul_mesh`, `http_routing`, `graphql_routing`
+
+**Obligations:** none
+
+**Dependencies:** CP01, CP05

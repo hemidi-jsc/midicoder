@@ -1,29 +1,41 @@
 pack:
-    id: "CP13"
-    name: "Background Job & Workflow Generator"
-    internal_id: "cp13-workflow-runtime"
-    version: "1.0.0"
-    phase: "P1"
-    category: "runtime"
-    status: "stable"
-    depends_on: ["CP05"]
-    definitions_count: 3
-    obligations_count: 1
-    error_codes:
-        prefix: "JOB"
-        range: "MDC-CP13-001~008"
-    capabilities_provided:
-        - schedule_job
-        - background_worker
-        - workflow_orchestrate
-    templates:
-        workflow_orchestrate: "fastapi/workflow_service.py.jinja2"
-        schedule_job: "fastapi/job_scheduler.py.jinja2"
-        background_worker: "fastapi/worker.py.jinja2"
-    frontend_integration:
-        angular:
-            - WorkflowService
-            - JobStatusComponent
-        react:
-            - useWorkflow
-            - useJobStatus
+  id: "CP13"
+  name: "Background Job & Workflow Generator"
+  internal_id: "cp13_workflow_runtime"
+  version: "1.0.0"
+  status: "stable"
+  category: "runtime"
+  depends_on: ["CP05"]
+  definitions_count: 3
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-CP13"
+    range: "MDC-CP13-001 to MDC-CP13-008"
+  capabilities_provided:
+    - schedule_job
+    - background_worker
+    - workflow_orchestrate
+  capabilities:
+    - id: "job_scheduler"
+      emitter: "fastapi, nestjs"
+    - id: "background_worker"
+      emitter: "fastapi, nestjs"
+    - id: "workflow_engine"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "JobSpec"
+      description: "Background job with schedule, payload, and retry policy"
+    - name: "WorkflowDefinition"
+      description: "Ordered sequence of steps with conditional branching"
+    - name: "WorkerConfig"
+      description: "Worker pool size, concurrency, and queue binding"
+  obligations:
+    - name: "JobRetry"
+      description: "Failed jobs must retry with exponential backoff"
+  frontend_integration:
+    angular:
+      - WorkflowService
+      - JobStatusComponent
+    react:
+      - useWorkflow
+      - useJobStatus

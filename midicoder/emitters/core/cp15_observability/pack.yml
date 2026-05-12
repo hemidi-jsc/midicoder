@@ -1,11 +1,10 @@
 pack:
   id: "CP15"
   name: "Observability Stack Generator"
-  internal_id: "cp15-observability"
+  internal_id: "cp15_observability"
   version: "1.0.0"
-  phase: "P1"
-  category: "observability"
   status: "stable"
+  category: "observability"
   depends_on: ["CP07"]
   definitions_count: 3
   obligations_count: 2
@@ -16,18 +15,25 @@ pack:
     - emit_metric
     - structured_logging
     - distributed_tracing
-  models:
-    - MetricProfile
-    - StructuredLogConfig
-    - TraceConfig
-  enums:
-    - MetricType
-    - LogLevel
-    - TracePropagationFormat
-  templates:
-    emit_metric: "fastapi/core/observability/observability_service.py.jinja2"
-    structured_logging: "fastapi/core/observability/observability_middleware.py.jinja2"
-    distributed_tracing: "nestjs/core/observability/observability.module.ts.jinja2"
+  capabilities:
+    - id: "metrics"
+      emitter: "fastapi, nestjs"
+    - id: "structured_logging"
+      emitter: "fastapi, nestjs"
+    - id: "tracing"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "MetricProfile"
+      description: "Metric type, granularity, and retention policy"
+    - name: "StructuredLogConfig"
+      description: "Log format, level, and output destination"
+    - name: "TraceConfig"
+      description: "Trace sampling, propagation, and exporter settings"
+  obligations:
+    - name: "LogStructured"
+      description: "All logs must be structured JSON with correlation IDs"
+    - name: "TracePropagation"
+      description: "Trace context must propagate across service boundaries"
   frontend_integration:
     angular:
       - LoggingService

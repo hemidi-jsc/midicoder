@@ -1,11 +1,10 @@
 pack:
   id: "CP53"
   name: "Domain Pack Runtime Bridge"
-  internal_id: "cp53-domain-bridge"
+  internal_id: "cp53_domain_bridge"
   version: "1.0.0"
-  phase: "P0"
-  category: "compiler"
   status: "stable"
+  category: "compiler"
   depends_on: ["CP01", "CP51"]
   definitions_count: 3
   obligations_count: 2
@@ -15,3 +14,20 @@ pack:
   capabilities_provided:
     - bridge_domain_pack
     - runtime_invoke
+  capabilities:
+    - id: "domain_bridge"
+      emitter: "fastapi, nestjs"
+    - id: "runtime_invoker"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "DomainBridge"
+      description: "Adapter between generic CP output and domain-specific semantics"
+    - name: "BridgeMapping"
+      description: "Mapping from generic capability to domain-specific implementation"
+    - name: "RuntimeInvocation"
+      description: "Dynamic invocation of domain pack at runtime"
+  obligations:
+    - name: "BridgeCompleteness"
+      description: "All domain pack capabilities must have bridge mappings"
+    - name: "RuntimeSafety"
+      description: "Runtime invocations must be type-checked and sandboxed"

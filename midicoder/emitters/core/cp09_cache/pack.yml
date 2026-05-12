@@ -1,13 +1,12 @@
 pack:
   id: "CP09"
   name: "Caching & Performance Layer Generator"
-  internal_id: "cp9-cache"
+  internal_id: "cp09_cache"
   version: "1.0.0"
-  phase: "P1"
-  category: "performance"
   status: "developing"
-  depends_on: ["CP01", "CP08"]
-  definitions_count: 5
+  category: "performance"
+  depends_on: ["CP08"]
+  definitions_count: 3
   obligations_count: 2
   error_codes:
     prefix: "MDC-CP09"
@@ -22,45 +21,26 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "memory"
       emitter: "fastapi, nestjs"
-    - id: "tenant-aware"
+    - id: "tenant_aware"
       emitter: "fastapi, nestjs"
     - id: "invalidation"
       emitter: "fastapi, nestjs"
-  emitters:
-    fastapi:
-      module: "midicoder.emitters.core.cp09_cache.fastapi:FastAPICacheEmitter"
-      output_prefix: "cache/"
-      files:
-        - "cache/__init__.py"
-        - "cache/redis.py"
-        - "cache/cache_strategy.py"
-        - "cache/cache_decorators.py"
-        - "cache/cache_invalidate.py"
-    nestjs:
-      module: "midicoder.emitters.core.cp09_cache.nestjs:NestJSCacheEmitter"
-      output_prefix: "cache/"
-      files:
-        - "cache/cache.module.ts"
-        - "cache/cache.service.ts"
-        - "cache/cache.interceptor.ts"
-    angular:
-      module: "midicoder.emitters.core.cp09_cache.angular:AngularEmitter"
-      output_prefix: "src/app/core/cache/"
-      files:
-        - "cache.models.ts"
-        - "cache.service.ts"
-        - "cache.interceptor.ts"
-        - "cache.module.ts"
-        - "index.ts"
-    react:
-      module: "midicoder.emitters.core.cp09_cache.react:ReactEmitter"
-      output_prefix: "src/cache/"
-      files:
-        - "cache.types.ts"
-        - "CacheProvider.tsx"
-        - "useCache.ts"
-        - "cache-utils.ts"
-        - "index.ts"
+  definitions:
+    - name: "CacheProfile"
+      description: "Cache backend, TTL, and eviction strategy"
+    - name: "CacheBinding"
+      description: "Binding between query patterns and cache keys"
+    - name: "InvalidationStrategy"
+      description: "Rule for cache invalidation on data mutations"
+  obligations:
+    - name: "CacheConsistency"
+      description: "Cache must be invalidated on corresponding data mutation"
+    - name: "TenantAware"
+      description: "Cache keys must include tenant isolation"
   frontend_integration:
-    angular: ["CacheService", "CacheInterceptor", "CacheNgModule"]
-    react: ["useCache", "CacheProvider", "cacheUtils"]
+    angular:
+      - CacheService
+      - CacheInterceptor
+    react:
+      - useCache
+      - CacheProvider

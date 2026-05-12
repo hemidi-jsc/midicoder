@@ -1,13 +1,11 @@
 pack:
   id: "CP11"
   name: "File Storage & Media Processing Generator"
-  internal_id: "cp11-file-media"
+  internal_id: "cp11_file_media"
   version: "1.0.0"
-  phase: "P1"
-  category: "storage"
   status: "developing"
-  depends_on:
-    - "CP01"
+  category: "storage"
+  depends_on: ["CP07"]
   definitions_count: 3
   obligations_count: 1
   error_codes:
@@ -19,55 +17,28 @@ pack:
     - file_storage
     - media_transform
   capabilities:
-    - id: "s3-storage"
+    - id: "s3_storage"
       emitter: "fastapi, nestjs"
-    - id: "local-storage"
+    - id: "local_storage"
       emitter: "fastapi, nestjs"
-    - id: "upload-policy"
+    - id: "upload_policy"
       emitter: "fastapi, nestjs"
-    - id: "media-transform"
+    - id: "media_transform"
       emitter: "fastapi, nestjs"
-  emitters:
-    fastapi:
-      module: "midicoder.emitters.core.cp11_file_media.fastapi:FastAPIFileStorageEmitter"
-      output_prefix: "storage/"
-      files:
-        - "storage/s3_config.py"
-        - "storage/file_upload_service.py"
-        - "storage/media_transform_service.py"
-        - "storage/storage_router.py"
-    nestjs:
-      module: "midicoder.emitters.core.cp11_file_media.nestjs:NestJSFileStorageEmitter"
-      output_prefix: "storage/"
-      files:
-        - "storage/s3.module.ts"
-        - "storage/file-upload.service.ts"
-        - "storage/media-transform.service.ts"
-        - "storage/file-upload.controller.ts"
-    angular:
-      module: "midicoder.emitters.core.cp11_file_media.angular:AngularFileStorageEmitter"
-      output_prefix: "src/app/core/storage/"
-      files:
-        - "file-storage.models.ts"
-        - "file-storage.service.ts"
-        - "file-upload.component.ts"
-        - "file-storage.module.ts"
-        - "index.ts"
-    react:
-      module: "midicoder.emitters.core.cp11_file_media.react:ReactFileStorageEmitter"
-      output_prefix: "src/storage/"
-      files:
-        - "fileStorage.types.ts"
-        - "FileStorageProvider.tsx"
-        - "useFileStorage.ts"
-        - "FileUpload.tsx"
-        - "index.ts"
+  definitions:
+    - name: "StorageProfile"
+      description: "Storage backend configuration (S3, local)"
+    - name: "UploadPolicy"
+      description: "File size, type, and rate limits"
+    - name: "MediaTransform"
+      description: "Image/video transformation pipeline"
+  obligations:
+    - name: "UploadValidation"
+      description: "All uploads must validate type, size, and malware"
   frontend_integration:
     angular:
-      - "FileStorageService"
-      - "FileUploadComponent"
-      - "FileStorageNgModule"
+      - FileStorageService
+      - FileUploadComponent
     react:
-      - "useFileStorage"
-      - "FileStorageProvider"
-      - "FileUpload"
+      - useFileStorage
+      - FileUpload

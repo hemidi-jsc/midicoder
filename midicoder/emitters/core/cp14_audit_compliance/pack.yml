@@ -1,36 +1,37 @@
 pack:
   id: "CP14"
   name: "Audit Trail & Compliance Generator"
-  internal_id: "cp14-audit-compliance"
+  internal_id: "cp14_audit_compliance"
   version: "1.0.0"
-  phase: "P1"
-  category: "compliance"
   status: "stable"
+  category: "compliance"
   depends_on: ["CP01"]
   definitions_count: 3
   obligations_count: 1
   error_codes:
-    prefix: "CP14"
-    range: "CP14001-CP14010"
+    prefix: "MDC-CP14"
+    range: "MDC-CP14-001 to MDC-CP14-010"
   capabilities_provided:
     - write_audit_log
     - audit_query
     - compliance_report
-  models:
-    - AuditTrail
-    - AuditRule
-    - ComplianceControl
-    - AuditComplianceCollection
-  enums:
-    - AuditActionType
-    - AuditLevel
-    - ControlType
-    - EnforcementLevel
-    - StandardType
-  templates:
-    write_audit_log: "fastapi/core/audit/audit_logger.py.jinja2"
-    audit_query: "fastapi/core/audit/audit_middleware.py.jinja2"
-    compliance_report: "nestjs/core/audit/audit.module.ts.jinja2"
+  capabilities:
+    - id: "audit_logger"
+      emitter: "fastapi, nestjs"
+    - id: "audit_query_engine"
+      emitter: "fastapi, nestjs"
+    - id: "compliance_checker"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "AuditTrail"
+      description: "Immutable record of user action with timestamp and context"
+    - name: "AuditRule"
+      description: "Policy defining which actions require audit logging"
+    - name: "ComplianceControl"
+      description: "Regulatory control with enforcement level"
+  obligations:
+    - name: "AuditImmutability"
+      description: "Audit logs must be append-only and tamper-proof"
   frontend_integration:
     angular:
       - AuditLoggerService

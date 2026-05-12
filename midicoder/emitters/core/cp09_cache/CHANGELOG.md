@@ -1,25 +1,31 @@
-# Changelog
+# Changelog — CP09 Caching & Performance Layer Generator
 
-All notable changes to CP09 - Caching & Performance Layer Generator.
+All notable changes to this pack will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-05-08
+## [Unreleased]
+
+## [1.0.0] - 2026-05-07
 
 ### Added
-- **5 Cache Definitions**: CacheProfile, CacheStrategy, CacheInvalidationRule, CacheWarmConfig, CacheMetrics
-- **CacheParser**: Parse YAML và MIR metadata thành CacheCollection với validation
-- **FastAPICacheEmitter**: Render 4 templates (redis, strategy, decorators, invalidation)
-- **NestJSCacheEmitter**: Render 3 templates (module, service, interceptor)
-- **Angular Templates**: CacheService, CacheInterceptor, CacheNgModule
-- **React Templates**: useCache hook, CacheProvider, cacheUtils
-- **Runtime Providers**: RedisCacheProvider, MemoryCacheProvider (ABC-based)
-- **Cache Decorators**: @cache, @cache_tenant, @cache_disable
-- **Cache Warm-up**: CacheWarmer, ScheduledWarmJob
-- **5 Error Codes**: MDC-CP09-001..005 với templates và suggestions
-- **KPI-029**: Tenant isolation enforced trong tất cả models và templates
-- **pack.yml**: Đồng bộ 1:1 với taxonomy.yml (capabilities_provided)
 
-### Obligations
-- TTL Validation: TTL phải > 0 (enforce tại model __post_init__)
-- Tenant Isolation: tenant_isolated=True mặc định cho tất cả cache profiles
+- **Models**: CacheProfile, CacheBinding, InvalidationStrategy
+- **FastAPI Emitter**: Redis client, cache strategy, cache decorators, cache invalidation
+- **NestJS Emitter**: CacheModule, CacheService, CacheInterceptor
+- **Angular Integration**: CacheService, CacheInterceptor
+- **React Integration**: useCache, CacheProvider
+
+---
+
+**Capabilities Provided:** `cache_get`, `cache_set`, `cache_invalidate`, `cache_warm`
+
+**Capabilities (Runtime):** `redis`, `memory`, `tenant_aware`, `invalidation`
+
+**Obligations:**
+
+1. **CacheConsistency** — Cache must be invalidated on corresponding data mutation
+2. **TenantAware** — Cache keys must include tenant isolation
+
+**Dependencies:** CP08

@@ -1,11 +1,10 @@
 pack:
   id: "CP03"
   name: "Authentication & Authorization Framework"
-  internal_id: "cp3-auth"
+  internal_id: "cp03_auth"
   version: "1.0.0"
-  phase: "P0"
-  category: "security"
   status: "stable"
+  category: "security"
   depends_on: ["CP01", "CP02"]
   definitions_count: 2
   obligations_count: 2
@@ -24,3 +23,22 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "permission_authorization"
       emitter: "fastapi, nestjs, angular, react"
+  definitions:
+    - name: "AuthProvider"
+      description: "Authentication provider (JWT, OAuth2, Session)"
+    - name: "Permission"
+      description: "Fine-grained permission with resource and action"
+  obligations:
+    - name: "AuthRequired"
+      description: "All protected endpoints must enforce authentication"
+    - name: "TokenExpiry"
+      description: "Auth tokens must have configurable expiration"
+  frontend_integration:
+    angular:
+      - AuthService
+      - AuthGuard
+      - JwtInterceptor
+    react:
+      - AuthContext
+      - useAuth
+      - ProtectedRoute

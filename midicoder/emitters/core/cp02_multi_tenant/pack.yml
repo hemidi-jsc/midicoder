@@ -1,31 +1,32 @@
 pack:
   id: "CP02"
   name: "Multi-Tenant Architecture Generator"
-  internal_id: "cp2-multi-tenant"
+  internal_id: "cp02_multi_tenant"
   version: "1.0.0"
-  phase: "P0"
+  status: "stable"
   category: "architecture"
-  status: "developing"
   depends_on: ["CP01"]
   definitions_count: 2
   obligations_count: 1
   error_codes:
-    prefix: "CP02"
-    range: "CP02001-CP02005"
+    prefix: "MDC-CP02"
+    range: "MDC-CP02-001 to MDC-CP02-005"
   capabilities_provided:
     - enforce_tenant_scope
     - tenant_isolation
-  templates:
-    enforce_tenant_scope:
-      fastapi: "app/core/security/tenant_middleware.py"
-      nestjs: "src/core/tenant/tenant.middleware.ts"
-      angular: "src/app/core/tenant/tenant.interceptor.ts"
-      react: "src/app/core/tenant/useTenant.ts"
-    tenant_isolation:
-      fastapi: "app/core/security/tenant_context.py"
-      nestjs: "src/core/tenant/tenant.module.ts"
-      angular: "src/app/core/tenant/tenant.service.ts"
-      react: "src/app/core/tenant/TenantProvider.tsx"
+  capabilities:
+    - id: "tenant_middleware"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "tenant_context"
+      emitter: "fastapi, nestjs, angular, react"
+  definitions:
+    - name: "TenantConfig"
+      description: "Tenant isolation strategy and provisioning settings"
+    - name: "TenantScope"
+      description: "Runtime scope enforcement for multi-tenancy"
+  obligations:
+    - name: "TenantIsolation"
+      description: "All data access must enforce tenant boundary"
   frontend_integration:
     angular:
       - TenantService

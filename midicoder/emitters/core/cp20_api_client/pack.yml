@@ -1,127 +1,49 @@
-name: "CP20-api-client-generator"
-description: "API Client & Integration Generator — Typed API clients, OpenAPI binding, realtime bridges"
-type: capability
-version: "1.0.0"
-capability_id: CP20
-priority: P2
-status: stable
-capabilities_provided:
-  - api_client_generate
-  - realtime_bridge
-  - openapi_bind
-created_date: "2025-07-26"
-author: "Midicoder Team"
-
-metadata:
-  capability_category: "integration"
-  capability_type: "emitter"
-  language: "python"
-  runtime: "python3.12"
-  python:
-    requires:
-      - pyyaml
-      - jinja2
-  description: "Generate typed API clients, realtime WebSocket/SSE bridges, and OpenAPI type binding (Angular, React, FastAPI, NestJS)"
-  tags:
-    - "integration"
-    - "angular"
-    - "react"
-    - "fastapi"
-    - "nestjs"
-    - "api_client"
-    - "openapi"
-    - "websocket"
-    - "sse"
-    - "realtime"
-    - "type_safety"
-    - "auth_injection"
-    - "error_mapping"
-
-files:
-  core:
-    models:
-      - "midicoder/emitters/core/api_client/models.py"
-    package:
-      - "midicoder/emitters/core/api_client/__init__.py"
-  emitters:
-    frontend:
-      - "midicoder/emitters/core/api_client/angular.py"
-      - "midicoder/emitters/core/api_client/react.py"
-    backend:
-      - "midicoder/emitters/core/api_client/fastapi.py"
-      - "midicoder/emitters/core/api_client/nestjs.py"
-  templates:
+pack:
+  id: "CP20"
+  name: "API Client & Integration Generator"
+  internal_id: "cp20_api_client"
+  version: "1.0.0"
+  status: "stable"
+  category: "frontend"
+  depends_on: ["CP06", "CP18"]
+  definitions_count: 3
+  obligations_count: 3
+  error_codes:
+    prefix: "MDC-CP20"
+    range: "MDC-CP20-001 to MDC-CP20-005"
+  capabilities_provided:
+    - api_client_generate
+    - realtime_bridge
+    - openapi_bind
+  capabilities:
+    - id: "typed_client"
+      emitter: "angular, react"
+    - id: "websocket_bridge"
+      emitter: "angular, react"
+    - id: "sse_bridge"
+      emitter: "angular, react"
+    - id: "openapi_binding"
+      emitter: "angular, react, fastapi, nestjs"
+  definitions:
+    - name: "ApiSpec"
+      description: "API specification with endpoints and types"
+    - name: "ClientBinding"
+      description: "Binding between backend routes and frontend client methods"
+    - name: "RealtimeBridgeSpec"
+      description: "WebSocket/SSE bridge configuration"
+  obligations:
+    - name: "TypeSafety"
+      description: "Client types must match backend route types exactly"
+    - name: "ErrorMapping"
+      description: "Backend errors must be mapped to client-side error types"
+    - name: "AuthInjection"
+      description: "Each request must automatically attach auth token"
+  frontend_integration:
     angular:
-      - "midicoder/stacks/angular/core/api_client/api-client.service.ts.jinja2"
-      - "midicoder/stacks/angular/core/api_client/realtime-bridge.service.ts.jinja2"
-      - "midicoder/stacks/angular/core/api_client/openapi-bind.ts.jinja2"
+      - ApiClientService
+      - RealtimeBridgeService
+      - OpenApiBindModule
     react:
-      - "midicoder/stacks/react/core/api_client/api-client.ts.jinja2"
-      - "midicoder/stacks/react/core/api_client/realtime-hooks.ts.jinja2"
-      - "midicoder/stacks/react/core/api_client/openapi-bind.ts.jinja2"
-    fastapi:
-      - "midicoder/stacks/fastapi/core/api_client/openapi_endpoint.py.jinja2"
-      - "midicoder/stacks/fastapi/core/api_client/websocket_gateway.py.jinja2"
-    nestjs:
-      - "midicoder/stacks/nestjs/core/api_client/openapi.module.ts.jinja2"
-      - "midicoder/stacks/nestjs/core/api_client/websocket.gateway.ts.jinja2"
-  tests:
-    models:
-      - "midicoder/tests/emitters/test_api_client_models.py"
-    emitters:
-      - "midicoder/tests/emitters/test_api_client_emitters.py"
-    integration:
-      - "midicoder/tests/emitters/test_api_client_integration.py"
-
-models:
-  ApiSpec: "midicoder/emitters/core/api_client/models.py"
-  ClientBinding: "midicoder/emitters/core/api_client/models.py"
-  RealtimeBridgeSpec: "midicoder/emitters/core/api_client/models.py"
-  TransportType: "midicoder/emitters/core/api_client/models.py"
-  AuthMode: "midicoder/emitters/core/api_client/models.py"
-  HttpMethod: "midicoder/emitters/core/api_client/models.py"
-
-emitters:
-  AngularApiEmitter: "midicoder/emitters/core/api_client/angular.py"
-  ReactApiEmitter: "midicoder/emitters/core/api_client/react.py"
-  FastAPIApiEmitter: "midicoder/emitters/core/api_client/fastapi.py"
-  NestJSApiEmitter: "midicoder/emitters/core/api_client/nestjs.py"
-
-dependencies:
-  packs:
-    - "CP06"
-    - "CP18"
-  libraries:
-    - "pyyaml>=6.0.1"
-    - "jinja2>=3.1.0"
-
-error_codes:
-  - "MDC-CP20-001"
-  - "MDC-CP20-002"
-  - "MDC-CP20-003"
-  - "MDC-CP20-004"
-  - "MDC-CP20-005"
-
-generator:
-  generator_id: "Gen-006"
-  generator_name: "API Client & Integration Generator"
-  description: "Generate typed API clients, realtime bridges, and OpenAPI type binding"
-  phases:
-    - "parse"
-    - "openapi_bind"
-    - "api_client_generate"
-    - "realtime_bridge"
-
-acceptance_criteria:
-  - "Generate typed API client service từ OpenAPI spec"
-  - "Generate realtime WebSocket/SSE bridge service"
-  - "Generate TypeScript interfaces từ backend spec"
-  - "Support 3 obligations: Type Safety, Error Mapping, Auth Injection"
-  - "Emit Angular API client (3 templates)"
-  - "Emit React API client (3 templates)"
-  - "Emit FastAPI OpenAPI endpoint + WebSocket gateway (2 templates)"
-  - "Emit NestJS OpenAPI module + WebSocket gateway (2 templates)"
-  - "E2E test: OpenAPI spec → typed client → realtime bridge"
-  - "Type safety: client types match backend routes"
-  - "Error mapping: backend error → client interceptor"
-  - "Auth injection: each request auto-attaches token"
+      - useApiClient
+      - useRealtime
+      - ApiTypes

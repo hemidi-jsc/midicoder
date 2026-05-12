@@ -1,19 +1,31 @@
-# Changelog — CP14: Audit Trail & Compliance Generator
+# Changelog — CP14 Audit Trail & Compliance Generator
 
-## [1.0.0] - 2026-05-06
+All notable changes to this pack will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.0.0] - 2026-05-07
 
 ### Added
-- `models.py`: AuditTrail, AuditRule, ComplianceControl, AuditComplianceCollection + enums
-- `parser.py`: AuditComplianceParser (YAML DSL → Collection)
-- `fastapi.py`: FastAPIAuditComplianceEmitter
-- `nestjs.py`: NestJSAuditComplianceEmitter
-- `audit_engine.py`: AuditLogger (dual write), AuditRuleEngine, ComplianceEnforcer
-- `pack.yml`: Pack metadata (sync với taxonomy.yml CP14)
-- Error codes MDC-CP14-001 ~ MDC-CP14-010 trong errors.py
-- Tests: test_audit_models.py, test_audit_parser.py
 
-### Notes
-- CP14 thay thế `write_audit_log` capability của contracts
-- Dual write: database + append-only file logs
-- SHA-256 hash chain cho tamper-evidence (RX11)
-- Standard retention + archive policy
+- **Models**: AuditTrail, AuditRule, ComplianceControl
+- **Enums**: AuditActionType, AuditLevel, ControlType, EnforcementLevel, StandardType
+- **FastAPI Emitter**: Audit logger, audit middleware, compliance reporter
+- **NestJS Emitter**: AuditModule, AuditService, ComplianceService
+- **Angular Integration**: AuditLoggerService, AuditLogListComponent
+- **React Integration**: useAudit, AuditLogList
+
+---
+
+**Capabilities Provided:** `write_audit_log`, `audit_query`, `compliance_report`
+
+**Capabilities (Runtime):** `audit_logger`, `audit_query_engine`, `compliance_checker`
+
+**Obligations:**
+
+1. **AuditImmutability** — Audit logs must be append-only and tamper-proof
+
+**Dependencies:** CP01

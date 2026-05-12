@@ -1,15 +1,33 @@
 pack:
   id: "CP52"
   name: "Invariant Gate Framework"
-  internal_id: "cp52-invariant"
+  internal_id: "cp52_invariant"
   version: "1.0.0"
-  phase: "P0"
-  category: "compiler"
   status: "developing"
+  category: "compiler"
   depends_on: ["CP51"]
   definitions_count: 3
   obligations_count: 2
-  error_codes: { prefix: "INV", range: "INV001-INV015" }
+  error_codes:
+    prefix: "MDC-CP52"
+    range: "MDC-CP52-001 to MDC-CP52-015"
   capabilities_provided:
     - enforce_invariant
     - gate_check
+  capabilities:
+    - id: "invariant_checker"
+      emitter: "fastapi"
+    - id: "gate_evaluator"
+      emitter: "fastapi"
+  definitions:
+    - name: "Invariant"
+      description: "Compile-time constraint that must hold for valid blueprints"
+    - name: "GateRule"
+      description: "Conditional gate with pass/fail criteria"
+    - name: "ViolationReport"
+      description: "Structured report of invariant violations"
+  obligations:
+    - name: "InvariantCompleteness"
+      description: "All P0 invariants must be evaluated before blueprint emission"
+    - name: "GateFailFast"
+      description: "Gate failure must halt pipeline immediately"

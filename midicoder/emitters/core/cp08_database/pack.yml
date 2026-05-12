@@ -1,23 +1,46 @@
 pack:
   id: "CP08"
   name: "Database & Data Access Layer Generator"
-  internal_id: "cp8-database"
+  internal_id: "cp08_database"
   version: "1.0.0"
-  phase: "P1"
-  category: "persistence"
   status: "developing"
+  category: "persistence"
   depends_on: ["CP01"]
   definitions_count: 6
   obligations_count: 1
   error_codes:
     prefix: "MDC-CP08"
     range: "MDC-CP08-001 to MDC-CP08-010"
+  capabilities_provided:
+    - create_record
+    - update_record
+    - delete_record
+    - query_records
+    - load_entity
+    - begin_transaction
+    - commit_transaction
   capabilities:
     - id: "datasource"
       emitter: "fastapi, nestjs"
-    - id: "entity-generation"
+    - id: "entity_generation"
       emitter: "fastapi, nestjs"
-    - id: "repository-pattern"
+    - id: "repository_pattern"
       emitter: "fastapi, nestjs"
     - id: "migration"
       emitter: "fastapi, nestjs"
+  definitions:
+    - name: "DataSource"
+      description: "Database connection configuration and profile"
+    - name: "TableMapping"
+      description: "Entity-to-table mapping with column definitions"
+    - name: "ColumnDef"
+      description: "Column type, constraints, and defaults"
+    - name: "Repository"
+      description: "CRUD interface over a data source"
+    - name: "Transaction"
+      description: "ACID transaction boundary"
+    - name: "Migration"
+      description: "Schema versioning and migration script"
+  obligations:
+    - name: "TenantScope"
+      description: "All queries must enforce tenant scope automatically"

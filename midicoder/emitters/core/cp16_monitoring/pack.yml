@@ -1,11 +1,10 @@
 pack:
   id: "CP16"
   name: "API & System Monitoring Generator"
-  internal_id: "cp16-monitoring"
+  internal_id: "cp16_monitoring"
   version: "1.0.0"
-  phase: "P2"
-  category: "observability"
   status: "stable"
+  category: "observability"
   depends_on: ["CP15"]
   definitions_count: 3
   obligations_count: 1
@@ -16,19 +15,23 @@ pack:
     - dashboard_create
     - alert_define
     - sli_monitor
-  models:
-    - DashboardProfile
-    - AlertRule
-    - SLIDefinition
-  enums:
-    - AlertSeverity
-    - AlertCondition
-    - SLIMetricType
-    - DashboardType
-  templates:
-    dashboard_create: "fastapi/core/monitoring/monitoring_service.py.jinja2"
-    alert_define: "nestjs/core/monitoring/monitoring.service.ts.jinja2"
-    sli_monitor: "nestjs/core/monitoring/monitoring.controller.ts.jinja2"
+  capabilities:
+    - id: "dashboard"
+      emitter: "fastapi, nestjs"
+    - id: "alert_engine"
+      emitter: "fastapi, nestjs"
+    - id: "sli_tracker"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "DashboardProfile"
+      description: "Dashboard layout, widgets, and data sources"
+    - name: "AlertRule"
+      description: "Threshold-based alert with notification channel"
+    - name: "SLIDefinition"
+      description: "Service Level Indicator with target and measurement"
+  obligations:
+    - name: "AlertNotification"
+      description: "Alerts must route to configured notification channels"
   frontend_integration:
     angular:
       - DashboardWidget

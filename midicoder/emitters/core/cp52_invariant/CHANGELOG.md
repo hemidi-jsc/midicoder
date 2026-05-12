@@ -1,13 +1,29 @@
-# Changelog: CP52 Invariant Gate Framework
+# Changelog — CP52 Invariant Gate Framework
 
-## [1.0.0] - 2026-05-06
+All notable changes to this pack will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.0.0] - 2026-05-12
 
 ### Added
-- Models: InvariantDefinition, InvariantResult, InvariantReport, CompileTimeCheckSpec, RuntimeGuardSpec
-- Enums: InvariantCategory, EnforcementMode, InvariantSeverity
-- Invariant categories: business, compliance, failure_mode
-- FastAPI emitter: invariant middleware, guard decorators
-- NestJS emitter: invariant.guard.ts, invariant.module.ts
-- pack.yml: Self-declare capabilities (enforce_invariant, gate_check)
-- Error codes: INV001-INV015
-- Meta pack — no frontend/backend emitter needed
+
+- **Models**: Invariant, GateRule, ViolationReport
+- **FastAPI Emitter**: Invariant checker, gate evaluator
+- **Capability Modules**: invariant_checker, gate_evaluator
+
+---
+
+**Capabilities Provided:** `enforce_invariant`, `gate_check`
+
+**Capabilities (Runtime):** `invariant_checker`, `gate_evaluator`
+
+**Obligations:**
+
+1. **InvariantCompleteness** — All P0 invariants must be evaluated before blueprint emission (MDC-CP52-001)
+2. **GateFailFast** — Gate failure must halt pipeline immediately (MDC-CP52-002)
+
+**Dependencies:** CP51

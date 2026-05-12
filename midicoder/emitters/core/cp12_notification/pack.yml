@@ -1,25 +1,42 @@
 pack:
   id: "CP12"
   name: "Notification & Communication Generator"
-  internal_id: "cp12-notification"
+  internal_id: "cp12_notification"
   version: "1.0.0"
-  phase: "P1"
-  category: "communication"
   status: "stable"
-  depends_on: ["CP01", "CP05"]
+  category: "communication"
+  depends_on: ["CP05"]
   definitions_count: 3
   obligations_count: 2
   error_codes:
-    prefix: "NTF"
-    range: "MDC-CP12-001~007"
+    prefix: "MDC-CP12"
+    range: "MDC-CP12-001 to MDC-CP12-007"
   capabilities_provided:
     - send_notification
     - email_dispatch
     - sms_dispatch
     - push_notification
-  templates:
-    send_notification: "fastapi/notification_service.py.jinja2"
-    email_dispatch: "fastapi/email_service.py.jinja2"
+  capabilities:
+    - id: "email"
+      emitter: "fastapi, nestjs"
+    - id: "sms"
+      emitter: "fastapi, nestjs"
+    - id: "push"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "template_engine"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "NotificationChannel"
+      description: "Channel type: email, sms, push, in_app"
+    - name: "NotificationTemplate"
+      description: "Parameterized message template per channel"
+    - name: "DispatchConfig"
+      description: "Routing and retry settings for notification delivery"
+  obligations:
+    - name: "TemplateValidation"
+      description: "Notification templates must have required variables"
+    - name: "FallbackChannel"
+      description: "Failed dispatch must retry on fallback channel"
   frontend_integration:
     angular:
       - NotificationService

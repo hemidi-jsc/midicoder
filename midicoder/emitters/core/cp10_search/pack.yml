@@ -1,14 +1,11 @@
 pack:
   id: "CP10"
   name: "Search & Indexing Generator"
-  internal_id: "cp10-search"
+  internal_id: "cp10_search"
   version: "1.0.0"
-  phase: "P1"
-  category: "performance"
   status: "developing"
-  depends_on:
-    - "CP01"
-    - "CP08"
+  category: "performance"
+  depends_on: ["CP08"]
   definitions_count: 3
   obligations_count: 2
   error_codes:
@@ -23,48 +20,26 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "meilisearch"
       emitter: "fastapi, nestjs"
-    - id: "tenant-aware"
+    - id: "tenant_aware"
       emitter: "fastapi, nestjs"
     - id: "fulltext"
       emitter: "fastapi, nestjs"
-  emitters:
-    fastapi:
-      module: "midicoder.emitters.core.cp10_search.fastapi:FastAPISearchEmitter"
-      output_prefix: "search/"
-      files:
-        - "search/__init__.py"
-        - "search/elasticsearch.py"
-        - "search/search_service.py"
-        - "search/index_manager.py"
-    nestjs:
-      module: "midicoder.emitters.core.cp10_search.nestjs:NestJSSearchEmitter"
-      output_prefix: "search/"
-      files:
-        - "search/search.module.ts"
-        - "search/search.service.ts"
-        - "search/search.decorators.ts"
-    angular:
-      module: "midicoder.emitters.core.cp10_search.angular:AngularEmitter"
-      output_prefix: "src/app/core/search/"
-      files:
-        - "search.models.ts"
-        - "search.service.ts"
-        - "search.module.ts"
-        - "index.ts"
-    react:
-      module: "midicoder.emitters.core.cp10_search.react:ReactEmitter"
-      output_prefix: "src/search/"
-      files:
-        - "search.types.ts"
-        - "SearchProvider.tsx"
-        - "useSearch.ts"
-        - "search-utils.ts"
-        - "index.ts"
+  definitions:
+    - name: "SearchIndex"
+      description: "Search index with field mappings and analyzers"
+    - name: "SearchQuery"
+      description: "Query binding to search backend"
+    - name: "SyncStrategy"
+      description: "Index synchronization with source data"
+  obligations:
+    - name: "IndexSync"
+      description: "Search index must stay in sync with source data"
+    - name: "TenantAware"
+      description: "Search results must respect tenant boundaries"
   frontend_integration:
     angular:
-      - "SearchService"
-      - "SearchNgModule"
+      - SearchService
+      - SearchComponent
     react:
-      - "useSearch"
-      - "SearchProvider"
-      - "searchUtils"
+      - useSearch
+      - SearchProvider

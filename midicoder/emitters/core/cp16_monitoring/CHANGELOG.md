@@ -1,11 +1,31 @@
-# Changelog: CP16 API & System Monitoring Generator
+# Changelog — CP16 API & System Monitoring Generator
 
-## [1.0.0] - 2026-05-06
+All notable changes to this pack will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.0.0] - 2026-05-07
 
 ### Added
-- Models: DashboardProfile, AlertRule, SLIDefinition, Panel, FiredAlert, SLIStatus
-- Enums: AlertSeverity, AlertCondition, SLIMetricType, DashboardType
-- FastAPI emitter: monitoring endpoints, alert dispatcher
-- NestJS emitter: monitoring.module.ts, alert.service.ts, sli-tracker.service.ts
-- pack.yml: Self-declare capabilities (dashboard_create, alert_define, sli_monitor)
-- Error codes: MDC-CP16-001 to MDC-CP16-010
+
+- **Models**: DashboardProfile, AlertRule, SLIDefinition
+- **Enums**: AlertSeverity, AlertCondition, SLIMetricType, DashboardType
+- **FastAPI Emitter**: Monitoring service, dashboard builder, alert engine
+- **NestJS Emitter**: MonitoringModule, MonitoringService, MonitoringController
+- **Angular Integration**: DashboardWidget, AlertPanel
+- **React Integration**: DashboardPanel, AlertBanner
+
+---
+
+**Capabilities Provided:** `dashboard_create`, `alert_define`, `sli_monitor`
+
+**Capabilities (Runtime):** `dashboard`, `alert_engine`, `sli_tracker`
+
+**Obligations:**
+
+1. **AlertNotification** — Alerts must route to configured notification channels
+
+**Dependencies:** CP15

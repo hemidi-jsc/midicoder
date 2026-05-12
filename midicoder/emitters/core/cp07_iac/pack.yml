@@ -1,22 +1,29 @@
 pack:
   id: "CP07"
   name: "Infrastructure as Code Generator"
-  internal_id: "cp7-iac"
+  internal_id: "cp07_iac"
   version: "1.0.0"
-  phase: "P0"
-  category: "infrastructure"
   status: "stable"
+  category: "infrastructure"
   depends_on: []
   definitions_count: 2
   obligations_count: 1
   error_codes:
     prefix: "MDC-CP07"
     range: "MDC-CP07-001 to MDC-CP07-005"
-  capabilities:
-    - id: "docker-compose"
-      emitter: "fastapi, nestjs"
-    - id: "terraform-aws"
-      emitter: "fastapi, nestjs"
   capabilities_provided:
     - emit_iac_docker
     - emit_iac_aws
+  capabilities:
+    - id: "docker_compose"
+      emitter: "fastapi, nestjs"
+    - id: "terraform_aws"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "IacProfile"
+      description: "Infrastructure profile (local/docker, aws, gcp)"
+    - name: "ServiceConfig"
+      description: "Service-specific infrastructure configuration"
+  obligations:
+    - name: "EnvParity"
+      description: "Local and production infrastructure must maintain parity"

@@ -1,11 +1,10 @@
 pack:
   id: "CP04"
   name: "RBAC & Policy Engine"
-  internal_id: "cp4-rbac"
+  internal_id: "cp04_rbac"
   version: "1.0.0"
-  phase: "P0"
-  category: "security"
   status: "stable"
+  category: "security"
   depends_on: ["CP02", "CP03"]
   definitions_count: 4
   obligations_count: 1
@@ -24,6 +23,24 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "abac_engine"
       emitter: "fastapi, nestjs"
+  definitions:
+    - name: "Role"
+      description: "Named set of permissions with hierarchical inheritance"
+    - name: "Permission"
+      description: "Atomic access right on a resource"
+    - name: "PolicyRule"
+      description: "Conditional access rule with effects"
+    - name: "PolicyDecision"
+      description: "Result of policy evaluation (allow/deny)"
+  obligations:
+    - name: "RoleHierarchy"
+      description: "Role assignments must respect hierarchical ordering"
   frontend_integration:
-    angular: ["RbacService", "RoleGuard", "PermissionDirective"]
-    react: ["useAuth", "ProtectedRoute", "WithPermission"]
+    angular:
+      - RbacService
+      - RoleGuard
+      - PermissionDirective
+    react:
+      - useRbac
+      - ProtectedRoute
+      - WithPermission
