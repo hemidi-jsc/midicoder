@@ -1,0 +1,28 @@
+/** NestJS Controller cho frontend {{ app_name }} config. */
+
+import { Controller, Get } from "@nestjs/common";
+import { FrontendConfigService } from "./frontend-config.service";
+
+@Controller("api/frontend")
+export class FrontendConfigController {
+
+  constructor(private readonly configService: FrontendConfigService) {}
+
+
+  @Get("config")
+  getAppConfig() {
+    return this.configService.getAppConfig();
+  }
+
+
+  @Get("routes")
+  getRoutes() {
+    return this.configService.getRoutes();
+  }
+
+
+  @Get("state-store")
+  getStateStore() {
+    return this.configService.getStateStore();
+  }
+}

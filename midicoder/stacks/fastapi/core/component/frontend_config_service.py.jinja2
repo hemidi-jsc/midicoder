@@ -1,0 +1,54 @@
+"""FastAPI ConfigService cho {{ app_name }}."""
+
+from pydantic import BaseModel
+from typing import List, Optional
+
+
+class FrontendConfig(BaseModel):
+    """Frontend app configuration model."""
+    name: str
+    framework: str
+    ui_framework: str
+    layout: str
+    description: Optional[str] = None
+
+
+class RouteConfig(BaseModel):
+    """Route configuration model."""
+    path: str
+    component: str
+    is_lazy: bool = False
+
+
+class StateStoreConfig(BaseModel):
+    """State store configuration model."""
+    store_type: str
+    entities: List[str] = []
+    selectors: List[str] = []
+    actions: List[str] = []
+
+
+class ConfigService:
+    """Service cung cấp frontend app config."""
+
+    APP_CONFIG = FrontendConfig(
+        name={{ app_name | tojson }},
+        framework={{ framework | tojson }},
+        ui_framework={{ ui_framework | tojson }},
+        layout={{ layout | tojson }},
+{% if description %}
+        description={{ description | tojson }},
+{% endif %}
+    )
+
+    @staticmethod
+    def get_app_config() -> FrontendConfig:
+        return ConfigService.APP_CONFIG
+
+    @staticmethod
+    def get_routes() -> List[RouteConfig]:
+        return []  # routes từ generator
+
+    @staticmethod
+    def get_state_store() -> Optional[StateStoreConfig]:
+        return None  # state_store từ generator

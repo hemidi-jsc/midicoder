@@ -554,6 +554,20 @@ class ErrorCode(str, Enum):
     CP17_DUPLICATE_MODEL_NAME = "MDC-CP17-015"
 
     # =========================================================================
+    # CP18: Frontend Framework Generator Errors
+    # =========================================================================
+    CP18_EMPTY_APP_NAME = "MDC-CP18-001"
+    CP18_INVALID_FRAMEWORK = "MDC-CP18-002"
+    CP18_INVALID_STATE_STORE = "MDC-CP18-003"
+    CP18_DUPLICATE_ROUTE = "MDC-CP18-004"
+    CP18_INVALID_ROUTE_PATH = "MDC-CP18-005"
+    CP18_INVALID_UI_FRAMEWORK = "MDC-CP18-006"
+    CP18_INVALID_LAYOUT = "MDC-CP18-007"
+    CP18_EMPTY_ROUTE_COMPONENT = "MDC-CP18-008"
+    CP18_FRONTEND_PARSE_ERROR = "MDC-CP18-009"
+    CP18_INVALID_ROUTER_STRATEGY = "MDC-CP18-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -928,6 +942,16 @@ class MidicoderErrorManager:
         ErrorCode.CP17_EMPTY_REPORT_NAME: "Report name không được để trống.",
         ErrorCode.CP17_INVALID_OUTPUT_FORMAT: "Report output format không hợp lệ.",
         ErrorCode.CP17_ANALYTICS_PARSE_ERROR: "Lỗi parse YAML analytics.",
+        ErrorCode.CP18_EMPTY_APP_NAME: "Frontend app name không được để trống.",
+        ErrorCode.CP18_INVALID_FRAMEWORK: "Frontend framework không hợp lệ. Chọn trong angular hoặc react.",
+        ErrorCode.CP18_INVALID_STATE_STORE: "State store type không hợp lệ.",
+        ErrorCode.CP18_DUPLICATE_ROUTE: "Route path trùng lặp.",
+        ErrorCode.CP18_INVALID_ROUTE_PATH: "Route path không hợp lệ. Phải bắt đầu bằng /.",
+        ErrorCode.CP18_INVALID_UI_FRAMEWORK: "UI framework không được hỗ trợ.",
+        ErrorCode.CP18_INVALID_LAYOUT: "App shell layout type không hợp lệ.",
+        ErrorCode.CP18_EMPTY_ROUTE_COMPONENT: "Route component name không được để trống.",
+        ErrorCode.CP18_FRONTEND_PARSE_ERROR: "Lỗi parse YAML frontend config.",
+        ErrorCode.CP18_INVALID_ROUTER_STRATEGY: "Router strategy không hợp lệ.",
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",
         ErrorCode.CP53_DUPLICATE_DP_ID: "Domain pack ID trung lap.",

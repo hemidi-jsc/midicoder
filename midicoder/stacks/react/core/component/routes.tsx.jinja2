@@ -1,0 +1,43 @@
+/** Auto-generated React routes config. */
+
+import React from "react";
+import { createBrowserRouter, RouteObject } from "react-router-dom";
+
+import { Layout } from "./components/layout";
+
+{% for route in routes %}
+const {{ route.component }} = React.lazy(() => import('./components/{{ route.component|lower }}/{{ route.component|lower
+}}.tsx'));
+{% endfor %}
+
+const routeElements: RouteObject[] = [
+{
+path: "/",
+element:
+<Layout />,
+children: [
+{% for route in routes %}
+{
+path: "{{ route.path | lstrip_slash }}",
+element:
+<{{ route.component }} />,
+{% if route.children %}
+children: [
+{% for child in route.children %}
+{
+path: "{{ child.path | lstrip_slash }}",
+element:
+<{{ child.component }} />,
+},
+{% endfor %}
+],
+{% endif %}
+},
+{% endfor %}
+],
+},
+];
+
+const router = createBrowserRouter(routeElements);
+
+export default router;

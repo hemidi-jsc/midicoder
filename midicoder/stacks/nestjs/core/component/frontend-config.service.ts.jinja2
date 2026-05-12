@@ -1,0 +1,53 @@
+/** NestJS ConfigService cho {{ app_name }}. */
+
+import { Injectable } from "@nestjs/common";
+
+export interface FrontendConfig {
+  name: string;
+  framework: string;
+  uiFramework: string;
+  layout: string;
+  description?: string;
+}
+
+export interface RouteConfig {
+  path: string;
+  component: string;
+  isLazy?: boolean;
+}
+
+export interface StateStoreConfig {
+  storeType: string;
+  entities: string[];
+  selectors: string[];
+  actions: string[];
+}
+
+@Injectable()
+export class FrontendConfigService {
+
+  private readonly appConfig: FrontendConfig = {
+    name: {{ app_name | tojson }},
+    framework: {{ framework | tojson }},
+    uiFramework: {{ ui_framework | tojson }},
+    layout: {{ layout | tojson }},
+{% if description %}
+    description: {{ description | tojson }},
+{% endif %}
+  };
+
+
+  getAppConfig(): FrontendConfig {
+    return this.appConfig;
+  }
+
+
+  getRoutes(): RouteConfig[] {
+    return []; // routes từ generator
+  }
+
+
+  getStateStore(): StateStoreConfig | null {
+    return null; // state_store từ generator
+  }
+}

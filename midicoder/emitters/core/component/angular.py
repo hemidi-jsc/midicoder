@@ -17,6 +17,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
+
+from midicoder.emitters.core.component.models import RouteDefinition, StateStoreConfig
+
+# Resolve template directory relative to this package
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+_TEMPLATE_DIR = _PACKAGE_DIR / "stacks" / "angular" / "core" / "component"
+
 
 @dataclass
 class GeneratedFile:
@@ -55,6 +63,30 @@ class AngularComponentEmitter:
                            "Chọn từ: " + str(self.SUPPORTED_UI_FRAMEWORKS))
         self.ui_framework = ui_framework
 
+        # Initialize Jinja2 environment for CP18 templates
+        self._template_env = Environment(
+            loader=FileSystemLoader(str(_TEMPLATE_DIR)),
+            autoescape=True,
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+
+    def _render_template(self, template_name: str, context: dict[str, Any]) -> str:
+        """Render a jinja2 template with the given context."""
+        try:
+            template = self._template_env.get_template(template_name)
+            return template.render(**context)
+        except TemplateNotFound:
+            return f"// {template_name} - template not found\n"
+
+    def _serialize_route(self, route: RouteDefinition) -> dict[str, Any]:
+        """Serialize RouteDefinition to dict for jinja2 template."""
+        return {
+            "path": route.path,
+            "component": route.component,
+            "children": [self._serialize_route(c) for c in route.children],
+        }
+
     def emit(
         self,
         entities: list[dict[str, Any]],
@@ -84,6 +116,54 @@ class AngularComponentEmitter:
         files.extend(self._emit_dashboard_component(components_dir, entities, output_dir))
 
         return files
+
+    # ------------------------------------------------------------------
+    # CP18 additions: routes & state store
+    # ------------------------------------------------------------------
+
+    def emit_routes(
+        self,
+        routes: list[RouteDefinition],
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """Generate Angular routes config từ RouteDefinition.
+
+        Template: app.routes.ts.jinja2
+
+        Args:
+            routes: Danh sách RouteDefinition.
+            output_dir: Output directory.
+
+        Returns:
+            List of GeneratedFile instances.
+        """
+        content = self._render_template("app.routes.ts.jinja2", {
+            "routes": [self._serialize_route(r) for r in routes],
+        })
+        return [self._write_file("app.routes.ts", content, output_dir)]
+
+    def emit_state_store(
+        self,
+        store_config: StateStoreConfig,
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """Generate Angular Signals store từ StateStoreConfig.
+
+        Template: store.ts.jinja2
+
+        Args:
+            store_config: Config state store.
+            output_dir: Output directory.
+
+        Returns:
+            List of GeneratedFile instances.
+        """
+        content = self._render_template("store.ts.jinja2", {
+            "entities": store_config.entities,
+            "selectors": store_config.selectors,
+            "actions": store_config.actions,
+        })
+        return [self._write_file("store.ts", content, output_dir)]
 
     def _emit_entity_components(
         self,
@@ -498,6 +578,150 @@ class AngularComponentEmitter:
             content=content,
             template="component/angular/" + filename,
         )
+
+    # ------------------------------------------------------------------
+    # CP18 helper: build Angular routes config
+    # ------------------------------------------------------------------
+
+    def _build_routes_ts(
+        self,
+        routes: list[RouteDefinition],
+        output_dir: Path,
+    ) -> list[str]:
+        """Build Angular app.routes.ts content."""
+        lines: list[str] = []
+        lines.append("/** Auto-generated Angular routes config. */")
+        lines.append("")
+        lines.append('import { Routes } from "@angular/router";')
+        lines.append("")
+        lines.append("const routes: Routes = [")
+
+        for route in routes:
+            lines.extend(self._route_to_ts(route, 2))
+
+        lines.append("];")
+        lines.append("")
+        lines.append("export default routes;")
+        lines.append("")
+        return lines
+
+    def _route_to_ts(self, route: RouteDefinition, indent: int) -> list[str]:
+        """Convert a single RouteDefinition to Angular route entry."""
+        spaces = "  " * indent
+        lines: list[str] = []
+        child_lines = []
+
+        lines.append(f"{spaces}{{")
+        lines.append(f'{spaces}  path: {self._ts_string(route.path)},')
+        lines.append(
+            f"{spaces}  loadComponent: "
+            f"() => import('./components/{route.component.lower()}/' "
+            f"\"{route.component.lower()}.component.ts\") "
+            f"then(m => m.default)"
+        )
+
+        if route.children:
+            child_lines.append(f"{spaces}  children: [")
+            for child in route.children:
+                child_lines.extend(self._route_to_ts(child, indent + 1))
+            child_lines.append(f"{spaces}  ]")
+
+        lines.extend(child_lines)
+
+        # Trailing comma (safe to have)
+        if child_lines:
+            lines[-1] = lines[-1].rstrip() + ","
+        else:
+            lines.append(f"{spaces}}},")
+
+        return lines
+
+    def _ts_string(self, s: str) -> str:
+        """Wrap a string in TypeScript quotes, replacing :id with ':id'."""
+        # Angular uses literal ':id' not ':id'
+        return f"'{s}'"
+
+    # ------------------------------------------------------------------
+    # CP18 helper: build Angular Signals store
+    # ------------------------------------------------------------------
+
+    def _build_signals_store(
+        self,
+        store_config: StateStoreConfig,
+        output_dir: Path,
+    ) -> list[str]:
+        """Build Angular Signals store content."""
+        lines: list[str] = []
+        lines.append("/** Auto-generated Angular Signals store. */")
+        lines.append("")
+        lines.append('import { signal, computed } from "@angular/core";')
+        lines.append("")
+
+        # Generate entity store sections
+        for entity in store_config.entities:
+            entity_lower = entity.lower()
+            entity_plural = entity_lower + "s"
+
+            lines.append(f"// {entity} store")
+            lines.append(f"export const {entity_plural}State = signal<{entity}[]>([]);")
+            lines.append(f"export const {entity_plural}Loading = signal<boolean>(false);")
+            lines.append(f"export const {entity_plural}Error = signal<string | null>(null);")
+            lines.append("")
+
+            # Computed signals
+            lines.append(f"export const {entity_plural}Count = computed(() => {entity_plural}State().length);")
+            lines.append(f"export const {entity_plural}Ids = computed(() => {entity_plural}State().map(e => e.id));")
+            lines.append("")
+
+            # Actions
+            lines.append(f"export function set{entity_plural}State(data: {entity}[]) {{")
+            lines.append(f"  {entity_plural}State.set(data);")
+            lines.append(f"}}")
+            lines.append("")
+            lines.append(f"export function add{entity}(item: {entity}) {{")
+            lines.append(f"  {entity_plural}State.update(prev => [...prev, item]);")
+            lines.append(f"}}")
+            lines.append("")
+            lines.append(f"export function update{entity}(id: string, changes: Partial<{entity}>) {{")
+            lines.append(f"  {entity_plural}State.update(prev => prev.map(e => e.id === id ? {{ ...e, ...changes }} : e));")
+            lines.append(f"}}")
+            lines.append("")
+            lines.append(f"export function remove{entity}(id: string) {{")
+            lines.append(f"  {entity_plural}State.update(prev => prev.filter(e => e.id !== id));")
+            lines.append(f"}}")
+            lines.append("")
+
+        # Global computed selectors
+        if store_config.entities:
+            lines.append("// Global selectors")
+            lines.append("export const totalItems = computed(() => {")
+            for entity in store_config.entities:
+                entity_plural = entity.lower() + "s"
+                lines.append(f"  +{entity_plural}Count()")
+            lines.append("  return 0; // fallback")
+            lines.append("});")
+            lines.append("")
+
+        # Export user-defined selectors placeholder
+        if store_config.selectors:
+            lines.append("// User-defined selectors")
+            for selector in store_config.selectors:
+                lines.append(f"export function {selector}() {{")
+                lines.append(f"  // TODO: implement {selector}")
+                lines.append(f"  return signal(null);")
+                lines.append(f"}}")
+                lines.append("")
+
+        # Export user-defined actions placeholder
+        if store_config.actions:
+            lines.append("// User-defined actions")
+            for action in store_config.actions:
+                lines.append(f"export function {action}() {{")
+                lines.append(f"  // TODO: implement {action}")
+                lines.append(f"}}")
+                lines.append("")
+
+        return lines
 
 
 __all__ = ["AngularComponentEmitter", "GeneratedFile"]

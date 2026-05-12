@@ -314,7 +314,7 @@ core_packs:
       - route_define
       - state_store_init
     category: frontend
-    status: developing
+    status: stable
     version: 1.0.0
   - id: CP19
     name: UI Component Generator

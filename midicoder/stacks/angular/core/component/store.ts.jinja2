@@ -1,0 +1,60 @@
+/** Auto-generated Angular Signals store. */
+
+import { signal, computed } from "@angular/core";
+
+{% for entity in entities %}
+// {{ entity }} store
+export const {{ entity|lower }}sState = signal<{{ entity }}[]>([]);
+    export const {{ entity|lower }}sLoading = signal<boolean>(false);
+        export const {{ entity|lower }}sError = signal<string | null>(null);
+
+            export const {{ entity|lower }}sCount = computed(() => {{ entity|lower }}sState().length);
+            export const {{ entity|lower }}sIds = computed(() => {{ entity|lower }}sState().map(e => e.id));
+
+            export function set{{ entity|lower }}sState(data: {{ entity }}[]) {
+            {{ entity|lower }}sState.set(data);
+            }
+
+            export function add{{ entity }}(item: {{ entity }}) {
+            {{ entity|lower }}sState.update(prev => [...prev, item]);
+            }
+
+            export function update{{ entity }}(id: string, changes: Partial<{{ entity }}>) {
+                {{ entity|lower }}sState.update(prev => prev.map(e => e.id === id ? { ...e, ...changes } : e));
+                }
+
+                export function remove{{ entity }}(id: string) {
+                {{ entity|lower }}sState.update(prev => prev.filter(e => e.id !== id));
+                }
+
+                {% endfor %}
+                {% if entities %}
+                // Global selectors
+                export const totalItems = computed(() => {
+                let total = 0;
+                {% for entity in entities %}
+                total += {{ entity|lower }}sCount();
+                {% endfor %}
+                return total;
+                });
+
+                {% endif %}
+                {% if selectors %}
+                // User-defined selectors
+                {% for selector in selectors %}
+                export function {{ selector }}() {
+                // TODO: implement {{ selector }}
+                return signal(null);
+                }
+
+                {% endfor %}
+                {% endif %}
+                {% if actions %}
+                // User-defined actions
+                {% for action in actions %}
+                export function {{ action }}() {
+                // TODO: implement {{ action }}
+                }
+
+                {% endfor %}
+                {% endif %}

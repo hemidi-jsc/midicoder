@@ -1,0 +1,121 @@
+name: "CP18-frontend-framework-generator"
+description: "Frontend App Generator — App shell, routing, state management, UI framework"
+type: capability
+version: "1.0.0"
+capability_id: CP18
+priority: P2
+status: active
+capabilities_provided:
+  - app_shell_scaffold
+  - route_define
+  - state_store_init
+created_date: "2025-07-26"
+author: "Midicoder Team"
+
+metadata:
+  capability_category: "frontend"
+  capability_type: "emitter"
+  language: "python"
+  runtime: "python3.12"
+  python:
+    requires:
+      - pyyaml
+  description: "Generate frontend app structure — shell, routing, state store (Angular, React)"
+  tags:
+    - "frontend"
+    - "angular"
+    - "react"
+    - "routing"
+    - "state_management"
+    - "app_shell"
+    - "ui_framework"
+    - "signals"
+    - "angular_material"
+    - "angular_forms"
+    - "react_router"
+    - "zustand"
+    - "recoil"
+    - "react_hooks_form"
+    - "tailwindcss"
+
+files:
+  core:
+    models:
+      - "midicoder/emitters/core/component/models.py"
+    parser:
+      - "midicoder/emitters/core/component/parser.py"
+    package:
+      - "midicoder/emitters/core/component/__init__.py"
+  emitters:
+    frontend:
+      - "midicoder/emitters/core/component/angular.py"
+      - "midicoder/emitters/core/component/react.py"
+    backend:
+      - "midicoder/emitters/core/component/fastapi.py"
+      - "midicoder/emitters/core/component/nestjs.py"
+  tests:
+    models:
+      - "midicoder/tests/emitters/test_frontend_framework_models.py"
+    parser:
+      - "midicoder/tests/emitters/test_frontend_framework_parser.py"
+    integration:
+      - "midicoder/tests/emitters/test_frontend_framework_integration.py"
+
+models:
+  FrontendApp: "midicoder/emitters/core/component/models.py"
+  RouteDefinition: "midicoder/emitters/core/component/models.py"
+  StateStoreConfig: "midicoder/emitters/core/component/models.py"
+  FrontendFramework: "midicoder/emitters/core/component/models.py"
+  StateStoreType: "midicoder/emitters/core/component/models.py"
+  RouterStrategy: "midicoder/emitters/core/component/models.py"
+  AppShellLayout: "midicoder/emitters/core/component/models.py"
+
+parsers:
+  FrontendFrameworkParser: "midicoder/emitters/core/component/parser.py"
+
+emitters:
+  AngularComponentEmitter: "midicoder/emitters/core/component/angular.py"
+  ReactComponentEmitter: "midicoder/emitters/core/component/react.py"
+  FastAPIFrontendEmitter: "midicoder/emitters/core/component/fastapi.py"
+  NestJSFrontendEmitter: "midicoder/emitters/core/component/nestjs.py"
+
+dependencies:
+  packs: []
+  libraries:
+    - "pyyaml>=6.0.1"
+
+error_codes:
+  - "MDC-CP18-001"
+  - "MDC-CP18-002"
+  - "MDC-CP18-003"
+  - "MDC-CP18-004"
+  - "MDC-CP18-005"
+  - "MDC-CP18-006"
+  - "MDC-CP18-007"
+  - "MDC-CP18-008"
+  - "MDC-CP18-009"
+  - "MDC-CP18-010"
+
+generator:
+  generator_id: "Gen-004"
+  generator_name: "Frontend App Generator"
+  description: "Generate frontend app — shell, routing, state management (Angular/React)"
+  phases:
+    - "parse"
+    - "plan"
+    - "generate_app_shell"
+    - "generate_routing"
+    - "generate_state_store"
+    - "generate_ui_components"
+
+acceptance_criteria:
+  - "Parse YAML DSL → FrontendApp + RouteDefinition[] + StateStoreConfig"
+  - "Auto-generate routes from entities (list + detail)"
+  - "Generate app shell with sidebar/topnav layout"
+  - "Generate state store (Angular Signals, Zustand, etc.)"
+  - "Support Angular Material + Reactive Forms"
+  - "Support React Router v6 + React Hook Form"
+  - "E2E test: empty YAML → valid config"
+  - "E2E test: full YAML → all components"
+  - "Route duplication detection"
+  - "Backend config service (FastAPI/NestJS)"

@@ -17,6 +17,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
+
+from midicoder.emitters.core.component.models import RouteDefinition, StateStoreConfig
+
+# Resolve template directory relative to this package
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+_TEMPLATE_DIR = _PACKAGE_DIR / "stacks" / "react" / "core" / "component"
+
 
 @dataclass
 class GeneratedFile:
@@ -48,6 +56,32 @@ class ReactComponentEmitter:
         if ui_framework not in self.SUPPORTED_UI_FRAMEWORKS:
             raise ValueError("UI framework '" + ui_framework + "' không được hỗ trợ.")
 
+        # Initialize Jinja2 environment for CP18 templates
+        self._template_env = Environment(
+            loader=FileSystemLoader(str(_TEMPLATE_DIR)),
+            autoescape=True,
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+        # Register custom filter to strip leading slash from route paths
+        self._template_env.filters["lstrip_slash"] = lambda s: s.lstrip("/")  # type: ignore[assignment]
+
+    def _render_template(self, template_name: str, context: dict[str, Any]) -> str:
+        """Render a jinja2 template with the given context."""
+        try:
+            template = self._template_env.get_template(template_name)
+            return template.render(**context)
+        except TemplateNotFound:
+            return f"// {template_name} - template not found\n"
+
+    def _serialize_route(self, route: RouteDefinition) -> dict[str, Any]:
+        """Serialize RouteDefinition to dict for jinja2 template."""
+        return {
+            "path": route.path,
+            "component": route.component,
+            "children": [self._serialize_route(c) for c in route.children],
+        }
+
     def emit(
         self,
         entities: list[dict[str, Any]],
@@ -73,6 +107,54 @@ class ReactComponentEmitter:
         files.extend(self._emit_dashboard_component(components_dir, entities, output_dir))
 
         return files
+
+    # ------------------------------------------------------------------
+    # CP18 additions: routes & state store
+    # ------------------------------------------------------------------
+
+    def emit_routes(
+        self,
+        routes: list[RouteDefinition],
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """Generate react-router config từ RouteDefinition.
+
+        Template: routes.tsx.jinja2
+
+        Args:
+            routes: Danh sách RouteDefinition.
+            output_dir: Output directory.
+
+        Returns:
+            List of GeneratedFile instances.
+        """
+        content = self._render_template("routes.tsx.jinja2", {
+            "routes": [self._serialize_route(r) for r in routes],
+        })
+        return [self._write_file("routes.tsx", content, output_dir, output_dir)]
+
+    def emit_state_store(
+        self,
+        store_config: StateStoreConfig,
+        output_dir: Path,
+    ) -> list[GeneratedFile]:
+        """Generate Zustand store từ StateStoreConfig.
+
+        Template: store.ts.jinja2
+
+        Args:
+            store_config: Config state store.
+            output_dir: Output directory.
+
+        Returns:
+            List of GeneratedFile instances.
+        """
+        content = self._render_template("store.ts.jinja2", {
+            "entities": store_config.entities,
+            "selectors": store_config.selectors,
+            "actions": store_config.actions,
+        })
+        return [self._write_file("store.ts", content, output_dir, output_dir)]
 
     def _emit_entity_components(
         self, entity: dict[str, Any], output_dir: Path, root_dir: Path
@@ -473,6 +555,170 @@ class ReactComponentEmitter:
             content=content,
             template="component/react/" + filename,
         )
+
+    # ------------------------------------------------------------------
+    # CP18 helper: build react-router config
+    # ------------------------------------------------------------------
+
+    def _build_routes_jsx(
+        self,
+        routes: list[RouteDefinition],
+        output_dir: Path,
+    ) -> list[str]:
+        """Build React routes.tsx content."""
+        lines: list[str] = []
+        lines.append("/** Auto-generated React routes config. */")
+        lines.append("")
+        lines.append('import React from "react";')
+        lines.append('import { createBrowserRouter, RouteObject } from "react-router-dom";')
+        lines.append("")
+        lines.append('import { Layout } from "./components/layout";')
+        lines.append("")
+
+        # Build route elements
+        for route in routes:
+            comp = route.component
+            lines.append(
+                f"const {comp} = React.lazy(() => "
+                f"import('./components/{comp.lower()}/{comp.lower()}.tsx'));"
+            )
+        lines.append("")
+
+        lines.append("const routeElements: RouteObject[] = [")
+        lines.append('  {')
+        lines.append('    path: "/",')
+        lines.append('    element: <Layout />,')
+        lines.append('    children: [')
+
+        for route in routes:
+            lines.extend(self._route_to_jsx(route, 3))
+
+        lines.append("    ],")
+        lines.append("  },")
+        lines.append("];")
+        lines.append("")
+        lines.append("const router = createBrowserRouter(routeElements);")
+        lines.append("")
+        lines.append("export default router;")
+        lines.append("")
+        return lines
+
+    def _route_to_jsx(self, route: RouteDefinition, indent: int) -> list[str]:
+        """Convert a single RouteDefinition to React route entry."""
+        spaces = "  " * indent
+        lines: list[str] = []
+
+        lines.append(f"{spaces}{{")
+        lines.append(f'{spaces}  path: "{route.path.lstrip("/")}",')
+        lines.append(f"{spaces}  element: <{route.component} />,")
+
+        if route.children:
+            lines.append(f"{spaces}  children: [")
+            for child in route.children:
+                lines.extend(self._route_to_jsx(child, indent + 1))
+            lines.append(f"{spaces}  ],")
+
+        lines.append(f"{spaces}}},")
+        return lines
+
+    # ------------------------------------------------------------------
+    # CP18 helper: build Zustand store
+    # ------------------------------------------------------------------
+
+    def _build_zustand_store(
+        self,
+        store_config: StateStoreConfig,
+        output_dir: Path,
+    ) -> list[str]:
+        """Build Zustand store content."""
+        lines: list[str] = []
+        lines.append("/** Auto-generated Zustand store. */")
+        lines.append("")
+        lines.append('import { create } from "zustand";')
+        lines.append("")
+
+        # Build state interface
+        lines.append("// State interface")
+        lines.append("interface StoreState {")
+        for entity in store_config.entities:
+            entity_lower = entity.lower()
+            entity_plural = entity_lower + "s"
+            lines.append(f"  {entity_plural}: {entity}[];")
+            lines.append(f"  {entity_plural}Loading: boolean;")
+            lines.append(f"  {entity_plural}Error: string | null;")
+        lines.append("}")
+        lines.append("")
+
+        # Build actions interface
+        lines.append("// Actions interface")
+        lines.append("interface StoreActions {")
+        for entity in store_config.entities:
+            entity_plural = entity.lower() + "s"
+            lines.append(f"  set{entity_plural}State: (data: {entity}[]) => void;")
+            lines.append(f"  add{entity}: (item: {entity}) => void;")
+            lines.append(f"  update{entity}: (id: string, changes: Partial<{entity}>) => void;")
+            lines.append(f"  remove{entity}: (id: string) => void;")
+        lines.append("}")
+        lines.append("")
+
+        # Create store
+        lines.append("export const useStore = create<StoreState & StoreActions>()((set) => ({")
+
+        # Initial state
+        for entity in store_config.entities:
+            entity_plural = entity.lower() + "s"
+            lines.append(f"  {entity_plural}: [],")
+            lines.append(f"  {entity_plural}Loading: false,")
+            lines.append(f"  {entity_plural}Error: null,")
+
+        # Actions
+        for entity in store_config.entities:
+            entity_plural = entity.lower() + "s"
+            lines.append(f"  set{entity_plural}State: (data) => set(() => ({{ {entity_plural}: data }})),")
+            lines.append(f"  add{entity}: (item) => set((state) => ({{ {entity_plural}: [...state.{entity_plural}, item] }})),")
+            lines.append(
+                f"  update{entity}: (id, changes) => set((state) => ({{"
+                f" {entity_plural}: state.{entity_plural}.map((e) => e.id === id ? {{ ...e, ...changes }} : e) }})), "
+            )
+            lines.append(
+                f"  remove{entity}: (id) => set((state) => ({{"
+                f" {entity_plural}: state.{entity_plural}.filter((e) => e.id !== id) }})), "
+            )
+
+        lines.append("}));")
+        lines.append("")
+
+        # Selectors
+        if store_config.entities:
+            lines.append("// Derived selectors")
+            for entity in store_config.entities:
+                entity_plural = entity.lower() + "s"
+                lines.append(
+                    f"export const use{entity}Count = () =>"
+                    f" useStore((state) => state.{entity_plural}.length);"
+                )
+            lines.append("")
+
+        # User-defined selectors
+        if store_config.selectors:
+            lines.append("// User-defined selectors")
+            for selector in store_config.selectors:
+                lines.append(f"export const {selector} = () => {{")
+                lines.append(f"  // TODO: implement {selector}")
+                lines.append(f"  return useStore((state) => state);")
+                lines.append(f"}}")
+                lines.append("")
+
+        # User-defined actions
+        if store_config.actions:
+            lines.append("// User-defined actions")
+            for action in store_config.actions:
+                lines.append(f"export function {action}() {{")
+                lines.append(f"  // TODO: implement {action}")
+                lines.append(f"}}")
+                lines.append("")
+
+        return lines
 
 
 __all__ = ["ReactComponentEmitter", "GeneratedFile"]

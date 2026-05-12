@@ -1,0 +1,13 @@
+/** NestJS ConfigModule cho {{ app_name }}. */
+
+import { Module, Global } from "@nestjs/common";
+import { FrontendConfigService } from "./frontend-config.service";
+import { FrontendConfigController } from "./frontend-config.controller";
+
+@Global()
+@Module({
+  controllers: [FrontendConfigController],
+  providers: [FrontendConfigService],
+  exports: [FrontendConfigService],
+})
+export class FrontendConfigModule {}

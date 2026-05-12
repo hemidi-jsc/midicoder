@@ -1,0 +1,34 @@
+/** Auto-generated Angular routes config. */
+
+import { Routes } from "@angular/router";
+
+const routes: Routes = [
+{% for route in routes %}
+  {
+    path: '{{ route.path }}',
+    loadComponent: () => import('./components/{{ route.component|lower }}/{{ route.component|lower }}.component.ts') then(m => m.default)
+{% if route.children %}
+    children: [
+{% for child in route.children %}
+      {
+        path: '{{ child.path }}',
+        loadComponent: () => import('./components/{{ child.component|lower }}/{{ child.component|lower }}.component.ts') then(m => m.default)
+{% if child.children %}
+        children: [
+{% for grandchild in child.children %}
+          {
+            path: '{{ grandchild.path }}',
+            loadComponent: () => import('./components/{{ grandchild.component|lower }}/{{ grandchild.component|lower }}.component.ts') then(m => m.default),
+          },
+{% endfor %}
+        ],
+{% endif %}
+      },
+{% endfor %}
+    ],
+{% endif %}
+  },
+{% endfor %}
+];
+
+export default routes;
