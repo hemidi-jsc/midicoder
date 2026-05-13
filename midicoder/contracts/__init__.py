@@ -5,7 +5,6 @@ Module này định nghĩa các contract chuẩn cho artifacts trong pipeline:
 - Artifact base types: Metadata, versioning, serialization
 - MIR (Intermediate Representation): Implementation truth typed
 - Surface/Patch Plan: Map capabilities → runtime surfaces → delivery plan
-- Blueprint Compiler (CP51): Compile blueprints → CompositionPlan
 
 Tất cả artifacts được thiết kế để:
 1. Deterministic: Same input → same output (hashable)
@@ -41,22 +40,6 @@ from .plan import (
     PatchOperation,
     PatchOperationType,
     PatchPlan,
-)
-from .blueprint_compiler import (
-    BlueprintCompiler,
-    BlueprintCompilerError,
-    CompiledBlueprint,
-    BlueprintMetadata,
-    IndustryInfo,
-    CorePacksConfig,
-    DomainPackRef,
-    RegulatoryOverlayRef,
-    BusinessInvariant,
-    ComplianceInvariant,
-    FailureModeInvariant,
-    InvariantsConfig,
-    BlueprintConfig,
-    BlueprintReferences,
 )
 from .composition.models import (
     CompositionNode,
@@ -94,23 +77,7 @@ __all__ = [
     "PatchOperationType",
     "PatchPlan",
 
-    # CP51: Blueprint Compiler
-    "BlueprintCompiler",
-    "BlueprintCompilerError",
-    "CompiledBlueprint",
-    "BlueprintMetadata",
-    "IndustryInfo",
-    "CorePacksConfig",
-    "DomainPackRef",
-    "RegulatoryOverlayRef",
-    "BusinessInvariant",
-    "ComplianceInvariant",
-    "FailureModeInvariant",
-    "InvariantsConfig",
-    "BlueprintConfig",
-    "BlueprintReferences",
-
-    # CP51: Composition Engine
+    # Composition Engine
     "CompositionNode",
     "PackResolution",
     "TemplateBinding",

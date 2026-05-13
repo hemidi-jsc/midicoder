@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from industry.registry import TaxonomyRegistry, Pack
 
 if TYPE_CHECKING:
-    from midicoder.contracts.blueprint_compiler import CompiledBlueprint
+    from typing import Any as CompiledBlueprint  # type: ignore  # blueprint_compiler removed
 from .models import (
     CompositionPlan,
     CompositionNode,

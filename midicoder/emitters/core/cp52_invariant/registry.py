@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from .models import InvariantCategory, InvariantDefinition
 
 if TYPE_CHECKING:
-    from midicoder.contracts.blueprint_compiler import CompiledBlueprint
+    from typing import Any as CompiledBlueprint  # type: ignore  # blueprint_compiler removed
 
 
 class InvariantRegistry:
