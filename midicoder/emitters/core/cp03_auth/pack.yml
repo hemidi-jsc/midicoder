@@ -53,6 +53,98 @@ pack:
       description: "SAML assertions must be signature-verified before trust"
     - name: "LDAPSecureBind"
       description: "LDAP connections must use LDAPS or StartTLS"
+  file_contributions:
+    infrastructure:
+      - path: "app/auth/__init__.py"
+        file_type: "init"
+        template: "cp03_auth/__init__.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/auth/jwt_auth.py"
+        file_type: "jwt_auth"
+        template: "cp03_auth/jwt_auth.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/auth/oauth2_provider.py"
+        file_type: "oauth2_provider"
+        template: "cp03_auth/oauth2_provider.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/auth/permissions.py"
+        file_type: "permissions"
+        template: "cp03_auth/permissions.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/auth/policy_engine.py"
+        file_type: "policy_engine"
+        template: "cp03_auth/policy_engine.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/auth/session.py"
+        file_type: "session"
+        template: "cp03_auth/session.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/auth/tenant_context.py"
+        file_type: "tenant_context"
+        template: "cp03_auth/tenant_context.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/auth/__init__.ts"
+        file_type: "init"
+        template: "cp03_auth/__init__.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/auth/jwt_auth.ts"
+        file_type: "jwt_auth"
+        template: "cp03_auth/jwt_auth.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/auth/oauth2_provider.ts"
+        file_type: "oauth2_provider"
+        template: "cp03_auth/oauth2_provider.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/auth/permissions.ts"
+        file_type: "permissions"
+        template: "cp03_auth/permissions.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/auth/policy_engine.ts"
+        file_type: "policy_engine"
+        template: "cp03_auth/policy_engine.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/auth/tenant_context.ts"
+        file_type: "tenant_context"
+        template: "cp03_auth/tenant_context.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/auth/auth.service.ts"
+        file_type: "auth_service"
+        template: "cp03_auth/auth.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/auth/auth.guard.ts"
+        file_type: "auth_guard"
+        template: "cp03_auth/auth.guard.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/auth/api-client.ts"
+        file_type: "auth_api_client"
+        template: "cp03_auth/api-client.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/auth/ProtectedRoute.tsx"
+        file_type: "auth_route"
+        template: "cp03_auth/ProtectedRoute.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/auth/useAuth.ts"
+        file_type: "auth_hook"
+        template: "cp03_auth/useAuth.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - AuthService

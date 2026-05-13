@@ -23,6 +23,13 @@ from typing import Optional, List, Dict, Any
 from midicoder.storage.sqlite import ArtifactsManager, ProvenanceManager
 from midicoder.pipeline.config import get_config
 from midicoder.pipeline.plan import ImplementationPlan, ModuleSpec, FileSpec
+from midicoder.pipeline.file_contributions_loader import (
+    FileContributionsLoader,
+    BACKEND_STACKS,
+    FRONTEND_STACKS,
+    INFRA_STACK,
+    CP_ID_TO_INTERNAL,
+)
 
 
 # ============================================================================
@@ -428,18 +435,26 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
         files=infra_specs,
         dependencies=[]
     ))
-    
+
+    # TODO[G5]: DP + RX pack loading (SoT §6.1 emit order: CPs → DPs → RXs)
+    # Currently only CP packs are loaded via FileContributionsLoader (emitters/core/).
+    # Future: load Domain Packs (emitters/domain/) and Regulatory Overlays
+    # (emitters/regulatory/) and emit them after CP files so domain-specific
+    # code can override/extend core scaffolding.  See backlog/MIDICODER_ARCHITECTURE.md §6.
+    # DP packs would use TaxonomyRegistry.resolve_dependencies() for ordering.
+    # RX packs would inject obligations/guards/gates into existing modules.
+
     return plan
 
 
 def _plan_backend_files(mir: dict) -> List[dict]:
     """
-    Plan backend files từ MIR.
+    Plan backend files from MIR.
 
-    Reads entities/commands/queries from mir["metadata"] (MIRBuilder stores
-    them there, not at the top level).  Entity model/schema FileSpecs carry
-    ``metadata.pack_emitter`` so that ``_generate_file()`` can dispatch to
-    the structured CP01 emitter instead of raw Jinja2.
+    Stack-aware: resolves file contributions from ALL packs for the
+    configured backend stack (default: ``fastapi``).  Entity model/schema
+    FileSpecs carry ``metadata.pack_emitter`` so that ``_generate_file()``
+    can dispatch to the structured CP01 emitter instead of raw Jinja2.
 
     Args:
         mir: MIR dictionary (as produced by MIR.to_dict())
@@ -447,17 +462,17 @@ def _plan_backend_files(mir: dict) -> List[dict]:
     Returns:
         Danh sách backend file plans
     """
-    # BUG FIX: entities/commands/queries live inside MIR.metadata, not at
-    # the top level of the serialised MIR dict.
     metadata = mir.get("metadata", {})
     entities = metadata.get("entities", [])
     commands = metadata.get("commands", [])
     queries = metadata.get("queries", [])
 
+    backend_stack = _get_backend_stack()
+    loader = FileContributionsLoader()
+
     files = []
 
-    # Core files (luôn include)
-    # Template paths là relative so với stacks/{stack}/core/
+    # --- Core files (always include, no pack owns these) ---
     files.extend([
         {
             "path": "app/main.py",
@@ -471,94 +486,88 @@ def _plan_backend_files(mir: dict) -> List[dict]:
             "template": "config.py.jinja2",
             "context": {},
         },
-        {
-            "path": "app/database.py",
-            "type": "database",
-            "template": "db/database.py.jinja2",
-            "context": {},
-        },
     ])
 
-    # Models, schemas, repositories cho mỗi entity — use pack emitter
+    # --- Pack-declared infrastructure files for this backend stack ---
+    infra_files = loader.resolve_all_infrastructure(backend_stack, metadata)
+    _merge_files(files, infra_files)
+
+    # --- Pack-declared per-entity files for this backend stack ---
+    per_entity_files = loader.resolve_all_per_entity(backend_stack, entities)
+    _merge_files(files, per_entity_files)
+
+    # --- CP01: entity model/schema — pack emitter dispatch ---
+    # (still hardcoded because CP01 uses structured emitters, not raw Jinja2)
     for entity in entities:
         entity_name = entity.get("id", "").lower()
-
         files.extend([
             {
                 "path": f"app/models/{entity_name}.py",
                 "type": "model",
-                "template": "cp01_domain_model/entity.py.jinja2",  # fallback
-                "context": {
-                    "entity": entity,
-                    "all_entities": entities,
-                },
+                "template": "cp01_domain_model/entity.py.jinja2",
+                "context": {"entity": entity, "all_entities": entities},
                 "metadata": {
                     "pack_emitter": "cp01.entity.fastapi",
-                    "stack": "fastapi",
+                    "stack": backend_stack,
                 },
             },
             {
                 "path": f"app/schemas/{entity_name}.py",
                 "type": "schema",
-                "template": "cp01_domain_model/entity.py.jinja2",  # fallback
-                "context": {
-                    "entity": entity,
-                    "all_entities": entities,
-                },
+                "template": "cp01_domain_model/entity.py.jinja2",
+                "context": {"entity": entity, "all_entities": entities},
                 "metadata": {
                     "pack_emitter": "cp01.entity.fastapi",
-                    "stack": "fastapi",
+                    "stack": backend_stack,
                 },
-            },
-            {
-                "path": f"app/repositories/{entity_name}_repo.py",
-                "type": "repository",
-                "template": "db/repository.py.jinja2",
-                "context": {"entity": entity},
             },
         ])
 
-    # Routes cho mỗi entity (CRUD)
-    for entity in entities:
-        entity_name = entity.get("id", "").lower()
-
-        files.append({
-            "path": f"app/routes/{entity_name}.py",
-            "type": "route",
-            "template": "routes/http_route.py.jinja2",
-            "context": {"entity": entity, "operation": "crud"},
-        })
-
-    # Command handlers
+    # --- Command handlers (per-command, not per-entity) ---
     for command in commands:
         command_name = command.get("id", "").lower()
         files.append({
             "path": f"app/commands/{command_name}_handler.py",
             "type": "command_handler",
-            "template": "commands/command_handler.py.jinja2",
+            "template": "cp01_domain_model/command_handler.py.jinja2",
             "context": {"command": command},
         })
 
-    # Query handlers
+    # --- Query handlers (per-query, not per-entity) ---
     for query in queries:
         query_name = query.get("id", "").lower()
         files.append({
             "path": f"app/queries/{query_name}_handler.py",
             "type": "query_handler",
-            "template": "queries/query_handler.py.jinja2",
+            "template": "cp01_domain_model/query_handler.py.jinja2",
             "context": {"query": query},
         })
 
     return files
 
 
+def _get_backend_stack() -> str:
+    """Get the configured backend stack from config."""
+    config = get_config()
+    stack = config.get("backend_stack", config.get("stack", "fastapi"))
+    return stack if stack in BACKEND_STACKS else "fastapi"
+
+
+def _merge_files(target: List[dict], source: List[dict]) -> None:
+    """Merge *source* into *target*, deduplicating by ``path``."""
+    seen = {f["path"] for f in target}
+    for f in source:
+        if f["path"] not in seen:
+            seen.add(f["path"])
+            target.append(f)
+
+
 def _plan_frontend_files(mir: dict) -> List[dict]:
     """
-    Plan frontend files từ MIR.
+    Plan frontend files from MIR.
 
-    Reads entities from mir["metadata"]["entities"].  Frontend FileSpecs
-    carry ``metadata.stack = "angular"`` so that ``_render_template()``
-    resolves the correct template directory.
+    Stack-aware: resolves file contributions from ALL packs for the
+    configured frontend stack (default: ``angular``).
 
     Args:
         mir: MIR dictionary
@@ -566,86 +575,75 @@ def _plan_frontend_files(mir: dict) -> List[dict]:
     Returns:
         Danh sách frontend file plans
     """
-    # BUG FIX: entities live inside MIR.metadata
     metadata = mir.get("metadata", {})
     entities = metadata.get("entities", [])
 
+    frontend_stack = _get_frontend_stack()
+    loader = FileContributionsLoader()
+
     files = []
 
-    # Core files — use angular stack
-    files.extend([
-        {
-            "path": "src/app/app.module.ts",
-            "type": "module",
-            "template": "angular/module.ts.jinja2",
-            "context": {},
-            "metadata": {"stack": "angular"},
-        },
-        {
-            "path": "src/app/app.component.ts",
-            "type": "app_component",
-            "template": "angular/app.component.ts.jinja2",
-            "context": {},
-            "metadata": {"stack": "angular"},
-        },
-    ])
+    # --- Pack-declared infrastructure files for this frontend stack ---
+    infra_files = loader.resolve_all_infrastructure(frontend_stack, metadata)
+    for f in infra_files:
+        f.setdefault("metadata", {})["stack"] = frontend_stack
+    _merge_files(files, infra_files)
 
-    # Components và services cho mỗi entity
-    for entity in entities:
-        entity_name = entity.get("id", "").lower()
-
-        files.extend([
-            {
-                "path": f"src/app/features/{entity_name}/components/{entity_name}.component.ts",
-                "type": "component",
-                "template": "angular/component.ts.jinja2",
-                "context": {"entity": entity},
-                "metadata": {"stack": "angular"},
-            },
-            {
-                "path": f"src/app/features/{entity_name}/components/{entity_name}.component.html",
-                "type": "component_template",
-                "template": "angular/component.html.jinja2",
-                "context": {"entity": entity},
-                "metadata": {"stack": "angular"},
-            },
-            {
-                "path": f"src/app/features/{entity_name}/services/{entity_name}.service.ts",
-                "type": "service",
-                "template": "angular/service.ts.jinja2",
-                "context": {"entity": entity},
-                "metadata": {"stack": "angular"},
-            },
-        ])
+    # --- Pack-declared per-entity files for this frontend stack ---
+    per_entity_files = loader.resolve_all_per_entity(frontend_stack, entities)
+    for f in per_entity_files:
+        f.setdefault("metadata", {})["stack"] = frontend_stack
+    _merge_files(files, per_entity_files)
 
     return files
+
+
+def _get_frontend_stack() -> str:
+    """Get the configured frontend stack from config."""
+    config = get_config()
+    stack = config.get("frontend_stack", "angular")
+    return stack if stack in FRONTEND_STACKS else "angular"
 
 
 def _plan_infra_files() -> List[dict]:
     """
     Plan infrastructure files.
-    
+
+    Stack-aware: resolves file contributions from ALL packs for the
+    ``infrastructure`` stack role (CP07 IaC).  Falls back to a minimal
+    set of well-known infra files when the loader returns nothing.
+
     Returns:
         Danh sách infra file plans
     """
+    loader = FileContributionsLoader()
+
+    # CP07 (IaC) contributes docker-compose, Dockerfile for fastapi/nestjs
+    # Since infra is stack-agnostic, try "fastapi" first (where CP07 lives)
+    infra_files = loader.resolve_all_infrastructure("fastapi")
+
+    # Filter to only infrastructure-type files
+    infra_paths = {"docker-compose.yml", "Dockerfile", "Dockerfile.api", ".env.example"}
+    infra_only = [f for f in infra_files if f["path"] in infra_paths]
+
+    if infra_only:
+        return infra_only
+
+    # Fallback: minimal infra files if loader returns nothing
     return [
         {
             "path": "docker-compose.yml",
             "type": "docker_compose",
-            "template": "infra/docker-compose.yml.jinja2",
+            "template": "cp07_iac/docker-compose.yml.jinja2",
             "context": {},
+            "metadata": {},
         },
         {
             "path": "Dockerfile",
             "type": "dockerfile",
-            "template": "infra/Dockerfile.jinja2",
+            "template": "cp07_iac/Dockerfile.api.jinja2",
             "context": {},
-        },
-        {
-            "path": ".env.example",
-            "type": "env_example",
-            "template": "infra/.env.example.jinja2",
-            "context": {},
+            "metadata": {},
         },
     ]
 

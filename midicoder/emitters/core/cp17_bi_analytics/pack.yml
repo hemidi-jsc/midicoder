@@ -34,6 +34,58 @@ pack:
       description: "Analytics data must respect defined freshness SLA"
     - name: "TenantIsolation"
       description: "Analytics queries must enforce tenant-scoped data"
+  file_contributions:
+    infrastructure:
+      - path: "app/analytics/analytics_service.py"
+        file_type: "analytics_service"
+        template: "cp17_bi_analytics/analytics_service.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "app/analytics/analytics_router.py"
+        file_type: "analytics_router"
+        template: "cp17_bi_analytics/analytics_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/analytics/analytics.module.ts"
+        file_type: "analytics_module"
+        template: "cp17_bi_analytics/analytics.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/analytics/analytics.service.ts"
+        file_type: "analytics_service"
+        template: "cp17_bi_analytics/analytics.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/analytics/analytics.controller.ts"
+        file_type: "analytics_controller"
+        template: "cp17_bi_analytics/analytics.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/shared/components/analytics-widget/analytics-widget.component.ts"
+        file_type: "analytics_component"
+        template: "cp17_bi_analytics/analytics_widget.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/shared/components/report-viewer/report-viewer.component.ts"
+        file_type: "report_viewer_component"
+        template: "cp17_bi_analytics/report_viewer.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/analytics/AnalyticsChart.tsx"
+        file_type: "analytics_component"
+        template: "cp17_bi_analytics/AnalyticsChart.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/analytics/ReportTable.tsx"
+        file_type: "report_component"
+        template: "cp17_bi_analytics/ReportTable.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/analytics/types.ts"
+        file_type: "analytics_types"
+        template: "cp17_bi_analytics/types.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - AnalyticsWidget

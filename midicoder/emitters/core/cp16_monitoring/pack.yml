@@ -32,6 +32,58 @@ pack:
   obligations:
     - name: "AlertNotification"
       description: "Alerts must route to configured notification channels"
+  file_contributions:
+    infrastructure:
+      - path: "app/monitoring/monitoring_service.py"
+        file_type: "monitoring_service"
+        template: "cp16_monitoring/monitoring_service.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "app/monitoring/monitoring_router.py"
+        file_type: "monitoring_router"
+        template: "cp16_monitoring/monitoring_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/monitoring/monitoring.module.ts"
+        file_type: "monitoring_module"
+        template: "cp16_monitoring/monitoring.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/monitoring/monitoring.service.ts"
+        file_type: "monitoring_service"
+        template: "cp16_monitoring/monitoring.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/monitoring/monitoring.controller.ts"
+        file_type: "monitoring_controller"
+        template: "cp16_monitoring/monitoring.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/shared/components/alert-panel/alert-panel.component.ts"
+        file_type: "alert_component"
+        template: "cp16_monitoring/alert_panel.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/shared/components/dashboard-widget/dashboard-widget.component.ts"
+        file_type: "dashboard_component"
+        template: "cp16_monitoring/dashboard_widget.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/monitoring/AlertBanner.tsx"
+        file_type: "alert_component"
+        template: "cp16_monitoring/AlertBanner.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/monitoring/DashboardPanel.tsx"
+        file_type: "dashboard_component"
+        template: "cp16_monitoring/DashboardPanel.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/monitoring/types.ts"
+        file_type: "monitoring_types"
+        template: "cp16_monitoring/types.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - DashboardWidget

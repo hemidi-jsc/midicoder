@@ -34,6 +34,63 @@ pack:
   obligations:
     - name: "ComponentSchemaConsistency"
       description: "Component schemas must match entity field types from CP01"
+  file_contributions:
+    infrastructure:
+      - path: "app/validation/form_validation_service.py"
+        file_type: "form_validation"
+        template: "cp19_ui_components/form_validation_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/shared/validations/form-validation.dto.ts"
+        file_type: "form_dto"
+        template: "cp19_ui_components/form-validation.dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/shared/pipes/form-validation.pipe.ts"
+        file_type: "form_pipe"
+        template: "cp19_ui_components/form-validation.pipe.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/shared/components/data-table/data-table.component.ts"
+        file_type: "data_table_component"
+        template: "cp19_ui_components/data-table.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/shared/components/card-list/card-list.component.ts"
+        file_type: "card_list_component"
+        template: "cp19_ui_components/card-list.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/shared/components/form-field/form-field.component.ts"
+        file_type: "form_field_component"
+        template: "cp19_ui_components/form-field.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/shared/components/dialog/dialog.component.ts"
+        file_type: "dialog_component"
+        template: "cp19_ui_components/dialog.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/components/DataTable.tsx"
+        file_type: "data_table_component"
+        template: "cp19_ui_components/DataTable.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/components/CardList.tsx"
+        file_type: "card_list_component"
+        template: "cp19_ui_components/CardList.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/components/FormField.tsx"
+        file_type: "form_field_component"
+        template: "cp19_ui_components/FormField.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/components/Dialog.tsx"
+        file_type: "dialog_component"
+        template: "cp19_ui_components/Dialog.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - FormFieldComponent

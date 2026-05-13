@@ -19,6 +19,28 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "runtime_invoker"
       emitter: "fastapi, nestjs"
+  file_contributions:
+    infrastructure:
+      - path: "app/bridge/inventory_service.py"
+        file_type: "domain_bridge"
+        template: "cp53_domain_bridge/inventory_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/bridge/payment_gateway_service.py"
+        file_type: "domain_bridge"
+        template: "cp53_domain_bridge/payment_gateway_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/bridge/inventory.service.ts"
+        file_type: "domain_bridge"
+        template: "cp53_domain_bridge/inventory.service.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/bridge/payment-gateway.service.ts"
+        file_type: "domain_bridge"
+        template: "cp53_domain_bridge/payment-gateway.service.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
   definitions:
     - name: "DomainBridge"
       description: "Adapter between generic CP output and domain-specific semantics"

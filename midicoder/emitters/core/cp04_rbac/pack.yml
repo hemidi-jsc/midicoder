@@ -35,6 +35,53 @@ pack:
   obligations:
     - name: "RoleHierarchy"
       description: "Role assignments must respect hierarchical ordering"
+  file_contributions:
+    infrastructure:
+      - path: "app/rbac/guards.py"
+        file_type: "rbac_guard"
+        template: "cp04_rbac/guards.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/rbac/service.py"
+        file_type: "rbac_service"
+        template: "cp04_rbac/service.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "src/rbac/guard.ts"
+        file_type: "rbac_guard"
+        template: "cp04_rbac/guard.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/rbac/decorator.ts"
+        file_type: "rbac_decorator"
+        template: "cp04_rbac/decorator.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/rbac/rbac.service.ts"
+        file_type: "rbac_service"
+        template: "cp04_rbac/service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/rbac/role.guard.ts"
+        file_type: "role_guard"
+        template: "cp04_rbac/guard.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/rbac/permission.directive.ts"
+        file_type: "permission_directive"
+        template: "cp04_rbac/directive.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/auth/WithPermission.tsx"
+        file_type: "rbac_component"
+        template: "cp04_rbac/component.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/auth/useRbac.ts"
+        file_type: "rbac_hook"
+        template: "cp04_rbac/hook.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - RbacService

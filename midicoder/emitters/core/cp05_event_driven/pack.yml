@@ -57,6 +57,63 @@ pack:
       description: "DLQ must be monitored and alerted on accumulation"
     - name: "TransportReliability"
       description: "Transport must enforce configured delivery guarantee"
+  file_contributions:
+    infrastructure:
+      - path: "app/events/__init__.py"
+        file_type: "init"
+        template: "cp05_event_driven/__init__.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/events/event_bus.py"
+        file_type: "event_bus"
+        template: "cp05_event_driven/event_bus.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/events/event_outbox.py"
+        file_type: "event_outbox"
+        template: "cp05_event_driven/event_outbox.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/events/event_publisher.py"
+        file_type: "event_publisher"
+        template: "cp05_event_driven/event_publisher.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/events/event_subscriber.py"
+        file_type: "event_subscriber"
+        template: "cp05_event_driven/event_subscriber.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/events/event-bus.service.ts"
+        file_type: "event_bus"
+        template: "cp05_event_driven/event-bus.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/events/event-outbox.service.ts"
+        file_type: "event_outbox"
+        template: "cp05_event_driven/event-outbox.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/events/event-publisher.service.ts"
+        file_type: "event_publisher"
+        template: "cp05_event_driven/event-publisher.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/events/event-subscriber.service.ts"
+        file_type: "event_subscriber"
+        template: "cp05_event_driven/event-subscriber.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/events/event.module.ts"
+        file_type: "event_module"
+        template: "cp05_event_driven/event.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/events/index.ts"
+        file_type: "init"
+        template: "cp05_event_driven/index.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - EventService

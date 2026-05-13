@@ -74,3 +74,66 @@ pack:
       description: "Distributed transactions must ensure eventual consistency across participants"
     - name: "SpatialSRID"
       description: "All spatial columns must declare explicit SRID (default: 4326 WGS84)"
+  file_contributions:
+    infrastructure:
+      - path: "app/database.py"
+        file_type: "database"
+        template: "cp08_database/database.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "app/models/base_model.py"
+        file_type: "base_model"
+        template: "cp08_database/base_model.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "app/repositories/base_repository.py"
+        file_type: "base_repository"
+        template: "cp08_database/base_repository.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/models/audit_mixin.py"
+        file_type: "audit_mixin"
+        template: "cp08_database/audit_mixin.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/models/tenant_mixin.py"
+        file_type: "tenant_mixin"
+        template: "cp08_database/tenant_mixin.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/migrations/env.py"
+        file_type: "migration_env"
+        template: "cp08_database/migrations/env.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/database/database.module.ts"
+        file_type: "database_module"
+        template: "cp08_database/database.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/database/base.entity.ts"
+        file_type: "base_entity"
+        template: "cp08_database/base.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/database/base.repository.ts"
+        file_type: "base_repository"
+        template: "cp08_database/base.repository.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/database/audit.decorator.ts"
+        file_type: "audit_decorator"
+        template: "cp08_database/audit.decorator.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/database/tenant.decorators.ts"
+        file_type: "tenant_decorator"
+        template: "cp08_database/tenant.decorators.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+    per_entity:
+      - path_pattern: "app/repositories/{entity_snake}_repo.py"
+        file_type: "repository"
+        template: "cp08_database/repository.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null

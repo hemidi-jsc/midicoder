@@ -57,6 +57,68 @@ pack:
       description: "High-concurrency cache misses must not cause thundering herd"
     - name: "CDNCacheControl"
       description: "CDN responses must have explicit Cache-Control headers"
+  file_contributions:
+    infrastructure:
+      - path: "app/cache/redis.py"
+        file_type: "redis_client"
+        template: "cp09_cache/redis.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/cache/cache_decorators.py"
+        file_type: "cache_decorator"
+        template: "cp09_cache/cache_decorators.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/cache/cache_invalidate.py"
+        file_type: "cache_invalidation"
+        template: "cp09_cache/cache_invalidate.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/cache/cache_strategy.py"
+        file_type: "cache_strategy"
+        template: "cp09_cache/cache_strategy.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/cache/redis.module.ts"
+        file_type: "redis_module"
+        template: "cp09_cache/redis.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/cache/cache.interceptor.ts"
+        file_type: "cache_interceptor"
+        template: "cp09_cache/cache.interceptor.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/cache/cache.module.ts"
+        file_type: "cache_module"
+        template: "cp09_cache/cache.module.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/cache/cache.service.ts"
+        file_type: "cache_service"
+        template: "cp09_cache/cache.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/cache/cache.interceptor.ts"
+        file_type: "cache_interceptor"
+        template: "cp09_cache/cache.interceptor.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/cache/CacheProvider.tsx"
+        file_type: "cache_provider"
+        template: "cp09_cache/CacheProvider.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/cache/useCache.ts"
+        file_type: "cache_hook"
+        template: "cp09_cache/useCache.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/cache/cache-utils.ts"
+        file_type: "cache_utils"
+        template: "cp09_cache/cache-utils.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - CacheService

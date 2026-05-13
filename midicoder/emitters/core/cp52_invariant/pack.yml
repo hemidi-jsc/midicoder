@@ -19,6 +19,53 @@ pack:
       emitter: "fastapi"
     - id: "gate_evaluator"
       emitter: "fastapi"
+  file_contributions:
+    infrastructure:
+      - path: "app/invariant/gate_middleware.py"
+        file_type: "gate_middleware"
+        template: "cp52_invariant/gate_middleware.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/invariant/runtime_guard.py"
+        file_type: "runtime_guard"
+        template: "cp52_invariant/runtime_guard.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/invariant/gate.pipe.ts"
+        file_type: "gate_pipe"
+        template: "cp52_invariant/gate.pipe.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/invariant/runtime.guard.ts"
+        file_type: "runtime_guard"
+        template: "cp52_invariant/runtime.guard.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/invariant/audit.service.ts"
+        file_type: "invariant_audit"
+        template: "cp52_invariant/audit.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/invariant/compliance.interceptor.ts"
+        file_type: "compliance_interceptor"
+        template: "cp52_invariant/compliance.interceptor.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/invariant/consent.guard.ts"
+        file_type: "consent_guard"
+        template: "cp52_invariant/consent.guard.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/invariant/InvariantContext.tsx"
+        file_type: "invariant_context"
+        template: "cp52_invariant/InvariantContext.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/invariant/useInvariant.ts"
+        file_type: "invariant_hook"
+        template: "cp52_invariant/useInvariant.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   definitions:
     - name: "Invariant"
       description: "Compile-time constraint that must hold for valid blueprints"

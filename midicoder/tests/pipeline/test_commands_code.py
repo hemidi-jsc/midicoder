@@ -7,6 +7,7 @@ Tests này validate:
 - Code generation từ plan
 - Code apply vào target directory
 - Error handling cho missing MIR/plan
+- FileContributionsLoader: self-declare mechanism cho packs
 
 E07: Emitter & Scaffolder
 """
@@ -31,6 +32,14 @@ from midicoder.pipeline.commands.code import (
     _plan_infra_files,
     _render_template,
 )
+from midicoder.pipeline.file_contributions_loader import (
+    FileContributionsLoader,
+    FileContributions,
+    _expand_path_pattern,
+    _pascal_to_snake,
+    _snake_to_camel,
+    FRONTEND_STACKS,
+)
 from midicoder.storage.sqlite import ArtifactsManager
 
 
@@ -46,18 +55,20 @@ def runner():
 
 @pytest.fixture
 def sample_mir():
-    """Sample MIR data."""
+    """Sample MIR data matching actual MIRBuilder output (entities in metadata)."""
     return {
-        "entities": [
-            {"id": "Customer", "attributes": ["id", "name", "email"]},
-            {"id": "Order", "attributes": ["id", "customer_id", "total"]},
-        ],
-        "commands": [
-            {"id": "CreateOrder", "input": ["customer_id", "items"], "output": ["order_id"]},
-        ],
-        "queries": [
-            {"id": "ListOrders", "input": ["customer_id"], "output": ["Order[]"]},
-        ],
+        "metadata": {
+            "entities": [
+                {"id": "Customer", "attributes": ["id", "name", "email"]},
+                {"id": "Order", "attributes": ["id", "customer_id", "total"]},
+            ],
+            "commands": [
+                {"id": "CreateOrder", "input": ["customer_id", "items"], "output": ["order_id"]},
+            ],
+            "queries": [
+                {"id": "ListOrders", "input": ["customer_id"], "output": ["Order[]"]},
+            ],
+        },
         "operations": [
             {"id": "op1", "type": "create"},
             {"id": "op2", "type": "read"},
@@ -167,11 +178,12 @@ class TestPlanCreation:
         # Core backend files luôn có
         assert file_counts["backend"] >= 3  # main, config, database
         
-        # Frontend core files
-        assert file_counts["frontend"] >= 2  # app.module, app.component
-        
-        # Infra files
-        assert file_counts["infra"] == 3  # docker-compose, Dockerfile, .env.example
+        # Frontend: now resolved from pack contributions (angular stack),
+        # includes auth, rbac, gateway, cache, etc.
+        assert file_counts["frontend"] >= 2
+
+        # Infra: CP07 contributes docker-compose + Dockerfile.api (2 files)
+        assert file_counts["infra"] >= 2
 
     def test_create_implementation_plan_with_entities(self, sample_mir):
         """Test create plan từ MIR với entities."""
@@ -214,28 +226,27 @@ class TestPlanCreation:
         assert "schema" in types
 
     def test_plan_frontend_files(self, sample_mir):
-        """Test _plan_frontend_files function."""
+        """Test _plan_frontend_files function — now resolved from pack contributions."""
         frontend_files = _plan_frontend_files(sample_mir)
-        
-        # Core files
         paths = [f["path"] for f in frontend_files]
-        assert "src/app/app.module.ts" in paths
-        assert "src/app/app.component.ts" in paths
-        
-        # Entity files
-        assert any("customer" in p for p in paths)
-        assert any("order" in p for p in paths)
+
+        # Frontend files come from pack file_contributions (angular stack by default)
+        # CP03 auth, CP04 rbac, CP06 gateway, CP18 frontend_framework, etc.
+        assert len(frontend_files) >= 2
+
+        # All frontend files should carry the frontend stack metadata
+        for f in frontend_files:
+            assert f.get("metadata", {}).get("stack") in FRONTEND_STACKS
 
     def test_plan_infra_files(self):
-        """Test _plan_infra_files function."""
+        """Test _plan_infra_files — now resolved from CP07 file_contributions."""
         infra_files = _plan_infra_files()
-        
-        assert len(infra_files) == 3
-        
+
+        # CP07 contributes docker-compose.yml + Dockerfile.api (2 files)
+        assert len(infra_files) >= 2
+
         paths = [f["path"] for f in infra_files]
         assert "docker-compose.yml" in paths
-        assert "Dockerfile" in paths
-        assert ".env.example" in paths
 
     def test_plan_target_filtering(self, sample_mir):
         """Test plan filtering by target."""
@@ -266,20 +277,16 @@ class TestCodeGeneration:
     """Tests cho code generation."""
 
     def test_render_template_placeholder(self):
-        """Test template rendering (placeholder)."""
-        context = {"entity": {"id": "Customer", "attributes": ["id", "name"]}}
-        content = _render_template("fastapi/model.py.jinja2", context)
-        
-        assert "Generated file" in content
-        assert "fastapi/model.py.jinja2" in content
-        assert "Customer" in content
+        """Test template rendering with a real template (config needs no special ctx)."""
+        content = _render_template("config.py.jinja2", {"app_name": "Test API"})
+
+        assert len(content) > 0
 
     def test_render_template_empty_context(self):
         """Test template rendering với empty context."""
-        content = _render_template("fastapi/main.py.jinja2", {})
-        
-        assert "Generated file" in content
-        assert "fastapi/main.py.jinja2" in content
+        content = _render_template("config.py.jinja2", {})
+
+        assert len(content) > 0
 
 
 # ============================================================================
@@ -512,11 +519,148 @@ class TestErrorHandling:
         mock_config = Mock()
         mock_config.get.return_value = "v9.9.9"
         mock_get_config.return_value = mock_config
-        
+
         result = runner.invoke(code, ["apply", "-d", str(tmp_path)])
-        
+
         assert result.exit_code == 1
         assert "không tồn tại" in result.output
+
+
+# ============================================================================
+# FileContributionsLoader Tests
+# ============================================================================
+
+class TestPascalToSnake:
+    """Tests for case conversion helpers."""
+
+    def test_simple_pascal(self):
+        assert _pascal_to_snake("Customer") == "customer"
+
+    def test_multi_word_pascal(self):
+        assert _pascal_to_snake("OrderItem") == "order_item"
+
+    def test_single_letter_prefix(self):
+        assert _pascal_to_snake("IOError") == "io_error"
+
+    def test_already_snake(self):
+        assert _pascal_to_snake("customer") == "customer"
+
+
+class TestSnakeToCamel:
+    """Tests for snake_to_camel helper."""
+
+    def test_simple_snake(self):
+        assert _snake_to_camel("customer") == "customer"
+
+    def test_multi_word_snake(self):
+        assert _snake_to_camel("order_item") == "orderItem"
+
+
+class TestExpandPathPattern:
+    """Tests for _expand_path_pattern placeholder expansion."""
+
+    def test_entity_snake_placeholder(self):
+        entity = {"id": "Customer"}
+        assert _expand_path_pattern("app/{entity_snake}_model.py", entity) == "app/customer_model.py"
+
+    def test_entity_pascal_placeholder(self):
+        entity = {"id": "Customer"}
+        assert _expand_path_pattern("app/{entity_pascal}Model.py", entity) == "app/CustomerModel.py"
+
+    def test_entity_camel_placeholder(self):
+        entity = {"id": "OrderItem"}
+        assert _expand_path_pattern("app/{entity_camel}.js", entity) == "app/orderItem.js"
+
+    def test_no_placeholder(self):
+        entity = {"id": "Customer"}
+        assert _expand_path_pattern("app/database.py", entity) == "app/database.py"
+
+    def test_unknown_placeholder_preserved(self):
+        entity = {"id": "Customer"}
+        assert _expand_path_pattern("app/{entity_snake}_{unknown_var}.py", entity) == "app/customer_{unknown_var}.py"
+
+
+class TestFileContributionsLoader:
+    """Tests for FileContributionsLoader — loading from pack.yml."""
+
+    def test_load_cp08_contributions(self):
+        """Test loading CP08 file_contributions from real pack.yml."""
+        loader = FileContributionsLoader()
+        fc = loader.load(pack_internal_id="cp08_database", pack_id="CP08")
+
+        assert fc.pack_id == "CP08"
+        assert fc.pack_internal_id == "cp08_database"
+        assert not fc.is_empty
+        assert len(fc.infrastructure) >= 1  # at least database.py
+        assert len(fc.per_entity) >= 1  # at least repository
+
+    def test_load_nonexistent_pack(self):
+        """Test loading a pack that doesn't exist returns empty."""
+        loader = FileContributionsLoader()
+        fc = loader.load(pack_internal_id="nonexistent_pack", pack_id="CP99")
+
+        assert fc.pack_id == "CP99"
+        assert fc.is_empty
+
+    def test_expand_infrastructure(self):
+        """Test expanding infrastructure entries into file plans."""
+        loader = FileContributionsLoader()
+        fc = loader.load(pack_internal_id="cp08_database", pack_id="CP08")
+
+        files = FileContributionsLoader.expand_infrastructure(fc)
+        paths = [f["path"] for f in files]
+
+        assert "app/database.py" in paths
+
+    def test_expand_per_entity(self):
+        """Test expanding per_entity entries with entity data."""
+        loader = FileContributionsLoader()
+        fc = loader.load(pack_internal_id="cp08_database", pack_id="CP08")
+
+        entities = [
+            {"id": "Customer"},
+            {"id": "OrderItem"},
+        ]
+
+        files = FileContributionsLoader.expand_per_entity(fc, entities)
+        paths = [f["path"] for f in files]
+
+        # Should have repository files for each entity
+        assert "app/repositories/customer_repo.py" in paths
+        assert "app/repositories/order_item_repo.py" in paths
+
+
+class TestFileContributionsLoaderIntegration:
+    """Integration tests: _plan_backend_files uses CP08 self-declare."""
+
+    def test_plan_backend_includes_cp08_infrastructure(self, sample_mir):
+        """Verify CP08 infrastructure files appear in backend plan."""
+        files = _plan_backend_files(sample_mir)
+        paths = [f["path"] for f in files]
+
+        assert "app/database.py" in paths
+
+        # Verify the template path is correct (cp08_database/ not db/)
+        db_file = next(f for f in files if f["path"] == "app/database.py")
+        assert db_file["template"] == "cp08_database/database.py.jinja2"
+
+    def test_plan_backend_includes_cp08_per_entity(self, sample_mir):
+        """Verify CP08 per-entity files (repositories) appear in backend plan."""
+        files = _plan_backend_files(sample_mir)
+        paths = [f["path"] for f in files]
+
+        assert "app/repositories/customer_repo.py" in paths
+        assert "app/repositories/order_repo.py" in paths
+
+    def test_plan_backend_no_stale_db_paths(self, sample_mir):
+        """Verify no template paths start with stale 'db/' prefix."""
+        files = _plan_backend_files(sample_mir)
+        for f in files:
+            template = f.get("template", "")
+            # None of the templates should start with "db/"
+            assert not template.startswith("db/"), (
+                f"Stale template path found: {template} in {f['path']}"
+            )
 
 
 if __name__ == "__main__":

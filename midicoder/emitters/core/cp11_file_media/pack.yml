@@ -35,6 +35,88 @@ pack:
   obligations:
     - name: "UploadValidation"
       description: "All uploads must validate type, size, and malware"
+  file_contributions:
+    infrastructure:
+      - path: "app/storage/s3.py"
+        file_type: "s3_client"
+        template: "cp11_file_media/s3.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/storage/file_upload.py"
+        file_type: "file_upload"
+        template: "cp11_file_media/file_upload.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/storage/media_transform.py"
+        file_type: "media_transform"
+        template: "cp11_file_media/media_transform.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/storage/storage_router.py"
+        file_type: "storage_router"
+        template: "cp11_file_media/storage_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/storage/s3.module.ts"
+        file_type: "s3_module"
+        template: "cp11_file_media/s3.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/storage/file-upload.service.ts"
+        file_type: "file_upload_service"
+        template: "cp11_file_media/file-upload.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/storage/file-upload.controller.ts"
+        file_type: "file_upload_controller"
+        template: "cp11_file_media/file-upload.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/storage/media-transform.service.ts"
+        file_type: "media_transform_service"
+        template: "cp11_file_media/media-transform.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/storage/file-storage.module.ts"
+        file_type: "storage_module"
+        template: "cp11_file_media/file-storage.module.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/storage/file-storage.service.ts"
+        file_type: "storage_service"
+        template: "cp11_file_media/file-storage.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/storage/file-storage.models.ts"
+        file_type: "storage_models"
+        template: "cp11_file_media/file-storage.models.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/shared/components/file-upload/file-upload.component.ts"
+        file_type: "file_upload_component"
+        template: "cp11_file_media/file-upload.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/storage/fileStorage.ts"
+        file_type: "storage_client"
+        template: "cp11_file_media/fileStorage.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/storage/fileStorage.types.ts"
+        file_type: "storage_types"
+        template: "cp11_file_media/fileStorage.types.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/storage/useFileStorage.ts"
+        file_type: "storage_hook"
+        template: "cp11_file_media/useFileStorage.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/components/FileUpload.tsx"
+        file_type: "file_upload_component"
+        template: "cp11_file_media/FileUpload.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - FileStorageService

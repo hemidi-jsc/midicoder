@@ -34,6 +34,48 @@ pack:
       description: "Auto-generated routes must map 1:1 to domain entities"
     - name: "StateStoreIsolation"
       description: "State stores must be namespaced per feature module"
+  file_contributions:
+    infrastructure:
+      - path: "app/frontend/frontend_config_service.py"
+        file_type: "frontend_config"
+        template: "cp18_frontend_framework/frontend_config_service.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "app/frontend/frontend_router.py"
+        file_type: "frontend_router"
+        template: "cp18_frontend_framework/frontend_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/frontend-config/frontend-config.module.ts"
+        file_type: "frontend_module"
+        template: "cp18_frontend_framework/frontend-config.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/frontend-config/frontend-config.service.ts"
+        file_type: "frontend_config"
+        template: "cp18_frontend_framework/frontend-config.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/frontend-config/frontend-config.controller.ts"
+        file_type: "frontend_controller"
+        template: "cp18_frontend_framework/frontend-config.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/app.routes.ts"
+        file_type: "app_routes"
+        template: "cp18_frontend_framework/app.routes.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/store/store.ts"
+        file_type: "state_store"
+        template: "cp18_frontend_framework/store.ts.jinja2"
+        stacks: ["angular", "react"]
+        pack_emitter: null
+      - path: "src/routes.tsx"
+        file_type: "app_routes"
+        template: "cp18_frontend_framework/routes.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - AppShellModule

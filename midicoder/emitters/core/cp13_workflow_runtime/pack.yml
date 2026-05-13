@@ -54,6 +54,73 @@ pack:
       description: "DAG must have no cycles (topological order required)"
     - name: "NodeTimeout"
       description: "Each DAG node must have timeout to prevent hangs"
+  file_contributions:
+    infrastructure:
+      - path: "app/workflow/celery_app.py"
+        file_type: "celery_app"
+        template: "cp13_workflow_runtime/celery_app.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/workflow/job_scheduler.py"
+        file_type: "job_scheduler"
+        template: "cp13_workflow_runtime/job_scheduler.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/workflow/tasks.py"
+        file_type: "tasks"
+        template: "cp13_workflow_runtime/tasks.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/workflow/workflow_service.py"
+        file_type: "workflow_service"
+        template: "cp13_workflow_runtime/workflow_service.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "src/workflow/queue.module.ts"
+        file_type: "queue_module"
+        template: "cp13_workflow_runtime/queue.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/workflow/job.scheduler.ts"
+        file_type: "job_scheduler"
+        template: "cp13_workflow_runtime/job.scheduler.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/workflow/worker.service.ts"
+        file_type: "worker_service"
+        template: "cp13_workflow_runtime/worker.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/workflow/workflow.service.ts"
+        file_type: "workflow_service"
+        template: "cp13_workflow_runtime/workflow.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/workflow/workflow.service.ts"
+        file_type: "workflow_service"
+        template: "cp13_workflow_runtime/workflow.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/shared/components/job-status/job-status.component.ts"
+        file_type: "job_status_component"
+        template: "cp13_workflow_runtime/job-status.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/workflow/WorkflowContext.tsx"
+        file_type: "workflow_context"
+        template: "cp13_workflow_runtime/WorkflowContext.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/workflow/useWorkflow.ts"
+        file_type: "workflow_hook"
+        template: "cp13_workflow_runtime/useWorkflow.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/workflow/types.ts"
+        file_type: "workflow_types"
+        template: "cp13_workflow_runtime/types.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - WorkflowService

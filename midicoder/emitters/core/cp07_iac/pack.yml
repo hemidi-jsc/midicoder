@@ -27,3 +27,15 @@ pack:
   obligations:
     - name: "EnvParity"
       description: "Local and production infrastructure must maintain parity"
+  file_contributions:
+    infrastructure:
+      - path: "docker-compose.yml"
+        file_type: "docker_compose"
+        template: "cp07_iac/docker-compose.yml.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "Dockerfile.api"
+        file_type: "dockerfile"
+        template: "cp07_iac/Dockerfile.api.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null

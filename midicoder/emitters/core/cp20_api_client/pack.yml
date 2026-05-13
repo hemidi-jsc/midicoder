@@ -38,6 +38,53 @@ pack:
       description: "Backend errors must be mapped to client-side error types"
     - name: "AuthInjection"
       description: "Each request must automatically attach auth token"
+  file_contributions:
+    infrastructure:
+      - path: "app/api_client/openapi_endpoint.py"
+        file_type: "openapi_endpoint"
+        template: "cp20_api_client/openapi_endpoint.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "app/api_client/websocket_gateway.py"
+        file_type: "websocket_gateway"
+        template: "cp20_api_client/websocket_gateway.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/api-client/openapi.module.ts"
+        file_type: "openapi_module"
+        template: "cp20_api_client/openapi.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/api-client/websocket.gateway.ts"
+        file_type: "websocket_gateway"
+        template: "cp20_api_client/websocket.gateway.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/api/api-client.service.ts"
+        file_type: "api_client_service"
+        template: "cp20_api_client/api-client.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/api/realtime-bridge.service.ts"
+        file_type: "realtime_bridge"
+        template: "cp20_api_client/realtime-bridge.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/core/api/openapi-bind.ts"
+        file_type: "openapi_binding"
+        template: "cp20_api_client/openapi-bind.ts.jinja2"
+        stacks: ["angular", "react"]
+        pack_emitter: null
+      - path: "src/api/api-client.ts"
+        file_type: "api_client"
+        template: "cp20_api_client/api-client.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/api/realtime-hooks.ts"
+        file_type: "realtime_hooks"
+        template: "cp20_api_client/realtime-hooks.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - ApiClientService

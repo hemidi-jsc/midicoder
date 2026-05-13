@@ -58,6 +58,48 @@ pack:
       description: "Compliance reports must include evidence (old/new values)"
     - name: "ReportGeneration"
       description: "Auto-generated reports must be delivered to configured recipients"
+  file_contributions:
+    infrastructure:
+      - path: "app/audit/audit_logger.py"
+        file_type: "audit_logger"
+        template: "cp14_audit_compliance/audit_logger.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "app/audit/audit_middleware.py"
+        file_type: "audit_middleware"
+        template: "cp14_audit_compliance/audit_middleware.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/audit/audit.module.ts"
+        file_type: "audit_module"
+        template: "cp14_audit_compliance/audit.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/audit/audit-logger.service.ts"
+        file_type: "audit_logger"
+        template: "cp14_audit_compliance/audit_logger_service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/shared/components/audit-log/audit-log.component.ts"
+        file_type: "audit_log_component"
+        template: "cp14_audit_compliance/audit_log_list.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/audit/AuditLogList.tsx"
+        file_type: "audit_log_component"
+        template: "cp14_audit_compliance/AuditLogList.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/audit/useAudit.ts"
+        file_type: "audit_hook"
+        template: "cp14_audit_compliance/useAudit.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/audit/types.ts"
+        file_type: "audit_types"
+        template: "cp14_audit_compliance/types.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - AuditLoggerService

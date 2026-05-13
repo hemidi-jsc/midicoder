@@ -61,6 +61,58 @@ pack:
       description: "Each log shipping destination must have valid endpoint"
     - name: "SamplingRateValid"
       description: "Sampler rate must be in [0.0, 1.0] range"
+  file_contributions:
+    infrastructure:
+      - path: "app/observability/observability_service.py"
+        file_type: "observability_service"
+        template: "cp15_observability/observability_service.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "app/observability/observability_middleware.py"
+        file_type: "observability_middleware"
+        template: "cp15_observability/observability_middleware.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/observability/observability.module.ts"
+        file_type: "observability_module"
+        template: "cp15_observability/observability.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/observability/observability.service.ts"
+        file_type: "observability_service"
+        template: "cp15_observability/observability.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/observability/observability.interceptor.ts"
+        file_type: "observability_interceptor"
+        template: "cp15_observability/observability.interceptor.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/observability/logging.service.ts"
+        file_type: "logging_service"
+        template: "cp15_observability/logging_service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/shared/components/log-viewer/log-viewer.component.ts"
+        file_type: "log_viewer_component"
+        template: "cp15_observability/log_viewer.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/observability/LogViewer.tsx"
+        file_type: "log_viewer_component"
+        template: "cp15_observability/LogViewer.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/observability/useLogging.ts"
+        file_type: "logging_hook"
+        template: "cp15_observability/useLogging.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/observability/types.ts"
+        file_type: "observability_types"
+        template: "cp15_observability/types.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - LoggingService

@@ -101,3 +101,101 @@ pack:
       description: "Only aggregate root may be accessed directly from outside"
     - name: "EventImmutability"
       description: "Domain events must be immutable once emitted"
+  file_contributions:
+    infrastructure:
+      - path: "app/models/__init__.py"
+        file_type: "init"
+        template: "cp01_domain_model/__init__.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/domain/index.ts"
+        file_type: "init"
+        template: "cp01_domain_model/index.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/domain/commands/command.module.ts"
+        file_type: "command_module"
+        template: "cp01_domain_model/command.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+    per_entity:
+      - path_pattern: "app/models/{entity_snake}.py"
+        file_type: "entity"
+        template: "cp01_domain_model/entity.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "src/entities/{entity_snake}.entity.ts"
+        file_type: "entity"
+        template: "cp01_domain_model/entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}.py"
+        file_type: "command"
+        template: "cp01_domain_model/command.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_handler.py"
+        file_type: "command_handler"
+        template: "cp01_domain_model/command_handler.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_validator.py"
+        file_type: "command_validator"
+        template: "cp01_domain_model/command_validator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_guards.py"
+        file_type: "command_guards"
+        template: "cp01_domain_model/command_guards.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_effects.py"
+        file_type: "command_effects"
+        template: "cp01_domain_model/command_effects.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_errors.py"
+        file_type: "command_errors"
+        template: "cp01_domain_model/command_errors.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}.py"
+        file_type: "query"
+        template: "cp01_domain_model/query.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_handler.py"
+        file_type: "query_handler"
+        template: "cp01_domain_model/query_handler.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_validator.py"
+        file_type: "query_validator"
+        template: "cp01_domain_model/query_validator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_guards.py"
+        file_type: "query_guards"
+        template: "cp01_domain_model/query_guards.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_effects.py"
+        file_type: "query_effects"
+        template: "cp01_domain_model/query_effects.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_output.py"
+        file_type: "query_output"
+        template: "cp01_domain_model/query_output.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_aggregation.py"
+        file_type: "query_aggregation"
+        template: "cp01_domain_model/query_aggregation.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/models/{vo_snake}.py"
+        file_type: "value_object"
+        template: "cp01_domain_model/value_object.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
