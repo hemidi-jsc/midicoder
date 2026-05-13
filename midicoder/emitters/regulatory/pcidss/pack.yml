@@ -1,0 +1,20 @@
+pack:
+  id: "RX03"
+  name: "PCI-DSS Regulatory Overlay"
+  internal_id: "pcidss"
+  version: "1.0.0"
+  status: "stable"
+  category: "regulatory"
+  depends_on: ["CP01", "CP03", "CP08"]
+  file_contributions:
+    infrastructure:
+      - path: "app/compliance/pcidss/card_data_protection.py"
+        file_type: "compliance_guard"
+        template: "regulatory/pcidss/card_data_protection.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        context_keys: []
+      - path: "app/compliance/pcidss/network_segmentation.py"
+        file_type: "compliance_guard"
+        template: "regulatory/pcidss/network_segmentation.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        context_keys: []

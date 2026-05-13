@@ -232,7 +232,13 @@ class DependencyGraph:
         for edge in self.edges:
             if edge.source == source and edge.target == target and edge.dep_type == dep_type:
                 return
-        
+
+        # Convert to string if not hashable (e.g. dict from LLM output)
+        if not isinstance(target, str):
+            target = str(target)
+        if not isinstance(source, str):
+            source = str(source)
+
         self.edges.append(Dependency(source=source, target=target, dep_type=dep_type, field=field))
         self.adjacency[source].append(target)
         self.reverse_adjacency[target].append(source)

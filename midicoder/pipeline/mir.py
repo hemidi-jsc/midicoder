@@ -92,20 +92,33 @@ class Operation:
     output_refs: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    # Backward-compatibility alias (contracts/mir used "op" instead of "op_type")
+    @property
+    def op(self) -> str:
+        """Alias for op_type (compatibility with contracts/mir API)."""
+        return self.op_type
+
+    @op.setter
+    def op(self, value: str) -> None:
+        self.op_type = value
+
     def to_dict(self) -> dict[str, Any]:
         """
         Chuyển Operation sang dictionary.
 
         Returns:
-            Dictionary representation của Operation
+            Dictionary representation (legacy + canonical keys)
         """
         return {
             "op_id": self.op_id,
+            "op": self.op_type,  # Legacy key
             "op_type": self.op_type,
             "params": self.params,
             "obligation_refs": self.obligation_refs,
             "input_refs": self.input_refs,
             "output_refs": self.output_refs,
+            "effect_refs": [],  # Legacy field on MIR level
+            "transaction_boundary": self.metadata.get("transaction_boundary"),
             "metadata": self.metadata,
         }
 
@@ -115,14 +128,16 @@ class Operation:
         Tạo Operation từ dictionary.
 
         Args:
-            data: Dictionary chứa operation data
+            data: Dictionary chứa operation data (supports legacy "op" key)
 
         Returns:
             Operation instance
         """
+        op_type = data.get("op_type", data.get("op", ""))
+        op_id = data.get("op_id", op_type)
         return cls(
-            op_id=data["op_id"],
-            op_type=data["op_type"],
+            op_id=op_id,
+            op_type=op_type,
             params=data.get("params", {}),
             obligation_refs=data.get("obligation_refs", []),
             input_refs=data.get("input_refs", []),
@@ -175,6 +190,9 @@ class DataFlow:
     transformation: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    # Backward-compat with contracts/mir API
+    id: Optional[str] = field(default=None, repr=False)
+
     def to_dict(self) -> dict[str, Any]:
         """
         Chuyển DataFlow sang dictionary.
@@ -182,7 +200,7 @@ class DataFlow:
         Returns:
             Dictionary representation của DataFlow
         """
-        return {
+        d: dict[str, Any] = {
             "source_op": self.source_op,
             "source_field": self.source_field,
             "target_op": self.target_op,
@@ -190,6 +208,9 @@ class DataFlow:
             "transformation": self.transformation,
             "metadata": self.metadata,
         }
+        if self.id is not None:
+            d["id"] = self.id
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DataFlow":
@@ -203,6 +224,7 @@ class DataFlow:
             DataFlow instance
         """
         return cls(
+            id=data.get("id"),
             source_op=data["source_op"],
             source_field=data["source_field"],
             target_op=data["target_op"],
@@ -253,6 +275,11 @@ class EffectFlow:
     payload_fields: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    # Backward-compat with contracts/mir API
+    id: Optional[str] = field(default=None, repr=False)
+    async_: bool = field(default=False, repr=False)
+    retry_policy: Optional[dict[str, Any]] = field(default=None, repr=False)
+
     def to_dict(self) -> dict[str, Any]:
         """
         Chuyển EffectFlow sang dictionary.
@@ -260,13 +287,20 @@ class EffectFlow:
         Returns:
             Dictionary representation của EffectFlow
         """
-        return {
+        d: dict[str, Any] = {
             "source_op": self.source_op,
             "effect_type": self.effect_type,
             "target": self.target,
             "payload_fields": self.payload_fields,
             "metadata": self.metadata,
         }
+        if self.id is not None:
+            d["id"] = self.id
+        if self.async_:
+            d["async"] = self.async_
+        if self.retry_policy is not None:
+            d["retry_policy"] = self.retry_policy
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EffectFlow":
@@ -280,10 +314,13 @@ class EffectFlow:
             EffectFlow instance
         """
         return cls(
+            id=data.get("id"),
             source_op=data["source_op"],
             effect_type=data["effect_type"],
             target=data["target"],
             payload_fields=data.get("payload_fields", []),
+            async_=data.get("async", False),
+            retry_policy=data.get("retry_policy"),
             metadata=data.get("metadata", {}),
         )
 
@@ -329,20 +366,35 @@ class Boundary:
     config: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    # Backward-compat with contracts/mir API
+    scope: Optional[str] = field(default=None, repr=False)
+
+    @property
+    def id(self) -> str:
+        """Alias for boundary_id (compatibility with contracts/mir API)."""
+        return self.boundary_id
+
+    @id.setter
+    def id(self, value: str) -> None:
+        self.boundary_id = value
+
     def to_dict(self) -> dict[str, Any]:
         """
         Chuyển Boundary sang dictionary.
 
         Returns:
-            Dictionary representation của Boundary
+            Dictionary representation của Boundary (legacy + canonical keys)
         """
-        return {
-            "boundary_id": self.boundary_id,
+        d: dict[str, Any] = {
+            "id": self.boundary_id,
             "boundary_type": self.boundary_type,
             "enclosing_ops": self.enclosing_ops,
             "config": self.config,
             "metadata": self.metadata,
         }
+        if self.scope is not None:
+            d["scope"] = self.scope
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Boundary":
@@ -350,16 +402,17 @@ class Boundary:
         Tạo Boundary từ dictionary.
 
         Args:
-            data: Dictionary chứa boundary data
+            data: Dictionary chứa boundary data (supports legacy "id" key)
 
         Returns:
             Boundary instance
         """
         return cls(
-            boundary_id=data["boundary_id"],
+            boundary_id=data.get("id", data.get("boundary_id", "")),
             boundary_type=data["boundary_type"],
-            enclosing_ops=data["enclosing_ops"],
+            enclosing_ops=data.get("enclosing_ops", []),
             config=data.get("config", {}),
+            scope=data.get("scope"),
             metadata=data.get("metadata", {}),
         )
 
@@ -404,6 +457,55 @@ class MIR:
     effect_flows: list[EffectFlow] = field(default_factory=list)
     boundaries: list[Boundary] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    # Backward-compat for contracts/mir API (legacy tests)
+    _ops_by_index: dict[int, Operation] = field(default_factory=dict, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Build legacy index cache."""
+        self._ops_by_index = {i: op for i, op in enumerate(self.operations)}
+
+    @property
+    def ir_ref(self) -> str:
+        """Legacy alias for metadata['ir_ref']."""
+        return self.metadata.get("ir_ref", "")
+
+    @ir_ref.setter
+    def ir_ref(self, value: str) -> None:
+        self.metadata["ir_ref"] = value
+
+    @property
+    def description(self) -> str | None:
+        """Legacy alias for metadata['description']."""
+        return self.metadata.get("description")
+
+    @description.setter
+    def description(self, value: str | None) -> None:
+        if value is not None:
+            self.metadata["description"] = value
+        else:
+            self.metadata.pop("description", None)
+
+    @property
+    def ops(self) -> list[Operation]:
+        """Legacy alias — same list as ``operations``."""
+        return self.operations
+
+    @property
+    def effect_refs(self) -> list[str]:
+        """Legacy: unused on MIR level (was on MIROperation)."""
+        return []
+
+    def get_operation(self, index: int) -> Operation | None:
+        """Legacy: get operation by numeric index."""
+        return self._ops_by_index.get(index)
+
+    def add_operation_compat(self, op: Operation) -> int:
+        """Legacy: add an Operation object (not builder-style kwargs)."""
+        index = len(self.operations)
+        self.operations.append(op)
+        self._ops_by_index[index] = op
+        return index
 
     def add_operation(self, op: Operation) -> None:
         """

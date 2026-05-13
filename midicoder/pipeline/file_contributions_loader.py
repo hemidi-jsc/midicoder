@@ -79,6 +79,30 @@ class PerEntityFile:
 
 
 @dataclass
+class PerCommandFile:
+    """A file emitted once per command in MIR metadata."""
+
+    path_pattern: str  # e.g. "app/commands/{command_snake}_handler.py"
+    file_type: str
+    template: str
+    stacks: list[str] = field(default_factory=list)
+    pack_emitter: str | None = None
+    context_keys: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PerQueryFile:
+    """A file emitted once per query in MIR metadata."""
+
+    path_pattern: str  # e.g. "app/queries/{query_snake}_handler.py"
+    file_type: str
+    template: str
+    stacks: list[str] = field(default_factory=list)
+    pack_emitter: str | None = None
+    context_keys: list[str] = field(default_factory=list)
+
+
+@dataclass
 class FileContributions:
     """All file contributions declared by a single pack."""
 
@@ -86,10 +110,12 @@ class FileContributions:
     pack_internal_id: str
     infrastructure: list[InfrastructureFile] = field(default_factory=list)
     per_entity: list[PerEntityFile] = field(default_factory=list)
+    per_command: list[PerCommandFile] = field(default_factory=list)
+    per_query: list[PerQueryFile] = field(default_factory=list)
 
     @property
     def is_empty(self) -> bool:
-        return not self.infrastructure and not self.per_entity
+        return not (self.infrastructure or self.per_entity or self.per_command or self.per_query)
 
 
 # ---------------------------------------------------------------------------
@@ -182,20 +208,24 @@ class FileContributionsLoader:
     frontend, or infra stack.
     """
 
-    def __init__(self, emitters_core_dir: Path | None = None):
+    def __init__(self, emitters_core_dir: Path | None = None, emitters_domain_dir: Path | None = None, emitters_regulatory_dir: Path | None = None):
         if emitters_core_dir is None:
             # midicoder/pipeline/ → midicoder/ → emitters/core/
             self._base_dir = Path(__file__).resolve().parent.parent / "emitters" / "core"
         else:
             self._base_dir = emitters_core_dir
 
-        # TODO[G5]: DP + RX pack loading (SoT §6.1 emit order: CPs → DPs → RXs)
-        # Currently only emitters/core/ (CP packs) is loaded.
-        # Future: add emitters/domain/ (DP) and emitters/regulatory/ (RX) dirs.
-        # DP packs: domain-specific entities, commands, queries, workflows, invariants
-        # RX packs: obligations, guards, gates that inject into CP/DP modules
-        self._domain_dir: Path | None = None
-        self._regulatory_dir: Path | None = None
+        # Domain Packs (DP) — industry-specific capabilities
+        if emitters_domain_dir is None:
+            self._domain_dir = Path(__file__).resolve().parent.parent / "emitters" / "domain"
+        else:
+            self._domain_dir = emitters_domain_dir
+
+        # Regulatory Overlays (RX) — compliance guards
+        if emitters_regulatory_dir is None:
+            self._regulatory_dir = Path(__file__).resolve().parent.parent / "emitters" / "regulatory"
+        else:
+            self._regulatory_dir = emitters_regulatory_dir
 
     # ------------------------------------------------------------------
     # Public API
@@ -229,17 +259,23 @@ class FileContributionsLoader:
 
         infra = [_parse_infrastructure(f) for f in raw.get("infrastructure", [])]
         per_entity = [_parse_per_entity(f) for f in raw.get("per_entity", [])]
+        per_command = [_parse_per_command(f) for f in raw.get("per_command", [])]
+        per_query = [_parse_per_query(f) for f in raw.get("per_query", [])]
 
         # Filter by stack if requested
         if stack:
             infra = [e for e in infra if stack in e.stacks]
             per_entity = [e for e in per_entity if stack in e.stacks]
+            per_command = [e for e in per_command if stack in e.stacks]
+            per_query = [e for e in per_query if stack in e.stacks]
 
         return FileContributions(
             pack_id=pack_id,
             pack_internal_id=pack_internal_id,
             infrastructure=infra,
             per_entity=per_entity,
+            per_command=per_command,
+            per_query=per_query,
         )
 
     def load_all(
@@ -247,7 +283,7 @@ class FileContributionsLoader:
         pack_map: dict[str, str] | None = None,
         stack: str | None = None,
     ) -> list[FileContributions]:
-        """Load contributions for multiple packs.
+        """Load contributions for all Core Packs (CP).
 
         Args:
             pack_map: ``{pack_id: internal_id}``.  If ``None``, loads ALL
@@ -266,6 +302,76 @@ class FileContributionsLoader:
             if not fc.is_empty:
                 contributions.append(fc)
         return contributions
+
+    # ------------------------------------------------------------------
+    # Domain Packs (DP) loading
+    # ------------------------------------------------------------------
+
+    def _load_from_dir(
+        self,
+        search_dir: Path,
+        stack: str | None = None,
+    ) -> list[FileContributions]:
+        """Load contributions from any pack directory (domain or regulatory).
+
+        Scans subdirectories for ``pack.yml`` and loads each.
+
+        Args:
+            search_dir: Parent directory containing pack folders.
+            stack: Optional stack filter.
+
+        Returns:
+            List of non-empty ``FileContributions``.
+        """
+        if not search_dir.exists():
+            return []
+
+        contributions: list[FileContributions] = []
+        for sub in search_dir.iterdir():
+            if not sub.is_dir() or sub.name.startswith("_"):
+                continue
+            pack_yml = sub / "pack.yml"
+            if not pack_yml.exists():
+                continue
+
+            data = _load_yaml(pack_yml)
+            raw = data.get("file_contributions", {})
+            if not raw:
+                continue
+
+            pack_id = data.get("id", sub.name)
+            internal_id = data.get("internal_id", sub.name)
+
+            infra = [_parse_infrastructure(f) for f in raw.get("infrastructure", [])]
+            per_entity = [_parse_per_entity(f) for f in raw.get("per_entity", [])]
+            per_command = [_parse_per_command(f) for f in raw.get("per_command", [])]
+            per_query = [_parse_per_query(f) for f in raw.get("per_query", [])]
+
+            if stack:
+                infra = [e for e in infra if stack in e.stacks]
+                per_entity = [e for e in per_entity if stack in e.stacks]
+                per_command = [e for e in per_command if stack in e.stacks]
+                per_query = [e for e in per_query if stack in e.stacks]
+
+            fc = FileContributions(
+                pack_id=pack_id,
+                pack_internal_id=internal_id,
+                infrastructure=infra,
+                per_entity=per_entity,
+                per_command=per_command,
+                per_query=per_query,
+            )
+            if not fc.is_empty:
+                contributions.append(fc)
+        return contributions
+
+    def load_all_domain(self, stack: str | None = None) -> list[FileContributions]:
+        """Load contributions from all Domain Packs (DP)."""
+        return self._load_from_dir(self._domain_dir, stack)
+
+    def load_all_regulatory(self, stack: str | None = None) -> list[FileContributions]:
+        """Load contributions from all Regulatory Overlays (RX)."""
+        return self._load_from_dir(self._regulatory_dir, stack)
 
     # ------------------------------------------------------------------
     # Expansion helpers — produce file plan dicts for code.py
@@ -347,6 +453,88 @@ class FileContributionsLoader:
                 })
         return files
 
+    @staticmethod
+    def expand_per_command(
+        contributions: FileContributions,
+        commands: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Expand ``per_command`` entries into concrete file plans.
+
+        Args:
+            contributions: Loaded ``FileContributions`` for a pack.
+            commands: Raw command dicts from ``MIR.metadata.commands``.
+
+        Returns:
+            List of file plan dicts.
+        """
+        files: list[dict[str, Any]] = []
+        for entry in contributions.per_command:
+            for command in commands:
+                cmd_id: str = command.get("id", "Command")
+                snake = _pascal_to_snake(cmd_id)
+                path = entry.path_pattern.replace("{command_snake}", snake)
+                path = path.replace("{command_pascal}", cmd_id)
+
+                ctx = {"command": command, "all_commands": commands}
+                for key in entry.context_keys:
+                    if key in command:
+                        ctx[key] = command[key]
+
+                metadata: dict[str, Any] = {}
+                if entry.pack_emitter:
+                    metadata["pack_emitter"] = entry.pack_emitter
+                    metadata["stack"] = entry.stacks[0] if entry.stacks else "fastapi"
+
+                files.append({
+                    "path": path,
+                    "type": entry.file_type,
+                    "template": entry.template,
+                    "context": ctx,
+                    "metadata": metadata,
+                })
+        return files
+
+    @staticmethod
+    def expand_per_query(
+        contributions: FileContributions,
+        queries: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Expand ``per_query`` entries into concrete file plans.
+
+        Args:
+            contributions: Loaded ``FileContributions`` for a pack.
+            queries: Raw query dicts from ``MIR.metadata.queries``.
+
+        Returns:
+            List of file plan dicts.
+        """
+        files: list[dict[str, Any]] = []
+        for entry in contributions.per_query:
+            for query in queries:
+                query_id: str = query.get("id", "Query")
+                snake = _pascal_to_snake(query_id)
+                path = entry.path_pattern.replace("{query_snake}", snake)
+                path = path.replace("{query_pascal}", query_id)
+
+                ctx = {"query": query, "all_queries": queries}
+                for key in entry.context_keys:
+                    if key in query:
+                        ctx[key] = query[key]
+
+                metadata: dict[str, Any] = {}
+                if entry.pack_emitter:
+                    metadata["pack_emitter"] = entry.pack_emitter
+                    metadata["stack"] = entry.stacks[0] if entry.stacks else "fastapi"
+
+                files.append({
+                    "path": path,
+                    "type": entry.file_type,
+                    "template": entry.template,
+                    "context": ctx,
+                    "metadata": metadata,
+                })
+        return files
+
     # ------------------------------------------------------------------
     # Aggregate helper — used by code.py
     # ------------------------------------------------------------------
@@ -382,6 +570,36 @@ class FileContributionsLoader:
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack):
             for f in self.expand_per_entity(fc, entities):
+                if f["path"] not in seen:
+                    seen.add(f["path"])
+                    result.append(f)
+        return result
+
+    def resolve_all_per_command(
+        self,
+        stack: str,
+        commands: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Load per-command files from ALL packs for the given stack."""
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
+        for fc in self.load_all(stack=stack):
+            for f in self.expand_per_command(fc, commands):
+                if f["path"] not in seen:
+                    seen.add(f["path"])
+                    result.append(f)
+        return result
+
+    def resolve_all_per_query(
+        self,
+        stack: str,
+        queries: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Load per-query files from ALL packs for the given stack."""
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
+        for fc in self.load_all(stack=stack):
+            for f in self.expand_per_query(fc, queries):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)
@@ -424,11 +642,35 @@ def _parse_per_entity(raw: dict[str, Any]) -> PerEntityFile:
     )
 
 
+def _parse_per_command(raw: dict[str, Any]) -> PerCommandFile:
+    return PerCommandFile(
+        path_pattern=raw["path_pattern"],
+        file_type=raw["file_type"],
+        template=raw["template"],
+        stacks=raw.get("stacks", ["fastapi"]),
+        pack_emitter=raw.get("pack_emitter"),
+        context_keys=raw.get("context_keys", []),
+    )
+
+
+def _parse_per_query(raw: dict[str, Any]) -> PerQueryFile:
+    return PerQueryFile(
+        path_pattern=raw["path_pattern"],
+        file_type=raw["file_type"],
+        template=raw["template"],
+        stacks=raw.get("stacks", ["fastapi"]),
+        pack_emitter=raw.get("pack_emitter"),
+        context_keys=raw.get("context_keys", []),
+    )
+
+
 __all__ = [
     "FileContributionsLoader",
     "FileContributions",
     "InfrastructureFile",
     "PerEntityFile",
+    "PerCommandFile",
+    "PerQueryFile",
     "_expand_path_pattern",
     "BACKEND_STACKS",
     "FRONTEND_STACKS",

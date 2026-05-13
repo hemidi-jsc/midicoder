@@ -307,9 +307,16 @@ def call_llm(
     start_time = time.time()
     
     try:
+        # Build model string for litellm
+        # For openai-compatible providers, use "openai/{model}" so litellm routes correctly
+        if config.provider == "openai-compatible":
+            model_str = f"openai/{config.model}"
+        else:
+            model_str = f"{config.provider}/{config.model}"
+
         # Call litellm completion
         response = litellm.completion(
-            model=f"{config.provider}/{config.model}",
+            model=model_str,
             messages=messages_list,
             api_base=config.api_url,
             api_key=config.api_key,
@@ -322,12 +329,22 @@ def call_llm(
         
         # Extract content (handle cả dict và object response)
         content = ""
+        reasoning = ""
         if response.choices:
             choice = response.choices[0]
             if isinstance(choice, dict):
-                content = choice.get("message", {}).get("content", "")
+                msg = choice.get("message", {})
+                content = msg.get("content", "") or ""
+                reasoning = msg.get("reasoning", "") or ""
             else:
-                content = choice.message.content
+                content = choice.message.content or ""
+                reasoning = getattr(choice.message, "reasoning", "") or ""
+
+        # For reasoning models: append reasoning after content
+        if reasoning and not content:
+            content = reasoning
+        elif reasoning and content:
+            content = content + "\n" + reasoning
         
         # Extract usage
         usage = _extract_usage(response.usage)
@@ -394,12 +411,22 @@ async def call_llm_async(
         
         # Extract content (handle cả dict và object response)
         content = ""
+        reasoning = ""
         if response.choices:
             choice = response.choices[0]
             if isinstance(choice, dict):
-                content = choice.get("message", {}).get("content", "")
+                msg = choice.get("message", {})
+                content = msg.get("content", "") or ""
+                reasoning = msg.get("reasoning", "") or ""
             else:
-                content = choice.message.content
+                content = choice.message.content or ""
+                reasoning = getattr(choice.message, "reasoning", "") or ""
+
+        # For reasoning models: append reasoning after content
+        if reasoning and not content:
+            content = reasoning
+        elif reasoning and content:
+            content = content + "\n" + reasoning
         
         usage = _extract_usage(response.usage)
         

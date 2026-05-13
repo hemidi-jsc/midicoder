@@ -32,10 +32,20 @@ pack:
       - path: "docker-compose.yml"
         file_type: "docker_compose"
         template: "cp07_iac/docker-compose.yml.jinja2"
-        stacks: ["fastapi"]
-        pack_emitter: null
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: "cp07.docker"
       - path: "Dockerfile.api"
         file_type: "dockerfile"
         template: "cp07_iac/Dockerfile.api.jinja2"
         stacks: ["fastapi", "nestjs"]
         pack_emitter: null
+      - path: "docker-compose.nestjs.yml"
+        file_type: "docker_compose"
+        template: "cp07_iac/docker-compose.yml.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp07.docker"
+      - path: "terraform/main.tf"
+        file_type: "terraform"
+        template: "infrastructure/terraform/main.tf.j2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: "cp07.terraform"

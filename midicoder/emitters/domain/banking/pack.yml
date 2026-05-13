@@ -1,0 +1,20 @@
+pack:
+  id: "DP11"
+  name: "Banking Domain Pack"
+  internal_id: "banking"
+  version: "1.0.0"
+  status: "stable"
+  category: "banking"
+  depends_on: ["CP01", "CP08"]
+  file_contributions:
+    infrastructure:
+      - path: "app/domain/banking/ledger.py"
+        file_type: "domain_service"
+        template: "domain/banking/ledger.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        context_keys: []
+      - path: "app/domain/banking/transaction_engine.py"
+        file_type: "domain_service"
+        template: "domain/banking/transaction_engine.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        context_keys: []

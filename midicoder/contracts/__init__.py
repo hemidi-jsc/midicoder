@@ -25,21 +25,29 @@ from .artifact import (
     compute_content_hash,
     compute_file_hash,
 )
-from .mir import (
+from midicoder.pipeline.mir import (
     MIR,
-    MIROperation,
-    MIRDataFlow,
-    MIREffectFlow,
-    MIRBoundary,
+    Operation,
+    DataFlow,
+    EffectFlow,
+    Boundary,
 )
+
+# Backward-compatibility aliases (deprecated — keep for legacy consumers)
+MIROperation = Operation
+MIRDataFlow = DataFlow
+MIREffectFlow = EffectFlow
+MIRBoundary = Boundary
 from .plan import (
     Surface,
     SurfaceType,
-    SurfacePlan,
+    # SurfacePlan and PatchPlan are deprecated — dead code, not used in pipeline.
+    # Keep imports available for legacy consumers but do NOT re-export in __all__.
+    SurfacePlan as _DeprecatedSurfacePlan,  # noqa: F401
     TargetPlan,
     PatchOperation,
     PatchOperationType,
-    PatchPlan,
+    PatchPlan as _DeprecatedPatchPlan,  # noqa: F401
 )
 from .composition.models import (
     CompositionNode,
@@ -71,11 +79,11 @@ __all__ = [
     # Plans
     "Surface",
     "SurfaceType",
-    "SurfacePlan",
+    # "SurfacePlan" — deprecated, removed from public API (dead code)
+    # "PatchPlan" — deprecated, removed from public API (dead code)
     "TargetPlan",
     "PatchOperation",
     "PatchOperationType",
-    "PatchPlan",
 
     # Composition Engine
     "CompositionNode",

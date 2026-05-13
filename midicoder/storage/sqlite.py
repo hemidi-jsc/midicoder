@@ -749,12 +749,21 @@ class ArtifactsManager:
         """
         try:
             with get_connection(self.db_path) as conn:
+                # Upsert: INSERT ... ON CONFLICT REPLACE so re-running pipeline is safe
                 cursor = conn.execute(
                     """
-                    INSERT INTO artifacts 
-                    (artifact_id, type, name, version, brief_id, content, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
+                    INSERT INTO artifacts
+                    (artifact_id, type, name, version, brief_id, content, metadata, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    ON CONFLICT(artifact_id) DO UPDATE SET
+                        type = excluded.type,
+                        name = excluded.name,
+                        version = excluded.version,
+                        brief_id = excluded.brief_id,
+                        content = excluded.content,
+                        metadata = excluded.metadata,
+                        updated_at = datetime('now')
+                    """,
                     (
                         artifact_id,
                         artifact_type,

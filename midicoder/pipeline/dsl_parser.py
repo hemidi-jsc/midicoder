@@ -39,6 +39,7 @@ _CATEGORY_TO_NODE_KIND = {
     "workflows": NodeKind.WORKFLOW,
     "value_objects": NodeKind.VALUE_OBJECT,
     "guards": NodeKind.GUARD,
+    "roles": NodeKind.ROLE,
 }
 
 # Key trong YAML dict tương ứng mỗi category
@@ -50,6 +51,7 @@ _CATEGORY_YAML_KEY = {
     "workflows": "workflows",
     "value_objects": "value_objects",
     "guards": "guards",
+    "roles": "roles",
 }
 
 
@@ -68,6 +70,7 @@ class DSLParser:
         - workflows
         - value_objects
         - guards
+        - roles
     """
 
     def __init__(self) -> None:
@@ -101,6 +104,7 @@ class DSLParser:
             "workflows": self._parse_workflows_string,
             "value_objects": self._parse_value_objects_string,
             "guards": self._parse_guards_string,
+            "roles": self._parse_roles_string,
         }
 
         return parser_map[category](yaml_content)
@@ -377,6 +381,38 @@ class DSLParser:
             node = ProjectionNode(
                 id=guard_id,
                 kind=NodeKind.GUARD,
+                params=params,
+            )
+            nodes.append(node)
+
+        return nodes
+
+    # ========================================================================
+    # Role Parsing
+    # ========================================================================
+
+    def _parse_roles_string(self, yaml_content: str) -> list[ProjectionNode]:
+        """Parse roles YAML string → ProjectionNodes."""
+        data = yaml.safe_load(yaml_content)
+        if not data or "roles" not in data:
+            return []
+
+        nodes = []
+        for role_def in data["roles"]:
+            if not role_def.get("id"):
+                continue
+
+            role_id = role_def["id"]
+            params = {
+                "id": role_id,
+                "description": role_def.get("description", ""),
+                "permissions": role_def.get("permissions", []),
+                "tenant_scope": role_def.get("tenant_scope", "global"),
+            }
+
+            node = ProjectionNode(
+                id=role_id,
+                kind=NodeKind.ROLE,
                 params=params,
             )
             nodes.append(node)

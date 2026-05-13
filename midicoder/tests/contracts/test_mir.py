@@ -2,19 +2,21 @@
 Unit Tests cho MIR (Midicoder Intermediate Representation) Contracts.
 
 Kiểm tra behavior của:
-- MIROperation class
-- MIRDataFlow class
-- MIREffectFlow class
-- MIRBoundary class
+- Operation class (aliased as MIROperation for backward compat)
+- DataFlow class (aliased as MIRDataFlow)
+- EffectFlow class (aliased as MIREffectFlow)
+- Boundary class (aliased as MIRBoundary)
 - MIR class
 
 Tests tuân thủ TDD, không mocks, bám sát SoT.
 
 Author: Midicoder Team
-Version: 1.0.0
+Version: 2.0.0 (unified with pipeline/mir.py)
 """
 
 import pytest
+
+# Import via compatibility shim — same types as pipeline/mir.py
 from midicoder.contracts.mir import (
     MIROperation,
     MIRDataFlow,

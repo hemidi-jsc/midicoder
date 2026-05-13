@@ -428,7 +428,7 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
         dependencies=[],
         metadata={}
     ) for f in infra_files]
-    
+
     plan.add_module(ModuleSpec(
         name="infra",
         module_type="infra",
@@ -436,15 +436,97 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
         dependencies=[]
     ))
 
-    # TODO[G5]: DP + RX pack loading (SoT §6.1 emit order: CPs → DPs → RXs)
-    # Currently only CP packs are loaded via FileContributionsLoader (emitters/core/).
-    # Future: load Domain Packs (emitters/domain/) and Regulatory Overlays
-    # (emitters/regulatory/) and emit them after CP files so domain-specific
-    # code can override/extend core scaffolding.  See backlog/MIDICODER_ARCHITECTURE.md §6.
-    # DP packs would use TaxonomyRegistry.resolve_dependencies() for ordering.
-    # RX packs would inject obligations/guards/gates into existing modules.
+    # DP packs: Domain Packs (emit after CPs — can override/extend core)
+    if target in ["backend", "all"]:
+        dp_files = _load_domain_pack_files(target)
+        if dp_files:
+            dp_specs = [FileSpec(
+                path=f["path"],
+                file_type=f["type"],
+                template=f["template"],
+                context=f.get("context", {}),
+                dependencies=["core"],
+                metadata=f.get("metadata", {})
+            ) for f in dp_files]
+            plan.add_module(ModuleSpec(
+                name="domain",
+                module_type="backend",
+                files=dp_specs,
+                dependencies=["core"]
+            ))
+
+    # RX packs: Regulatory Overlays (emit last — inject compliance)
+    if target in ["backend", "all"]:
+        rx_files = _load_regulatory_pack_files(target)
+        if rx_files:
+            rx_specs = [FileSpec(
+                path=f["path"],
+                file_type=f["type"],
+                template=f["template"],
+                context=f.get("context", {}),
+                dependencies=["core"],
+                metadata=f.get("metadata", {})
+            ) for f in rx_files]
+            plan.add_module(ModuleSpec(
+                name="regulatory",
+                module_type="backend",
+                files=rx_specs,
+                dependencies=["core", "domain"]
+            ))
 
     return plan
+
+
+def _load_domain_pack_files(target: str) -> List[dict]:
+    """Load infrastructure files from Domain Packs (DP).
+
+    Args:
+        target: Target to generate (backend|frontend|all)
+
+    Returns:
+        List of file plan dicts from domain packs.
+    """
+    if target not in ("backend", "all"):
+        return []
+
+    backend_stack = _get_backend_stack()
+    loader = FileContributionsLoader()
+    domain_contributions = loader.load_all_domain(stack=backend_stack)
+
+    files: List[dict] = []
+    seen: set[str] = set()
+    for fc in domain_contributions:
+        for f in loader.expand_infrastructure(fc):
+            if f["path"] not in seen:
+                seen.add(f["path"])
+                files.append(f)
+    return files
+
+
+def _load_regulatory_pack_files(target: str) -> List[dict]:
+    """Load infrastructure files from Regulatory Overlays (RX).
+
+    Args:
+        target: Target to generate (backend|frontend|all)
+
+    Returns:
+        List of file plan dicts from regulatory packs.
+    """
+    if target not in ("backend", "all"):
+        return []
+
+    backend_stack = _get_backend_stack()
+    loader = FileContributionsLoader()
+    regulatory_contributions = loader.load_all_regulatory(stack=backend_stack)
+
+    files: List[dict] = []
+    seen: set[str] = set()
+    for fc in regulatory_contributions:
+        for f in loader.expand_infrastructure(fc):
+            if f["path"] not in seen:
+                seen.add(f["path"])
+                files.append(f)
+    return files
 
 
 def _plan_backend_files(mir: dict) -> List[dict]:
@@ -496,52 +578,13 @@ def _plan_backend_files(mir: dict) -> List[dict]:
     per_entity_files = loader.resolve_all_per_entity(backend_stack, entities)
     _merge_files(files, per_entity_files)
 
-    # --- CP01: entity model/schema — pack emitter dispatch ---
-    # (still hardcoded because CP01 uses structured emitters, not raw Jinja2)
-    for entity in entities:
-        entity_name = entity.get("id", "").lower()
-        files.extend([
-            {
-                "path": f"app/models/{entity_name}.py",
-                "type": "model",
-                "template": "cp01_domain_model/entity.py.jinja2",
-                "context": {"entity": entity, "all_entities": entities},
-                "metadata": {
-                    "pack_emitter": "cp01.entity.fastapi",
-                    "stack": backend_stack,
-                },
-            },
-            {
-                "path": f"app/schemas/{entity_name}.py",
-                "type": "schema",
-                "template": "cp01_domain_model/entity.py.jinja2",
-                "context": {"entity": entity, "all_entities": entities},
-                "metadata": {
-                    "pack_emitter": "cp01.entity.fastapi",
-                    "stack": backend_stack,
-                },
-            },
-        ])
+    # --- Pack-declared per-command files for this backend stack ---
+    per_command_files = loader.resolve_all_per_command(backend_stack, commands)
+    _merge_files(files, per_command_files)
 
-    # --- Command handlers (per-command, not per-entity) ---
-    for command in commands:
-        command_name = command.get("id", "").lower()
-        files.append({
-            "path": f"app/commands/{command_name}_handler.py",
-            "type": "command_handler",
-            "template": "cp01_domain_model/command_handler.py.jinja2",
-            "context": {"command": command},
-        })
-
-    # --- Query handlers (per-query, not per-entity) ---
-    for query in queries:
-        query_name = query.get("id", "").lower()
-        files.append({
-            "path": f"app/queries/{query_name}_handler.py",
-            "type": "query_handler",
-            "template": "cp01_domain_model/query_handler.py.jinja2",
-            "context": {"query": query},
-        })
+    # --- Pack-declared per-query files for this backend stack ---
+    per_query_files = loader.resolve_all_per_query(backend_stack, queries)
+    _merge_files(files, per_query_files)
 
     return files
 
@@ -595,6 +638,12 @@ def _plan_frontend_files(mir: dict) -> List[dict]:
         f.setdefault("metadata", {})["stack"] = frontend_stack
     _merge_files(files, per_entity_files)
 
+    # --- Inject ui_framework into all frontend file contexts ---
+    ui_framework = _get_ui_framework(frontend_stack)
+    for f in files:
+        f.setdefault("context", {})["ui_framework"] = ui_framework
+        f.setdefault("metadata", {})["ui_framework"] = ui_framework
+
     return files
 
 
@@ -603,6 +652,28 @@ def _get_frontend_stack() -> str:
     config = get_config()
     stack = config.get("frontend_stack", "angular")
     return stack if stack in FRONTEND_STACKS else "angular"
+
+
+def _get_ui_framework(frontend_stack: str) -> str:
+    """
+    Get the configured UI framework from config.
+
+    Defaults:
+    - Angular → "material"
+    - React → "antd"
+
+    Args:
+        frontend_stack: Frontend stack name
+
+    Returns:
+        UI framework name
+    """
+    config = get_config()
+    ui_framework = config.get("ui_framework")
+    if ui_framework:
+        return ui_framework
+    # Default per stack
+    return "material" if frontend_stack == "angular" else "antd"
 
 
 def _plan_infra_files() -> List[dict]:
@@ -701,43 +772,18 @@ def _execute_gen(target: str = "all", dry_run: bool = False) -> None:
             click.echo(f"⚠️  Không thể parse MIR: {e}")
             mir = None
     
-    # Bước 4: Generate Docker Compose từ MIR
-    docker_compose_path = output_dir / "docker-compose.yml"
-    if mir is not None:
-        try:
-            click.echo("   🐳 Đang generate Docker Compose từ MIR...")
-            # Late import để tránh circular import
-            from midicoder.emitters.core.cp07_iac.docker import DockerComposeGenerator as DCG
-            docker_generator = DCG()
-            infra_config = docker_generator.generate(mir, docker_compose_path)
-            click.echo(f"   ✓ Docker Compose generated với services: {', '.join(infra_config.services)}")
-        except Exception as e:
-            click.echo(f"⚠️  Docker Compose generation failed: {e}")
-            # Fallback: generate placeholder
-            docker_generator = None
-    else:
-        docker_generator = None
-    
-    # Bước 5: Generate files từ plan.modules
-    # BUG FIX: ImplementationPlan.to_json() serialises as {"modules": [...]},
-    # not {"backend_files": [...], "frontend_files": [...], "infra_files": [...]}.
+    # Bước 4: Generate files từ plan.modules (typed roundtrip)
+    from midicoder.pipeline.plan import ImplementationPlan
+    plan = ImplementationPlan.from_dict(plan_data)
+
     files_generated = []
+    modules = plan.get_modules_by_type("backend") if target == "backend" else \
+              plan.get_modules_by_type("frontend") if target == "frontend" else \
+              plan.modules
 
-    for module in plan_data.get("modules", []):
-        module_type = module.get("module_type", "")
-
-        # Filter by target
-        if target == "backend" and module_type != "backend":
-            continue
-        if target == "frontend" and module_type != "frontend":
-            continue
-
-        for file_plan in module.get("files", []):
-            # Skip docker-compose.yml in infra — already generated from MIR
-            if file_plan.get("path") == "docker-compose.yml":
-                continue
-
-            generated = _generate_file(file_plan, output_dir, dry_run)
+    for module in modules:
+        for file_spec in module.files:
+            generated = _generate_file(file_spec.to_dict(), output_dir, dry_run, mir_data)
             if generated:
                 files_generated.append(generated)
     
@@ -803,20 +849,23 @@ def _load_plan_from_artifacts(active_version: str) -> Optional[dict]:
     return None
 
 
-def _generate_file(file_plan: dict, output_dir: Path, dry_run: bool) -> Optional[GeneratedFile]:
+def _generate_file(file_plan: dict, output_dir: Path, dry_run: bool, mir_data: dict | None = None) -> Optional[GeneratedFile]:
     """
     Generate một file từ plan.
 
-    Supports two rendering paths:
+    Supports three rendering paths:
     1. **Pack emitter dispatch** — if ``file_plan["metadata"]["pack_emitter"]``
        is set, delegates to the structured pack emitter (e.g. CP01 EntityEmitter).
-    2. **Raw Jinja2** — falls back to ``Emitter.render()`` with the stack
+    2. **IAC dispatch** — if ``pack_emitter`` starts with ``cp07.``, passes
+       the typed MIR object to the generator (Docker Compose, Terraform).
+    3. **Raw Jinja2** — falls back to ``Emitter.render()`` with the stack
        determined by ``file_plan["metadata"]["stack"]`` (or config default).
 
     Args:
         file_plan: File plan dictionary (from ImplementationPlan JSON)
         output_dir: Output directory
         dry_run: Dry run mode
+        mir_data: Optional MIR dictionary for IAC generators
 
     Returns:
         GeneratedFile hoặc None nếu lỗi
@@ -834,6 +883,16 @@ def _generate_file(file_plan: dict, output_dir: Path, dry_run: bool) -> Optional
         # --- Pack emitter dispatch ---
         pack_emitter = metadata.get("pack_emitter")
         if pack_emitter:
+            # --- IAC dispatch (Docker Compose / Terraform) ---
+            if pack_emitter.startswith("cp07."):
+                from midicoder.pipeline.mir import MIR as MIRClass
+                mir = MIRClass.from_dict(mir_data) if mir_data else None
+                if mir is None:
+                    click.echo(f"⚠️  MIR không tồn tại — skip {file_path}")
+                    return None
+                return _generate_iac_file(pack_emitter, mir, output_dir, file_path)
+
+            # --- Structured pack emitter dispatch ---
             from midicoder.pipeline.pack_emitter_router import PackEmitterRouter
             stack = metadata.get("stack", _get_stack_from_config())
             result_files = PackEmitterRouter.dispatch(
@@ -873,6 +932,65 @@ def _generate_file(file_plan: dict, output_dir: Path, dry_run: bool) -> Optional
         )
     except Exception as e:
         click.echo(f"⚠️  Không thể generate {file_path}: {e}")
+        return None
+
+
+def _generate_iac_file(
+    pack_emitter: str,
+    mir,
+    output_dir: Path,
+    file_path: Path,
+) -> Optional[GeneratedFile]:
+    """
+    Generate IAC files (Docker Compose, Terraform) from typed MIR.
+
+    Args:
+        pack_emitter: Emitter key (e.g. "cp07.docker", "cp07.terraform")
+        mir: Typed MIR object
+        output_dir: Output directory
+        file_path: Relative file path
+
+    Returns:
+        GeneratedFile or None
+    """
+    try:
+        full_path = output_dir / file_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if pack_emitter == "cp07.docker":
+            from midicoder.emitters.core.cp07_iac.docker import DockerComposeGenerator as DCG
+            generator = DCG()
+            infra_config = generator.generate(mir, full_path)
+            content = full_path.read_text(encoding="utf-8")
+            click.echo(f"   ✓ Docker Compose generated với services: {', '.join(infra_config.services)}")
+            return GeneratedFile(
+                path=str(file_path),
+                content=content,
+                type="docker_compose",
+                template="pack_emitter:cp07.docker",
+            )
+
+        elif pack_emitter == "cp07.terraform":
+            from midicoder.emitters.core.cp07_iac.terraform import TerraformGenerator
+            generator = TerraformGenerator()
+            generator.generate(mir, full_path.parent)
+            # Terraform may generate multiple files; return the main one
+            if full_path.exists():
+                content = full_path.read_text(encoding="utf-8")
+                return GeneratedFile(
+                    path=str(file_path),
+                    content=content,
+                    type="terraform",
+                    template="pack_emitter:cp07.terraform",
+                )
+
+        click.echo(f"⚠️  Unknown IAC emitter: {pack_emitter}")
+        return None
+
+    except Exception as e:
+        click.echo(f"⚠️  IAC generation failed for {file_path}: {e}")
+        import traceback
+        click.echo(traceback.format_exc())
         return None
 
 

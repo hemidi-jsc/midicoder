@@ -1,0 +1,20 @@
+pack:
+  id: "RX01"
+  name: "HIPAA Regulatory Overlay"
+  internal_id: "hipaa"
+  version: "1.0.0"
+  status: "stable"
+  category: "regulatory"
+  depends_on: ["CP01", "CP03", "CP14"]
+  file_contributions:
+    infrastructure:
+      - path: "app/compliance/hipaa/audit_controls.py"
+        file_type: "compliance_guard"
+        template: "regulatory/hipaa/audit_controls.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        context_keys: []
+      - path: "app/compliance/hipaa/data_encryption.py"
+        file_type: "compliance_guard"
+        template: "regulatory/hipaa/data_encryption.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        context_keys: []

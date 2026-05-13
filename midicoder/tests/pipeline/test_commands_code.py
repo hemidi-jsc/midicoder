@@ -78,21 +78,35 @@ def sample_mir():
 
 @pytest.fixture
 def sample_plan():
-    """Sample implementation plan."""
+    """Sample implementation plan (typed roundtrip format)."""
     return {
         "meta": {
             "version": "1.0.0",
             "created_at": "2026-04-27T10:00:00Z",
             "target": "all",
         },
-        "backend_files": [
-            {"path": "app/main.py", "type": "main", "template": "fastapi/main.py.jinja2"},
-        ],
-        "frontend_files": [
-            {"path": "src/app/app.module.ts", "type": "module", "template": "angular/module.ts.jinja2"},
-        ],
-        "infra_files": [
-            {"path": "docker-compose.yml", "type": "docker_compose", "template": "infra/docker-compose.yml.jinja2"},
+        "modules": [
+            {
+                "name": "backend_core",
+                "module_type": "backend",
+                "files": [
+                    {"path": "app/main.py", "file_type": "main", "template": "fastapi/main.py.jinja2"},
+                ],
+            },
+            {
+                "name": "frontend_core",
+                "module_type": "frontend",
+                "files": [
+                    {"path": "src/app/app.module.ts", "file_type": "module", "template": "angular/module.ts.jinja2"},
+                ],
+            },
+            {
+                "name": "infra_core",
+                "module_type": "infra",
+                "files": [
+                    {"path": "docker-compose.yml", "file_type": "docker_compose", "template": "infra/docker-compose.yml.jinja2"},
+                ],
+            },
         ],
     }
 

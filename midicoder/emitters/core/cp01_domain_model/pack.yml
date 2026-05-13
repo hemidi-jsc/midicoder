@@ -129,6 +129,7 @@ pack:
         template: "cp01_domain_model/entity.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
+    per_command:
       - path_pattern: "app/commands/{command_snake}.py"
         file_type: "command"
         template: "cp01_domain_model/command.py.jinja2"
@@ -159,6 +160,7 @@ pack:
         template: "cp01_domain_model/command_errors.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null
+    per_query:
       - path_pattern: "app/queries/{query_snake}.py"
         file_type: "query"
         template: "cp01_domain_model/query.py.jinja2"
@@ -192,10 +194,5 @@ pack:
       - path_pattern: "app/queries/{query_snake}_aggregation.py"
         file_type: "query_aggregation"
         template: "cp01_domain_model/query_aggregation.py.jinja2"
-        stacks: ["fastapi"]
-        pack_emitter: null
-      - path_pattern: "app/models/{vo_snake}.py"
-        file_type: "value_object"
-        template: "cp01_domain_model/value_object.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null

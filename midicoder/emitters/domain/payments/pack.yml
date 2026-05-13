@@ -1,0 +1,20 @@
+pack:
+  id: "DP12"
+  name: "Payments Domain Pack"
+  internal_id: "payments"
+  version: "1.0.0"
+  status: "stable"
+  category: "payments"
+  depends_on: ["CP01", "CP08"]
+  file_contributions:
+    infrastructure:
+      - path: "app/domain/payments/payment_processor.py"
+        file_type: "domain_service"
+        template: "domain/payments/payment_processor.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        context_keys: []
+      - path: "app/domain/payments/fraud_detector.py"
+        file_type: "domain_service"
+        template: "domain/payments/fraud_detector.py.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        context_keys: []
