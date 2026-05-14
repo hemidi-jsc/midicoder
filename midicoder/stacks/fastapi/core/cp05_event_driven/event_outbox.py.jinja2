@@ -1,12 +1,20 @@
 """
 Event Outbox Module.
 
+{% if events %}
+Events: {% for e in events %}{{ e.event_name }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+{% if topics %}
+Topics: {% for t in topics %}{{ t }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
 Module này implement Outbox pattern để đảm bảo reliable event delivery.
 Event được ghi vào outbox table cùng transaction với business data,
 sau đó có consumer polling và publish các event chưa gửi.
 
-Author: Midicoder CE
-Auto-generated - do not edit manually
+CP05: Event-Driven Architecture
+KPI-029: Tenant Isolation - Multi-tenant outbox entries
+{% if has_tenant_events %}KPI-029: Active - Tenant isolation enabled{% endif %}
 """
 
 from __future__ import annotations

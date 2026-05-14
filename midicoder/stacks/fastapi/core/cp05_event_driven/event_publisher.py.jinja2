@@ -1,11 +1,16 @@
 """
 Event Publisher - Publish events đến event bus.
 
+{% if events %}
+Events: {% for e in events %}{{ e.event_name }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
 Module này cung cấp EventPublisher để publish events.
 Có thể mở rộng để publish sang Kafka, RabbitMQ, SQS, v.v.
 
 CP05: Event-Driven Architecture
 KPI-029: Tenant Isolation - Multi-tenant event publishing
+{% if has_tenant_events %}KPI-029: Active - Tenant isolation enabled{% endif %}
 """
 
 from typing import Any, Optional
@@ -13,7 +18,7 @@ from dataclasses import dataclass
 import logging
 import uuid
 
-from app.core.event.event_bus import EventBus, EventMessage
+from {{ events_package }}.event_bus import EventBus, EventMessage
 
 logger = logging.getLogger(__name__)
 

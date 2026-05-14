@@ -1,12 +1,20 @@
 /**
- * Event-Driven Architecture - Event module cho NestJS.
- * 
- * Module này cung cấp event publishing/subscribing cho NestJS application.
- * Hỗ trợ in-memory event bus với khả năng mở rộng sang Kafka/RabbitMQ.
- * 
- * KPI-029: Tenant Isolation - Event module hỗ trợ tenant-specific event routing
- * CP05: Event-Driven Architecture
- */
+* Event-Driven Architecture - Event module cho NestJS.
+*
+{% if events %}
+* Events: {% for e in events %}{{ e.event_name }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+{% if topics %}
+* Topics: {% for t in topics %}{{ t }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+*
+* Module này cung cấp event publishing/subscribing cho NestJS application.
+* Hỗ trợ in-memory event bus với khả năng mở rộng sang Kafka/RabbitMQ.
+*
+* KPI-029: Tenant Isolation - Event module hỗ trợ tenant-specific event routing
+* CP05: Event-Driven Architecture
+{% if has_tenant_events %} * KPI-029: Active - Tenant isolation enabled{% endif %}
+*/
 
 import { Module, Global } from '@nestjs/common';
 import { EventBusService } from './event-bus.service';
@@ -14,26 +22,26 @@ import { EventPublisherService } from './event-publisher.service';
 import { EventSubscriberService } from './event-subscriber.service';
 
 /**
- * Event module - Global module cho event bus.
- * 
- * KPI-029: Event module hỗ trợ tenant isolation qua:
- * - EventBusService với tenant-specific subscriptions
- * - EventPublisherService với tenant_id trong events
- * - EventSubscriberService với tenant-based filtering
- * 
- * Import module này vào AppModule để sử dụng event bus trong toàn app.
- */
+* Event module - Global module cho event bus.
+*
+* KPI-029: Event module hỗ trợ tenant isolation qua:
+* - EventBusService với tenant-specific subscriptions
+* - EventPublisherService với tenant_id trong events
+* - EventSubscriberService với tenant-based filtering
+*
+* Import module này vào AppModule để sử dụng event bus trong toàn app.
+*/
 @Global()
 @Module({
-  providers: [
-    EventBusService,  // KPI-029: Tenant-specific event routing
-    EventPublisherService,  // KPI-029: Publish events với tenant_id
-    EventSubscriberService,  // KPI-029: Tenant-based event filtering
-  ],
-  exports: [
-    EventBusService,
-    EventPublisherService,
-    EventSubscriberService,
-  ],
+providers: [
+EventBusService, // KPI-029: Tenant-specific event routing
+EventPublisherService, // KPI-029: Publish events với tenant_id
+EventSubscriberService, // KPI-029: Tenant-based event filtering
+],
+exports: [
+EventBusService,
+EventPublisherService,
+EventSubscriberService,
+],
 })
 export class EventModule {}

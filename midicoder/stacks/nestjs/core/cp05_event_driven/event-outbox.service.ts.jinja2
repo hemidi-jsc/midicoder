@@ -1,189 +1,175 @@
 /**
- * Event Outbox Service.
- *
- * Service này implement Outbox pattern để đảm bảo reliable event delivery.
- * Event được ghi vào outbox table cùng transaction với business data,
- * sau đó có consumer polling và publish các event chưa gửi.
- *
- * Author: Midicoder CE
- * Auto-generated - do not edit manually
- */
+* Event Outbox Service.
+*
+{% if events %}
+* Events: {% for e in events %}{{ e.event_name }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+{% if topics %}
+* Topics: {% for t in topics %}{{ t }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+*
+* Service này implement Outbox pattern để đảm bảo reliable event delivery.
+* Event được ghi vào outbox table cùng transaction với business data,
+* sau đó có consumer polling và publish các event chưa gửi.
+*
+* KPI-029: Tenant Isolation - Multi-tenant outbox entries
+* CP05: Event-Driven Architecture
+{% if has_tenant_events %} * KPI-029: Active - Tenant isolation enabled{% endif %}
+*/
 
 import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface OutboxEntry {
-  /** Unique identifier cho outbox entry */
-  id: string;
-  /** Tên của event */
-  event_name: string;
-  /** Payload data của event */
-  payload: Record<string, any>;
-  /** Topic để route event */
-  topic: string;
-  /** Transaction ID để link với business transaction */
-  transaction_id?: string;
-  /** Trạng thái (pending, published, failed) */
-  status: 'pending' | 'published' | 'failed';
-  /** Delay giây trước khi có thể publish */
-  visibility_delay: number;
-  /** Thời điểm tạo entry */
-  created_at: string;
-  /** Thời điểm publish thành công */
-  published_at?: string;
-  /** Số lần retry đã thực hiện */
-  retries: number;
-  /** Error message nếu publish thất bại */
-  error?: string;
-}
-
-export class OutboxEntryImpl implements OutboxEntry {
-  id: string;
-  event_name: string;
-  payload: Record<string, any>;
-  topic: string;
-  transaction_id?: string;
-  status: 'pending' | 'published' | 'failed';
-  visibility_delay: number;
-  created_at: string;
-  published_at?: string;
-  retries: number;
-  error?: string;
-
-  constructor(partial: Partial<OutboxEntry> = {}) {
-    this.id = partial.id || uuidv4();
-    this.event_name = partial.event_name || '';
-    this.payload = partial.payload || {};
-    this.topic = partial.topic || 'default';
-    this.transaction_id = partial.transaction_id;
-    this.status = partial.status || 'pending';
-    this.visibility_delay = partial.visibility_delay || 0;
-    this.created_at = partial.created_at || new Date().toISOString();
-    this.published_at = partial.published_at;
-    this.retries = partial.retries || 0;
-    this.error = partial.error;
-  }
-}
-
-@Injectable()
-export class EventOutboxService {
-  private readonly logger = new Logger(EventOutboxService.name);
-  private entries: OutboxEntry[] = [];
-  private published = new Set<string>();
-
-  /**
-   * Ghi event vào outbox.
-   *
-   * @param event_name Tên của event
-   * @param payload Payload data
-   * @param topic Topic để route event
-   * @param transactionId Transaction ID
-   * @param visibilityDelay Delay trước khi publish
-   * @returns OutboxEntry đã tạo
-   */
-  async write(
-    event_name: string,
-    payload?: Record<string, any>,
-    topic?: string,
-    transactionId?: string,
-    visibilityDelay?: number,
-  ): Promise<OutboxEntry> {
-    const entry = new OutboxEntryImpl({
-      event_name,
-      payload: payload || {},
-      topic: topic || 'default',
-      transaction_id: transactionId,
-      visibility_delay: visibilityDelay || 0,
-    });
-
-    this.entries.push(entry);
-    this.logger.debug(`Outbox entry created: ${entry.id} for ${event_name}`);
-    return entry;
-  }
-
-  /**
-   * Publish các event pending trong outbox.
-   *
-   * @returns List of entry IDs đã publish thành công
-   */
-  async publishPending(): Promise<string[]> {
-    const now = new Date();
-    const publishedIds: string[] = [];
-
-    for (const entry of this.entries) {
-      if (this.published.has(entry.id)) {
-        continue;
-      }
-
-      if (entry.status !== 'pending') {
-        continue;
-      }
-
-      // Check visibility delay
-      if (entry.visibility_delay > 0) {
-        const created = new Date(entry.created_at);
-        const elapsed = (now.getTime() - created.getTime()) / 1000;
-        if (elapsed < entry.visibility_delay) {
-          continue;
-        }
-      }
-
-      // Simulate publishing
-      entry.status = 'published';
-      entry.published_at = now.toISOString();
-      this.published.add(entry.id);
-      publishedIds.push(entry.id);
-      this.logger.debug(`Published outbox entry: ${entry.id}`);
+/** Unique identifier cho outbox entry */
+id: string;
+/** Tên của event */
+event_name: string;
+/** Payload data của event */
+payload: Record<string, any>;
+    /** Topic để route event */
+    topic: string;
+    /** Transaction ID để link với business transaction */
+    transaction_id?: string;
+    /** Tenant ID cho multi-tenant isolation */
+    tenant_id?: string;
+    /** Trạng thái (pending, published, failed) */
+    status: 'pending' | 'published' | 'failed';
+    /** Delay giây trước khi có thể publish */
+    visibility_delay: number;
+    /** Thời điểm tạo entry */
+    created_at: string;
+    /** Thời điểm publish thành công */
+    published_at?: string;
+    /** Số lần retry đã thực hiện */
+    retries: number;
+    /** Error message nếu publish thất bại */
+    error?: string;
     }
 
-    return publishedIds;
-  }
+    export class OutboxEntryImpl implements OutboxEntry {
+    id: string;
+    event_name: string;
+    payload: Record<string, any>;
+        topic: string;
+        transaction_id?: string;
+        tenant_id?: string;
+        status: 'pending' | 'published' | 'failed';
+        visibility_delay: number;
+        created_at: string;
+        published_at?: string;
+        retries: number;
+        error?: string;
 
-  /**
-   * Trả về danh sách entries còn pending.
-   */
-  async getPending(): Promise<OutboxEntry[]> {
-    return this.entries.filter((e) => e.status === 'pending');
-  }
+        constructor(partial: Partial<OutboxEntry> = {}) {
+            this.id = partial.id || uuidv4();
+            this.event_name = partial.event_name || '';
+            this.payload = partial.payload || {};
+            this.topic = partial.topic || 'default';
+            this.transaction_id = partial.transaction_id;
+            this.tenant_id = partial.tenant_id;
+            this.status = partial.status || 'pending';
+            this.visibility_delay = partial.visibility_delay || 0;
+            this.created_at = partial.created_at || new Date().toISOString();
+            this.published_at = partial.published_at;
+            this.retries = partial.retries || 0;
+            this.error = partial.error;
+            }
+            }
 
-  /**
-   * Trả về danh sách entries đã thất bại.
-   */
-  async getFailed(): Promise<OutboxEntry[]> {
-    return this.entries.filter((e) => e.status === 'failed');
-  }
+            @Injectable()
+            export class EventOutboxService {
+            private readonly logger = new Logger(EventOutboxService.name);
+            private entries: OutboxEntry[] = [];
+            private published = new Set<string>();
 
-  /**
-   * Retry các entries đã thất bại.
-   *
-   * @param maxRetries Số lần retry tối đa
-   * @returns List of entry IDs đã retry thành công
-   */
-  async retryFailed(maxRetries: number = 3): Promise<string[]> {
-    const retried: string[] = [];
+                /**
+                * Ghi event vào outbox.
+                *
+                * @param event_name Tên của event
+                * @param payload Payload data
+                * @param topic Topic để route event
+                * @param transactionId Transaction ID
+                * @param visibilityDelay Delay trước khi publish
+                * @returns OutboxEntry đã tạo
+                */
+                async write(
+                event_name: string,
+                payload?: Record<string, any>,
+                    topic?: string,
+                    transactionId?: string,
+                    visibilityDelay?: number,
+                    ): Promise<OutboxEntry> {
+                        const entry = new OutboxEntryImpl({
+                        event_name,
+                        payload: payload || {},
+                        topic: topic || 'default',
+                        transaction_id: transactionId,
+                        visibility_delay: visibilityDelay || 0,
+                        });
 
-    for (const entry of this.entries) {
-      if (entry.status === 'failed' && entry.retries < maxRetries) {
-        entry.status = 'pending';
-        entry.retries += 1;
-        entry.error = undefined;
-        retried.push(entry.id);
-        this.logger.debug(`Retrying outbox entry: ${entry.id}`);
-      }
-    }
+                        this.entries.push(entry);
+                        this.logger.debug(`Outbox entry created: ${entry.id} for ${event_name}`);
+                        return entry;
+                        }
 
-    return retried;
-  }
+                        /**
+                        * Publish các event pending trong outbox.
+                        *
+                        * @returns List of entry IDs đã publish thành công
+                        */
+                        async publishPending(): Promise<string[]> {
+                            const now = new Date();
+                            const publishedIds: string[] = [];
 
-  /**
-   * Trả về thống kê outbox.
-   */
-  getStats(): Record<string, number> {
-    return {
-      total: this.entries.length,
-      pending: this.entries.filter((e) => e.status === 'pending').length,
-      published: this.entries.filter((e) => e.status === 'published').length,
-      failed: this.entries.filter((e) => e.status === 'failed').length,
-    };
-  }
-}
+                            for (const entry of this.entries) {
+                            if (this.published.has(entry.id)) {
+                            continue;
+                            }
+
+                            if (entry.status !== 'pending') {
+                            continue;
+                            }
+
+                            // Check visibility delay
+                            if (entry.visibility_delay > 0) {
+                            const created = new Date(entry.created_at);
+                            const elapsed = (now.getTime() - created.getTime()) / 1000;
+                            if (elapsed < entry.visibility_delay) { continue; } } // Simulate publishing
+                                entry.status='published' ; entry.published_at=now.toISOString();
+                                this.published.add(entry.id); publishedIds.push(entry.id); this.logger.debug(`Published
+                                outbox entry: ${entry.id}`); } return publishedIds; } /** * Trả về danh sách entries còn
+                                pending. */ async getPending(): Promise<OutboxEntry[]> {
+                                return this.entries.filter((e) => e.status === 'pending');
+                                }
+
+                                /**
+                                * Trả về danh sách entries đã thất bại.
+                                */
+                                async getFailed(): Promise<OutboxEntry[]> {
+                                    return this.entries.filter((e) => e.status === 'failed');
+                                    }
+
+                                    /**
+                                    * Retry các entries đã thất bại.
+                                    *
+                                    * @param maxRetries Số lần retry tối đa
+                                    * @returns List of entry IDs đã retry thành công
+                                    */
+                                    async retryFailed(maxRetries: number = 3): Promise<string[]> {
+                                        const retried: string[] = [];
+
+                                        for (const entry of this.entries) {
+                                        if (entry.status === 'failed' && entry.retries < maxRetries) {
+                                            entry.status='pending' ; entry.retries +=1; entry.error=undefined;
+                                            retried.push(entry.id); this.logger.debug(`Retrying outbox entry:
+                                            ${entry.id}`); } } return retried; } /** * Trả về thống kê outbox. */
+                                            getStats(): Record<string, number> {
+                                            return {
+                                            total: this.entries.length,
+                                            pending: this.entries.filter((e) => e.status === 'pending').length,
+                                            published: this.entries.filter((e) => e.status === 'published').length,
+                                            failed: this.entries.filter((e) => e.status === 'failed').length,
+                                            };
+                                            }
+                                            }

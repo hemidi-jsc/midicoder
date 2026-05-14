@@ -129,6 +129,7 @@ class OutboxEntry:
     visibility_delay: int = 0
     status: str = "pending"
     retries: int = 0
+    tenant_id: str | None = None
     created_at: str | None = None
     published_at: str | None = None
 
@@ -149,6 +150,8 @@ class OutboxEntry:
             result["transaction_id"] = self.transaction_id
         if self.visibility_delay > 0:
             result["visibility_delay"] = self.visibility_delay
+        if self.tenant_id is not None:
+            result["tenant_id"] = self.tenant_id
         if self.created_at is not None:
             result["created_at"] = self.created_at
         if self.published_at is not None:
@@ -173,6 +176,7 @@ class OutboxEntry:
             transaction_id=data.get("transaction_id"),
             visibility_delay=data.get("visibility_delay", 0),
             status=data.get("status", "pending"),
+            tenant_id=data.get("tenant_id"),
             created_at=data.get("created_at"),
             published_at=data.get("published_at"),
         )
@@ -540,20 +544,317 @@ class RetryPolicy:
 
 
 # ============================================================================
+# Idempotent Consumer
+# ============================================================================
+
+
+class IdempotencyStrategy(str, Enum):
+    """
+    Chiến lược đảm bảo idempotent consumer.
+
+    - dedup_by_event_id: Lọc trùng dựa trên event_id (correlation_id)
+    - dedup_by_business_key: Lọc trùng dựa trên business key (vd: order_id)
+    - exactly_once_semantic: Dùng transactional receive (Kafka EOS, SQS FIFO)
+    - none: Không đảm bảo idempotent (at-most-once)
+    """
+    DEDUP_BY_EVENT_ID = "dedup_by_event_id"
+    DEDUP_BY_BUSINESS_KEY = "dedup_by_business_key"
+    EXACTLY_ONCE_SEMANTIC = "exactly_once_semantic"
+    NONE = "none"
+
+
+@dataclass
+class IdempotentConsumer:
+    """
+    Configuration cho idempotent event consumer.
+
+    Attributes:
+        strategy: Chiến lược idempotency
+        dedup_window_seconds: Cửa sổ thời gian giữ dedup keys
+        business_key_fields: Các fields dùng làm business key (vd: ["order_id"])
+        enable_checkpoint: Có checkpoint progress không (cho restart safety)
+        checkpoint_interval: Interval giữa các checkpoint (số events processed)
+        description: Mô tả idempotent consumer config
+    """
+    strategy: IdempotencyStrategy = IdempotencyStrategy.DEDUP_BY_EVENT_ID
+    dedup_window_seconds: int = 3600
+    business_key_fields: list[str] = field(default_factory=list)
+    enable_checkpoint: bool = True
+    checkpoint_interval: int = 100
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate idempotent consumer config sau khi khởi tạo."""
+        if self.dedup_window_seconds < 60:
+            self.dedup_window_seconds = 3600
+        if self.checkpoint_interval < 1:
+            self.checkpoint_interval = 100
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển idempotent consumer config sang dict format."""
+        return {
+            "strategy": self.strategy.value,
+            "dedup_window_seconds": self.dedup_window_seconds,
+            "business_key_fields": self.business_key_fields,
+            "enable_checkpoint": self.enable_checkpoint,
+            "checkpoint_interval": self.checkpoint_interval,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "IdempotentConsumer":
+        """Tạo IdempotentConsumer từ dict."""
+        return cls(
+            strategy=IdempotencyStrategy(data.get("strategy", "dedup_by_event_id")),
+            dedup_window_seconds=data.get("dedup_window_seconds", 3600),
+            business_key_fields=data.get("business_key_fields", []),
+            enable_checkpoint=data.get("enable_checkpoint", True),
+            checkpoint_interval=data.get("checkpoint_interval", 100),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
+# Event Schema Versioning & Evolution
+# ============================================================================
+
+
+class SchemaEvolutionPolicy(str, Enum):
+    """Chính sách evolution cho event schema."""
+    ADDITIVE_ONLY = "additive_only"
+    ADDITIVE_WITH_DEFAULTS = "additive_with_defaults"
+    ADDITIVE_AND_RENAME = "additive_and_rename"
+    FREE_FORM = "free_form"
+
+
+@dataclass
+class EventSchemaVersion:
+    """
+    Version tracking cho event schema — backward compatibility enforcement.
+
+    Attributes:
+        event_name: Tên event type
+        version: Version string (vd: "1.0", "2.0")
+        schema: JSON Schema definition cho event payload
+        evolution_policy: Chính sách evolution cho version này
+        is_deprecated: Có deprecated không
+        deprecated_since: Từ khi nào deprecated (ISO date string)
+        migration_target: Version target để migrate (nếu deprecated)
+        description: Mô tả schema version
+    """
+    event_name: str
+    version: str = "1.0"
+    schema: dict[str, Any] = field(default_factory=dict)
+    evolution_policy: SchemaEvolutionPolicy = SchemaEvolutionPolicy.ADDITIVE_ONLY
+    is_deprecated: bool = False
+    deprecated_since: str | None = None
+    migration_target: str | None = None
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate event schema version sau khi khởi tạo."""
+        if not self.event_name or not self.event_name.strip():
+            raise ValueError("event_name không được để trống")
+        if not self.version or not self.version.strip():
+            self.version = "1.0"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển event schema version sang dict format."""
+        result: dict[str, Any] = {
+            "event_name": self.event_name,
+            "version": self.version,
+            "schema": self.schema,
+            "evolution_policy": self.evolution_policy.value,
+            "is_deprecated": self.is_deprecated,
+            "description": self.description,
+        }
+        if self.deprecated_since is not None:
+            result["deprecated_since"] = self.deprecated_since
+        if self.migration_target is not None:
+            result["migration_target"] = self.migration_target
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "EventSchemaVersion":
+        """Tạo EventSchemaVersion từ dict."""
+        return cls(
+            event_name=data.get("event_name", ""),
+            version=data.get("version", "1.0"),
+            schema=data.get("schema", {}),
+            evolution_policy=SchemaEvolutionPolicy(data.get("evolution_policy", "additive_only")),
+            is_deprecated=data.get("is_deprecated", False),
+            deprecated_since=data.get("deprecated_since"),
+            migration_target=data.get("migration_target"),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
+# Event Stream (Event Sourcing backbone)
+# ============================================================================
+
+
+@dataclass
+class EventStream:
+    """
+    Event stream cho event-sourced aggregate.
+
+    Attributes:
+        stream_id: Unique ID cho stream (thường là aggregate_id)
+        aggregate_type: Loại aggregate root (vd: "Order", "Customer")
+        aggregate_id: ID của aggregate root
+        events: Sequence của events trong stream
+        current_version: Version hiện tại của stream (số events)
+        max_version: Max version cho optimistic locking
+        description: Mô tả event stream
+    """
+    stream_id: str
+    aggregate_type: str = ""
+    aggregate_id: str = ""
+    events: list[dict[str, Any]] = field(default_factory=list)
+    current_version: int = 0
+    max_version: int = 0
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate event stream sau khi khởi tạo."""
+        if not self.stream_id or not self.stream_id.strip():
+            raise ValueError("stream_id không được để trống")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển event stream sang dict format."""
+        return {
+            "stream_id": self.stream_id,
+            "aggregate_type": self.aggregate_type,
+            "aggregate_id": self.aggregate_id,
+            "events": self.events,
+            "current_version": self.current_version,
+            "max_version": self.max_version,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "EventStream":
+        """Tạo EventStream từ dict."""
+        return cls(
+            stream_id=data.get("stream_id", ""),
+            aggregate_type=data.get("aggregate_type", ""),
+            aggregate_id=data.get("aggregate_id", ""),
+            events=data.get("events", []),
+            current_version=data.get("current_version", 0),
+            max_version=data.get("max_version", 0),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
+# CQRS Projection
+# ============================================================================
+
+
+class MaterializationStrategy(str, Enum):
+    """Chiến lược materialization cho read model."""
+    INCREMENTAL = "incremental"
+    BATCH = "batch"
+    HYBRID = "hybrid"
+
+
+@dataclass
+class CQRSProjection:
+    """
+    CQRS projection — transform write model events vào read model.
+
+    Attributes:
+        projection_id: Unique ID cho projection
+        name: Tên projection (vd: "OrderDashboardView")
+        source_events: List của event names để subscribe
+        target_entity: Entity/table để materialize read model
+        transformation: Transformation rules (JSON)
+        materialization: Chiến lược materialization
+        refresh_interval_seconds: Interval cho batch/hybrid materialization
+        enable_cdc: Enable change data capture
+        description: Mô tả projection
+    """
+    projection_id: str
+    name: str = ""
+    source_events: list[str] = field(default_factory=list)
+    target_entity: str = ""
+    transformation: dict[str, Any] = field(default_factory=dict)
+    materialization: MaterializationStrategy = MaterializationStrategy.INCREMENTAL
+    refresh_interval_seconds: int = 300
+    enable_cdc: bool = False
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate CQRS projection sau khi khởi tạo."""
+        if not self.projection_id or not self.projection_id.strip():
+            raise ValueError("projection_id không được để trống")
+        if not self.source_events:
+            raise ValueError("CQRS projection phải có ít nhất một source event")
+        if not self.target_entity or not self.target_entity.strip():
+            raise ValueError("target_entity không được để trống")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển CQRS projection sang dict format."""
+        return {
+            "projection_id": self.projection_id,
+            "name": self.name,
+            "source_events": self.source_events,
+            "target_entity": self.target_entity,
+            "transformation": self.transformation,
+            "materialization": self.materialization.value,
+            "refresh_interval_seconds": self.refresh_interval_seconds,
+            "enable_cdc": self.enable_cdc,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CQRSProjection":
+        """Tạo CQRSProjection từ dict."""
+        return cls(
+            projection_id=data.get("projection_id", ""),
+            name=data.get("name", ""),
+            source_events=data.get("source_events", []),
+            target_entity=data.get("target_entity", ""),
+            transformation=data.get("transformation", {}),
+            materialization=MaterializationStrategy(data.get("materialization", "incremental")),
+            refresh_interval_seconds=data.get("refresh_interval_seconds", 300),
+            enable_cdc=data.get("enable_cdc", False),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
 # Exports
 # ============================================================================
 
 __all__ = [
+    # Core models
     "EventDefinition",
     "OutboxEntry",
+    # Transport abstraction
     "TransportType",
     "DeliveryGuarantee",
     "TransportConfig",
+    # Dead Letter Queue
     "DLQPolicy",
     "DLQConfig",
+    # Event Sourcing
     "EventStoreBackend",
     "SnapshotStrategy",
     "EventStoreConfig",
+    # Retry
     "RetryStrategy",
     "RetryPolicy",
+    # Idempotent Consumer
+    "IdempotencyStrategy",
+    "IdempotentConsumer",
+    # Schema Versioning
+    "SchemaEvolutionPolicy",
+    "EventSchemaVersion",
+    # Event Stream
+    "EventStream",
+    # CQRS Projection
+    "MaterializationStrategy",
+    "CQRSProjection",
 ]

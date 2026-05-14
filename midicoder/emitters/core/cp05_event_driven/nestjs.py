@@ -81,7 +81,7 @@ class NestJSEventEmitter:
             )
 
         self._env = Environment(
-            loader=FileSystemLoader(str(stack_dir / "event")),
+            loader=FileSystemLoader(str(stack_dir / "cp05_event_driven")),
             autoescape=True,
         )
 

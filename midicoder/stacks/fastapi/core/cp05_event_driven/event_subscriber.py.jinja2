@@ -1,11 +1,19 @@
 """
 Event Subscriber - Subscribe và handle events.
 
+{% if events %}
+Events: {% for e in events %}{{ e.event_name }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+{% if topics %}
+Topics: {% for t in topics %}{{ t }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
 Module này cung cấp EventSubscriber để subscribe và handle events.
 Hỗ trợ filter, retry policies, và error handling.
 
 KPI-029: Tenant Isolation - Hỗ trợ tenant-specific event filtering
 CP05: Event-Driven Architecture
+{% if has_tenant_events %}KPI-029: Active - Tenant isolation enabled{% endif %}
 """
 
 from typing import Any, Callable, Optional
@@ -13,7 +21,7 @@ from dataclasses import dataclass, field
 import logging
 import asyncio
 
-from app.core.event.event_bus import EventBus, EventMessage
+from {{ events_package }}.event_bus import EventBus, EventMessage
 
 logger = logging.getLogger(__name__)
 

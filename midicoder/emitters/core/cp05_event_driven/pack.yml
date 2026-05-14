@@ -6,7 +6,7 @@ pack:
   status: "stable"
   category: "architecture"
   depends_on: ["CP01"]
-  definitions_count: 8
+  definitions_count: 22
   obligations_count: 4
   error_codes:
     prefix: "MDC-CP05"
@@ -18,6 +18,9 @@ pack:
     - event_sourcing
     - transport_abstraction
     - dead_letter_queue
+    - idempotent_consumer
+    - schema_evolution
+    - cqrs_projection
   capabilities:
     - id: "event_publisher"
       emitter: "fastapi, nestjs"
@@ -31,15 +34,17 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "event_sourcing"
       emitter: "fastapi, nestjs"
+    - id: "idempotent_consumer"
+      emitter: "fastapi, nestjs"
+    - id: "schema_versioning"
+      emitter: "fastapi, nestjs"
+    - id: "cqrs_projection"
+      emitter: "fastapi, nestjs"
   definitions:
-    - name: "EventTopic"
-      description: "Named channel for event publication"
-    - name: "EventSubscription"
-      description: "Binding between topic and handler"
-    - name: "EventEnvelope"
-      description: "Wrapper with metadata for published events"
-    - name: "OutboxConfig"
-      description: "Transactional outbox settings for reliable delivery"
+    - name: "EventDefinition"
+      description: "Core event definition with name, payload fields, topic, version"
+    - name: "OutboxEntry"
+      description: "Transactional outbox entry for reliable event delivery"
     - name: "TransportConfig"
       description: "Abstract message transport (Kafka, RabbitMQ, SQS, SNS, Redis)"
     - name: "DLQConfig"
@@ -48,6 +53,14 @@ pack:
       description: "Event sourcing backbone with snapshot and optimistic locking"
     - name: "RetryPolicy"
       description: "Retry strategy (exponential backoff with jitter, fibonacci)"
+    - name: "IdempotentConsumer"
+      description: "Dedup + checkpoint for exactly-once processing"
+    - name: "EventSchemaVersion"
+      description: "Event schema versioning and backward compatibility tracking"
+    - name: "EventStream"
+      description: "Event stream for event-sourced aggregate"
+    - name: "CQRSProjection"
+      description: "CQRS read model projection from write model events"
   obligations:
     - name: "EventOrdering"
       description: "Events from same aggregate must maintain causal order"
@@ -114,10 +127,3 @@ pack:
         template: "cp05_event_driven/index.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
-  frontend_integration:
-    angular:
-      - EventService
-      - EventSubscriber
-    react:
-      - useEvent
-      - EventListener

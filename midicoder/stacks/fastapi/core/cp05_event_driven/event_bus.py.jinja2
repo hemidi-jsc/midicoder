@@ -1,11 +1,19 @@
 """
 Event Bus - In-memory event bus cho FastAPI.
 
+{% if events %}
+Events: {% for e in events %}{{ e.event_name }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+{% if topics %}
+Topics: {% for t in topics %}{{ t }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
 Module này cung cấp event bus cho publish/subscribe pattern.
 Có thể mở rộng để tích hợp với Kafka, RabbitMQ, SQS, v.v.
 
 CP05: Event-Driven Architecture
 KPI-029: Tenant Isolation - Multi-tenant event support
+{% if has_tenant_events %}KPI-029: Active - Tenant isolation enabled{% endif %}
 """
 
 from typing import Any, Callable, Optional

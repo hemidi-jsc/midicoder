@@ -1,11 +1,16 @@
 /**
- * Event-Driven Architecture - Exports cho NestJS.
- * 
- * Module này export tất cả các components cho event bus.
- * 
- * KPI-029: Tenant Isolation - Event components hỗ trợ tenant-specific routing
- * CP05: Event-Driven Architecture
- */
+* Event-Driven Architecture - Exports cho NestJS.
+*
+{% if events %}
+* Events: {% for e in events %}{{ e.event_name }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+*
+* Module này export tất cả các components cho event bus.
+*
+* KPI-029: Tenant Isolation - Event components hỗ trợ tenant-specific routing
+* CP05: Event-Driven Architecture
+{% if has_tenant_events %} * KPI-029: Active - Tenant isolation enabled{% endif %}
+*/
 
 export * from './event.module';
 export * from './event-bus.service';

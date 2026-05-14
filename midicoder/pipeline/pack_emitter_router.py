@@ -124,6 +124,18 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "ReactEmitter",
         "cp10_search",
     ),
+    # CP05 – Event (FastAPI)
+    "cp05.event.fastapi": (
+        "midicoder.emitters.core.cp05_event_driven.fastapi",
+        "FastAPIEventEmitter",
+        "cp05_event",
+    ),
+    # CP05 – Event (NestJS)
+    "cp05.event.nestjs": (
+        "midicoder.emitters.core.cp05_event_driven.nestjs",
+        "NestJSEventEmitter",
+        "cp05_event",
+    ),
 }
 
 
@@ -185,11 +197,23 @@ def _parse_search_dict(raw: dict[str, Any]) -> Any:
     return parser.parse_from_metadata(raw)
 
 
+def _parse_event_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw event dict from MIR metadata into a CP05 EventDefinition list."""
+    from midicoder.emitters.core.cp05_event_driven.parser import EventParser
+    parser = EventParser()
+    # MIR metadata stores events as a list of dicts — pass directly
+    if isinstance(raw, list):
+        return parser.parse(raw)
+    # If it's a single dict, wrap in list
+    return parser.parse([raw])
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
     "cp03_auth": _parse_auth_dict,
     "cp10_search": _parse_search_dict,
+    "cp05_event": _parse_event_dict,
 }
 
 

@@ -31,3 +31,6 @@ bak/
 
 # Backlog / planning
 backlog/
+
+# E2E output
+sandbox/

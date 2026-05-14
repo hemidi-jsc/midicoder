@@ -1,346 +1,339 @@
 /**
- * Event Subscriber - Subscribe và handle events.
- * 
- * Module này cung cấp EventSubscriber để subscribe và handle events.
- * Hỗ trợ filter, retry policies, và error handling.
- * 
- * KPI-029: Tenant Isolation - Hỗ trợ tenant-specific event filtering
- * CP05: Event-Driven Architecture
- */
+* Event Subscriber - Subscribe và handle events.
+*
+* Module này cung cấp EventSubscriber để subscribe và handle events.
+* Hỗ trợ filter, retry policies, và error handling.
+*
+* KPI-029: Tenant Isolation - Hỗ trợ tenant-specific event filtering
+* CP05: Event-Driven Architecture
+*/
 
 import { Injectable, Logger } from '@nestjs/common';
 import { EventBusService, EventMessage, EventHandler } from './event-bus.service';
 
 /**
- * Retry Policy configuration.
- * 
- * Cấu hình cho retry logic.
- */
+* Retry Policy configuration.
+*
+* Cấu hình cho retry logic.
+*/
 export interface RetryPolicy {
-  max_retries: number;
-  backoff_ms: number;
+max_retries: number;
+backoff_ms: number;
 }
 
 /**
- * Filter Function type.
- * 
- * Function để filter events.
- */
+* Filter Function type.
+*
+* Function để filter events.
+*/
 export type EventFilter = (message: EventMessage) => boolean;
 
 /**
- * EventSubscriberService - Subscribe và handle events.
- * 
- * EventSubscriber đăng ký handler để xử lý events.
- * Có thể có filter và retry policies.
- * 
- * KPI-029: Hỗ trợ tenant-specific subscriptions để isolate events theo tenant.
- * 
- * Attributes:
- *     subscriptions: Map chứa global subscriptions
- *     tenantSubscriptions: Map chứa tenant-specific subscriptions (tenant_id -> topic -> subscription)
- */
+* EventSubscriberService - Subscribe và handle events.
+*
+* EventSubscriber đăng ký handler để xử lý events.
+* Có thể có filter và retry policies.
+*
+* KPI-029: Hỗ trợ tenant-specific subscriptions để isolate events theo tenant.
+*
+* Attributes:
+* subscriptions: Map chứa global subscriptions
+* tenantSubscriptions: Map chứa tenant-specific subscriptions (tenant_id -> topic -> subscription)
+*/
 @Injectable()
 export class EventSubscriberService {
-  private readonly logger = new Logger(EventSubscriberService.name);
-  private subscriptions: Map<string, { handler: EventHandler; filter?: EventFilter }> = new Map();
-  private tenantSubscriptions: Map<string, Map<string, { handler: EventHandler; filter?: EventFilter }>> = new Map();  // KPI-029: tenant -> topic -> subscription
+private readonly logger = new Logger(EventSubscriberService.name);
+private subscriptions: Map<string, { handler: EventHandler; filter?: EventFilter }> = new Map();
+    private tenantSubscriptions: Map<string, Map<string, { handler: EventHandler; filter?: EventFilter }>> = new Map();
+        // KPI-029: tenant -> topic -> subscription
 
-  constructor(private readonly eventBus: EventBusService) {
-    this.logger.log('EventSubscriberService đã được khởi tạo');
-  }
+        constructor(private readonly eventBus: EventBusService) {
+        this.logger.log('EventSubscriberService đã được khởi tạo');
+        }
 
-  /**
-   * Subscribe handler đến topic (global - nhận events từ tất cả tenants).
-   * 
-   * @param topic - Topic để subscribe
-   * @param handler - Function để handle events
-   * @param filter - Optional filter function
-   */
-  subscribe(
-    topic: string,
-    handler: EventHandler,
-    filter?: EventFilter,
-  ): void {
-    const wrappedHandler = async (message: EventMessage) => {
-      // Apply filter nếu có
-      if (filter && !filter(message)) {
+        /**
+        * Subscribe handler đến topic (global - nhận events từ tất cả tenants).
+        *
+        * @param topic - Topic để subscribe
+        * @param handler - Function để handle events
+        * @param filter - Optional filter function
+        */
+        subscribe(
+        topic: string,
+        handler: EventHandler,
+        filter?: EventFilter,
+        ): void {
+        const wrappedHandler = async (message: EventMessage) => {
+        // Apply filter nếu có
+        if (filter && !filter(message)) {
         this.logger.debug(`Event '${message.event_id}' bị filter bởi subscriber`);
         return;
-      }
-
-      this.logger.info(`Handling event '${message.event_id}' (global)`);
-
-      try {
-        await this.handleWithRetry(message, handler);
-      } catch (error) {
-        this.logger.error(
-          `Error xử lý event '${message.event_id}': ${error.message}`,
-          error.stack,
-        );
-        throw error;
-      }
-    };
-
-    this.eventBus.subscribe(topic, wrappedHandler);
-    this.subscriptions.set(topic, { handler: wrappedHandler, filter });
-    this.logger.info(`EventSubscriber đã subscribe đến topic '${topic}' (global)`);
-  }
-
-  /**
-   * Subscribe handler đến topic cho tenant cụ thể.
-   * 
-   * KPI-029: Chỉ nhận events từ tenant được chỉ định.
-   * 
-   * @param tenant_id - ID của tenant để filter
-   * @param topic - Topic để subscribe
-   * @param handler - Function để handle events
-   * @param filter - Optional filter function bổ sung
-   */
-  subscribeForTenant(
-    tenant_id: string,
-    topic: string,
-    handler: EventHandler,
-    filter?: EventFilter,
-  ): void {
-    // Tạo tenant filter mặc định
-    const tenantFilter: EventFilter = (message: EventMessage) => {
-      return message.tenant_id === tenant_id;
-    };
-
-    // Kết hợp tenant filter với custom filter (nếu có)
-    const combinedFilter: EventFilter = (message: EventMessage) => {
-      if (!tenantFilter(message)) {
-        this.logger.debug(`Event '${message.event_id}' bị filter: tenant không khớp '${message.tenant_id}' !== '${tenant_id}'`);
-        return false;
-      }
-      // Áp dụng custom filter nếu có
-      return !filter || filter(message);
-    };
-
-    const wrappedHandler = async (message: EventMessage) => {
-      if (combinedFilter && !combinedFilter(message)) {
-        return;
-      }
-
-      this.logger.info(`Handling event '${message.event_id}' cho tenant '${tenant_id}'`);
-
-      try {
-        await this.handleWithRetry(message, handler);
-      } catch (error) {
-        this.logger.error(
-          `Error xử lý event '${message.event_id}' cho tenant '${tenant_id}': ${error.message}`,
-          error.stack,
-        );
-        throw error;
-      }
-    };
-
-    // Sử dụng eventBus.subscribeForTenant để đăng ký tenant-specific handler
-    this.eventBus.subscribeForTenant(tenant_id, topic, wrappedHandler);
-
-    // Lưu subscription để có thể unsubscribe sau
-    if (!this.tenantSubscriptions.has(tenant_id)) {
-      this.tenantSubscriptions.set(tenant_id, new Map());
-    }
-    const tenantTopics = this.tenantSubscriptions.get(tenant_id)!;
-    tenantTopics.set(topic, { handler: wrappedHandler, filter: combinedFilter });
-
-    this.logger.info(`EventSubscriber đã subscribe đến topic '${topic}' cho tenant '${tenant_id}'`);
-  }
-
-  /**
-   * Handle event với retry logic.
-   * 
-   * @param message - EventMessage cần handle
-   * @param handler - Handler function
-   * @param retryPolicy - Retry configuration
-   */
-  private async handleWithRetry(
-    message: EventMessage,
-    handler: EventHandler,
-    retryPolicy: RetryPolicy = { max_retries: 3, backoff_ms: 1000 },
-  ): Promise<void> {
-    const { max_retries, backoff_ms } = retryPolicy;
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt <= max_retries; attempt++) {
-      try {
-        await handler(message);
-        return;
-      } catch (error) {
-        lastError = error as Error;
-        this.logger.warning(
-          `Attempt ${attempt + 1}/${max_retries + 1} failed: ${error.message}`,
-        );
-
-        if (attempt < max_retries) {
-          // Backoff trước khi retry
-          await new Promise((resolve) => setTimeout(resolve, backoff_ms));
         }
-      }
-    }
 
-    // All retries failed
-    this.logger.error(
-      `All retries failed for event '${message.event_id}': ${lastError?.message}`,
-    );
-    // Trong production, có thể send to dead letter queue
-    throw lastError;
-  }
+        this.logger.info(`Handling event '${message.event_id}' (global)`);
 
-  /**
-   * Unsubscribe khỏi topic (global).
-   * 
-   * @param topic - Topic để unsubscribe
-   */
-  unsubscribe(topic: string): void {
-    const subscription = this.subscriptions.get(topic);
-    if (subscription) {
-      this.eventBus.unsubscribe(topic, subscription.handler);
-      this.subscriptions.delete(topic);
-      this.logger.info(`EventSubscriber đã unsubscribe khỏi topic '${topic}' (global)`);
-    }
-  }
+        try {
+        await this.handleWithRetry(message, handler);
+        } catch (error) {
+        this.logger.error(
+        `Error xử lý event '${message.event_id}': ${error.message}`,
+        error.stack,
+        );
+        throw error;
+        }
+        };
 
-  /**
-   * Unsubscribe khỏi tenant-specific topic.
-   * 
-   * KPI-029: Unsubscribe handler từ tenant-specific topic.
-   * 
-   * @param tenant_id - ID của tenant
-   * @param topic - Topic để unsubscribe
-   */
-  unsubscribeForTenant(tenant_id: string, topic: string): void {
-    const tenantTopics = this.tenantSubscriptions.get(tenant_id);
-    if (!tenantTopics) {
-      this.logger.warning(`Không có subscription cho tenant '${tenant_id}'`);
-      return;
-    }
+        this.eventBus.subscribe(topic, wrappedHandler);
+        this.subscriptions.set(topic, { handler: wrappedHandler, filter });
+        this.logger.info(`EventSubscriber đã subscribe đến topic '${topic}' (global)`);
+        }
 
-    const subscription = tenantTopics.get(topic);
-    if (subscription) {
-      this.eventBus.unsubscribeForTenant(tenant_id, topic, subscription.handler);
-      tenantTopics.delete(topic);
-      this.logger.info(`EventSubscriber đã unsubscribe khỏi topic '${topic}' cho tenant '${tenant_id}'`);
-    }
-  }
+        /**
+        * Subscribe handler đến topic cho tenant cụ thể.
+        *
+        * KPI-029: Chỉ nhận events từ tenant được chỉ định.
+        *
+        * @param tenant_id - ID của tenant để filter
+        * @param topic - Topic để subscribe
+        * @param handler - Function để handle events
+        * @param filter - Optional filter function bổ sung
+        */
+        subscribeForTenant(
+        tenant_id: string,
+        topic: string,
+        handler: EventHandler,
+        filter?: EventFilter,
+        ): void {
+        // Tạo tenant filter mặc định
+        const tenantFilter: EventFilter = (message: EventMessage) => {
+        return message.tenant_id === tenant_id;
+        };
 
-  /**
-   * Unsubscribe tất cả subscriptions cho tenant.
-   * 
-   * KPI-029: Dùng khi tenant bị xóa hoặc cần reset tất cả handlers.
-   * 
-   * @param tenant_id - ID của tenant
-   */
-  unsubscribeAllForTenant(tenant_id: string): void {
-    const tenantTopics = this.tenantSubscriptions.get(tenant_id);
-    if (!tenantTopics) {
-      this.logger.warning(`Không có subscription cho tenant '${tenant_id}'`);
-      return;
-    }
+        // Kết hợp tenant filter với custom filter (nếu có)
+        const combinedFilter: EventFilter = (message: EventMessage) => {
+        if (!tenantFilter(message)) {
+        this.logger.debug(`Event '${message.event_id}' bị filter: tenant không khớp '${message.tenant_id}' !==
+        '${tenant_id}'`);
+        return false;
+        }
+        // Áp dụng custom filter nếu có
+        return !filter || filter(message);
+        };
 
-    for (const [topic, subscription] of tenantTopics.entries()) {
-      this.eventBus.unsubscribeForTenant(tenant_id, topic, subscription.handler);
-    }
-    this.tenantSubscriptions.delete(tenant_id);
-    this.logger.info(`Tất cả subscriptions cho tenant '${tenant_id}' đã được clear`);
-  }
+        const wrappedHandler = async (message: EventMessage) => {
+        if (combinedFilter && !combinedFilter(message)) {
+        return;
+        }
 
-  /**
-   * Unsubscribe tất cả (global và tenant-specific).
-   */
-  unsubscribeAll(): void {
-    // Unsubscribe global
-    for (const [topic, subscription] of this.subscriptions.entries()) {
-      this.eventBus.unsubscribe(topic, subscription.handler);
-    }
-    this.subscriptions.clear();
+        this.logger.info(`Handling event '${message.event_id}' cho tenant '${tenant_id}'`);
 
-    // Unsubscribe tenant-specific
-    for (const [tenant_id, tenantTopics] of this.tenantSubscriptions.entries()) {
-      for (const [topic, subscription] of tenantTopics.entries()) {
-        this.eventBus.unsubscribeForTenant(tenant_id, topic, subscription.handler);
-      }
-    }
-    this.tenantSubscriptions.clear();
+        try {
+        await this.handleWithRetry(message, handler);
+        } catch (error) {
+        this.logger.error(
+        `Error xử lý event '${message.event_id}' cho tenant '${tenant_id}': ${error.message}`,
+        error.stack,
+        );
+        throw error;
+        }
+        };
 
-    this.logger.info('Tất cả subscriptions đã được clear');
-  }
-}
+        // Sử dụng eventBus.subscribeForTenant để đăng ký tenant-specific handler
+        this.eventBus.subscribeForTenant(tenant_id, topic, wrappedHandler);
 
-/**
- * Filter by event type.
- * 
- * Tạo filter function để filter theo event type.
- * 
- * @param eventType - Event type để filter
- * @returns Filter function
- */
-export function filterByEventType(eventType: string): EventFilter {
-  return (message: EventMessage) => message.event_id === eventType;
-}
+        // Lưu subscription để có thể unsubscribe sau
+        if (!this.tenantSubscriptions.has(tenant_id)) {
+        this.tenantSubscriptions.set(tenant_id, new Map());
+        }
+        const tenantTopics = this.tenantSubscriptions.get(tenant_id)!;
+        tenantTopics.set(topic, { handler: wrappedHandler, filter: combinedFilter });
 
-/**
- * Filter by metadata.
- * 
- * Tạo filter function để filter theo metadata.
- * 
- * @param key - Metadata key để filter
- * @param value - Giá trị để match
- * @returns Filter function
- */
-export function filterByMetadata(key: string, value: any): EventFilter {
-  return (message: EventMessage) => {
-    if (!message.metadata) return false;
-    return message.metadata[key] === value;
-  };
-}
+        this.logger.info(`EventSubscriber đã subscribe đến topic '${topic}' cho tenant '${tenant_id}'`);
+        }
 
-/**
- * Filter by payload field.
- * 
- * Tạo filter function để filter theo payload field.
- * 
- * @param field - Payload field để filter
- * @param value - Giá trị để match
- * @returns Filter function
- */
-export function filterByPayloadField(field: string, value: any): EventFilter {
-  return (message: EventMessage) => message.payload[field] === value;
-}
+        /**
+        * Handle event với retry logic.
+        *
+        * @param message - EventMessage cần handle
+        * @param handler - Handler function
+        * @param retryPolicy - Retry configuration
+        */
+        private async handleWithRetry(
+        message: EventMessage,
+        handler: EventHandler,
+        retryPolicy: RetryPolicy = { max_retries: 3, backoff_ms: 1000 },
+        ): Promise<void> {
+            const { max_retries, backoff_ms } = retryPolicy;
+            let lastError: Error | null = null;
 
-/**
- * Filter by tenant_id.
- * 
- * KPI-029: Tạo filter function để filter theo tenant_id.
- * 
- * @param tenant_id - ID của tenant để filter
- * @returns Filter function
- */
-export function filterByTenantId(tenant_id: string): EventFilter {
-  return (message: EventMessage) => {
-    // Nếu message không có tenant_id, không match (trừ khi tenant_id là undefined)
-    if (!message.tenant_id) {
-      return tenant_id === undefined || tenant_id === null;
-    }
-    return message.tenant_id === tenant_id;
-  };
-}
+            for (let attempt = 0; attempt <= max_retries; attempt++) { try { await handler(message); return; } catch
+                (error) { lastError=error as Error; this.logger.warn( `Attempt ${attempt + 1}/${max_retries + 1} failed:
+                ${error.message}`, ); if (attempt < max_retries) { // Backoff trước khi retry await new
+                Promise((resolve)=> setTimeout(resolve, backoff_ms));
+                }
+                }
+                }
 
-/**
- * Filter for multi-tenant (nhận events từ multiple tenants).
- * 
- * KPI-029: Cho phép subscriber nhận events từ danh sách tenants.
- * 
- * @param tenant_ids - Danh sách tenant_ids để filter
- * @returns Filter function
- */
-export function filterByMultiTenant(tenant_ids: string[]): EventFilter {
-  return (message: EventMessage) => {
-    if (!message.tenant_id) {
-      return false;
-    }
-    return tenant_ids.includes(message.tenant_id);
-  };
-}
+                // All retries failed
+                this.logger.error(
+                `All retries failed for event '${message.event_id}': ${lastError?.message}`,
+                );
+                // Trong production, có thể send to dead letter queue
+                throw lastError;
+                }
+
+                /**
+                * Unsubscribe khỏi topic (global).
+                *
+                * @param topic - Topic để unsubscribe
+                */
+                unsubscribe(topic: string): void {
+                const subscription = this.subscriptions.get(topic);
+                if (subscription) {
+                this.eventBus.unsubscribe(topic, subscription.handler);
+                this.subscriptions.delete(topic);
+                this.logger.info(`EventSubscriber đã unsubscribe khỏi topic '${topic}' (global)`);
+                }
+                }
+
+                /**
+                * Unsubscribe khỏi tenant-specific topic.
+                *
+                * KPI-029: Unsubscribe handler từ tenant-specific topic.
+                *
+                * @param tenant_id - ID của tenant
+                * @param topic - Topic để unsubscribe
+                */
+                unsubscribeForTenant(tenant_id: string, topic: string): void {
+                const tenantTopics = this.tenantSubscriptions.get(tenant_id);
+                if (!tenantTopics) {
+                this.logger.warn(`Không có subscription cho tenant '${tenant_id}'`);
+                return;
+                }
+
+                const subscription = tenantTopics.get(topic);
+                if (subscription) {
+                this.eventBus.unsubscribeForTenant(tenant_id, topic, subscription.handler);
+                tenantTopics.delete(topic);
+                this.logger.info(`EventSubscriber đã unsubscribe khỏi topic '${topic}' cho tenant '${tenant_id}'`);
+                }
+                }
+
+                /**
+                * Unsubscribe tất cả subscriptions cho tenant.
+                *
+                * KPI-029: Dùng khi tenant bị xóa hoặc cần reset tất cả handlers.
+                *
+                * @param tenant_id - ID của tenant
+                */
+                unsubscribeAllForTenant(tenant_id: string): void {
+                const tenantTopics = this.tenantSubscriptions.get(tenant_id);
+                if (!tenantTopics) {
+                this.logger.warn(`Không có subscription cho tenant '${tenant_id}'`);
+                return;
+                }
+
+                for (const [topic, subscription] of tenantTopics.entries()) {
+                this.eventBus.unsubscribeForTenant(tenant_id, topic, subscription.handler);
+                }
+                this.tenantSubscriptions.delete(tenant_id);
+                this.logger.info(`Tất cả subscriptions cho tenant '${tenant_id}' đã được clear`);
+                }
+
+                /**
+                * Unsubscribe tất cả (global và tenant-specific).
+                */
+                unsubscribeAll(): void {
+                // Unsubscribe global
+                for (const [topic, subscription] of this.subscriptions.entries()) {
+                this.eventBus.unsubscribe(topic, subscription.handler);
+                }
+                this.subscriptions.clear();
+
+                // Unsubscribe tenant-specific
+                for (const [tenant_id, tenantTopics] of this.tenantSubscriptions.entries()) {
+                for (const [topic, subscription] of tenantTopics.entries()) {
+                this.eventBus.unsubscribeForTenant(tenant_id, topic, subscription.handler);
+                }
+                }
+                this.tenantSubscriptions.clear();
+
+                this.logger.info('Tất cả subscriptions đã được clear');
+                }
+                }
+
+                /**
+                * Filter by event type.
+                *
+                * Tạo filter function để filter theo event type.
+                *
+                * @param eventType - Event type để filter
+                * @returns Filter function
+                */
+                export function filterByEventType(eventType: string): EventFilter {
+                return (message: EventMessage) => message.event_id === eventType;
+                }
+
+                /**
+                * Filter by metadata.
+                *
+                * Tạo filter function để filter theo metadata.
+                *
+                * @param key - Metadata key để filter
+                * @param value - Giá trị để match
+                * @returns Filter function
+                */
+                export function filterByMetadata(key: string, value: any): EventFilter {
+                return (message: EventMessage) => {
+                if (!message.metadata) return false;
+                return message.metadata[key] === value;
+                };
+                }
+
+                /**
+                * Filter by payload field.
+                *
+                * Tạo filter function để filter theo payload field.
+                *
+                * @param field - Payload field để filter
+                * @param value - Giá trị để match
+                * @returns Filter function
+                */
+                export function filterByPayloadField(field: string, value: any): EventFilter {
+                return (message: EventMessage) => message.payload[field] === value;
+                }
+
+                /**
+                * Filter by tenant_id.
+                *
+                * KPI-029: Tạo filter function để filter theo tenant_id.
+                *
+                * @param tenant_id - ID của tenant để filter
+                * @returns Filter function
+                */
+                export function filterByTenantId(tenant_id: string): EventFilter {
+                return (message: EventMessage) => {
+                // Nếu message không có tenant_id, không match (trừ khi tenant_id là undefined)
+                if (!message.tenant_id) {
+                return tenant_id === undefined || tenant_id === null;
+                }
+                return message.tenant_id === tenant_id;
+                };
+                }
+
+                /**
+                * Filter for multi-tenant (nhận events từ multiple tenants).
+                *
+                * KPI-029: Cho phép subscriber nhận events từ danh sách tenants.
+                *
+                * @param tenant_ids - Danh sách tenant_ids để filter
+                * @returns Filter function
+                */
+                export function filterByMultiTenant(tenant_ids: string[]): EventFilter {
+                return (message: EventMessage) => {
+                if (!message.tenant_id) {
+                return false;
+                }
+                return tenant_ids.includes(message.tenant_id);
+                };
+                }
