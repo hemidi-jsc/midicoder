@@ -1,0 +1,147 @@
+/**
+ * Vector Search Service cho Angular.
+ *
+ * Cung cấp vector search operations qua HTTP client:
+ * - ANN (Approximate Nearest Neighbor) search
+ * - Hybrid search (BM25 + vector similarity)
+ *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant filtering trong vector search operations
+ * CP10: Search & Indexing
+ */
+
+import { Injectable } from "@angular/core";
+import { HttpClient, HttpHeaders } from "@angular/common/http";
+import { Observable } from "rxjs";
+
+/** Kết quả từ vector search operation */
+export interface VectorSearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+  queryVectorDimensions?: number;
+}
+
+/** Kết quả từ hybrid search operation */
+export interface HybridSearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+  textWeight: number;
+  vectorWeight: number;
+}
+
+/** Options cho ANN search */
+export interface VectorSearchOptions {
+  queryVector: number[];
+  k?: number;
+  index?: string;
+  filters?: Record<string, any>;
+  minScore?: number;
+  tenantId?: string; // KPI-029
+}
+
+/** Options cho hybrid search */
+export interface HybridSearchOptions {
+  queryText: string;
+  queryVector: number[];
+  textWeight?: number;
+  vectorWeight?: number;
+  index?: string;
+  size?: number;
+  from?: number;
+  filters?: Record<string, any>;
+  tenantId?: string; // KPI-029
+}
+
+/**
+ * Vector Search Service.
+ *
+ * KPI-029: Hỗ trợ tenant filtering để isolate vector search results theo tenant.
+ */
+@Injectable({
+  providedIn: "root",
+})
+export class VectorSearchService {
+  private vectorSearchUrl = "/api/search/vector";
+  private tenantId: string | undefined; // KPI-029
+
+  constructor(private http: HttpClient) {}
+
+  /**
+   * Đặt tenant ID cho tenant isolation (KPI-029).
+   */
+  setTenantId(tenantId: string | undefined): void {
+    this.tenantId = tenantId;
+  }
+
+  /**
+   * Thực hiện ANN (Approximate Nearest Neighbor) search.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param options - Vector search options
+   * @returns Vector search results
+   */
+  annSearch<T = any>(options: VectorSearchOptions): Observable<VectorSearchResult<T>> {
+    let headers = new HttpHeaders();
+
+    // KPI-029: Lấy tenant ID từ options hoặc instance
+    const effectiveTenantId = options.tenantId || this.tenantId;
+    if (effectiveTenantId) {
+      headers = headers.set("x-tenant-id", effectiveTenantId);
+    }
+    headers = headers.set("Content-Type", "application/json");
+
+    return this.http.post<VectorSearchResult<T>>(
+      `${this.vectorSearchUrl}/ann${options.index ? `/${options.index}` : ""}`,
+      {
+        queryVector: options.queryVector,
+        k: options.k ?? 10,
+        filters: options.filters,
+        minScore: options.minScore,
+      },
+      { headers },
+    );
+  }
+
+  /**
+   * Thực hiện hybrid search (BM25 + vector similarity).
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param options - Hybrid search options
+   * @returns Hybrid search results
+   */
+  hybridSearch<T = any>(options: HybridSearchOptions): Observable<HybridSearchResult<T>> {
+    let headers = new HttpHeaders();
+
+    // KPI-029: Lấy tenant ID từ options hoặc instance
+    const effectiveTenantId = options.tenantId || this.tenantId;
+    if (effectiveTenantId) {
+      headers = headers.set("x-tenant-id", effectiveTenantId);
+    }
+    headers = headers.set("Content-Type", "application/json");
+
+    return this.http.post<HybridSearchResult<T>>(
+      `${this.vectorSearchUrl}/hybrid${options.index ? `/${options.index}` : ""}`,
+      {
+        queryText: options.queryText,
+        queryVector: options.queryVector,
+        textWeight: options.textWeight ?? 0.5,
+        vectorWeight: options.vectorWeight ?? 0.5,
+        size: options.size ?? 20,
+        from: options.from ?? 0,
+        filters: options.filters,
+      },
+      { headers },
+    );
+  }
+}

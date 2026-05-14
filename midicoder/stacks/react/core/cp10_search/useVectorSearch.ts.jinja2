@@ -1,0 +1,250 @@
+/**
+ * useVectorSearch Hook - CP10.
+ *
+ * Custom hook để thực hiện vector similarity search.
+ * Hỗ trợ:
+ * - ANN (Approximate Nearest Neighbor) search
+ * - Hybrid search (BM25 + vector similarity)
+ *
+ * KPI-029: Tenant-aware vector search.
+ *
+ * CP10: Search & Indexing
+ */
+
+import { useState, useCallback } from "react";
+
+/** Kết quả từ vector search operation */
+export interface VectorSearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+  queryVectorDimensions?: number;
+}
+
+/** Kết quả từ hybrid search operation */
+export interface HybridSearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+  textWeight: number;
+  vectorWeight: number;
+}
+
+/** State cho vector search */
+interface VectorSearchState<T = any> {
+  results: VectorSearchResult<T> | null;
+  loading: boolean;
+  error: Error | null;
+}
+
+/** State cho hybrid search */
+interface HybridSearchState<T = any> {
+  results: HybridSearchResult<T> | null;
+  loading: boolean;
+  error: Error | null;
+}
+
+/** Options cho ANN search */
+export interface VectorSearchOptions {
+  queryVector: number[];
+  k?: number;
+  index?: string;
+  filters?: Record<string, any>;
+  minScore?: number;
+  tenantId?: string; // KPI-029
+}
+
+/** Options cho hybrid search */
+export interface HybridSearchOptions {
+  queryText: string;
+  queryVector: number[];
+  textWeight?: number;
+  vectorWeight?: number;
+  size?: number;
+  from?: number;
+  index?: string;
+  filters?: Record<string, any>;
+  tenantId?: string; // KPI-029
+}
+
+/** Return type của useVectorSearch */
+export interface UseVectorSearchReturn {
+  /** State cho ANN search */
+  annState: VectorSearchState;
+  /** State cho hybrid search */
+  hybridState: HybridSearchState;
+  /** Thực hiện ANN search (KPI-029: tenant-aware) */
+  annSearch: <T = any>(options: VectorSearchOptions) => Promise<VectorSearchResult<T>>;
+  /** Thực hiện hybrid search (KPI-029: tenant-aware) */
+  hybridSearch: <T = any>(options: HybridSearchOptions) => Promise<HybridSearchResult<T>>;
+  /** Đặt tenant ID (KPI-029) */
+  setTenantId: (id: string | undefined) => void;
+  /** Tenant ID hiện tại */
+  tenantId: string | undefined;
+  /** Reset state */
+  reset: () => void;
+}
+
+/**
+ * Hook để thực hiện vector search operations.
+ *
+ * @param apiUrl - URL của vector search API
+ * @param initialTenantId KPI-029: Tenant ID ban đầu
+ *
+ * @example
+ *   const { annSearch, hybridSearch } = useVectorSearch("/api/search/vector");
+ *
+ *   // ANN search
+ *   const results = await annSearch({
+ *     queryVector: [0.1, 0.2, 0.3, ...],
+ *     k: 10,
+ *   });
+ *
+ *   // Hybrid search
+ *   const hybridResults = await hybridSearch({
+ *     queryText: "laptop gaming",
+ *     queryVector: [0.1, 0.2, 0.3, ...],
+ *     textWeight: 0.5,
+ *     vectorWeight: 0.5,
+ *   });
+ */
+export function useVectorSearch(
+  apiUrl: string = "/api/search/vector",
+  initialTenantId?: string,
+): UseVectorSearchReturn {
+  const [annState, setAnnState] = useState<VectorSearchState>({
+    results: null,
+    loading: false,
+    error: null,
+  });
+
+  const [hybridState, setHybridState] = useState<HybridSearchState>({
+    results: null,
+    loading: false,
+    error: null,
+  });
+
+  const [tenantId, setTenantId] = useState<string | undefined>(initialTenantId);
+
+  /** Thực hiện ANN search (KPI-029: tenant-aware) */
+  const annSearch = useCallback(
+    async <T = any>(options: VectorSearchOptions): Promise<VectorSearchResult<T>> => {
+      setAnnState({ results: null, loading: true, error: null });
+
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+
+      // KPI-029: Thêm tenant ID
+      const effectiveTenantId = options.tenantId || tenantId;
+      if (effectiveTenantId) {
+        headers["x-tenant-id"] = effectiveTenantId;
+      }
+
+      const url = options.index
+        ? `${apiUrl}/ann/${options.index}`
+        : `${apiUrl}/ann`;
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            queryVector: options.queryVector,
+            k: options.k ?? 10,
+            filters: options.filters,
+            minScore: options.minScore,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`ANN search thất bại: ${response.status} ${response.statusText}`);
+        }
+
+        const data: VectorSearchResult<T> = await response.json();
+        setAnnState({ results: data, loading: false, error: null });
+        return data;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        setAnnState({ results: null, loading: false, error: err });
+        throw err;
+      }
+    },
+    [apiUrl, tenantId],
+  );
+
+  /** Thực hiện hybrid search (KPI-029: tenant-aware) */
+  const hybridSearch = useCallback(
+    async <T = any>(options: HybridSearchOptions): Promise<HybridSearchResult<T>> => {
+      setHybridState({ results: null, loading: true, error: null });
+
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+
+      // KPI-029: Thêm tenant ID
+      const effectiveTenantId = options.tenantId || tenantId;
+      if (effectiveTenantId) {
+        headers["x-tenant-id"] = effectiveTenantId;
+      }
+
+      const url = options.index
+        ? `${apiUrl}/hybrid/${options.index}`
+        : `${apiUrl}/hybrid`;
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            queryText: options.queryText,
+            queryVector: options.queryVector,
+            textWeight: options.textWeight ?? 0.5,
+            vectorWeight: options.vectorWeight ?? 0.5,
+            size: options.size ?? 20,
+            from: options.from ?? 0,
+            filters: options.filters,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Hybrid search thất bại: ${response.status} ${response.statusText}`);
+        }
+
+        const data: HybridSearchResult<T> = await response.json();
+        setHybridState({ results: data, loading: false, error: null });
+        return data;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        setHybridState({ results: null, loading: false, error: err });
+        throw err;
+      }
+    },
+    [apiUrl, tenantId],
+  );
+
+  /** Đặt tenant ID (KPI-029) */
+  const setTenantIdCallback = useCallback((id: string | undefined) => {
+    setTenantId(id);
+  }, []);
+
+  /** Reset state */
+  const reset = useCallback(() => {
+    setAnnState({ results: null, loading: false, error: null });
+    setHybridState({ results: null, loading: false, error: null });
+  }, []);
+
+  return {
+    annState,
+    hybridState,
+    annSearch,
+    hybridSearch,
+    setTenantId: setTenantIdCallback,
+    tenantId,
+    reset,
+  };
+}

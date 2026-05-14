@@ -1,0 +1,393 @@
+/**
+ * useGeoSearch Hook - CP10.
+ *
+ * Custom hook để thực hiện geospatial search operations.
+ * Hỗ trợ:
+ * - Circle search (tìm trong bán kính)
+ * - Bounding box search
+ * - Distance sorting
+ * - Distance bucket aggregation
+ *
+ * KPI-029: Tenant-aware geospatial search.
+ *
+ * CP10: Search & Indexing
+ */
+
+import { useState, useCallback } from "react";
+
+/** Kết quả từ geo search operation */
+export interface GeoSearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+  center?: { lat: number; lon: number };
+  radius?: string;
+  boundingBox?: {
+    top_left: { lat: number; lon: number };
+    bottom_right: { lat: number; lon: number };
+  };
+  referencePoint?: { lat: number; lon: number };
+}
+
+/** Kết quả từ distance bucket aggregation */
+export interface GeoAggregationResult {
+  buckets: Array<{
+    key: string;
+    doc_count: number;
+    from?: number;
+    to?: number;
+  }>;
+  took: number;
+  center: { lat: number; lon: number };
+}
+
+/** State cho geo search */
+interface GeoSearchState<T = any> {
+  results: GeoSearchResult<T> | null;
+  loading: boolean;
+  error: Error | null;
+}
+
+/** State cho geo aggregation */
+interface GeoAggregationState {
+  results: GeoAggregationResult | null;
+  loading: boolean;
+  error: Error | null;
+}
+
+/** Options cho radius search */
+export interface RadiusSearchOptions {
+  latitude: number;
+  longitude: number;
+  radius: string;
+  index?: string;
+  filters?: Record<string, any>;
+  size?: number;
+  from?: number;
+  sortByDistance?: boolean;
+  tenantId?: string; // KPI-029
+}
+
+/** Options cho bounding box search */
+export interface BoundingBoxSearchOptions {
+  topLeft: [number, number];
+  bottomRight: [number, number];
+  index?: string;
+  filters?: Record<string, any>;
+  size?: number;
+  from?: number;
+  tenantId?: string; // KPI-029
+}
+
+/** Options cho distance sort search */
+export interface DistanceSortOptions {
+  latitude: number;
+  longitude: number;
+  maxDistance?: string;
+  index?: string;
+  filters?: Record<string, any>;
+  sortFields?: string[];
+  size?: number;
+  from?: number;
+  tenantId?: string; // KPI-029
+}
+
+/** Options cho distance bucket aggregation */
+export interface DistanceBucketOptions {
+  latitude: number;
+  longitude: number;
+  distances: string[];
+  index?: string;
+  filters?: Record<string, any>;
+  tenantId?: string; // KPI-029
+}
+
+/** Return type của useGeoSearch */
+export interface UseGeoSearchReturn {
+  /** State cho radius search */
+  radiusState: GeoSearchState;
+  /** State cho bounding box search */
+  bboxState: GeoSearchState;
+  /** State cho distance sort search */
+  distanceSortState: GeoSearchState;
+  /** State cho distance bucket aggregation */
+  aggregationState: GeoAggregationState;
+  /** Tìm documents trong bán kính (KPI-029: tenant-aware) */
+  searchWithinRadius: <T = any>(options: RadiusSearchOptions) => Promise<GeoSearchResult<T>>;
+  /** Tìm documents trong bounding box (KPI-029: tenant-aware) */
+  searchWithinBoundingBox: <T = any>(
+    options: BoundingBoxSearchOptions,
+  ) => Promise<GeoSearchResult<T>>;
+  /** Tìm documents và sắp xếp theo khoảng cách (KPI-029: tenant-aware) */
+  searchWithDistanceSort: <T = any>(options: DistanceSortOptions) => Promise<GeoSearchResult<T>>;
+  /** Aggregation theo khoảng cách (KPI-029: tenant-aware) */
+  distanceBucketAggregation: (options: DistanceBucketOptions) => Promise<GeoAggregationResult>;
+  /** Đặt tenant ID (KPI-029) */
+  setTenantId: (id: string | undefined) => void;
+  /** Tenant ID hiện tại */
+  tenantId: string | undefined;
+  /** Reset state */
+  reset: () => void;
+}
+
+/**
+ * Hook để thực hiện geospatial search operations.
+ *
+ * @param apiUrl - URL của geo search API
+ * @param initialTenantId KPI-029: Tenant ID ban đầu
+ *
+ * @example
+ *   const { searchWithinRadius, searchWithinBoundingBox } = useGeoSearch("/api/search/geo");
+ *
+ *   // Radius search
+ *   const nearby = await searchWithinRadius({
+ *     latitude: 21.0285,
+ *     longitude: 105.8542,
+ *     radius: "5km",
+ *   });
+ *
+ *   // Bounding box search
+ *   const inArea = await searchWithinBoundingBox({
+ *     topLeft: [21.1, 105.8],
+ *     bottomRight: [20.9, 106.0],
+ *   });
+ */
+export function useGeoSearch(
+  apiUrl: string = "/api/search/geo",
+  initialTenantId?: string,
+): UseGeoSearchReturn {
+  const [radiusState, setRadiusState] = useState<GeoSearchState>({
+    results: null,
+    loading: false,
+    error: null,
+  });
+
+  const [bboxState, setBboxState] = useState<GeoSearchState>({
+    results: null,
+    loading: false,
+    error: null,
+  });
+
+  const [distanceSortState, setDistanceSortState] = useState<GeoSearchState>({
+    results: null,
+    loading: false,
+    error: null,
+  });
+
+  const [aggregationState, setAggregationState] = useState<GeoAggregationState>({
+    results: null,
+    loading: false,
+    error: null,
+  });
+
+  const [tenantId, setTenantId] = useState<string | undefined>(initialTenantId);
+
+  /**
+   * Build headers với tenant ID (KPI-029).
+   */
+  const buildHeaders = useCallback(
+    (overrideTenantId?: string): HeadersInit => {
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      const effectiveTenantId = overrideTenantId || tenantId;
+      if (effectiveTenantId) {
+        headers["x-tenant-id"] = effectiveTenantId;
+      }
+      return headers;
+    },
+    [tenantId],
+  );
+
+  /** Tìm documents trong bán kính (KPI-029: tenant-aware) */
+  const searchWithinRadius = useCallback(
+    async <T = any>(options: RadiusSearchOptions): Promise<GeoSearchResult<T>> => {
+      setRadiusState({ results: null, loading: true, error: null });
+
+      const headers = buildHeaders(options.tenantId);
+
+      const url = options.index
+        ? `${apiUrl}/radius/${options.index}`
+        : `${apiUrl}/radius`;
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            latitude: options.latitude,
+            longitude: options.longitude,
+            radius: options.radius,
+            filters: options.filters,
+            size: options.size ?? 20,
+            from: options.from ?? 0,
+            sortByDistance: options.sortByDistance !== false,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Radius search thất bại: ${response.status} ${response.statusText}`);
+        }
+
+        const data: GeoSearchResult<T> = await response.json();
+        setRadiusState({ results: data, loading: false, error: null });
+        return data;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        setRadiusState({ results: null, loading: false, error: err });
+        throw err;
+      }
+    },
+    [apiUrl, buildHeaders],
+  );
+
+  /** Tìm documents trong bounding box (KPI-029: tenant-aware) */
+  const searchWithinBoundingBox = useCallback(
+    async <T = any>(options: BoundingBoxSearchOptions): Promise<GeoSearchResult<T>> => {
+      setBboxState({ results: null, loading: true, error: null });
+
+      const headers = buildHeaders(options.tenantId);
+
+      const url = options.index
+        ? `${apiUrl}/bounding-box/${options.index}`
+        : `${apiUrl}/bounding-box`;
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            topLeft: options.topLeft,
+            bottomRight: options.bottomRight,
+            filters: options.filters,
+            size: options.size ?? 20,
+            from: options.from ?? 0,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Bounding box search thất bại: ${response.status} ${response.statusText}`);
+        }
+
+        const data: GeoSearchResult<T> = await response.json();
+        setBboxState({ results: data, loading: false, error: null });
+        return data;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        setBboxState({ results: null, loading: false, error: err });
+        throw err;
+      }
+    },
+    [apiUrl, buildHeaders],
+  );
+
+  /** Tìm documents và sắp xếp theo khoảng cách (KPI-029: tenant-aware) */
+  const searchWithDistanceSort = useCallback(
+    async <T = any>(options: DistanceSortOptions): Promise<GeoSearchResult<T>> => {
+      setDistanceSortState({ results: null, loading: true, error: null });
+
+      const headers = buildHeaders(options.tenantId);
+
+      const url = options.index
+        ? `${apiUrl}/distance-sort/${options.index}`
+        : `${apiUrl}/distance-sort`;
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            latitude: options.latitude,
+            longitude: options.longitude,
+            maxDistance: options.maxDistance,
+            filters: options.filters,
+            sortFields: options.sortFields,
+            size: options.size ?? 20,
+            from: options.from ?? 0,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Distance sort search thất bại: ${response.status} ${response.statusText}`);
+        }
+
+        const data: GeoSearchResult<T> = await response.json();
+        setDistanceSortState({ results: data, loading: false, error: null });
+        return data;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        setDistanceSortState({ results: null, loading: false, error: err });
+        throw err;
+      }
+    },
+    [apiUrl, buildHeaders],
+  );
+
+  /** Aggregation theo khoảng cách (KPI-029: tenant-aware) */
+  const distanceBucketAggregation = useCallback(
+    async (options: DistanceBucketOptions): Promise<GeoAggregationResult> => {
+      setAggregationState({ results: null, loading: true, error: null });
+
+      const headers = buildHeaders(options.tenantId);
+
+      const url = options.index
+        ? `${apiUrl}/distance-buckets/${options.index}`
+        : `${apiUrl}/distance-buckets`;
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            latitude: options.latitude,
+            longitude: options.longitude,
+            distances: options.distances,
+            filters: options.filters,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Distance bucket aggregation thất bại: ${response.status} ${response.statusText}`);
+        }
+
+        const data: GeoAggregationResult = await response.json();
+        setAggregationState({ results: data, loading: false, error: null });
+        return data;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        setAggregationState({ results: null, loading: false, error: err });
+        throw err;
+      }
+    },
+    [apiUrl, buildHeaders],
+  );
+
+  /** Đặt tenant ID (KPI-029) */
+  const setTenantIdCallback = useCallback((id: string | undefined) => {
+    setTenantId(id);
+  }, []);
+
+  /** Reset state */
+  const reset = useCallback(() => {
+    setRadiusState({ results: null, loading: false, error: null });
+    setBboxState({ results: null, loading: false, error: null });
+    setDistanceSortState({ results: null, loading: false, error: null });
+    setAggregationState({ results: null, loading: false, error: null });
+  }, []);
+
+  return {
+    radiusState,
+    bboxState,
+    distanceSortState,
+    aggregationState,
+    searchWithinRadius,
+    searchWithinBoundingBox,
+    searchWithDistanceSort,
+    distanceBucketAggregation,
+    setTenantId: setTenantIdCallback,
+    tenantId,
+    reset,
+  };
+}

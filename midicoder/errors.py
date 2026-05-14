@@ -454,6 +454,11 @@ class ErrorCode(str, Enum):
     CP10_SYNC_STRATEGY_INVALID = "MDC-CP10-003"
     CP10_INVALID_COLUMN_TYPE = "MDC-CP10-004"
     CP10_INDEX_CREATE_FAILED = "MDC-CP10-005"
+    CP10_MISSING_VECTOR_COLUMN = "MDC-CP10-006"
+    CP10_INVALID_VECTOR_DIMENSIONS = "MDC-CP10-007"
+    CP10_MISSING_GEO_COLUMN = "MDC-CP10-008"
+    CP10_INVALID_GEO_TYPE = "MDC-CP10-009"
+    CP10_MISSING_FACET_SOURCE = "MDC-CP10-010"
 
     # =========================================================================
     # CP11: File Storage & Media Processing Errors

@@ -222,6 +222,29 @@ def _build_mir_from_projection_tree(tree: ProjectionTree) -> MIR:
     for workflow in tree.get_workflows():
         _process_workflow_to_mir(builder, workflow)
 
+    # Store search nodes into metadata
+    _store_search_indices_in_metadata(builder, tree)
+
+    # Process Search Index → Operations
+    for search_index in tree.get_search_indexes():
+        _process_search_index_to_mir(builder, search_index)
+
+    # Process Search Query → Operations
+    for search_query in tree.get_search_queries():
+        _process_search_query_to_mir(builder, search_query)
+
+    # Process Vector Search Index → Operations
+    for vector_search in tree.get_nodes_by_kind(NodeKind.VECTOR_SEARCH_INDEX):
+        _process_vector_search_to_mir(builder, vector_search)
+
+    # Process Geo Search Index → Operations
+    for geo_search in tree.get_nodes_by_kind(NodeKind.GEO_SEARCH_INDEX):
+        _process_geo_search_to_mir(builder, geo_search)
+
+    # Process Faceted Search Index → Operations
+    for faceted_search in tree.get_nodes_by_kind(NodeKind.FACETED_SEARCH_INDEX):
+        _process_faceted_search_to_mir(builder, faceted_search)
+
     # Auto-generate IAC operations nếu có backend services (commands/queries)
     # Theo CP07: luôn generate cả 2 IAC ops (docker cho local dev, terraform cho AWS prod)
     has_backend = (len(tree.get_commands()) > 0 or len(tree.get_queries()) > 0)
@@ -663,3 +686,360 @@ def _process_value_object_to_mir(builder: MIRBuilder, vo: ProjectionNode) -> Non
             "extends": params.get("extends"),
         },
     )
+
+
+# ============================================================================
+# Search Operation Generation (CP10)
+# ============================================================================
+
+
+def _store_search_indices_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
+    """
+    Lưu search indices vào MIR metadata cho emitter sử dụng.
+
+    Args:
+        builder: MIRBuilder
+        tree: ProjectionTree
+    """
+    search_indices = []
+    for si in tree.get_search_indexes():
+        search_indices.append({
+            "id": si.params.get("id", "SearchIndex"),
+            "description": si.params.get("description", ""),
+            "name": si.params.get("name"),
+            "engine": si.params.get("engine", "elasticsearch"),
+            "entity_id": si.params.get("entity_id"),
+            "fields": si.params.get("fields", []),
+            "config": si.params.get("config", {}),
+            "tags": si.params.get("tags", []),
+        })
+    builder.mir.metadata["search_indices"] = search_indices
+
+    vector_search_indices = []
+    for vs in tree.get_nodes_by_kind(NodeKind.VECTOR_SEARCH_INDEX):
+        vector_search_indices.append({
+            "id": vs.params.get("id", "VectorSearch"),
+            "description": vs.params.get("description", ""),
+            "provider": vs.params.get("provider", "elasticsearch"),
+            "dimensions": vs.params.get("dimensions"),
+            "similarity_metric": vs.params.get("similarity_metric", "cosine"),
+            "index_type": vs.params.get("index_type", "hnsw"),
+            "vector_column": vs.params.get("vector_column"),
+            "text_columns": vs.params.get("text_columns", []),
+            "top_k": vs.params.get("top_k", 10),
+            "tenant_isolated": vs.params.get("tenant_isolated", False),
+            "tags": vs.params.get("tags", []),
+        })
+    builder.mir.metadata["vector_search_indices"] = vector_search_indices
+
+    geo_search_indices = []
+    for gs in tree.get_nodes_by_kind(NodeKind.GEO_SEARCH_INDEX):
+        geo_search_indices.append({
+            "id": gs.params.get("id", "GeoSearch"),
+            "description": gs.params.get("description", ""),
+            "provider": gs.params.get("provider", "elasticsearch"),
+            "geo_column": gs.params.get("geo_column"),
+            "geo_type": gs.params.get("geo_type", "point"),
+            "operations": gs.params.get("operations", []),
+            "text_columns": gs.params.get("text_columns", []),
+            "tenant_isolated": gs.params.get("tenant_isolated", False),
+            "tags": gs.params.get("tags", []),
+        })
+    builder.mir.metadata["geo_search_indices"] = geo_search_indices
+
+    faceted_search_indices = []
+    for fs in tree.get_nodes_by_kind(NodeKind.FACETED_SEARCH_INDEX):
+        faceted_search_indices.append({
+            "id": fs.params.get("id", "FacetedSearch"),
+            "description": fs.params.get("description", ""),
+            "provider": fs.params.get("provider", "elasticsearch"),
+            "columns": fs.params.get("columns", []),
+            "facets": fs.params.get("facets", []),
+            "tenant_isolated": fs.params.get("tenant_isolated", False),
+            "tags": fs.params.get("tags", []),
+        })
+    builder.mir.metadata["faceted_search_indices"] = faceted_search_indices
+
+    search_queries = []
+    for sq in tree.get_search_queries():
+        search_queries.append({
+            "id": sq.params.get("id", "SearchQuery"),
+            "description": sq.params.get("description", ""),
+            "name": sq.params.get("name"),
+            "index_id": sq.params.get("index_id"),
+            "query_type": sq.params.get("query_type", "full_text"),
+            "fields": sq.params.get("fields", []),
+            "filters": sq.params.get("filters", []),
+            "tags": sq.params.get("tags", []),
+        })
+    builder.mir.metadata["search_queries"] = search_queries
+
+
+def _process_search_index_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:
+    """
+    Transform SearchIndex node sang MIR operation.
+
+    Tạo search_index operation với params từ SearchIndex node.
+    Thêm data flow từ search operation đến entity tương ứng.
+    Thêm effect flow cho search events nếu có.
+
+    Args:
+        builder: MIRBuilder
+        node: SearchIndex ProjectionNode
+    """
+    params = node.params
+    index_id = params.get("id", node.id)
+    entity_id = params.get("entity_id")
+
+    # Main search index operation
+    builder.add_operation(
+        op_id=f"{index_id}_index",
+        op_type="search_index",
+        params={
+            "index_id": index_id,
+            "name": params.get("name", index_id),
+            "engine": params.get("engine", "elasticsearch"),
+            "entity_id": entity_id,
+            "fields": params.get("fields", []),
+            "config": params.get("config", {}),
+        },
+        output_refs=[f"{index_id}_index_ref"]
+    )
+
+    # Data flow từ search index đến entity
+    if entity_id:
+        builder.add_data_flow(
+            source_op=f"{index_id}_index",
+            source_field="indexed_data",
+            target_op=f"{entity_id}_main",
+            target_field="search_index_ref"
+        )
+
+    # Effect flow cho index events
+    builder.add_effect_flow(
+        source_op=f"{index_id}_index",
+        effect_type="index_event",
+        target=f"{index_id}_indexed",
+        payload_fields=["index_id", "entity_id", "document_count"]
+    )
+
+
+def _process_vector_search_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:
+    """
+    Transform Vector Search Index node sang MIR operation.
+
+    Tạo vector_search operation với params từ Vector Search node.
+    Hỗ trợ similarity search trên embedding vectors.
+
+    Args:
+        builder: MIRBuilder
+        node: Vector Search Index ProjectionNode
+    """
+    params = node.params
+    index_id = params.get("id", node.id)
+
+    # Main vector search operation
+    builder.add_operation(
+        op_id=f"{index_id}_vector",
+        op_type="vector_search",
+        params={
+            "index_id": index_id,
+            "provider": params.get("provider", "elasticsearch"),
+            "dimensions": params.get("dimensions"),
+            "similarity_metric": params.get("similarity_metric", "cosine"),
+            "index_type": params.get("index_type", "hnsw"),
+            "vector_column": params.get("vector_column"),
+            "text_columns": params.get("text_columns", []),
+            "top_k": params.get("top_k", 10),
+            "tenant_isolated": params.get("tenant_isolated", False),
+        },
+        output_refs=[f"{index_id}_vector_ref"]
+    )
+
+    # Tenant scope enforcement nếu có tenant isolation
+    if params.get("tenant_isolated", False):
+        builder.add_operation(
+            op_id=f"{index_id}_tenant",
+            op_type="enforce_tenant_scope",
+            params={"scope": "tenant_isolated"},
+            obligation_refs=[f"tenant_oblig_{index_id}"]
+        )
+        builder.add_data_flow(
+            source_op=f"{index_id}_tenant",
+            source_field="tenant_id",
+            target_op=f"{index_id}_vector",
+            target_field="tenant_scope"
+        )
+
+    # Effect flow cho vector search events
+    builder.add_effect_flow(
+        source_op=f"{index_id}_vector",
+        effect_type="search_event",
+        target=f"{index_id}_vector_searched",
+        payload_fields=["index_id", "query_vector", "result_count"]
+    )
+
+
+def _process_geo_search_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:
+    """
+    Transform Geo Search Index node sang MIR operation.
+
+    Tạo geo_search operation với params từ Geo Search node.
+    Hỗ trợ geospatial tìm kiếm dựa trên vị trí địa lý.
+
+    Args:
+        builder: MIRBuilder
+        node: Geo Search Index ProjectionNode
+    """
+    params = node.params
+    index_id = params.get("id", node.id)
+
+    # Main geo search operation
+    builder.add_operation(
+        op_id=f"{index_id}_geo",
+        op_type="geo_search",
+        params={
+            "index_id": index_id,
+            "provider": params.get("provider", "elasticsearch"),
+            "geo_column": params.get("geo_column"),
+            "geo_type": params.get("geo_type", "point"),
+            "operations": params.get("operations", []),
+            "text_columns": params.get("text_columns", []),
+            "tenant_isolated": params.get("tenant_isolated", False),
+        },
+        output_refs=[f"{index_id}_geo_ref"]
+    )
+
+    # Tenant scope enforcement nếu có tenant isolation
+    if params.get("tenant_isolated", False):
+        builder.add_operation(
+            op_id=f"{index_id}_tenant",
+            op_type="enforce_tenant_scope",
+            params={"scope": "tenant_isolated"},
+            obligation_refs=[f"tenant_oblig_{index_id}"]
+        )
+        builder.add_data_flow(
+            source_op=f"{index_id}_tenant",
+            source_field="tenant_id",
+            target_op=f"{index_id}_geo",
+            target_field="tenant_scope"
+        )
+
+    # Effect flow cho geo search events
+    builder.add_effect_flow(
+        source_op=f"{index_id}_geo",
+        effect_type="search_event",
+        target=f"{index_id}_geo_searched",
+        payload_fields=["index_id", "geo_query", "result_count"]
+    )
+
+
+def _process_faceted_search_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:
+    """
+    Transform Faceted Search Index node sang MIR operation.
+
+    Tạo faceted_search operation với params từ Faceted Search node.
+    Hỗ trợ tìm kiếm có phân loại theo nhiều facet.
+
+    Args:
+        builder: MIRBuilder
+        node: Faceted Search Index ProjectionNode
+    """
+    params = node.params
+    index_id = params.get("id", node.id)
+
+    # Main faceted search operation
+    builder.add_operation(
+        op_id=f"{index_id}_faceted",
+        op_type="faceted_search",
+        params={
+            "index_id": index_id,
+            "provider": params.get("provider", "elasticsearch"),
+            "columns": params.get("columns", []),
+            "facets": params.get("facets", []),
+            "tenant_isolated": params.get("tenant_isolated", False),
+        },
+        output_refs=[f"{index_id}_faceted_ref"]
+    )
+
+    # Tenant scope enforcement nếu có tenant isolation
+    if params.get("tenant_isolated", False):
+        builder.add_operation(
+            op_id=f"{index_id}_tenant",
+            op_type="enforce_tenant_scope",
+            params={"scope": "tenant_isolated"},
+            obligation_refs=[f"tenant_oblig_{index_id}"]
+        )
+        builder.add_data_flow(
+            source_op=f"{index_id}_tenant",
+            source_field="tenant_id",
+            target_op=f"{index_id}_faceted",
+            target_field="tenant_scope"
+        )
+
+    # Effect flow cho faceted search events
+    builder.add_effect_flow(
+        source_op=f"{index_id}_faceted",
+        effect_type="search_event",
+        target=f"{index_id}_faceted_searched",
+        payload_fields=["index_id", "facet_filters", "result_count"]
+    )
+
+
+def _process_search_query_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:
+    """
+    Transform SearchQuery node sang MIR operation.
+
+    Tạo search_query operation với params từ SearchQuery node.
+    Thêm data flow liên kết với search index.
+
+    Args:
+        builder: MIRBuilder
+        node: SearchQuery ProjectionNode
+    """
+    params = node.params
+    query_id = params.get("id", node.id)
+    index_id = params.get("index_id")
+
+    # Authorization — nếu query có required_permissions
+    required_perms = params.get("required_permissions", [])
+    if required_perms:
+        builder.add_operation(
+            op_id=f"{query_id}_auth",
+            op_type="authorize_permission",
+            params={"permissions": required_perms}
+        )
+
+    # Main search query operation
+    builder.add_operation(
+        op_id=f"{query_id}_search",
+        op_type="search_query",
+        params={
+            "query_id": query_id,
+            "name": params.get("name", query_id),
+            "index_id": index_id,
+            "query_type": params.get("query_type", "full_text"),
+            "fields": params.get("fields", []),
+            "filters": params.get("filters", []),
+        },
+        input_refs=[f"{query_id}_input"],
+        output_refs=[f"{query_id}_result"]
+    )
+
+    # Data flow từ search index đến search query
+    if index_id:
+        builder.add_data_flow(
+            source_op=f"{index_id}_index",
+            source_field="index_ref",
+            target_op=f"{query_id}_search",
+            target_field="index"
+        )
+
+    # Data flow từ auth đến search query (nếu có auth)
+    if required_perms:
+        builder.add_data_flow(
+            source_op=f"{query_id}_auth",
+            source_field="user_context",
+            target_op=f"{query_id}_search",
+            target_field="auth_context"
+        )

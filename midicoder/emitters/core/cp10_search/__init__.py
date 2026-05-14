@@ -22,7 +22,20 @@ from midicoder.emitters.core.cp10_search.models import (
     SyncTrigger,
     SearchIndexColumn,
     SearchIndex,
+    SearchQuery,
+    SearchQueryType,
     SearchCollection,
+    VectorSimilarityMetric,
+    VectorIndexType,
+    VectorIndexColumn,
+    VectorSearchIndex,
+    GeoOperation,
+    GeoSearchColumn,
+    GeoSearchIndex,
+    FacetType,
+    AggregationFunction,
+    Facet,
+    FacetedSearchIndex,
 )
 from midicoder.emitters.core.cp10_search.parser import SearchParser
 from midicoder.emitters.core.cp10_search.fastapi import FastAPISearchEmitter
@@ -31,13 +44,29 @@ from midicoder.emitters.core.cp10_search.angular import AngularEmitter
 from midicoder.emitters.core.cp10_search.react import ReactEmitter
 
 __all__ = [
-    # Models
+    # Models — basic
     "SearchProviderType",
     "SyncStrategy",
     "SyncTrigger",
     "SearchIndexColumn",
     "SearchIndex",
+    "SearchQuery",
+    "SearchQueryType",
     "SearchCollection",
+    # Models — vector search
+    "VectorSimilarityMetric",
+    "VectorIndexType",
+    "VectorIndexColumn",
+    "VectorSearchIndex",
+    # Models — geospatial search
+    "GeoOperation",
+    "GeoSearchColumn",
+    "GeoSearchIndex",
+    # Models — faceted aggregation
+    "FacetType",
+    "AggregationFunction",
+    "Facet",
+    "FacetedSearchIndex",
     # Parser
     "SearchParser",
     # Emitters

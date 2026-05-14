@@ -1,0 +1,489 @@
+/**
+ * Geo Search Service cho NestJS.
+ *
+ * Cung cấp geospatial search operations:
+ * - Circle search (tìm trong bán kính)
+ * - Bounding box search
+ * - Distance sorting
+ * - Distance bucket aggregation
+ *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant filtering trong geospatial search operations
+ * CP10: Search & Indexing
+ */
+
+import { Injectable, Inject } from "@nestjs/common";
+import { Client } from "@elastic/elasticsearch";
+
+/**
+ * Geo Search Result interface.
+ */
+export interface GeoSearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+  center?: { lat: number; lon: number };
+  radius?: string;
+  boundingBox?: {
+    top_left: { lat: number; lon: number };
+    bottom_right: { lat: number; lon: number };
+  };
+  referencePoint?: { lat: number; lon: number };
+}
+
+/**
+ * Geo Aggregation Result interface.
+ */
+export interface GeoAggregationResult {
+  buckets: Array<{
+    key: string;
+    doc_count: number;
+    from?: number;
+    to?: number;
+  }>;
+  took: number;
+  center: { lat: number; lon: number };
+}
+
+/**
+ * Options cho radius search.
+ */
+export interface RadiusSearchOptions {
+  latitude: number;
+  longitude: number;
+  radius: string;
+  filters?: Record<string, any>;
+  size?: number;
+  from?: number;
+  sortByDistance?: boolean;
+  tenantId?: string;  // KPI-029
+}
+
+/**
+ * Options cho bounding box search.
+ */
+export interface BoundingBoxSearchOptions {
+  topLeft: [number, number];
+  bottomRight: [number, number];
+  filters?: Record<string, any>;
+  size?: number;
+  from?: number;
+  tenantId?: string;  // KPI-029
+}
+
+/**
+ * Options cho distance sort search.
+ */
+export interface DistanceSortSearchOptions {
+  latitude: number;
+  longitude: number;
+  maxDistance?: string;
+  filters?: Record<string, any>;
+  sortFields?: string[];
+  size?: number;
+  from?: number;
+  tenantId?: string;  // KPI-029
+}
+
+/**
+ * Options cho distance bucket aggregation.
+ */
+export interface DistanceBucketOptions {
+  latitude: number;
+  longitude: number;
+  distances: string[];
+  filters?: Record<string, any>;
+  tenantId?: string;  // KPI-029
+}
+
+/**
+ * Geo Search Service.
+ *
+ * KPI-029: Hỗ trợ tenant filtering để isolate geospatial results theo tenant.
+ *
+ * Cung cấp các geospatial search operations cho Elasticsearch.
+ */
+@Injectable()
+export class GeoSearchService {
+  /**
+   * Constructor.
+   *
+   * @param client - Elasticsearch client
+   * @param index - Default index name
+   * @param locationField - Trường chứa geopoint
+   * @param tenantId KPI-029: Tenant ID cho tenant-specific operations
+   */
+  constructor(
+    @Inject("ELASTICSEARCH_CLIENT")
+    private readonly client: Client,
+    private readonly index: string = "{{ index_name }}",
+    private readonly locationField: string = "{{ location_field }}",
+    private readonly tenantId?: string,
+  ) {}
+
+  /**
+   * Tìm documents trong bán kính nhất định.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param index - Index name (override default)
+   * @param options - Radius search options
+   * @returns Search results
+   */
+  async searchWithinRadius<T = any>(
+    index?: string,
+    options?: RadiusSearchOptions,
+  ): Promise<GeoSearchResult<T>> {
+    const targetIndex = index ?? this.index;
+    const size = options?.size ?? 20;
+    const from = options?.from ?? 0;
+    const effectiveTenantId = options?.tenantId ?? this.tenantId;  // KPI-029
+
+    // Build geo-distance query
+    const geoQuery: any = {
+      geo_distance: {
+        distance: options?.radius,
+        [this.locationField]: {
+          lat: options?.latitude,
+          lon: options?.longitude,
+        },
+      },
+    };
+
+    // KPI-029: Build filter conditions
+    const filterConditions: any[] = [geoQuery];
+
+    if (effectiveTenantId) {
+      filterConditions.push({ term: { tenant_id: effectiveTenantId } });
+    }
+
+    // Add custom filters
+    if (options?.filters) {
+      filterConditions.push(
+        ...Object.entries(options.filters).map(([field, value]) => ({
+          term: { [field]: value },
+        })),
+      );
+    }
+
+    const searchBody: any = {
+      query: {
+        bool: {
+          filter: filterConditions,
+        },
+      },
+      size,
+      from,
+    };
+
+    // Add distance sorting
+    if (options?.sortByDistance !== false) {
+      searchBody.sort = [
+        {
+          _geo_distance: {
+            [this.locationField]: {
+              lat: options?.latitude,
+              lon: options?.longitude,
+            },
+            order: "asc",
+            unit: "km",
+          },
+        },
+      ];
+    }
+
+    // Execute search
+    const response = await this.client.search<any, any>({
+      index: targetIndex,
+      body: searchBody,
+    });
+
+    return {
+      hits: response.body.hits.hits.map((hit) => ({
+        _id: hit._id,
+        _source: hit._source as T,
+        _score: hit._score,
+      })),
+      total: response.body.hits.total.value,
+      took: response.headers["x-foundry-time-ms"] as unknown as number,
+      center: { lat: options?.latitude, lon: options?.longitude },
+      radius: options?.radius,
+    };
+  }
+
+  /**
+   * Tìm documents trong bounding box.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param index - Index name (override default)
+   * @param options - Bounding box search options
+   * @returns Search results
+   */
+  async searchWithinBoundingBox<T = any>(
+    index?: string,
+    options?: BoundingBoxSearchOptions,
+  ): Promise<GeoSearchResult<T>> {
+    const targetIndex = index ?? this.index;
+    const size = options?.size ?? 20;
+    const from = options?.from ?? 0;
+    const effectiveTenantId = options?.tenantId ?? this.tenantId;  // KPI-029
+
+    // Build geo-bounding box query
+    const geoBBoxQuery: any = {
+      geo_bounding_box: {
+        [this.locationField]: {
+          top_left: {
+            lat: options?.topLeft[0],
+            lon: options?.topLeft[1],
+          },
+          bottom_right: {
+            lat: options?.bottomRight[0],
+            lon: options?.bottomRight[1],
+          },
+        },
+      },
+    };
+
+    // KPI-029: Build filter conditions
+    const filterConditions: any[] = [geoBBoxQuery];
+
+    if (effectiveTenantId) {
+      filterConditions.push({ term: { tenant_id: effectiveTenantId } });
+    }
+
+    // Add custom filters
+    if (options?.filters) {
+      filterConditions.push(
+        ...Object.entries(options.filters).map(([field, value]) => ({
+          term: { [field]: value },
+        })),
+      );
+    }
+
+    const searchBody: any = {
+      query: {
+        bool: {
+          filter: filterConditions,
+        },
+      },
+      size,
+      from,
+    };
+
+    // Execute search
+    const response = await this.client.search<any, any>({
+      index: targetIndex,
+      body: searchBody,
+    });
+
+    return {
+      hits: response.body.hits.hits.map((hit) => ({
+        _id: hit._id,
+        _source: hit._source as T,
+        _score: hit._score,
+      })),
+      total: response.body.hits.total.value,
+      took: response.headers["x-foundry-time-ms"] as unknown as number,
+      boundingBox: {
+        top_left: { lat: options?.topLeft[0], lon: options?.topLeft[1] },
+        bottom_right: { lat: options?.bottomRight[0], lon: options?.bottomRight[1] },
+      },
+    };
+  }
+
+  /**
+   * Tìm documents và sắp xếp theo khoảng cách.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param index - Index name (override default)
+   * @param options - Distance sort search options
+   * @returns Search results
+   */
+  async searchWithDistanceSort<T = any>(
+    index?: string,
+    options?: DistanceSortSearchOptions,
+  ): Promise<GeoSearchResult<T>> {
+    const targetIndex = index ?? this.index;
+    const size = options?.size ?? 20;
+    const from = options?.from ?? 0;
+    const effectiveTenantId = options?.tenantId ?? this.tenantId;  // KPI-029
+
+    // KPI-029: Build filter conditions
+    const filterConditions: any[] = [];
+
+    if (effectiveTenantId) {
+      filterConditions.push({ term: { tenant_id: effectiveTenantId } });
+    }
+
+    // Add custom filters
+    if (options?.filters) {
+      filterConditions.push(
+        ...Object.entries(options.filters).map(([field, value]) => ({
+          term: { [field]: value },
+        })),
+      );
+    }
+
+    // Add max_distance filter
+    if (options?.maxDistance) {
+      filterConditions.push({
+        geo_distance: {
+          distance: options.maxDistance,
+          [this.locationField]: {
+            lat: options?.latitude,
+            lon: options?.longitude,
+          },
+        },
+      });
+    }
+
+    // Build sort array
+    const sortArray: any[] = [
+      {
+        _geo_distance: {
+          [this.locationField]: {
+            lat: options?.latitude,
+            lon: options?.longitude,
+          },
+          order: "asc",
+          unit: "km",
+        },
+      },
+    ];
+
+    // Add additional sort fields
+    if (options?.sortFields) {
+      for (const field of options.sortFields) {
+        sortArray.push({ field });
+      }
+    }
+
+    const searchBody: any = {
+      query: {
+        bool: {
+          filter: filterConditions.length > 0 ? filterConditions : [{ match_all: {} }],
+        },
+      },
+      size,
+      from,
+      sort: sortArray,
+    };
+
+    // Execute search
+    const response = await this.client.search<any, any>({
+      index: targetIndex,
+      body: searchBody,
+    });
+
+    return {
+      hits: response.body.hits.hits.map((hit) => ({
+        _id: hit._id,
+        _source: hit._source as T,
+        _score: hit._score,
+      })),
+      total: response.body.hits.total.value,
+      took: response.headers["x-foundry-time-ms"] as unknown as number,
+      referencePoint: { lat: options?.latitude, lon: options?.longitude },
+    };
+  }
+
+  /**
+   * Aggregation theo các khoảng cách từ một điểm.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param index - Index name (override default)
+   * @param options - Distance bucket aggregation options
+   * @returns Aggregation results
+   */
+  async distanceBucketAggregation(
+    index?: string,
+    options?: DistanceBucketOptions,
+  ): Promise<GeoAggregationResult> {
+    const targetIndex = index ?? this.index;
+    const effectiveTenantId = options?.tenantId ?? this.tenantId;  // KPI-029
+
+    // KPI-029: Build filter conditions
+    const filterConditions: any[] = [];
+
+    if (effectiveTenantId) {
+      filterConditions.push({ term: { tenant_id: effectiveTenantId } });
+    }
+
+    // Add custom filters
+    if (options?.filters) {
+      filterConditions.push(
+        ...Object.entries(options.filters).map(([field, value]) => ({
+          term: { [field]: value },
+        })),
+      );
+    }
+
+    const searchBody: any = {
+      size: 0,
+      query: {
+        bool: {
+          filter: filterConditions,
+        },
+      },
+      aggs: {
+        distance_buckets: {
+          geo_distance: {
+            field: this.locationField,
+            origin: {
+              lat: options?.latitude,
+              lon: options?.longitude,
+            },
+            unit: "km",
+            ranges: this.buildDistanceRanges(options?.distances ?? []),
+          },
+        },
+      },
+    };
+
+    // Execute aggregation
+    const response = await this.client.search<any, any>({
+      index: targetIndex,
+      body: searchBody,
+    });
+
+    return {
+      buckets: response.body.aggregations.distance_buckets.buckets,
+      took: response.headers["x-foundry-time-ms"] as unknown as number,
+      center: { lat: options?.latitude, lon: options?.longitude },
+    };
+  }
+
+  /**
+   * Xây dựng distance ranges từ list distances.
+   *
+   * @param distances - List khoảng cách
+   * @returns List của range definitions
+   */
+  private buildDistanceRanges(distances: string[]): Array<{ from?: number; to?: number }> {
+    const ranges: Array<{ from?: number; to?: number }> = [];
+    let prevDistance = 0;
+
+    for (let i = 0; i < distances.length; i++) {
+      const value = parseFloat(distances[i].replace(/[a-zA-Z]/g, ""));
+
+      if (i < distances.length - 1) {
+        ranges.push({ from: prevDistance, to: value });
+      } else {
+        ranges.push({ from: prevDistance, to: value });
+      }
+
+      prevDistance = value;
+    }
+
+    // Add open-ended bucket
+    ranges.push({ from: prevDistance });
+
+    return ranges;
+  }
+}

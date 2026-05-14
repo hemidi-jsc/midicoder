@@ -1,0 +1,410 @@
+"""
+Geospatial Search Service cho FastAPI.
+
+Cung cấp:
+- Circle search (tim trong bán kính)
+- Bounding box search
+- Distance sorting
+- KPI-029: Tenant-specific geospatial filtering
+
+KPI-029: Tenant Isolation - Hỗ trợ tenant filtering trong geospatial search operations
+CP10: Search & Indexing
+"""
+
+from typing import Any, Dict, List, Optional, Tuple
+
+from .elasticsearch import get_elasticsearch, get_tenant_elasticsearch, get_tenant_index_name
+
+
+class GeoSearchService:
+    """
+    Service cho geospatial search operations.
+
+    Hỗ trợ:
+    - Geo-distance (circle) search
+    - Geo-bounding box search
+    - Geo-shape search
+    - Distance sorting
+    - Distance bucket aggregation
+
+    KPI-029: Hỗ trợ tenant filtering để isolate geospatial results theo tenant.
+    """
+
+    def __init__(self, index: str = "{{ index_name }}", tenant_id: Optional[str] = None) -> None:
+        """
+        Khởi tạo geospatial search service.
+
+        Args:
+            index: Default index name cho geospatial search
+            tenant_id: KPI-029: Tenant ID cho tenant-specific geospatial search
+        """
+        self.index = index
+        self.tenant_id = tenant_id  # KPI-029: Tenant context
+        self.location_field = "{{ location_field }}"  # Trường chứa geopoint
+
+    async def search_within_radius(
+        self,
+        latitude: float,
+        longitude: float,
+        radius: str,
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        size: int = 20,
+        from_page: int = 0,
+        sort_by_distance: bool = True,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Tìm documents trong bán kính nhất định từ một điểm.
+
+        Ví dụ: Tìm tất cả cửa hàng trong vòng 5km từ vị trí hiện tại.
+
+        Args:
+            latitude: Vĩ độ của điểm trung tâm
+            longitude: Kinh độ của điểm trung tâm
+            radius: Bán kính tìm kiếm (ví dụ: "5km", "100m", "2mi")
+            index: Index name (override default)
+            filters: Additional filters
+            size: Số lượng kết quả trả về
+            from_page: Pagination offset
+            sort_by_distance: Sắp xếp kết quả theo khoảng cách tăng dần
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Search results dictionary với distance info
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # Build geo-distance query
+        geo_query = {
+            "geo_distance": {
+                "distance": radius,
+                self.location_field: {
+                    "lat": latitude,
+                    "lon": longitude,
+                },
+            }
+        }
+
+        # KPI-029: Build filter array
+        filter_conditions: List[Dict[str, Any]] = []
+        filter_conditions.append(geo_query)
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+
+        search_body = {
+            "query": {
+                "bool": {
+                    "filter": filter_conditions,
+                }
+            },
+            "size": size,
+            "from": from_page,
+        }
+
+        # Add distance sorting
+        if sort_by_distance:
+            search_body["sort"] = [
+                {
+                    "_geo_distance": {
+                        self.location_field: {
+                            "lat": latitude,
+                            "lon": longitude,
+                        },
+                        "order": "asc",
+                        "unit": "km",
+                    }
+                }
+            ]
+
+        # Execute search
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "hits": response["hits"]["hits"],
+            "total": response["hits"]["total"]["value"],
+            "took": response["took"],
+            "center": {"lat": latitude, "lon": longitude},
+            "radius": radius,
+        }
+
+    async def search_within_bounding_box(
+        self,
+        top_left: Tuple[float, float],
+        bottom_right: Tuple[float, float],
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        size: int = 20,
+        from_page: int = 0,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Tìm documents trong một hình chữ nhật (bounding box).
+
+        Ví dụ: Tìm tất cả địa điểm trong khu vực map đang hiển thị.
+
+        Args:
+            top_left: Tọa độ góc trên bên trái (lat, lon)
+            bottom_right: Tọa độ góc dưới bên phải (lat, lon)
+            index: Index name (override default)
+            filters: Additional filters
+            size: Số lượng kết quả trả về
+            from_page: Pagination offset
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Search results dictionary
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # Build geo-bounding box query
+        geo_bbox_query = {
+            "geo_bounding_box": {
+                self.location_field: {
+                    "top_left": {
+                        "lat": top_left[0],
+                        "lon": top_left[1],
+                    },
+                    "bottom_right": {
+                        "lat": bottom_right[0],
+                        "lon": bottom_right[1],
+                    },
+                }
+            }
+        }
+
+        # KPI-029: Build filter array
+        filter_conditions: List[Dict[str, Any]] = []
+        filter_conditions.append(geo_bbox_query)
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+
+        search_body = {
+            "query": {
+                "bool": {
+                    "filter": filter_conditions,
+                }
+            },
+            "size": size,
+            "from": from_page,
+        }
+
+        # Execute search
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "hits": response["hits"]["hits"],
+            "total": response["hits"]["total"]["value"],
+            "took": response["took"],
+            "bounding_box": {
+                "top_left": {"lat": top_left[0], "lon": top_left[1]},
+                "bottom_right": {"lat": bottom_right[0], "lon": bottom_right[1]},
+            },
+        }
+
+    async def search_with_distance_sort(
+        self,
+        latitude: float,
+        longitude: float,
+        max_distance: Optional[str] = None,
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        sort_fields: Optional[List[str]] = None,
+        size: int = 20,
+        from_page: int = 0,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Tìm documents và sắp xếp theo khoảng cách từ một điểm.
+
+        Hỗ trợ thêm max_distance để giới hạn phạm vi tìm kiếm.
+
+        Args:
+            latitude: Vĩ độ của điểm tham chiếu
+            longitude: Kinh độ của điểm tham chiếu
+            max_distance: Khoảng cách tối đa (ví dụ: "10km", None = không giới hạn)
+            index: Index name (override default)
+            filters: Additional filters
+            sort_fields: Các trường sort bổ sung sau khi sort theo distance
+            size: Số lượng kết quả trả về
+            from_page: Pagination offset
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Search results dictionary với distance sorting
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # KPI-029: Build filter array
+        filter_conditions: List[Dict[str, Any]] = []
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+
+        # Add max_distance filter nếu có
+        if max_distance:
+            geo_distance_filter = {
+                "geo_distance": {
+                    "distance": max_distance,
+                    self.location_field: {
+                        "lat": latitude,
+                        "lon": longitude,
+                    },
+                }
+            }
+            filter_conditions.append(geo_distance_filter)
+
+        search_body = {
+            "query": {
+                "bool": {
+                    "filter": filter_conditions if filter_conditions else [{"match_all": {}}],
+                }
+            },
+            "size": size,
+            "from": from_page,
+            "sort": [
+                {
+                    "_geo_distance": {
+                        self.location_field: {
+                            "lat": latitude,
+                            "lon": longitude,
+                        },
+                        "order": "asc",
+                        "unit": "km",
+                    }
+                }
+            ],
+        }
+
+        # Add additional sort fields
+        if sort_fields:
+            for field in sort_fields:
+                search_body["sort"].append({"field": field})
+
+        # Execute search
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "hits": response["hits"]["hits"],
+            "total": response["hits"]["total"]["value"],
+            "took": response["took"],
+            "reference_point": {"lat": latitude, "lon": longitude},
+        }
+
+    async def distance_bucket_aggregation(
+        self,
+        latitude: float,
+        longitude: float,
+        distances: List[str],
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Aggregation theo các khoảng cách từ một điểm.
+
+        Ví dụ: Đếm số lượng cửa hàng trong khoảng 0-5km, 5-10km, 10-20km.
+
+        Args:
+            latitude: Vĩ độ của điểm trung tâm
+            longitude: Kinh độ của điểm trung tâm
+            distances: List các khoảng cách để tạo buckets (ví dụ: ["5km", "10km", "20km"])
+            index: Index name (override default)
+            filters: Additional filters
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Aggregation results dictionary
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # KPI-029: Build filter array
+        filter_conditions: List[Dict[str, Any]] = []
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+
+        search_body = {
+            "size": 0,
+            "query": {
+                "bool": {
+                    "filter": filter_conditions,
+                }
+            },
+            "aggs": {
+                "distance_buckets": {
+                    "geo_distance": {
+                        "field": self.location_field,
+                        "origin": {
+                            "lat": latitude,
+                            "lon": longitude,
+                        },
+                        "unit": "km",
+                        "ranges": self._build_distance_ranges(distances),
+                    }
+                }
+            },
+        }
+
+        # Execute aggregation
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "buckets": response["aggregations"]["distance_buckets"]["buckets"],
+            "took": response["took"],
+            "center": {"lat": latitude, "lon": longitude},
+        }
+
+    def _build_distance_ranges(self, distances: List[str]) -> List[Dict[str, Any]]:
+        """
+        Xây dựng distance ranges từ list distances.
+
+        Ví dụ: ["5km", "10km"] -> [{"to": 5}, {"from": 5, "to": 10}, {"from": 10}]
+
+        Args:
+            distances: List khoảng cách
+
+        Returns:
+            List của range definitions
+        """
+        ranges: List[Dict[str, Any]] = []
+        prev_distance = 0
+
+        for i, dist in enumerate(distances):
+            # Parse distance value từ string (giả sử luôn có đơn vị km/mi/m)
+            value = float(dist.rstrip("kmi"))
+
+            if i == len(distances) - 1:
+                # Bucket cuối cùng: from giá trị này đến vô cùng
+                ranges.append({"from": prev_distance, "to": value})
+            else:
+                ranges.append({"from": prev_distance, "to": value})
+
+            prev_distance = value
+
+        # Add open-ended bucket cho khoảng cách lớn nhất
+        ranges.append({"from": prev_distance})
+
+        return ranges

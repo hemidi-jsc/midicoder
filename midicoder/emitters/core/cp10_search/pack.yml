@@ -65,52 +65,52 @@ pack:
         file_type: "elasticsearch_client"
         template: "cp10_search/elasticsearch.py.jinja2"
         stacks: ["fastapi"]
-        pack_emitter: null
+        pack_emitter: "cp10.search.fastapi"
       - path: "app/search/index_manager.py"
         file_type: "index_manager"
         template: "cp10_search/index_manager.py.jinja2"
         stacks: ["fastapi"]
-        pack_emitter: null
+        pack_emitter: "cp10.search.fastapi"
       - path: "app/search/search_service.py"
         file_type: "search_service"
         template: "cp10_search/search_service.py.jinja2"
-        stacks: ["fastapi", "nestjs"]
-        pack_emitter: null
+        stacks: ["fastapi"]
+        pack_emitter: "cp10.search.fastapi"
       - path: "src/search/search.module.ts"
         file_type: "search_module"
         template: "cp10_search/search.module.ts.jinja2"
         stacks: ["nestjs"]
-        pack_emitter: null
+        pack_emitter: "cp10.search.nestjs"
       - path: "src/search/search.service.ts"
         file_type: "search_service"
         template: "cp10_search/search.service.ts.jinja2"
         stacks: ["nestjs"]
-        pack_emitter: null
+        pack_emitter: "cp10.search.nestjs"
       - path: "src/search/search.decorators.ts"
         file_type: "search_decorator"
         template: "cp10_search/search.decorators.ts.jinja2"
         stacks: ["nestjs"]
-        pack_emitter: null
+        pack_emitter: "cp10.search.nestjs"
       - path: "src/app/core/search/search.module.ts"
         file_type: "search_module"
         template: "cp10_search/search.module.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp10.search.angular"
       - path: "src/app/core/search/search.service.ts"
         file_type: "search_service"
         template: "cp10_search/search.service.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp10.search.angular"
       - path: "src/search/SearchProvider.tsx"
         file_type: "search_provider"
         template: "cp10_search/SearchProvider.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp10.search.react"
       - path: "src/search/useSearch.ts"
         file_type: "search_hook"
         template: "cp10_search/useSearch.ts.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp10.search.react"
   frontend_integration:
     angular:
       - SearchService

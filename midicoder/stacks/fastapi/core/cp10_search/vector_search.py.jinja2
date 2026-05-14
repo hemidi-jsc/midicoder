@@ -1,0 +1,289 @@
+"""
+Vector Search Service cho FastAPI.
+
+Cung cấp:
+- ANN (Approximate Nearest Neighbor) search với embedding vector
+- Hybrid search (kết hợp BM25 + vector scores)
+- KPI-029: Tenant-specific vector search filtering
+
+KPI-029: Tenant Isolation - Hỗ trợ tenant filtering trong vector search operations
+CP10: Search & Indexing
+"""
+
+from typing import Any, Dict, List, Optional
+
+from .elasticsearch import get_elasticsearch, get_tenant_elasticsearch, get_tenant_index_name
+
+
+class VectorSearchService:
+    """
+    Service cho vector similarity search operations.
+
+    Hỗ trợ:
+    - k-NN (Approximate Nearest Neighbor) search
+    - Hybrid search (BM25 + vector)
+    - Reciprocal Rank Fusion (RRF) scoring
+
+    KPI-029: Hỗ trợ tenant filtering để isolate vector search results theo tenant.
+    """
+
+    def __init__(self, index: str = "{{ index_name }}", tenant_id: Optional[str] = None) -> None:
+        """
+        Khởi tạo vector search service.
+
+        Args:
+            index: Default index name cho vector search
+            tenant_id: KPI-029: Tenant ID cho tenant-specific vector search
+        """
+        self.index = index
+        self.tenant_id = tenant_id  # KPI-029: Tenant context
+        self.dimensions = {{ dimensions }}  # Số chiều của embedding vector
+        self.embedding_field = "{{ embedding_field }}"  # Trường chứa embedding vector
+
+    async def ann_search(
+        self,
+        query_vector: List[float],
+        k: int = 10,
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        min_score: Optional[float] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Thực hiện ANN (Approximate Nearest Neighbor) search với embedding vector.
+
+        Tìm các documents có embedding vector gần nhất với query vector.
+
+        Args:
+            query_vector: Embedding vector của query
+            k: Số lượng kết quả trả về (top-k nearest neighbors)
+            index: Index name (override default)
+            filters: Additional filters
+            min_score: Minimum similarity score threshold
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Search results dictionary với similarity scores
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # Build k-NN query
+        knn_params = {
+            "k": k,
+            "num_candidates": max(k * 10, 100),  # Tăng num_candidates để tăng accuracy
+        }
+
+        # KPI-029: Add filter condition cho tenant isolation
+        filter_conditions: List[Dict[str, Any]] = []
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+        if min_score is not None:
+            filter_conditions.append(
+                {"range": {f"{self.embedding_field}.score": {"gte": min_score}}}
+            )
+
+        search_body = {
+            "knn": {
+                "field": self.embedding_field,
+                "query_vector": query_vector,
+                "k": knn_params["k"],
+                "num_candidates": knn_params["num_candidates"],
+                "filter": filter_conditions if filter_conditions else [],
+            },
+            "size": k,
+            "_source": True,
+        }
+
+        # Execute k-NN search
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "hits": response["hits"]["hits"],
+            "total": response["hits"]["total"]["value"],
+            "took": response["took"],
+            "query_vector_dimensions": len(query_vector),
+        }
+
+    async def hybrid_search(
+        self,
+        query_text: str,
+        query_vector: List[float],
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        text_weight: float = 0.5,
+        vector_weight: float = 0.5,
+        size: int = 20,
+        from_page: int = 0,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Thực hiện hybrid search kết hợp BM25 text search và vector similarity.
+
+        Sử dụng Reciprocal Rank Fusion (RRF) để combine scores từ text và vector search.
+
+        Args:
+            query_text: Text query cho BM25 search
+            query_vector: Embedding vector cho vector similarity search
+            index: Index name (override default)
+            filters: Additional filters
+            text_weight: Trọng số cho BM25 text score (default 0.5)
+            vector_weight: Trọng số cho vector similarity score (default 0.5)
+            size: Số lượng kết quả trả về
+            from_page: Pagination offset
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Combined search results với hybrid scores
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # KPI-029: Build filter array cho tenant isolation
+        filter_conditions: List[Dict[str, Any]] = []
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+
+        # Build hybrid query với RRF (Reciprocal Rank Fusion)
+        search_body = {
+            "query": {
+                "mixed": {
+                    "on": self.embedding_field,
+                    "text": {
+                        "query": query_text,
+                        "fields": ["*"],
+                        "boost": text_weight,
+                    },
+                    "vector": {
+                        "query_vector": query_vector,
+                        "boost": vector_weight,
+                    },
+                }
+            },
+            "size": size,
+            "from": from_page,
+        }
+
+        # Apply filters
+        if filter_conditions:
+            search_body["query"] = {
+                "bool": {
+                    "must": [search_body["query"]],
+                    "filter": filter_conditions,
+                }
+            }
+
+        # Execute hybrid search
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "hits": response["hits"]["hits"],
+            "total": response["hits"]["total"]["value"],
+            "took": response["took"],
+            "text_weight": text_weight,
+            "vector_weight": vector_weight,
+        }
+
+    async def index_with_embedding(
+        self,
+        doc_id: str,
+        document: Dict[str, Any],
+        embedding: List[float],
+        index: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Index document kèm embedding vector.
+
+        Args:
+            doc_id: Document ID
+            document: Document data
+            embedding: Embedding vector của document
+            index: Index name (override default)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Index response
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # Validate embedding dimensions
+        if len(embedding) != self.dimensions:
+            raise ValueError(
+                f"Embedding có {len(embedding)} chiều, "
+                f"nhưng index yêu cầu {self.dimensions} chiều"
+            )
+
+        # KPI-029: Add tenant_id to document if not present
+        doc_with_tenant = {**document}
+        if effective_tenant_id and "tenant_id" not in doc_with_tenant:
+            doc_with_tenant["tenant_id"] = effective_tenant_id
+
+        # Add embedding vector
+        doc_with_tenant[self.embedding_field] = embedding
+
+        response = await client.index(
+            index=target_index,
+            id=doc_id,
+            body=doc_with_tenant,
+            refresh=True,
+        )
+
+        return response
+
+    async def bulk_index_with_embeddings(
+        self,
+        documents: List[Dict[str, Any]],
+        index: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Bulk index nhiều documents kèm embeddings.
+
+        Mỗi document phải có trường 'embedding' và 'doc_id'.
+
+        Args:
+            documents: List của documents với doc_id và embedding
+            index: Index name (override default)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Bulk response
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        actions = []
+        for doc in documents:
+            doc_id = doc.pop("doc_id", None)
+
+            # KPI-029: Add tenant_id to document if not present
+            doc_with_tenant = {**doc}
+            if effective_tenant_id and "tenant_id" not in doc_with_tenant:
+                doc_with_tenant["tenant_id"] = effective_tenant_id
+
+            if doc_id:
+                actions.append({"index": {"_index": target_index, "_id": doc_id}})
+            else:
+                actions.append({"index": {"_index": target_index}})
+            actions.append(doc_with_tenant)
+
+        response = await client.bulk(body=actions)
+        return response

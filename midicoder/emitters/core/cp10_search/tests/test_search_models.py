@@ -18,12 +18,25 @@ Version: 1.0.0
 import pytest
 
 from midicoder.emitters.core.cp10_search.models import (
+    AggregationFunction,
+    Facet,
+    FacetedSearchIndex,
+    FacetType,
+    GeoOperation,
+    GeoSearchColumn,
+    GeoSearchIndex,
+    SearchCollection,
+    SearchIndex,
+    SearchIndexColumn,
     SearchProviderType,
+    SearchQuery,
+    SearchQueryType,
     SyncStrategy,
     SyncTrigger,
-    SearchIndexColumn,
-    SearchIndex,
-    SearchCollection,
+    VectorIndexColumn,
+    VectorIndexType,
+    VectorSearchIndex,
+    VectorSimilarityMetric,
 )
 from midicoder.errors import ErrorCode, MidicoderError
 
@@ -494,7 +507,13 @@ class TestSearchCollectionSerialization:
         """Chuyen collection rong sang dict."""
         collection = SearchCollection()
         d = collection.to_dict()
-        assert d == {"indices": []}
+        assert d == {
+            "indices": [],
+            "vector_indices": [],
+            "geo_indices": [],
+            "faceted_indices": [],
+            "queries": [],
+        }
 
     def test_to_dict_with_indices(self):
         """Chuyen collection co indices sang dict."""

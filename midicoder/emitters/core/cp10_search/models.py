@@ -184,24 +184,96 @@ class SearchCollection:
     Collection chứa tất cả search indices.
 
     Attributes:
-        indices: Danh sách search indices.
+        indices: Danh sách search indices cơ bản.
+        vector_indices: Danh sách vector search indices.
+        geo_indices: Danh sách geospatial search indices.
+        faceted_indices: Danh sách faceted search indices.
+        queries: Danh sách search query bindings.
     """
     indices: list[SearchIndex] = field(default_factory=list)
+    vector_indices: list["VectorSearchIndex"] = field(default_factory=list)
+    geo_indices: list["GeoSearchIndex"] = field(default_factory=list)
+    faceted_indices: list["FacetedSearchIndex"] = field(default_factory=list)
+    queries: list["SearchQuery"] = field(default_factory=list)
 
     def add_index(self, index: SearchIndex) -> None:
         """Thêm index vào collection."""
         self.indices.append(index)
+
+    def add_vector_index(self, index: "VectorSearchIndex") -> None:
+        """Thêm vector search index vào collection."""
+        self.vector_indices.append(index)
+
+    def add_geo_index(self, index: "GeoSearchIndex") -> None:
+        """Thêm geospatial search index vào collection."""
+        self.geo_indices.append(index)
+
+    def add_faceted_index(self, index: "FacetedSearchIndex") -> None:
+        """Thêm faceted search index vào collection."""
+        self.faceted_indices.append(index)
+
+    def add_query(self, query: "SearchQuery") -> None:
+        """Thêm search query vào collection."""
+        self.queries.append(query)
 
     @property
     def total_count(self) -> int:
         """Tổng số indices trong collection."""
         return len(self.indices)
 
+    @property
+    def total_vector_count(self) -> int:
+        """Tổng số vector indices trong collection."""
+        return len(self.vector_indices)
+
+    @property
+    def total_geo_count(self) -> int:
+        """Tổng số geo indices trong collection."""
+        return len(self.geo_indices)
+
+    @property
+    def total_faceted_count(self) -> int:
+        """Tổng số faceted indices trong collection."""
+        return len(self.faceted_indices)
+
+    @property
+    def total_query_count(self) -> int:
+        """Tổng số queries trong collection."""
+        return len(self.queries)
+
     def get_by_id(self, index_id: str) -> Optional[SearchIndex]:
         """Tìm index theo ID."""
         for index in self.indices:
             if index.id == index_id:
                 return index
+        return None
+
+    def get_vector_by_id(self, index_id: str) -> Optional["VectorSearchIndex"]:
+        """Tìm vector index theo ID."""
+        for index in self.vector_indices:
+            if index.id == index_id:
+                return index
+        return None
+
+    def get_geo_by_id(self, index_id: str) -> Optional["GeoSearchIndex"]:
+        """Tìm geo index theo ID."""
+        for index in self.geo_indices:
+            if index.id == index_id:
+                return index
+        return None
+
+    def get_faceted_by_id(self, index_id: str) -> Optional["FacetedSearchIndex"]:
+        """Tìm faceted index theo ID."""
+        for index in self.faceted_indices:
+            if index.id == index_id:
+                return index
+        return None
+
+    def get_query_by_id(self, query_id: str) -> Optional["SearchQuery"]:
+        """Tìm query theo ID."""
+        for query in self.queries:
+            if query.id == query_id:
+                return query
         return None
 
     def tenant_isolated_indices(self) -> list[SearchIndex]:
@@ -212,6 +284,10 @@ class SearchCollection:
         """Chuyển collection sang dict format."""
         return {
             "indices": [i.to_dict() for i in self.indices],
+            "vector_indices": [i.to_dict() for i in self.vector_indices],
+            "geo_indices": [i.to_dict() for i in self.geo_indices],
+            "faceted_indices": [i.to_dict() for i in self.faceted_indices],
+            "queries": [q.to_dict() for q in self.queries],
         }
 
     @classmethod
@@ -219,7 +295,101 @@ class SearchCollection:
         """Tạo SearchCollection từ dict."""
         result = cls()
         result.indices = [SearchIndex.from_dict(i) for i in data.get("indices", [])]
+        result.vector_indices = [VectorSearchIndex.from_dict(i) for i in data.get("vector_indices", [])]
+        result.geo_indices = [GeoSearchIndex.from_dict(i) for i in data.get("geo_indices", [])]
+        result.faceted_indices = [FacetedSearchIndex.from_dict(i) for i in data.get("faceted_indices", [])]
+        result.queries = [SearchQuery.from_dict(q) for q in data.get("queries", [])]
         return result
+
+
+# ===========================================================================
+# SearchQuery — first-class query binding
+# ===========================================================================
+
+
+class SearchQueryType(str, Enum):
+    """
+    Loại search query.
+
+    - fulltext: Full-text search (BM25/TF-IDF)
+    - vector: Vector similarity search (ANN)
+    - geo: Geospatial search (circle, bounding_box, polygon)
+    - facet: Faceted aggregation (term, range, histogram)
+    - hybrid: Hybrid search (fulltext + vector combined)
+    """
+    FULLTEXT = "fulltext"
+    VECTOR = "vector"
+    GEO = "geo"
+    FACET = "facet"
+    HYBRID = "hybrid"
+
+
+@dataclass
+class SearchQuery:
+    """
+    Search query binding — liên kết query với search backend.
+
+    SearchQuery đại diện cho một loại truy vấn tìm kiếm, xác định:
+    - Index mục tiêu
+    - Loại query (fulltext, vector, geo, facet, hybrid)
+    - Các field tham gia
+    - Default parameters (size, from, sort)
+
+    Attributes:
+        id: Định danh duy nhất (vd: "search_products", "find_nearby_stores")
+        query_type: Loại query (fulltext, vector, geo, facet, hybrid)
+        target_index: Tên search index mục tiêu
+        fields: Các fields tham gia trong query
+        default_size: Số kết quả trả về mặc định
+        default_sort: Sort mặc định
+        tenant_isolated: Có enforce tenant isolation không (KPI-029)
+        description: Mô tả query
+
+    Raises:
+        MidicoderError: Nếu id rỗng (MDC-CP10-001).
+    """
+    id: str
+    query_type: SearchQueryType = SearchQueryType.FULLTEXT
+    target_index: str = ""
+    fields: list[str] = field(default_factory=list)
+    default_size: int = 20
+    default_sort: str = ""
+    tenant_isolated: bool = True
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate các trường bắt buộc sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(ErrorCode.CP10_EMPTY_INDEX_NAME, name=self.id)
+        if self.default_size < 1:
+            self.default_size = 20
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển query sang dict format."""
+        return {
+            "id": self.id,
+            "query_type": self.query_type.value,
+            "target_index": self.target_index,
+            "fields": self.fields,
+            "default_size": self.default_size,
+            "default_sort": self.default_sort,
+            "tenant_isolated": self.tenant_isolated,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SearchQuery":
+        """Tạo SearchQuery từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            query_type=SearchQueryType(data.get("query_type", "fulltext")),
+            target_index=data.get("target_index", ""),
+            fields=data.get("fields", []),
+            default_size=data.get("default_size", 20),
+            default_sort=data.get("default_sort", ""),
+            tenant_isolated=data.get("tenant_isolated", True),
+            description=data.get("description", ""),
+        )
 
 
 # ===========================================================================

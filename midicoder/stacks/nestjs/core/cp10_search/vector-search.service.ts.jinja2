@@ -1,0 +1,338 @@
+/**
+ * Vector Search Service cho NestJS.
+ *
+ * Cung cấp vector similarity search operations:
+ * - ANN (Approximate Nearest Neighbor) search
+ * - Hybrid search (BM25 + vector scores)
+ * - Document indexing với embedding vector
+ *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant filtering trong vector search operations
+ * CP10: Search & Indexing
+ */
+
+import { Injectable, Inject } from "@nestjs/common";
+import { Client } from "@elastic/elasticsearch";
+
+/**
+ * Vector Search Result interface.
+ */
+export interface VectorSearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+  queryVectorDimensions?: number;
+  textWeight?: number;
+  vectorWeight?: number;
+}
+
+/**
+ * Options cho vector search.
+ */
+export interface VectorSearchOptions {
+  queryVector: number[];
+  k?: number;
+  filters?: Record<string, any>;
+  minScore?: number;
+  tenantId?: string;  // KPI-029
+}
+
+/**
+ * Options cho hybrid search.
+ */
+export interface HybridSearchOptions {
+  queryText: string;
+  queryVector: number[];
+  textWeight?: number;
+  vectorWeight?: number;
+  size?: number;
+  from?: number;
+  filters?: Record<string, any>;
+  tenantId?: string;  // KPI-029
+}
+
+/**
+ * Vector Search Service.
+ *
+ * KPI-029: Hỗ trợ tenant filtering để isolate vector search results theo tenant.
+ *
+ * Cung cấp các vector similarity search operations cho Elasticsearch.
+ */
+@Injectable()
+export class VectorSearchService {
+  /**
+   * Constructor.
+   *
+   * @param client - Elasticsearch client
+   * @param index - Default index name
+   * @param dimensions - Số chiều của embedding vector
+   * @param embeddingField - Trường chứa embedding vector
+   * @param tenantId KPI-029: Tenant ID cho tenant-specific operations
+   */
+  constructor(
+    @Inject("ELASTICSEARCH_CLIENT")
+    private readonly client: Client,
+    private readonly index: string = "{{ index_name }}",
+    private readonly dimensions: number = {{ dimensions }},
+    private readonly embeddingField: string = "{{ embedding_field }}",
+    private readonly tenantId?: string,
+  ) {}
+
+  /**
+   * Thực hiện ANN (Approximate Nearest Neighbor) search.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param index - Index name (override default)
+   * @param options - Vector search options
+   * @returns Search results
+   */
+  async annSearch<T = any>(
+    index?: string,
+    options?: VectorSearchOptions,
+  ): Promise<VectorSearchResult<T>> {
+    const targetIndex = index ?? this.index;
+    const k = options?.k ?? 10;
+    const effectiveTenantId = options?.tenantId ?? this.tenantId;  // KPI-029
+
+    // Build filter conditions
+    const filterConditions: any[] = [];
+
+    // KPI-029: Add tenant filter
+    if (effectiveTenantId) {
+      filterConditions.push({ term: { tenant_id: effectiveTenantId } });
+    }
+
+    // Add custom filters
+    if (options?.filters) {
+      filterConditions.push(
+        ...Object.entries(options.filters).map(([field, value]) => ({
+          term: { [field]: value },
+        })),
+      );
+    }
+
+    // Add min_score filter
+    if (options?.minScore !== undefined) {
+      filterConditions.push({
+        range: {
+          [`${this.embeddingField}.score`]: { gte: options.minScore },
+        },
+      });
+    }
+
+    // Build k-NN query
+    const searchBody: any = {
+      knn: {
+        field: this.embeddingField,
+        query_vector: options?.queryVector,
+        k,
+        num_candidates: Math.max(k * 10, 100),
+        filter: filterConditions.length > 0 ? filterConditions : [],
+      },
+      size: k,
+      _source: true,
+    };
+
+    // Execute k-NN search
+    const response = await this.client.search<any, any>({
+      index: targetIndex,
+      body: searchBody,
+    });
+
+    return {
+      hits: response.body.hits.hits.map((hit) => ({
+        _id: hit._id,
+        _source: hit._source as T,
+        _score: hit._score,
+      })),
+      total: response.body.hits.total.value,
+      took: response.headers["x-foundry-time-ms"] as unknown as number,
+      queryVectorDimensions: options?.queryVector?.length,
+    };
+  }
+
+  /**
+   * Thực hiện hybrid search (BM25 + vector similarity).
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param index - Index name (override default)
+   * @param options - Hybrid search options
+   * @returns Search results
+   */
+  async hybridSearch<T = any>(
+    index?: string,
+    options?: HybridSearchOptions,
+  ): Promise<VectorSearchResult<T>> {
+    const targetIndex = index ?? this.index;
+    const textWeight = options?.textWeight ?? 0.5;
+    const vectorWeight = options?.vectorWeight ?? 0.5;
+    const size = options?.size ?? 20;
+    const from = options?.from ?? 0;
+    const effectiveTenantId = options?.tenantId ?? this.tenantId;  // KPI-029
+
+    // Build filter conditions
+    const filterConditions: any[] = [];
+
+    // KPI-029: Add tenant filter
+    if (effectiveTenantId) {
+      filterConditions.push({ term: { tenant_id: effectiveTenantId } });
+    }
+
+    // Add custom filters
+    if (options?.filters) {
+      filterConditions.push(
+        ...Object.entries(options.filters).map(([field, value]) => ({
+          term: { [field]: value },
+        })),
+      );
+    }
+
+    // Build hybrid query
+    let searchBody: any = {
+      query: {
+        mixed: {
+          on: this.embeddingField,
+          text: {
+            query: options?.queryText,
+            fields: ["*"],
+            boost: textWeight,
+          },
+          vector: {
+            query_vector: options?.queryVector,
+            boost: vectorWeight,
+          },
+        },
+      },
+      size,
+      from,
+    };
+
+    // Apply filters
+    if (filterConditions.length > 0) {
+      searchBody.query = {
+        bool: {
+          must: [searchBody.query],
+          filter: filterConditions,
+        },
+      };
+    }
+
+    // Execute hybrid search
+    const response = await this.client.search<any, any>({
+      index: targetIndex,
+      body: searchBody,
+    });
+
+    return {
+      hits: response.body.hits.hits.map((hit) => ({
+        _id: hit._id,
+        _source: hit._source as T,
+        _score: hit._score,
+      })),
+      total: response.body.hits.total.value,
+      took: response.headers["x-foundry-time-ms"] as unknown as number,
+      textWeight,
+      vectorWeight,
+    };
+  }
+
+  /**
+   * Index document kèm embedding vector.
+   *
+   * KPI-029: Tự động thêm tenant_id vào document nếu có.
+   *
+   * @param index - Index name (override default)
+   * @param id - Document ID
+   * @param document - Document data
+   * @param embedding - Embedding vector
+   * @param tenantId KPI-029: Tenant ID (optional)
+   * @returns Index response
+   */
+  async indexWithEmbedding<T = any>(
+    index: string,
+    id: string,
+    document: T,
+    embedding: number[],
+    tenantId?: string,
+  ): Promise<{ result: string; _id: string }> {
+    const targetIndex = index ?? this.index;
+    const effectiveTenantId = tenantId ?? this.tenantId;
+
+    // Validate embedding dimensions
+    if (embedding.length !== this.dimensions) {
+      throw new Error(
+        `Embedding có ${embedding.length} chiều, nhưng index yêu cầu ${this.dimensions} chiều`,
+      );
+    }
+
+    // KPI-029: Add tenant_id to document if not present
+    const docWithTenant = {
+      ...document,
+      ...(effectiveTenantId && !("tenant_id" in document) ? { tenant_id: effectiveTenantId } : {}),
+    };
+
+    // Add embedding vector
+    docWithTenant[this.embeddingField] = embedding;
+
+    const response = await this.client.index({
+      index: targetIndex,
+      id,
+      body: docWithTenant,
+      refresh: true,
+    });
+
+    return {
+      result: response.body.result,
+      _id: response.body._id,
+    };
+  }
+
+  /**
+   * Bulk index nhiều documents kèm embeddings.
+   *
+   * KPI-029: Tự động thêm tenant_id vào documents nếu có.
+   *
+   * @param index - Index name (override default)
+   * @param documents - List of documents với id và embedding
+   * @param tenantId KPI-029: Tenant ID (optional)
+   * @returns Bulk response
+   */
+  async bulkIndexWithEmbeddings<T = any>(
+    index: string,
+    documents: Array<{ id?: string; data: T; embedding: number[] }>,
+    tenantId?: string,
+  ): Promise<{ errors: boolean; items: any[] }> {
+    const targetIndex = index ?? this.index;
+    const actions: any[] = [];
+    const effectiveTenantId = tenantId ?? this.tenantId;
+
+    for (const doc of documents) {
+      // KPI-029: Add tenant_id if not present
+      const dataWithTenant = {
+        ...doc.data,
+        ...(effectiveTenantId && !("tenant_id" in doc.data) ? { tenant_id: effectiveTenantId } : {}),
+      };
+
+      if (doc.id) {
+        actions.push({ index: { _index: targetIndex, _id: doc.id } });
+      } else {
+        actions.push({ index: { _index: targetIndex } });
+      }
+      actions.push(dataWithTenant);
+    }
+
+    const response = await this.client.bulk({
+      body: actions,
+    });
+
+    return {
+      errors: response.body.errors,
+      items: response.body.items,
+    };
+  }
+}

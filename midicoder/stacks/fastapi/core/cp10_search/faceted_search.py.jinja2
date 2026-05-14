@@ -1,0 +1,441 @@
+"""
+Faceted Search Service cho FastAPI.
+
+Cung cấp:
+- Aggregation-based faceted search
+- Terms aggregation (đếm theo category, tag, v.v.)
+- Range aggregation (phân theo khoảng giá trị)
+- Date histogram aggregation (phân theo thời gian)
+- Composite aggregation (kết hợp nhiều facets)
+- KPI-029: Tenant-specific faceted filtering
+
+KPI-029: Tenant Isolation - Hỗ trợ tenant filtering trong faceted search operations
+CP10: Search & Indexing
+"""
+
+from typing import Any, Dict, List, Optional
+
+from .elasticsearch import get_elasticsearch, get_tenant_elasticsearch, get_tenant_index_name
+
+
+class FacetedSearchService:
+    """
+    Service cho faceted aggregation search operations.
+
+    Hỗ trợ:
+    - Terms aggregation (phân loại theo category, brand, tag)
+    - Range aggregation (phân theo khoảng giá, rating)
+    - Date histogram aggregation (phân theo ngày/tháng/năm)
+    - Composite aggregation (kết hợp nhiều facets đồng thời)
+    - Facet drilling (click vào facet để filter kết quả)
+
+    KPI-029: Hỗ trợ tenant filtering để isolate faceted results theo tenant.
+    """
+
+    def __init__(self, index: str = "{{ index_name }}", tenant_id: Optional[str] = None) -> None:
+        """
+        Khởi tạo faceted search service.
+
+        Args:
+            index: Default index name cho faceted search
+            tenant_id: KPI-029: Tenant ID cho tenant-specific faceted search
+        """
+        self.index = index
+        self.tenant_id = tenant_id  # KPI-029: Tenant context
+
+    async def search_with_facets(
+        self,
+        query: str,
+        facet_fields: List[Dict[str, Any]],
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        size: int = 20,
+        from_page: int = 0,
+        facet_size: int = 20,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Thực hiện search kèm faceted aggregation.
+
+        Args:
+            query: Search query string
+            facet_fields: List các field để aggregate (terms, range, date_histogram)
+            index: Index name (override default)
+            filters: Additional filters
+            size: Số lượng kết quả trả về
+            from_page: Pagination offset
+            facet_size: Số bucket tối đa cho mỗi facet
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Search results dictionary với facets
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # Build aggregations
+        aggs: Dict[str, Any] = {}
+        for i, facet in enumerate(facet_fields):
+            agg_name = facet.get("name", f"facet_{i}")
+            field = facet["field"]
+            agg_type = facet.get("type", "terms")
+
+            if agg_type == "terms":
+                aggs[agg_name] = {
+                    "terms": {
+                        "field": field,
+                        "size": facet_size,
+                    }
+                }
+            elif agg_type == "range":
+                aggs[agg_name] = {
+                    "range": {
+                        "field": field,
+                        "ranges": facet.get("ranges", []),
+                    }
+                }
+            elif agg_type == "date_histogram":
+                aggs[agg_name] = {
+                    "date_histogram": {
+                        "field": field,
+                        "calendar_interval": facet.get("interval", "month"),
+                    }
+                }
+            elif agg_type == "histogram":
+                aggs[agg_name] = {
+                    "histogram": {
+                        "field": field,
+                        "interval": facet.get("interval", 10),
+                    }
+                }
+
+        # Build query
+        search_body: Dict[str, Any] = {
+            "query": {
+                "multi_match": {
+                    "query": query,
+                    "fields": ["*"],
+                    "fuzziness": "AUTO",
+                }
+            },
+            "size": size,
+            "from": from_page,
+        }
+
+        # KPI-029: Add tenant_id filter
+        filter_conditions: List[Dict[str, Any]] = []
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+
+        if filter_conditions:
+            search_body["query"] = {
+                "bool": {
+                    "must": [search_body["query"]],
+                    "filter": filter_conditions,
+                }
+            }
+
+        # Add aggregations
+        if aggs:
+            search_body["aggs"] = aggs
+
+        # Execute search
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "hits": response["hits"]["hits"],
+            "total": response["hits"]["total"]["value"],
+            "took": response["took"],
+            "facets": {
+                name: agg["buckets"] for name, agg in response.get("aggregations", {}).items()
+            },
+        }
+
+    async def get_facets(
+        self,
+        facet_fields: List[Dict[str, Any]],
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        facet_size: int = 20,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Lấy facets aggregation mà không cần search results.
+
+        Hữu ích cho sidebar filters, chỉ cần bucket counts.
+
+        Args:
+            facet_fields: List các field để aggregate
+            index: Index name (override default)
+            filters: Additional filters để scope aggregation
+            facet_size: Số bucket tối đa cho mỗi facet
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Facets dictionary
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # Build aggregations
+        aggs: Dict[str, Any] = {}
+        for i, facet in enumerate(facet_fields):
+            agg_name = facet.get("name", f"facet_{i}")
+            field = facet["field"]
+            agg_type = facet.get("type", "terms")
+
+            if agg_type == "terms":
+                aggs[agg_name] = {
+                    "terms": {
+                        "field": field,
+                        "size": facet_size,
+                    }
+                }
+            elif agg_type == "range":
+                aggs[agg_name] = {
+                    "range": {
+                        "field": field,
+                        "ranges": facet.get("ranges", []),
+                    }
+                }
+            elif agg_type == "date_histogram":
+                aggs[agg_name] = {
+                    "date_histogram": {
+                        "field": field,
+                        "calendar_interval": facet.get("interval", "month"),
+                    }
+                }
+            elif agg_type == "histogram":
+                aggs[agg_name] = {
+                    "histogram": {
+                        "field": field,
+                        "interval": facet.get("interval", 10),
+                    }
+                }
+
+        # Build filter query
+        filter_conditions: List[Dict[str, Any]] = []
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+
+        search_body: Dict[str, Any] = {
+            "size": 0,
+            "query": {
+                "bool": {
+                    "filter": filter_conditions if filter_conditions else [{"match_all": {}}],
+                }
+            },
+            "aggs": aggs,
+        }
+
+        # Execute aggregation
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "facets": {
+                name: agg["buckets"] for name, agg in response.get("aggregations", {}).items()
+            },
+            "took": response["took"],
+        }
+
+    async def drill_down(
+        self,
+        query: str,
+        facet_filters: List[Dict[str, Any]],
+        facet_fields: List[Dict[str, Any]],
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        size: int = 20,
+        from_page: int = 0,
+        facet_size: int = 20,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Facet drilling - click vào facet để filter kết quả và tính lại facets.
+
+        Ví dụ: Click vào "Laptop" trong Category, kết quả filter theo Laptop
+        và tính lại các facets còn lại.
+
+        Args:
+            query: Search query string
+            facet_filters: List các facet values đã được chọn để filter
+            facet_fields: List các field để aggregate
+            index: Index name (override default)
+            filters: Additional filters
+            size: Số lượng kết quả trả về
+            from_page: Pagination offset
+            facet_size: Số bucket tối đa cho mỗi facet
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Search results dictionary với facets đã được drill-down
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # KPI-029: Build filter array
+        filter_conditions: List[Dict[str, Any]] = []
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+
+        # Add facet drill-down filters
+        for facet_filter in facet_filters:
+            field = facet_filter["field"]
+            value = facet_filter["value"]
+            filter_conditions.append({"term": {field: value}})
+
+        # Add custom filters
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+
+        # Build aggregations
+        aggs: Dict[str, Any] = {}
+        for i, facet in enumerate(facet_fields):
+            agg_name = facet.get("name", f"facet_{i}")
+            field = facet["field"]
+            agg_type = facet.get("type", "terms")
+
+            if agg_type == "terms":
+                aggs[agg_name] = {
+                    "terms": {
+                        "field": field,
+                        "size": facet_size,
+                    }
+                }
+            elif agg_type == "range":
+                aggs[agg_name] = {
+                    "range": {
+                        "field": field,
+                        "ranges": facet.get("ranges", []),
+                    }
+                }
+
+        search_body: Dict[str, Any] = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {
+                            "multi_match": {
+                                "query": query,
+                                "fields": ["*"],
+                                "fuzziness": "AUTO",
+                            }
+                        }
+                    ],
+                    "filter": filter_conditions,
+                }
+            },
+            "size": size,
+            "from": from_page,
+        }
+
+        # Add aggregations
+        if aggs:
+            search_body["aggs"] = aggs
+
+        # Execute search
+        response = await client.search(index=target_index, body=search_body)
+
+        return {
+            "hits": response["hits"]["hits"],
+            "total": response["hits"]["total"]["value"],
+            "took": response["took"],
+            "facets": {
+                name: agg["buckets"] for name, agg in response.get("aggregations", {}).items()
+            },
+            "applied_filters": facet_filters,
+        }
+
+    async def composite_facets(
+        self,
+        facet_fields: List[Dict[str, Any]],
+        index: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        size: int = 100,
+        after: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Composite aggregation để paginate qua nhiều facets đồng thời.
+
+        Hữu ích khi cần lấy tất cả kết quả unique combinations của nhiều facets.
+
+        Args:
+            facet_fields: List các field cho composite aggregation
+            index: Index name (override default)
+            filters: Additional filters
+            size: Số kết quả mỗi trang composite
+            after: After key cho pagination (từ response trước)
+            tenant_id: KPI-029: Tenant ID (override instance tenant_id)
+
+        Returns:
+            Composite aggregation results dictionary
+        """
+        # KPI-029: Use provided tenant_id or instance tenant_id
+        effective_tenant_id = tenant_id or self.tenant_id
+        target_index = get_tenant_index_name(index or self.index, effective_tenant_id)
+
+        client = get_tenant_elasticsearch(effective_tenant_id) if effective_tenant_id else get_elasticsearch()
+
+        # Build sources cho composite
+        sources: List[Dict[str, Any]] = []
+        for facet in facet_fields:
+            field = facet["field"]
+            agg_type = facet.get("type", "terms")
+
+            if agg_type == "terms":
+                sources.append({"terms": {"field": field}})
+            elif agg_type == "range":
+                sources.append({"range": {"field": field, "ranges": facet.get("ranges", [])}})
+
+        # KPI-029: Build filter array
+        filter_conditions: List[Dict[str, Any]] = []
+        if effective_tenant_id:
+            filter_conditions.append({"term": {"tenant_id": effective_tenant_id}})
+        if filters:
+            filter_conditions.extend([{"term": {k: v}} for k, v in filters.items()])
+
+        search_body: Dict[str, Any] = {
+            "size": 0,
+            "query": {
+                "bool": {
+                    "filter": filter_conditions if filter_conditions else [{"match_all": {}}],
+                }
+            },
+            "aggs": {
+                "composite_agg": {
+                    "composite": {
+                        "sources": sources,
+                        "size": size,
+                    }
+                }
+            },
+        }
+
+        # Add after key for pagination
+        if after:
+            search_body["aggs"]["composite_agg"]["composite"]["after"] = after
+
+        # Execute aggregation
+        response = await client.search(index=target_index, body=search_body)
+
+        agg_result = response["aggregations"]["composite_agg"]
+
+        return {
+            "buckets": agg_result["buckets"],
+            "after_key": agg_result.get("after_key"),
+            "took": response["took"],
+        }

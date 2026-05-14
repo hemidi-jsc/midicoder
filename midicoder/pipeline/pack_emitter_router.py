@@ -100,6 +100,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "TypeORMEmitter",
         "cp08_database",
     ),
+    # CP10 – Search (FastAPI)
+    "cp10.search.fastapi": (
+        "midicoder.emitters.core.cp10_search.fastapi",
+        "FastAPISearchEmitter",
+        "cp10_search",
+    ),
+    # CP10 – Search (NestJS)
+    "cp10.search.nestjs": (
+        "midicoder.emitters.core.cp10_search.nestjs",
+        "NestJSSearchEmitter",
+        "cp10_search",
+    ),
+    # CP10 – Search (Angular)
+    "cp10.search.angular": (
+        "midicoder.emitters.core.cp10_search.angular",
+        "AngularEmitter",
+        "cp10_search",
+    ),
+    # CP10 – Search (React)
+    "cp10.search.react": (
+        "midicoder.emitters.core.cp10_search.react",
+        "ReactEmitter",
+        "cp10_search",
+    ),
 }
 
 
@@ -154,10 +178,18 @@ def _parse_auth_dict(raw: dict[str, Any]) -> Any:
     return auth_ir
 
 
+def _parse_search_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw MIR metadata into a CP10 SearchCollection."""
+    from midicoder.emitters.core.cp10_search.parser import SearchParser
+    parser = SearchParser()
+    return parser.parse_from_metadata(raw)
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
     "cp03_auth": _parse_auth_dict,
+    "cp10_search": _parse_search_dict,
 }
 
 
@@ -256,6 +288,39 @@ class PackEmitterRouter:
             try:
                 content = emitter.render_value_object(vo_data)
                 return [{"path": file_path, "content": content}]
+            except Exception as exc:
+                return _fallback_placeholder(file_path, str(exc))
+
+        elif parser_key == "cp10_search" or pack_emitter.startswith("cp10."):
+            # --- Search emitter dispatch ---
+            # Search emitters take (SearchCollection, output_dir) and return
+            # list[GeneratedFile] with path/content attributes.
+            try:
+                collection = PARSER_REGISTRY["cp10_search"](context)
+                import tempfile
+                with tempfile.TemporaryDirectory() as tmp:
+                    output_dir = Path(tmp)
+                    generated = emitter.emit(collection, output_dir)
+                    results = []
+                    for gf in generated:
+                        # GeneratedFile can have .content str or need file read
+                        if hasattr(gf, "content"):
+                            content = gf.content
+                        elif hasattr(gf, "path") and gf.path.exists():
+                            content = gf.path.read_text(encoding="utf-8")
+                        else:
+                            continue
+                        # Build relative path from output_dir
+                        rel = str(getattr(gf, "path", Path(file_path)))
+                        if tmp in rel:
+                            try:
+                                rel = str(Path(rel).relative_to(tmp))
+                            except ValueError:
+                                pass
+                        results.append({"path": rel, "content": content})
+                    return results if results else _fallback_placeholder(
+                        file_path, "Search emitter produced no files"
+                    )
             except Exception as exc:
                 return _fallback_placeholder(file_path, str(exc))
 

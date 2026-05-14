@@ -159,15 +159,18 @@ core_packs:
     name: Search & Indexing Generator
     internal_id: cp10_search
     phase: P1
-    description: Search index declarations, query bindings, sync strategies
-    definitions_count: 3
-    obligations_count: 2
+    description: Search index declarations, query bindings, sync strategies, vector/geo/faceted search
+    definitions_count: 9
+    obligations_count: 3
     depends_on:
       - CP08
     capabilities_provided:
       - search_index
       - search_query
       - fulltext_search
+      - vector_search
+      - geo_search
+      - faceted_aggregation
     category: performance
     status: developing
     version: 1.0.0

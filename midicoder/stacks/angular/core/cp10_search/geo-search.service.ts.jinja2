@@ -1,0 +1,244 @@
+/**
+ * Geo Search Service cho Angular.
+ *
+ * Cung cấp geospatial search operations qua HTTP client:
+ * - Circle search (tìm trong bán kính)
+ * - Bounding box search
+ * - Distance sorting
+ * - Distance bucket aggregation
+ *
+ * KPI-029: Tenant Isolation - Hỗ trợ tenant filtering trong geospatial search operations
+ * CP10: Search & Indexing
+ */
+
+import { Injectable } from "@angular/core";
+import { HttpClient, HttpHeaders } from "@angular/common/http";
+import { Observable } from "rxjs";
+
+/** Kết quả từ geo search operation */
+export interface GeoSearchResult<T = any> {
+  hits: Array<{
+    _id: string;
+    _source: T;
+    _score: number;
+  }>;
+  total: number;
+  took: number;
+  center?: { lat: number; lon: number };
+  radius?: string;
+  boundingBox?: {
+    top_left: { lat: number; lon: number };
+    bottom_right: { lat: number; lon: number };
+  };
+  referencePoint?: { lat: number; lon: number };
+}
+
+/** Kết quả từ distance bucket aggregation */
+export interface GeoAggregationResult {
+  buckets: Array<{
+    key: string;
+    doc_count: number;
+    from?: number;
+    to?: number;
+  }>;
+  took: number;
+  center: { lat: number; lon: number };
+}
+
+/** Options cho radius search */
+export interface RadiusSearchOptions {
+  latitude: number;
+  longitude: number;
+  radius: string;
+  index?: string;
+  filters?: Record<string, any>;
+  size?: number;
+  from?: number;
+  sortByDistance?: boolean;
+  tenantId?: string; // KPI-029
+}
+
+/** Options cho bounding box search */
+export interface BoundingBoxSearchOptions {
+  topLeft: [number, number];
+  bottomRight: [number, number];
+  index?: string;
+  filters?: Record<string, any>;
+  size?: number;
+  from?: number;
+  tenantId?: string; // KPI-029
+}
+
+/** Options cho distance sort search */
+export interface DistanceSortOptions {
+  latitude: number;
+  longitude: number;
+  maxDistance?: string;
+  index?: string;
+  filters?: Record<string, any>;
+  sortFields?: string[];
+  size?: number;
+  from?: number;
+  tenantId?: string; // KPI-029
+}
+
+/** Options cho distance bucket aggregation */
+export interface DistanceBucketOptions {
+  latitude: number;
+  longitude: number;
+  distances: string[];
+  index?: string;
+  filters?: Record<string, any>;
+  tenantId?: string; // KPI-029
+}
+
+/**
+ * Geo Search Service.
+ *
+ * KPI-029: Hỗ trợ tenant filtering để isolate geospatial results theo tenant.
+ */
+@Injectable({
+  providedIn: "root",
+})
+export class GeoSearchService {
+  private geoSearchUrl = "/api/search/geo";
+  private tenantId: string | undefined; // KPI-029
+
+  constructor(private http: HttpClient) {}
+
+  /**
+   * Đặt tenant ID cho tenant isolation (KPI-029).
+   */
+  setTenantId(tenantId: string | undefined): void {
+    this.tenantId = tenantId;
+  }
+
+  /**
+   * Tìm documents trong bán kính nhất định.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param options - Radius search options
+   * @returns Geo search results
+   */
+  searchWithinRadius<T = any>(options: RadiusSearchOptions): Observable<GeoSearchResult<T>> {
+    let headers = new HttpHeaders();
+
+    // KPI-029: Lấy tenant ID từ options hoặc instance
+    const effectiveTenantId = options.tenantId || this.tenantId;
+    if (effectiveTenantId) {
+      headers = headers.set("x-tenant-id", effectiveTenantId);
+    }
+    headers = headers.set("Content-Type", "application/json");
+
+    return this.http.post<GeoSearchResult<T>>(
+      `${this.geoSearchUrl}/radius${options.index ? `/${options.index}` : ""}`,
+      {
+        latitude: options.latitude,
+        longitude: options.longitude,
+        radius: options.radius,
+        filters: options.filters,
+        size: options.size ?? 20,
+        from: options.from ?? 0,
+        sortByDistance: options.sortByDistance !== false,
+      },
+      { headers },
+    );
+  }
+
+  /**
+   * Tìm documents trong bounding box.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param options - Bounding box search options
+   * @returns Geo search results
+   */
+  searchWithinBoundingBox<T = any>(
+    options: BoundingBoxSearchOptions,
+  ): Observable<GeoSearchResult<T>> {
+    let headers = new HttpHeaders();
+
+    // KPI-029: Lấy tenant ID từ options hoặc instance
+    const effectiveTenantId = options.tenantId || this.tenantId;
+    if (effectiveTenantId) {
+      headers = headers.set("x-tenant-id", effectiveTenantId);
+    }
+    headers = headers.set("Content-Type", "application/json");
+
+    return this.http.post<GeoSearchResult<T>>(
+      `${this.geoSearchUrl}/bounding-box${options.index ? `/${options.index}` : ""}`,
+      {
+        topLeft: options.topLeft,
+        bottomRight: options.bottomRight,
+        filters: options.filters,
+        size: options.size ?? 20,
+        from: options.from ?? 0,
+      },
+      { headers },
+    );
+  }
+
+  /**
+   * Tìm documents và sắp xếp theo khoảng cách.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param options - Distance sort options
+   * @returns Geo search results
+   */
+  searchWithDistanceSort<T = any>(options: DistanceSortOptions): Observable<GeoSearchResult<T>> {
+    let headers = new HttpHeaders();
+
+    // KPI-029: Lấy tenant ID từ options hoặc instance
+    const effectiveTenantId = options.tenantId || this.tenantId;
+    if (effectiveTenantId) {
+      headers = headers.set("x-tenant-id", effectiveTenantId);
+    }
+    headers = headers.set("Content-Type", "application/json");
+
+    return this.http.post<GeoSearchResult<T>>(
+      `${this.geoSearchUrl}/distance-sort${options.index ? `/${options.index}` : ""}`,
+      {
+        latitude: options.latitude,
+        longitude: options.longitude,
+        maxDistance: options.maxDistance,
+        filters: options.filters,
+        sortFields: options.sortFields,
+        size: options.size ?? 20,
+        from: options.from ?? 0,
+      },
+      { headers },
+    );
+  }
+
+  /**
+   * Aggregation theo các khoảng cách từ một điểm.
+   *
+   * KPI-029: Support tenant filtering nếu có tenant_id.
+   *
+   * @param options - Distance bucket aggregation options
+   * @returns Aggregation results
+   */
+  distanceBucketAggregation(options: DistanceBucketOptions): Observable<GeoAggregationResult> {
+    let headers = new HttpHeaders();
+
+    // KPI-029: Lấy tenant ID từ options hoặc instance
+    const effectiveTenantId = options.tenantId || this.tenantId;
+    if (effectiveTenantId) {
+      headers = headers.set("x-tenant-id", effectiveTenantId);
+    }
+    headers = headers.set("Content-Type", "application/json");
+
+    return this.http.post<GeoAggregationResult>(
+      `${this.geoSearchUrl}/distance-buckets${options.index ? `/${options.index}` : ""}`,
+      {
+        latitude: options.latitude,
+        longitude: options.longitude,
+        distances: options.distances,
+        filters: options.filters,
+      },
+      { headers },
+    );
+  }
+}

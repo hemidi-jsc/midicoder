@@ -111,9 +111,12 @@ from midicoder.dsl.projection import (
     EventSubscriberParams,
     
     # P1: Search
+    FacetedSearchParams,
     FullTextFieldParams,
+    GeoSearchParams,
     SearchIndexParams,
     SearchQueryParams,
+    VectorSearchParams,
     
     # P2: Pagination & Versioning
     APIVersionParams,
@@ -274,9 +277,12 @@ __all__ = [
     "EventSourcingStreamParams",
     
     # P1: Search Params
+    "FacetedSearchParams",
+    "FullTextFieldParams",
+    "GeoSearchParams",
     "SearchIndexParams",
     "SearchQueryParams",
-    "FullTextFieldParams",
+    "VectorSearchParams",
     
     # P2: Pagination & Versioning Params
     "PaginationSpecParams",

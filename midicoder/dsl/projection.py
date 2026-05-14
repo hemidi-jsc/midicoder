@@ -2134,6 +2134,96 @@ class FullTextFieldParams(TypedDict, total=False):
     tags: list[str]
 
 
+class VectorSearchParams(TypedDict, total=False):
+    """
+    Tham số cho Vector Search Index nodes.
+
+    Vector Search Index định nghĩa các index cho similarity search trên embedding vectors.
+    Hỗ trợ hybrid search (vector + fulltext) và multi-tenancy.
+
+    Fields:
+        id: Định danh của index
+        description: Mô tả index
+        provider: Search engine provider (elasticsearch, meilisearch, qdrant, etc.)
+        dimensions: Số chiều của vector (768, 1536, etc.)
+        similarity_metric: Hàm tính khoảng cách (cosine, euclidean, dot_product)
+        index_type: Loại index structure (hnsw, ivf_flat, ivf_pq, flat)
+        vector_column: Tên column chứa vector
+        text_columns: Danh sách text columns cho hybrid search
+        top_k: Số lượng kết quả mặc định
+        tenant_isolated: Có cách ly theo tenant không
+        tags: Danh sách tags
+    """
+
+    id: str
+    description: str
+    provider: str
+    dimensions: int
+    similarity_metric: str
+    index_type: str
+    vector_column: str
+    text_columns: list[str]
+    top_k: int
+    tenant_isolated: bool
+    tags: list[str]
+
+
+class GeoSearchParams(TypedDict, total=False):
+    """
+    Tham số cho Geospatial Search Index nodes.
+
+    Geospatial Search Index định nghĩa các index cho tìm kiếm dựa trên vị trí địa lý.
+    Hỗ trợ point, polygon, line geometry và các geospatial operations.
+
+    Fields:
+        id: Định danh của index
+        description: Mô tả index
+        provider: Search engine provider (elasticsearch, meilisearch, postgis, etc.)
+        geo_column: Tên column chứa dữ liệu địa lý
+        geo_type: Loại hình học (point, polygon, line)
+        operations: Danh sách geospatial operations (circle, bounding_box, polygon, distance)
+        text_columns: Danh sách text columns cho kết hợp với text search
+        tenant_isolated: Có cách ly theo tenant không
+        tags: Danh sách tags
+    """
+
+    id: str
+    description: str
+    provider: str
+    geo_column: str
+    geo_type: str
+    operations: list[str]
+    text_columns: list[str]
+    tenant_isolated: bool
+    tags: list[str]
+
+
+class FacetedSearchParams(TypedDict, total=False):
+    """
+    Tham số cho Faceted Search Index nodes.
+
+    Faceted Search Index định nghĩa các index cho tìm kiếm có phân loại theo nhiều facet.
+    Hỗ trợ navigation và filtering theo nhiều chiều dữ liệu.
+
+    Fields:
+        id: Định danh của index
+        description: Mô tả index
+        provider: Search engine provider (elasticsearch, meilisearch, etc.)
+        columns: Danh sách column definitions
+        facets: Danh sách facet definitions ({id, type, source_column})
+        tenant_isolated: Có cách ly theo tenant không
+        tags: Danh sách tags
+    """
+
+    id: str
+    description: str
+    provider: str
+    columns: list[dict]
+    facets: list[dict]
+    tenant_isolated: bool
+    tags: list[str]
+
+
 # ============================================================================
 # P2: Pagination & API Versioning Params
 # ============================================================================
@@ -3897,7 +3987,7 @@ NodeParams = (
 
 
 # ============================================================================
-# Node Kind Enum (106 Node Types Tổng cộng)
+# Node Kind Enum (109 Node Types Tổng cộng)
 # ============================================================================
 
 
@@ -3915,11 +4005,11 @@ class NodeKind(Enum):
     Layer 6: Integration/API (5 types)
     Layer 7: Ops/Observability (4 types)
     P0: Reporting, Notification, Compliance, Integration Contracts (17 types)
-    P1: Workflow Enhancement, Event-Driven, Search (13 types)
+    P1: Workflow Enhancement, Event-Driven, Search (16 types)
     P2: Pagination, Versioning, Domain-Specific (25 types)
     P3: Advanced Patterns (7 types)
 
-    Tổng: 106 loại node
+    Tổng: 109 loại node
     """
 
     # =========================================================================
@@ -4031,11 +4121,14 @@ class NodeKind(Enum):
     EVENT_SOURCING_STREAM = "event.sourcing"
 
     # =========================================================================
-    # P1: Search & Indexing (3 loại) - GAP-009
+    # P1: Search & Indexing (6 loại) - GAP-009
     # =========================================================================
     SEARCH_INDEX = "search.index"
     SEARCH_QUERY = "search.query"
     FULL_TEXT_FIELD = "search.field"
+    VECTOR_SEARCH_INDEX = "search.vector_index"
+    GEO_SEARCH_INDEX = "search.geo_index"
+    FACETED_SEARCH_INDEX = "search.faceted_index"
 
     # =========================================================================
     # P2: Pagination & API Versioning (3 loại) - GAP-013, GAP-014
