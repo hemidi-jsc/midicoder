@@ -1,0 +1,23 @@
+// PostGIS Spatial Decorators for TypeORM.
+// Obligation: All spatial columns must declare explicit SRID (default: 4326 WGS84)
+
+import { Column } from 'typeorm';
+
+
+// Obligation: All spatial columns must declare explicit SRID (default: 4326 WGS84)
+const DEFAULT_SRID = 4326;
+
+{% for col in spatial_columns %}
+// PostGIS {{ col.spatial_type.value }} column (SRID={{ col.srid or 4326 }})
+// Usage:
+//   @Column('geometry', {
+//     spatialFeatureType: '{{ col.spatial_type.value }}',
+//     srid: {{ col.srid or 4326 }},
+//   })
+//   {{ col.column_name | replace('_', '') | camelcase }}!: string;
+
+{% endfor %}
+
+export function SpatialColumn(type: string, srid: number = DEFAULT_SRID) {
+  return Column({ type: 'geometry', spatialFeatureType: type, srid });
+}

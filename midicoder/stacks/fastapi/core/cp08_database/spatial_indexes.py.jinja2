@@ -1,0 +1,22 @@
+"""
+Spatial Index Definitions.
+
+GiST/SP-GiST/BRIN indexes for spatial columns.
+
+CP08: Database & Data Access — spatial capability
+"""
+
+from alembic import op
+
+
+def create_spatial_indexes():
+    """Create GiST/SP-GiST/BRIN indexes for spatial columns."""
+{% for idx in spatial_indexes %}
+    op.create_index("{{ idx.name }}", "{{ idx.table_name }}", {{ idx.columns }}, postgresql_using="{{ idx.index_type.value }}")
+{% endfor %}
+
+
+def drop_spatial_indexes():
+{% for idx in spatial_indexes %}
+    op.drop_index("{{ idx.name }}", table_name="{{ idx.table_name }}")
+{% endfor %}

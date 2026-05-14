@@ -1,0 +1,23 @@
+// JSONB Column Decorators for TypeORM.
+
+import { Column, Index } from 'typeorm';
+
+
+{% for col in jsonb_columns %}
+// JSONB column: {{ col.column_name }}
+{% if col.validation_mode.value != 'none' %}// Validation: {{ col.validation_mode.value }}{% endif %}
+// GIN Index: {{ col.gin_index_enabled }}
+// Usage:
+//   @Column('jsonb')
+{% if col.gin_index_enabled %}//   @Index('{{ col.column_name }}_gin_idx', { unique: false, spatialIndex: false }){% endif %}
+//   {{ col.column_name | replace('_', '') | camelcase }}!: any;
+
+{% endfor %}
+
+export function JsonbColumn(options: any = {}) {
+  return Column('jsonb', options);
+}
+
+export function JsonbGinIndex(name: string) {
+  return Index(name, { unique: false });
+}

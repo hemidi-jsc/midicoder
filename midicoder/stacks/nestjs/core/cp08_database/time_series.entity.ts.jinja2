@@ -1,0 +1,36 @@
+// Time-Series Entity: {{ model.id }}
+// Partition Key: {{ model.partition_key }}
+// Granularity: {{ model.granularity.value }}
+{% if model.retention %}// Retention: {{ model.retention.policy_type.value }} — {{ model.retention.duration_days }} days{% endif %}
+
+import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+
+@Entity('{{ model.table_name }}')
+// KPI: Time-series partitioned table
+// Partition key: {{ model.partition_key }}
+export class {{ model.id }} {
+
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column({ type: 'timestamptz', nullable: false })
+  @Index()
+  {{ model.partition_key | replace('_', '') | camelcase }}!: Date;
+
+{% for col in model.columns %}
+  @Column({ type: '{{ col.column_type.name | lower }}'{% if not col.required %}, nullable: true{% endif %} })
+  {{ col.name | replace('_', '') | camelcase }}!: any;
+{% endfor %}
+
+{% if model.retention %}
+  // Retention: {{ model.retention.policy_type.value }} — auto-drop data older than {{ model.retention.duration_days }} days
+{% endif %}
+}
+
+# Migration: create hypertable for time-series partitioning
+#   SELECT create_hypertable('{{ model.table_name }}', '{{ model.partition_key }}',
+#       timescaledb.skip_custom_backfill := true,
+#       number_partitions := 4);
+{% if model.retention %}
+#   SELECT add_retention_policy('{{ model.table_name }}', INTERVAL '{{ model.retention.duration_days }} days');
+{% endif %}

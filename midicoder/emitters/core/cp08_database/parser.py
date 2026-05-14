@@ -39,6 +39,9 @@ _TYPE_MAP = {
     "json": ColumnType.JSON,
     "datetime": ColumnType.DATETIME,
     "uuid": ColumnType.UUID,
+    "array": ColumnType.ARRAY, "list": ColumnType.ARRAY,
+    "bytes": ColumnType.BYTES, "binary": ColumnType.BYTES,
+    "time": ColumnType.TIME,
 }
 
 
@@ -59,6 +62,9 @@ _ENGINE_MAP = {
     "sqlserver": DatabaseEngine.SQLSERVER,
     "mssql": DatabaseEngine.SQLSERVER,
     "oracle": DatabaseEngine.ORACLE,
+    "mongodb": DatabaseEngine.MONGODB,
+    "mongo": DatabaseEngine.MONGODB,
+    "sqlite": DatabaseEngine.SQLITE,
 }
 
 

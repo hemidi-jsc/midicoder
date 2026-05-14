@@ -1,0 +1,19 @@
+// Spatial Index Migration for TypeORM.
+
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+
+export class CreateSpatialIndexes implements MigrationInterface {
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+{% for idx in spatial_indexes %}
+    await queryRunner.query(`CREATE INDEX "{{ idx.name }}" ON "{{ idx.table_name }}" USING {{ idx.index_type.value }} ({{ idx.columns }})`);
+{% endfor %}
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+{% for idx in spatial_indexes %}
+    await queryRunner.query(`DROP INDEX "{{ idx.name }}"`);
+{% endfor %}
+  }
+}

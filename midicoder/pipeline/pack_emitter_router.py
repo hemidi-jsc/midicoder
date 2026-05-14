@@ -64,6 +64,18 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "DockerComposeGenerator",
         None,
     ),
+    # CP08 – Database (FastAPI)
+    "cp08.database.fastapi": (
+        "midicoder.emitters.core.cp08_database.fastapi",
+        "SQLAlchemyEmitter",
+        "cp08_database",
+    ),
+    # CP08 – Database (NestJS)
+    "cp08.database.nestjs": (
+        "midicoder.emitters.core.cp08_database.nestjs",
+        "TypeORMEmitter",
+        "cp08_database",
+    ),
 }
 
 
@@ -87,8 +99,16 @@ def _parse_entity_dict(raw: dict[str, Any]) -> Any:
     return entities[0] if entities else None
 
 
+def _parse_database_dict(raw: dict[str, Any]) -> Any:
+    """Parse a raw database dict from MIR metadata into a CP08 DataModelCollection."""
+    from midicoder.emitters.core.cp08_database.parser import DBParser
+    parser = DBParser()
+    return parser.parse_from_metadata(raw)
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
+    "cp08_database": _parse_database_dict,
 }
 
 

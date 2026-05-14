@@ -1,0 +1,100 @@
+// Distributed Transaction: {{ tx.id }}
+// Protocol: {{ tx.protocol.value }}
+// Timeout: {{ tx.timeout_ms }}ms
+// Participants: {{ tx.participants | length }}
+
+import { Injectable } from '@nestjs/common';
+
+
+{% if tx.protocol.value == 'saga' %}
+enum SagaStep {
+{% for p in tx.participants %}
+  {{ p.role | upper | replace(' ', '_') }} = '{{ p.role }}',
+  {{ p.role | upper | replace(' ', '_') }}_COMPENSATE = '{{ p.role }}_compensate',
+{% endfor %}
+}
+
+@Injectable()
+export class {{ tx.id | replace('-', '_') | title | replace('_', '') }}Saga {
+  // Saga orchestrator for '{{ tx.id }}'.
+  // Participants: {{ tx.participants | length }}
+  // Timeout: {{ tx.timeout_ms }}ms
+
+  async execute() {
+    // Execute saga steps forward; on failure, compensate.
+    const steps = Object.values(SagaStep);
+    for (const step of steps) {
+      try {
+        await this.runStep(step);
+      } catch (error) {
+        await this.compensate(error);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private async compensate(error: any) {
+    // Execute compensation steps in reverse.
+  }
+
+  private async runStep(step: string) {
+    switch (step) {
+{% for p in tx.participants %}
+      case SagaStep.{{ p.role | upper | replace(' ', '_') }}:
+        break;
+{% endfor %}
+      default:
+        break;
+    }
+  }
+}
+
+{% elif tx.protocol.value == 'two_phase_commit' %}
+@Injectable()
+export class {{ tx.id | replace('-', '_') | title | replace('_', '') }}Coordinator {
+  // Two-Phase Commit coordinator for '{{ tx.id }}'.
+
+  async prepare(): Promise<Record<string, boolean>> {
+    // Phase 1: ask all participants to prepare.
+    const results: Record<string, boolean> = {};
+{% for p in tx.participants %}
+    results['{{ p.role }}'] = await this.prepare_{{ p.role | replace(' ', '_') }}();
+{% endfor %}
+    return results;
+  }
+
+  async commit(): Promise<boolean> {
+    // Phase 2: commit all if all prepared.
+    return true;
+  }
+
+  async abort(): Promise<boolean> {
+    // Phase 2: abort all if any failed.
+    return true;
+  }
+}
+
+{% else %}
+export class {{ tx.id | replace('-', '_') | title | replace('_', '') }}Outbox {
+  // Outbox pattern for '{{ tx.id }}'.
+
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column()
+  aggregateType!: string;
+
+  @Column()
+  aggregateId!: string;
+
+  @Column()
+  eventType!: string;
+
+  @Column({ nullable: true })
+  payload: string | null;
+
+  @Column({ default: false })
+  published: boolean;
+}
+{% endif %}

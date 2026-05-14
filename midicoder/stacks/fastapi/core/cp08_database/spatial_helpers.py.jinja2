@@ -1,0 +1,36 @@
+"""
+PostGIS Spatial Helpers.
+
+Tất cả spatial columns phải khai báo SRID rõ ràng (mặc định: 4326 WGS84).
+
+KPI: Spatial SRID enforcement
+CP08: Database & Data Access — spatial capability
+"""
+
+from sqlalchemy import Column, Index
+from sqlalchemy.ext.mutable import Mutable
+
+# PostGIS spatial column types
+# Obligation: All spatial columns must declare explicit SRID (default: 4326 WGS84)
+DEFAULT_SRID = 4326
+
+
+{% for col in spatial_columns %}
+class {{ col.column_name | replace('_', '') | title }}Geometry(Mutable):
+    """PostGIS {{ col.spatial_type.value }} column (SRID={{ col.srid or 4326 }})."""
+    __dialect_name__ = '{{ col.spatial_type.value | lower }}'
+    srid = {{ col.srid or 4326 }}
+
+{% endfor %}
+
+def spatial_distance(column, lon: float, lat: float, radius_km: float):
+    """ST_DWithin query — find points within radius_km."""
+    from sqlalchemy import text
+    radius_m = radius_km * 1000
+    return text(f"ST_DWithin({column}, ST_Point(:lon, :lat, 4326), :radius_m)")
+
+
+def spatial_contains(polygon_col, point_col):
+    """ST_Contains query — check if polygon contains point."""
+    from sqlalchemy import text
+    return text(f"ST_Contains({polygon_col}, {point_col})")

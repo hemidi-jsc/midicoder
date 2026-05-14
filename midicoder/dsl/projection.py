@@ -4627,6 +4627,20 @@ class ProjectionTree:
         """Lấy tất cả HTTP route nodes."""
         return self.get_nodes_by_kind(NodeKind.HTTP_ROUTE)
 
+    # --- Infrastructure getters ---
+
+    def get_datasources(self) -> list[ProjectionNode]:
+        """Lấy tất cả datasource nodes."""
+        return self.get_nodes_by_kind(NodeKind.DATASOURCE)
+
+    def get_tables(self) -> list[ProjectionNode]:
+        """Lấy tất cả table nodes."""
+        return self.get_nodes_by_kind(NodeKind.TABLE)
+
+    def get_indexes(self) -> list[ProjectionNode]:
+        """Lấy tất cả index nodes."""
+        return self.get_nodes_by_kind(NodeKind.INDEX)
+
     def get_value_objects(self) -> list[ProjectionNode]:
         """Lấy tất cả value object nodes."""
         return self.get_nodes_by_kind(NodeKind.VALUE_OBJECT)

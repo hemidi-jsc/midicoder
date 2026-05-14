@@ -39,6 +39,8 @@ class DatabaseEngine(str, Enum):
     MYSQL = "mysql"
     SQLSERVER = "sqlserver"
     ORACLE = "oracle"
+    MONGODB = "mongodb"
+    SQLITE = "sqlite"
 
 
 class ColumnType(str, Enum):
@@ -51,6 +53,9 @@ class ColumnType(str, Enum):
     JSON = "json"
     DATETIME = "datetime"
     UUID = "uuid"
+    ARRAY = "array"
+    BYTES = "bytes"
+    TIME = "time"
 
 
 class RelationshipType(str, Enum):

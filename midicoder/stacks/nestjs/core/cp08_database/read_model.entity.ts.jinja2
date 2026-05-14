@@ -1,0 +1,35 @@
+// CQRS Read Model: {{ read_model.id }}
+// Source: {{ read_model.source.value }}
+// Refresh: {{ read_model.refresh_strategy.value }}
+// Source Tables: {{ ', '.join(read_model.source_tables) }}
+
+import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+
+@Entity('{{ read_model.table_name }}')
+// Read model — {{ read_model.source.value }}
+// Refresh strategy: {{ read_model.refresh_strategy.value }}
+export class {{ read_model.id }} {
+
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+{% for col in read_model.columns %}
+  @Column({ type: '{{ col.column_type.name | lower }}'{% if not col.required %}, nullable: true{% endif %} })
+  {{ col.name | replace('_', '') | camelcase }}!: any;
+{% endfor %}
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastRefreshedAt!: Date | null;
+
+  static refreshStrategy = '{{ read_model.refresh_strategy.value }}';
+
+{% if read_model.refresh_strategy.value == 'real_time' %}
+  // Real-time: triggered by event handler on every write
+{% elif read_model.refresh_strategy.value == 'batch' %}
+  // Batch: scheduled CRON job
+{% elif read_model.refresh_strategy.value == 'lazy' %}
+  // Lazy: refreshed on first read after staleness threshold
+{% elif read_model.refresh_strategy.value == 'event_driven' %}
+  // Event-driven: triggered by domain events
+{% endif %}
+}
