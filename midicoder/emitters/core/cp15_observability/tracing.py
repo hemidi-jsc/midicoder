@@ -213,18 +213,25 @@ class TraceContext:
         """
         return list(self._spans)
 
-    def inject_trace_header(self) -> dict:
-        """Inject trace headers cho W3C propagation.
+    def inject_trace_header(self, format: str = "w3c") -> dict:
+        """Inject trace headers cho propagation.
 
-        Tạo traceparent header theo định dạng W3C Trace Context:
-        00-{trace_id}-{span_id}-{flags}
+        Hỗ trợ 2 định dạng:
+        - w3c: W3C Trace Context (traceparent + tracestate)
+        - b3: Zipkin B3 (X-B3-TraceId, X-B3-SpanId, X-B3-Sampled)
 
-        Trong đó flags=01 nghĩa là trace là sampled.
+        Args:
+            format: Định dạng propagation ("w3c" hoặc "b3")
 
         Returns:
             Dictionary chứa trace headers
         """
         active = self.active_span()
+
+        if format == "b3":
+            return self._inject_b3(active)
+
+        # Default: W3C Trace Context
         if active is None:
             return {"traceparent": f"00-{self._trace_id}-{'0' * 16}-01"}
 
@@ -233,7 +240,42 @@ class TraceContext:
             "tracestate": self._service_name,
         }
 
-    def extract_trace_header(self, headers: dict) -> tuple:
+    def _inject_b3(self, active: Optional[Span]) -> dict:
+        """Inject B3 headers cho Zipkin propagation.
+
+        Returns:
+            Dictionary với X-B3-TraceId, X-B3-SpanId, X-B3-Sampled
+        """
+        span_id = active.span_id if active is not None else "0" * 16
+        headers = {
+            "X-B3-TraceId": self._trace_id,
+            "X-B3-SpanId": span_id,
+            "X-B3-Sampled": "1",
+        }
+        if active is not None and active.parent_span_id:
+            headers["X-B3-ParentSpanId"] = active.parent_span_id
+        return headers
+
+    def extract_trace_header(self, headers: dict, format: str = "w3c") -> tuple:
+        """Extract trace_id, span_id từ propagation headers.
+
+        Hỗ trợ 2 định dạng:
+        - w3c: Parse traceparent header (W3C Trace Context)
+        - b3: Parse X-B3-TraceId, X-B3-SpanId headers
+
+        Args:
+            headers: Dictionary chứa headers
+            format: Định dạng propagation ("w3c" hoặc "b3")
+
+        Returns:
+            Tuple (trace_id, span_id) hoặc (None, None) nếu không parse được
+        """
+        if format == "b3":
+            return self._extract_b3(headers)
+
+        return self._extract_w3c(headers)
+
+    def _extract_w3c(self, headers: dict) -> tuple:
         """Extract trace_id, span_id từ W3C traceparent header.
 
         Parse traceparent header theo định dạng:
@@ -270,6 +312,27 @@ class TraceContext:
             return (trace_id, span_id)
         except (ValueError, IndexError):
             return (None, None)
+
+    def _extract_b3(self, headers: dict) -> tuple:
+        """Extract trace_id, span_id từ B3 headers.
+
+        Args:
+            headers: Dictionary chứa X-B3-TraceId, X-B3-SpanId
+
+        Returns:
+            Tuple (trace_id, span_id) hoặc (None, None) nếu không parse được
+        """
+        trace_id = headers.get("X-B3-TraceId")
+        span_id = headers.get("X-B3-SpanId")
+
+        if not trace_id or not span_id:
+            return (None, None)
+
+        # Normalize: B3 trace_id có thể 16 hoặc 32 hex
+        if len(trace_id) == 16:
+            trace_id = trace_id * 2
+
+        return (trace_id, span_id)
 
     def export_json(self) -> str:
         """Export toàn bộ trace làm JSON.

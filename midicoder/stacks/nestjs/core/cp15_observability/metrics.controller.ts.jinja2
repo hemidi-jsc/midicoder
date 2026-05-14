@@ -1,0 +1,23 @@
+/**
+ * Controller /metrics — export Prometheus metrics cho {{ service_name|default('midicoder') }}.
+ *
+ * Cung cấp endpoint GET /metrics để Prometheus hoặc các công cụ
+ * thu thập metrics khác có thể scrape dữ liệu.
+ */
+import { Controller, Get } from '@nestjs/common';
+import { ObservabilityService } from './observability.service';
+
+@Controller('metrics')
+export class MetricsController {
+  constructor(private readonly observability: ObservabilityService) {}
+
+  /**
+   * GET /metrics — xuất tất cả metric dưới định dạng Prometheus text.
+   *
+   * @returns Chuỗi metric đã được định dạng.
+   */
+  @Get()
+  getMetrics(): string {
+    return this.observability.exportMetrics();
+  }
+}

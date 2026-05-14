@@ -15,9 +15,15 @@ import pytest
 
 from midicoder.emitters.core.cp15_observability.parser import ObservabilityParser
 from midicoder.emitters.core.cp15_observability.models import (
+    LogDestinationType,
+    LogShippingConfig,
     LogLevel,
     MetricProfile,
     MetricType,
+    OpenTelemetryConfig,
+    OTelExporterConfig,
+    OTLPExportProtocol,
+    SamplerType,
     StructuredLogConfig,
     TraceConfig,
     TracePropagationFormat,
@@ -455,3 +461,322 @@ tracing: []
         assert result["metrics"] == []
         assert result["logging"] == []
         assert result["tracing"] == []
+
+
+# =============================================================================
+# OpenTelemetry Parser Tests
+# =============================================================================
+
+
+class TestOpenTelemetryParser:
+    """Test suite cho parser extensions: OpenTelemetry."""
+
+    def setup_method(self):
+        """Setup parser cho mỗi test."""
+        self.parser = ObservabilityParser()
+
+    def test_parse_minimal_otel_config(self):
+        """Kiểm tra parse OpenTelemetry config tối thiểu."""
+        dsl = """
+opentelemetry:
+  service_name: payment-service
+"""
+        result = self.parser.parse(dsl)
+        assert "opentelemetry" in result
+
+        cfg = result["opentelemetry"]
+        assert isinstance(cfg, OpenTelemetryConfig)
+        assert cfg.service_name == "payment-service"
+        assert cfg.sampler_type == SamplerType.TRACEID_RATIO_BASED
+        assert cfg.sampler_rate == 1.0
+        assert cfg.enable_traces is True
+
+    def test_parse_full_otel_config(self):
+        """Kiểm tra parse OpenTelemetry config đầy đủ."""
+        dsl = """
+opentelemetry:
+  service_name: api-gateway
+  sampler_type: parent_based
+  sampler_rate: 0.75
+  resource_attributes:
+    env: production
+    region: us-east-1
+  enable_traces: true
+  enable_metrics: true
+  enable_logs: false
+  description: Main API gateway OTel config
+  exporter:
+    endpoint: http://otel-collector:4318
+    protocol: http_json
+    timeout_ms: 5000
+    compression: gzip
+    batch_size: 256
+    batch_timeout_ms: 3000
+    retry_on_failure: true
+    max_queue_size: 4096
+    headers:
+      Authorization: Bearer otel-token
+"""
+        result = self.parser.parse(dsl)
+        cfg = result["opentelemetry"]
+        assert cfg.service_name == "api-gateway"
+        assert cfg.sampler_type == SamplerType.PARENT_BASED
+        assert cfg.sampler_rate == 0.75
+        assert cfg.enable_logs is False
+        assert cfg.resource_attributes == {"env": "production", "region": "us-east-1"}
+        assert cfg.description == "Main API gateway OTel config"
+
+        # Verify nested exporter
+        assert cfg.exporter.endpoint == "http://otel-collector:4318"
+        assert cfg.exporter.protocol == OTLPExportProtocol.HTTP_JSON
+        assert cfg.exporter.compression == "gzip"
+        assert cfg.exporter.batch_size == 256
+        assert cfg.exporter.headers == {"Authorization": "Bearer otel-token"}
+
+    def test_parse_otel_all_sampler_types(self):
+        """Kiểm tra parse tất cả sampler types."""
+        for st in SamplerType:
+            dsl = f"""
+opentelemetry:
+  service_name: test-svc
+  sampler_type: {st.value}
+"""
+            result = self.parser.parse(dsl)
+            assert result["opentelemetry"].sampler_type == st
+
+    def test_parse_otel_all_protocols(self):
+        """Kiểm tra parse tất cả OTLP protocols."""
+        for proto in OTLPExportProtocol:
+            dsl = f"""
+opentelemetry:
+  service_name: test-svc
+  exporter:
+    protocol: {proto.value}
+"""
+            result = self.parser.parse(dsl)
+            assert result["opentelemetry"].exporter.protocol == proto
+
+    def test_parse_otel_disabled_features(self):
+        """Kiểm tra parse OTel với features disabled."""
+        dsl = """
+opentelemetry:
+  service_name: minimal-trace
+  enable_traces: true
+  enable_metrics: false
+  enable_logs: false
+"""
+        result = self.parser.parse(dsl)
+        cfg = result["opentelemetry"]
+        assert cfg.enable_traces is True
+        assert cfg.enable_metrics is False
+        assert cfg.enable_logs is False
+
+    def test_parse_otel_without_exporter_section(self):
+        """Kiểm tra parse OTel không có exporter section dùng default."""
+        dsl = """
+opentelemetry:
+  service_name: test-svc
+"""
+        result = self.parser.parse(dsl)
+        cfg = result["opentelemetry"]
+        assert isinstance(cfg.exporter, OTelExporterConfig)
+        assert cfg.exporter.endpoint == "http://localhost:4317"
+        assert cfg.exporter.protocol == OTLPExportProtocol.GRPC
+
+    def test_parse_otel_invalid_sampler_type(self):
+        """Kiểm tra sampler_type không hợp lệ throw error."""
+        dsl = """
+opentelemetry:
+  service_name: test-svc
+  sampler_type: invalid_sampler
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code == ErrorCode.CP15_INVALID_TRACE_FORMAT
+
+
+# =============================================================================
+# Log Shipping Parser Tests
+# =============================================================================
+
+
+class TestLogShippingParser:
+    """Test suite cho parser extensions: Log Shipping."""
+
+    def setup_method(self):
+        """Setup parser cho mỗi test."""
+        self.parser = ObservabilityParser()
+
+    def test_parse_minimal_log_shipping(self):
+        """Kiểm tra parse log shipping config tối thiểu."""
+        dsl = """
+log_shipping:
+  enabled: true
+"""
+        result = self.parser.parse(dsl)
+        assert "log_shipping" in result
+
+        cfg = result["log_shipping"]
+        assert isinstance(cfg, LogShippingConfig)
+        assert cfg.enabled is True
+        assert cfg.destinations == []
+
+    def test_parse_full_log_shipping(self):
+        """Kiểm tra parse log shipping config đầy đủ."""
+        dsl = """
+log_shipping:
+  enabled: true
+  async_shipping: true
+  max_queue_size: 5000
+  drop_on_overflow: false
+  description: Ship logs to Loki and Datadog
+  destinations:
+    - destination_type: loki
+      endpoint: http://loki:3100/loki/api/v1/push
+      flush_interval_ms: 3000
+      max_batch_size: 500
+      compression: gzip
+      labels:
+        app: midicoder
+        env: prod
+      filter_pattern: level >= info
+    - destination_type: datadog
+      endpoint: https://http-intake.logs.datadoghq.com
+      flush_interval_ms: 5000
+      max_batch_size: 1000
+      compression: gzip
+      labels:
+        service: api-gateway
+"""
+        result = self.parser.parse(dsl)
+        cfg = result["log_shipping"]
+        assert cfg.enabled is True
+        assert cfg.async_shipping is True
+        assert cfg.max_queue_size == 5000
+        assert cfg.drop_on_overflow is False
+        assert len(cfg.destinations) == 2
+
+        # Verify first destination (Loki)
+        loki = cfg.destinations[0]
+        assert loki.destination_type == LogDestinationType.LOKI
+        assert loki.endpoint == "http://loki:3100/loki/api/v1/push"
+        assert loki.flush_interval_ms == 3000
+        assert loki.labels == {"app": "midicoder", "env": "prod"}
+        assert loki.filter_pattern == "level >= info"
+
+        # Verify second destination (Datadog)
+        dd = cfg.destinations[1]
+        assert dd.destination_type == LogDestinationType.DATADOG
+        assert dd.endpoint == "https://http-intake.logs.datadoghq.com"
+        assert dd.labels == {"service": "api-gateway"}
+
+    def test_parse_all_destination_types(self):
+        """Kiểm tra parse tất cả destination types."""
+        for dt in LogDestinationType:
+            dsl = f"""
+log_shipping:
+  destinations:
+    - destination_type: {dt.value}
+"""
+            result = self.parser.parse(dsl)
+            assert result["log_shipping"].destinations[0].destination_type == dt
+
+    def test_parse_disabled_log_shipping(self):
+        """Kiểm tra parse log shipping disabled."""
+        dsl = """
+log_shipping:
+  enabled: false
+  async_shipping: false
+  max_queue_size: 20000
+  drop_on_overflow: true
+"""
+        result = self.parser.parse(dsl)
+        cfg = result["log_shipping"]
+        assert cfg.enabled is False
+        assert cfg.async_shipping is False
+        assert cfg.max_queue_size == 20000
+        assert cfg.drop_on_overflow is True
+
+    def test_parse_log_shipping_with_single_stdout_dest(self):
+        """Kiểm tra parse log shipping chỉ có stdout destination."""
+        dsl = """
+log_shipping:
+  enabled: true
+  destinations:
+    - destination_type: stdout
+"""
+        result = self.parser.parse(dsl)
+        cfg = result["log_shipping"]
+        assert len(cfg.destinations) == 1
+        assert cfg.destinations[0].destination_type == LogDestinationType.STDOUT
+
+    def test_parse_log_shipping_invalid_destination_type(self):
+        """Kiểm tra destination_type không hợp lệ throw error."""
+        dsl = """
+log_shipping:
+  destinations:
+    - destination_type: invalid_dest
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code in (
+            ErrorCode.CP15_OBSERVABILITY_PARSE_ERROR,
+            ValueError,  # enum ValueError → wrapped
+        )
+
+
+# =============================================================================
+# Combined DSL Tests (all sections together)
+# =============================================================================
+
+
+class TestCombinedParser:
+    """Test parse DSL có tất cả sections cùng lúc."""
+
+    def setup_method(self):
+        self.parser = ObservabilityParser()
+
+    def test_parse_all_sections_together(self):
+        """Kiểm tra parse DSL có metrics, logging, tracing, opentelemetry, log_shipping."""
+        dsl = """
+metrics:
+  - name: http_requests_total
+    type: counter
+logging:
+  - service_name: api-svc
+    log_level: INFO
+tracing:
+  - service_name: api-svc
+    propagation_format: w3c_trace_context
+opentelemetry:
+  service_name: api-svc
+  sampler_type: always_on
+log_shipping:
+  enabled: true
+  destinations:
+    - destination_type: loki
+      endpoint: http://loki:3100
+"""
+        result = self.parser.parse(dsl)
+        assert len(result["metrics"]) == 1
+        assert len(result["logging"]) == 1
+        assert len(result["tracing"]) == 1
+        assert "opentelemetry" in result
+        assert "log_shipping" in result
+        assert result["opentelemetry"].sampler_type == SamplerType.ALWAYS_ON
+        assert len(result["log_shipping"].destinations) == 1
+
+    def test_parse_otel_and_log_shipping_only(self):
+        """Kiểm tra parse chỉ có opentelemetry + log_shipping."""
+        dsl = """
+opentelemetry:
+  service_name: test-svc
+log_shipping:
+  enabled: false
+"""
+        result = self.parser.parse(dsl)
+        assert result["metrics"] == []
+        assert result["logging"] == []
+        assert result["tracing"] == []
+        assert result["opentelemetry"].service_name == "test-svc"
+        assert result["log_shipping"].enabled is False

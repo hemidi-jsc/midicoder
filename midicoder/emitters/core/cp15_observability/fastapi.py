@@ -14,6 +14,7 @@ class FastAPIObservabilityEmitter:
         result: Dict[str, str] = {}
         result.update(self.generate_service())
         result.update(self.generate_middleware())
+        result.update(self.generate_metrics_endpoint())
         return result
 
     def generate_service(self) -> Dict[str, str]:
@@ -461,3 +462,44 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         return response
 '''
         return {"src/observability/observability_middleware.py": code}
+
+    def generate_metrics_endpoint(self) -> Dict[str, str]:
+        """Tạo FastAPI endpoint /metrics để export Prometheus metrics."""
+        code = '''\\
+"""Endpoint /metrics cho FastAPI — export Prometheus metrics."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+# Import ObservabilityService từ mô-đun service
+# Trong thực tế, service sẽ được inject qua dependency injection của FastAPI
+_observability_service: "ObservabilityService | None" = None
+
+
+def set_metrics_service(service: "ObservabilityService") -> None:
+    """Đặt instance ObservabilityService cho metrics endpoint.
+
+    Args:
+        service: Instance của ObservabilityService.
+    """
+    global _observability_service
+    _observability_service = service
+
+
+router = APIRouter()
+
+
+@router.get("/metrics")
+def metrics_endpoint() -> str:
+    """Xuất tất cả metric dưới định dạng Prometheus text.
+
+    Returns:
+        Chuỗi metric đã được định dạng Prometheus.
+    """
+    service = _observability_service
+    if not service:
+        return "# No observability service configured\\n"
+    return service.export_metrics()
+'''
+        return {"src/observability/metrics_endpoint.py": code}

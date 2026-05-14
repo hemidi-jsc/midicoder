@@ -15,6 +15,7 @@ class NestJSObservabilityEmitter:
         result.update(self.generate_module())
         result.update(self.generate_service())
         result.update(self.generate_interceptor())
+        result.update(self.generate_metrics_endpoint())
         return result
 
     def generate_module(self) -> Dict[str, str]:
@@ -495,3 +496,32 @@ export class ObservabilityInterceptor implements NestInterceptor {
 }
 '''
         return {"src/observability/observability.interceptor.ts": code}
+
+    def generate_metrics_endpoint(self) -> Dict[str, str]:
+        """Tạo NestJS controller /metrics để export Prometheus metrics."""
+        code = '''\\
+/**
+ * Controller /metrics — export Prometheus metrics.
+ *
+ * Cung cấp endpoint GET /metrics để Prometheus hoặc các công cụ
+ * thu thập metrics khác có thể scrape dữ liệu.
+ */
+import { Controller, Get, Headers } from \'@nestjs/common\';
+import { ObservabilityService } from \'./observability.service\';
+
+@Controller(\'metrics\')
+export class MetricsController {
+  constructor(private readonly observability: ObservabilityService) {}
+
+  /**
+   * GET /metrics — xuất tất cả metric dưới định dạng Prometheus text.
+   *
+   * @returns Chuỗi metric đã được định dạng.
+   */
+  @Get()
+  getMetrics(): string {
+    return this.observability.exportMetrics();
+  }
+}
+'''
+        return {"src/observability/metrics.controller.ts": code}

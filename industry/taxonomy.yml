@@ -244,15 +244,18 @@ core_packs:
     name: Observability Stack Generator
     internal_id: cp15_observability
     phase: P1
-    description: Logging, metrics, tracing baseline profiles
-    definitions_count: 3
-    obligations_count: 2
+    description: Logging, metrics, tracing, OpenTelemetry, log shipping baseline profiles
+    definitions_count: 9
+    obligations_count: 5
     depends_on:
       - CP07
     capabilities_provided:
       - emit_metric
       - structured_logging
       - distributed_tracing
+      - opentelemetry_export
+      - log_shipping
+      - span_propagation
     category: observability
     status: stable
     version: 1.0.0

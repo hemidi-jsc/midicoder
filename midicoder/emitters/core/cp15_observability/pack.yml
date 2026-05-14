@@ -66,11 +66,16 @@ pack:
       - path: "app/observability/observability_service.py"
         file_type: "observability_service"
         template: "cp15_observability/observability_service.py.jinja2"
-        stacks: ["fastapi", "nestjs"]
+        stacks: ["fastapi"]
         pack_emitter: null
       - path: "app/observability/observability_middleware.py"
         file_type: "observability_middleware"
         template: "cp15_observability/observability_middleware.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/observability/metrics_endpoint.py"
+        file_type: "metrics_endpoint"
+        template: "cp15_observability/metrics_endpoint.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null
       - path: "src/observability/observability.module.ts"
@@ -88,7 +93,12 @@ pack:
         template: "cp15_observability/observability.interceptor.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
-      - path: "src/app/core/observability/logging.service.ts"
+      - path: "src/observability/metrics.controller.ts"
+        file_type: "metrics_endpoint"
+        template: "cp15_observability/metrics.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/core/observability/logging_service.ts"
         file_type: "logging_service"
         template: "cp15_observability/logging_service.ts.jinja2"
         stacks: ["angular"]

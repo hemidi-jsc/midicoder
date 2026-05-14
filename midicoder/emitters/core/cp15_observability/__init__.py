@@ -4,15 +4,25 @@ CP15: Observability Stack Generator.
 
 Cung cấp:
 - models: MetricType, LogLevel, TracePropagationFormat, MetricProfile, StructuredLogConfig, TraceConfig
+- models: OpenTelemetryConfig, OTelExporterConfig, OTLPExportProtocol, SamplerType, SpanKind
+- models: LogShippingConfig, LogShippingDestination, LogDestinationType
 - parser: ObservabilityParser
-- emitters: FastAPIObservabilityEmitter, NestJSObservabilityEmitter, AngularObservabilityEmitter, ReactObservabilityEmitter
 - engine: MetricRegistry, StructuredLogger, TraceContext
+- emitters: FastAPIObservabilityEmitter, NestJSObservabilityEmitter, AngularObservabilityEmitter, ReactObservabilityEmitter
 """
 
 from midicoder.emitters.core.cp15_observability.models import (
     LogLevel,
+    LogDestinationType,
+    LogShippingConfig,
+    LogShippingDestination,
     MetricProfile,
     MetricType,
+    OpenTelemetryConfig,
+    OTelExporterConfig,
+    OTLPExportProtocol,
+    SamplerType,
+    SpanKind,
     StructuredLogConfig,
     TraceConfig,
     TracePropagationFormat,
@@ -27,13 +37,22 @@ from midicoder.emitters.core.cp15_observability.angular import AngularObservabil
 from midicoder.emitters.core.cp15_observability.react import ReactObservabilityEmitter
 
 __all__ = [
-    # Models
+    # Enums
     "MetricType",
     "LogLevel",
     "TracePropagationFormat",
+    "OTLPExportProtocol",
+    "SamplerType",
+    "SpanKind",
+    "LogDestinationType",
+    # Models
     "MetricProfile",
     "StructuredLogConfig",
     "TraceConfig",
+    "OpenTelemetryConfig",
+    "OTelExporterConfig",
+    "LogShippingConfig",
+    "LogShippingDestination",
     # Parser
     "ObservabilityParser",
     # Engine

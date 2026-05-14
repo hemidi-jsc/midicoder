@@ -264,7 +264,7 @@ import { Component, OnInit, OnDestroy, ChangeDetectionStrategy } from \'@angular
 import { CommonModule } from \'@angular/common\';
 import { FormsModule } from \'@angular/forms\';
 import { Subscription } from \'rxjs\';
-import { LoggingService, LogEntry, LogLevel, LogQueryParams } from \'./logging_service\';
+import { LoggingService, LogEntry, LogLevel, LogQueryParams } from \'../../core/observability/logging_service\';
 
 /**
  * Trạng thái bộ lọc hiện tại.

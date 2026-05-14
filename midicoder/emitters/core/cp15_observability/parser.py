@@ -24,8 +24,10 @@ import yaml
 
 from midicoder.emitters.core.cp15_observability.models import (
     LogLevel,
+    LogShippingConfig,
     MetricProfile,
     MetricType,
+    OpenTelemetryConfig,
     StructuredLogConfig,
     TraceConfig,
     TracePropagationFormat,
@@ -120,6 +122,18 @@ class ObservabilityParser:
             for trace_data in raw_tracing:
                 config = self._parse_trace_config(trace_data)
                 result["tracing"].append(config)
+
+        # Parse OpenTelemetry section
+        raw_otel = data.get("opentelemetry", None)
+        if raw_otel and isinstance(raw_otel, dict):
+            config = self._parse_otel_config(raw_otel)
+            result["opentelemetry"] = config
+
+        # Parse log_shipping section
+        raw_shipping = data.get("log_shipping", None)
+        if raw_shipping and isinstance(raw_shipping, dict):
+            config = self._parse_log_shipping_config(raw_shipping)
+            result["log_shipping"] = config
 
         return result
 
@@ -237,4 +251,135 @@ class ObservabilityParser:
             max_spans=data.get("max_spans", 100),
             sample_rate=data.get("sample_rate", 1.0),
             attributes=data.get("attributes", {}) if data.get("attributes") else {},
+        )
+
+    def _parse_otel_config(self, data: dict[str, Any]) -> OpenTelemetryConfig:
+        """
+        Parse dict thành OpenTelemetryConfig.
+
+        Args:
+            data: Dict chứa thông tin OpenTelemetry config
+
+        Returns:
+            OpenTelemetryConfig instance
+
+        Raises:
+            MidicoderError: Nếu dữ liệu không hợp lệ
+        """
+        if not isinstance(data, dict):
+            EM.raise_error(
+                ErrorCode.CP15_OBSERVABILITY_PARSE_ERROR,
+                message="OpenTelemetry config phải là YAML mapping",
+            )
+
+        return OpenTelemetryConfig(
+            service_name=data.get("service_name", "midicoder"),
+            exporter=self._parse_otel_exporter(data.get("exporter", {})),
+            sampler_type=self._parse_sampler_type(data.get("sampler_type", "traceid_ratio_based")),
+            sampler_rate=data.get("sampler_rate", 1.0),
+            resource_attributes=data.get("resource_attributes", {}) if data.get("resource_attributes") else {},
+            enable_traces=data.get("enable_traces", True),
+            enable_metrics=data.get("enable_metrics", True),
+            enable_logs=data.get("enable_logs", True),
+            description=data.get("description", ""),
+        )
+
+    def _parse_otel_exporter(self, data: dict[str, Any]):
+        """Parse OTLP exporter config dict thành OTelExporterConfig."""
+        from midicoder.emitters.core.cp15_observability.models import OTelExporterConfig, OTLPExportProtocol
+
+        if not data or not isinstance(data, dict):
+            return OTelExporterConfig()
+
+        return OTelExporterConfig(
+            endpoint=data.get("endpoint", "http://localhost:4317"),
+            protocol=OTLPExportProtocol(data.get("protocol", "grpc")),
+            timeout_ms=data.get("timeout_ms", 10000),
+            headers=data.get("headers", {}) if data.get("headers") else {},
+            compression=data.get("compression", "none"),
+            batch_size=data.get("batch_size", 512),
+            batch_timeout_ms=data.get("batch_timeout_ms", 5000),
+            retry_on_failure=data.get("retry_on_failure", True),
+            max_queue_size=data.get("max_queue_size", 2048),
+            description=data.get("description", ""),
+        )
+
+    def _parse_sampler_type(self, value: str):
+        """Parse sampler type string thành SamplerType enum."""
+        from midicoder.emitters.core.cp15_observability.models import SamplerType
+
+        try:
+            return SamplerType(value)
+        except ValueError:
+            EM.raise_error(
+                ErrorCode.CP15_INVALID_TRACE_FORMAT,
+                sampler_type=value,
+                valid_types=[t.value for t in SamplerType],
+            )
+
+    def _parse_log_shipping_config(self, data: dict[str, Any]) -> LogShippingConfig:
+        """
+        Parse dict thành LogShippingConfig.
+
+        Args:
+            data: Dict chứa thông tin log shipping config
+
+        Returns:
+            LogShippingConfig instance
+
+        Raises:
+            MidicoderError: Nếu dữ liệu không hợp lệ
+        """
+        if not isinstance(data, dict):
+            EM.raise_error(
+                ErrorCode.CP15_OBSERVABILITY_PARSE_ERROR,
+                message="Log shipping config phải là YAML mapping",
+            )
+
+        raw_destinations = data.get("destinations", [])
+        destinations = []
+        if isinstance(raw_destinations, list):
+            for dest_data in raw_destinations:
+                destinations.append(self._parse_log_destination(dest_data))
+
+        return LogShippingConfig(
+            enabled=data.get("enabled", True),
+            destinations=destinations,
+            async_shipping=data.get("async_shipping", True),
+            max_queue_size=data.get("max_queue_size", 10000),
+            drop_on_overflow=data.get("drop_on_overflow", False),
+            description=data.get("description", ""),
+        )
+
+    def _parse_log_destination(self, data: dict[str, Any]):
+        """Parse log destination dict thành LogShippingDestination."""
+        from midicoder.emitters.core.cp15_observability.models import LogDestinationType, LogShippingDestination
+
+        if not isinstance(data, dict):
+            EM.raise_error(
+                ErrorCode.CP15_OBSERVABILITY_PARSE_ERROR,
+                message="Log destination phải là YAML mapping",
+            )
+
+        # Parse destination type
+        dest_str = data.get("destination_type", "loki")
+        try:
+            dest_type = LogDestinationType(dest_str)
+        except ValueError:
+            EM.raise_error(
+                ErrorCode.CP15_OBSERVABILITY_PARSE_ERROR,
+                destination_type=dest_str,
+                valid_types=[t.value for t in LogDestinationType],
+            )
+
+        return LogShippingDestination(
+            destination_type=dest_type,
+            endpoint=data.get("endpoint", ""),
+            auth_token=data.get("auth_token", ""),
+            flush_interval_ms=data.get("flush_interval_ms", 5000),
+            max_batch_size=data.get("max_batch_size", 1000),
+            compression=data.get("compression", "gzip"),
+            labels=data.get("labels", {}) if data.get("labels") else {},
+            filter_pattern=data.get("filter_pattern", ""),
+            description=data.get("description", ""),
         )

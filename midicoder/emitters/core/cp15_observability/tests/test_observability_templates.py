@@ -9,12 +9,13 @@ import sys
 
 import pytest
 
-# Repo root: d:\hemidi-labs\midicoder-ce (4 levels up from this file)
-# Package root: d:\hemidi-labs\midicoder-ce\midicoder (3 levels up, for imports)
-PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-REPO_ROOT = os.path.dirname(PACKAGE_ROOT)
-if PACKAGE_ROOT not in sys.path:
-    sys.path.insert(0, PACKAGE_ROOT)
+# File lives at: .../midicoder/emitters/core/cp15_observability/tests/test_observability_templates.py
+# 5 levels up = d:\hemidi-labs\midicoder-ce\midicoder
+# 6 levels up = d:\hemidi-labs\midicoder-ce (repo root, where midicoder/stacks/... lives)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
+MIDICODER_ROOT = os.path.join(REPO_ROOT, "midicoder")
+if MIDICODER_ROOT not in sys.path:
+    sys.path.insert(0, MIDICODER_ROOT)
 
 
 # Định nghĩa danh sách templates mong đợi

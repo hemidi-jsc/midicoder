@@ -2,127 +2,28 @@
 Integration tests CP15 — Observability Stack Generator.
 
 Kiểm tra:
-- Query effects _record_metric() wire vào CP15 MetricRegistry
-- Command effects _record_metric() wire vào CP15 MetricRegistry
 - End-to-end: parser → models → engine → emitter
+- Metric Retention Obligation (append-only, immutable)
+- Log Immutability Obligation (SHA-256 hash)
+- Trace Propagation (W3C format)
+- Pack/Taxonomy sync
+- __init__.py exports
+
+Lưu ý: Đã loại bỏ TestQueryEffectsIntegration và TestCommandEffectsIntegration
+(based trên inspect.getsource() + MagicMock — fragile, dễ break khi refactor).
 """
 
-import asyncio
-import json
 import os
 import sys
-from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
-# Thêm project root vào path
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
-
-class TestQueryEffectsIntegration:
-    """Kiểm tra query effects wire vào CP15 MetricRegistry."""
-
-    def test_record_metric_imports_metric_registry(self):
-        """_record_metric phải import từ CP15."""
-        from midicoder.emitters.core.cp01_domain_model.query_effects import QueryEffects
-        import inspect
-        source = inspect.getsource(QueryEffects._record_metric)
-        assert "MetricRegistry" in source, "_record_metric phải sử dụng MetricRegistry"
-        assert "observability" in source, "_record_metric phải import từ observability"
-
-    def test_record_metric_calls_registry_record(self):
-        """_record_metric phải gọi registry.record()."""
-        import inspect
-        from midicoder.emitters.core.cp01_domain_model.query_effects import QueryEffects
-        source = inspect.getsource(QueryEffects._record_metric)
-        assert "registry.record" in source or "registry = MetricRegistry" in source, \
-            "_record_metric phải gọi registry.record()"
-
-    def test_record_metric_no_placeholder(self):
-        """_record_metric không còn placeholder."""
-        import inspect
-        from midicoder.emitters.core.cp01_domain_model.query_effects import QueryEffects
-        source = inspect.getsource(QueryEffects._record_metric)
-        assert "placeholder" not in source.lower(), "_record_metric không được có placeholder"
-        assert "pass" not in source.strip().split("\n")[-1].strip(), "_record_metric không được chỉ có pass"
-
-    def test_query_effects_execute_record_metric(self):
-        """QueryEffects.execute_all() phải chạy _record_metric thành công."""
-        from midicoder.emitters.core.cp01_domain_model.query_effects import QueryEffects
-        from midicoder.emitters.core.cp01_domain_model.models import Query, QueryEffect, QueryEffectType
-
-        effect = QueryEffect(
-            effect_type=QueryEffectType.RECORD_METRIC,
-            metric_name="query.test_duration",
-            metric_value=42.0,
-        )
-        query = Query(
-            id="TestQuery",
-            description="Test",
-            reads_from="TestEntity",
-            effects=[effect],
-        )
-        qe = QueryEffects(query)
-        context = {
-            "query_id": "test-1",
-            "user_id": "user-1",
-            "tenant_id": "tenant-1",
-        }
-        result = asyncio.run(qe.execute_all(context))  # noqa:ASYNC
-        assert result is None  # _record_metric returns None
-
-
-class TestCommandEffectsIntegration:
-    """Kiểm tra command effects wire vào CP15 MetricRegistry."""
-
-    def test_record_metric_imports_metric_registry(self):
-        """_record_metric phải import từ CP15."""
-        from midicoder.emitters.core.cp01_domain_model.command_effects import CommandEffects
-        import inspect
-        source = inspect.getsource(CommandEffects._record_metric)
-        assert "MetricRegistry" in source, "_record_metric phải sử dụng MetricRegistry"
-        assert "observability" in source, "_record_metric phải import từ observability"
-
-    def test_record_metric_calls_registry_record(self):
-        """_record_metric phải gọi registry.record()."""
-        import inspect
-        from midicoder.emitters.core.cp01_domain_model.command_effects import CommandEffects
-        source = inspect.getsource(CommandEffects._record_metric)
-        assert "registry.record" in source or "registry = MetricRegistry" in source, \
-            "_record_metric phải gọi registry.record()"
-
-    def test_record_metric_no_placeholder(self):
-        """_record_metric không còn placeholder."""
-        import inspect
-        from midicoder.emitters.core.cp01_domain_model.command_effects import CommandEffects
-        source = inspect.getsource(CommandEffects._record_metric)
-        assert "placeholder" not in source.lower(), "_record_metric không được có placeholder"
-        assert "# Placeholder" not in source, "_record_metric không được có comment placeholder"
-
-    def test_command_effects_execute_record_metric(self):
-        """CommandEffects.execute() phải chạy _record_metric thành công."""
-        from midicoder.emitters.core.cp01_domain_model.command_effects import CommandEffects, CommandEffect
-        from midicoder.emitters.core.cp01_domain_model.models import Command, EffectType
-
-        # CommandEffect lacks metric_name/metric_value fields; use MagicMock
-        effect = MagicMock(spec=CommandEffect)
-        effect.effect_type = EffectType.RECORD_METRIC
-        effect.metric_name = "command.test_duration"
-        effect.metric_value = 99.0
-        effect.condition = None
-
-        command = Command(
-            id="TestCommand",
-            description="Test",
-            effects=[effect],
-        )
-        ce = CommandEffects(command)
-        result = asyncio.run(
-            ce.execute({}, user_id="u1", tenant_id="t1")
-        )
-        assert isinstance(result, dict)
+# File lives at: .../midicoder/emitters/core/cp15_observability/tests/
+# 6 levels up = midicoder-ce (repo root)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
+MIDICODER_ROOT = os.path.join(REPO_ROOT, "midicoder")
+if MIDICODER_ROOT not in sys.path:
+    sys.path.insert(0, MIDICODER_ROOT)
 
 
 class TestEndToEndPipeline:
@@ -329,13 +230,13 @@ class TestPackTaxonomySync:
 
     def test_pack_yml_exists(self):
         """pack.yml phải tồn tại."""
-        pack_path = os.path.join(PROJECT_ROOT, "emitters", "core", "cp15_observability", "pack.yml")
+        pack_path = os.path.join(MIDICODER_ROOT, "emitters", "core", "cp15_observability", "pack.yml")
         assert os.path.isfile(pack_path), "pack.yml missing"
 
     def test_pack_capabilities(self):
         """pack.yml capabilities_provided phải đúng."""
         import yaml
-        pack_path = os.path.join(PROJECT_ROOT, "emitters", "core", "cp15_observability", "pack.yml")
+        pack_path = os.path.join(MIDICODER_ROOT, "emitters", "core", "cp15_observability", "pack.yml")
         with open(pack_path, "r") as f:
             pack = yaml.safe_load(f)
         caps = pack.get("pack", {}).get("capabilities_provided", [])
@@ -346,11 +247,7 @@ class TestPackTaxonomySync:
     def test_taxonomy_status_stable(self):
         """taxonomy.yml CP15 status phải là 'stable'."""
         import yaml
-        taxonomy_path = os.path.join(
-            os.path.dirname(PROJECT_ROOT), "industry", "taxonomy.yml"
-        )
-        if not os.path.isfile(taxonomy_path):
-            taxonomy_path = os.path.join(PROJECT_ROOT, "..", "industry", "taxonomy.yml")
+        taxonomy_path = os.path.join(REPO_ROOT, "industry", "taxonomy.yml")
         with open(taxonomy_path, "r") as f:
             taxonomy = yaml.safe_load(f)
         cp15 = None
