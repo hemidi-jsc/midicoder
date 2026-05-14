@@ -228,15 +228,19 @@ core_packs:
     name: Audit Trail & Compliance Generator
     internal_id: cp14_audit_compliance
     phase: P1
-    description: Audit trails, audit rules, compliance controls
-    definitions_count: 3
-    obligations_count: 1
+    description: Audit trails, immutable ledger, compliance controls, GDPR/HIPAA/SOX/PCI-DSS
+    definitions_count: 17
+    obligations_count: 4
     depends_on:
       - CP01
     capabilities_provided:
       - write_audit_log
       - audit_query
       - compliance_report
+      - immutable_ledger
+      - compliance_reporting
+      - tamper_detection
+      - audit_export
     category: compliance
     status: stable
     version: 1.0.0

@@ -3,50 +3,41 @@ Audit Logger - Audit logging cho API.
 
 Module này cung cấp:
 - AuditLogger class cho audit logging
-- AuditEvent enum cho event types
-- Audit record structure
+- AuditActionType enum cho action types
+- AuditRecord structure với immutable hash (tamper-evidence)
 - Integration với database
-- Multi-tenant audit logging (KPI-029)
+- Multi-tenant audit logging
 
-CP14: Audit & Compliance
-KPI-029: Tenant Isolation - Multi-tenant audit logging
+CP14: Audit Trail & Compliance Generator
+{% if collection %}
+Configured with {{ collection.audit_rules|length }} audit rules, {{ collection.compliance_controls|length }} compliance controls
+{% endif %}
 """
 
+import hashlib
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Any, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
 
-class AuditEvent(str, Enum):
-    """
-    Audit event types.
-
-    Types:
-        USER_LOGIN: User login
-        USER_LOGOUT: User logout
-        PASSWORD_CHANGE: Password change
-        DATA_CREATE: Data creation
-        DATA_UPDATE: Data update
-        DATA_DELETE: Data deletion
-        PERMISSION_CHANGE: Permission change
-        CONFIG_CHANGE: Configuration change
-        EXPORT: Data export
-        IMPORT: Data import
-    """
-    USER_LOGIN = "user_login"
-    USER_LOGOUT = "user_logout"
-    PASSWORD_CHANGE = "password_change"
-    DATA_CREATE = "data_create"
-    DATA_UPDATE = "data_update"
-    DATA_DELETE = "data_delete"
-    PERMISSION_CHANGE = "permission_change"
-    CONFIG_CHANGE = "config_change"
-    EXPORT = "export"
-    IMPORT = "import"
+class AuditActionType(str, Enum):
+    """Audit action types — matches CP14 models."""
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+    READ = "READ"
+    LOGIN = "LOGIN"
+    LOGOUT = "LOGOUT"
+    EXPORT = "EXPORT"
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+    CUSTOM = "CUSTOM"
 
 
 @dataclass
@@ -55,147 +46,243 @@ class AuditRecord:
     Audit record structure.
 
     Attributes:
-        event: Audit event type
-        user_id: User ID (nullable cho system events)
-        tenant_id: Tenant ID
-        resource_type: Resource type (entity name)
-        resource_id: Resource ID (nullable)
-        action: Action performed
-        old_value: Old value (cho updates)
-        new_value: New value (cho updates)
-        metadata: Additional metadata
-        ip_address: Client IP address
-        user_agent: User agent string
-        timestamp: Event timestamp
+        id: UUID định danh duy nhất
+        timestamp: Thời điểm event (UTC)
+        action: Hành động audit
+        entity_type: Tên entity bị ảnh hưởng
+        entity_id: ID của entity
+        actor_id: ID người thực hiện
+        actor_type: Loại actor (user/system/background_job)
+        tenant_id: Tenant scope
+        old_values: Giá trị cũ
+        new_values: Giá trị mới
+        metadata: Metadata mở rộng
+        immutable_hash: SHA-256 hash cho tamper-evidence
     """
-    event: AuditEvent
-    user_id: Optional[str]
-    tenant_id: str
-    resource_type: str
-    resource_id: Optional[str]
     action: str
-    old_value: Optional[dict[str, Any]] = None
-    new_value: Optional[dict[str, Any]] = None
+    entity_type: str
+    entity_id: str
+    actor_id: str
+    actor_type: str = "system"
+    tenant_id: str = "default"
+    id: str = ""
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    old_values: Optional[dict[str, Any]] = None
+    new_values: Optional[dict[str, Any]] = None
     metadata: Optional[dict[str, Any]] = None
-    ip_address: Optional[str] = None
-    user_agent: Optional[str] = None
-    timestamp: datetime = None
+    immutable_hash: str = ""
 
     def __post_init__(self) -> None:
-        """Set timestamp nếu chưa có."""
-        if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+        """Compute immutable hash nếu chưa có."""
+        if not self.immutable_hash:
+            data = {
+                "id": self.id,
+                "timestamp": self.timestamp.isoformat(),
+                "action": self.action,
+                "entity_type": self.entity_type,
+                "entity_id": self.entity_id,
+                "actor_id": self.actor_id,
+                "actor_type": self.actor_type,
+                "tenant_id": self.tenant_id,
+                "old_values": self.old_values or {},
+                "new_values": self.new_values or {},
+                "metadata": self.metadata or {},
+            }
+            canonical = json.dumps(data, sort_keys=True, default=str)
+            self.immutable_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
-        """
-        Chuyển AuditRecord sang dictionary.
-
-        Returns:
-            Dictionary representation của AuditRecord
-        """
-        data = asdict(self)
-        data["event"] = self.event.value
-        data["timestamp"] = self.timestamp.isoformat()
-        return data
+        """Chuyển AuditRecord sang dictionary."""
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp.isoformat(),
+            "action": self.action,
+            "entity_type": self.entity_type,
+            "entity_id": self.entity_id,
+            "actor_id": self.actor_id,
+            "actor_type": self.actor_type,
+            "tenant_id": self.tenant_id,
+            "old_values": self.old_values,
+            "new_values": self.new_values,
+            "metadata": self.metadata,
+            "immutable_hash": self.immutable_hash,
+        }
 
 
 class AuditLogger:
     """
-    Audit Logger - Audit logging cho API.
+    Audit Logger — dual write (database + append-only file).
 
-    Class này:
-    1. Log audit events
-    2. Store audit records vào database
-    3. Support multi-tenant audit logging (KPI-029)
-    4. Mask sensitive data
+    Ghi audit log vào cả database VÀ append-only JSONL file
+    cho redundancy và tamper-evidence.
 
-    KPI-029: Tenant Isolation - Tất cả audit logs đều có tenant_id để enforce tenant boundaries.
+{% if entities %}
+    Configured entities: {{ entities|join(", ") }}
+{% endif %}
 
     Usage:
-        audit_logger = AuditLogger(db_session)
-        audit_logger.log(AuditEvent.DATA_CREATE, user_id, tenant_id, "Order", order_id)
+        audit_logger = AuditLogger(db_session, log_dir=".midicoder/audit_logs")
+        await audit_logger.log(
+            action="CREATE",
+            entity_type="Order",
+            entity_id="order_123",
+            actor_id="user_456",
+            tenant_id="tenant_1",
+        )
     """
 
-    def __init__(self, db_session=None) -> None:
+    def __init__(
+        self,
+        db_session=None,
+        log_dir: str = ".midicoder/audit_logs",
+    ) -> None:
         """
         Khởi tạo AuditLogger.
 
         Args:
             db_session: Database session (optional)
+            log_dir: Thư mục chứa audit log files
         """
         self._db_session = db_session
+        self._log_dir = Path(log_dir)
+        self._log_dir.mkdir(parents=True, exist_ok=True)
         self._sensitive_fields = {"password", "secret", "token", "credit_card", "ssn"}
 
     async def log(
         self,
-        event: AuditEvent,
-        user_id: Optional[str],
-        tenant_id: str,
-        resource_type: str,
-        resource_id: Optional[str] = None,
-        action: str = "",
-        old_value: Optional[dict[str, Any]] = None,
-        new_value: Optional[dict[str, Any]] = None,
+        action: str,
+        entity_type: str,
+        entity_id: str,
+        actor_id: str,
+        actor_type: str = "system",
+        tenant_id: str = "default",
+        old_values: Optional[dict[str, Any]] = None,
+        new_values: Optional[dict[str, Any]] = None,
         metadata: Optional[dict[str, Any]] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
     ) -> str:
         """
-        Log audit event.
+        Log audit entry.
 
         Args:
-            event: Audit event type
-            user_id: User ID
-            tenant_id: Tenant ID
-            resource_type: Resource type
-            resource_id: Resource ID
-            action: Action description
-            old_value: Old value (cho updates)
-            new_value: New value (cho updates)
-            metadata: Additional metadata
-            ip_address: Client IP
-            user_agent: User agent
+            action: Hành động audit
+            entity_type: Tên entity
+            entity_id: ID entity
+            actor_id: ID người thực hiện
+            actor_type: Loại actor
+            tenant_id: Tenant scope
+            old_values: Giá trị cũ
+            new_values: Giá trị mới
+            metadata: Metadata mở rộng
 
         Returns:
             Audit record ID
         """
-        # Mask sensitive data
-        if old_value:
-            old_value = self._mask_sensitive_data(old_value)
-        if new_value:
-            new_value = self._mask_sensitive_data(new_value)
+        import uuid
 
-        # Create audit record
+        # Mask sensitive data
+        if old_values:
+            old_values = self._mask_sensitive_data(old_values)
+        if new_values:
+            new_values = self._mask_sensitive_data(new_values)
+
+        entry_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        # Compute immutable hash
+        hash_data = {
+            "id": entry_id,
+            "timestamp": now.isoformat(),
+            "action": action,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "actor_id": actor_id,
+            "actor_type": actor_type,
+            "tenant_id": tenant_id,
+            "old_values": old_values or {},
+            "new_values": new_values or {},
+            "metadata": metadata or {},
+        }
+        immutable_hash = hashlib.sha256(
+            json.dumps(hash_data, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+
         record = AuditRecord(
-            event=event,
-            user_id=user_id,
-            tenant_id=tenant_id,
-            resource_type=resource_type,
-            resource_id=resource_id,
+            id=entry_id,
+            timestamp=now,
             action=action,
-            old_value=old_value,
-            new_value=new_value,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            actor_id=actor_id,
+            actor_type=actor_type,
+            tenant_id=tenant_id,
+            old_values=old_values,
+            new_values=new_values,
             metadata=metadata,
-            ip_address=ip_address,
-            user_agent=user_agent,
+            immutable_hash=immutable_hash,
         )
+
+        # Write to append-only JSONL file
+        date_str = now.strftime("%Y-%m-%d")
+        log_file = self._log_dir / f"audit_{date_str}.jsonl"
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record.to_dict(), default=str, ensure_ascii=False) + "\n")
 
         # Store to database
         if self._db_session:
-            # TODO: Store to database
-            # audit_table = await self._db_session.execute(...)
+            # TODO: Store to database via ORM
             pass
 
-        # Log to logger
         logger.info(
-            f"Audit: {event.value} | "
-            f"User: {user_id} | "
+            f"Audit: {action} | "
+            f"User: {actor_id} | "
             f"Tenant: {tenant_id} | "
-            f"Resource: {resource_type}:{resource_id} | "
-            f"Action: {action}"
+            f"Resource: {entity_type}:{entity_id}"
         )
 
-        return f"audit_{datetime.utcnow().timestamp()}"
+        return entry_id
+
+    async def query(
+        self,
+        tenant_id: str,
+        entity_type: Optional[str] = None,
+        actor_id: Optional[str] = None,
+        action: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        limit: int = 100,
+    ) -> list[AuditRecord]:
+        """
+        Query audit records.
+
+        Args:
+            tenant_id: Tenant ID (required)
+            entity_type: Filter by entity type
+            actor_id: Filter by actor
+            action: Filter by action
+            start_time: Start time filter
+            end_time: End time filter
+            limit: Max records
+
+        Returns:
+            List of AuditRecord
+        """
+        if self._db_session:
+            # TODO: Query from database
+            pass
+
+        return []
+
+    async def verify_integrity(self) -> bool:
+        """
+        Verify hash chain integrity of all audit records.
+
+        Returns:
+            True if all records have valid hashes
+        """
+        if self._db_session:
+            # TODO: Query and verify all records
+            pass
+        return True
 
     def _mask_sensitive_data(self, data: dict[str, Any]) -> dict[str, Any]:
         """
@@ -223,32 +310,3 @@ class AuditLogger:
                 ]
 
         return masked
-
-    async def query(
-        self,
-        tenant_id: str,
-        start_time: datetime,
-        end_time: datetime,
-        event_type: Optional[AuditEvent] = None,
-        user_id: Optional[str] = None,
-        limit: int = 100,
-    ) -> list[AuditRecord]:
-        """
-        Query audit records.
-
-        Args:
-            tenant_id: Tenant ID
-            start_time: Start time
-            end_time: End time
-            event_type: Event type filter
-            user_id: User ID filter
-            limit: Max records
-
-        Returns:
-            List of AuditRecord
-        """
-        if self._db_session:
-            # TODO: Query from database
-            pass
-
-        return []

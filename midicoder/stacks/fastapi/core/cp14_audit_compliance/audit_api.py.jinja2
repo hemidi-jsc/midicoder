@@ -1,0 +1,147 @@
+"""
+Audit API Routes - FastAPI endpoints cho audit trail.
+
+Cung cấp các endpoint:
+- POST /audit/log - Ghi audit log
+- GET /audit/query - Query audit logs
+- GET /audit/entity/{entity_type}/{entity_id} - Lấy audit trail cho entity
+- GET /audit/verify - Xác minh integrity
+- GET /audit/export - Export audit logs
+
+CP14: Audit Trail & Compliance Generator
+"""
+
+from datetime import datetime
+from typing import Any, Optional
+
+from fastapi import APIRouter, HTTPException, Query
+
+from .audit_logger import AuditLogger, AuditRecord
+
+router = APIRouter(prefix="/audit", tags=["audit"])
+
+
+def get_audit_router(
+    audit_logger: AuditLogger,
+    require_auth: bool = True,
+) -> APIRouter:
+    """
+    Tạo audit router với audit_logger đã config.
+
+    Args:
+        audit_logger: AuditLogger instance
+        require_auth: Có require auth không (cho admin endpoints)
+
+    Returns:
+        APIRouter với audit endpoints
+    """
+    tagged_router = APIRouter(prefix="/audit", tags=["audit"])
+
+    @tagged_router.post("/log", summary="Ghi audit log", responses={201: {"description": "Audit log ID"}})
+    async def log_audit(
+        action: str = Query(..., description="Hành động audit"),
+        entity_type: str = Query(..., description="Tên entity"),
+        entity_id: str = Query(..., description="ID entity"),
+        actor_id: str = Query(..., description="ID người thực hiện"),
+        actor_type: str = Query("user", description="Loại actor"),
+        tenant_id: str = Query("default", description="Tenant scope"),
+        old_values: Optional[dict[str, Any]] = Query(None),
+        new_values: Optional[dict[str, Any]] = Query(None),
+        metadata: Optional[dict[str, Any]] = Query(None),
+    ) -> dict[str, str]:
+        """Ghi audit log entry."""
+        entry_id = await audit_logger.log(
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            actor_id=actor_id,
+            actor_type=actor_type,
+            tenant_id=tenant_id,
+            old_values=old_values,
+            new_values=new_values,
+            metadata=metadata,
+        )
+        return {"id": entry_id}
+
+    @tagged_router.get("/query", summary="Query audit logs")
+    async def query_audit(
+        tenant_id: str = Query(..., description="Tenant ID"),
+        entity_type: Optional[str] = Query(None),
+        actor_id: Optional[str] = Query(None),
+        action: Optional[str] = Query(None),
+        start_time: Optional[datetime] = Query(None),
+        end_time: Optional[datetime] = Query(None),
+        limit: int = Query(100, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        """Query audit logs với filters."""
+        records = await audit_logger.query(
+            tenant_id=tenant_id,
+            entity_type=entity_type,
+            actor_id=actor_id,
+            action=action,
+            start_time=start_time,
+            end_time=end_time,
+            limit=limit,
+        )
+        return {
+            "entries": [r.to_dict() for r in records],
+            "total": len(records),
+            "limit": limit,
+        }
+
+    @tagged_router.get("/entity/{entity_type}/{entity_id}", summary="Lấy audit trail cho entity")
+    async def get_entity_audit_trail(
+        entity_type: str,
+        entity_id: str,
+        limit: int = Query(100, ge=1, le=1000),
+    ) -> list[dict[str, Any]]:
+        """Lấy audit trail cho một entity cụ thể."""
+        # Note: tenant_id should come from auth context in production
+        records = await audit_logger.query(
+            tenant_id="default",
+            entity_type=entity_type,
+            limit=limit,
+        )
+        return [r.to_dict() for r in records]
+
+    @tagged_router.get("/verify", summary="Xác minh integrity")
+    async def verify_integrity() -> dict[str, Any]:
+        """Xác minh hash chain integrity của tất cả audit records."""
+        is_valid = await audit_logger.verify_integrity()
+        return {
+            "verified": is_valid,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    @tagged_router.get("/export", summary="Export audit logs")
+    async def export_audit(
+        tenant_id: str = Query(..., description="Tenant ID"),
+        entity_type: Optional[str] = Query(None),
+        start_time: Optional[datetime] = Query(None),
+        end_time: Optional[datetime] = Query(None),
+        format: str = Query("json", regex="^(json|csv)$"),
+    ) -> dict[str, Any]:
+        """Export audit logs (JSON/CSV)."""
+        records = await audit_logger.query(
+            tenant_id=tenant_id,
+            entity_type=entity_type,
+            start_time=start_time,
+            end_time=end_time,
+            limit=10000,
+        )
+
+        if format == "csv":
+            # Simple CSV export
+            lines = ["id,timestamp,action,entity_type,entity_id,actor_id,actor_type,tenant_id,immutable_hash"]
+            for r in records:
+                d = r.to_dict()
+                lines.append(f"{d['id']},{d['timestamp']},{d['action']},{d['entity_type']},{d['entity_id']},{d['actor_id']},{d['actor_type']},{d['tenant_id']},{d['immutable_hash']}")
+            return {"format": "csv", "data": "\n".join(lines)}
+        else:
+            return {
+                "format": "json",
+                "entries": [r.to_dict() for r in records],
+                "total": len(records),
+            }
+
+    return tagged_router

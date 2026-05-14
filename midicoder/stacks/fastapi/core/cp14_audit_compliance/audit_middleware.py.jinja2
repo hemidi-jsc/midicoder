@@ -4,11 +4,10 @@ Audit Middleware - Audit middleware cho FastAPI.
 Middleware này:
 - Tự động log audit events cho API requests
 - Track user actions
-- Support multi-tenant (KPI-029)
+- Support multi-tenant
 - Integration với AuditLogger
 
-CP14: Audit & Compliance
-KPI-029: Tenant Isolation - Multi-tenant audit middleware
+CP14: Audit Trail & Compliance Generator
 """
 
 import logging
@@ -18,7 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from .audit_logger import AuditLogger, AuditEvent
+from .audit_logger import AuditLogger
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +30,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
     1. Request audit logging
     2. Response status tracking
     3. User action tracking
-    4. Multi-tenant support (KPI-029)
-
-    KPI-029: Tenant Isolation - Tự động extract tenant_id từ request và log vào audit.
+    4. Multi-tenant support
 
     Usage:
         app.add_middleware(AuditMiddleware, audit_logger=audit_logger)
@@ -58,7 +55,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.audit_logger = audit_logger
         self.enabled = enabled
-        self.exclude_paths = exclude_paths or []
+        self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json", "/redoc"]
 
     async def dispatch(
         self, request: Request, call_next: Callable
@@ -83,169 +80,77 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
         # Extract user info từ request
         user_id = self._get_user_id(request)
-        tenant_id = self._get_tenant_id(request)
+        tenant_id = self._get_tenant_id(request) or "default"
         ip_address = self._get_client_ip(request)
         user_agent = request.headers.get("user-agent")
 
         # Process request
-        start_time = datetime.utcnow()
+        start_time = datetime.now()
         response = await call_next(request)
-        duration = (datetime.utcnow() - start_time).total_seconds()
+        duration = (datetime.now() - start_time).total_seconds()
 
-        # Log audit event
-        await self._log_request_audit(
-            request=request,
-            response=response,
-            user_id=user_id,
-            tenant_id=tenant_id,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            duration=duration,
-        )
+        # Chỉ log cho mutation methods
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            # Get resource info từ path
+            resource_type, resource_id = self._extract_resource_info(path)
+
+            # Determine action
+            action = self._method_to_action(request.method, response.status_code)
+
+            # Log audit
+            await self.audit_logger.log(
+                action=action,
+                entity_type=resource_type,
+                entity_id=resource_id or "unknown",
+                actor_id=user_id or "anonymous",
+                actor_type="user",
+                tenant_id=tenant_id,
+                metadata={
+                    "method": request.method,
+                    "status_code": response.status_code,
+                    "duration_ms": round(duration * 1000, 2),
+                    "path": request.url.path,
+                    "ip_address": ip_address,
+                    "user_agent": user_agent,
+                },
+            )
 
         return response
 
     def _is_excluded(self, path: str) -> bool:
-        """
-        Check nếu path bị exclude.
-
-        Args:
-            path: Request path
-
-        Returns:
-            True nếu path bị exclude
-        """
-        return any(
-            path.startswith(exclude) for exclude in self.exclude_paths
-        )
+        """Check nếu path bị exclude."""
+        return any(path.startswith(exclude) for exclude in self.exclude_paths)
 
     def _get_user_id(self, request: Request) -> Optional[str]:
-        """
-        Extract user ID từ request.
-
-        Args:
-            request: HTTP request
-
-        Returns:
-            User ID hoặc None
-        """
-        # Check state (set bởi auth middleware)
+        """Extract user ID từ request."""
         if hasattr(request.state, "user_id"):
             return request.state.user_id
-
-        # Fallback: extract from header
+        if hasattr(request.state, "user") and request.state.user:
+            return getattr(request.state.user, "id", None)
         return request.headers.get("X-User-ID")
 
     def _get_tenant_id(self, request: Request) -> Optional[str]:
-        """
-        Extract tenant ID từ request.
-
-        KPI-029: Tenant Isolation - Extract tenant_id để enforce tenant boundaries trong audit logs.
-
-        Args:
-            request: HTTP request
-
-        Returns:
-            Tenant ID hoặc None
-        """
-        # Check state (set bởi tenant middleware)
+        """Extract tenant ID từ request."""
         if hasattr(request.state, "tenant_id"):
             return request.state.tenant_id
-
-        # KPI-029: Fallback - extract from X-Tenant-ID header
         return request.headers.get("X-Tenant-ID")
 
     def _get_client_ip(self, request: Request) -> str:
-        """
-        Extract client IP address.
-
-        Args:
-            request: HTTP request
-
-        Returns:
-            Client IP address
-        """
-        # Check forwarded headers
+        """Extract client IP address."""
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
             return forwarded.split(",")[0].strip()
-
-        # Fallback to client
         return request.client.host if request.client else "unknown"
 
-    async def _log_request_audit(
-        self,
-        request: Request,
-        response: Response,
-        user_id: Optional[str],
-        tenant_id: Optional[str],
-        ip_address: str,
-        user_agent: str,
-        duration: float,
-    ) -> None:
-        """
-        Log request audit.
-
-        Args:
-            request: HTTP request
-            response: HTTP response
-            user_id: User ID
-            tenant_id: Tenant ID
-            ip_address: Client IP
-            user_agent: User agent
-            duration: Request duration (seconds)
-        """
-        method = request.method
-        path = request.url.path
-
-        # Determine audit event type
-        event = self._determine_event_type(method, path, response.status_code)
-
-        # Get resource info từ path
-        resource_type, resource_id = self._extract_resource_info(path)
-
-        # Log audit
-        await self.audit_logger.log(
-            event=event,
-            user_id=user_id,
-            tenant_id=tenant_id or "system",
-            resource_type=resource_type,
-            resource_id=resource_id,
-            action=f"{method} {path}",
-            metadata={
-                "method": method,
-                "status_code": response.status_code,
-                "duration_ms": duration * 1000,
-                "path": path,
-            },
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
-
-    def _determine_event_type(
-        self, method: str, path: str, status_code: int
-    ) -> AuditEvent:
-        """
-        Determine audit event type từ request.
-
-        Args:
-            method: HTTP method
-            path: Request path
-            status_code: Response status code
-
-        Returns:
-            AuditEvent type
-        """
-        if status_code == 201:
-            return AuditEvent.DATA_CREATE
-        elif method == "PUT" or method == "PATCH":
-            return AuditEvent.DATA_UPDATE
-        elif method == "DELETE":
-            return AuditEvent.DATA_DELETE
-        elif method == "GET":
-            return AuditEvent.DATA_CREATE  # Read action
-        else:
-            return AuditEvent.DATA_CREATE  # Default
+    def _method_to_action(self, method: str, status_code: int) -> str:
+        """Map HTTP method sang audit action."""
+        if method == "POST" and status_code < 300:
+            return "CREATE"
+        elif method in ("PUT", "PATCH") and status_code < 300:
+            return "UPDATE"
+        elif method == "DELETE" and status_code < 300:
+            return "DELETE"
+        return "CUSTOM"
 
     def _extract_resource_info(self, path: str) -> tuple[str, Optional[str]]:
         """
@@ -257,52 +162,25 @@ class AuditMiddleware(BaseHTTPMiddleware):
         Returns:
             Tuple (resource_type, resource_id)
         """
-        # Simple path parsing: /api/v1/orders/123 -> (Order, 123)
-        parts = path.strip("/").split("/")
+        parts = [p for p in path.strip("/").split("/") if p not in ("api", "v1", "v2")]
 
-        # Get resource type (thường là entity name)
         resource_type = "API"
         resource_id = None
 
         for i, part in enumerate(parts):
-            if part in ["api", "v1", "v2"]:
-                continue
             if i < len(parts) - 1:
-                resource_type = self._to_pascal_case(part)
-            elif part.isdigit() or self._is_uuid(part):
+                resource_type = "".join(w.capitalize() for w in part.split("_"))
+            elif part and (part.isdigit() or self._is_uuid(part)):
                 resource_id = part
 
         return resource_type, resource_id
 
-    def _to_pascal_case(self, snake_str: str) -> str:
-        """
-        Convert snake_case sang PascalCase.
-
-        Args:
-            snake_str: Snake case string
-
-        Returns:
-            Pascal case string
-        """
-        components = snake_str.split("_")
-        return "".join(x.title() for x in components)
-
     def _is_uuid(self, value: str) -> bool:
-        """
-        Check nếu value là UUID.
-
-        Args:
-            value: Value để check
-
-        Returns:
-            True nếu là UUID
-        """
+        """Check nếu value là UUID."""
         try:
             parts = value.split("-")
             if len(parts) == 5:
-                return all(
-                    len(part) in [8, 4, 4, 4, 12] for part in parts
-                )
+                return all(len(part) in (8, 4, 4, 4, 12) for part in parts)
         except Exception:
             pass
         return False

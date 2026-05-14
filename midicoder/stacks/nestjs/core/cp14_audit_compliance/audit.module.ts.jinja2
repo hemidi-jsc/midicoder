@@ -1,137 +1,147 @@
 /**
- * Audit Module - Audit logging cho NestJS.
- *
- * Module này cung cấp:
- * - AuditService cho audit logging
- * - AuditInterceptor cho auto logging
- * - Audit event types
- * - Multi-tenant support
- *
- * CP14: Audit & Compliance
- */
+* Audit Module - Audit logging cho NestJS.
+*
+* Module này cung cấp:
+* - AuditService cho audit logging
+* - AuditInterceptor cho auto logging
+* - Audit event types (matches CP14 AuditActionType)
+* - Multi-tenant support
+*
+* CP14: Audit Trail & Compliance Generator
+*/
 
-import { Module, DynamicModule } from '@nestjs/common';
+import { Module, Global, DynamicModule, Provider } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditService } from './audit.service';
 import { AuditInterceptor } from './audit.interceptor';
+import { AuditController } from './audit.controller';
+import { AuditLogEntity } from './audit-log.entity';
 
 /**
- * Audit event types.
- */
-export enum AuditEvent {
-  USER_LOGIN = 'user_login',
-  USER_LOGOUT = 'user_logout',
-  PASSWORD_CHANGE = 'password_change',
-  DATA_CREATE = 'data_create',
-  DATA_UPDATE = 'data_update',
-  DATA_DELETE = 'data_delete',
-  PERMISSION_CHANGE = 'permission_change',
-  CONFIG_CHANGE = 'config_change',
-  EXPORT = 'export',
-  IMPORT = 'import',
+* Audit action types — matches CP14 AuditActionType enum.
+*/
+export enum AuditActionType {
+CREATE = 'CREATE',
+UPDATE = 'UPDATE',
+DELETE = 'DELETE',
+READ = 'READ',
+LOGIN = 'LOGIN',
+LOGOUT = 'LOGOUT',
+EXPORT = 'EXPORT',
+APPROVE = 'APPROVE',
+REJECT = 'REJECT',
+CUSTOM = 'CUSTOM',
 }
 
 /**
- * Audit record structure.
- */
+* Audit record structure.
+*/
 export interface AuditRecord {
-  event: AuditEvent;
-  userId: string | null;
-  tenantId: string;
-  resourceType: string;
-  resourceId: string | null;
-  action: string;
-  oldValue?: Record<string, any> | null;
-  newValue?: Record<string, any> | null;
-  metadata?: Record<string, any> | null;
-  ipAddress: string | null;
-  userAgent: string | null;
-  timestamp: Date;
-}
+id: string;
+timestamp: Date;
+action: string;
+entityType: string;
+entityId: string;
+actorId: string;
+actorType: string;
+tenantId: string;
+oldValues?: Record<string, any> | null;
+    newValues?: Record<string, any> | null;
+        metadata?: Record<string, any> | null;
+            immutableHash: string;
+            }
 
-/**
- * Audit config options.
- */
-export interface AuditModuleConfig {
-  /** Có bật audit logging không */
-  enabled: boolean;
-  /** Danh sách paths loại trừ */
-  excludePaths?: string[];
-  /** Mask sensitive fields */
-  maskSensitiveFields: boolean;
-  /** Sensitive field names */
-  sensitiveFields?: string[];
-}
+            /**
+            * Audit config options.
+            */
+            export interface AuditModuleConfig {
+            /** Có bật audit logging không */
+            enabled: boolean;
+            /** Danh sách paths loại trừ */
+            excludePaths?: string[];
+            /** Mask sensitive fields */
+            maskSensitiveFields: boolean;
+            /** Sensitive field names */
+            sensitiveFields?: string[];
+            /** Log directory for append-only file logs */
+            logDir?: string;
+            }
 
-/**
- * Default audit config.
- */
-const DEFAULT_CONFIG: AuditModuleConfig = {
-  enabled: true,
-  excludePaths: [],
-  maskSensitiveFields: true,
-  sensitiveFields: ['password', 'secret', 'token', 'creditCard', 'ssn'],
-};
+            /**
+            * Default audit config.
+            */
+            const DEFAULT_CONFIG: AuditModuleConfig = {
+            enabled: true,
+            excludePaths: ['/health', '/docs', '/swagger', '/openapi.json'],
+            maskSensitiveFields: true,
+            sensitiveFields: ['password', 'secret', 'token', 'creditCard', 'ssn'],
+            logDir: '.midicoder/audit_logs',
+            };
 
-/**
- * Audit Module - Audit logging module cho NestJS.
- *
- * Usage:
- *   // Basic
- *   AuditModule.forRoot()
- *
- *   // With config
- *   AuditModule.forRoot({
- *     enabled: true,
- *     excludePaths: ['/health', '/ping'],
- *   })
- */
-@Module({
-  providers: [AuditService],
-  exports: [AuditService],
-})
-export class AuditModule {
-  /**
-   * ForRoot - Register AuditModule.
-   *
-   * @param config Audit config (optional)
-   * @returns Dynamic module
-   */
-  static forRoot(config?: Partial<AuditModuleConfig>): DynamicModule {
-    const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+            /**
+            * Audit Module - Audit logging module cho NestJS.
+            *
+            * Usage:
+            * // Basic
+            * AuditModule.forRoot()
+            *
+            * // With config
+            * AuditModule.forRoot({
+            * enabled: true,
+            * excludePaths: ['/health', '/ping'],
+            * })
+            */
+            @Global()
+            @Module({
+            imports: [TypeOrmModule.forFeature([AuditLogEntity])],
+            providers: [AuditService],
+            exports: [AuditService],
+            })
+            export class AuditModule {
+            /**
+            * ForRoot - Register AuditModule.
+            *
+            * @param config Audit config (optional)
+            * @returns Dynamic module
+            */
+            static forRoot(config?: Partial<AuditModuleConfig>): DynamicModule {
+                const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
-    return {
-      module: AuditModule,
-      providers: [
-        AuditService,
-        {
-          provide: 'AUDIT_CONFIG',
-          useValue: mergedConfig,
-        },
-        {
-          provide: APP_INTERCEPTOR,
-          useClass: AuditInterceptor,
-        },
-      ],
-      exports: [AuditService],
-    };
-  }
+                const configProvider: Provider = {
+                provide: 'AUDIT_CONFIG',
+                useValue: mergedConfig,
+                };
 
-  /**
-   * ForFeature - Register audit cho specific feature.
-   *
-   * @param resourceType Resource type
-   * @returns Dynamic module
-   */
-  static forFeature(resourceType: string): DynamicModule {
-    return {
-      module: AuditModule,
-      providers: [
-        {
-          provide: `RESOURCE_TYPE_${resourceType.toUpperCase()}`,
-          useValue: resourceType,
-        },
-      ],
-      exports: [],
-    };
-  }
-}
+                const interceptorProvider: Provider = {
+                provide: 'APP_INTERCEPTOR',
+                useClass: AuditInterceptor,
+                };
+
+                return {
+                module: AuditModule,
+                imports: [TypeOrmModule.forFeature([AuditLogEntity])],
+                controllers: [AuditController],
+                providers: [AuditService, configProvider, interceptorProvider],
+                exports: [AuditService],
+                };
+                }
+
+                /**
+                * ForFeature - Register audit cho specific feature.
+                *
+                * @param resourceType Resource type
+                * @returns Dynamic module
+                */
+                static forFeature(resourceType: string): DynamicModule {
+                return {
+                module: AuditModule,
+                providers: [
+                {
+                provide: `RESOURCE_TYPE_${resourceType.toUpperCase()}`,
+                useValue: resourceType,
+                },
+                ],
+                exports: [],
+                };
+                }
+                }
