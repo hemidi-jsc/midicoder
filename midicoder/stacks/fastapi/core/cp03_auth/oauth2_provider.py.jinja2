@@ -191,7 +191,7 @@ class OAuth2ProviderService:
 
             if response.status_code != 200:
                 raise HTTPException(
-                    status_code=status.HTTP_000_INTERNAL_SERVER_ERROR,
+                    status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"OAuth2 token exchange failed: {response.text}",
                 )
 
@@ -233,7 +233,7 @@ class OAuth2ProviderService:
 
             if response.status_code != 200:
                 raise HTTPException(
-                    status_code=status.HTTP_000_INTERNAL_SERVER_ERROR,
+                    status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"OAuth2 user info fetch failed: {response.text}",
                 )
 
@@ -281,7 +281,7 @@ class OAuth2ProviderService:
 
             if response.status_code != 200:
                 raise HTTPException(
-                    status_code=status.HTTP_000_INTERNAL_SERVER_ERROR,
+                    status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"OAuth2 token refresh failed: {response.text}",
                 )
 

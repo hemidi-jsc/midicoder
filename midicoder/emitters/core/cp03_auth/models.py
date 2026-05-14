@@ -114,19 +114,11 @@ class OAuth2AuthConfig:
     client_id: str = ""
 
     def __post_init__(self) -> None:
-        """Validate cấu hình OAuth2 sau khi khởi tạo."""
-        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+        """Validate cấu hình OAuth2 sau khi khởi tạo.
 
-        if not self.authorization_url:
-            EM.raise_error(
-                ErrorCode.CP03_AUTH_CONFIG_INVALID,
-                reason="authorization_url bắt buộc cho OAuth2 provider",
-            )
-        if not self.token_url:
-            EM.raise_error(
-                ErrorCode.CP03_AUTH_CONFIG_INVALID,
-                reason="token_url bắt buộc cho OAuth2 provider",
-            )
+        Note: URLs có thể để trống cho custom provider — sẽ được fill ở runtime
+        từ environment variables hoặc config file.
+        """
 
 
 # ============================================================================
@@ -516,6 +508,242 @@ class Permission:
 
 
 # ============================================================================
+# Rate Limit Strategy
+# ============================================================================
+
+
+class RateLimitStrategyType(str, Enum):
+    """
+    Chiến lược rate limiting.
+
+    - fixed_window: Đếm requests trong cửa sổ thời gian cố định
+    - sliding_window: Sliding window (precision hơn fixed window)
+    - token_bucket: Token bucket algorithm (smooth burst handling)
+    - leaky_bucket: Leaky bucket (rate smoothing)
+    """
+    FIXED_WINDOW = "fixed_window"
+    SLIDING_WINDOW = "sliding_window"
+    TOKEN_BUCKET = "token_bucket"
+    LEAKY_BUCKET = "leaky_bucket"
+
+
+@dataclass
+class RateLimitConfig:
+    """
+    Cấu hình rate limiting cho authentication endpoints.
+
+    Rate limiting bảo vệ khỏi brute-force attack, credential stuffing.
+
+    Attributes:
+        strategy: Chiến lược rate limiting (fixed_window, sliding_window, ...)
+        max_requests: Số request tối đa trong window
+        window_seconds: Kích thước window (giây)
+        per_user: Có apply rate limit per-user không
+        per_ip: Có apply rate limit per-IP không
+        per_endpoint: Có apply rate limit per-endpoint không
+        block_duration_seconds: Thời gian block sau khi vượt limit
+        storage_backend: Backend lưu trạng thái rate limit (memory, redis, ...)
+    """
+    strategy: RateLimitStrategyType = RateLimitStrategyType.SLIDING_WINDOW
+    max_requests: int = 10
+    window_seconds: int = 300
+    per_user: bool = True
+    per_ip: bool = True
+    per_endpoint: bool = False
+    block_duration_seconds: int = 600
+    storage_backend: str = "memory"
+
+    def __post_init__(self) -> None:
+        """Validate rate limit config sau khi khởi tạo."""
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        if self.max_requests <= 0:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="max_requests phải lớn hơn 0",
+                value=self.max_requests,
+            )
+        if self.window_seconds <= 0:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="window_seconds phải lớn hơn 0",
+                value=self.window_seconds,
+            )
+        if self.block_duration_seconds < 0:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="block_duration_seconds phải >= 0",
+                value=self.block_duration_seconds,
+            )
+
+
+# ============================================================================
+# MFA (Multi-Factor Authentication) Providers
+# ============================================================================
+
+
+class MFAProviderType(str, Enum):
+    """
+    Loại MFA provider.
+
+    - totp: Time-based One-Time Password (RFC 6238)
+    - webauthn: Web Authentication (FIDO2/passkeys)
+    - sms: SMS OTP
+    - email_otp: Email OTP
+    """
+    TOTP = "totp"
+    WEBAUTHN = "webauthn"
+    SMS = "sms"
+    EMAIL_OTP = "email_otp"
+
+
+class TOTPAlgorithm(str, Enum):
+    """Algorithm cho TOTP."""
+    SHA1 = "SHA1"
+    SHA256 = "SHA256"
+    SHA512 = "SHA512"
+
+
+@dataclass
+class TOTPConfig:
+    """
+    Cấu hình TOTP (Time-based One-Time Password).
+
+    Theo RFC 6238, dùng cho Google Authenticator, Authy, v.v.
+
+    Attributes:
+        algorithm: Hash algorithm (SHA1, SHA256, SHA512)
+        digit_count: Số chữ số trong OTP (6 hoặc 8)
+        period: Thời gian thay đổi OTP (giây), mặc định 30
+        skew: Số period dung sai (cho clock drift)
+    """
+    algorithm: TOTPAlgorithm = TOTPAlgorithm.SHA1
+    digit_count: int = 6
+    period: int = 30
+    skew: int = 1
+
+    def __post_init__(self) -> None:
+        """Validate TOTP config."""
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        if self.digit_count not in (6, 8):
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="digit_count phải là 6 hoặc 8",
+                value=self.digit_count,
+            )
+        if self.period <= 0:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="period phải lớn hơn 0",
+                value=self.period,
+            )
+        if self.skew < 0:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="skew phải >= 0",
+                value=self.skew,
+            )
+
+
+@dataclass
+class WebAuthnConfig:
+    """
+    Cấu hình WebAuthn (FIDO2 / Passkeys).
+
+    WebAuthn cho phép authentication bằng fingerprint, face ID, hardware security key.
+
+    Attributes:
+        rp_id: Relying Party ID (domain, vd: "example.com")
+        rp_name: Relying Party display name
+        origins: Allowed origins (vd: ["https://example.com"])
+        require_resident_key: Bắt buộc resident key (passwordless)
+        user_verification: User verification requirement (required, preferred, discouraged)
+        timeout_seconds: Timeout cho authentication ceremony
+        allow_credentials: List của credential IDs đã registered (empty = allow all)
+    """
+    rp_id: str
+    rp_name: str
+    origins: list[str] = field(default_factory=list)
+    require_resident_key: bool = False
+    user_verification: str = "preferred"
+    timeout_seconds: int = 60
+    allow_credentials: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate WebAuthn config."""
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        if not self.rp_id:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="rp_id bắt buộc cho WebAuthn",
+            )
+        if not self.rp_name:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="rp_name bắt buộc cho WebAuthn",
+            )
+        if not self.origins:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="origins bắt buộc cho WebAuthn",
+            )
+        if self.user_verification not in ("required", "preferred", "discouraged"):
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="user_verification phải là required, preferred, hoặc discouraged",
+                value=self.user_verification,
+            )
+
+
+@dataclass
+class MFAPolicy:
+    """
+    Chính sách Multi-Factor Authentication.
+
+    Xác định khi nào và bắt buộc user dùng MFA.
+
+    Attributes:
+        enabled: Có bật MFA không
+        required: Có bắt buộc MFA không (true = forced, false = optional)
+        providers: List các provider MFA được cho phép
+        totp_config: Cấu hình TOTP
+        webauthn_config: Cấu hình WebAuthn
+        enforce_on_role: List các roles bắt buộc MFA (empty = tất cả)
+        grace_period_days: Số ngày để user enroll MFA sau khi bật (0 = ngay lập tức)
+    """
+    enabled: bool = False
+    required: bool = False
+    providers: list[MFAProviderType] = field(default_factory=list)
+    totp_config: TOTPConfig = field(default_factory=TOTPConfig)
+    webauthn_config: WebAuthnConfig | None = None
+    enforce_on_role: list[str] = field(default_factory=list)
+    grace_period_days: int = 0
+
+    def __post_init__(self) -> None:
+        """Validate MFA policy."""
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        if self.required and not self.providers:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="MFA required phải có ít nhất một provider",
+            )
+        if self.required and self.grace_period_days > 0:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="MFA required không thể có grace_period > 0",
+            )
+        if self.grace_period_days < 0:
+            EM.raise_error(
+                ErrorCode.CP03_AUTH_CONFIG_INVALID,
+                reason="grace_period_days phải >= 0",
+                value=self.grace_period_days,
+            )
+
+
+# ============================================================================
 # AuthIR (Main Dataclass cho CP03)
 # ============================================================================
 
@@ -526,18 +754,24 @@ class AuthIR:
     Authentication & Authorization Intermediate Representation.
 
     Intermediate representation cho CP03:
-    - Authentication providers (JWT, OAuth2)
+    - Authentication providers (JWT, OAuth2, SAML, LDAP, mTLS, Session)
     - Session management configuration
     - Permissions list
+    - Rate limiting configuration
+    - MFA policy
 
     Attributes:
         providers: List authentication providers
         session: Session configuration
         permissions: List permission definitions
+        rate_limit: Rate limiting configuration
+        mfa: Multi-factor authentication policy
     """
     providers: list[AuthProvider] = field(default_factory=list)
     session: SessionConfig = field(default_factory=SessionConfig)
     permissions: list[Permission] = field(default_factory=list)
+    rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
+    mfa: MFAPolicy = field(default_factory=MFAPolicy)
 
     def validate(self) -> None:
         """
@@ -628,6 +862,9 @@ __all__ = [
     "LDAPReferralMode",
     "MTLSVerificationMode",
     "SessionStoreType",
+    "RateLimitStrategyType",
+    "MFAProviderType",
+    "TOTPAlgorithm",
     # Config classes
     "JWTAuthConfig",
     "OAuth2AuthConfig",
@@ -636,6 +873,10 @@ __all__ = [
     "MTLSAuthConfig",
     "StatefulSessionConfig",
     "SessionConfig",
+    "RateLimitConfig",
+    "TOTPConfig",
+    "WebAuthnConfig",
+    "MFAPolicy",
     # Main models
     "AuthProvider",
     "Permission",

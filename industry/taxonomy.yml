@@ -43,9 +43,9 @@ core_packs:
     name: Authentication & Authorization Framework
     internal_id: cp03_auth
     phase: P0
-    description: JWT/OAuth2 baseline, session management, rate limiting
-    definitions_count: 2
-    obligations_count: 2
+    description: JWT/OAuth2/SAML/LDAP/mTLS auth, session management, rate limiting, MFA
+    definitions_count: 19
+    obligations_count: 10
     depends_on:
       - CP01
       - CP02
@@ -54,7 +54,7 @@ core_packs:
       - authenticate_user
     category: security
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP04
     name: RBAC & Policy Engine
     internal_id: cp04_rbac

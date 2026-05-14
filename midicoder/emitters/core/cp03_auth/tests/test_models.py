@@ -137,17 +137,17 @@ class TestOAuth2AuthConfig:
         assert config.token_url == "https://example.com/oauth/token"
         assert config.scopes == ["read", "write"]
 
-    def test_missing_authorization_url(self):
-        """Test thiếu authorization_url raise error."""
-        with pytest.raises(MidicoderError) as exc_info:
-            OAuth2AuthConfig(authorization_url="", token_url="https://example.com/token")
-        assert exc_info.value.code == ErrorCode.CP03_AUTH_CONFIG_INVALID
+    def test_empty_urls_allowed_for_custom_provider(self):
+        """Test empty URLs OK for custom provider (filled at runtime)."""
+        config = OAuth2AuthConfig(authorization_url="", token_url="")
+        assert config.authorization_url == ""
+        assert config.token_url == ""
 
-    def test_missing_token_url(self):
-        """Test thiếu token_url raise error."""
-        with pytest.raises(MidicoderError) as exc_info:
-            OAuth2AuthConfig(authorization_url="https://example.com/auth", token_url="")
-        assert exc_info.value.code == ErrorCode.CP03_AUTH_CONFIG_INVALID
+    def test_partial_urls_allowed(self):
+        """Test partial URLs OK (one filled, one empty)."""
+        config = OAuth2AuthConfig(authorization_url="https://example.com/auth", token_url="")
+        assert config.authorization_url == "https://example.com/auth"
+        assert config.token_url == ""
 
 
 # ============================================================================

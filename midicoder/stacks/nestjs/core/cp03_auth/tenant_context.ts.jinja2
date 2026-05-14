@@ -1,163 +1,162 @@
 /**
- * Tenant Context - Multi-tenant context propagation.
- * 
- * Module này quản lý tenant context cho multi-tenant isolation.
- * 
- * KPI-029: Missing tenant filter detection.
- */
+* Tenant Context - Multi-tenant context propagation.
+*
+* Module này quản lý tenant context cho multi-tenant isolation.
+*
+* KPI-029: Missing tenant filter detection.
+*/
 
 import { createParamDecorator, ExecutionContext } from "@nestjs/common";
-import { activateFilters } from "@nestjs/core";
 
 /**
- * Tenant Mode.
- */
+* Tenant Mode.
+*/
 export enum TenantMode {
-  DATABASE = "database",
-  SCHEMA = "schema",
-  ROW = "row",
-  HYBRID = "hybrid",
+DATABASE = "database",
+SCHEMA = "schema",
+ROW = "row",
+HYBRID = "hybrid",
 }
 
 /**
- * Tenant Context Interface.
- */
+* Tenant Context Interface.
+*/
 export interface TenantContextData {
-  id: string;
-  name?: string;
-  mode?: TenantMode;
+id: string;
+name?: string;
+mode?: TenantMode;
 }
 
 /**
- * Tenant Context Key.
- */
+* Tenant Context Key.
+*/
 const TENANT_CONTEXT_KEY = "tenant";
 
 /**
- * Tenant Context Storage (Request-local).
- */
+* Tenant Context Storage (Request-local).
+*/
 const tenantContextStorage = new WeakMap<ExecutionContext, TenantContextData>();
 
-/**
- * Set tenant context cho current request.
- * 
- * KPI-029: Tenant-scoped operations.
- * 
- * @param context - Execution context
- * @param tenant - Tenant context data
- */
-export function setTenantContext(
-  context: ExecutionContext,
-  tenant: TenantContextData,
-): void {
-  tenantContextStorage.set(context, tenant);
-}
+    /**
+    * Set tenant context cho current request.
+    *
+    * KPI-029: Tenant-scoped operations.
+    *
+    * @param context - Execution context
+    * @param tenant - Tenant context data
+    */
+    export function setTenantContext(
+    context: ExecutionContext,
+    tenant: TenantContextData,
+    ): void {
+    tenantContextStorage.set(context, tenant);
+    }
 
-/**
- * Get tenant context từ current request.
- * 
- * KPI-029: Tenant filter cho queries.
- * 
- * @param context - Execution context
- * @returns Tenant context data hoặc undefined
- */
-export function getTenantContext(context: ExecutionContext): TenantContextData | undefined {
-  return tenantContextStorage.get(context);
-}
+    /**
+    * Get tenant context từ current request.
+    *
+    * KPI-029: Tenant filter cho queries.
+    *
+    * @param context - Execution context
+    * @returns Tenant context data hoặc undefined
+    */
+    export function getTenantContext(context: ExecutionContext): TenantContextData | undefined {
+    return tenantContextStorage.get(context);
+    }
 
-/**
- * Get tenant ID từ current request.
- * 
- * KPI-029: Tenant filter cho queries.
- * 
- * @param context - Execution context
- * @returns Tenant ID hoặc undefined
- */
-export function getTenantId(context: ExecutionContext): string | undefined {
-  const tenant = getTenantContext(context);
-  return tenant?.id;
-}
+    /**
+    * Get tenant ID từ current request.
+    *
+    * KPI-029: Tenant filter cho queries.
+    *
+    * @param context - Execution context
+    * @returns Tenant ID hoặc undefined
+    */
+    export function getTenantId(context: ExecutionContext): string | undefined {
+    const tenant = getTenantContext(context);
+    return tenant?.id;
+    }
 
-/**
- * Tenant Decorator - Extract tenant from request.
- * 
- * Decorator này extract tenant context từ request.
- * 
- * KPI-029: Tenant-scoped operations.
- */
-export const CurrentTenant = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext) => {
+    /**
+    * Tenant Decorator - Extract tenant from request.
+    *
+    * Decorator này extract tenant context từ request.
+    *
+    * KPI-029: Tenant-scoped operations.
+    */
+    export const CurrentTenant = createParamDecorator(
+    (data: unknown, ctx: ExecutionContext) => {
     const request = ctx.switchToHttp().getRequest();
-    
+
     // Get tenant from user context (set by JWT guard)
     if (request.user?.tenantId) {
-      return {
-        id: request.user.tenantId,
-        mode: TenantMode.ROW, // Default mode
-      };
+    return {
+    id: request.user.tenantId,
+    mode: TenantMode.ROW, // Default mode
+    };
     }
 
     // Get tenant from header
     const tenantHeader = request.headers["x-tenant-id"];
     if (tenantHeader) {
-      return {
-        id: tenantHeader as string,
-        mode: TenantMode.ROW,
-      };
+    return {
+    id: tenantHeader as string,
+    mode: TenantMode.ROW,
+    };
     }
 
     return undefined;
-  },
-);
+    },
+    );
 
-/**
- * Tenant Guard Interface.
- */
-export interface TenantGuard {
-  validateTenant(tenantId: string): Promise<boolean>;
-}
+    /**
+    * Tenant Guard Interface.
+    */
+    export interface TenantGuard {
+    validateTenant(tenantId: string): Promise<boolean>;
+        }
 
-/**
- * Default Tenant Guard Implementation.
- * 
- * Guard này validate tenant context cho mỗi request.
- * 
- * KPI-029: Tenant isolation enforcement.
- */
-export class DefaultTenantGuard implements TenantGuard {
-  /**
-   * Validate tenant ID.
-   * 
-   * @param tenantId - Tenant ID to validate
-   * @returns True nếu tenant valid
-   */
-  async validateTenant(tenantId: string): Promise<boolean> {
-    // Basic validation: tenant ID must not be empty
-    if (!tenantId || tenantId.trim() === "") {
-      return false;
-    }
+        /**
+        * Default Tenant Guard Implementation.
+        *
+        * Guard này validate tenant context cho mỗi request.
+        *
+        * KPI-029: Tenant isolation enforcement.
+        */
+        export class DefaultTenantGuard implements TenantGuard {
+        /**
+        * Validate tenant ID.
+        *
+        * @param tenantId - Tenant ID to validate
+        * @returns True nếu tenant valid
+        */
+        async validateTenant(tenantId: string): Promise<boolean> {
+            // Basic validation: tenant ID must not be empty
+            if (!tenantId || tenantId.trim() === "") {
+            return false;
+            }
 
-    // TODO: Add tenant existence check từ database
-    return true;
-  }
-}
+            // TODO: Add tenant existence check từ database
+            return true;
+            }
+            }
 
-/**
- * Tenant Filter Decorator.
- * 
- * Decorator để auto-filter queries bằng tenant ID.
- * 
- * KPI-029: Auto tenant filter cho tất cả queries.
- */
-export function ApplyTenantFilter() {
-  return function (target: object, propertyKey: string, descriptor: PropertyDescriptor) {
-    const originalMethod = descriptor.value;
+            /**
+            * Tenant Filter Decorator.
+            *
+            * Decorator để auto-filter queries bằng tenant ID.
+            *
+            * KPI-029: Auto tenant filter cho tất cả queries.
+            */
+            export function ApplyTenantFilter() {
+            return function (target: object, propertyKey: string, descriptor: PropertyDescriptor) {
+            const originalMethod = descriptor.value;
 
-    descriptor.value = async function (...args: unknown[]) {
-      // This is a marker decorator - actual filtering happens in repository layer
-      return originalMethod.apply(this, args);
-    };
+            descriptor.value = async function (...args: unknown[]) {
+            // This is a marker decorator - actual filtering happens in repository layer
+            return originalMethod.apply(this, args);
+            };
 
-    return descriptor;
-  };
-}
+            return descriptor;
+            };
+            }

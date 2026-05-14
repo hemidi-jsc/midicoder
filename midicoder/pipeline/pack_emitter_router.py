@@ -58,6 +58,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "NestJSValueObjectEmitter",
         None,
     ),
+    # CP03 – Auth (FastAPI)
+    "cp03.auth.fastapi": (
+        "midicoder.emitters.core.cp03_auth.fastapi",
+        "FastAPIAuthEmitter",
+        "cp03_auth",
+    ),
+    # CP03 – Auth (NestJS)
+    "cp03.auth.nestjs": (
+        "midicoder.emitters.core.cp03_auth.nestjs",
+        "NestJSEmitter",
+        "cp03_auth",
+    ),
+    # CP03 – Auth (Angular)
+    "cp03.auth.angular": (
+        "midicoder.emitters.core.cp03_auth.angular",
+        "AngularEmitter",
+        "cp03_auth",
+    ),
+    # CP03 – Auth (React)
+    "cp03.auth.react": (
+        "midicoder.emitters.core.cp03_auth.react",
+        "ReactEmitter",
+        "cp03_auth",
+    ),
     # CP07 – Docker Compose (already used, kept for reference)
     "cp07.docker": (
         "midicoder.emitters.core.cp07_iac.docker",
@@ -106,9 +130,34 @@ def _parse_database_dict(raw: dict[str, Any]) -> Any:
     return parser.parse_from_metadata(raw)
 
 
+def _parse_auth_dict(raw: dict[str, Any]) -> Any:
+    """Parse a raw auth dict from MIR metadata into a CP03 AuthIR dataclass."""
+    from midicoder.emitters.core.cp03_auth.parser import AuthParser
+    import yaml
+
+    # AuthParser expects a file path, but we have raw dict — create a minimal
+    # YAML structure and use the internal parse methods.
+    yaml_safe = raw if "authentication" in raw else {
+        "authentication": {"providers": raw.get("providers", [])},
+    }
+    yaml_str = yaml.dump(yaml_safe)
+
+    # Use a temp file for AuthParser
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False, encoding="utf-8") as f:
+        f.write(yaml_str)
+        f.flush()
+        parser = AuthParser(f.name)
+        auth_ir = parser.parse()
+    import os
+    os.unlink(f.name)
+    return auth_ir
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
+    "cp03_auth": _parse_auth_dict,
 }
 
 

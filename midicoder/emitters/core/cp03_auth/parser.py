@@ -24,9 +24,17 @@ from midicoder.emitters.core.cp03_auth.models import (
     AuthProvider,
     AuthProviderType,
     JWTAuthConfig,
+    LDAPOAuthConfig,
+    LDAPReferralMode,
+    MTLSAuthConfig,
+    MTLSVerificationMode,
+    NameIDFormat,
     OAuth2AuthConfig,
     Permission,
+    SAMLAuthConfig,
     SessionConfig,
+    SessionStoreType,
+    StatefulSessionConfig,
 )
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
@@ -203,6 +211,14 @@ class AuthParser:
             config = self._parse_jwt_config(config_data, provider_id)
         elif provider_type == AuthProviderType.OAUTH2:
             config = self._parse_oauth2_config(config_data, provider_id)
+        elif provider_type == AuthProviderType.SAML:
+            config = self._parse_saml_config(config_data, provider_id)
+        elif provider_type == AuthProviderType.LDAP:
+            config = self._parse_ldap_config(config_data, provider_id)
+        elif provider_type == AuthProviderType.MTLS:
+            config = self._parse_mtls_config(config_data, provider_id)
+        elif provider_type == AuthProviderType.SESSION:
+            config = self._parse_session_config(config_data, provider_id)
         else:
             EM.raise_error(
                 ErrorCode.CP03_AUTH_CONFIG_INVALID,
@@ -274,6 +290,162 @@ class AuthParser:
             authorization_url=authorization_url,
             token_url=token_url,
             scopes=config_data.get("scopes", []),
+        )
+
+    def _parse_saml_config(
+        self, config_data: dict[str, Any], provider_id: str
+    ) -> SAMLAuthConfig:
+        """
+        Parse SAML 2.0 auth config.
+
+        Args:
+            config_data: Config YAML data
+            provider_id: Provider ID (for error messages)
+
+        Returns:
+            SAMLAuthConfig object
+
+        Raises:
+            MidicoderError: If required fields missing
+        """
+        name_id_format_str = config_data.get("name_id_format", "persistent")
+        try:
+            name_id_format = NameIDFormat(name_id_format_str.lower())
+        except ValueError:
+            EM.raise_error(
+                ErrorCode.DSL_MISSING_REQUIRED_FIELD,
+                field="name_id_format",
+                provider_id=provider_id,
+                valid_values=[f.value for f in NameIDFormat],
+            )
+
+        return SAMLAuthConfig(
+            idp_metadata_url=config_data.get("idp_metadata_url", ""),
+            idp_metadata_xml=config_data.get("idp_metadata_xml", ""),
+            sp_entity_id=config_data.get("sp_entity_id", ""),
+            sp_assertion_consumer_url=config_data.get("sp_assertion_consumer_url", ""),
+            name_id_format=name_id_format,
+            want_authn_requests_signed=config_data.get("want_authn_requests_signed", False),
+            want_response_signed=config_data.get("want_response_signed", True),
+            want_assertion_signed=config_data.get("want_assertion_signed", True),
+            cert=config_data.get("cert", ""),
+            key=config_data.get("key", ""),
+        )
+
+    def _parse_ldap_config(
+        self, config_data: dict[str, Any], provider_id: str
+    ) -> LDAPOAuthConfig:
+        """
+        Parse LDAP auth config.
+
+        Args:
+            config_data: Config YAML data
+            provider_id: Provider ID (for error messages)
+
+        Returns:
+            LDAPOAuthConfig object
+
+        Raises:
+            MidicoderError: If required fields missing
+        """
+        referral_mode_str = config_data.get("referral_mode", "ignore")
+        try:
+            referral_mode = LDAPReferralMode(referral_mode_str.lower())
+        except ValueError:
+            EM.raise_error(
+                ErrorCode.DSL_MISSING_REQUIRED_FIELD,
+                field="referral_mode",
+                provider_id=provider_id,
+                valid_values=[m.value for m in LDAPReferralMode],
+            )
+
+        return LDAPOAuthConfig(
+            server=config_data.get("server", ""),
+            use_ssl=config_data.get("use_ssl", False),
+            base_dn=config_data.get("base_dn", ""),
+            user_search_base=config_data.get("user_search_base", ""),
+            group_search_base=config_data.get("group_search_base", ""),
+            user_search_filter=config_data.get("user_search_filter", "(sAMAccountName={login})"),
+            group_search_filter=config_data.get("group_search_filter", "(member={dn})"),
+            bind_dn=config_data.get("bind_dn", ""),
+            bind_password=config_data.get("bind_password", ""),
+            referral_mode=referral_mode,
+            attributes=config_data.get("attributes", ["cn", "mail", "memberOf"]),
+        )
+
+    def _parse_mtls_config(
+        self, config_data: dict[str, Any], provider_id: str
+    ) -> MTLSAuthConfig:
+        """
+        Parse mTLS auth config.
+
+        Args:
+            config_data: Config YAML data
+            provider_id: Provider ID (for error messages)
+
+        Returns:
+            MTLSAuthConfig object
+
+        Raises:
+            MidicoderError: If required fields missing
+        """
+        verification_mode_str = config_data.get("verification_mode", "required")
+        try:
+            verification_mode = MTLSVerificationMode(verification_mode_str.lower())
+        except ValueError:
+            EM.raise_error(
+                ErrorCode.DSL_MISSING_REQUIRED_FIELD,
+                field="verification_mode",
+                provider_id=provider_id,
+                valid_values=[m.value for m in MTLSVerificationMode],
+            )
+
+        return MTLSAuthConfig(
+            ca_cert_path=config_data.get("ca_cert_path", ""),
+            server_cert_path=config_data.get("server_cert_path", ""),
+            server_key_path=config_data.get("server_key_path", ""),
+            verification_mode=verification_mode,
+            allowed_cn_patterns=config_data.get("allowed_cn_patterns", []),
+            allowed_ou_patterns=config_data.get("allowed_ou_patterns", []),
+            allowed_o_patterns=config_data.get("allowed_o_patterns", []),
+        )
+
+    def _parse_session_config(
+        self, config_data: dict[str, Any], provider_id: str
+    ) -> StatefulSessionConfig:
+        """
+        Parse stateful session config.
+
+        Args:
+            config_data: Config YAML data
+            provider_id: Provider ID (for error messages)
+
+        Returns:
+            StatefulSessionConfig object
+
+        Raises:
+            MidicoderError: If required fields missing
+        """
+        store_type_str = config_data.get("store_type", "database")
+        try:
+            store_type = SessionStoreType(store_type_str.lower())
+        except ValueError:
+            EM.raise_error(
+                ErrorCode.DSL_MISSING_REQUIRED_FIELD,
+                field="store_type",
+                provider_id=provider_id,
+                valid_values=[s.value for s in SessionStoreType],
+            )
+
+        return StatefulSessionConfig(
+            store_type=store_type,
+            store_connection_string=config_data.get("store_connection_string", ""),
+            cookie_name=config_data.get("cookie_name", "session_id"),
+            cookie_secure=config_data.get("cookie_secure", True),
+            cookie_http_only=config_data.get("cookie_http_only", True),
+            cookie_samesite=config_data.get("cookie_samesite", "lax"),
+            ttl_seconds=config_data.get("ttl_seconds", 86400),
+            idle_timeout_seconds=config_data.get("idle_timeout_seconds", 3600),
         )
 
     def _parse_session(self, data: dict[str, Any]) -> SessionConfig:
