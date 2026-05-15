@@ -147,7 +147,7 @@ class TenantSchemaMixin:
                 schema = User.get_tenant_schema()
                 # Returns: "acme" hoặc "acme_db"
         """
-        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+        from app.multitenant.tenant_context import get_tenant_context
 
         context = get_tenant_context()
         if context is None:
@@ -189,7 +189,7 @@ class TenantSchemaMixin:
         Returns:
             True nếu current tenant context khớp với tenant_id
         """
-        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+        from app.multitenant.tenant_context import get_tenant_context
 
         context = get_tenant_context()
         if context is None:
@@ -258,7 +258,7 @@ class TenantDatabaseMixin:
                 url = User.get_tenant_database_url()
                 engine = create_engine(url)
         """
-        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+        from app.multitenant.tenant_context import get_tenant_context
 
         context = get_tenant_context()
         if context is None:
@@ -289,7 +289,7 @@ class TenantDatabaseMixin:
             db_name = User.get_tenant_database_name()
             # Returns: "tenant-123" hoặc "acme_db"
         """
-        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+        from app.multitenant.tenant_context import get_tenant_context
 
         context = get_tenant_context()
         if context is None:
@@ -314,7 +314,7 @@ class TenantDatabaseMixin:
         Returns:
             True nếu current database thuộc tenant_id này
         """
-        from midicoder.stacks.fastapi.templates.tenant.tenant_context import get_tenant_context
+        from app.multitenant.tenant_context import get_tenant_context
 
         context = get_tenant_context()
         if context is None:

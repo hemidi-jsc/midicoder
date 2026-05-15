@@ -72,24 +72,23 @@ class AuditRecord:
     metadata: Optional[dict[str, Any]] = None
     immutable_hash: str = ""
 
-    def __post_init__(self) -> None:
-        """Compute immutable hash nếu chưa có."""
-        if not self.immutable_hash:
-            data = {
-                "id": self.id,
-                "timestamp": self.timestamp.isoformat(),
-                "action": self.action,
-                "entity_type": self.entity_type,
-                "entity_id": self.entity_id,
-                "actor_id": self.actor_id,
-                "actor_type": self.actor_type,
-                "tenant_id": self.tenant_id,
-                "old_values": self.old_values or {},
-                "new_values": self.new_values or {},
-                "metadata": self.metadata or {},
-            }
-            canonical = json.dumps(data, sort_keys=True, default=str)
-            self.immutable_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    def compute_hash(self) -> str:
+        """Tính SHA-256 hash cho tamper-evidence (từ các fields hiện tại)."""
+        data = {
+            "id": self.id,
+            "timestamp": self.timestamp.isoformat(),
+            "action": self.action,
+            "entity_type": self.entity_type,
+            "entity_id": self.entity_id,
+            "actor_id": self.actor_id,
+            "actor_type": self.actor_type,
+            "tenant_id": self.tenant_id,
+            "old_values": self.old_values or {},
+            "new_values": self.new_values or {},
+            "metadata": self.metadata or {},
+        }
+        canonical = json.dumps(data, sort_keys=True, default=str)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
         """Chuyển AuditRecord sang dictionary."""

@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 from industry.registry import TaxonomyRegistry, Pack
+from midicoder.contracts.registry import CP_ID_TO_INTERNAL
 from .models import PackResolution
 
 
@@ -134,8 +135,8 @@ class PackResolver:
             # Dùng internal_id làm directory name
             dir_name = pack.internal_id
             if dir_name is None:
-                # Fallback: thử các tên phổ biến
-                dir_name = self._cp_id_to_dir_name(pack.id)
+                # Fallback: dùng single source mapping
+                dir_name = CP_ID_TO_INTERNAL.get(pack.id, pack.id.lower())
             return base_dir / "core" / dir_name
 
         elif pack.pack_type == "domain_pack":
@@ -186,35 +187,6 @@ class PackResolver:
             return f"rx{num}-{short_name}"
 
         return f"{pack.pack_type}-{pack.id}"
-
-    def _cp_id_to_dir_name(self, cp_id: str) -> str:
-        """Map CP ID → directory name (snake_case internal_id, matches folder name verbatim)."""
-        mapping = {
-            "CP01": "cp01_domain_model",
-            "CP02": "cp02_multi_tenant",
-            "CP03": "cp03_auth",
-            "CP04": "cp04_rbac",
-            "CP05": "cp05_event_driven",
-            "CP06": "cp06_api_gateway",
-            "CP07": "cp07_iac",
-            "CP08": "cp08_database",
-            "CP09": "cp09_cache",
-            "CP10": "cp10_search",
-            "CP11": "cp11_file_media",
-            "CP12": "cp12_notification",
-            "CP13": "cp13_workflow_runtime",
-            "CP14": "cp14_audit_compliance",
-            "CP15": "cp15_observability",
-            "CP16": "cp16_monitoring",
-            "CP17": "cp17_bi_analytics",
-            "CP18": "cp18_frontend_framework",
-            "CP19": "cp19_ui_components",
-            "CP20": "cp20_api_client",
-            "CP51": "cp51_blueprint",
-            "CP52": "cp52_invariant",
-            "CP53": "cp53_domain_bridge",
-        }
-        return mapping.get(cp_id, cp_id.lower())
 
     def _dp_id_to_dir_name(self, dp_id: str) -> str:
         """Map DP ID → directory name."""

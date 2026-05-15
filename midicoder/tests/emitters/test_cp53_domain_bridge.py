@@ -557,15 +557,10 @@ class TestExports:
 
 
 class TestPackResolverIntegration:
-    """Tests cho integration của CP53 với PackResolver."""
+    """Tests cho integration của CP53 với CP_ID_TO_INTERNAL registry."""
 
-    def test_resolver_maps_cp53_to_domain_bridge(self) -> None:
-        """Kiểm tra PackResolver._cp_id_to_dir_name() mapping CP53."""
-        from midicoder.contracts.composition.resolver import PackResolver
-        from industry.registry import TaxonomyRegistry
+    def test_registry_maps_cp53_to_domain_bridge(self) -> None:
+        """Kiểm tra CP_ID_TO_INTERNAL mapping CP53 → cp53_domain_bridge."""
+        from midicoder.contracts.registry import CP_ID_TO_INTERNAL
 
-        registry = TaxonomyRegistry.load(str(PROJECT_ROOT / "industry/taxonomy.yml"))
-        resolver = PackResolver(registry, ROOT)
-
-        dir_name = resolver._cp_id_to_dir_name("CP53")
-        assert dir_name == "domain_bridge"
+        assert CP_ID_TO_INTERNAL.get("CP53") == "cp53_domain_bridge"

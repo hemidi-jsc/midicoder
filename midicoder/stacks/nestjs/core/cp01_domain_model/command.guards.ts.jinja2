@@ -18,9 +18,9 @@
 
 import { Injectable } from '@nestjs/common';
 import { {{ command.id }} } from './{{ command_snake }}';
-import { AuthService } from '@midicoder/services/auth';
-import { TenantService } from '@midicoder/services/tenant';
-import { ComplianceService } from '@midicoder/services/compliance';
+import { AuthService } from '../services/auth';
+import { TenantService } from '../services/tenant';
+import { ComplianceService } from '../services/compliance';
 
 /**
 * Guards cho {{ command.description }}.

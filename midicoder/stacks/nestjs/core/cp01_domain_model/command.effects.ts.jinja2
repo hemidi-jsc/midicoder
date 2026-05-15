@@ -1,551 +1,570 @@
 /**
- * Effects cho {{ command.id }}.
- * 
- * Thực thi 19+ effect types cho {{ command.description }}:
- * 
- * Core Effects:
- * - CREATE_RECORD: Tạo record mới
- * - UPDATE_RECORD: Cập nhật record
- * - DELETE_RECORD: Xóa record
- * - PUBLISH_EVENT: Publish event
- * 
- * Transaction Effects:
- * - BEGIN_TRANSACTION: Bắt đầu transaction
- * - COMMIT_TRANSACTION: Commit transaction
- * - ROLLBACK_TRANSACTION: Rollback transaction
- * 
- * Extended Effects:
- * - QUERY_RECORDS: Query trong command
- * - UPSERT_RECORD: Upsert record
- * 
- * Integration Effects:
- * - CALL_EXTERNAL_API: Gọi external API
- * - SEND_EMAIL: Gửi email
- * - SEND_SMS: Gửi SMS
- * - WEBHOOK: Gọi webhook
- * 
- * Observability Effects:
- * - WRITE_AUDIT_LOG: Ghi audit log
- * - RECORD_METRIC: Ghi metric
- * 
- * Compliance Effects:
- * - CHECK_COMPLIANCE: Check compliance gate
- * - MASK_PII: Mask PII data
- * 
- * KPI-029: Tenant Isolation - tenantId được pass vào tất cả effects cho tenant isolation.
- * 
- * @author Midicoder Auto-generated
- */
+* Effects cho {{ command.id }}.
+*
+* Thực thi 19+ effect types cho {{ command.description }}:
+*
+* Core Effects:
+* - CREATE_RECORD: Tạo record mới
+* - UPDATE_RECORD: Cập nhật record
+* - DELETE_RECORD: Xóa record
+* - PUBLISH_EVENT: Publish event
+*
+* Transaction Effects:
+* - BEGIN_TRANSACTION: Bắt đầu transaction
+* - COMMIT_TRANSACTION: Commit transaction
+* - ROLLBACK_TRANSACTION: Rollback transaction
+*
+* Extended Effects:
+* - QUERY_RECORDS: Query trong command
+* - UPSERT_RECORD: Upsert record
+*
+* Integration Effects:
+* - CALL_EXTERNAL_API: Gọi external API
+* - SEND_EMAIL: Gửi email
+* - SEND_SMS: Gửi SMS
+* - WEBHOOK: Gọi webhook
+*
+* Observability Effects:
+* - WRITE_AUDIT_LOG: Ghi audit log
+* - RECORD_METRIC: Ghi metric
+*
+* Compliance Effects:
+* - CHECK_COMPLIANCE: Check compliance gate
+* - MASK_PII: Mask PII data
+*
+* KPI-029: Tenant Isolation - tenantId được pass vào tất cả effects cho tenant isolation.
+*
+* @author Midicoder Auto-generated
+*/
 
 import { Injectable } from '@nestjs/common';
 import { {{ command.id }} } from './{{ command_snake }}';
-import { BaseRepository } from '@midicoder/repositories/base';
-import { EventBus } from '@midicoder/services/event-bus';
-import { NotificationService } from '@midicoder/services/notification';
-import { AuditService } from '@midicoder/services/audit';
+import { BaseRepository } from '../repositories/base';
+import { EventBus } from '../services/event-bus';
+import { NotificationService } from '../services/notification';
+import { AuditService } from '../services/audit';
 
 /**
- * Effects manager cho {{ command.description }}.
- * 
- * Effect types supported (19+):
- * - CRUD: CREATE_RECORD, UPDATE_RECORD, DELETE_RECORD, QUERY_RECORDS, UPSERT_RECORD
- * - Transaction: BEGIN_TRANSACTION, COMMIT_TRANSACTION, ROLLBACK_TRANSACTION
- * - Events: PUBLISH_EVENT
- * - Integration: CALL_EXTERNAL_API, SEND_EMAIL, SEND_SMS, WEBHOOK
- * - Observability: WRITE_AUDIT_LOG, RECORD_METRIC
- * - Compliance: CHECK_COMPLIANCE, MASK_PII
- * 
- * KPI-029: tenantId được pass vào tất cả effects cho tenant isolation.
- * 
- * Dependencies:
- * - Repositories: Cho CRUD operations
- * - EventBus: Cho publish events
- * - NotificationService: Cho email/SMS
- * - AuditService: Cho audit logs
- */
+* Effects manager cho {{ command.description }}.
+*
+* Effect types supported (19+):
+* - CRUD: CREATE_RECORD, UPDATE_RECORD, DELETE_RECORD, QUERY_RECORDS, UPSERT_RECORD
+* - Transaction: BEGIN_TRANSACTION, COMMIT_TRANSACTION, ROLLBACK_TRANSACTION
+* - Events: PUBLISH_EVENT
+* - Integration: CALL_EXTERNAL_API, SEND_EMAIL, SEND_SMS, WEBHOOK
+* - Observability: WRITE_AUDIT_LOG, RECORD_METRIC
+* - Compliance: CHECK_COMPLIANCE, MASK_PII
+*
+* KPI-029: tenantId được pass vào tất cả effects cho tenant isolation.
+*
+* Dependencies:
+* - Repositories: Cho CRUD operations
+* - EventBus: Cho publish events
+* - NotificationService: Cho email/SMS
+* - AuditService: Cho audit logs
+*/
 @Injectable()
 export class {{ command.id }}Effects {
-    constructor(
-        private readonly repositories: Map<string, BaseRepository>,
-        private readonly eventBus: EventBus,
-        private readonly notificationService: NotificationService,
-        private readonly auditService: AuditService,
+constructor(
+private readonly repositories: Map<string, BaseRepository>,
+    private readonly eventBus: EventBus,
+    private readonly notificationService: NotificationService,
+    private readonly auditService: AuditService,
     ) {}
 
     /**
-     * Thực thi tất cả effects theo thứ tự trong command definition.
-     * 
-     * KPI-029: tenantId được pass vào tất cả effects cho tenant isolation.
-     * 
-     * Process:
-     * 1. Iterate qua tất cả effects
-     * 2. Check condition (nếu có)
-     * 3. Execute effect theo type với tenantId
-     * 4. Collect results
-     * 
-     * KPI-029: Tenant Flow:
-     * - tenantId được pass vào CREATE_RECORD, UPDATE_RECORD, DELETE_RECORD
-     * - tenantId được include trong PUBLISH_EVENT metadata
-     * - tenantId được ghi vào WRITE_AUDIT_LOG
-     * 
-     * Effect Execution Order:
-{% if command.effects %}
-{% for effect in command.effects %}
-     * - {{ effect.type }}{% if effect.entity %} ({{ effect.entity }}){% endif %}{% if effect.event %} ({{ effect.event }}){% endif %}
-{% endfor %}
-{% else %}
-     * (No effects defined)
-{% endif %}
-     * 
-     * @param command Command instance với tenantId (KPI-029)
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID cho tenant isolation
-     * @returns Dict của results từ mỗi effect
-     */
+    * Thực thi tất cả effects theo thứ tự trong command definition.
+    *
+    * KPI-029: tenantId được pass vào tất cả effects cho tenant isolation.
+    *
+    * Process:
+    * 1. Iterate qua tất cả effects
+    * 2. Check condition (nếu có)
+    * 3. Execute effect theo type với tenantId
+    * 4. Collect results
+    *
+    * KPI-029: Tenant Flow:
+    * - tenantId được pass vào CREATE_RECORD, UPDATE_RECORD, DELETE_RECORD
+    * - tenantId được include trong PUBLISH_EVENT metadata
+    * - tenantId được ghi vào WRITE_AUDIT_LOG
+    *
+    * Effect Execution Order:
+    {% if command.effects %}
+    {% for effect in command.effects %}
+    * - {{ effect.type }}{% if effect.entity %} ({{ effect.entity }}){% endif %}{% if effect.event %} ({{ effect.event
+    }}){% endif %}
+    {% endfor %}
+    {% else %}
+    * (No effects defined)
+    {% endif %}
+    *
+    * @param command Command instance với tenantId (KPI-029)
+    * @param userId User ID
+    * @param tenantId KPI-029: Tenant ID cho tenant isolation
+    * @returns Dict của results từ mỗi effect
+    */
     async execute(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
+    command: {{ command.id }},
+    userId?: string,
+    tenantId?: string,
     ): Promise<Record<string, unknown>> {
         const results: Record<string, unknown> = {};
 
-{% if command.effects %}
-{% for effect in command.effects %}
-        // Execute {{ effect.type }} effect
-{% if effect.type == 'create_record' %}
-        const recordId = await this._create{{ effect.entity }}(command, userId, tenantId);
-        results['{{ effect.entity|lower }}_id'] = recordId;
+            {% if command.effects %}
+            {% for effect in command.effects %}
+            // Execute {{ effect.type }} effect
+            {% if effect.type == 'create_record' %}
+            const recordId = await this._create{{ effect.entity }}(command, userId, tenantId);
+            results['{{ effect.entity|lower }}_id'] = recordId;
 
-{% elif effect.type == 'update_record' %}
-        const updated = await this._update{{ effect.entity }}(command, userId, tenantId);
-        results['{{ effect.entity|lower }}_updated'] = updated;
+            {% elif effect.type == 'update_record' %}
+            const updated = await this._update{{ effect.entity }}(command, userId, tenantId);
+            results['{{ effect.entity|lower }}_updated'] = updated;
 
-{% elif effect.type == 'delete_record' %}
-        const deleted = await this._delete{{ effect.entity }}(command, userId, tenantId);
-        results['{{ effect.entity|lower }}_deleted'] = deleted;
+            {% elif effect.type == 'delete_record' %}
+            const deleted = await this._delete{{ effect.entity }}(command, userId, tenantId);
+            results['{{ effect.entity|lower }}_deleted'] = deleted;
 
-{% elif effect.type == 'query_records' %}
-        const records = await this._query{{ effect.entity }}(command, tenantId);
-        results['{{ effect.entity|lower }}_records'] = records;
+            {% elif effect.type == 'query_records' %}
+            const records = await this._query{{ effect.entity }}(command, tenantId);
+            results['{{ effect.entity|lower }}_records'] = records;
 
-{% elif effect.type == 'upsert_record' %}
-        const upsertedId = await this._upsert{{ effect.entity }}(command, userId, tenantId);
-        results['{{ effect.entity|lower }}_id'] = upsertedId;
+            {% elif effect.type == 'upsert_record' %}
+            const upsertedId = await this._upsert{{ effect.entity }}(command, userId, tenantId);
+            results['{{ effect.entity|lower }}_id'] = upsertedId;
 
-{% elif effect.type == 'publish_event' %}
-        const published = await this._publish{{ effect.event }}(command, userId, tenantId);
-        results['{{ effect.event|lower }}_published'] = published;
+            {% elif effect.type == 'publish_event' %}
+            const published = await this._publish{{ effect.event }}(command, userId, tenantId);
+            results['{{ effect.event|lower }}_published'] = published;
 
-{% elif effect.type == 'begin_transaction' %}
-        await this._beginTransaction();
-        results['transaction_started'] = true;
+            {% elif effect.type == 'begin_transaction' %}
+            await this._beginTransaction();
+            results['transaction_started'] = true;
 
-{% elif effect.type == 'commit_transaction' %}
-        await this._commitTransaction();
-        results['transaction_committed'] = true;
+            {% elif effect.type == 'commit_transaction' %}
+            await this._commitTransaction();
+            results['transaction_committed'] = true;
 
-{% elif effect.type == 'rollback_transaction' %}
-        await this._rollbackTransaction();
-        results['transaction_rolled_back'] = true;
+            {% elif effect.type == 'rollback_transaction' %}
+            await this._rollbackTransaction();
+            results['transaction_rolled_back'] = true;
 
-{% elif effect.type == 'call_external_api' %}
-        const apiResult = await this._callExternalApi(command, {{ effect.api_endpoint or 'null' }});
-        results['{{ effect.api_endpoint | lower | replace('/', '_') or 'api_result' }}'] = apiResult;
+            {% elif effect.type == 'call_external_api' %}
+            const apiResult = await this._callExternalApi(command, {{ effect.api_endpoint or 'null' }});
+            results['{{ effect.api_endpoint | lower | replace('/', '_') or 'api_result' }}'] = apiResult;
 
-{% elif effect.type == 'send_email' %}
-        const sent = await this._sendEmail(command, userId, tenantId);
-        results['email_sent'] = sent;
+            {% elif effect.type == 'send_email' %}
+            const sent = await this._sendEmail(command, userId, tenantId);
+            results['email_sent'] = sent;
 
-{% elif effect.type == 'send_sms' %}
-        const sent = await this._sendSms(command, userId, tenantId);
-        results['sms_sent'] = sent;
+            {% elif effect.type == 'send_sms' %}
+            const sent = await this._sendSms(command, userId, tenantId);
+            results['sms_sent'] = sent;
 
-{% elif effect.type == 'webhook' %}
-        const called = await this._callWebhook(command, {{ effect.webhook_url or 'null' }});
-        results['webhook_called'] = called;
+            {% elif effect.type == 'webhook' %}
+            const called = await this._callWebhook(command, {{ effect.webhook_url or 'null' }});
+            results['webhook_called'] = called;
 
-{% elif effect.type == 'write_audit_log' %}
-        const auditId = await this._writeAuditLog(command, userId, tenantId);
-        results['audit_id'] = auditId;
+            {% elif effect.type == 'write_audit_log' %}
+            const auditId = await this._writeAuditLog(command, userId, tenantId);
+            results['audit_id'] = auditId;
 
-{% elif effect.type == 'record_metric' %}
-        const recorded = await this._recordMetric(command, tenantId);
-        results['metric_recorded'] = recorded;
+            {% elif effect.type == 'record_metric' %}
+            const recorded = await this._recordMetric(command, tenantId);
+            results['metric_recorded'] = recorded;
 
-{% elif effect.type == 'check_compliance' %}
-        const compliant = await this._checkCompliance(command, userId, tenantId);
-        results['compliance_checked'] = compliant;
+            {% elif effect.type == 'check_compliance' %}
+            const compliant = await this._checkCompliance(command, userId, tenantId);
+            results['compliance_checked'] = compliant;
 
-{% elif effect.type == 'mask_pii' %}
-        const maskedData = await this._maskPii(command);
-        results['data_masked'] = true;
+            {% elif effect.type == 'mask_pii' %}
+            const maskedData = await this._maskPii(command);
+            results['data_masked'] = true;
 
-{% endif %}
-{% endfor %}
-{% else %}
-        // No effects to execute
-{% endif %}
-        return results;
-    }
-
-    {% if command.effects %}
-    {% for effect in command.effects %}
-{% if effect.type == 'create_record' %}
-    /**
-     * Tạo {{ effect.entity }} record.
-     * 
-     * KPI-029: tenantId được set trong record data cho tenant isolation.
-     * 
-     * @param command Command instance
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID cho tenant isolation
-     * @returns Record ID
-     */
-    private async _create{{ effect.entity }}(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
-    ): Promise<string> {
-        const repo = this.repositories.get('{{ effect.entity|lower }}');
-        if (repo) {
-            const data = this._mapTo{{ effect.entity }}(command);
-            // KPI-029: Set tenant_id cho tenant isolation
-            if (tenantId) {
-                data.tenant_id = tenantId;
+            {% endif %}
+            {% endfor %}
+            {% else %}
+            // No effects to execute
+            {% endif %}
+            return results;
             }
-            if (userId) {
+
+            {% if command.effects %}
+            {% for effect in command.effects %}
+            {% if effect.type == 'create_record' %}
+            /**
+            * Tạo {{ effect.entity }} record.
+            *
+            * KPI-029: tenantId được set trong record data cho tenant isolation.
+            *
+            * @param command Command instance
+            * @param userId User ID
+            * @param tenantId KPI-029: Tenant ID cho tenant isolation
+            * @returns Record ID
+            */
+            private async _create{{ effect.entity }}(
+            command: {{ command.id }},
+            userId?: string,
+            tenantId?: string,
+            ): Promise<string> {
+                const repo = this.repositories.get('{{ effect.entity|lower }}');
+                if (repo) {
+                const data = this._mapTo{{ effect.entity }}(command);
+                // KPI-029: Set tenant_id cho tenant isolation
+                if (tenantId) {
+                data.tenant_id = tenantId;
+                }
+                if (userId) {
                 data.created_by = userId;
-            }
-            const record = await repo.create(data);
-            return String(record.id);
-        }
-        return 'generated-id';
-    }
+                }
+                const record = await repo.create(data);
+                return String(record.id);
+                }
+                return 'generated-id';
+                }
 
-{% elif effect.type == 'update_record' %}
-    /**
-     * Cập nhật {{ effect.entity }} record.
-     * 
-     * KPI-029: tenantId được verify trước khi update.
-     * 
-     * @param command Command instance
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID cho tenant verification
-     * @returns True nếu cập nhật thành công
-     */
-    private async _update{{ effect.entity }}(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
-    ): Promise<boolean> {
-        const repo = this.repositories.get('{{ effect.entity|lower }}');
-        if (repo) {
-            const data = this._mapTo{{ effect.entity }}(command);
-            if (userId) {
-                data.updated_by = userId;
-            }
-            // KPI-029: tenantId được verify trong repository
-            return await repo.update(command.{{ effect.entity|lower }}_id, data, tenantId);
-        }
-        return true;
-    }
+                {% elif effect.type == 'update_record' %}
+                /**
+                * Cập nhật {{ effect.entity }} record.
+                *
+                * KPI-029: tenantId được verify trước khi update.
+                *
+                * @param command Command instance
+                * @param userId User ID
+                * @param tenantId KPI-029: Tenant ID cho tenant verification
+                * @returns True nếu cập nhật thành công
+                */
+                private async _update{{ effect.entity }}(
+                command: {{ command.id }},
+                userId?: string,
+                tenantId?: string,
+                ): Promise<boolean> {
+                    const repo = this.repositories.get('{{ effect.entity|lower }}');
+                    if (repo) {
+                    const data = this._mapTo{{ effect.entity }}(command);
+                    if (userId) {
+                    data.updated_by = userId;
+                    }
+                    // KPI-029: tenantId được verify trong repository
+                    return await repo.update(command.{{ effect.entity|lower }}_id, data, tenantId);
+                    }
+                    return true;
+                    }
 
-{% elif effect.type == 'delete_record' %}
-    /**
-     * Xóa {{ effect.entity }} record.
-     * 
-     * KPI-029: tenantId được verify trước khi delete.
-     * 
-     * @param command Command instance
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID cho tenant verification
-     * @returns True nếu xóa thành công
-     */
-    private async _delete{{ effect.entity }}(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
-    ): Promise<boolean> {
-        const repo = this.repositories.get('{{ effect.entity|lower }}');
-        if (repo) {
-            // KPI-029: tenantId được verify trong repository
-            return await repo.delete(command.{{ effect.entity|lower }}_id, tenantId);
-        }
-        return true;
-    }
+                    {% elif effect.type == 'delete_record' %}
+                    /**
+                    * Xóa {{ effect.entity }} record.
+                    *
+                    * KPI-029: tenantId được verify trước khi delete.
+                    *
+                    * @param command Command instance
+                    * @param userId User ID
+                    * @param tenantId KPI-029: Tenant ID cho tenant verification
+                    * @returns True nếu xóa thành công
+                    */
+                    private async _delete{{ effect.entity }}(
+                    command: {{ command.id }},
+                    userId?: string,
+                    tenantId?: string,
+                    ): Promise<boolean> {
+                        const repo = this.repositories.get('{{ effect.entity|lower }}');
+                        if (repo) {
+                        // KPI-029: tenantId được verify trong repository
+                        return await repo.delete(command.{{ effect.entity|lower }}_id, tenantId);
+                        }
+                        return true;
+                        }
 
-{% elif effect.type == 'query_records' %}
-    /**
-     * Query {{ effect.entity }} records.
-     * 
-     * KPI-029: tenantId được dùng để filter records.
-     * 
-     * @param command Command instance
-     * @param tenantId KPI-029: Tenant ID cho tenant filtering
-     * @returns List của records
-     */
-    private async _query{{ effect.entity }}(
-        command: {{ command.id }},
-        tenantId?: string,
-    ): Promise<Record<string, unknown>[]> {
-        const repo = this.repositories.get('{{ effect.entity|lower }}');
-        if (repo) {
-            // KPI-029: Query với tenant filter
-            return await repo.query(command.toObject(), tenantId);
-        }
-        return [];
-    }
+                        {% elif effect.type == 'query_records' %}
+                        /**
+                        * Query {{ effect.entity }} records.
+                        *
+                        * KPI-029: tenantId được dùng để filter records.
+                        *
+                        * @param command Command instance
+                        * @param tenantId KPI-029: Tenant ID cho tenant filtering
+                        * @returns List của records
+                        */
+                        private async _query{{ effect.entity }}(
+                        command: {{ command.id }},
+                        tenantId?: string,
+                        ): Promise<Record<string, unknown>[]> {
+                            const repo = this.repositories.get('{{ effect.entity|lower }}');
+                            if (repo) {
+                            // KPI-029: Query với tenant filter
+                            return await repo.query(command.toObject(), tenantId);
+                            }
+                            return [];
+                            }
 
-{% elif effect.type == 'upsert_record' %}
-    /**
-     * Upsert {{ effect.entity }} record (create or update).
-     * 
-     * KPI-029: tenantId được set trong record data.
-     * 
-     * @param command Command instance
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID cho tenant isolation
-     * @returns Record ID
-     */
-    private async _upsert{{ effect.entity }}(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
-    ): Promise<string> {
-        const repo = this.repositories.get('{{ effect.entity|lower }}');
-        if (repo) {
-            const data = this._mapTo{{ effect.entity }}(command);
-            // KPI-029: Set tenant_id cho tenant isolation
-            if (tenantId) {
-                data.tenant_id = tenantId;
-            }
-            const record = await repo.upsert(data);
-            return String(record.id);
-        }
-        return 'generated-id';
-    }
+                            {% elif effect.type == 'upsert_record' %}
+                            /**
+                            * Upsert {{ effect.entity }} record (create or update).
+                            *
+                            * KPI-029: tenantId được set trong record data.
+                            *
+                            * @param command Command instance
+                            * @param userId User ID
+                            * @param tenantId KPI-029: Tenant ID cho tenant isolation
+                            * @returns Record ID
+                            */
+                            private async _upsert{{ effect.entity }}(
+                            command: {{ command.id }},
+                            userId?: string,
+                            tenantId?: string,
+                            ): Promise<string> {
+                                const repo = this.repositories.get('{{ effect.entity|lower }}');
+                                if (repo) {
+                                const data = this._mapTo{{ effect.entity }}(command);
+                                // KPI-029: Set tenant_id cho tenant isolation
+                                if (tenantId) {
+                                data.tenant_id = tenantId;
+                                }
+                                const record = await repo.upsert(data);
+                                return String(record.id);
+                                }
+                                return 'generated-id';
+                                }
 
-{% elif effect.type == 'publish_event' %}
-    /**
-     * Publish {{ effect.event }} event.
-     * 
-     * KPI-029: tenantId được include trong event metadata cho tenant filtering.
-     * 
-     * @param command Command instance
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID cho tenant filtering
-     * @returns True nếu publish thành công
-     */
-    private async _publish{{ effect.event }}(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
-    ): Promise<boolean> {
-        const event = {
-            type: '{{ effect.event }}',
-            payload: command.toObject(),
-            metadata: { 
-                userId, 
-                // KPI-029: Include tenantId cho tenant filtering
-                tenantId, 
-            },
-        };
-        await this.eventBus.publish(event);
-        return true;
-    }
+                                {% elif effect.type == 'publish_event' %}
+                                /**
+                                * Publish {{ effect.event }} event.
+                                *
+                                * KPI-029: tenantId được include trong event metadata cho tenant filtering.
+                                *
+                                * @param command Command instance
+                                * @param userId User ID
+                                * @param tenantId KPI-029: Tenant ID cho tenant filtering
+                                * @returns True nếu publish thành công
+                                */
+                                private async _publish{{ effect.event }}(
+                                command: {{ command.id }},
+                                userId?: string,
+                                tenantId?: string,
+                                ): Promise<boolean> {
+                                    const event = {
+                                    type: '{{ effect.event }}',
+                                    payload: command.toObject(),
+                                    metadata: {
+                                    userId,
+                                    // KPI-029: Include tenantId cho tenant filtering
+                                    tenantId,
+                                    },
+                                    };
+                                    await this.eventBus.publish(event);
+                                    return true;
+                                    }
 
-{% elif effect.type == 'begin_transaction' %}
-    /**
-     * Begin transaction (placeholder - use TransactionManager in handler).
-     */
-    private async _beginTransaction(): Promise<void> {
-        // Placeholder - actual transaction management is in handler
-    }
+                                    {% elif effect.type == 'begin_transaction' %}
+                                    /**
+                                    * Begin transaction (placeholder - use TransactionManager in handler).
+                                    */
+                                    private async _beginTransaction(): Promise<void> {
+                                        // Placeholder - actual transaction management is in handler
+                                        }
 
-{% elif effect.type == 'commit_transaction' %}
-    /**
-     * Commit transaction (placeholder - use TransactionManager in handler).
-     */
-    private async _commitTransaction(): Promise<void> {
-        // Placeholder - actual transaction management is in handler
-    }
+                                        {% elif effect.type == 'commit_transaction' %}
+                                        /**
+                                        * Commit transaction (placeholder - use TransactionManager in handler).
+                                        */
+                                        private async _commitTransaction(): Promise<void> {
+                                            // Placeholder - actual transaction management is in handler
+                                            }
 
-{% elif effect.type == 'rollback_transaction' %}
-    /**
-     * Rollback transaction (placeholder - use TransactionManager in handler).
-     */
-    private async _rollbackTransaction(): Promise<void> {
-        // Placeholder - actual transaction management is in handler
-    }
+                                            {% elif effect.type == 'rollback_transaction' %}
+                                            /**
+                                            * Rollback transaction (placeholder - use TransactionManager in handler).
+                                            */
+                                            private async _rollbackTransaction(): Promise<void> {
+                                                // Placeholder - actual transaction management is in handler
+                                                }
 
-{% elif effect.type == 'call_external_api' %}
-    /**
-     * Call external API.
-     * 
-     * @param command Command instance
-     * @param endpoint API endpoint
-     * @returns API response
-     */
-    private async _callExternalApi(
-        command: {{ command.id }},
-        endpoint?: string,
-    ): Promise<Record<string, unknown>> {
-        // TODO: Implement API call logic
-        return { status: 'success' };
-    }
+                                                {% elif effect.type == 'call_external_api' %}
+                                                /**
+                                                * Call external API.
+                                                *
+                                                * @param command Command instance
+                                                * @param endpoint API endpoint
+                                                * @returns API response
+                                                */
+                                                private async _callExternalApi(
+                                                command: {{ command.id }},
+                                                endpoint?: string,
+                                                ): Promise<Record<string, unknown>> {
+                                                    // TODO: Implement API call logic
+                                                    return { status: 'success' };
+                                                    }
 
-{% elif effect.type == 'send_email' %}
-    /**
-     * Send email notification.
-     * 
-     * KPI-029: tenantId được pass vào email template cho tenant-specific content.
-     * 
-     * @param command Command instance
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID cho tenant-specific template
-     * @returns True nếu gửi thành công
-     */
-    private async _sendEmail(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
-    ): Promise<boolean> {
-        await this.notificationService.sendEmail({
-            template: '{{ effect.email_template or "default" }}',
-            data: command.toObject(),
-            userId,
-            // KPI-029: Include tenantId cho tenant-specific template
-            tenantId,
-        });
-        return true;
-    }
+                                                    {% elif effect.type == 'send_email' %}
+                                                    /**
+                                                    * Send email notification.
+                                                    *
+                                                    * KPI-029: tenantId được pass vào email template cho tenant-specific
+                                                    content.
+                                                    *
+                                                    * @param command Command instance
+                                                    * @param userId User ID
+                                                    * @param tenantId KPI-029: Tenant ID cho tenant-specific template
+                                                    * @returns True nếu gửi thành công
+                                                    */
+                                                    private async _sendEmail(
+                                                    command: {{ command.id }},
+                                                    userId?: string,
+                                                    tenantId?: string,
+                                                    ): Promise<boolean> {
+                                                        await this.notificationService.sendEmail({
+                                                        template: '{{ effect.email_template or "default" }}',
+                                                        data: command.toObject(),
+                                                        userId,
+                                                        // KPI-029: Include tenantId cho tenant-specific template
+                                                        tenantId,
+                                                        });
+                                                        return true;
+                                                        }
 
-{% elif effect.type == 'send_sms' %}
-    /**
-     * Send SMS notification.
-     * 
-     * KPI-029: tenantId được pass vào SMS template.
-     * 
-     * @param command Command instance
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID
-     * @returns True nếu gửi thành công
-     */
-    private async _sendSms(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
-    ): Promise<boolean> {
-        await this.notificationService.sendSms({
-            template: '{{ effect.sms_template or "default" }}',
-            data: command.toObject(),
-            userId,
-            // KPI-029: Include tenantId
-            tenantId,
-        });
-        return true;
-    }
+                                                        {% elif effect.type == 'send_sms' %}
+                                                        /**
+                                                        * Send SMS notification.
+                                                        *
+                                                        * KPI-029: tenantId được pass vào SMS template.
+                                                        *
+                                                        * @param command Command instance
+                                                        * @param userId User ID
+                                                        * @param tenantId KPI-029: Tenant ID
+                                                        * @returns True nếu gửi thành công
+                                                        */
+                                                        private async _sendSms(
+                                                        command: {{ command.id }},
+                                                        userId?: string,
+                                                        tenantId?: string,
+                                                        ): Promise<boolean> {
+                                                            await this.notificationService.sendSms({
+                                                            template: '{{ effect.sms_template or "default" }}',
+                                                            data: command.toObject(),
+                                                            userId,
+                                                            // KPI-029: Include tenantId
+                                                            tenantId,
+                                                            });
+                                                            return true;
+                                                            }
 
-{% elif effect.type == 'webhook' %}
-    /**
-     * Call webhook.
-     * 
-     * @param command Command instance
-     * @param url Webhook URL
-     * @returns True nếu gọi thành công
-     */
-    private async _callWebhook(command: {{ command.id }}, url?: string): Promise<boolean> {
-        // TODO: Implement webhook call logic
-        return true;
-    }
+                                                            {% elif effect.type == 'webhook' %}
+                                                            /**
+                                                            * Call webhook.
+                                                            *
+                                                            * @param command Command instance
+                                                            * @param url Webhook URL
+                                                            * @returns True nếu gọi thành công
+                                                            */
+                                                            private async _callWebhook(command: {{ command.id }}, url?:
+                                                            string): Promise<boolean> {
+                                                                // TODO: Implement webhook call logic
+                                                                return true;
+                                                                }
 
-{% elif effect.type == 'write_audit_log' %}
-    /**
-     * Write audit log (RX11 - immutable audit).
-     * 
-     * KPI-029: tenantId được ghi vào audit log cho tenant-specific audit trail.
-     * 
-     * @param command Command instance
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID cho tenant-specific audit
-     * @returns Audit record ID
-     */
-    private async _writeAuditLog(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
-    ): Promise<string> {
-        const auditRecord = await this.auditService.log({
-            action: '{{ effect.audit_action or "command_executed" }}',
-            data: command.toObject(),
-            userId,
-            // KPI-029: Include tenantId cho tenant-specific audit trail
-            tenantId,
-        });
-        return String(auditRecord.id);
-    }
+                                                                {% elif effect.type == 'write_audit_log' %}
+                                                                /**
+                                                                * Write audit log (RX11 - immutable audit).
+                                                                *
+                                                                * KPI-029: tenantId được ghi vào audit log cho
+                                                                tenant-specific audit trail.
+                                                                *
+                                                                * @param command Command instance
+                                                                * @param userId User ID
+                                                                * @param tenantId KPI-029: Tenant ID cho tenant-specific
+                                                                audit
+                                                                * @returns Audit record ID
+                                                                */
+                                                                private async _writeAuditLog(
+                                                                command: {{ command.id }},
+                                                                userId?: string,
+                                                                tenantId?: string,
+                                                                ): Promise<string> {
+                                                                    const auditRecord = await this.auditService.log({
+                                                                    action: '{{ effect.audit_action or
+                                                                    "command_executed" }}',
+                                                                    data: command.toObject(),
+                                                                    userId,
+                                                                    // KPI-029: Include tenantId cho tenant-specific
+                                                                    audit trail
+                                                                    tenantId,
+                                                                    });
+                                                                    return String(auditRecord.id);
+                                                                    }
 
-{% elif effect.type == 'record_metric' %}
-    /**
-     * Record metric.
-     * 
-     * KPI-029: tenantId được include trong metric labels.
-     * 
-     * @param command Command instance
-     * @param tenantId KPI-029: Tenant ID cho tenant-specific metrics
-     * @returns True nếu ghi thành công
-     */
-    private async _recordMetric(
-        command: {{ command.id }},
-        tenantId?: string,
-    ): Promise<boolean> {
-        // TODO: Implement metric recording with tenantId label
-        return true;
-    }
+                                                                    {% elif effect.type == 'record_metric' %}
+                                                                    /**
+                                                                    * Record metric.
+                                                                    *
+                                                                    * KPI-029: tenantId được include trong metric
+                                                                    labels.
+                                                                    *
+                                                                    * @param command Command instance
+                                                                    * @param tenantId KPI-029: Tenant ID cho
+                                                                    tenant-specific metrics
+                                                                    * @returns True nếu ghi thành công
+                                                                    */
+                                                                    private async _recordMetric(
+                                                                    command: {{ command.id }},
+                                                                    tenantId?: string,
+                                                                    ): Promise<boolean> {
+                                                                        // TODO: Implement metric recording with
+                                                                        tenantId label
+                                                                        return true;
+                                                                        }
 
-{% elif effect.type == 'check_compliance' %}
-    /**
-     * Check compliance gate.
-     * 
-     * KPI-029: tenantId được dùng để check tenant-specific compliance rules.
-     * 
-     * @param command Command instance
-     * @param userId User ID
-     * @param tenantId KPI-029: Tenant ID cho tenant-specific compliance
-     * @returns True nếu compliance check passed
-     */
-    private async _checkCompliance(
-        command: {{ command.id }},
-        userId?: string,
-        tenantId?: string,
-    ): Promise<boolean> {
-        // TODO: Implement compliance check with tenant-specific rules
-        return true;
-    }
+                                                                        {% elif effect.type == 'check_compliance' %}
+                                                                        /**
+                                                                        * Check compliance gate.
+                                                                        *
+                                                                        * KPI-029: tenantId được dùng để check
+                                                                        tenant-specific compliance rules.
+                                                                        *
+                                                                        * @param command Command instance
+                                                                        * @param userId User ID
+                                                                        * @param tenantId KPI-029: Tenant ID cho
+                                                                        tenant-specific compliance
+                                                                        * @returns True nếu compliance check passed
+                                                                        */
+                                                                        private async _checkCompliance(
+                                                                        command: {{ command.id }},
+                                                                        userId?: string,
+                                                                        tenantId?: string,
+                                                                        ): Promise<boolean> {
+                                                                            // TODO: Implement compliance check with
+                                                                            tenant-specific rules
+                                                                            return true;
+                                                                            }
 
-{% elif effect.type == 'mask_pii' %}
-    /**
-     * Mask PII data (RX01).
-     * 
-     * @param command Command instance
-     * @returns Masked data
-     */
-    private async _maskPii(command: {{ command.id }}): Promise<Record<string, unknown>> {
-        // TODO: Implement PII masking
-        return command.toObject();
-    }
+                                                                            {% elif effect.type == 'mask_pii' %}
+                                                                            /**
+                                                                            * Mask PII data (RX01).
+                                                                            *
+                                                                            * @param command Command instance
+                                                                            * @returns Masked data
+                                                                            */
+                                                                            private async _maskPii(command: {{
+                                                                            command.id }}): Promise<Record<string,
+                                                                                unknown>> {
+                                                                                // TODO: Implement PII masking
+                                                                                return command.toObject();
+                                                                                }
 
-{% endif %}  // Close if effect.type == 'create_record' chain
-{% endfor %} // Close for effect in command.effects
-{% endif %}  // Close if command.effects
+                                                                                {% endif %} // Close if effect.type ==
+                                                                                'create_record' chain
+                                                                                {% endfor %} // Close for effect in
+                                                                                command.effects
+                                                                                {% endif %} // Close if command.effects
 
-    /**
-     * Map command to entity fields.
-     * 
-     * @param command Command instance
-     * @returns Mapped data
-     */
-    private _mapToEntity(command: {{ command.id }}): Record<string, unknown> {
-        return command.toObject();
-    }
-}
+                                                                                /**
+                                                                                * Map command to entity fields.
+                                                                                *
+                                                                                * @param command Command instance
+                                                                                * @returns Mapped data
+                                                                                */
+                                                                                private _mapToEntity(command: {{
+                                                                                command.id }}): Record<string, unknown>
+                                                                                    {
+                                                                                    return command.toObject();
+                                                                                    }
+                                                                                    }

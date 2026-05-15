@@ -7,16 +7,44 @@ Hỗ trợ permission checks, role checks, và policy evaluation.
 CP04: RBAC & Policy Engine
 """
 
+from enum import Enum
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
 
-from midicoder.contracts.rbac_models import (
-    Policy,
-    PolicyEffect,
-    PolicyEvaluationResult,
-    Role,
-)
+
+class PolicyEffect(str, Enum):
+    ALLOW = "allow"
+    DENY = "deny"
+
+
+@dataclass
+class Policy:
+    """RBAC Policy definition."""
+    subject: str
+    resource: str
+    action: str
+    effect: PolicyEffect
+
+
+@dataclass
+class PolicyEvaluationResult:
+    """Result of evaluating a policy."""
+    allowed: bool
+    policy_id: str = ""
+    reason: str = ""
+
+
+@dataclass
+class Role:
+    """Role definition."""
+    name: str
+    permissions: list[str] = None  # type: ignore
+
+    def __post_init__(self):
+        if self.permissions is None:
+            self.permissions = []
 
 
 # ============================================================================

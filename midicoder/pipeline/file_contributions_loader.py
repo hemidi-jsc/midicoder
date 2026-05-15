@@ -42,11 +42,14 @@ from typing import Any
 
 import yaml
 
-# Canonical set of known stacks, grouped by role.
-BACKEND_STACKS = {"fastapi", "nestjs"}
-FRONTEND_STACKS = {"angular", "react"}
-INFRA_STACK = "infrastructure"
-ALL_STACKS = BACKEND_STACKS | FRONTEND_STACKS | {INFRA_STACK}
+# Import stack constants và CP_ID_TO_INTERNAL từ single source
+from midicoder.contracts.registry import (
+    ALL_STACKS,
+    BACKEND_STACKS,
+    CP_ID_TO_INTERNAL,
+    FRONTEND_STACKS,
+    INFRA_STACK,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -172,32 +175,7 @@ def _snake_to_camel(name: str) -> str:
 # Stack-aware Loader
 # ---------------------------------------------------------------------------
 
-# Canonical mapping of CP pack ID → folder name (matches resolver.py)
-CP_ID_TO_INTERNAL: dict[str, str] = {
-    "CP01": "cp01_domain_model",
-    "CP02": "cp02_multi_tenant",
-    "CP03": "cp03_auth",
-    "CP04": "cp04_rbac",
-    "CP05": "cp05_event_driven",
-    "CP06": "cp06_api_gateway",
-    "CP07": "cp07_iac",
-    "CP08": "cp08_database",
-    "CP09": "cp09_cache",
-    "CP10": "cp10_search",
-    "CP11": "cp11_file_media",
-    "CP12": "cp12_notification",
-    "CP13": "cp13_workflow_runtime",
-    "CP14": "cp14_audit_compliance",
-    "CP15": "cp15_observability",
-    "CP16": "cp16_monitoring",
-    "CP17": "cp17_bi_analytics",
-    "CP18": "cp18_frontend_framework",
-    "CP19": "cp19_ui_components",
-    "CP20": "cp20_api_client",
-    "CP51": "cp51_blueprint",
-    "CP52": "cp52_invariant",
-    "CP53": "cp53_domain_bridge",
-}
+# CP_ID_TO_INTERNAL imported from midicoder.contracts.registry (single source)
 
 
 class FileContributionsLoader:

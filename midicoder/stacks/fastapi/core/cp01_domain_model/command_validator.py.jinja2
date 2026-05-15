@@ -15,7 +15,7 @@ Author: Midicoder Auto-generated
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.commands.{{ command_id_lower }}.{{ command_id_lower }} import {{ command.id }}
@@ -40,11 +40,7 @@ class ValidationResult:
     """
     is_valid: bool
     error: Exception | None = None
-    errors: list[str] = None
-    
-    def __post_init__(self) -> None:
-        if self.errors is None:
-            self.errors = []
+    errors: list[str] = field(default_factory=list)
 
 
 class {{ command.id }}Validator:
