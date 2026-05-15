@@ -59,6 +59,12 @@ from .composition.models import (
 from .composition.resolver import PackResolver
 from .composition.engine import CompositionEngine
 
+from .tenant_models import (
+    TenantContext as ContractTenantContext,
+    TenantFilter,
+    TenantIsolationStrategy,
+)
+
 __all__ = [
     # Artifact base
     "ArtifactBase",
@@ -93,4 +99,9 @@ __all__ = [
     "CompositionPlan",
     "PackResolver",
     "CompositionEngine",
+
+    # Tenant Models (CP02 bridge)
+    "ContractTenantContext",
+    "TenantFilter",
+    "TenantIsolationStrategy",
 ]

@@ -6,7 +6,7 @@ pack:
   status: "stable"
   category: "architecture"
   depends_on: ["CP01"]
-  definitions_count: 7
+  definitions_count: 11
   obligations_count: 4
   error_codes:
     prefix: "MDC-CP02"
@@ -19,9 +19,9 @@ pack:
     - cross_tenant_access
   capabilities:
     - id: "tenant_middleware"
-      emitter: "fastapi, nestjs, angular, react"
+      emitter: "fastapi, nestjs"
     - id: "tenant_context"
-      emitter: "fastapi, nestjs, angular, react"
+      emitter: "fastapi, nestjs"
     - id: "schema_isolation"
       emitter: "fastapi, nestjs"
     - id: "tenant_provisioning"
@@ -31,10 +31,18 @@ pack:
   definitions:
     - name: "TenantConfig"
       description: "Tenant isolation strategy and provisioning settings"
-    - name: "TenantScope"
+    - name: "TenantContext"
       description: "Runtime scope enforcement for multi-tenancy"
+    - name: "TenantResolver"
+      description: "Resolve tenant ID from header, JWT, or subdomain"
+    - name: "TenantIsolationStrategy"
+      description: "Isolation enum: ROW, SCHEMA, DATABASE, HYBRID"
+    - name: "TenantFilter"
+      description: "Row/schema filter for tenant-aware queries"
     - name: "SchemaIsolationConfig"
       description: "Schema/database-level isolation with RLS, auto-create, migration"
+    - name: "SchemaIsolationMode"
+      description: "Schema isolation mode (dedicated_schema, dedicated_database, shared_schema)"
     - name: "TenantProvisioningConfig"
       description: "Auto/manual provisioning with plans, features, resource limits"
     - name: "CrossTenantAccessRule"

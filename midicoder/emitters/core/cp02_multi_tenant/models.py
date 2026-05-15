@@ -30,17 +30,47 @@ from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 # ===========================================================================
 
 
+class TenantIsolationStrategy(str, Enum):
+    """
+    Chiến lược tenant isolation (physical separation).
+
+    - ROW: Shared schema, row-level filter bằng tenant_id column
+    - SCHEMA: Mỗi tenant có PostgreSQL schema riêng
+    - DATABASE: Mỗi tenant có database riêng (strongest isolation)
+    - HYBRID: Mix of above (vd: system tenant dùng shared, others dùng dedicated)
+
+    Đây là enum chính — dùng trong templates và contracts.
+    TenantMode là alias layer (SUBDOMAIN = discovery method, không phải isolation).
+    """
+    ROW = "row"
+    SCHEMA = "schema"
+    DATABASE = "database"
+    HYBRID = "hybrid"
+
+
 class TenantMode(str, Enum):
     """
-    Enum các cách tenant isolation.
+    Enum các cách tenant isolation (legacy alias, map sang TenantIsolationStrategy).
 
     - SCHEMA: Mỗi tenant có PostgreSQL schema riêng
     - ROW: Tất cả tenant chia cùng bảng, phân biệt bằng tenant_id column
-    - SUBDOMAIN: Mỗi tenant có subdomain riêng (tenant1.app.com)
+    - SUBDOMAIN: Mỗi tenant có subdomain riêng (tenant1.app.com) — discovery method
+
+    Deprecated: dùng TenantIsolationStrategy cho isolation, subdomain là discovery.
     """
     SCHEMA = "schema"
     ROW = "row"
     SUBDOMAIN = "subdomain"
+
+    @property
+    def isolation_strategy(self) -> TenantIsolationStrategy:
+        """Map TenantMode → TenantIsolationStrategy."""
+        mapping = {
+            TenantMode.SCHEMA: TenantIsolationStrategy.SCHEMA,
+            TenantMode.ROW: TenantIsolationStrategy.ROW,
+            TenantMode.SUBDOMAIN: TenantIsolationStrategy.ROW,
+        }
+        return mapping[self]
 
 
 # ===========================================================================
@@ -447,8 +477,53 @@ class TenantProvisioningConfig:
 
 
 # ===========================================================================
-# Cross-Tenant Access
+# TenantFilter
 # ===========================================================================
+
+
+@dataclass
+class TenantFilter:
+    """
+    Filter tenant cho query — apply tenant boundary.
+
+    Attributes:
+        tenant_id: Tenant ID để filter
+        tenant_column: Column name để filter (default: "tenant_id")
+        filter_type: Type filter (row, schema, database)
+    """
+    tenant_id: str
+    tenant_column: str = "tenant_id"
+    filter_type: str = "row"
+
+    @classmethod
+    def create_row_filter(
+        cls,
+        tenant_id: str,
+        tenant_column: str = "tenant_id",
+    ) -> "TenantFilter":
+        """Tạo row-level tenant filter."""
+        return cls(tenant_id=tenant_id, tenant_column=tenant_column, filter_type="row")
+
+    @classmethod
+    def create_schema_filter(
+        cls,
+        tenant_id: str,
+        schema_name: str = "",
+    ) -> "TenantFilter":
+        """Tạo schema-level tenant filter."""
+        return cls(tenant_id=tenant_id, tenant_column=schema_name, filter_type="schema")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển tenant filter sang dict."""
+        return {
+            "tenant_id": self.tenant_id,
+            "tenant_column": self.tenant_column,
+            "filter_type": self.filter_type,
+        }
+
+
+# ===========================================================================
+# Cross-Tenant Access
 
 
 @dataclass
