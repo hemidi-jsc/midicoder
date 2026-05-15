@@ -34,3 +34,7 @@ backlog/
 
 # E2E output
 sandbox/
+
+# Runtime-generated stacks directories (created by tests/emitters)
+midicoder/stacks/test/
+midicoder/stacks/v*/

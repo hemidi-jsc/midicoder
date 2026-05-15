@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
-from ....core.command.models import CommandGuard, GuardType
+from ....core.cp01_domain_model.models import CommandGuard, GuardType
 
 
 class SafetyGuards:

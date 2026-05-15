@@ -168,6 +168,7 @@ class TestCallLlm:
         # Mock litellm response (object format)
         mock_message = MagicMock()
         mock_message.content = "Hello from LLM"
+        mock_message.reasoning = ""
         mock_choice = MagicMock()
         mock_choice.message = mock_message
         mock_response = MagicMock()
@@ -295,6 +296,7 @@ class TestCallLlmAsync:
         # Mock litellm async response (object format)
         mock_message = MagicMock()
         mock_message.content = "Async response"
+        mock_message.reasoning = ""
         mock_choice = MagicMock()
         mock_choice.message = mock_message
         mock_response = MagicMock()

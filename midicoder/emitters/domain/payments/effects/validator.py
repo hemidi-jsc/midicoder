@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from typing import Any
-from ....core.command.models import ValidationResult
+from ....core.cp01_domain_model.models import ValidationResult
 
 
 class FraudValidators:

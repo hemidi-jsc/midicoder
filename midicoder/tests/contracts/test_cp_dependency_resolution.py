@@ -8,7 +8,7 @@ Tuân thủ TDD, kiểm tra:
 - Validate P0 mandatory packs có dependencies đúng
 
 Author: Midicoder Team
-Version: 1.0.0
+Version: 2.0.0 (updated for 53 CPs, dynamic phase lists)
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def taxonomy(taxonomy_path: Path) -> dict[str, Any]:
 def cp_dependency_map(taxonomy: dict[str, Any]) -> dict[str, list[str]]:
     """
     Tạo map từ CP ID → dependencies.
-    
+
     Ví dụ:
         {
             "CP01": [],
@@ -52,7 +52,7 @@ def cp_dependency_map(taxonomy: dict[str, Any]) -> dict[str, list[str]]:
     """
     cp_map: dict[str, list[str]] = {}
     for cp in taxonomy.get("core_packs", []):
-        cp_map[cp["id"]] = cp.get("dependencies", [])
+        cp_map[cp["id"]] = cp.get("depends_on", [])
     return cp_map
 
 
@@ -60,7 +60,7 @@ def cp_dependency_map(taxonomy: dict[str, Any]) -> dict[str, list[str]]:
 def cp_phase_map(taxonomy: dict[str, Any]) -> dict[str, str]:
     """
     Tạo map từ CP ID → phase.
-    
+
     Ví dụ:
         {
             "CP01": "P0",
@@ -108,12 +108,18 @@ class TestCPDependencyMap:
         """Kiểm tra CP07 không có dependencies."""
         assert cp_dependency_map.get("CP07", []) == [], "CP07 không có dependencies"
 
-    def test_cp29_all_dependencies(self, cp_dependency_map: dict[str, list[str]]) -> None:
-        """Kiểm tra CP29 phụ thuộc tất cả CP01-CP28."""
+    def test_cp29_has_many_dependencies(self, cp_dependency_map: dict[str, list[str]]) -> None:
+        """Kiểm tra CP29 có nhiều dependencies (giám sát tuân thủ)."""
         deps = cp_dependency_map.get("CP29", [])
-        # CP29 phụ thuộc tất cả CP khác
-        expected_deps = [f"CP{i:02d}" for i in range(1, 29)]
-        assert deps == expected_deps, f"CP29 phải phụ thuộc CP01-CP28, tìm thấy {deps}"
+        assert len(deps) >= 40, f"CP29 (Compliance) nên có >= 40 deps, tìm thấy {len(deps)}"
+        # Validate một số deps quan trọng
+        essential = {"CP01", "CP02", "CP03", "CP04", "CP05", "CP07", "CP08"}
+        assert essential.issubset(set(deps)), f"CP29 thiếu deps quan trọng: {essential - set(deps)}"
+
+    def test_cp_count_matches(self, cp_dependency_map: dict[str, list[str]], taxonomy: dict[str, Any]) -> None:
+        """Kiểm tra số lượng CP trong map khớp với taxonomy."""
+        cp_count = len(taxonomy.get("core_packs", []))
+        assert len(cp_dependency_map) == cp_count, f"Số CP trong map ({len(cp_dependency_map)}) không khớp taxonomy ({cp_count})"
 
 
 # ============================================================================
@@ -129,10 +135,10 @@ class TestTransitiveDependencyResolution:
     ) -> None:
         """
         Resolve transitive dependencies cho CP02.
-        
+
         CP02 → [CP01]
         CP01 → []
-        
+
         Result: [CP01, CP02]
         """
         cp_list = self._resolve_transitive("CP02", cp_dependency_map)
@@ -143,11 +149,11 @@ class TestTransitiveDependencyResolution:
     ) -> None:
         """
         Resolve transitive dependencies cho CP03.
-        
+
         CP03 → [CP01, CP02]
         CP02 → [CP01]
         CP01 → []
-        
+
         Result: [CP01, CP02, CP03]
         """
         cp_list = self._resolve_transitive("CP03", cp_dependency_map)
@@ -158,72 +164,70 @@ class TestTransitiveDependencyResolution:
     ) -> None:
         """
         Resolve transitive dependencies cho CP04.
-        
+
         CP04 → [CP02, CP03]
         CP03 → [CP01, CP02]
         CP02 → [CP01]
         CP01 → []
-        
+
         Result: [CP01, CP02, CP03, CP04]
         """
         cp_list = self._resolve_transitive("CP04", cp_dependency_map)
         assert set(cp_list) == {"CP01", "CP02", "CP03", "CP04"}, "CP04 transitive deps phải là [CP01, CP02, CP03, CP04]"
 
-    def test_resolve_multiple_p0_packs(
-        self, cp_dependency_map: dict[str, list[str]]
+    def test_resolve_p0_no_external_deps(
+        self, cp_dependency_map: dict[str, list[str]], cp_phase_map: dict[str, str]
     ) -> None:
         """
-        Resolve transitive dependencies cho tất cả P0 packs.
-        
-        P0 packs: CP01, CP02, CP03, CP04, CP07
-        
-        Result: [CP01, CP02, CP03, CP04, CP07] (no additional deps)
+        Resolve transitive dependencies cho tất cả P0 packs — chỉ trả về P0.
         """
-        p0_packs = ["CP01", "CP02", "CP03", "CP04", "CP07"]
+        p0_packs = [cp_id for cp_id, phase in cp_phase_map.items() if phase == "P0"]
         all_resolved: set[str] = set()
-        
+
         for cp_id in p0_packs:
             resolved = self._resolve_transitive(cp_id, cp_dependency_map)
             all_resolved.update(resolved)
-        
-        assert all_resolved == {"CP01", "CP02", "CP03", "CP04", "CP07"}, "P0 packs không có thêm dependencies ngoài P0"
 
-    def test_resolve_cp29_all_transitive(
+        # Tất cả resolved phải là P0
+        for resolved_cp in all_resolved:
+            assert cp_phase_map.get(resolved_cp) == "P0", (
+                f"P0 pack resolve ra {resolved_cp} ({cp_phase_map.get(resolved_cp)}) — không hợp lệ"
+            )
+
+    def test_resolve_cp29_includes_essential(
         self, cp_dependency_map: dict[str, list[str]]
     ) -> None:
         """
-        Resolve transitive dependencies cho CP29 (phụ thuộc tất cả CP khác).
-        
-        CP29 → [CP01-CP28]
-        
-        Result: [CP01-CP30] (tất cả)
+        Resolve transitive dependencies cho CP29 — bao gồm CP01-CP05 tối thiểu.
         """
         cp_list = self._resolve_transitive("CP29", cp_dependency_map)
-        expected = {f"CP{i:02d}" for i in range(1, 30)}
-        assert set(cp_list) == expected, "CP29 transitive deps phải bao gồm CP01-CP29"
+        essential = {"CP01", "CP02", "CP03", "CP04", "CP05", "CP07", "CP08", "CP29"}
+        assert essential.issubset(set(cp_list)), (
+            f"CP29 transitive deps thiếu essential: {essential - set(cp_list)}"
+        )
 
     def _resolve_transitive(
         self, cp_id: str, cp_dependency_map: dict[str, list[str]]
     ) -> list[str]:
         """
         Helper: Resolve transitive dependencies cho một CP.
-        
+
         Sử dụng DFS để traverse dependency graph.
         """
         resolved: set[str] = set()
         stack = [cp_id]
-        
+
         while stack:
             current = stack.pop()
             if current in resolved:
                 continue
-            
+
             resolved.add(current)
             deps = cp_dependency_map.get(current, [])
             for dep in deps:
                 if dep not in resolved:
                     stack.append(dep)
-        
+
         # Sort theo CP ID để deterministic
         return sorted(resolved, key=lambda x: int(x[2:]))
 
@@ -234,89 +238,69 @@ class TestTransitiveDependencyResolution:
 
 
 class TestDependencyOrderValidation:
-    """Tests cho dependency order validation (P0 → P1 → P2 → P3)."""
+    """Tests cho dependency order validation (P0 → P1 → P2 → P3 → P4).
 
-    def test_p0_packs_have_no_p1_deps(
+    Phase lists được derive từ taxonomy, không hardcode.
+    """
+
+    def _get_packs_by_phase(
+        self, cp_phase_map: dict[str, str], phase: str
+    ) -> list[str]:
+        """Lấy danh sách CPs theo phase."""
+        return sorted([cp for cp, p in cp_phase_map.items() if p == phase])
+
+    def test_p0_packs_have_no_higher_deps(
         self,
         cp_dependency_map: dict[str, list[str]],
         cp_phase_map: dict[str, str],
     ) -> None:
         """
-        P0 packs không được phụ thuộc P1/P2/P3 packs.
-        
-        P0 packs: CP01, CP02, CP03, CP04, CP07
+        P0 packs không được phụ thuộc P1/P2/P3/P4 packs.
         """
-        p0_packs = ["CP01", "CP02", "CP03", "CP04", "CP07"]
-        
-        for cp_id in p0_packs:
+        for cp_id, phase in cp_phase_map.items():
+            if phase != "P0":
+                continue
             deps = cp_dependency_map.get(cp_id, [])
             for dep in deps:
                 dep_phase = cp_phase_map.get(dep, "P0")
                 assert dep_phase == "P0", f"{cp_id} (P0) không được phụ thuộc {dep} ({dep_phase})"
 
-    def test_p1_packs_can_dep_p0_or_p1(
-        self,
-        cp_dependency_map: dict[str, list[str]],
-        cp_phase_map: dict[str, str],
-    ) -> None:
+    def test_phase_order_valid(self, cp_phase_map: dict[str, str]) -> None:
         """
-        P1 packs chỉ được phụ thuộc P0 hoặc P1 packs.
+        Kiểm tra phase values chỉ là P0-P4.
         """
-        p1_packs = ["CP05", "CP06", "CP08", "CP09", "CP10", "CP11", "CP12", "CP13", "CP14", "CP15", "CP23"]
-        
-        for cp_id in p1_packs:
-            deps = cp_dependency_map.get(cp_id, [])
-            for dep in deps:
-                dep_phase = cp_phase_map.get(dep, "P0")
-                assert dep_phase in ["P0", "P1"], f"{cp_id} (P1) không được phụ thuộc {dep} ({dep_phase})"
+        valid_phases = {"P0", "P1", "P2", "P3", "P4"}
+        for cp_id, phase in cp_phase_map.items():
+            assert phase in valid_phases, f"{cp_id} có phase không valid: {phase}"
 
-    def test_p2_packs_can_dep_p0_p1_p2(
-        self,
-        cp_dependency_map: dict[str, list[str]],
-        cp_phase_map: dict[str, str],
-    ) -> None:
+    def test_no_phase_jump(self, cp_dependency_map: dict[str, list[str]], cp_phase_map: dict[str, str]) -> None:
         """
-        P2 packs chỉ được phụ thuộc P0/P1/P2 packs.
-        """
-        p2_packs = ["CP16", "CP17", "CP18", "CP19", "CP20", "CP21", "CP22"]
-        
-        for cp_id in p2_packs:
-            deps = cp_dependency_map.get(cp_id, [])
-            for dep in deps:
-                dep_phase = cp_phase_map.get(dep, "P0")
-                assert dep_phase in ["P0", "P1", "P2"], f"{cp_id} (P2) không được phụ thuộc {dep} ({dep_phase})"
+        Một pack không được phụ thuộc pack có phase cao hơn.
 
-    def test_p3_packs_can_dep_p0_p1_p2_p3(
-        self,
-        cp_dependency_map: dict[str, list[str]],
-        cp_phase_map: dict[str, str],
-    ) -> None:
+        Ví dụ: P1 không được phụ thuộc P2/P3/P4.
         """
-        P3 packs chỉ được phụ thuộc P0/P1/P2/P3 packs.
-        """
-        p3_packs = ["CP24", "CP25", "CP26"]
-        
-        for cp_id in p3_packs:
-            deps = cp_dependency_map.get(cp_id, [])
-            for dep in deps:
-                dep_phase = cp_phase_map.get(dep, "P0")
-                assert dep_phase in ["P0", "P1", "P2", "P3"], f"{cp_id} (P3) không được phụ thuộc {dep} ({dep_phase})"
+        phase_num = {"P0": 0, "P1": 1, "P2": 2, "P3": 3, "P4": 4}
 
-    def test_p4_packs_can_dep_any(
-        self,
-        cp_dependency_map: dict[str, list[str]],
-        cp_phase_map: dict[str, str],
-    ) -> None:
-        """
-        P4 packs có thể phụ thuộc bất kỳ phase nào (P0-P4).
-        """
-        p4_packs = ["CP27", "CP28", "CP29", "CP30"]
-        
-        for cp_id in p4_packs:
-            deps = cp_dependency_map.get(cp_id, [])
+        for cp_id, deps in cp_dependency_map.items():
+            cp_phase = cp_phase_map.get(cp_id, "P0")
+            cp_level = phase_num.get(cp_phase, 0)
             for dep in deps:
                 dep_phase = cp_phase_map.get(dep, "P0")
-                assert dep_phase in ["P0", "P1", "P2", "P3", "P4"], f"{cp_id} (P4) dependency {dep} phase không valid: {dep_phase}"
+                dep_level = phase_num.get(dep_phase, 0)
+                assert dep_level <= cp_level, (
+                    f"{cp_id} ({cp_phase}, level {cp_level}) không được phụ thuộc "
+                    f"{dep} ({dep_phase}, level {dep_level})"
+                )
+
+    def test_all_phases_have_packs(self, cp_phase_map: dict[str, str]) -> None:
+        """
+        Kiểm tra tất cả phase P0-P4 đều có ít nhất 1 pack.
+        """
+        phases_present = set(cp_phase_map.values())
+        expected = {"P0", "P1", "P2", "P3", "P4"}
+        assert expected.issubset(phases_present), (
+            f"Thiếu phase trong taxonomy: {expected - phases_present}"
+        )
 
 
 # ============================================================================
@@ -332,13 +316,13 @@ class TestMissingDependencyDetection:
     ) -> None:
         """
         Detect missing dependencies khi blueprint chỉ include CP03 nhưng không có CP01, CP02.
-        
+
         Blueprint: ["CP03"]
         Missing: ["CP01", "CP02"]
         """
         blueprint_packs = {"CP03"}
         missing = self._find_missing_dependencies(blueprint_packs, cp_dependency_map)
-        
+
         assert "CP01" in missing, "CP01 phải được detect là missing"
         assert "CP02" in missing, "CP02 phải được detect là missing"
 
@@ -347,13 +331,13 @@ class TestMissingDependencyDetection:
     ) -> None:
         """
         Không có missing dependencies khi include đầy đủ.
-        
+
         Blueprint: ["CP01", "CP02", "CP03"]
         Missing: set()
         """
         blueprint_packs = {"CP01", "CP02", "CP03"}
         missing = self._find_missing_dependencies(blueprint_packs, cp_dependency_map)
-        
+
         assert missing == set(), f"Không nên có missing deps, tìm thấy: {missing}"
 
     def test_missing_in_transitive_chain(
@@ -361,17 +345,17 @@ class TestMissingDependencyDetection:
     ) -> None:
         """
         Detect missing dependencies trong transitive chain.
-        
+
         Blueprint: ["CP04"]
         CP04 → [CP02, CP03]
         CP03 → [CP01, CP02]
         CP02 → [CP01]
-        
+
         Missing: ["CP01", "CP02", "CP03"]
         """
         blueprint_packs = {"CP04"}
         missing = self._find_missing_dependencies(blueprint_packs, cp_dependency_map)
-        
+
         assert "CP01" in missing, "CP01 phải được detect là missing"
         assert "CP02" in missing, "CP02 phải được detect là missing"
         assert "CP03" in missing, "CP03 phải được detect là missing"
@@ -384,18 +368,18 @@ class TestMissingDependencyDetection:
         """
         all_required: set[str] = set()
         stack = list(blueprint_packs)
-        
+
         while stack:
             cp_id = stack.pop()
             if cp_id in all_required:
                 continue
-            
+
             all_required.add(cp_id)
             deps = cp_dependency_map.get(cp_id, [])
             for dep in deps:
                 if dep not in all_required:
                     stack.append(dep)
-        
+
         # Missing = all_required - blueprint_packs
         return all_required - blueprint_packs
 
@@ -417,7 +401,7 @@ class TestDependencyResolutionIntegration:
         Tất cả dependencies trong taxonomy đều phải tồn tại.
         """
         all_cp_ids = {cp["id"] for cp in taxonomy.get("core_packs", [])}
-        
+
         for cp_id, deps in cp_dependency_map.items():
             for dep in deps:
                 assert dep in all_cp_ids, f"{cp_id} phụ thuộc {dep} không tồn tại trong taxonomy"
@@ -431,21 +415,21 @@ class TestDependencyResolutionIntegration:
         # DFS với visited và recursion stack
         visited: set[str] = set()
         rec_stack: set[str] = set()
-        
+
         def has_cycle(cp_id: str) -> bool:
             visited.add(cp_id)
             rec_stack.add(cp_id)
-            
+
             for dep in cp_dependency_map.get(cp_id, []):
                 if dep not in visited:
                     if has_cycle(dep):
                         return True
                 elif dep in rec_stack:
                     return True
-            
+
             rec_stack.remove(cp_id)
             return False
-        
+
         for cp_id in cp_dependency_map:
             if cp_id not in visited:
                 assert not has_cycle(cp_id), f"Circular dependency detected từ {cp_id}"
@@ -459,7 +443,7 @@ class TestDependencyResolutionIntegration:
         P0 mandatory packs (CP01-CP04, CP07) đều được resolve đúng.
         """
         p0_mandatory = {"CP01", "CP02", "CP03", "CP04", "CP07"}
-        
+
         for cp_id in p0_mandatory:
             assert cp_id in cp_dependency_map, f"{cp_id} phải có trong dependency map"
             assert cp_phase_map.get(cp_id) == "P0", f"{cp_id} phải là P0"

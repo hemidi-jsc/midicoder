@@ -88,9 +88,10 @@ class TestInitCommand:
         assert "--force" not in result.output or "No such option" not in result.output
 
     def test_init_no_index_flag(self, runner):
-        """Kiểm tra init --no-index flag được nhận."""
+        """Kiểm tra init --no-index flag được nhận (flag đã bị remove, CLI báo No such option)."""
         result = runner.invoke(cli, ["init", "--no-index"])
-        assert "--no-index" not in result.output or "No such option" not in result.output
+        # --no-index không còn là flag hợp lệ
+        assert result.exit_code != 0 or "No such option" in result.output
 
     def test_init_version_flag(self, runner):
         """Kiểm tra init --version flag được nhận."""

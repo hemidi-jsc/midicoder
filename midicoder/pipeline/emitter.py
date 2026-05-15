@@ -136,9 +136,8 @@ class Emitter:
         elif templates_dir.exists():
             self._template_dir = templates_dir
         else:
-            # Template directory không tồn tại — tạo empty environment
+            # Template directory không tồn tại — dùng core_dir nhưng KHÔNG tạo thư mục
             self._template_dir = core_dir
-            self._template_dir.mkdir(parents=True, exist_ok=True)
     
     @property
     def _template_dir(self) -> Optional[Path]:

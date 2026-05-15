@@ -23,7 +23,7 @@ from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefiniti
 
 # Resolve template directory relative to this package
 _PACKAGE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-_TEMPLATE_DIR = _PACKAGE_DIR / "stacks" / "angular" / "core" / "component"
+_TEMPLATE_DIR = _PACKAGE_DIR / "stacks" / "angular" / "core" / "cp18_frontend_framework"
 
 
 @dataclass

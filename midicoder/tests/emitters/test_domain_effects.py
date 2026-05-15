@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pytest_mock import MockerFixture
 
+from midicoder.emitters.core.cp02_multi_tenant.models import TenantContext
 from midicoder.emitters.domain import DomainEffects, ClinicalTransitionResult
 from midicoder.emitters.domain.banking.effects.effects import LedgerEntryResult
 from midicoder.emitters.domain.manufacturing.effects.effects import InventoryReservationResult
@@ -48,7 +49,7 @@ class TestDoubleEntryLedger:
             "transaction_ref": "txn_001",
         }
 
-        result = await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert isinstance(result, LedgerEntryResult)
         assert result.balanced is True
@@ -66,7 +67,7 @@ class TestDoubleEntryLedger:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_DOUBLE_ENTRY_MISMATCH
 
@@ -80,7 +81,7 @@ class TestDoubleEntryLedger:
             "credit_entries": [{"account": "revenue", "amount": 100.0, "description": "test"}],
         }
 
-        result = await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.balanced is True
 
@@ -95,7 +96,7 @@ class TestDoubleEntryLedger:
         }
 
         with pytest.raises(MidicoderError):
-            await effects.execute_double_entry(data, user_id="user_1", tenant_id=None)
+            await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id=None))
 
     @pytest.mark.asyncio
     async def test_double_entry_no_entries_raises_error(self):
@@ -108,7 +109,7 @@ class TestDoubleEntryLedger:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_LEDGER_ENTRY_FAILED
 
@@ -128,7 +129,7 @@ class TestDoubleEntryLedger:
             "credit_entries": [{"account": "revenue", "amount": 100}],
         }
 
-        result = await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.transaction_id == "txn_123"
         mock_service.create_ledger_entries.assert_called_once()
@@ -147,7 +148,7 @@ class TestDoubleEntryLedger:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_LEDGER_ENTRY_FAILED
 
@@ -167,8 +168,8 @@ class TestDoubleEntryLedger:
             "credit_entries": [{"account": "revenue", "amount": 100}],
         }
 
-        await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_A")
-        await effects.execute_double_entry(data, user_id="user_2", tenant_id="tenant_B")
+        await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_A"))
+        await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_2", tenant_id="tenant_B"))
 
         assert mock_service.create_ledger_entries.call_count == 2
 
@@ -202,7 +203,7 @@ class TestDoubleEntryLedger:
             ],
         }
 
-        result = await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.debit_total == 100
         assert result.credit_total == 100
@@ -220,7 +221,7 @@ class TestDoubleEntryLedger:
             "description": "Test transaction",
         }
 
-        result = await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.balanced is True
 
@@ -240,7 +241,7 @@ class TestDoubleEntryLedger:
             "credit_entries": [{"account": "revenue", "amount": 100}],
         }
 
-        await effects.execute_double_entry(data, user_id="user_123", tenant_id="tenant_1")
+        await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_123", tenant_id="tenant_1"))
 
         call_kwargs = mock_service.create_ledger_entries.call_args.kwargs
         assert call_kwargs["user_id"] == "user_123"
@@ -255,7 +256,7 @@ class TestDoubleEntryLedger:
             "credit_entries": [{"account": "revenue", "amount": 1000000000}],
         }
 
-        result = await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.debit_total == 1000000000
         assert result.balanced is True
@@ -270,7 +271,7 @@ class TestDoubleEntryLedger:
             "credit_entries": [{"account": "revenue", "amount": 100.123}],
         }
 
-        result = await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.balanced is True
 
@@ -288,7 +289,7 @@ class TestDoubleEntryLedger:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_double_entry(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_double_entry(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_LEDGER_ENTRY_FAILED
 
@@ -314,7 +315,7 @@ class TestInventoryReservation:
         }
 
         result = await effects.execute_inventory_reservation(
-            data, user_id="user_1", tenant_id="tenant_1"
+            data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1")
         )
 
         assert isinstance(result, InventoryReservationResult)
@@ -332,7 +333,7 @@ class TestInventoryReservation:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_INSUFFICIENT_STOCK
 
@@ -347,7 +348,7 @@ class TestInventoryReservation:
         }
 
         with pytest.raises(MidicoderError):
-            await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
     @pytest.mark.asyncio
     async def test_inventory_reservation_with_service(self, mocker: MockerFixture):
@@ -367,7 +368,7 @@ class TestInventoryReservation:
         }
 
         result = await effects.execute_inventory_reservation(
-            data, user_id="user_1", tenant_id="tenant_1"
+            data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1")
         )
 
         assert result.reservation_id == "res_123"
@@ -387,7 +388,7 @@ class TestInventoryReservation:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_INSUFFICIENT_STOCK
 
@@ -404,8 +405,8 @@ class TestInventoryReservation:
             "quantity": 10,
         }
 
-        await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_A")
-        await effects.execute_inventory_reservation(data, user_id="user_2", tenant_id="tenant_B")
+        await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_A"))
+        await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_2", tenant_id="tenant_B"))
 
         assert mock_service.reserve_stock.call_count == 2
 
@@ -433,7 +434,7 @@ class TestInventoryReservation:
             "quantity": 10,
         }
 
-        result = await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.expires_at is not None
 
@@ -448,7 +449,7 @@ class TestInventoryReservation:
             "expires_in": 48,
         }
 
-        result = await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.expires_at is not None
 
@@ -463,7 +464,7 @@ class TestInventoryReservation:
             "reservation_ref": "PO-2026-001",
         }
 
-        result = await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.item_id == "ITEM_001"
 
@@ -477,7 +478,7 @@ class TestInventoryReservation:
             "quantity": 10000,
         }
 
-        result = await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.quantity == 10000
 
@@ -492,7 +493,7 @@ class TestInventoryReservation:
         }
 
         with pytest.raises(MidicoderError):
-            await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
     @pytest.mark.asyncio
     async def test_inventory_reservation_with_user_id(self, mocker: MockerFixture):
@@ -507,7 +508,7 @@ class TestInventoryReservation:
             "quantity": 10,
         }
 
-        await effects.execute_inventory_reservation(data, user_id="user_123", tenant_id="tenant_1")
+        await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_123", tenant_id="tenant_1"))
 
         call_kwargs = mock_service.reserve_stock.call_args.kwargs
         assert call_kwargs["user_id"] == "user_123"
@@ -522,7 +523,7 @@ class TestInventoryReservation:
             "quantity": 10,
         }
 
-        result = await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id=None)
+        result = await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="global"))
 
         assert result.status == "reserved"
 
@@ -539,7 +540,7 @@ class TestInventoryReservation:
             "quantity": 10,
         }
 
-        await effects.execute_inventory_reservation(data, user_id="user_1", tenant_id="tenant_ABC")
+        await effects.execute_inventory_reservation(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_ABC"))
 
         call_kwargs = mock_service.reserve_stock.call_args.kwargs
         assert call_kwargs["tenant_id"] == "tenant_ABC"
@@ -569,7 +570,7 @@ class TestPaymentProcess:
         }
 
         result = await effects.execute_payment_process(
-            data, user_id="user_1", tenant_id="tenant_1"
+            data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1")
         )
 
         assert isinstance(result, PaymentProcessResult)
@@ -588,7 +589,7 @@ class TestPaymentProcess:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_PAYMENT_FAILED
 
@@ -604,7 +605,7 @@ class TestPaymentProcess:
         }
 
         with pytest.raises(MidicoderError):
-            await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
     @pytest.mark.asyncio
     async def test_payment_process_with_service(self, mocker: MockerFixture):
@@ -626,7 +627,7 @@ class TestPaymentProcess:
             "customer_id": "cust_001",
         }
 
-        result = await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.payment_id == "pi_123"
         mock_service.process_payment.assert_called_once()
@@ -647,7 +648,7 @@ class TestPaymentProcess:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_PAYMENT_DUPLICATE
 
@@ -667,7 +668,7 @@ class TestPaymentProcess:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_PAYMENT_GATEWAY_ERROR
 
@@ -686,8 +687,8 @@ class TestPaymentProcess:
             "customer_id": "cust_001",
         }
 
-        await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_A")
-        await effects.execute_payment_process(data, user_id="user_2", tenant_id="tenant_B")
+        await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_A"))
+        await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_2", tenant_id="tenant_B"))
 
         assert mock_service.process_payment.call_count == 2
 
@@ -718,7 +719,7 @@ class TestPaymentProcess:
             }
 
             result = await effects.execute_payment_process(
-                data, user_id="user_1", tenant_id="tenant_1"
+                data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1")
             )
 
             assert result.gateway == gateway
@@ -736,7 +737,7 @@ class TestPaymentProcess:
             "customer_id": "cust_001",
         }
 
-        result = await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.gateway == "vnpay"
 
@@ -753,7 +754,7 @@ class TestPaymentProcess:
             "customer_id": "cust_001",
         }
 
-        result = await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.gateway == "stripe"
 
@@ -769,7 +770,7 @@ class TestPaymentProcess:
             "customer_id": "cust_001",
         }
 
-        result = await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_1")
+        result = await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
         assert result.status == "completed"
 
@@ -785,7 +786,7 @@ class TestPaymentProcess:
         }
 
         with pytest.raises(MidicoderError):
-            await effects.execute_payment_process(data, user_id="user_1", tenant_id="tenant_1")
+            await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"))
 
     @pytest.mark.asyncio
     async def test_payment_with_user_id(self, mocker: MockerFixture):
@@ -802,7 +803,7 @@ class TestPaymentProcess:
             "customer_id": "cust_001",
         }
 
-        await effects.execute_payment_process(data, user_id="user_123", tenant_id="tenant_1")
+        await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_123", tenant_id="tenant_1"))
 
         call_kwargs = mock_service.process_payment.call_args.kwargs
         assert call_kwargs["user_id"] == "user_123"
@@ -819,7 +820,7 @@ class TestPaymentProcess:
             "customer_id": "cust_001",
         }
 
-        result = await effects.execute_payment_process(data, user_id="user_1", tenant_id=None)
+        result = await effects.execute_payment_process(data, tenant_context=TenantContext(user_id="user_1", tenant_id="global"))
 
         assert result.status == "completed"
 
@@ -846,7 +847,7 @@ class TestClinicalTransition:
         }
 
         result = await effects.execute_clinical_transition(
-            data, user_id="provider_1", tenant_id="tenant_1"
+            data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1")
         )
 
         assert isinstance(result, ClinicalTransitionResult)
@@ -866,7 +867,7 @@ class TestClinicalTransition:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id="tenant_1")
+            await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_INVALID_STATE_TRANSITION
 
@@ -890,7 +891,7 @@ class TestClinicalTransition:
         }
 
         result = await effects.execute_clinical_transition(
-            data, user_id="provider_1", tenant_id="tenant_1"
+            data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1")
         )
 
         assert result.transitioned is True
@@ -912,7 +913,7 @@ class TestClinicalTransition:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id="tenant_1")
+            await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1"))
 
         # Either INVALID_STATE_TRANSITION (097) if validation fails first,
         # or PROVIDER_NOT_CERTIFIED (099) if credential check fails
@@ -938,7 +939,7 @@ class TestClinicalTransition:
         }
 
         with pytest.raises(MidicoderError) as exc_info:
-            await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id="tenant_1")
+            await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1"))
 
         assert exc_info.value.code == ErrorCode.CP01_EFFECT_CLINICAL_CHECK_FAILED
 
@@ -959,8 +960,8 @@ class TestClinicalTransition:
             "to_state": "scheduled",
         }
 
-        await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id="tenant_A")
-        await effects.execute_clinical_transition(data, user_id="provider_2", tenant_id="tenant_B")
+        await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_A"))
+        await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_2", tenant_id="tenant_B"))
 
         assert mock_service.transition_state.call_count == 2
 
@@ -1000,7 +1001,7 @@ class TestClinicalTransition:
             }
 
             result = await effects.execute_clinical_transition(
-                data, user_id="provider_1", tenant_id="tenant_1"
+                data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1")
             )
 
             assert result.from_state == from_state
@@ -1024,7 +1025,7 @@ class TestClinicalTransition:
             "phi_fields": ["diagnosis", "medication", "allergies"],
         }
 
-        await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id="tenant_1")
+        await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1"))
 
         mock_service.log_phi_access.assert_called_once()
         call_kwargs = mock_service.log_phi_access.call_args.kwargs
@@ -1047,7 +1048,7 @@ class TestClinicalTransition:
             "to_state": "scheduled",
         }
 
-        await effects.execute_clinical_transition(data, user_id="provider_123", tenant_id="tenant_1")
+        await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_123", tenant_id="tenant_1"))
 
         call_kwargs = mock_service.verify_provider_credentials.call_args.kwargs
         assert call_kwargs["user_id"] == "provider_123"
@@ -1064,7 +1065,7 @@ class TestClinicalTransition:
         }
 
         with pytest.raises(MidicoderError):
-            await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id="tenant_1")
+            await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1"))
 
     @pytest.mark.asyncio
     async def test_clinical_missing_to_state(self):
@@ -1078,7 +1079,7 @@ class TestClinicalTransition:
         }
 
         with pytest.raises(MidicoderError):
-            await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id="tenant_1")
+            await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1"))
 
     @pytest.mark.asyncio
     async def test_clinical_with_check_type(self, mocker: MockerFixture):
@@ -1098,7 +1099,7 @@ class TestClinicalTransition:
             "check_type": "vital_signs",
         }
 
-        await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id="tenant_1")
+        await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1"))
 
         call_kwargs = mock_service.check_clinical_decision.call_args.kwargs
         assert call_kwargs["check_type"] == "vital_signs"
@@ -1114,7 +1115,7 @@ class TestClinicalTransition:
             "to_state": "scheduled",
         }
 
-        result = await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id=None)
+        result = await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="global"))
 
         assert result.transitioned is True
 
@@ -1135,7 +1136,7 @@ class TestClinicalTransition:
             "to_state": "scheduled",
         }
 
-        await effects.execute_clinical_transition(data, user_id="provider_1", tenant_id="tenant_ABC")
+        await effects.execute_clinical_transition(data, tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_ABC"))
 
         call_kwargs = mock_service.transition_state.call_args.kwargs
         assert call_kwargs["tenant_id"] == "tenant_ABC"
@@ -1178,29 +1179,25 @@ class TestDomainEffectsIntegration:
         # Execute all effects
         ledger_result = await effects.execute_double_entry(
             {"debit_entries": [{"account": "a", "amount": 100}], "credit_entries": [{"account": "b", "amount": 100}]},
-            user_id="user_1",
-            tenant_id="tenant_1",
+            tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"),
         )
         assert ledger_result.balanced is True
 
         inventory_result = await effects.execute_inventory_reservation(
             {"item_id": "ITEM_1", "quantity": 10},
-            user_id="user_1",
-            tenant_id="tenant_1",
+            tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"),
         )
         assert inventory_result.status == "reserved"
 
         payment_result = await effects.execute_payment_process(
             {"amount": 100, "gateway": "stripe", "idempotency_key": "txn_1", "customer_id": "cust_1"},
-            user_id="user_1",
-            tenant_id="tenant_1",
+            tenant_context=TenantContext(user_id="user_1", tenant_id="tenant_1"),
         )
         assert payment_result.status == "completed"
 
         clinical_result = await effects.execute_clinical_transition(
             {"case_id": "CASE_1", "from_state": "pending", "to_state": "scheduled"},
-            user_id="provider_1",
-            tenant_id="tenant_1",
+            tenant_context=TenantContext(user_id="provider_1", tenant_id="tenant_1"),
         )
         assert clinical_result.transitioned is True
 
@@ -1212,25 +1209,25 @@ class TestDomainEffectsIntegration:
         # All effects should return fallback results
         ledger_result = await effects.execute_double_entry(
             {"debit_entries": [{"account": "a", "amount": 100}], "credit_entries": [{"account": "b", "amount": 100}]},
-            tenant_id="tenant_1",
+            tenant_context=TenantContext(tenant_id="tenant_1"),
         )
         assert ledger_result.balanced is True
 
         inventory_result = await effects.execute_inventory_reservation(
             {"item_id": "ITEM_1", "quantity": 10},
-            tenant_id="tenant_1",
+            tenant_context=TenantContext(tenant_id="tenant_1"),
         )
         assert inventory_result.status == "reserved"
 
         payment_result = await effects.execute_payment_process(
             {"amount": 100, "gateway": "stripe", "idempotency_key": "txn_1", "customer_id": "cust_1"},
-            tenant_id="tenant_1",
+            tenant_context=TenantContext(tenant_id="tenant_1"),
         )
         assert payment_result.status == "completed"
 
         clinical_result = await effects.execute_clinical_transition(
             {"case_id": "CASE_1", "from_state": "pending", "to_state": "scheduled"},
-            tenant_id="tenant_1",
+            tenant_context=TenantContext(tenant_id="tenant_1"),
         )
         assert clinical_result.transitioned is True
 
@@ -1262,31 +1259,31 @@ class TestDomainEffectsIntegration:
         # Execute for tenant_A
         await effects.execute_double_entry(
             {"debit_entries": [{"account": "a", "amount": 100}], "credit_entries": [{"account": "b", "amount": 100}]},
-            tenant_id="tenant_A",
+            tenant_context=TenantContext(tenant_id="tenant_A"),
         )
-        await effects.execute_inventory_reservation({"item_id": "ITEM_1", "quantity": 10}, tenant_id="tenant_A")
+        await effects.execute_inventory_reservation({"item_id": "ITEM_1", "quantity": 10}, tenant_context=TenantContext(tenant_id="tenant_A"))
         await effects.execute_payment_process(
             {"amount": 100, "gateway": "stripe", "idempotency_key": "txn_1", "customer_id": "cust_1"},
-            tenant_id="tenant_A",
+            tenant_context=TenantContext(tenant_id="tenant_A"),
         )
         await effects.execute_clinical_transition(
             {"case_id": "CASE_1", "from_state": "pending", "to_state": "scheduled"},
-            tenant_id="tenant_A",
+            tenant_context=TenantContext(tenant_id="tenant_A"),
         )
 
         # Execute for tenant_B
         await effects.execute_double_entry(
             {"debit_entries": [{"account": "a", "amount": 100}], "credit_entries": [{"account": "b", "amount": 100}]},
-            tenant_id="tenant_B",
+            tenant_context=TenantContext(tenant_id="tenant_B"),
         )
-        await effects.execute_inventory_reservation({"item_id": "ITEM_1", "quantity": 10}, tenant_id="tenant_B")
+        await effects.execute_inventory_reservation({"item_id": "ITEM_1", "quantity": 10}, tenant_context=TenantContext(tenant_id="tenant_B"))
         await effects.execute_payment_process(
             {"amount": 100, "gateway": "stripe", "idempotency_key": "txn_2", "customer_id": "cust_1"},
-            tenant_id="tenant_B",
+            tenant_context=TenantContext(tenant_id="tenant_B"),
         )
         await effects.execute_clinical_transition(
             {"case_id": "CASE_2", "from_state": "pending", "to_state": "scheduled"},
-            tenant_id="tenant_B",
+            tenant_context=TenantContext(tenant_id="tenant_B"),
         )
 
         # Each service called 2 times (once per tenant)

@@ -29,7 +29,7 @@ from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
 # Resolve template directory relative to this package
 _PACKAGE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-_TEMPLATE_DIR = _PACKAGE_DIR / "stacks" / "nestjs" / "core" / "component"
+_TEMPLATE_DIR = _PACKAGE_DIR / "stacks" / "nestjs" / "core" / "cp18_frontend_framework"
 
 
 @dataclass

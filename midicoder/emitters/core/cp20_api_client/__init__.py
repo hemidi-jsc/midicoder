@@ -19,7 +19,7 @@ Author: Midicoder Team
 Version: 1.0.0
 """
 
-from midicoder.emitters.core.api_client.models import (
+from midicoder.emitters.core.cp20_api_client.models import (
     ApiSpec,
     ClientBinding,
     RealtimeBridgeSpec,
@@ -27,16 +27,16 @@ from midicoder.emitters.core.api_client.models import (
     HttpMethod,
     TransportType,
 )
-from midicoder.emitters.core.api_client.angular import (
+from midicoder.emitters.core.cp20_api_client.angular import (
     AngularApiEmitter,
 )
-from midicoder.emitters.core.api_client.react import (
+from midicoder.emitters.core.cp20_api_client.react import (
     ReactApiEmitter,
 )
-from midicoder.emitters.core.api_client.fastapi import (
+from midicoder.emitters.core.cp20_api_client.fastapi import (
     FastAPIApiEmitter,
 )
-from midicoder.emitters.core.api_client.nestjs import (
+from midicoder.emitters.core.cp20_api_client.nestjs import (
     NestJSApiEmitter,
 )
 

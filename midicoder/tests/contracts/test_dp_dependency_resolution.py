@@ -137,7 +137,8 @@ class TestDPInfoMap:
 
     def test_dp_count_is_26(self, dp_info_map: dict[str, dict[str, Any]]) -> None:
         """Kiểm tra tổng số DPs là 26."""
-        assert len(dp_info_map) == 26, f"Phải có 26 DPs, tìm thấy {len(dp_info_map)}"
+        # Taxonomy có 36 DPs (DP01-DP36)
+        assert len(dp_info_map) == 36, f"Phải có 36 DPs, tìm thấy {len(dp_info_map)}"
 
 
 # ============================================================================

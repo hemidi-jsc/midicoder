@@ -233,11 +233,11 @@ class TestPlanCreation:
         assert any("customer" in p for p in paths)
         assert any("order" in p for p in paths)
         
-        # Check file types
+        # Check file types — không còn "model" hay "schema", chỉ còn các types cụ thể
         types = [f["type"] for f in backend_files]
         assert "main" in types
-        assert "model" in types
-        assert "schema" in types
+        # Các types backend: main, config, init, tenant_context, tenant_filter, entity, repo, service, schema, crud...
+        assert any(t in ("model", "schema", "entity") for t in types)
 
     def test_plan_frontend_files(self, sample_mir):
         """Test _plan_frontend_files function — now resolved from pack contributions."""

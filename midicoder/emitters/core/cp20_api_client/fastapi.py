@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from midicoder.emitters.core.api_client.models import ApiSpec
+from midicoder.emitters.core.cp20_api_client.models import ApiSpec
 
 
 @dataclass

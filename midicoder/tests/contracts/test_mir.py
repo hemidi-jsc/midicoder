@@ -11,7 +11,7 @@ Kiểm tra behavior của:
 Tests tuân thủ TDD, không mocks, bám sát SoT.
 
 Author: Midicoder Team
-Version: 2.0.0 (types from pipeline/mir.py, re-exported via contracts/)
+Version: 3.0.0 (updated for pipeline/mir.py dataclass signatures)
 """
 
 import pytest
@@ -36,64 +36,69 @@ class TestMIROperation:
     """Tests cho MIROperation class."""
 
     def test_operation_created_with_required_fields(self):
-        """Kiểm tra MIROperation được tạo với op bắt buộc."""
-        operation = MIROperation(op="authorize_permission")
+        """Kiểm tra MIROperation được tạo với op_id và op_type bắt buộc."""
+        operation = MIROperation(
+            op_id="op_001",
+            op_type="authorize_permission",
+            params={},
+        )
 
-        assert operation.op == "authorize_permission"
+        assert operation.op_type == "authorize_permission"
+        assert operation.op == "authorize_permission"  # backward-compat alias
         assert operation.params == {}
         assert operation.input_refs == []
         assert operation.output_refs == []
-        assert operation.effect_refs == []
-        assert operation.transaction_boundary is None
         assert operation.obligation_refs == []
+        assert operation.metadata == {}
 
     def test_operation_created_with_all_fields(self):
         """Kiểm tra MIROperation được tạo với tất cả fields."""
         operation = MIROperation(
-            op="create_record",
+            op_id="op_002",
+            op_type="create_record",
             params={"entity": "Order", "data": {"name": "Test"}},
             input_refs=["input_001"],
             output_refs=["output_001"],
-            effect_refs=["effect_001"],
-            transaction_boundary="tx_001",
             obligation_refs=["obligation_001"],
+            metadata={"transaction_boundary": "tx_001"},
         )
 
-        assert operation.op == "create_record"
+        assert operation.op_type == "create_record"
         assert operation.params == {"entity": "Order", "data": {"name": "Test"}}
         assert operation.input_refs == ["input_001"]
         assert operation.output_refs == ["output_001"]
-        assert operation.effect_refs == ["effect_001"]
-        assert operation.transaction_boundary == "tx_001"
         assert operation.obligation_refs == ["obligation_001"]
+        assert operation.metadata["transaction_boundary"] == "tx_001"
 
     def test_operation_to_dict_contains_all_fields(self):
-        """Kiểm tra to_dict chứa tất cả fields."""
+        """Kiểm tra to_dict chứa tất cả fields (legacy + canonical)."""
         operation = MIROperation(
-            op="authorize_permission",
+            op_id="op_003",
+            op_type="authorize_permission",
             params={"permission": "order.create"},
             obligation_refs=["perm_check_001"],
         )
         operation_dict = operation.to_dict()
 
-        assert operation_dict["op"] == "authorize_permission"
+        assert operation_dict["op_id"] == "op_003"
+        assert operation_dict["op"] == "authorize_permission"  # legacy key
+        assert operation_dict["op_type"] == "authorize_permission"
         assert operation_dict["params"] == {"permission": "order.create"}
         assert operation_dict["obligation_refs"] == ["perm_check_001"]
 
     def test_operation_from_dict_creates_operation(self):
-        """Kiểm tra from_dict tạo MIROperation đúng."""
+        """Kiểm tra from_dict tạo MIROperation đúng (legacy keys supported)."""
         operation_data = {
+            "op_id": "op_004",
             "op": "create_record",
             "params": {"entity": "Customer"},
             "input_refs": ["input_001"],
             "output_refs": ["output_001"],
-            "effect_refs": ["effect_001"],
-            "transaction_boundary": "tx_001",
-            "obligation_refs": ["oblig_001"],
         }
 
         operation = MIROperation.from_dict(operation_data)
 
+        assert operation.op_type == "create_record"
         assert operation.op == "create_record"
         assert operation.params == {"entity": "Customer"}
         assert operation.input_refs == ["input_001"]
@@ -101,25 +106,33 @@ class TestMIROperation:
     def test_operation_roundtrip_preserves_state(self):
         """Kiểm tra roundtrip serialization giữ nguyên state."""
         original = MIROperation(
-            op="create_record",
+            op_id="op_005",
+            op_type="create_record",
             params={"entity": "Order", "data": {"id": 1}},
             input_refs=["input_001"],
             output_refs=["output_001"],
-            effect_refs=["effect_001"],
-            transaction_boundary="tx_001",
             obligation_refs=["oblig_001"],
+            metadata={"transaction_boundary": "tx_001"},
         )
 
         operation_dict = original.to_dict()
         reconstructed = MIROperation.from_dict(operation_dict)
 
+        assert reconstructed.op_type == original.op_type
         assert reconstructed.op == original.op
         assert reconstructed.params == original.params
         assert reconstructed.input_refs == original.input_refs
         assert reconstructed.output_refs == original.output_refs
-        assert reconstructed.effect_refs == original.effect_refs
-        assert reconstructed.transaction_boundary == original.transaction_boundary
         assert reconstructed.obligation_refs == original.obligation_refs
+        assert reconstructed.metadata["transaction_boundary"] == "tx_001"
+
+    def test_op_property_is_alias_for_op_type(self):
+        """Kiểm tra property `op` là alias cho `op_type`."""
+        op = MIROperation(op_id="op_006", op_type="query_records", params={})
+        assert op.op == op.op_type
+        # Set via alias
+        op.op = "update_record"
+        assert op.op_type == "update_record"
 
 
 class TestMIRDataFlow:
@@ -316,34 +329,41 @@ class TestMIRBoundary:
     def test_boundary_created_with_transaction_type(self):
         """Kiểm tra MIRBoundary được tạo với transaction type."""
         boundary = MIRBoundary(
-            id="boundary_001",
+            boundary_id="boundary_001",
             boundary_type="transaction",
             enclosing_ops=["create_order", "update_inventory"],
         )
 
-        assert boundary.id == "boundary_001"
+        assert boundary.boundary_id == "boundary_001"
+        assert boundary.id == "boundary_001"  # backward-compat alias
         assert boundary.boundary_type == "transaction"
         assert boundary.enclosing_ops == ["create_order", "update_inventory"]
 
     def test_boundary_created_with_auth_type(self):
         """Kiểm tra MIRBoundary được tạo với auth type."""
         boundary = MIRBoundary(
-            id="boundary_002",
+            boundary_id="boundary_002",
             boundary_type="auth",
             enclosing_ops=["authorize_permission"],
             config={"role": "admin", "permission": "order.create"},
         )
 
-        assert boundary.id == "boundary_002"
+        assert boundary.boundary_id == "boundary_002"
         assert boundary.boundary_type == "auth"
         assert boundary.config == {"role": "admin", "permission": "order.create"}
 
     def test_boundary_boundary_type_values(self):
         """Kiểm tra boundary_type string values."""
         # boundary_type là string, không phải enum
-        transaction_boundary = MIRBoundary(id="b1", boundary_type="transaction")
-        auth_boundary = MIRBoundary(id="b2", boundary_type="auth")
-        tenant_boundary = MIRBoundary(id="b3", boundary_type="tenant")
+        transaction_boundary = MIRBoundary(
+            boundary_id="b1", boundary_type="transaction", enclosing_ops=[]
+        )
+        auth_boundary = MIRBoundary(
+            boundary_id="b2", boundary_type="auth", enclosing_ops=[]
+        )
+        tenant_boundary = MIRBoundary(
+            boundary_id="b3", boundary_type="tenant", enclosing_ops=[]
+        )
 
         assert transaction_boundary.boundary_type == "transaction"
         assert auth_boundary.boundary_type == "auth"
@@ -352,7 +372,7 @@ class TestMIRBoundary:
     def test_boundary_to_dict_contains_all_fields(self):
         """Kiểm tra to_dict chứa tất cả fields."""
         boundary = MIRBoundary(
-            id="boundary_003",
+            boundary_id="boundary_003",
             boundary_type="transaction",
             enclosing_ops=["op1", "op2"],
             config={"isolation": "read_committed"},
@@ -364,7 +384,7 @@ class TestMIRBoundary:
         assert boundary_dict["enclosing_ops"] == ["op1", "op2"]
 
     def test_boundary_from_dict_creates_boundary(self):
-        """Kiểm tra from_dict tạo MIRBoundary đúng."""
+        """Kiểm tra from_dict tạo MIRBoundary đúng (legacy "id" key supported)."""
         boundary_data = {
             "id": "boundary_004",
             "boundary_type": "tenant",
@@ -373,6 +393,7 @@ class TestMIRBoundary:
 
         boundary = MIRBoundary.from_dict(boundary_data)
 
+        assert boundary.boundary_id == "boundary_004"
         assert boundary.id == "boundary_004"
         assert boundary.boundary_type == "tenant"
         assert boundary.enclosing_ops == ["query_records"]
@@ -380,7 +401,7 @@ class TestMIRBoundary:
     def test_boundary_roundtrip_preserves_state(self):
         """Kiểm tra roundtrip serialization giữ nguyên state."""
         original = MIRBoundary(
-            id="boundary_005",
+            boundary_id="boundary_005",
             boundary_type="transaction",
             enclosing_ops=["create_order", "create_item"],
             config={"isolation": "serializable"},
@@ -390,10 +411,18 @@ class TestMIRBoundary:
         boundary_dict = original.to_dict()
         reconstructed = MIRBoundary.from_dict(boundary_dict)
 
-        assert reconstructed.id == original.id
+        assert reconstructed.boundary_id == original.boundary_id
         assert reconstructed.boundary_type == original.boundary_type
         assert reconstructed.enclosing_ops == original.enclosing_ops
         assert reconstructed.scope == original.scope
+
+    def test_id_property_is_alias_for_boundary_id(self):
+        """Kiểm tra property `id` là alias cho `boundary_id`."""
+        b = MIRBoundary(boundary_id="b6", boundary_type="auth", enclosing_ops=[])
+        assert b.id == b.boundary_id
+        # Set via alias
+        b.id = "new_id"
+        assert b.boundary_id == "new_id"
 
 
 class TestMIR:
@@ -404,7 +433,8 @@ class TestMIR:
         mir = MIR()
 
         assert mir is not None
-        assert mir.ops == []
+        assert mir.operations == []
+        assert mir.ops == []  # backward-compat alias
         assert mir.data_flows == []
         assert mir.effect_flows == []
         assert mir.boundaries == []
@@ -412,70 +442,96 @@ class TestMIR:
 
     def test_mir_created_with_ops(self):
         """Kiểm tra MIR được tạo với operations."""
-        operation = MIROperation(op="authorize_permission", params={"permission": "order.create"})
-        mir = MIR(ir_ref="Command.CreateOrder", ops=[operation])
+        operation = MIROperation(
+            op_id="op_001",
+            op_type="authorize_permission",
+            params={"permission": "order.create"},
+        )
+        mir = MIR(operations=[operation])
+        mir.ir_ref = "Command.CreateOrder"
 
-        assert len(mir.ops) == 1
+        assert len(mir.operations) == 1
+        assert mir.ops[0].op_type == "authorize_permission"
         assert mir.ops[0].op == "authorize_permission"
         assert mir.ir_ref == "Command.CreateOrder"
 
     def test_mir_add_operation(self):
-        """Kiểm tra add_operation thêm operation vào MIR."""
-        mir = MIR(ir_ref="Command.CreateOrder")
-        operation = MIROperation(op="create_record")
+        """Kiểm tra add_operation_compat thêm operation vào MIR."""
+        mir = MIR()
+        mir.ir_ref = "Command.CreateOrder"
+        operation = MIROperation(
+            op_id="op_002", op_type="create_record", params={}
+        )
 
-        index = mir.add_operation(operation)
+        index = mir.add_operation_compat(operation)
 
-        assert len(mir.ops) == 1
-        assert mir.ops[0].op == "create_record"
+        assert len(mir.operations) == 1
+        assert mir.ops[0].op_type == "create_record"
         assert index == 0
 
     def test_mir_get_operation(self):
         """Kiểm tra get_operation trả về operation đúng theo index."""
-        mir = MIR(ir_ref="Command.CreateOrder")
-        operation = MIROperation(op="create_record", params={"entity": "Order"})
-        mir.add_operation(operation)
+        mir = MIR()
+        operation = MIROperation(
+            op_id="op_003",
+            op_type="create_record",
+            params={"entity": "Order"},
+        )
+        mir.add_operation_compat(operation)
 
         result = mir.get_operation(0)
         assert result is not None
-        assert result.op == "create_record"
+        assert result.op_type == "create_record"
 
     def test_mir_to_dict_contains_all_fields(self):
         """Kiểm tra to_dict chứa tất cả fields."""
-        operation = MIROperation(op="authorize_permission")
-        mir = MIR(ir_ref="Command.CreateOrder", ops=[operation])
+        operation = MIROperation(
+            op_id="op_004",
+            op_type="authorize_permission",
+            params={},
+        )
+        mir = MIR(operations=[operation])
+        mir.ir_ref = "Command.CreateOrder"
 
         mir_dict = mir.to_dict()
 
-        assert "ops" in mir_dict
+        assert "operations" in mir_dict
         assert "data_flows" in mir_dict
         assert "effect_flows" in mir_dict
         assert "boundaries" in mir_dict
-        assert "ir_ref" in mir_dict
-        assert len(mir_dict["ops"]) == 1
+        assert "metadata" in mir_dict
+        assert len(mir_dict["operations"]) == 1
 
     def test_mir_from_dict_creates_mir(self):
         """Kiểm tra from_dict tạo MIR đúng."""
         mir_data = {
-            "ir_ref": "Command.CreateOrder",
-            "ops": [
-                {"op": "authorize_permission", "params": {"permission": "order.create"}}
+            "operations": [
+                {
+                    "op_id": "op_005",
+                    "op": "authorize_permission",
+                    "params": {"permission": "order.create"},
+                }
             ],
             "data_flows": [],
             "effect_flows": [],
             "boundaries": [],
+            "metadata": {"ir_ref": "Command.CreateOrder"},
         }
 
         mir = MIR.from_dict(mir_data)
 
         assert mir is not None
-        assert len(mir.ops) == 1
-        assert mir.ops[0].op == "authorize_permission"
+        assert len(mir.operations) == 1
+        assert mir.ops[0].op_type == "authorize_permission"
         assert mir.ir_ref == "Command.CreateOrder"
 
     def test_mir_roundtrip_preserves_state(self):
         """Kiểm tra roundtrip serialization giữ nguyên state."""
-        operation = MIROperation(op="create_record", params={"entity": "Order"})
+        operation = MIROperation(
+            op_id="op_006",
+            op_type="create_record",
+            params={"entity": "Order"},
+        )
         data_flow = MIRDataFlow(
             id="flow_001",
             source_op="create_record",
@@ -484,18 +540,31 @@ class TestMIR:
             target_field="payload.order_id",
         )
         mir = MIR(
-            ir_ref="Command.CreateOrder",
-            description="Create order MIR",
-            ops=[operation],
+            operations=[operation],
             data_flows=[data_flow],
         )
+        mir.ir_ref = "Command.CreateOrder"
+        mir.description = "Create order MIR"
 
         mir_dict = mir.to_dict()
         reconstructed = MIR.from_dict(mir_dict)
 
-        assert len(reconstructed.ops) == len(mir.ops)
+        assert len(reconstructed.operations) == len(mir.operations)
         assert len(reconstructed.data_flows) == len(mir.data_flows)
-        assert reconstructed.ops[0].op == mir.ops[0].op
+        assert reconstructed.operations[0].op_type == mir.operations[0].op_type
         assert reconstructed.data_flows[0].id == mir.data_flows[0].id
         assert reconstructed.ir_ref == mir.ir_ref
         assert reconstructed.description == mir.description
+
+    def test_ir_ref_property_is_alias_for_metadata(self):
+        """Kiểm tra property `ir_ref` là alias cho metadata['ir_ref']."""
+        mir = MIR()
+        assert mir.ir_ref == ""
+        mir.ir_ref = "Command.Test"
+        assert mir.ir_ref == "Command.Test"
+        assert mir.metadata["ir_ref"] == "Command.Test"
+
+    def test_ops_property_is_alias_for_operations(self):
+        """Kiểm tra property `ops` là alias cho `operations`."""
+        mir = MIR()
+        assert mir.ops is mir.operations

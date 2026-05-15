@@ -318,10 +318,18 @@ class TestGenerateContracts:
 
     @patch("midicoder.pipeline.commands.contract.click.prompt", return_value="y")
     @patch("midicoder.pipeline.commands.contract.click.echo")
+    @patch("midicoder.pipeline.commands.contract.load_llm_config")
+    @patch("midicoder.pipeline.commands.contract.call_llm")
     def test_generates_contracts_from_brief(
-        self, mock_echo, mock_prompt, temp_workspace, sample_brief
+        self, mock_call, mock_llm_config, mock_echo, mock_prompt, temp_workspace, sample_brief
     ):
         """Test: Generate contracts từ brief → SQLite artifacts."""
+        from midicoder.pipeline.llm.client import LlmConfig, LlmResponse
+        mock_llm_config.return_value = LlmConfig(
+            provider="openai-compatible", model="test", api_url="http://localhost",
+            api_key="test", max_tokens=4096, temperature=0.3, timeout=300, retry_attempts=3,
+        )
+        mock_call.return_value = LlmResponse(content="items: []", usage={"total_tokens": 100})
         generate_contracts(force=True)
 
         artifacts_manager = ArtifactsManager()
@@ -396,14 +404,12 @@ class TestFullGenerateAndCheckFlow:
         Integration Test: Full flow generate → check → load.
 
         Steps:
-        1. Generate contracts (SQLite)
+        1. Generate contracts (SQLite) via placeholder fallback
         2. Check contracts (SQLite → DSLParser → validate)
         3. Load contracts (SQLite → ProjectionTree)
         """
-        # Step 1: Generate
-        with patch("midicoder.pipeline.commands.contract.click.echo"):
-            with patch("midicoder.pipeline.commands.contract.click.prompt", return_value="y"):
-                generate_contracts(force=True)
+        # Step 1: Generate (autouse fixture forces placeholder fallback)
+        _generate_contracts_to_sqlite(sample_brief)
 
         # Step 2: Verify 7 artifacts
         artifacts_manager = ArtifactsManager()
@@ -423,15 +429,10 @@ class TestFullGenerateAndCheckFlow:
 
     def test_full_flow_idempotent(self, temp_workspace, sample_brief):
         """Test: Chạy generate 2 lần → không crash, artifacts vẫn đúng."""
-        # First run
-        with patch("midicoder.pipeline.commands.contract.click.echo"):
-            with patch("midicoder.pipeline.commands.contract.click.prompt", return_value="y"):
-                generate_contracts(force=True)
-
+        # First run (autouse fixture forces placeholder fallback)
+        _generate_contracts_to_sqlite(sample_brief)
         # Second run
-        with patch("midicoder.pipeline.commands.contract.click.echo"):
-            with patch("midicoder.pipeline.commands.contract.click.prompt", return_value="y"):
-                generate_contracts(force=True)
+        _generate_contracts_to_sqlite(sample_brief)
 
         # Verify still 7 artifacts
         artifacts_manager = ArtifactsManager()

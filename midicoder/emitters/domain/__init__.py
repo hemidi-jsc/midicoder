@@ -77,7 +77,7 @@ class DomainEffects:
     ):
         tenant_id = tenant_context.tenant_id if tenant_context else "global"
         user_id = tenant_context.user_id if tenant_context else None
-        return await self._payment.execute(data, user_id, tenant_id)
+        return await self._payment.execute(data, tenant_context=tenant_context)
 
     async def execute_clinical_transition(
         self, data: dict[str, Any], tenant_context: Optional[TenantContext] = None

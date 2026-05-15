@@ -46,10 +46,10 @@ class TestPackStructure:
         assert "File Storage" in pack["pack"]["name"]
 
     def test_pack_phase(self, pack):
-        assert pack["pack"]["phase"] == "P1"
+        assert pack["pack"]["status"] in ("developing", "stable"), f"Status không hợp lệ: {pack['pack']['status']}"
 
     def test_pack_internal_id(self, pack):
-        assert pack["pack"]["internal_id"] == "cp11-file-media"
+        assert pack["pack"]["internal_id"] == "cp11_file_media"
 
     def test_pack_has_error_codes(self, pack):
         assert "MDC-CP11" in pack["pack"]["error_codes"]["prefix"]
@@ -61,40 +61,31 @@ class TestPackStructure:
         assert pack["pack"]["obligations_count"] == 1
 
     def test_pack_has_emitters(self, pack):
-        emitters = pack["pack"]["emitters"]
-        assert "fastapi" in emitters
-        assert "nestjs" in emitters
-        assert "angular" in emitters
-        assert "react" in emitters
+        """Kiểm tra capabilities_provided thay vì emitters (format mới)."""
+        assert "capabilities_provided" in pack["pack"], "Pack phải khai báo capabilities_provided"
+        caps = pack["pack"]["capabilities_provided"]
+        assert "file_upload" in caps
+        assert "file_storage" in caps
 
 
 class TestPackEmittersExist:
-    """Kiểm tra các emitters được khai báo có module thực tế."""
+    """Kiểm tra các module emitter cho CP11 có tồn tại."""
 
-    def test_fastapi_emitter_exists(self, pack):
-        mod_path = pack["pack"]["emitters"]["fastapi"]["module"]
-        assert ":" in mod_path
-        module_name, cls_name = mod_path.rsplit(":", 1)
-        mod = __import__(module_name, fromlist=[cls_name])
-        assert hasattr(mod, cls_name)
+    def test_fastapi_emitter_exists(self):
+        from midicoder.emitters.core.cp11_file_media.fastapi import FastAPIFileStorageEmitter
+        assert FastAPIFileStorageEmitter
 
-    def test_nestjs_emitter_exists(self, pack):
-        mod_path = pack["pack"]["emitters"]["nestjs"]["module"]
-        module_name, cls_name = mod_path.rsplit(":", 1)
-        mod = __import__(module_name, fromlist=[cls_name])
-        assert hasattr(mod, cls_name)
+    def test_nestjs_emitter_exists(self):
+        from midicoder.emitters.core.cp11_file_media.nestjs import NestJSFileStorageEmitter
+        assert NestJSFileStorageEmitter
 
-    def test_angular_emitter_exists(self, pack):
-        mod_path = pack["pack"]["emitters"]["angular"]["module"]
-        module_name, cls_name = mod_path.rsplit(":", 1)
-        mod = __import__(module_name, fromlist=[cls_name])
-        assert hasattr(mod, cls_name)
+    def test_angular_emitter_exists(self):
+        from midicoder.emitters.core.cp11_file_media.angular import AngularFileStorageEmitter
+        assert AngularFileStorageEmitter
 
-    def test_react_emitter_exists(self, pack):
-        mod_path = pack["pack"]["emitters"]["react"]["module"]
-        module_name, cls_name = mod_path.rsplit(":", 1)
-        mod = __import__(module_name, fromlist=[cls_name])
-        assert hasattr(mod, cls_name)
+    def test_react_emitter_exists(self):
+        from midicoder.emitters.core.cp11_file_media.react import ReactFileStorageEmitter
+        assert ReactFileStorageEmitter
 
 
 class TestPackTaxonomySync:

@@ -15,7 +15,7 @@ from midicoder.pipeline.cli import cli
 
 
 # Import từ shell module
-from midicoder.pipeline.shell import get_ascii_logo, ASCII_LOGO_PATH
+from midicoder.pipeline.shell import get_ascii_logo
 
 
 class TestInteractiveShell:

@@ -110,8 +110,7 @@ class TestEmitterRender:
         template_file = tmp_path / "simple.txt.jinja2"
         template_file.write_text("Hello, {{ name }}!")
 
-        emitter = Emitter(stack="test")
-        emitter._template_dir = tmp_path
+        emitter = Emitter(template_dir=tmp_path)
 
         result = emitter.render("simple.txt.jinja2", {"name": "World"})
         assert result == "Hello, World!"
@@ -130,8 +129,7 @@ class TestEmitterRender:
             "{% endfor %}"
         )
 
-        emitter = Emitter(stack="test")
-        emitter._template_dir = tmp_path
+        emitter = Emitter(template_dir=tmp_path)
 
         context = {
             "entity": {
@@ -161,8 +159,7 @@ class TestEmitterRender:
             "{% endfor %}"
         )
 
-        emitter = Emitter(stack="test")
-        emitter._template_dir = tmp_path
+        emitter = Emitter(template_dir=tmp_path)
 
         result = emitter.render("models.py.jinja2", SAMPLE_CONTEXT)
         assert "class Order: pass" in result
@@ -172,8 +169,7 @@ class TestEmitterRender:
         from midicoder.pipeline.emitter import Emitter
         from midicoder.errors import MidicoderError
 
-        emitter = Emitter(stack="test")
-        emitter._template_dir = tmp_path
+        emitter = Emitter(template_dir=tmp_path)
 
         with pytest.raises(MidicoderError):
             emitter.render("nonexistent.jinja2", {})
@@ -198,8 +194,7 @@ class TestEmitterEmit:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        emitter = Emitter(stack="test")
-        emitter._template_dir = tmp_path
+        emitter = Emitter(template_dir=tmp_path)
 
         file_specs = [
             FileSpec(
@@ -229,8 +224,7 @@ class TestEmitterEmit:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        emitter = Emitter(stack="test")
-        emitter._template_dir = tmp_path
+        emitter = Emitter(template_dir=tmp_path)
 
         file_specs = [
             FileSpec(
@@ -279,8 +273,7 @@ class TestEmitterErrors:
         template_file = tmp_path / "broken.jinja2"
         template_file.write_text("{{ invalid syntax }}")
 
-        emitter = Emitter(stack="test")
-        emitter._template_dir = tmp_path
+        emitter = Emitter(template_dir=tmp_path)
 
         with pytest.raises(MidicoderError):
             emitter.render("broken.jinja2", {})

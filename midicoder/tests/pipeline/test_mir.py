@@ -343,8 +343,8 @@ class TestBoundary:
         )
         
         result = b.to_dict()
-        
-        assert result["boundary_id"] == "txn_001"
+
+        assert result["id"] == "txn_001"
         assert result["boundary_type"] == "transaction"
         assert result["enclosing_ops"] == ["op1", "op2"]
         assert result["config"] == {"workflow_id": "wf_001"}

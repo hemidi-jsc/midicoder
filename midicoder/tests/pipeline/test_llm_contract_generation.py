@@ -297,11 +297,15 @@ class TestGenerateContractsWithLlm:
 class TestAutoFixContracts:
     """Tests cho auto-fix loop."""
 
+    @patch("midicoder.pipeline.commands.contract.call_llm")
     @patch("midicoder.pipeline.commands.contract.click.echo")
-    def test_no_fix_needed_when_valid(self, mock_echo, artifacts_manager, sample_brief, mock_llm_config):
+    def test_no_fix_needed_when_valid(self, mock_echo, mock_call, artifacts_manager, sample_brief, mock_llm_config):
         """Test: Khong can fix khi contracts da valid."""
-        # Tao placeholder contracts
         from midicoder.pipeline.commands.contract import _build_placeholder_yaml
+        from midicoder.pipeline.llm.client import LlmResponse
+        mock_call.return_value = LlmResponse(content="items: []", usage={"total_tokens": 100})
+
+        # Tao placeholder contracts
         yaml_dict = _build_placeholder_yaml(sample_brief, "2026-01-01T00:00:00Z")
 
         result = _auto_fix_contracts(artifacts_manager, yaml_dict, sample_brief, mock_llm_config)
