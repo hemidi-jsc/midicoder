@@ -1,0 +1,205 @@
+/**
+ * Workflow Controller — CP13: Background Job & Workflow Generator.
+ *
+ * Controller này cung cấp các API endpoints cho
+ * quản lý workflow instances và background jobs.
+ */
+
+import { Controller, Get, Post, Body, Param, Query, HttpCode, HttpStatus, Logger, Inject } from '@nestjs/common';
+import { WorkflowService } from '../workflow.service';
+import { JobSchedulerService } from '../job.scheduler';
+
+/**
+ * DTO cho request tạo workflow instance mới.
+ */
+interface CreateWorkflowDto {
+  instanceId: string;
+  workflowName: string;
+  initialState: string;
+}
+
+/**
+ * DTO cho request execute event.
+ */
+interface ExecuteEventDto {
+  event: string;
+  eventData?: Record<string, any>;
+}
+
+/**
+ * Response wrapper cho danh sách phân trang.
+ */
+interface PaginatedResponse<T> {
+  data: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+/**
+ * Controller cho Workflow Instance CRUD và Job management.
+ *
+ * Endpoints:
+ * - Workflow instances: CRUD, event execution, state, history
+ * - Jobs: list, trigger, toggle, status
+ */
+@Controller({
+  path: 'workflows',
+  version: '1',
+})
+export class WorkflowController {
+  private readonly logger = new Logger(WorkflowController.name);
+
+  constructor(
+    @Inject(WorkflowService)
+    private readonly workflowService: WorkflowService,
+    @Inject(JobSchedulerService)
+    private readonly jobScheduler: JobSchedulerService,
+  ) {}
+
+  /* =========================================================
+   * Workflow Instance Endpoints
+   * ========================================================= */
+
+  /**
+   * Liệt kê tất cả workflow instances với phân trang.
+   *
+   * GET /api/workflows?page=1&pageSize=20
+   */
+  @Get()
+  listWorkflows(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ): PaginatedResponse<any> {
+    const pageNum = Math.max(1, parseInt(page || '1', 10));
+    const pageSizeNum = Math.min(100, Math.max(1, parseInt(pageSize || '20', 10)));
+
+    const allInstances = this.workflowService.listInstances();
+    const total = allInstances.length;
+    const start = (pageNum - 1) * pageSizeNum;
+    const data = allInstances.slice(start, start + pageSizeNum);
+
+    return { data, page: pageNum, pageSize: pageSizeNum, total };
+  }
+
+  /**
+   * Lấy chi tiết một workflow instance.
+   *
+   * GET /api/workflows/:instanceId
+   */
+  @Get(':instanceId')
+  getWorkflow(@Param('instanceId') instanceId: string): any {
+    this.logger.log(`Lấy workflow instance: ${instanceId}`);
+    return this.workflowService.getState(instanceId);
+  }
+
+  /**
+   * Tạo workflow instance mới.
+   *
+   * POST /api/workflows
+   * Body: { instanceId, workflowName, initialState }
+   */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  createWorkflow(@Body() dto: CreateWorkflowDto): any {
+    this.logger.log(`Tạo workflow instance: ${dto.instanceId} (${dto.workflowName})`);
+    return this.workflowService.createInstance(dto.instanceId, dto.workflowName, dto.initialState);
+  }
+
+  /**
+   * Execute event trên workflow instance.
+   *
+   * POST /api/workflows/:instanceId/events
+   * Body: { event, eventData? }
+   */
+  @Post(':instanceId/events')
+  executeEvent(
+    @Param('instanceId') instanceId: string,
+    @Body() dto: ExecuteEventDto,
+  ): Promise<any> {
+    this.logger.log(`Execute event '${dto.event}' trên instance: ${instanceId}`);
+    return this.workflowService.executeEvent(instanceId, dto.event, dto.eventData);
+  }
+
+  /**
+   * Lấy trạng thái hiện tại của workflow instance.
+   *
+   * GET /api/workflows/:instanceId/state
+   */
+  @Get(':instanceId/state')
+  getWorkflowState(@Param('instanceId') instanceId: string): any {
+    return this.workflowService.getState(instanceId);
+  }
+
+  /**
+   * Lấy lịch sử transition của workflow instance.
+   *
+   * GET /api/workflows/:instanceId/history
+   */
+  @Get(':instanceId/history')
+  getWorkflowHistory(@Param('instanceId') instanceId: string): any[] {
+    const instance = this.workflowService.getState(instanceId);
+    return instance.history || [];
+  }
+
+  /* =========================================================
+   * Job Endpoints
+   * ========================================================= */
+
+  /**
+   * Liệt kê tất cả jobs đang được schedule.
+   *
+   * GET /api/jobs
+   */
+  @Get('jobs')
+  listJobs(): any[] {
+    return this.jobScheduler.listJobs();
+  }
+
+  /**
+   * Trigger job chạy ngay (manual trigger).
+   *
+   * POST /api/jobs/:jobId/trigger
+   */
+  @Post('jobs/:jobId/trigger')
+  triggerJob(@Param('jobId') jobId: string): Promise<Record<string, any>> {
+    this.logger.log(`Manual trigger job: ${jobId}`);
+    return this.jobScheduler.triggerJob(jobId);
+  }
+
+  /**
+   * Bật/tắt job (toggle enabled status).
+   *
+   * POST /api/jobs/:jobId/toggle
+   */
+  @Post('jobs/:jobId/toggle')
+  toggleJob(@Param('jobId') jobId: string): any {
+    const job = this.jobScheduler.getJobStatus(jobId);
+    if (!job) {
+      throw new Error(`Job '${jobId}' không tìm thấy [MDC-CP13-002]`);
+    }
+
+    if (job.enabled) {
+      this.jobScheduler.disableJob(jobId);
+    } else {
+      this.jobScheduler.enableJob(jobId);
+    }
+
+    this.logger.log(`Toggle job '${jobId}' → enabled: ${!job.enabled}`);
+    return this.jobScheduler.getJobStatus(jobId);
+  }
+
+  /**
+   * Lấy thông tin và trạng thái của job.
+   *
+   * GET /api/jobs/:jobId/status
+   */
+  @Get('jobs/:jobId/status')
+  getJobStatus(@Param('jobId') jobId: string): any {
+    const job = this.jobScheduler.getJobStatus(jobId);
+    if (!job) {
+      throw new Error(`Job '${jobId}' không tìm thấy [MDC-CP13-002]`);
+    }
+    return job;
+  }
+}

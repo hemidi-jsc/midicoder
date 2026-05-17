@@ -6,9 +6,10 @@ SchedulePolicy và JobPriority.
 
 from __future__ import annotations
 
+import random
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Any
 
@@ -23,7 +24,7 @@ class JobPriority(str, Enum):
 
 
 # Delayed import để tránh circular — import ở top cho __post_init__ dùng được
-from midicoder.errors import ErrorCode  # noqa: E402
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM  # noqa: E402
 
 
 @dataclass
@@ -207,4 +208,199 @@ class JobInstance:
             "retries": self.retries,
             "error": self.error,
             "result": self.result,
+        }
+
+
+@dataclass
+class RetryPolicy:
+    """Chính sách retry với exponential backoff cho job.
+
+    Attributes:
+        max_retries: Số lần retry tối đa.
+        base_delay_seconds: Độ trễ cơ bản (giây) cho lần retry đầu tiên.
+        max_delay_seconds: Độ trễ tối đa (giây) giới hạn trên.
+        backoff_multiplier: Hệ số nhân cho exponential backoff.
+        jitter: Có thêm ngẫu nhiên vào độ trễ để tránh thundering herd.
+    """
+
+    max_retries: int = 3
+    base_delay_seconds: float = 1.0
+    max_delay_seconds: float = 300.0
+    backoff_multiplier: float = 2.0
+    jitter: bool = True
+
+    def get_delay_attempt(self, attempt: int) -> float:
+        """Tính độ trễ cho attempt cụ thể với exponential backoff và jitter.
+
+        Args:
+            attempt: Số lần retry hiện tại (0-based).
+
+        Returns:
+            Độ trễ tính bằng giây.
+        """
+        delay = self.base_delay_seconds * (self.backoff_multiplier ** attempt)
+        delay = min(delay, self.max_delay_seconds)
+
+        if self.jitter:
+            delay = random.uniform(0, delay)
+
+        return delay
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển sang dict."""
+        return {
+            "max_retries": self.max_retries,
+            "base_delay_seconds": self.base_delay_seconds,
+            "max_delay_seconds": self.max_delay_seconds,
+            "backoff_multiplier": self.backoff_multiplier,
+            "jitter": self.jitter,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RetryPolicy:
+        """Tạo RetryPolicy từ dict."""
+        return cls(
+            max_retries=data.get("max_retries", 3),
+            base_delay_seconds=data.get("base_delay_seconds", 1.0),
+            max_delay_seconds=data.get("max_delay_seconds", 300.0),
+            backoff_multiplier=data.get("backoff_multiplier", 2.0),
+            jitter=data.get("jitter", True),
+        )
+
+
+@dataclass
+class DeadLetterQueue:
+    """Dead letter queue cho các job thất bại không thể recover.
+
+    Attributes:
+        queue_name: Tên của queue.
+        messages: Danh sách các message thất bại.
+        max_size: Số message tối đa trong queue.
+        retention_hours: Thời gian giữ message (giờ). Mặc định 168 giờ (7 ngày).
+    """
+
+    queue_name: str
+    messages: list[dict] = field(default_factory=list)
+    max_size: int = 10000
+    retention_hours: int = 168
+
+    def add(self, message: dict) -> None:
+        """Thêm message vào dead letter queue.
+
+        Args:
+            message: Message dict chứa thông tin job thất bại.
+        """
+        self.messages.append(message)
+
+    def get_all(self) -> list[dict]:
+        """Trả về tất cả messages trong queue."""
+        return self.messages
+
+    def purge(self) -> None:
+        """Xóa tất cả messages khỏi queue."""
+        self.messages.clear()
+
+    def size(self) -> int:
+        """Trả về số message hiện tại trong queue."""
+        return len(self.messages)
+
+    def is_full(self) -> bool:
+        """Kiểm tra queue đã đầy chưa."""
+        return len(self.messages) >= self.max_size
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển sang dict."""
+        return {
+            "queue_name": self.queue_name,
+            "messages": self.messages,
+            "max_size": self.max_size,
+            "retention_hours": self.retention_hours,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DeadLetterQueue:
+        """Tạo DeadLetterQueue từ dict."""
+        return cls(
+            queue_name=data["queue_name"],
+            messages=data.get("messages", []),
+            max_size=data.get("max_size", 10000),
+            retention_hours=data.get("retention_hours", 168),
+        )
+
+
+@dataclass
+class JobRetryTracker:
+    """Theo dõi trạng thái retry cho một job instance.
+
+    Attributes:
+        instance_id: ID của job instance.
+        retry_policy: Chính sách retry áp dụng.
+        current_attempt: Số lần attempt hiện tại.
+        last_error: Lỗi cuối cùng (nếu có).
+        next_retry_at: Thời điểm retry tiếp theo.
+        is_exhausted: Đã hết lượt retry hay chưa.
+    """
+
+    instance_id: str
+    retry_policy: RetryPolicy
+    current_attempt: int = 0
+    last_error: str = ""
+    next_retry_at: datetime | None = None
+    is_exhausted: bool = False
+
+    def record_failure(self, error: str) -> None:
+        """Ghi nhận thất bại, tăng attempt, tính thời điểm retry tiếp theo.
+
+        Args:
+            error: Thông điệp lỗi của lần attempt này.
+        """
+        self.current_attempt += 1
+        self.last_error = error
+
+        if self.current_attempt >= self.retry_policy.max_retries:
+            self.is_exhausted = True
+            EM.raise_error(
+                ErrorCode.CP13_JOB_RETRY_EXHAUSTED,
+                instance_id=str(self.instance_id),
+                attempt=self.current_attempt,
+                max_retries=self.retry_policy.max_retries,
+                last_error=error,
+            )
+            return
+
+        delay = self.retry_policy.get_delay_attempt(self.current_attempt)
+        self.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+
+    def reset(self) -> None:
+        """Đặt lại trạng thái retry về ban đầu."""
+        self.current_attempt = 0
+        self.last_error = ""
+        self.next_retry_at = None
+        self.is_exhausted = False
+
+    def should_retry(self) -> bool:
+        """Kiểm tra xem còn nên retry nữa không.
+
+        Returns:
+            True nếu chưa hết lượt retry.
+        """
+        return not self.is_exhausted
+
+    def get_next_delay(self) -> float:
+        """Tính độ trễ cho lần retry tiếp theo.
+
+        Returns:
+            Độ trễ tính bằng giây.
+        """
+        return self.retry_policy.get_delay_attempt(self.current_attempt)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển sang dict."""
+        return {
+            "instance_id": self.instance_id,
+            "retry_policy": self.retry_policy.to_dict(),
+            "current_attempt": self.current_attempt,
+            "last_error": self.last_error,
+            "next_retry_at": self.next_retry_at.isoformat() if self.next_retry_at else None,
+            "is_exhausted": self.is_exhausted,
         }

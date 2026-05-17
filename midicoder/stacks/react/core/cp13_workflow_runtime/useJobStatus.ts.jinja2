@@ -1,0 +1,190 @@
+/**
+ * useJobStatus Hook — CP13: Background Job & Workflow Generator.
+ *
+ * Custom hook để quản lý trạng thái của danh sách background jobs.
+ * Tự động làm mới danh sách jobs mỗi 30 giây và cung cấp các phương
+ * thức trigger, toggle, cùng kiểm tra trạng thái từng job.
+ */
+
+import { useState, useCallback, useEffect } from 'react';
+import { JobInfo, JobExecutionResult } from './types';
+
+const API_BASE = '/api';
+const REFRESH_INTERVAL = 30_000; // 30 giây
+
+/**
+ * Trạng thái quản lý danh sách jobs.
+ */
+export interface JobStatusState {
+  /** Danh sách jobs hiện tại. */
+  jobs: JobInfo[];
+  /** Đang tải (cho thao tác thủ công). */
+  loading: boolean;
+  /** Lỗi từ lần gọi API gần nhất. */
+  error: string | null;
+  /** Đang làm mới nền từ auto-refresh. */
+  refreshing: boolean;
+}
+
+/**
+ * Kết quả trả về của hook useJobStatus.
+ */
+export interface UseJobStatusReturn extends JobStatusState {
+  /** Trigger job chạy ngay. */
+  triggerJob: (jobId: string) => Promise<JobExecutionResult>;
+
+  /** Đảo trạng thái bật/tắt của job. */
+  toggleJob: (jobId: string) => Promise<void>;
+
+  /** Lấy toàn bộ danh sách jobs (thủ công). */
+  listJobs: () => Promise<void>;
+
+  /** Làm mới danh sách jobs (thủ công). */
+  refreshJobs: () => Promise<void>;
+
+  /** Lấy trạng thái chi tiết của một job. */
+  getJobStatus: (jobId: string) => Promise<JobExecutionResult>;
+}
+
+/**
+ * Custom hook để quản lý trạng thái và thao tác trên background jobs.
+ *
+ * Tự động fetch danh sách jobs khi mount và làm mới mỗi 30 giây.
+ *
+ * @example
+ * ```tsx
+ * function JobPanel() {
+ *   const { jobs, triggerJob, toggleJob, refreshing } = useJobStatus();
+ *
+ *   return (
+ *     <div>
+ *       {refreshing && <span>Đang làm mới...</span>}
+ *       {jobs.map((job) => (
+ *         <div key={job.jobId}>
+ *           <span>{job.taskName} — {job.enabled ? 'Bật' : 'Tắt'}</span>
+ *           <button onClick={() => triggerJob(job.jobId)}>Chạy</button>
+ *           <button onClick={() => toggleJob(job.jobId)}>
+ *             {job.enabled ? 'Tắt' : 'Bật'}
+ *           </button>
+ *         </div>
+ *       ))}
+ *     </div>
+ *   );
+ * }
+ * ```
+ */
+export function useJobStatus(): UseJobStatusReturn {
+  const [jobs, setJobs] = useState<JobInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  /** Fetch danh sách jobs — dùng cho thao tác thủ công (set loading). */
+  const fetchJobs = useCallback(async (isAutoRefresh: boolean): Promise<void> => {
+    const setStateFlag = isAutoRefresh ? setRefreshing : setLoading;
+    setStateFlag(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/jobs`);
+      if (!res.ok) throw new Error(`Không thể lấy danh sách jobs: HTTP ${res.status}`);
+      const data: JobInfo[] = await res.json();
+      setJobs(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+    } finally {
+      setStateFlag(false);
+    }
+  }, []);
+
+  /** Lấy toàn bộ danh sách jobs (thủ công). */
+  const listJobs = useCallback(async (): Promise<void> => {
+    await fetchJobs(false);
+  }, [fetchJobs]);
+
+  /** Làm mới danh sách jobs (thủ công). */
+  const refreshJobs = useCallback(async (): Promise<void> => {
+    await fetchJobs(false);
+  }, [fetchJobs]);
+
+  /** Trigger job chạy ngay. */
+  const triggerJob = useCallback(async (jobId: string): Promise<JobExecutionResult> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/jobs/${jobId}/trigger`, { method: 'POST' });
+      if (!res.ok) throw new Error(`Không thể trigger job: HTTP ${res.status}`);
+      const data: JobExecutionResult = await res.json();
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /** Đảo trạng thái bật/tắt của job. */
+  const toggleJob = useCallback(async (jobId: string): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Đọc state hiện tại từ local jobs
+      const currentJob = jobs.find((j) => j.jobId === jobId);
+      if (!currentJob) throw new Error(`Không tìm thấy job: ${jobId}`);
+
+      const action = currentJob.enabled ? 'disable' : 'enable';
+      const res = await fetch(`${API_BASE}/jobs/${jobId}/${action}`, { method: 'PUT' });
+      if (!res.ok) throw new Error(`Không thể ${action} job: HTTP ${res.status}`);
+
+      // Cập nhật local state ngay để tránh chờ API refresh
+      setJobs((prev) =>
+        prev.map((j) => (j.jobId === jobId ? { ...j, enabled: !j.enabled } : j))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [jobs]);
+
+  /** Lấy trạng thái chi tiết của một job. */
+  const getJobStatus = useCallback(async (jobId: string): Promise<JobExecutionResult> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/jobs/${jobId}`);
+      if (!res.ok) throw new Error(`Không tìm thấy job: HTTP ${res.status}`);
+      const data: JobExecutionResult = await res.json();
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /** Tự động làm mới jobs list khi mount. */
+  useEffect(() => {
+    fetchJobs(true);
+
+    const intervalId = setInterval(() => {
+      fetchJobs(true);
+    }, REFRESH_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [fetchJobs]);
+
+  return {
+    jobs,
+    loading,
+    error,
+    refreshing,
+    triggerJob,
+    toggleJob,
+    listJobs,
+    refreshJobs,
+    getJobStatus,
+  };
+}

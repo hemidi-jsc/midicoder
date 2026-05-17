@@ -480,7 +480,15 @@ def _process_role_to_mir(builder: MIRBuilder, role: ProjectionNode) -> None:
 
 def _process_workflow_to_mir(builder: MIRBuilder, workflow: ProjectionNode) -> None:
     """
-    Transform Workflow node sang MIR transaction boundary.
+    Transform Workflow node sang MIR operations + boundary.
+
+    Tạo:
+    - workflow_state operations cho mỗi state
+    - workflow_orchestrate operations cho mỗi transition
+    - schedule_job operation cho scheduling
+    - background_worker operation cho async transitions
+    - effect_flows cho mỗi effect trong transitions
+    - transaction boundary bao quanh tất cả
 
     Args:
         builder: MIRBuilder
@@ -488,16 +496,134 @@ def _process_workflow_to_mir(builder: MIRBuilder, workflow: ProjectionNode) -> N
     """
     params = workflow.params
     workflow_id = params.get("id", workflow.id)
-
-    # Extract operation IDs từ workflow states
     states = params.get("states", [])
-    state_ops = [f"{workflow_id}_{state.get('id', str(i))}" for i, state in enumerate(states)]
+    transitions = params.get("transitions", [])
+    effects_list = params.get("effects", [])
+    guards_list = params.get("guards", [])
 
+    all_op_ids: list[str] = []
+
+    # 1. Tạo operation cho mỗi state
+    for state in states:
+        state_id = state if isinstance(state, str) else state.get("id", state.get("name", "unknown"))
+        op_id = f"wf_state_{workflow_id}_{state_id}"
+        builder.add_operation(
+            op_id=op_id,
+            op_type="workflow_state",
+            params={
+                "workflow_id": workflow_id,
+                "state_id": state_id,
+                "entity": params.get("entity"),
+                "is_initial": state_id == params.get("initial_state"),
+            },
+            obligation_refs=[],
+            metadata={"source_pack": "CP13", "workflow_id": workflow_id},
+        )
+        all_op_ids.append(op_id)
+
+    # 2. Tạo operation cho mỗi transition
+    for i, transition in enumerate(transitions):
+        from_state = transition.get("from_state", "")
+        to_state = transition.get("to_state", "")
+        trans_id = transition.get("id", f"trans_{i}")
+        op_id = f"wf_transition_{workflow_id}_{trans_id}"
+
+        trans_guards = transition.get("guards", [])
+        trans_effects = transition.get("effects", [])
+        is_async = transition.get("async", False)
+
+        builder.add_operation(
+            op_id=op_id,
+            op_type="workflow_orchestrate",
+            params={
+                "workflow_id": workflow_id,
+                "transition_id": trans_id,
+                "from_state": from_state,
+                "to_state": to_state,
+                "event": transition.get("event", trans_id),
+                "async": is_async,
+                "guards_count": len(trans_guards),
+                "effects_count": len(trans_effects),
+            },
+            obligation_refs=["MDC-CP13-003"],
+            input_refs=[f"wf_state_{workflow_id}_{from_state}"],
+            output_refs=[f"wf_state_{workflow_id}_{to_state}"],
+            metadata={"source_pack": "CP13", "workflow_id": workflow_id, "is_async": is_async},
+        )
+        all_op_ids.append(op_id)
+
+        # Effect flows cho mỗi effect trong transition
+        for effect in trans_effects:
+            effect_type = effect.get("type", "event")
+            target = (
+                effect.get("publish") or
+                effect.get("execute") or
+                effect.get("action") or
+                effect.get("rollback") or
+                "unknown"
+            )
+            builder.add_effect_flow(
+                source_op=op_id,
+                effect_type=f"workflow_{effect_type}",
+                target=target,
+                payload_fields=list(effect.keys()),
+                metadata={"source_pack": "CP13", "workflow_id": workflow_id},
+            )
+
+        # Nếu async, thêm background_worker operation
+        if is_async:
+            bg_op_id = f"wf_bg_{workflow_id}_{trans_id}"
+            builder.add_operation(
+                op_id=bg_op_id,
+                op_type="background_worker",
+                params={
+                    "workflow_id": workflow_id,
+                    "transition_id": trans_id,
+                    "from_state": from_state,
+                    "to_state": to_state,
+                },
+                obligation_refs=[],
+                input_refs=[op_id],
+                metadata={"source_pack": "CP13", "workflow_id": workflow_id},
+            )
+            all_op_ids.append(bg_op_id)
+
+    # 3. Tạo schedule_job operation (nếu có gateway_types, sub_workflows, hoặc timers)
+    gateway_types = params.get("gateway_types", [])
+    sub_workflows = params.get("sub_workflows", [])
+    timers = params.get("timers", [])
+    compensation = params.get("compensation")
+    human_tasks = params.get("human_tasks", [])
+
+    if gateway_types or sub_workflows or timers or compensation or human_tasks:
+        sched_op_id = f"wf_schedule_{workflow_id}"
+        builder.add_operation(
+            op_id=sched_op_id,
+            op_type="schedule_job",
+            params={
+                "workflow_id": workflow_id,
+                "gateway_types": gateway_types,
+                "sub_workflows": sub_workflows,
+                "has_timers": bool(timers),
+                "has_compensation": bool(compensation),
+                "has_human_tasks": bool(human_tasks),
+            },
+            obligation_refs=["MDC-CP13-001"],
+            metadata={"source_pack": "CP13", "workflow_id": workflow_id},
+        )
+        all_op_ids.append(sched_op_id)
+
+    # 4. Tạo transaction boundary bao quanh tất cả operations
     builder.add_boundary(
         boundary_id=f"txn_{workflow_id}",
         boundary_type="transaction",
-        enclosing_ops=state_ops,
-        config={"workflow_id": workflow_id}
+        enclosing_ops=list(all_op_ids),
+        config={
+            "workflow_id": workflow_id,
+            "entity": params.get("entity"),
+            "states_count": len(states),
+            "transitions_count": len(transitions),
+        }
     )
 
 
@@ -622,6 +748,15 @@ def _store_workflows_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> N
             "transitions": workflow.params.get("transitions", []),
             "guards": workflow.params.get("guards", []),
             "effects": workflow.params.get("effects", []),
+            "entity": workflow.params.get("entity"),
+            "initial_state": workflow.params.get("initial_state"),
+            "gateway_types": workflow.params.get("gateway_types", []),
+            "sub_workflows": workflow.params.get("sub_workflows", []),
+            "compensation": workflow.params.get("compensation"),
+            "human_tasks": workflow.params.get("human_tasks", []),
+            "timers": workflow.params.get("timers", []),
+            "tenant_scope": workflow.params.get("tenant_scope", "global"),
+            "tags": workflow.params.get("tags", []),
         })
     builder.mir.metadata["workflows"] = workflows
 

@@ -21,6 +21,10 @@ from .models import (
     Effect,
     GuardType,
     EffectType,
+    JobSpec,
+    WorkerConfig,
+    TimeoutPolicy,
+    DeadlockDetection,
 )
 from .parser import WorkflowParser
 from .scheduler import (
@@ -28,6 +32,9 @@ from .scheduler import (
     SchedulePolicy,
     JobDefinition,
     JobInstance,
+    RetryPolicy,
+    DeadLetterQueue,
+    JobRetryTracker,
 )
 from .fastapi import WorkflowFastAPIEmitter
 from .nestjs import WorkflowNestJSEmitter
@@ -45,6 +52,9 @@ __all__ = [
     "SchedulePolicy",
     "JobDefinition",
     "JobInstance",
+    "RetryPolicy",
+    "DeadLetterQueue",
+    "JobRetryTracker",
     # Parser
     "WorkflowParser",
     # Emitters

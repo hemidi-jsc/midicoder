@@ -414,14 +414,242 @@ class WorkflowDefinition:
     def is_final_state(self, state: str) -> bool:
         """
         Kiểm tra state có phải final state không (không có outgoing transitions).
-        
+
         Args:
             state: State name
-            
+
         Returns:
             True nếu là final state
         """
         return len(self.get_transitions_from(state)) == 0
+
+
+# ===========================================================================
+# Job & Worker Config
+# ===========================================================================
+
+
+@dataclass
+class JobSpec:
+    """
+    JobSpec - Đặc tả công việc nền (background job).
+
+    Định nghĩa một job cần thực thi ở nền, bao gồm thông tin schedule,
+    retry policy, priority, và metadata kèm theo.
+
+    Attributes:
+        job_id: ID duy nhất của job
+        task_name: Tên task/handler để thực thi
+        payload: Dữ liệu đầu vào cho job
+        schedule: Cấu hình schedule (cron_expr hoặc interval_seconds)
+        retry_policy: Chính sách retry khi job thất bại
+        timeout_seconds: Timeout tối đa cho job (giây)
+        priority: Mức độ ưu tiên (critical, high, normal, low)
+        enabled: Job có được kích hoạt không
+        metadata: Metadata bổ sung cho job
+    """
+    job_id: str
+    task_name: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    schedule: dict[str, Any] | None = None
+    retry_policy: dict[str, Any] | None = None
+    timeout_seconds: int = 3600
+    priority: str = "normal"
+    enabled: bool = True
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate job specification sau khi init."""
+        if not self.job_id:
+            EM.raise_error(
+                ErrorCode.CP13_JOB_SPEC_INVALID,
+                reason="job_id must not be empty",
+            )
+        if not self.task_name:
+            EM.raise_error(
+                ErrorCode.CP13_JOB_SPEC_INVALID,
+                reason="task_name must not be empty",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển JobSpec sang dict."""
+        return {
+            "job_id": self.job_id,
+            "task_name": self.task_name,
+            "payload": self.payload,
+            "schedule": self.schedule,
+            "retry_policy": self.retry_policy,
+            "timeout_seconds": self.timeout_seconds,
+            "priority": self.priority,
+            "enabled": self.enabled,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "JobSpec":
+        """Tạo JobSpec từ dict."""
+        return cls(
+            job_id=data.get("job_id", ""),
+            task_name=data.get("task_name", ""),
+            payload=data.get("payload", {}),
+            schedule=data.get("schedule", None),
+            retry_policy=data.get("retry_policy", None),
+            timeout_seconds=data.get("timeout_seconds", 3600),
+            priority=data.get("priority", "normal"),
+            enabled=data.get("enabled", True),
+            metadata=data.get("metadata", {}),
+        )
+
+
+@dataclass
+class WorkerConfig:
+    """
+    WorkerConfig - Cấu hình worker pool.
+
+    Định nghĩa cách worker pool hoạt động: kích thước pool, số job
+    chạy song song tối đa, queue bindings, và các tham số giao tiếp.
+
+    Attributes:
+        pool_size: Số worker trong pool
+        max_concurrent: Số job tối đa chạy song song
+        queue_bindings: Danh sách queue mà worker sẽ lắng nghe
+        prefetch_count: Số job prefetch từ queue
+        heartbeat_seconds: Interval heartbeat (giây)
+        auto_ack: Tự động acknowledge job sau khi nhận
+        timeout_seconds: Timeout tối đa cho một job (giây)
+    """
+    pool_size: int = 4
+    max_concurrent: int = 10
+    queue_bindings: list[str] = field(default_factory=list)
+    prefetch_count: int = 1
+    heartbeat_seconds: int = 30
+    auto_ack: bool = False
+    timeout_seconds: int = 3600
+
+    def __post_init__(self) -> None:
+        """Validate worker config sau khi init."""
+        if self.pool_size <= 0:
+            EM.raise_error(
+                ErrorCode.CP13_WORKER_CONFIG_INVALID,
+                reason="pool_size must be greater than 0",
+            )
+        if self.max_concurrent <= 0:
+            EM.raise_error(
+                ErrorCode.CP13_WORKER_CONFIG_INVALID,
+                reason="max_concurrent must be greater than 0",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển WorkerConfig sang dict."""
+        return {
+            "pool_size": self.pool_size,
+            "max_concurrent": self.max_concurrent,
+            "queue_bindings": self.queue_bindings,
+            "prefetch_count": self.prefetch_count,
+            "heartbeat_seconds": self.heartbeat_seconds,
+            "auto_ack": self.auto_ack,
+            "timeout_seconds": self.timeout_seconds,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WorkerConfig":
+        """Tạo WorkerConfig từ dict."""
+        return cls(
+            pool_size=data.get("pool_size", 4),
+            max_concurrent=data.get("max_concurrent", 10),
+            queue_bindings=data.get("queue_bindings", []),
+            prefetch_count=data.get("prefetch_count", 1),
+            heartbeat_seconds=data.get("heartbeat_seconds", 30),
+            auto_ack=data.get("auto_ack", False),
+            timeout_seconds=data.get("timeout_seconds", 3600),
+        )
+
+
+@dataclass
+class TimeoutPolicy:
+    """
+    TimeoutPolicy - Chính sách timeout cho các bước trong workflow.
+
+    Định nghĩa ngưỡng timeout ở nhiều mức độ (step, workflow, idle)
+    và hành vi khi vượt quá timeout.
+
+    Attributes:
+        step_timeout_seconds: Timeout cho từng step (giây)
+        workflow_timeout_seconds: Timeout cho toàn bộ workflow (giây)
+        idle_timeout_seconds: Timeout khi không có hoạt động (giây)
+        on_timeout: Hành vi khi timeout (fail/skip/compensate)
+    """
+    step_timeout_seconds: int = 300
+    workflow_timeout_seconds: int = 3600
+    idle_timeout_seconds: int = 600
+    on_timeout: str = "fail"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển TimeoutPolicy sang dict."""
+        return {
+            "step_timeout_seconds": self.step_timeout_seconds,
+            "workflow_timeout_seconds": self.workflow_timeout_seconds,
+            "idle_timeout_seconds": self.idle_timeout_seconds,
+            "on_timeout": self.on_timeout,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TimeoutPolicy":
+        """Tạo TimeoutPolicy từ dict."""
+        return cls(
+            step_timeout_seconds=data.get("step_timeout_seconds", 300),
+            workflow_timeout_seconds=data.get("workflow_timeout_seconds", 3600),
+            idle_timeout_seconds=data.get("idle_timeout_seconds", 600),
+            on_timeout=data.get("on_timeout", "fail"),
+        )
+
+
+@dataclass
+class DeadlockDetection:
+    """
+    DeadlockDetection - Cấu hình phát hiện deadlock.
+
+    Định nghĩa cơ chế phát hiện và xử lý deadlock khi có nhiều
+    workflow/job cạnh tranh tài nguyên.
+
+    Attributes:
+        enabled: Có bật deadlock detection không
+        check_interval_seconds: Khoảng thời gian kiểm tra (giây)
+        max_wait_seconds: Thời gian chờ tối đa trước khi coi là deadlock
+        on_deadlock: Hành vi khi phát hiện deadlock (abort_youngest/abort_all/notify)
+    """
+    enabled: bool = True
+    check_interval_seconds: int = 10
+    max_wait_seconds: int = 300
+    on_deadlock: str = "abort_youngest"
+
+    def __post_init__(self) -> None:
+        """Validate deadlock detection config sau khi init."""
+        valid_strategies = ("abort_youngest", "abort_all", "notify")
+        if self.on_deadlock not in valid_strategies:
+            EM.raise_error(
+                ErrorCode.CP13_DEADLOCK_CONFIG_INVALID,
+                reason=f"on_deadlock must be one of {valid_strategies}",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DeadlockDetection sang dict."""
+        return {
+            "enabled": self.enabled,
+            "check_interval_seconds": self.check_interval_seconds,
+            "max_wait_seconds": self.max_wait_seconds,
+            "on_deadlock": self.on_deadlock,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DeadlockDetection":
+        """Tạo DeadlockDetection từ dict."""
+        return cls(
+            enabled=data.get("enabled", True),
+            check_interval_seconds=data.get("check_interval_seconds", 10),
+            max_wait_seconds=data.get("max_wait_seconds", 300),
+            on_deadlock=data.get("on_deadlock", "abort_youngest"),
+        )
 
 
 # ===========================================================================

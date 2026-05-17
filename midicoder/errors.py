@@ -496,6 +496,9 @@ class ErrorCode(str, Enum):
     CP13_WORKFLOW_STATE_MACHINE_ERROR = "MDC-CP13-006"
     CP13_SCHEDULE_POLICY_INVALID = "MDC-CP13-007"
     CP13_JOB_RETRY_EXHAUSTED = "MDC-CP13-008"
+    CP13_JOB_SPEC_INVALID = "MDC-CP13-009"
+    CP13_WORKER_CONFIG_INVALID = "MDC-CP13-010"
+    CP13_DEADLOCK_CONFIG_INVALID = "MDC-CP13-011"
 
     # =========================================================================
     # CP14: Audit Trail & Compliance Errors
@@ -920,6 +923,16 @@ class MidicoderErrorManager:
         ErrorCode.CP12_NOTIFICATION_RATE_LIMIT_EXCEEDED: "Vượt quá rate limit cho notification channel.",
         ErrorCode.CP12_NOTIFICATION_INVALID_RECIPIENT: "Người nhận notification không hợp lệ.",
 
+        # CP13: Background Job & Workflow Errors
+        ErrorCode.CP13_JOB_SCHEDULE_FAILED: "Không thể lên lịch job '{job_id}'",
+        ErrorCode.CP13_JOB_NOT_FOUND: "Không tìm thấy job '{job_id}'",
+        ErrorCode.CP13_WORKFLOW_INVALID_TRANSITION: "Transition không hợp lệ cho workflow '{workflow_id}': {reason}",
+        ErrorCode.CP13_WORKFLOW_GUARD_FAILED: "Guard failed cho workflow '{workflow_id}': {guard_type} — {reason}",
+        ErrorCode.CP13_WORKFLOW_EFFECT_FAILED: "Effect failed cho workflow '{workflow_id}': {effect_type} — {reason}",
+        ErrorCode.CP13_WORKFLOW_STATE_MACHINE_ERROR: "Lỗi state machine: {reason}",
+        ErrorCode.CP13_SCHEDULE_POLICY_INVALID: "Schedule policy không hợp lệ: {reason}",
+        ErrorCode.CP13_JOB_RETRY_EXHAUSTED: "Job '{job_id}' đã hết lượt retry ({max_retries} lần)",
+
         # CP
         ErrorCode.CP08_DUPLICATE_COLUMN_NAME: "Column name trùng lặp trong model.",
         ErrorCode.CP08_DUPLICATE_TABLE_NAME: "Table name trùng lặp trong collection.",
@@ -1178,6 +1191,42 @@ class MidicoderErrorManager:
             "Kiểm tra Elasticsearch server đang chạy",
             "Đảm bảo connection config (ELASTICSEARCH_URL) đúng",
             "Kiểm tra index mappings hợp lệ",
+        ],
+
+        # CP13: Background Job & Workflow Suggestions
+        ErrorCode.CP13_JOB_SCHEDULE_FAILED: [
+            "Kiểm tra Celery worker đang chạy",
+            "Kiểm tra Redis/RabbitMQ connection",
+            "Xem log worker cho lỗi chi tiết",
+        ],
+        ErrorCode.CP13_JOB_NOT_FOUND: [
+            "Kiểm tra job_id có đúng không",
+            "List jobs hiện tại: GET /api/jobs",
+        ],
+        ErrorCode.CP13_WORKFLOW_INVALID_TRANSITION: [
+            "Kiểm tra workflow definition — state hiện tại có transition đến state đích không",
+            "Xem logs cho trạng thái hiện tại của instance",
+        ],
+        ErrorCode.CP13_WORKFLOW_GUARD_FAILED: [
+            "Kiểm tra điều kiện guard — permission, business rule, hoặc compliance",
+            "Debug guard evaluation bằng cách bật verbose logging",
+        ],
+        ErrorCode.CP13_WORKFLOW_EFFECT_FAILED: [
+            "Kiểm tra service dependency (EventService, NotificationService, AuditService)",
+            "Effects chạy best-effort — failure không block transition",
+        ],
+        ErrorCode.CP13_WORKFLOW_STATE_MACHINE_ERROR: [
+            "Kiểm tra workflow definition có valid không (cycle, missing states)",
+            "Xem logs cho error chi tiết",
+        ],
+        ErrorCode.CP13_SCHEDULE_POLICY_INVALID: [
+            "Cron expression phải có đúng 5-6 fields",
+            "Hoặc dùng interval_seconds (positive integer)",
+        ],
+        ErrorCode.CP13_JOB_RETRY_EXHAUSTED: [
+            "Kiểm tra Dead Letter Queue cho job đã fail",
+            "Tăng max_retries hoặc điều chỉnh backoff policy",
+            "Xem logs cho root cause của failure",
         ],
 
         ErrorCode.CP14_AUDIT_INVALID_ACTION: [

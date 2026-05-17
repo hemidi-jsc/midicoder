@@ -1,0 +1,465 @@
+"""
+Workflow Router — CP13: Background Job & Workflow Generator.
+
+Cung cấp REST API cho:
+- CRUD workflow instances
+- Execute events trên workflow
+- View state và transition history
+- Quản lý background jobs (trigger, toggle, status)
+
+CP13: Background Job & Workflow Runtime
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
+from pydantic import BaseModel, Field
+
+# Import từ app — không import từ midicoder
+from app.workflow import celery_app, job_scheduler, workflow_service
+
+
+# =============================================================================
+# Pydantic models cho request/response
+# =============================================================================
+
+
+class WorkflowCreateRequest(BaseModel):
+    """Request body cho tạo workflow instance mới."""
+
+    workflow_name: str = Field(..., description="Tên workflow definition")
+    entity_type: str = Field(..., description="Loại entity liên kết (vd: order, user)")
+    entity_id: str = Field(..., description="ID của entity liên kết")
+
+
+class EventExecuteRequest(BaseModel):
+    """Request body cho execute event trên workflow instance."""
+
+    event_name: str = Field(..., description="Tên event để trigger transition")
+    user_id: Optional[str] = Field(None, description="ID user trigger event")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Metadata bổ sung cho event")
+
+
+class WorkflowInstanceResponse(BaseModel):
+    """Response cho workflow instance."""
+
+    instance_id: str
+    workflow_name: str
+    current_state: str
+    entity_type: Optional[str] = None
+    entity_id: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class WorkflowStateResponse(BaseModel):
+    """Response cho workflow state detail."""
+
+    instance_id: str
+    workflow_name: str
+    current_state: str
+    history: List[Dict[str, Any]]
+
+
+class EventResultResponse(BaseModel):
+    """Response cho execute event result."""
+
+    instance_id: str
+    new_state: str
+    event: str
+
+
+class JobResponse(BaseModel):
+    """Response cho job information."""
+
+    job_id: str
+    task_name: str
+    cron_expr: Optional[str] = None
+    interval_seconds: Optional[int] = None
+    enabled: bool = True
+    last_run_at: Optional[str] = None
+    last_result: Optional[Dict[str, Any]] = None
+
+
+class JobStatusResponse(BaseModel):
+    """Response cho job status trigger."""
+
+    job_id: str
+    status: str
+    triggered_at: Optional[str] = None
+
+
+# =============================================================================
+# Dependency injection
+# =============================================================================
+
+
+def get_workflow_service() -> Any:
+    """
+    Dependency cho WorkflowService.
+
+    Returns:
+        WorkflowService instance từ app.workflow
+    """
+    return workflow_service
+
+
+def get_job_scheduler() -> Any:
+    """
+    Dependency cho JobScheduler.
+
+    Returns:
+        JobScheduler instance từ app.workflow
+    """
+    return job_scheduler
+
+
+# =============================================================================
+# Router instance
+# =============================================================================
+
+router = APIRouter(
+    prefix="/api/workflows",
+    tags=["workflow"],
+    responses={
+        404: {"description": "Workflow instance không tìm thấy"},
+        400: {"description": "Yêu cầu không hợp lệ"},
+        422: {"description": "Validation error"},
+    },
+)
+
+
+# =============================================================================
+# Workflow Instance Endpoints
+# =============================================================================
+
+
+@router.get("", response_model=List[WorkflowInstanceResponse], status_code=status.HTTP_200_OK)
+async def list_workflows(
+    page: int = Query(1, ge=1, description="Số trang (bắt đầu từ 1)"),
+    page_size: int = Query(20, ge=1, le=100, description="Số mục mỗi trang"),
+    workflow_service_ref: Any = Depends(get_workflow_service),
+) -> List[Dict[str, Any]]:
+    """
+    Liệt kê tất cả workflow instances với pagination.
+
+    Args:
+        page: Số trang (bắt đầu từ 1)
+        page_size: Số mục mỗi trang (1-100)
+        workflow_service_ref: WorkflowService từ dependency injection
+
+    Returns:
+        Danh sách workflow instances
+    """
+    try:
+        instances = workflow_service_ref.list_instances(page=page, page_size=page_size)
+        return instances
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi lấy danh sách workflows: {str(e)}",
+        )
+
+
+@router.get("/{instance_id}", response_model=WorkflowInstanceResponse, status_code=status.HTTP_200_OK)
+async def get_workflow(
+    instance_id: str = Path(..., description="Workflow instance ID"),
+    workflow_service_ref: Any = Depends(get_workflow_service),
+) -> Dict[str, Any]:
+    """
+    Lấy thông tin chi tiết của workflow instance.
+
+    Args:
+        instance_id: Workflow instance ID
+        workflow_service_ref: WorkflowService từ dependency injection
+
+    Returns:
+        Thông tin chi tiết workflow instance
+
+    Raises:
+        HTTPException 404: Nếu instance không tìm thấy
+    """
+    try:
+        state = workflow_service_ref.get_state(instance_id)
+        return state
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+@router.post("", response_model=WorkflowInstanceResponse, status_code=status.HTTP_201_CREATED)
+async def create_workflow(
+    body: WorkflowCreateRequest = Body(..., description="Dữ liệu tạo workflow instance"),
+    workflow_service_ref: Any = Depends(get_workflow_service),
+) -> Dict[str, Any]:
+    """
+    Tạo workflow instance mới.
+
+    Args:
+        body: Dữ liệu bao gồm workflow_name, entity_type, entity_id
+        workflow_service_ref: WorkflowService từ dependency injection
+
+    Returns:
+        Workflow instance đã tạo
+    """
+    import uuid
+
+    instance_id = str(uuid.uuid4())
+    try:
+        state = workflow_service_ref.create_instance(
+            instance_id=instance_id,
+            workflow_name=body.workflow_name,
+            initial_state="initial",
+        )
+        return {
+            "instance_id": state.instance_id,
+            "workflow_name": state.workflow_name,
+            "current_state": state.current_state,
+            "entity_type": body.entity_type,
+            "entity_id": body.entity_id,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi tạo workflow instance: {str(e)}",
+        )
+
+
+@router.post("/{instance_id}/events", response_model=EventResultResponse, status_code=status.HTTP_200_OK)
+async def execute_event(
+    instance_id: str = Path(..., description="Workflow instance ID"),
+    body: EventExecuteRequest = Body(..., description="Dữ liệu event"),
+    workflow_service_ref: Any = Depends(get_workflow_service),
+) -> Dict[str, Any]:
+    """
+    Execute event trên workflow instance để trigger state transition.
+
+    Flow:
+    1. Tìm workflow instance
+    2. Evaluate guard (nếu có)
+    3. Thực hiện transition
+    4. Execute effects
+
+    Args:
+        instance_id: Workflow instance ID
+        body: Event data với event_name, user_id, metadata
+        workflow_service_ref: WorkflowService từ dependency injection
+
+    Returns:
+        Kết quả transition với new_state
+
+    Raises:
+        HTTPException 404: Nếu instance không tìm thấy
+        HTTPException 400: Nếu guard evaluation thất bại hoặc transition không hợp lệ
+    """
+    event_data = {}
+    if body.user_id:
+        event_data["user_id"] = body.user_id
+    if body.metadata:
+        event_data.update(body.metadata)
+
+    try:
+        result = await workflow_service_ref.execute_event(
+            instance_id=instance_id,
+            event=body.event_name,
+            event_data=event_data if event_data else None,
+        )
+        return result
+    except ValueError as e:
+        error_msg = str(e)
+        if "không tìm thấy" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
+        )
+
+
+@router.get("/{instance_id}/state", response_model=WorkflowStateResponse, status_code=status.HTTP_200_OK)
+async def get_workflow_state(
+    instance_id: str = Path(..., description="Workflow instance ID"),
+    workflow_service_ref: Any = Depends(get_workflow_service),
+) -> Dict[str, Any]:
+    """
+    Lấy trạng thái hiện tại của workflow instance.
+
+    Args:
+        instance_id: Workflow instance ID
+        workflow_service_ref: WorkflowService từ dependency injection
+
+    Returns:
+        Trạng thái hiện tại bao gồm instance_id, workflow_name, current_state, history
+
+    Raises:
+        HTTPException 404: Nếu instance không tìm thấy
+    """
+    try:
+        state = workflow_service_ref.get_state(instance_id)
+        return state
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+@router.get("/{instance_id}/history", status_code=status.HTTP_200_OK)
+async def get_workflow_history(
+    instance_id: str = Path(..., description="Workflow instance ID"),
+    workflow_service_ref: Any = Depends(get_workflow_service),
+) -> Dict[str, Any]:
+    """
+    Lấy transition history của workflow instance.
+
+    Args:
+        instance_id: Workflow instance ID
+        workflow_service_ref: WorkflowService từ dependency injection
+
+    Returns:
+        Danh sách các transition trong history
+
+    Raises:
+        HTTPException 404: Nếu instance không tìm thấy
+    """
+    try:
+        state = workflow_service_ref.get_state(instance_id)
+        return {
+            "instance_id": instance_id,
+            "history": state.get("history", []),
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+# =============================================================================
+# Job Endpoints (prefix /api/jobs)
+# =============================================================================
+
+job_router = APIRouter(
+    prefix="/api/jobs",
+    tags=["jobs"],
+    responses={
+        404: {"description": "Job không tìm thấy"},
+        400: {"description": "Yêu cầu không hợp lệ"},
+    },
+)
+
+
+@job_router.get("", response_model=List[JobResponse], status_code=status.HTTP_200_OK)
+async def list_jobs(
+    job_scheduler_ref: Any = Depends(get_job_scheduler),
+) -> List[Dict[str, Any]]:
+    """
+    Liệt kê tất cả background jobs đang được schedule.
+
+    Args:
+        job_scheduler_ref: JobScheduler từ dependency injection
+
+    Returns:
+        Danh sách jobs với thông tin cơ bản
+    """
+    try:
+        jobs = job_scheduler_ref.list_jobs()
+        return jobs
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi lấy danh sách jobs: {str(e)}",
+        )
+
+
+@job_router.post("/{job_id}/trigger", response_model=JobStatusResponse, status_code=status.HTTP_200_OK)
+async def trigger_job(
+    job_id: str = Path(..., description="Job ID"),
+    job_scheduler_ref: Any = Depends(get_job_scheduler),
+) -> Dict[str, Any]:
+    """
+    Trigger job chạy ngay (manual trigger).
+
+    Job sẽ được dispatch đến Celery worker để thực thi.
+
+    Args:
+        job_id: Job ID cần trigger
+        job_scheduler_ref: JobScheduler từ dependency injection
+
+    Returns:
+        Kết quả trigger với status
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+    """
+    try:
+        result = await job_scheduler_ref.trigger_job(job_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+@job_router.post("/{job_id}/toggle", response_model=JobResponse, status_code=status.HTTP_200_OK)
+async def toggle_job(
+    job_id: str = Path(..., description="Job ID"),
+    job_scheduler_ref: Any = Depends(get_job_scheduler),
+) -> Dict[str, Any]:
+    """
+    Bật/tắt job — toggle trạng thái enabled.
+
+    Nếu job đang enabled thì sẽ disable, và ngược lại.
+
+    Args:
+        job_id: Job ID cần toggle
+        job_scheduler_ref: JobScheduler từ dependency injection
+
+    Returns:
+        Thông tin job sau khi toggle
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+    """
+    try:
+        current_status = job_scheduler_ref.get_job_status(job_id)
+        if current_status is None:
+            raise ValueError(f"Job '{job_id}' không tìm thấy [MDC-CP13-002]")
+
+        if current_status["enabled"]:
+            job_scheduler_ref.disable_job(job_id)
+        else:
+            job_scheduler_ref.enable_job(job_id)
+
+        updated = job_scheduler_ref.get_job_status(job_id)
+        return updated
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+@job_router.get("/{job_id}/status", response_model=Optional[JobResponse], status_code=status.HTTP_200_OK)
+async def get_job_status(
+    job_id: str = Path(..., description="Job ID"),
+    job_scheduler_ref: Any = Depends(get_job_scheduler),
+) -> Optional[Dict[str, Any]]:
+    """
+    Lấy thông tin và trạng thái hiện tại của job.
+
+    Args:
+        job_id: Job ID
+        job_scheduler_ref: JobScheduler từ dependency injection
+
+    Returns:
+        Thông tin job hoặc None nếu không tìm thấy
+    """
+    status_info = job_scheduler_ref.get_job_status(job_id)
+    return status_info

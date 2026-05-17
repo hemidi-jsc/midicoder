@@ -6,17 +6,20 @@ pack:
   status: "stable"
   category: "runtime"
   depends_on: ["CP05"]
-  definitions_count: 8
-  obligations_count: 4
+  definitions_count: 14
+  obligations_count: 5
   error_codes:
     prefix: "MDC-CP13"
-    range: "MDC-CP13-001 to MDC-CP13-008"
+    range: "MDC-CP13-001 to MDC-CP13-011"
   capabilities_provided:
     - schedule_job
     - background_worker
     - workflow_orchestrate
     - dag_execution
     - saga_orchestration
+    - queue_abstraction
+    - dead_letter_queue
+    - retry_policy
   capabilities:
     - id: "job_scheduler"
       emitter: "fastapi, nestjs"
@@ -27,6 +30,12 @@ pack:
     - id: "dag_executor"
       emitter: "fastapi, nestjs"
     - id: "saga_orchestrator"
+      emitter: "fastapi, nestjs"
+    - id: "queue_provider"
+      emitter: "fastapi, nestjs"
+    - id: "dead_letter_queue"
+      emitter: "fastapi, nestjs"
+    - id: "retry_policy"
       emitter: "fastapi, nestjs"
   definitions:
     - name: "JobSpec"
@@ -45,6 +54,16 @@ pack:
       description: "Saga step with backward/forward/mixed compensation"
     - name: "DAGFailurePolicy"
       description: "Failure policy (fail_fast, skip_and_continue, retry_then_skip, compensate)"
+    - name: "QueueConfig"
+      description: "Queue provider config (Redis, RabbitMQ, SQS, in-memory)"
+    - name: "RetryPolicy"
+      description: "Exponential backoff retry policy with jitter"
+    - name: "DeadLetterQueue"
+      description: "Dead letter queue for permanently failed jobs"
+    - name: "TimeoutPolicy"
+      description: "Timeout policy for workflow steps and idle"
+    - name: "DeadlockDetection"
+      description: "Deadlock detection configuration"
   obligations:
     - name: "JobRetry"
       description: "Failed jobs must retry with exponential backoff"
@@ -54,6 +73,8 @@ pack:
       description: "DAG must have no cycles (topological order required)"
     - name: "NodeTimeout"
       description: "Each DAG node must have timeout to prevent hangs"
+    - name: "DeadLetterQueue"
+      description: "Permanently failed jobs must move to dead letter queue"
   file_contributions:
     infrastructure:
       - path: "app/workflow/celery_app.py"
@@ -76,6 +97,11 @@ pack:
         template: "cp13_workflow_runtime/workflow_service.py.jinja2"
         stacks: ["fastapi", "nestjs"]
         pack_emitter: null
+      - path: "app/workflow/workflow_router.py"
+        file_type: "workflow_router"
+        template: "cp13_workflow_runtime/workflow_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
       - path: "src/workflow/queue.module.ts"
         file_type: "queue_module"
         template: "cp13_workflow_runtime/queue.module.ts.jinja2"
@@ -89,6 +115,11 @@ pack:
       - path: "src/workflow/worker.service.ts"
         file_type: "worker_service"
         template: "cp13_workflow_runtime/worker.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/workflow/workflow.controller.ts"
+        file_type: "workflow_controller"
+        template: "cp13_workflow_runtime/workflow.controller.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
       - path: "src/workflow/workflow.service.ts"
@@ -116,6 +147,11 @@ pack:
         template: "cp13_workflow_runtime/useWorkflow.ts.jinja2"
         stacks: ["react"]
         pack_emitter: null
+      - path: "src/workflow/useJobStatus.ts"
+        file_type: "job_status_hook"
+        template: "cp13_workflow_runtime/useJobStatus.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
       - path: "src/workflow/types.ts"
         file_type: "workflow_types"
         template: "cp13_workflow_runtime/types.ts.jinja2"
@@ -128,3 +164,4 @@ pack:
     react:
       - useWorkflow
       - useJobStatus
+      - WorkflowContext
