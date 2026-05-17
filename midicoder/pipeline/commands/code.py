@@ -13,6 +13,7 @@ E07: Emitter & Scaffolder
 """
 
 import json
+import os
 import shutil
 import click
 from dataclasses import dataclass
@@ -375,6 +376,9 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
             ))
 
         # Entity modules (models, schemas, routes per entity)
+        # Collect paths already assigned to core or entity modules
+        _assigned_paths: set[str] = {f["path"] for f in core_files}
+
         for entity in entities:
             entity_name = entity.get("id", "").lower()
             entity_files = [
@@ -395,6 +399,41 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
                     name=entity_name,
                     module_type="backend",
                     files=entity_specs,
+                    dependencies=["core"]
+                ))
+                for ef in entity_files:
+                    _assigned_paths.add(ef["path"])
+
+        # Pack infrastructure modules — files not assigned to core or any entity
+        # These are pack-declared infrastructure files (workflow, cache, search, notification, ...)
+        remaining_files = [f for f in backend_files if f["path"] not in _assigned_paths]
+        if remaining_files:
+            # Group remaining files by top-level directory (e.g., "workflow", "multitenant", "cache")
+            from collections import defaultdict
+            group_by_prefix: dict[str, list[dict]] = defaultdict(list)
+            for f in remaining_files:
+                # Extract module prefix from path (e.g., "app/workflow/x.py" → "workflow")
+                parts = f["path"].split(os.sep)
+                if len(parts) >= 3 and parts[0] == "app":
+                    group_key = parts[1]  # e.g., "workflow", "cache"
+                else:
+                    group_key = "shared"
+                group_by_prefix[group_key].append(f)
+
+            for group_name in sorted(group_by_prefix.keys()):
+                group_files = group_by_prefix[group_name]
+                group_specs = [FileSpec(
+                    path=f["path"],
+                    file_type=f["type"],
+                    template=f["template"],
+                    context=f.get("context", {}),
+                    dependencies=[],
+                    metadata=f.get("metadata", {})
+                ) for f in group_files]
+                plan.add_module(ModuleSpec(
+                    name=group_name,
+                    module_type="backend",
+                    files=group_specs,
                     dependencies=["core"]
                 ))
 
