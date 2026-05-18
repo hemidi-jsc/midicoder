@@ -1,14 +1,38 @@
 /**
- * RBAC Service - Role-Based Access Control Service cho NestJS.
- *
- * Module này cung cấp RBAC service cho authorization checks.
- * Hỗ trợ permission checks, role checks, và policy evaluation.
- *
- * CP04: RBAC & Policy Engine
- */
+* RBAC Service - Role-Based Access Control Service cho NestJS.
+*
+* Module này cung cấp RBAC service cho authorization checks.
+* Hỗ trợ permission checks, role checks, và policy evaluation.
+*
+* CP04: RBAC & Policy Engine
+*/
 
-import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
-import { Role, Policy, PolicyEvaluationResult } from 'midicoder/contracts/rbac_models';
+import { Injectable, ForbiddenException } from '@nestjs/common';
+
+
+// ============================================================================
+// Inline Type Definitions (standalone — no external imports)
+// ============================================================================
+
+export interface RBACRole {
+name: string;
+permissions: string[];
+parent_roles: string[];
+}
+
+export interface PolicyRule {
+id: string;
+effect: 'allow' | 'deny';
+condition: string;
+resource_type?: string;
+actions?: string[];
+}
+
+export interface PolicyEvaluationResult {
+allowed: boolean;
+policy_id: string;
+reason: string;
+}
 
 
 // ============================================================================
@@ -17,108 +41,186 @@ import { Role, Policy, PolicyEvaluationResult } from 'midicoder/contracts/rbac_m
 
 @Injectable()
 export class RBACService {
-  private _roles: Map<string, Role>;
-  private _policies: Map<string, Policy>;
+private _roles: Map<string, RBACRole>;
+    private _policies: Map<string, PolicyRule>;
 
-  constructor(roles: Map<string, Role>, policies: Policy[]) {
-    this._roles = roles;
-    this._policies = new Map();
-    for (const policy of policies) {
-      this._policies.set(policy.id, policy);
-    }
-  }
+        constructor(roles: Map<string, RBACRole> = new Map(), policies: PolicyRule[] = []) {
+            this._roles = roles;
+            this._policies = new Map();
+            for (const policy of policies) {
+            this._policies.set(policy.id, policy);
+            }
+            }
 
-  /**
-   * Đăng ký policy mới.
-   */
-  registerPolicy(policy: Policy): void {
-    this._policies.set(policy.id, policy);
-  }
+            /**
+            * Đăng ký role mới.
+            */
+            registerRole(name: string, permissions: string[] = [], parentRoles: string[] = []): void {
+            this._roles.set(name, { name, permissions, parent_roles: parentRoles });
+            }
 
-  /**
-   * Check nếu user có role (bao gồm hierarchical inheritance).
-   */
-  checkRole(userRoles: string[], requiredRole: string): boolean {
-    for (const roleName of userRoles) {
-      if (this._roleInherits(roleName, requiredRole)) {
-        return true;
-      }
-    }
-    return false;
-  }
+            /**
+            * Đăng ký policy mới.
+            */
+            registerPolicy(policy: PolicyRule): void {
+            this._policies.set(policy.id, policy);
+            }
 
-  /**
-   * Check nếu user có permission cho resource:action.
-   */
-  checkPermission(userRoles: string[], resource: string, action: string): boolean {
-    const permissionId = `${resource.toLowerCase()}.${action}`;
-    const allPermissions = this._gatherPermissions(userRoles);
-    return allPermissions.has(permissionId);
-  }
+            /**
+            * Check nếu user có role (bao gồm hierarchical inheritance).
+            */
+            checkRole(userRoles: string[], requiredRole: string): boolean {
+            for (const roleName of userRoles) {
+            if (this._roleInherits(roleName, requiredRole)) {
+            return true;
+            }
+            }
+            return false;
+            }
 
-  /**
-   * Evaluate policy với context.
-   */
-  evaluatePolicy(policyId: string, context: Record<string, any>): PolicyEvaluationResult | null {
-    const policy = this._policies.get(policyId);
-    if (!policy) return null;
-    return policy.evaluate(context);
-  }
+            /**
+            * Check nếu user có permission cho resource:action.
+            */
+            checkPermission(userRoles: string[], resource: string, action: string): boolean {
+            const permissionId = `${resource.toLowerCase()}.${action}`;
+            const allPermissions = this._gatherPermissions(userRoles);
+            return allPermissions.has(permissionId);
+            }
 
-  /**
-   * Lấy tất cả permissions của user.
-   */
-  getUserPermissions(userRoles: string[]): Set<string> {
-    return this._gatherPermissions(userRoles);
-  }
+            /**
+            * Evaluate ABAC policy với context.
+            */
+            evaluatePolicy(context: Record<string, any>): PolicyEvaluationResult {
+                let denyMatched: PolicyRule | null = null;
+                let allowMatched: PolicyRule | null = null;
 
-  /**
-   * Check nếu role có target role qua inheritance.
-   */
-  private _roleInherits(roleName: string, target: string): boolean {
-    if (roleName === target) return true;
-    const role = this._roles.get(roleName);
-    if (!role) return false;
-    for (const parentName of role.parent_roles) {
-      if (this._roleInherits(parentName, target)) return true;
-    }
-    return false;
-  }
+                for (const policy of this._policies.values()) {
+                if (this._matchPolicy(policy, context)) {
+                if (policy.effect === 'deny') {
+                denyMatched = policy;
+                } else {
+                allowMatched = policy;
+                }
+                }
+                }
 
-  /**
-   * Thu thập tất cả permissions từ user roles.
-   */
-  private _gatherPermissions(userRoles: string[]): Set<string> {
-    const permissions = new Set<string>();
-    for (const roleName of userRoles) {
-      const role = this._roles.get(roleName);
-      if (role) {
-        const roleMap = new Map<string, Role>(this._roles);
-        const allPerms = role.get_all_permissions(roleMap);
-        for (const perm of allPerms) {
-          permissions.add(perm);
-        }
-      }
-    }
-    return permissions;
-  }
-}
+                if (denyMatched) {
+                return { allowed: false, policy_id: denyMatched.id, reason: `DENY policy '${denyMatched.id}' match` };
+                }
+                if (allowMatched) {
+                return { allowed: true, policy_id: allowMatched.id, reason: `ALLOW policy '${allowMatched.id}' match` };
+                }
+                return { allowed: false, policy_id: '', reason: 'Không có policy nào match — default DENY' };
+                }
+
+                /**
+                * Lấy tất cả permissions của user.
+                */
+                getUserPermissions(userRoles: string[]): Set<string> {
+                    return this._gatherPermissions(userRoles);
+                    }
+
+                    /**
+                    * Check nếu role có target role qua inheritance.
+                    */
+                    private _roleInherits(roleName: string, target: string): boolean {
+                    if (roleName === target) return true;
+                    const role = this._roles.get(roleName);
+                    if (!role) return false;
+                    for (const parentName of role.parent_roles) {
+                    if (this._roleInherits(parentName, target)) return true;
+                    }
+                    return false;
+                    }
+
+                    /**
+                    * Thu thập tất cả permissions từ user roles.
+                    */
+                    private _gatherPermissions(userRoles: string[]): Set<string> {
+                        const permissions = new Set<string>();
+                            for (const roleName of userRoles) {
+                            const role = this._roles.get(roleName);
+                            if (role) {
+                            role.permissions.forEach((p) => permissions.add(p));
+                            for (const parentName of role.parent_roles) {
+                            const parent = this._roles.get(parentName);
+                            if (parent) {
+                            parent.permissions.forEach((p) => permissions.add(p));
+                            }
+                            }
+                            }
+                            }
+                            return permissions;
+                            }
+
+                            /**
+                            * Check policy match với context.
+                            */
+                            private _matchPolicy(policy: PolicyRule, context: Record<string, any>): boolean {
+                                // Check resource_type
+                                if (policy.resource_type && policy.resource_type !== context.resource?.type) {
+                                return false;
+                                }
+                                // Check actions
+                                if (policy.actions && policy.actions.length > 0 &&
+                                !policy.actions.includes(context.action)) {
+                                return false;
+                                }
+                                // Simple condition evaluation (string match fallback)
+                                if (policy.condition) {
+                                try {
+                                return this._simpleEvaluate(policy.condition, context);
+                                } catch {
+                                return false;
+                                }
+                                }
+                                return true;
+                                }
+
+                                /**
+                                * Simple condition evaluation (equality only).
+                                */
+                                private _simpleEvaluate(condition: string, context: Record<string, any>): boolean {
+                                    const eqParts = condition.split('==').map((s) => s.trim());
+                                    if (eqParts.length === 2) {
+                                    const leftVal = this._resolvePath(eqParts[0], context);
+                                    const rightRaw = eqParts[1].replace(/['"]/g, '').trim();
+                                    return leftVal === rightRaw;
+                                    }
+                                    return false;
+                                    }
+
+                                    /**
+                                    * Resolve dotted path from context.
+                                    */
+                                    private _resolvePath(path: string, ctx: Record<string, any>): any {
+                                        const parts = path.split('.');
+                                        let current: any = ctx;
+                                        for (const part of parts) {
+                                        if (current && typeof current === 'object' && part in current) {
+                                        current = current[part];
+                                        } else {
+                                        return undefined;
+                                        }
+                                        }
+                                        return current;
+                                        }
+                                        }
 
 
-// ============================================================================
-// Policy Service
-// ============================================================================
+                                        // ============================================================================
+                                        // Policy Service (thin wrapper)
+                                        // ============================================================================
 
-@Injectable()
-export class PolicyService {
-  constructor(private rbacService: RBACService) {}
+                                        @Injectable()
+                                        export class PolicyService {
+                                        constructor(private rbacService: RBACService) {}
 
-  /**
-   * Check nếu action được allow bởi policy.
-   */
-  async checkAllowed(policyId: string, context: Record<string, any>): Promise<boolean> {
-    const result = this.rbacService.evaluatePolicy(policyId, context);
-    if (!result) return false;
-    return result.allowed;
-  }
-}
+                                        /**
+                                        * Check nếu action được allow bởi policy.
+                                        */
+                                        async checkAllowed(context: Record<string, any>): Promise<boolean> {
+                                                const result = this.rbacService.evaluatePolicy(context);
+                                                return result.allowed;
+                                                }
+                                                }

@@ -82,6 +82,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "ReactEmitter",
         "cp03_auth",
     ),
+    # CP04 – RBAC (FastAPI)
+    "cp04.rbac.fastapi": (
+        "midicoder.emitters.core.cp04_rbac.fastapi",
+        "FastAPIRBACEmitter",
+        None,
+    ),
+    # CP04 – RBAC (NestJS)
+    "cp04.rbac.nestjs": (
+        "midicoder.emitters.core.cp04_rbac.nestjs",
+        "NestJSRBACEmitter",
+        None,
+    ),
+    # CP04 – RBAC (Angular)
+    "cp04.rbac.angular": (
+        "midicoder.emitters.core.cp04_rbac.angular",
+        "AngularRBACEmitter",
+        None,
+    ),
+    # CP04 – RBAC (React)
+    "cp04.rbac.react": (
+        "midicoder.emitters.core.cp04_rbac.react",
+        "ReactRBACEmitter",
+        None,
+    ),
     # CP07 – Docker Compose (already used, kept for reference)
     "cp07.docker": (
         "midicoder.emitters.core.cp07_iac.docker",

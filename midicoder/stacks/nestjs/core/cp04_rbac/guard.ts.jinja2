@@ -1,138 +1,71 @@
-/**
- * RBAC Guards - CanActivate Guards cho NestJS.
- *
- * Module này cung cấp Guards cho role-based và policy-based authorization.
- *
- * CP04: RBAC & Policy Engine
- */
-
 import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  ForbiddenException,
-  SetMetadata,
-} from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { RBACService } from './service';
+CanActivate,
+ExecutionContext,
+ForbiddenException,
+Injectable,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { RBACService } from "./rbac.service";
+import { ROLES_KEY, PERMISSIONS_KEY } from "./decorators";
 
-export const ROLES_KEY = 'roles';
-export const POLICY_KEY = 'policy';
-export const PERMISSION_KEY = 'permission';
-
-export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
-export const Policy = (policyId: string) => SetMetadata(POLICY_KEY, policyId);
-export const Permission = (resource: string, action: string) =>
-  SetMetadata(PERMISSION_KEY, { resource, action });
-
-
-// ============================================================================
-// RolesGuard - CanActivate cho role-based authorization
-// ============================================================================
-
+/**
+* Roles Guard - CP04.
+*
+* NestJS canActivate cho role-based access control.
+* Sử dụng @Roles() decorator để chỉ định roles được phép.
+*/
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(
-    private reflector: Reflector,
-    private rbacService: RBACService,
-  ) {}
+constructor(
+private reflector: Reflector,
+private rbacService: RBACService,
+) {}
 
-  canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<string[]>(
-      ROLES_KEY,
-      [context.getHandler(), context.getClass()],
+canActivate(context: ExecutionContext): boolean {
+const requiredRoles = this.reflector.getAllAndOverride<string[]>(
+    ROLES_KEY,
+    [context.getHandler(), context.getClass()],
     );
 
-    if (!requiredRoles || requiredRoles.length === 0) {
-      return true;
-    }
+    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
+        PERMISSIONS_KEY,
+        [context.getHandler(), context.getClass()],
+        );
 
-    const request = context.switchToHttp().getRequest();
-    const user = request.user;
-    if (!user || !user.roles) {
-      throw new ForbiddenException('User không có role');
-    }
-
-    for (const role of requiredRoles) {
-      if (this.rbacService.checkRole(user.roles, role)) {
+        if (!requiredRoles && !requiredPermissions) {
         return true;
-      }
-    }
+        }
 
-    throw new ForbiddenException(`Yêu cầu một trong các roles: ${requiredRoles.join(', ')}`);
-  }
-}
+        const request = context.switchToHttp().getRequest();
+        const user = request.user;
 
+        if (!user) {
+        throw new ForbiddenException("Không tìm thấy user");
+        }
 
-// ============================================================================
-// PermissionGuard - CanActivate cho permission-based authorization
-// ============================================================================
+        const userRoles = user.roles || [];
+        const userPermissions = user.permissions || [];
 
-@Injectable()
-export class PermissionGuard implements CanActivate {
-  constructor(
-    private reflector: Reflector,
-    private rbacService: RBACService,
-  ) {}
+        if (requiredRoles) {
+        const hasRole = requiredRoles.some((role) =>
+        this.rbacService.checkRole(userRoles, role),
+        );
+        if (!hasRole && !requiredPermissions) {
+        throw new ForbiddenException(`Yêu cầu role: ${requiredRoles.join(", ")}`);
+        }
+        }
 
-  canActivate(context: ExecutionContext): boolean {
-    const permission = this.reflector.getAllAndOverride<{ resource: string; action: string }>(
-      PERMISSION_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+        if (requiredPermissions) {
+        const hasPermission = requiredPermissions.some((perm) =>
+        userPermissions.includes(perm),
+        );
+        if (!hasPermission && !requiredRoles) {
+        throw new ForbiddenException(
+        `Yêu cầu permission: ${requiredPermissions.join(", ")}`,
+        );
+        }
+        }
 
-    if (!permission) {
-      return true;
-    }
-
-    const request = context.switchToHttp().getRequest();
-    const user = request.user;
-    if (!user || !user.roles) {
-      throw new ForbiddenException('User không có role');
-    }
-
-    if (!this.rbacService.checkPermission(user.roles, permission.resource, permission.action)) {
-      throw new ForbiddenException(`Yêu cầu permission: ${permission.resource}:${permission.action}`);
-    }
-
-    return true;
-  }
-}
-
-
-// ============================================================================
-// PolicyGuard - CanActivate cho policy-based authorization
-// ============================================================================
-
-@Injectable()
-export class PolicyGuard implements CanActivate {
-  constructor(
-    private reflector: Reflector,
-    private rbacService: RBACService,
-  ) {}
-
-  canActivate(context: ExecutionContext): boolean {
-    const policyId = this.reflector.getAllAndOverride<string>(
-      POLICY_KEY,
-      [context.getHandler(), context.getClass()],
-    );
-
-    if (!policyId) {
-      return true;
-    }
-
-    const request = context.switchToHttp().getRequest();
-    const context_data: Record<string, any> = {
-      user: request.user,
-      resource: request.body,
-      env: { ip: request.ip },
-    };
-
-    const result = this.rbacService.evaluatePolicy(policyId, context_data);
-    if (!result || !result.allowed) {
-      throw new ForbiddenException(`Policy '${policyId}' đã reject`);
-    }
-
-    return true;
-  }
-}
+        return true;
+        }
+        }

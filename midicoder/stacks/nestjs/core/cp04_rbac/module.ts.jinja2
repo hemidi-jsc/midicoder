@@ -1,0 +1,21 @@
+import { Module, Global } from "@nestjs/common";
+import { RBACService, PolicyService } from "./rbac.service";
+import { RolesGuard } from "./roles.guard";
+import { PolicyGuard } from "./policy.guard";
+
+/**
+ * RBAC Module - CP04.
+ *
+ * Module này cung cấp Role-Based Access Control và Policy Engine cho NestJS.
+ * Export các guard và service để sử dụng trong toàn bộ app.
+ */
+@Global()
+@Module({
+  providers: [
+    RBACService,
+    PolicyService,
+    { provide: APP_GUARD, useClass: RolesGuard },
+  ],
+  exports: [RBACService, PolicyService, RolesGuard, PolicyGuard],
+})
+export class RBACModule {}

@@ -44,7 +44,7 @@ class ReactRBACEmitter:
     def generate(self) -> dict[str, str]:
         """Generate toan bo React RBAC code."""
         result: dict[str, str] = {}
-        result["src/core/rbac/useAuth.ts"] = self._generate_hook()
+        result["src/core/rbac/useRbac.ts"] = self._generate_hook()
         result["src/core/rbac/ProtectedRoute.tsx"] = self._generate_protected_route()
         result["src/core/rbac/WithPermission.tsx"] = self._generate_with_permission()
         return result

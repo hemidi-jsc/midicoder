@@ -59,8 +59,8 @@ core_packs:
     name: RBAC & Policy Engine
     internal_id: cp04_rbac
     phase: P0
-    description: Role-based access control, permissions, policy rules
-    definitions_count: 4
+    description: Role-based access control, permissions, ABAC policy engine with expression DSL
+    definitions_count: 11
     obligations_count: 1
     depends_on:
       - CP02
@@ -70,7 +70,7 @@ core_packs:
       - check_policy
     category: security
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP07
     name: Infrastructure as Code Generator
     internal_id: cp07_iac

@@ -6,7 +6,6 @@ Module này cung cấp FastAPIRBACEmitter để generate FastAPI RBAC code:
 - RoleGuard: FastAPI dependency cho role-based access
 - PolicyGuard: FastAPI dependency cho ABAC policy evaluation
 
-Import CP03 AuthUser context từ request.
 Tất cả comments bằng tiếng Việt.
 
 Author: Midicoder Team
@@ -15,7 +14,7 @@ Version: 1.0.0
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -42,9 +41,9 @@ class FastAPIRBACEmitter:
     Emitter cho FastAPI RBAC code.
 
     Generate code từ RBACConfig cho:
-    - app/core/rbac/service.py (RBACService)
-    - app/core/rbac/guards.py (RoleGuard, PolicyGuard)
-    - app/core/rbac/__init__.py
+    - app/rbac/__init__.py
+    - app/rbac/service.py (RBACService)
+    - app/rbac/guards.py (RoleGuard, PolicyGuard)
     """
 
     def __init__(self, config: Any) -> None:
@@ -64,9 +63,9 @@ class FastAPIRBACEmitter:
             Dict {file_path: code_content}
         """
         result: dict[str, str] = {}
-        result["app/core/rbac/__init__.py"] = self._generate_init()
-        result["app/core/rbac/service.py"] = self._generate_service()
-        result["app/core/rbac/guards.py"] = self._generate_guards()
+        result["app/rbac/__init__.py"] = self._generate_init()
+        result["app/rbac/service.py"] = self._generate_service()
+        result["app/rbac/guards.py"] = self._generate_guards()
         return result
 
     def emit(self, output_dir: Path) -> list[GeneratedFile]:
@@ -79,9 +78,6 @@ class FastAPIRBACEmitter:
         Returns:
             List of GeneratedFile instances
         """
-        rbac_dir = output_dir / "core" / "rbac"
-        rbac_dir.mkdir(parents=True, exist_ok=True)
-
         files: list[GeneratedFile] = []
         for path_str, content in self.generate().items():
             file_path = output_dir / path_str
@@ -125,11 +121,12 @@ __all__ = [
 '''
 
     def _generate_service(self) -> str:
-        """Generate service.py - RBACService class."""
+        """Generate service.py - RBACService class (standalone, no pipeline imports)."""
         return '''"""
 RBAC Service - CP04.
 
 Service layer cho Role-Based Access Control va Policy Evaluation.
+Generated code — standalone, không phụ thuộc runtime dependency.
 """
 
 from typing import Any, Optional
@@ -236,13 +233,14 @@ class RBACService:
         """
         permission_id = f"{resource.lower()}.{action}"
 
-        # Thu thap tat ca permissions tu user roles
         all_permissions = self._gather_permissions(user_roles)
         return permission_id in all_permissions
 
     def check_policy(self, context: dict[str, Any]) -> dict[str, Any]:
         """
-        Evaluate ABAC policy voi context.
+        Evaluate ABAC policy voi context (standalone — no external deps).
+
+        Deny takes precedence. Default deny khi khong co policy match.
 
         Args:
             context: Policy context (user, resource, action, env)
@@ -250,52 +248,139 @@ class RBACService:
         Returns:
             Decision dict: {allowed: bool, policy_id: str, reason: str}
         """
-        # Import PolicyEngine de evaluate
-        try:
-            from midicoder.emitters.core.cp04_rbac.policy_engine import PolicyEngine
-            from midicoder.emitters.core.cp04_rbac.models import (
-                PolicyContext, PolicyRule, RBACConfig, Role,
-            )
+        deny_matched = None
+        allow_matched = None
 
-            # Xay config tu registered data
-            roles = [
-                Role(name=r["name"], permissions=r["permissions"],
-                     parent_roles=r["parent_roles"])
-                for r in self._roles.values()
-            ]
-            policies = [
-                PolicyRule(
-                    id=p["id"], effect=p["effect"],
-                    condition=p["condition"],
-                    resource_type=p.get("resource_type"),
-                    actions=p.get("actions", []),
-                )
-                for p in self._policies
-            ]
-            config = RBACConfig(roles=roles, policies=policies)
-            engine = PolicyEngine(config)
+        for policy in self._policies:
+            # Check resource_type filter
+            if policy.get("resource_type"):
+                res_type = context.get("resource", {}).get("type")
+                if res_type != policy["resource_type"]:
+                    continue
 
-            # Xay PolicyContext
-            policy_context = PolicyContext(
-                action=context.get("action", ""),
-                user_attributes=context.get("user", {}),
-                resource_attributes=context.get("resource", {}),
-                environment=context.get("env", {}),
-            )
+            # Check actions filter
+            if policy.get("actions") and context.get("action") not in policy["actions"]:
+                continue
 
-            decision = engine.evaluate(policy_context)
+            # Evaluate condition (standalone, no external engine)
+            if self._evaluate_condition(policy.get("condition", ""), context):
+                if policy["effect"] == "deny":
+                    deny_matched = policy
+                else:
+                    allow_matched = policy
+
+        # DENY takes precedence
+        if deny_matched is not None:
             return {
-                "allowed": decision.allowed,
-                "policy_id": decision.policy_id,
-                "reason": decision.reason,
+                "allowed": False,
+                "policy_id": deny_matched["id"],
+                "reason": f"DENY policy '{deny_matched['id']}' match",
             }
-        except ImportError:
-            # Fallback: simple string match
+        if allow_matched is not None:
             return {
                 "allowed": True,
-                "policy_id": "fallback",
-                "reason": "PolicyEngine khong danh — fallback ALLOW",
+                "policy_id": allow_matched["id"],
+                "reason": f"ALLOW policy '{allow_matched['id']}' match",
             }
+
+        return {
+            "allowed": False,
+            "policy_id": "",
+            "reason": "Khong co policy nao match — default DENY",
+        }
+
+    def _evaluate_condition(self, condition: str, context: dict[str, Any]) -> bool:
+        """
+        Evaluate condition expression (standalone fallback).
+
+        Support: ==, !=, >, >=, <, <=, AND, OR, NOT.
+        Variable: user.*, resource.*, env.*, action.
+        """
+        if not condition:
+            return True
+        try:
+            return self._parse_or(condition.strip(), context)
+        except Exception:
+            return False
+
+    def _parse_or(self, expr: str, ctx: dict[str, Any]) -> bool:
+        parts = [p.strip() for p in expr.split(" OR ")]
+        if len(parts) == 1:
+            return self._parse_and(parts[0], ctx)
+        return any(self._parse_and(p, ctx) for p in parts)
+
+    def _parse_and(self, expr: str, ctx: dict[str, Any]) -> bool:
+        parts = [p.strip() for p in expr.split(" AND ")]
+        if len(parts) == 1:
+            return self._parse_not(parts[0], ctx)
+        return all(self._parse_not(p, ctx) for p in parts)
+
+    def _parse_not(self, expr: str, ctx: dict[str, Any]) -> bool:
+        stripped = expr.strip()
+        if stripped.startswith("NOT "):
+            return not self._parse_not(stripped[4:], ctx)
+        return self._compare(stripped, ctx)
+
+    def _compare(self, expr: str, ctx: dict[str, Any]) -> bool:
+        for op in ("==", "!=", ">=", "<=", ">", "<"):
+            if op in expr:
+                parts = expr.split(op, 1)
+                left = self._resolve(parts[0].strip(), ctx)
+                right = self._resolve(parts[1].strip(), ctx)
+                try:
+                    if op == "==":
+                        return left == right
+                    if op == "!=":
+                        return left != right
+                    if op == ">":
+                        return left > right if left is not None else False
+                    if op == ">=":
+                        return left >= right if left is not None else False
+                    if op == "<":
+                        return left < right if left is not None else False
+                    if op == "<=":
+                        return left <= right if left is not None else False
+                except TypeError:
+                    return False
+        # Single value — truthy
+        val = self._resolve(expr.strip(), ctx)
+        return bool(val)
+
+    def _resolve(self, token: str, ctx: dict[str, Any]) -> Any:
+        """Resolve variable or literal from context."""
+        token = token.strip()
+        # String literal
+        if (token.startswith("'") and token.endswith("'")) or \
+           (token.startswith('"') and token.endswith('"')):
+            return token[1:-1]
+        # Boolean
+        if token.lower() == "true":
+            return True
+        if token.lower() == "false":
+            return False
+        # Number
+        try:
+            return int(token)
+        except ValueError:
+            pass
+        try:
+            return float(token)
+        except ValueError:
+            pass
+        # Dotted path: user.role, resource.tenant_id, env.ip
+        if "." in token:
+            keys = token.split(".")
+            current = ctx
+            for key in keys:
+                if isinstance(current, dict) and key in current:
+                    current = current[key]
+                else:
+                    return None
+            return current
+        # Direct key
+        if token in ctx:
+            return ctx[token]
+        return None
 
     def _role_inherits(self, role: dict[str, Any], target: str) -> bool:
         """Kiem tra role co target role qua inheritance."""
@@ -314,7 +399,6 @@ class RBACService:
             role = self._roles.get(role_name)
             if role:
                 permissions.update(role.get("permissions", []))
-                # Inherited permissions
                 for parent_name in role.get("parent_roles", []):
                     parent = self._roles.get(parent_name)
                     if parent:
@@ -324,6 +408,38 @@ class RBACService:
 
 # Singleton instance
 _default_service: Optional[RBACService] = None
+
+
+def init_rbac_service(
+    roles: Optional[dict[str, Any]] = None,
+    policies: Optional[list[dict[str, Any]]] = None,
+) -> None:
+    """
+    Initialize global RBAC service.
+
+    Args:
+        roles: Mapping role_name -> {permissions, parent_roles}
+        policies: List of policy dicts
+    """
+    global _default_service
+    svc = RBACService()
+    if roles:
+        for name, data in roles.items():
+            svc.register_role(
+                name=name,
+                permissions=data.get("permissions", []) if isinstance(data, dict) else None,
+                parent_roles=data.get("parent_roles", []) if isinstance(data, dict) else None,
+            )
+    if policies:
+        for p in policies:
+            svc.register_policy(
+                policy_id=p["id"],
+                effect=p.get("effect", "allow"),
+                condition=p.get("condition", ""),
+                resource_type=p.get("resource_type"),
+                actions=p.get("actions"),
+            )
+    _default_service = svc
 
 
 def get_rbac_service() -> RBACService:
@@ -397,7 +513,6 @@ class RoleGuard:
         Raises:
             HTTPException 403: Neu khong du quyen
         """
-        # Lay user roles va permissions tu request state
         user_roles = getattr(request.state, "user_roles", [])
         user_permissions = getattr(request.state, "user_permissions", [])
 
@@ -464,7 +579,6 @@ class PolicyGuard:
         """
         action = self.action or request.method.lower()
 
-        # Xay policy context
         context = {
             "action": action,
             "user": {
@@ -505,15 +619,8 @@ def require_role(*roles: str) -> Callable[..., Any]:
         @require_role("admin", "superadmin")
         def admin_page(...):
             ...
-
-    Args:
-        *roles: Roles duoc phep
-
-    Returns:
-        Decorator function
     """
     def decorator(func: Callable) -> Callable:
-        # Them dependency vao function metadata
         if not hasattr(func, "_rbac_guards"):
             func._rbac_guards = []  # type: ignore
         func._rbac_guards.append(RoleGuard(required_roles=list(roles)))  # type: ignore
@@ -530,12 +637,6 @@ def require_policy(action: str) -> Callable[..., Any]:
         @require_policy("order:create")
         def create_order(...):
             ...
-
-    Args:
-        action: Action name
-
-    Returns:
-        Decorator function
     """
     def decorator(func: Callable) -> Callable:
         if not hasattr(func, "_rbac_guards"):

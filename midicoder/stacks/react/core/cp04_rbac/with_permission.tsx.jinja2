@@ -1,0 +1,61 @@
+import { ComponentType, FC } from "react";
+import { useRbac } from "./useRbac";
+
+/**
+ * WithPermission - Higher-Order Component cho permission check.
+ *
+ * Usage:
+ * ```tsx
+ * const AdminOnlyComponent = WithPermission({
+ *   requiredRoles: ["admin"],
+ *   forbiddenComponent: <ForbiddenPage />,
+ * })(AdminPanel);
+ * ```
+ */
+
+interface WithPermissionOptions {
+  requiredRoles?: string[];
+  requiredPermissions?: string[];
+  forbiddenComponent?: FC;
+}
+
+/**
+ * WithPermission HOC.
+ *
+ * @param options - Options cho permission check
+ * @returns HOC function
+ */
+export function WithPermission(options: WithPermissionOptions) {
+  return <T extends Record<string, unknown>>(
+    WrappedComponent: ComponentType<T>,
+  ): FC<T> => {
+    const WithPermissionComponent = (props: T) => {
+      const { hasAnyRole, hasAnyPermission } = useRbac();
+
+      if (!options.requiredRoles && !options.requiredPermissions) {
+        return <WrappedComponent {...props} />;
+      }
+
+      if (options.requiredRoles && hasAnyRole(options.requiredRoles)) {
+        return <WrappedComponent {...props} />;
+      }
+
+      if (
+        options.requiredPermissions &&
+        hasAnyPermission(options.requiredPermissions)
+      ) {
+        return <WrappedComponent {...props} />;
+      }
+
+      if (options.forbiddenComponent) {
+        return options.forbiddenComponent();
+      }
+
+      return null;
+    };
+
+    WithPermissionComponent.displayName = `WithPermission(${WrappedComponent.displayName || WrappedComponent.name || "Component"})`;
+
+    return WithPermissionComponent;
+  };
+}

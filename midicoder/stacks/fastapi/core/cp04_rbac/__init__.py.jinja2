@@ -1,0 +1,22 @@
+"""
+RBAC Module - Role-Based Access Control & Policy Engine (CP04).
+
+Module này cung cấp:
+- RBACService: Service layer cho role/permission checks
+- RoleGuard: FastAPI dependency cho role-based access
+- PolicyGuard: FastAPI dependency cho ABAC policy evaluation
+
+CP04: RBAC & Policy Engine
+"""
+
+from .service import RBACService, get_rbac_service
+from .guards import RoleGuard, PolicyGuard, require_role, require_policy
+
+__all__ = [
+    "RBACService",
+    "get_rbac_service",
+    "RoleGuard",
+    "PolicyGuard",
+    "require_role",
+    "require_policy",
+]

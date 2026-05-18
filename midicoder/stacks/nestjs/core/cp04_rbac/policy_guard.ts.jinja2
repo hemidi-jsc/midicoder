@@ -1,0 +1,63 @@
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { RBACService } from "./rbac.service";
+import { POLICY_ACTION_KEY } from "./decorators";
+
+/**
+ * Policy Guard - CP04.
+ *
+ * NestJS canActivate cho ABAC policy evaluation.
+ * Sử dụng @Policies() decorator để chỉ định action.
+ */
+@Injectable()
+export class PolicyGuard implements CanActivate {
+  constructor(
+    private reflector: Reflector,
+    private rbacService: RBACService,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const action = this.reflector.getAllAndOverride<string>(
+      POLICY_ACTION_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!action) {
+      return true;
+    }
+
+    const request = context.switchToHttp().getRequest();
+    const user = request.user || {};
+
+    const policyContext = {
+      action,
+      user: {
+        role: user.role || "",
+        roles: user.roles || [],
+        tenant_id: user.tenant_id || "",
+      },
+      resource: {
+        type: request.body?.type || "",
+        tenant_id: request.body?.tenant_id || "",
+      },
+      env: {
+        ip: request.ip || "",
+        method: request.method,
+        path: request.url || "",
+      },
+    };
+
+    const decision = this.rbacService.evaluatePolicy(policyContext);
+
+    if (!decision.allowed) {
+      throw new ForbiddenException(decision.reason || "Policy deny");
+    }
+
+    return true;
+  }
+}

@@ -40,11 +40,8 @@ class PolicyEvaluationResult:
 class Role:
     """Role definition."""
     name: str
-    permissions: list[str] = None  # type: ignore
-
-    def __post_init__(self):
-        if self.permissions is None:
-            self.permissions = []
+    permissions: list[str] = field(default_factory=list)
+    parent_roles: list[str] = field(default_factory=list)
 
 
 # ============================================================================
