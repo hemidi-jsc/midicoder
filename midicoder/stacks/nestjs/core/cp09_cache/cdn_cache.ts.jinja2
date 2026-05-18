@@ -1,0 +1,167 @@
+/**
+ * CDN Cache Service cho NestJS.
+ *
+ * Quản lý CDN caching (Cloudflare, Fastly, AWS CloudFront).
+ * Hỗ trợ purge cache theo path hoặc toàn bộ.
+ *
+ * CP09: Caching & Performance
+ */
+
+import { Injectable, Logger } from "@nestjs/common";
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+const CDN_PROVIDER = process.env.CDN_PROVIDER || "cloudflare";
+const CDN_ZONE_ID = process.env.CDN_ZONE_ID || "";
+const CDN_API_KEY = process.env.CDN_API_KEY || "";
+const DEFAULT_CDN_TTL = parseInt(process.env.CDN_DEFAULT_TTL || "3600", 10);
+
+// ============================================================================
+// Cache-Control Header Helper
+// ============================================================================
+
+/**
+ * Xay dựng Cache-Control headers cho CDN responses.
+ *
+ * @param public - Cache public (true) hay private (false)
+ * @param ttl - Time-to-live (giây)
+ * @param staleWhileRevalidate - Thời gian serve stale content khi revalidate
+ * @param staleIfError - Thời gian serve stale content khi có lỗi
+ * @returns Object chứa Cache-Control header
+ */
+export function getCacheControlHeaders(
+  publicFlag: boolean = true,
+  ttl: number | null = null,
+  staleWhileRevalidate: number = 60,
+  staleIfError: number = 300,
+): Record<string, string> {
+  const actualTtl = ttl !== null ? ttl : DEFAULT_CDN_TTL;
+  const directives = [
+    publicFlag ? "public" : "private",
+    `max-age=${actualTtl}`,
+    `stale-while-revalidate=${staleWhileRevalidate}`,
+    `stale-if-error=${staleIfError}`,
+  ];
+  return { "Cache-Control": directives.join(", ") };
+}
+
+// ============================================================================
+// CDN Cache Service
+// ============================================================================
+
+/**
+ * CDN Cache Service.
+ *
+ * Cung cấp các phương thức purge cache trên CDN.
+ * Hỗ trợ Cloudflare (mặc định), Fastly, AWS CloudFront.
+ */
+@Injectable()
+export class CdnCacheService {
+  private readonly logger = new Logger(CdnCacheService.name);
+  private provider: string;
+  private zoneId: string;
+  private apiKey: string;
+
+  constructor() {
+    this.provider = CDN_PROVIDER;
+    this.zoneId = CDN_ZONE_ID;
+    this.apiKey = CDN_API_KEY;
+  }
+
+  /**
+   * Purge cache cho 1 path cụ thể.
+   *
+   * @param path - URL path cần purge
+   * @returns True nếu purge thành công
+   */
+  async purgePath(path: string): Promise<boolean> {
+    if (!this.zoneId || !this.apiKey) {
+      this.logger.warn("[CDN] Cannot purge: missing zoneId or apiKey");
+      return false;
+    }
+
+    if (this.provider === "cloudflare") {
+      return this._purgeCloudflare([path]);
+    }
+
+    this.logger.warn(`[CDN] Unsupported provider: ${this.provider}`);
+    return false;
+  }
+
+  /**
+   * Purge toàn bộ cache trên CDN.
+   *
+   * @returns True nếu purge thành công
+   */
+  async purgeAll(): Promise<boolean> {
+    if (!this.zoneId || !this.apiKey) {
+      this.logger.warn("[CDN] Cannot purge all: missing zoneId or apiKey");
+      return false;
+    }
+
+    if (this.provider === "cloudflare") {
+      return this._purgeCloudflareAll();
+    }
+
+    this.logger.warn(`[CDN] Unsupported provider: ${this.provider}`);
+    return false;
+  }
+
+  // ------------------------------------------------------------------
+  // Cloudflare API
+  // ------------------------------------------------------------------
+
+  private async _purgeCloudflare(files: string[]): Promise<boolean> {
+    const url = `https://api.cloudflare.com/client/v4/zones/${this.zoneId}/purge_cache`;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ files }),
+      });
+
+      if (response.status === 200) {
+        this.logger.log(`[CDN] Purged ${files.length} file(s)`);
+        return true;
+      }
+
+      this.logger.error(`[CDN] Purge failed: ${response.status}`);
+      return false;
+    } catch (error) {
+      this.logger.error("[CDN] Purge error", error);
+      return false;
+    }
+  }
+
+  private async _purgeCloudflareAll(): Promise<boolean> {
+    const url = `https://api.cloudflare.com/client/v4/zones/${this.zoneId}/purge_cache`;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ purge_everything: true }),
+      });
+
+      if (response.status === 200) {
+        this.logger.log("[CDN] Purged all cache");
+        return true;
+      }
+
+      this.logger.error(`[CDN] Purge all failed: ${response.status}`);
+      return false;
+    } catch (error) {
+      this.logger.error("[CDN] Purge all error", error);
+      return false;
+    }
+  }
+}

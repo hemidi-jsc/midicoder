@@ -1,0 +1,137 @@
+/**
+ * Cache Stampede Prevention cho NestJS.
+ *
+ * Ngăn cache stampede bằng distributed mutex lock trên Redis.
+ * Khi cache miss, chỉ 1 request thực sự load data, các request khác wait.
+ *
+ * CP09: Caching & Performance
+ */
+
+import { Injectable, Logger } from "@nestjs/common";
+import { Redis } from "ioredis";
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+const LOCK_PREFIX = "__cache_lock:";
+const DEFAULT_LOCK_TTL = parseInt(process.env.STAMPEDE_LOCK_TTL || "10", 10);
+const DEFAULT_LOCK_TIMEOUT = parseInt(process.env.STAMPEDE_LOCK_TIMEOUT || "5", 10);
+
+// ============================================================================
+// Cache Stampede Service
+// ============================================================================
+
+/**
+ * Cache Stampede Prevention Service.
+ *
+ * Cung cấp stampede-safe cache get: khi nhiều request cùng hit cache miss,
+ * chỉ 1 request load data thật sự, các request khác đợi đến khi data được set.
+ */
+@Injectable()
+export class StampedePreventionService {
+  private readonly logger = new Logger(StampedePreventionService.name);
+  private readonly redis: Redis;
+
+  constructor(redisClient: Redis) {
+    this.redis = redisClient;
+  }
+
+  /**
+   * Stampede-safe get từ cache.
+   *
+   * Khi cache miss, acquire lock và chỉ 1 request load data.
+   * Các request khác sleep và retry.
+   *
+   * @param key - Cache key
+   * @param loader - Async function để load data khi cache miss
+   * @param ttl - Time-to-live (giây), mặc định 300
+   * @param tenantId - Tenant ID (optional)
+   * @returns Cached hoặc loaded value
+   */
+  async stampedeSafeGet<T>(
+    key: string,
+    loader: () => Promise<T>,
+    ttl: number = 300,
+    tenantId?: string,
+  ): Promise<T> {
+    // Try get from cache
+    const fullKey = this._buildKey(key, tenantId);
+    const cached = await this.redis.get(fullKey);
+
+    if (cached !== null) {
+      try {
+        return JSON.parse(cached) as T;
+      } catch {
+        return cached as unknown as T;
+      }
+    }
+
+    // Cache miss - try acquire lock
+    const acquired = await this._acquireLock(key, tenantId);
+
+    if (acquired) {
+      try {
+        // Double-check sau khi acquire lock
+        const rechecked = await this.redis.get(fullKey);
+        if (rechecked !== null) {
+          try {
+            return JSON.parse(rechecked) as T;
+          } catch {
+            return rechecked as unknown as T;
+          }
+        }
+
+        // Load data và set vào cache
+        const value = await loader();
+        await this.redis.set(fullKey, JSON.stringify(value), "EX", ttl);
+
+        this.logger.debug(`[Stampede] Loaded and cached: ${key}`);
+        return value;
+      } finally {
+        await this._releaseLock(key, tenantId);
+      }
+    } else {
+      // Không acquire được lock - wait và retry
+      const maxRetries = DEFAULT_LOCK_TIMEOUT * 10;
+      for (let i = 0; i < maxRetries; i++) {
+        await this._sleep(100);
+        const retry = await this.redis.get(fullKey);
+        if (retry !== null) {
+          try {
+            return JSON.parse(retry) as T;
+          } catch {
+            return retry as unknown as T;
+          }
+        }
+      }
+
+      // Timeout - fallback: load data trực tiếp (không cache)
+      this.logger.warn(`[Stampede] Timeout waiting for lock: ${key}`);
+      return loader();
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Internal: Lock management
+  // ------------------------------------------------------------------
+
+  private async _acquireLock(key: string, tenantId?: string): Promise<boolean> {
+    const lockKey = this._buildKey(`${LOCK_PREFIX}${key}`, tenantId);
+    const acquired = await this.redis.set(lockKey, "1", "NX", "EX", DEFAULT_LOCK_TTL);
+    return acquired === "OK";
+  }
+
+  private async _releaseLock(key: string, tenantId?: string): Promise<void> {
+    const lockKey = this._buildKey(`${LOCK_PREFIX}${key}`, tenantId);
+    await this.redis.del(lockKey);
+  }
+
+  private _buildKey(key: string, tenantId?: string): string {
+    return tenantId ? `${tenantId}:${key}` : key;
+  }
+
+  private _sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+}

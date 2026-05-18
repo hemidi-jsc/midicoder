@@ -1,0 +1,182 @@
+/**
+ * Cache Warmup cho NestJS.
+ *
+ * Warm cache khi service khởi động hoặc theo schedule.
+ * Hỗ trợ batch warmup với parallelism control.
+ *
+ * CP09: Caching & Performance
+ */
+
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { Redis } from "ioredis";
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+const BATCH_SIZE = parseInt(process.env.CACHE_WARMUP_BATCH_SIZE || "100", 10);
+const PARALLELISM = parseInt(process.env.CACHE_WARMUP_PARALLELISM || "4", 10);
+
+/**
+ * Danh sách keys cần warm (configurable).
+ */
+const WARMUP_KEYS: string[] = [];
+
+// ============================================================================
+// Cache Warmup Service
+// ============================================================================
+
+/**
+ * Cache Warmup Service.
+ *
+ * Warm cache để tránh cold start penalty.
+ */
+@Injectable()
+export class CacheWarmupService {
+  private readonly logger = new Logger(CacheWarmupService.name);
+  private readonly redis: Redis;
+
+  constructor(redisClient: Redis) {
+    this.redis = redisClient;
+  }
+
+  /**
+   * Warm 1 key: check if exists, nếu không thì load và set.
+   *
+   * @param key - Cache key
+   * @param loader - Async function để load value
+   * @param ttl - Time-to-live (giây)
+   * @param tenantId - Tenant ID (optional)
+   * @returns True nếu warm thành công
+   */
+  async warmKey(
+    key: string,
+    loader: () => Promise<any>,
+    ttl: number = 300,
+    tenantId?: string,
+  ): Promise<boolean> {
+    const fullKey = tenantId ? `${tenantId}:${key}` : key;
+
+    const existing = await this.redis.get(fullKey);
+    if (existing !== null) {
+      return true;
+    }
+
+    try {
+      const value = await loader();
+      await this.redis.set(fullKey, JSON.stringify(value), "EX", ttl);
+      return true;
+    } catch (error) {
+      this.logger.error(`[CacheWarmup] Failed to warm key ${key}: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Warm batch keys với parallelism control.
+   *
+   * @param keys - Danh sách keys cần warm
+   * @param loader - Async function để load value
+   * @param ttl - Time-to-live (giây)
+   * @param tenantId - Tenant ID (optional)
+   * @returns Map {key: success}
+   */
+  async warmBatch(
+    keys: string[],
+    loader: (key: string) => Promise<any>,
+    ttl: number = 300,
+    tenantId?: string,
+  ): Promise<Record<string, boolean>> {
+    const results: Record<string, boolean> = {};
+    const semaphore = this._createSemaphore(PARALLELISM);
+
+    const tasks = keys.map(async (key) => {
+      await semaphore.acquire();
+      try {
+        const success = await this.warmKey(key, () => loader(key), ttl, tenantId);
+        results[key] = success;
+      } finally {
+        semaphore.release();
+      }
+    });
+
+    await Promise.all(tasks);
+    return results;
+  }
+
+  /**
+   * Warm cache khi service khởi động.
+   *
+   * @param loader - Async function để load value
+   * @param ttl - Time-to-live (giây)
+   * @param tenantId - Tenant ID (optional)
+   * @returns Map {key: success}
+   */
+  async warmOnStartup(
+    loader: (key: string) => Promise<any>,
+    ttl: number = 300,
+    tenantId?: string,
+  ): Promise<Record<string, boolean>> {
+    this.logger.log("[CacheWarmup] Starting warmup on startup...");
+    const results = await this.warmBatch(WARMUP_KEYS, loader, ttl, tenantId);
+    const successCount = Object.values(results).filter(Boolean).length;
+    this.logger.log(`[CacheWarmup] Warmed ${successCount}/${results.length} keys`);
+    return results;
+  }
+
+  // ------------------------------------------------------------------
+  // Internal: Semaphore
+  // ------------------------------------------------------------------
+
+  private _createSemaphore(limit: number) {
+    let running = 0;
+    const queue: (() => void)[] = [];
+
+    return {
+      acquire: () => {
+        if (running < limit) {
+          running++;
+          return Promise.resolve();
+        }
+        return new Promise<void>((resolve) => queue.push(resolve));
+      },
+      release: () => {
+        running--;
+        if (queue.length > 0) {
+          running++;
+          const next = queue.shift();
+          if (next) next();
+        }
+      },
+    };
+  }
+}
+
+// ============================================================================
+// Startup Warmup Hook (optional)
+// ============================================================================
+
+/**
+ * Hook để warm cache tự động khi module khởi động.
+ *
+ * Sử dụng:
+ *   export class AppModule implements OnModuleInit {
+ *     async onModuleInit() {
+ *       await warmupOnStartup(cacheWarmupService, dataLoader);
+ *     }
+ *   }
+ *
+ * @param service - CacheWarmupService instance
+ * @param loader - Async function để load value
+ * @param ttl - Time-to-live (giây)
+ * @param tenantId - Tenant ID (optional)
+ * @returns Warmup results
+ */
+export async function warmupOnStartup(
+  service: CacheWarmupService,
+  loader: (key: string) => Promise<any>,
+  ttl: number = 300,
+  tenantId?: string,
+): Promise<Record<string, boolean>> {
+  return service.warmOnStartup(loader, ttl, tenantId);
+}

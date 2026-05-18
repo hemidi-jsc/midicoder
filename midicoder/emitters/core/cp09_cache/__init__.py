@@ -4,18 +4,21 @@ Cache Emitter Module (CP09).
 
 Module này định nghĩa các emitter cho cache layer:
 - Models: CacheProfile, CacheStrategy, CacheInvalidationRule, CacheWarmConfig, CacheMetrics
+- Models (Advanced): CDNCacheLayer, StampedePrevention, CacheTier, CacheWarmupConfig
 - Parser: CacheParser để parse MIR metadata và YAML
 - FastAPI Emitter: FastAPICacheEmitter
 - NestJS Emitter: NestJSCacheEmitter
-- Providers: CacheProvider (ABC), RedisCacheProvider, MemoryCacheProvider
+- Angular Emitter: AngularEmitter
+- React Emitter: ReactEmitter
+- Providers: CacheProvider (ABC), RedisCacheProvider, MemoryCacheProvider, MemcachedCacheProvider
 - Decorators: @cache, @cache_tenant, @cache_disable
 - Warm-up: CacheWarmer, ScheduledWarmJob
 
 Author: Midicoder Team
-Version: 1.0.0
+Version: 1.1.0
 """
 
-# Models (5 definitions)
+# Models (core definitions)
 from midicoder.emitters.core.cp09_cache.models import (
     CacheBackend,
     InvalidationStrategy,
@@ -25,6 +28,17 @@ from midicoder.emitters.core.cp09_cache.models import (
     CacheWarmConfig,
     CacheMetrics,
     CacheCollection,
+)
+
+# Models (advanced definitions)
+from midicoder.emitters.core.cp09_cache.models import (
+    CDNCacheControlDirective,
+    CDNCacheLayer,
+    StampedePreventionStrategy,
+    StampedePrevention,
+    CacheTier,
+    CacheWarmupStrategy,
+    CacheWarmupConfig,
 )
 
 # Parser
@@ -38,6 +52,7 @@ from midicoder.emitters.core.cp09_cache.nestjs import NestJSCacheEmitter
 from midicoder.emitters.core.cp09_cache.providers.base import CacheProvider
 from midicoder.emitters.core.cp09_cache.providers.redis import RedisCacheProvider
 from midicoder.emitters.core.cp09_cache.providers.memory import MemoryCacheProvider
+from midicoder.emitters.core.cp09_cache.providers.memcached import MemcachedCacheProvider
 
 # Decorators
 from midicoder.emitters.core.cp09_cache.cache_decorator import (
@@ -74,7 +89,7 @@ except ImportError:
     emit_react_cache = None  # type: ignore[misc,assignment]
 
 __all__ = [
-    # Models (5 definitions)
+    # Models (core)
     "CacheBackend",
     "InvalidationStrategy",
     "CacheProfile",
@@ -83,6 +98,14 @@ __all__ = [
     "CacheWarmConfig",
     "CacheMetrics",
     "CacheCollection",
+    # Models (advanced)
+    "CDNCacheControlDirective",
+    "CDNCacheLayer",
+    "StampedePreventionStrategy",
+    "StampedePrevention",
+    "CacheTier",
+    "CacheWarmupStrategy",
+    "CacheWarmupConfig",
     # Parser
     "CacheParser",
     # Emitters
@@ -92,6 +115,7 @@ __all__ = [
     "CacheProvider",
     "RedisCacheProvider",
     "MemoryCacheProvider",
+    "MemcachedCacheProvider",
     # Decorators
     "cache",
     "cache_tenant",

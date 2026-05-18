@@ -2,12 +2,12 @@ pack:
   id: "CP09"
   name: "Caching & Performance Layer Generator"
   internal_id: "cp09_cache"
-  version: "1.0.0"
+  version: "1.1.0"
   status: "developing"
   category: "performance"
   depends_on: ["CP08"]
-  definitions_count: 8
-  obligations_count: 4
+  definitions_count: 14
+  obligations_count: 5
   error_codes:
     prefix: "MDC-CP09"
     range: "MDC-CP09-001 to MDC-CP09-005"
@@ -18,10 +18,15 @@ pack:
     - cache_warm
     - cdn_cache
     - stampede_prevention
+    - multi_tier_cache
+    - tag_invalidation
+    - distributed_lock
   capabilities:
     - id: "redis"
       emitter: "fastapi, nestjs"
     - id: "memory"
+      emitter: "fastapi, nestjs"
+    - id: "memcached"
       emitter: "fastapi, nestjs"
     - id: "tenant_aware"
       emitter: "fastapi, nestjs"
@@ -31,34 +36,53 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "stampede_prevention"
       emitter: "fastapi, nestjs"
+    - id: "multi_tier"
+      emitter: "fastapi, nestjs"
+    - id: "cache_warmup"
+      emitter: "fastapi, nestjs"
   definitions:
     - name: "CacheProfile"
-      description: "Cache backend, TTL, and eviction strategy"
+      description: "Cache backend, TTL, và eviction strategy"
     - name: "CacheBinding"
-      description: "Binding between query patterns and cache keys"
+      description: "Binding giữa query patterns và cache keys"
     - name: "InvalidationStrategy"
-      description: "Rule for cache invalidation on data mutations"
+      description: "Quy tắc cache invalidation (pattern, tag, event)"
     - name: "CDNCacheLayer"
-      description: "CDN edge cache with origin shield, purge API, cache-control headers"
+      description: "CDN edge cache với origin shield, purge API, cache-control headers"
     - name: "StampedePrevention"
-      description: "Cache stampede/thundering-herd prevention (mutex, early-update, probabilistic)"
+      description: "Ngăn thundering-herd (mutex, early-update, probabilistic)"
     - name: "CacheTier"
       description: "Multi-tier cache (L1=memory, L2=Redis, L3=database)"
-    - name: "CacheWarmupStrategy"
-      description: "Cache warmup strategy (scheduled, on_demand, background)"
+    - name: "CacheWarmupConfig"
+      description: "Cache warmup strategy (scheduled, on_demand, background, on_startup)"
     - name: "CacheMetrics"
       description: "Cache performance metrics (hit_rate, miss_rate, eviction_rate, latency)"
+    - name: "CacheStrategy"
+      description: "Strategy caching (read_through, write_through, cache_aside)"
+    - name: "CacheInvalidationRule"
+      description: "Quy tắc cho cache invalidation"
+    - name: "CacheWarmConfig"
+      description: "Cấu hình warm-up cache"
+    - name: "CDNCacheControlDirective"
+      description: "Cache-Control directives cho CDN responses"
+    - name: "StampedePreventionStrategy"
+      description: "Chiến lược ngăn cache stampede"
+    - name: "CacheWarmupStrategy"
+      description: "Chiến lược cache warmup"
   obligations:
     - name: "CacheConsistency"
-      description: "Cache must be invalidated on corresponding data mutation"
+      description: "Cache phải được invalidate khi data mutation tương ứng"
     - name: "TenantAware"
-      description: "Cache keys must include tenant isolation"
+      description: "Cache keys phải bao gồm tenant isolation"
     - name: "StampedeProtection"
-      description: "High-concurrency cache misses must not cause thundering herd"
+      description: "Cache miss đồng thời không được gây thundering herd"
     - name: "CDNCacheControl"
-      description: "CDN responses must have explicit Cache-Control headers"
+      description: "CDN responses phải có Cache-Control headers rõ ràng"
+    - name: "MultiTierConsistency"
+      description: "Multi-tier cache phải đồng bộ khi invalidate"
   file_contributions:
     infrastructure:
+      # FastAPI infrastructure
       - path: "app/cache/redis.py"
         file_type: "redis_client"
         template: "cp09_cache/redis.py.jinja2"
@@ -79,6 +103,22 @@ pack:
         template: "cp09_cache/cache_strategy.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null
+      - path: "app/cache/cdn_cache.py"
+        file_type: "cdn_cache"
+        template: "cp09_cache/cdn_cache.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/cache/stampede_prevention.py"
+        file_type: "stampede_prevention"
+        template: "cp09_cache/stampede_prevention.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/cache/cache_warmup.py"
+        file_type: "cache_warmup"
+        template: "cp09_cache/cache_warmup.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # NestJS infrastructure
       - path: "src/cache/redis.module.ts"
         file_type: "redis_module"
         template: "cp09_cache/redis.module.ts.jinja2"
@@ -89,6 +129,27 @@ pack:
         template: "cp09_cache/cache.interceptor.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
+      - path: "src/cache/cdn_cache.ts"
+        file_type: "cdn_cache"
+        template: "cp09_cache/cdn_cache.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/cache/stampede_prevention.ts"
+        file_type: "stampede_prevention"
+        template: "cp09_cache/stampede_prevention.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/cache/cache_warmup.ts"
+        file_type: "cache_warmup"
+        template: "cp09_cache/cache_warmup.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/cache/multi_tier.ts"
+        file_type: "multi_tier_cache"
+        template: "cp09_cache/multi_tier.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      # Angular infrastructure
       - path: "src/app/core/cache/cache.module.ts"
         file_type: "cache_module"
         template: "cp09_cache/cache.module.ts.jinja2"
@@ -104,6 +165,7 @@ pack:
         template: "cp09_cache/cache.interceptor.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
+      # React infrastructure
       - path: "src/cache/CacheProvider.tsx"
         file_type: "cache_provider"
         template: "cp09_cache/CacheProvider.tsx.jinja2"

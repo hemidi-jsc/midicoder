@@ -34,6 +34,7 @@ class CacheBackend(str, Enum):
     """Enum các backend cache được hỗ trợ."""
     REDIS = "redis"
     MEMORY = "memory"
+    MEMCACHED = "memcached"
 
 
 class InvalidationStrategy(str, Enum):
@@ -47,6 +48,7 @@ class InvalidationStrategy(str, Enum):
 _BACKEND_MAP = {
     "redis": CacheBackend.REDIS,
     "memory": CacheBackend.MEMORY,
+    "memcached": CacheBackend.MEMCACHED,
 }
 
 _STRATEGY_MAP = {
@@ -471,7 +473,8 @@ class CacheMetrics:
 @dataclass
 class CacheCollection:
     """
-    Collection chứa tất cả cache profiles, strategies, rules, warm configs, metrics.
+    Collection chứa tất cả cache profiles, strategies, rules, warm configs, metrics
+    và advanced configurations (CDN, Stampede, Multi-tier, Warmup).
 
     Attributes:
         profiles: Danh sách cache profiles
@@ -479,12 +482,20 @@ class CacheCollection:
         invalidation_rules: Danh sách invalidation rules
         warm_configs: Danh sách warm-up configs
         metrics: Danh sách cache metrics
+        cdn_layers: Danh sách CDN cache layers
+        stampede_prevention: Config stampede prevention
+        tiers: Danh sách cache tiers (multi-tier)
+        warmup_config: Cache warmup strategy config
     """
     profiles: list[CacheProfile] = field(default_factory=list)
     strategies: list[CacheStrategy] = field(default_factory=list)
     invalidation_rules: list[CacheInvalidationRule] = field(default_factory=list)
     warm_configs: list[CacheWarmConfig] = field(default_factory=list)
     metrics: list[CacheMetrics] = field(default_factory=list)
+    cdn_layers: list[CDNCacheLayer] = field(default_factory=list)
+    stampede_prevention: Optional["StampedePrevention"] = None
+    tiers: list["CacheTier"] = field(default_factory=list)
+    warmup_config: Optional["CacheWarmupConfig"] = None
 
     def add_profile(self, profile: CacheProfile) -> None:
         """Thêm profile vào collection."""
@@ -505,6 +516,22 @@ class CacheCollection:
     def add_metrics(self, metrics: CacheMetrics) -> None:
         """Thêm metrics vào collection."""
         self.metrics.append(metrics)
+
+    def add_cdn_layer(self, layer: CDNCacheLayer) -> None:
+        """Thêm CDN cache layer vào collection."""
+        self.cdn_layers.append(layer)
+
+    def set_stampede_prevention(self, config: StampedePrevention) -> None:
+        """Đặt stampede prevention config."""
+        self.stampede_prevention = config
+
+    def add_tier(self, tier: CacheTier) -> None:
+        """Thêm cache tier vào collection."""
+        self.tiers.append(tier)
+
+    def set_warmup_config(self, config: CacheWarmupConfig) -> None:
+        """Đặt warmup config."""
+        self.warmup_config = config
 
     @property
     def total_count(self) -> int:
@@ -538,15 +565,28 @@ class CacheCollection:
         """Lọc các profiles dùng Memory backend."""
         return [p for p in self.profiles if p.backend == CacheBackend.MEMORY]
 
+    def memcached_profiles(self) -> list[CacheProfile]:
+        """Lọc các profiles dùng Memcached backend."""
+        return [p for p in self.profiles if p.backend == CacheBackend.MEMCACHED]
+
     def to_dict(self) -> dict[str, Any]:
         """Chuyển collection sang dict format."""
-        return {
+        result: dict[str, Any] = {
             "profiles": [p.to_dict() for p in self.profiles],
             "strategies": [s.to_dict() for s in self.strategies],
             "invalidation_rules": [r.to_dict() for r in self.invalidation_rules],
             "warm_configs": [w.to_dict() for w in self.warm_configs],
             "metrics": [m.to_dict() for m in self.metrics],
         }
+        if self.cdn_layers:
+            result["cdn_layers"] = [c.to_dict() for c in self.cdn_layers]
+        if self.stampede_prevention:
+            result["stampede_prevention"] = self.stampede_prevention.to_dict()
+        if self.tiers:
+            result["tiers"] = [t.to_dict() for t in self.tiers]
+        if self.warmup_config:
+            result["warmup_config"] = self.warmup_config.to_dict()
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CacheCollection":
@@ -561,6 +601,15 @@ class CacheCollection:
             CacheWarmConfig.from_dict(w) for w in data.get("warm_configs", [])
         ]
         result.metrics = [CacheMetrics.from_dict(m) for m in data.get("metrics", [])]
+        # Advanced fields
+        if "cdn_layers" in data:
+            result.cdn_layers = [CDNCacheLayer.from_dict(c) for c in data["cdn_layers"]]
+        if "stampede_prevention" in data:
+            result.stampede_prevention = StampedePrevention.from_dict(data["stampede_prevention"])
+        if "tiers" in data:
+            result.tiers = [CacheTier.from_dict(t) for t in data["tiers"]]
+        if "warmup_config" in data:
+            result.warmup_config = CacheWarmupConfig.from_dict(data["warmup_config"])
         return result
 
 

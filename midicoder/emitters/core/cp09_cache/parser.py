@@ -6,7 +6,7 @@ Module này chứa CacheParser để parse cache config từ MIR metadata
 và từ YAML string thành CacheCollection.
 
 Author: Midicoder Team
-Version: 1.0.0
+Version: 1.1.0
 """
 
 from __future__ import annotations
@@ -26,6 +26,12 @@ from midicoder.emitters.core.cp09_cache.models import (
     CacheCollection,
     _BACKEND_MAP,
     _STRATEGY_MAP,
+    CDNCacheLayer,
+    StampedePrevention,
+    CacheTier,
+    CacheWarmupConfig,
+    StampedePreventionStrategy,
+    CacheWarmupStrategy,
 )
 
 
@@ -71,7 +77,8 @@ class CacheParser:
 
         Args:
             metadata: Dict chứa cache_profiles, strategies, invalidation_rules,
-                      warm_configs, metrics
+                      warm_configs, metrics, cdn_layers, stampede_prevention,
+                      tiers, warmup_config
 
         Returns:
             CacheCollection đầy đủ
@@ -112,6 +119,38 @@ class CacheParser:
                 collection.add_metrics(self._parse_metrics(metrics_data))
             except Exception:
                 continue
+
+        # Parse CDN layers
+        for cdn_data in metadata.get("cdn_layers", []):
+            try:
+                collection.add_cdn_layer(self._parse_cdn_layer(cdn_data))
+            except Exception:
+                continue
+
+        # Parse stampede prevention
+        if "stampede_prevention" in metadata:
+            try:
+                collection.set_stampede_prevention(
+                    self._parse_stampede_prevention(metadata["stampede_prevention"])
+                )
+            except Exception:
+                pass
+
+        # Parse cache tiers
+        for tier_data in metadata.get("tiers", []):
+            try:
+                collection.add_tier(self._parse_tier(tier_data))
+            except Exception:
+                continue
+
+        # Parse warmup config
+        if "warmup_config" in metadata:
+            try:
+                collection.set_warmup_config(
+                    self._parse_warmup_config(metadata["warmup_config"])
+                )
+            except Exception:
+                pass
 
         return collection
 
@@ -189,4 +228,52 @@ class CacheParser:
             avg_latency_ms=data.get("avg_latency_ms", 0.0),
             peak_memory_mb=data.get("peak_memory_mb", 0.0),
             tenant_scoped=data.get("tenant_scoped", True),
+        )
+
+    # ------------------------------------------------------------------
+    # Advanced model parsers
+    # ------------------------------------------------------------------
+
+    def _parse_cdn_layer(self, data: dict[str, Any]) -> CDNCacheLayer:
+        """Parse một CDN cache layer."""
+        return CDNCacheLayer.from_dict(data)
+
+    def _parse_stampede_prevention(self, data: dict[str, Any]) -> StampedePrevention:
+        """Parse stampede prevention config."""
+        strategy_str = data.get("strategy", "mutex")
+        try:
+            strategy = StampedePreventionStrategy(strategy_str)
+        except ValueError:
+            strategy = StampedePreventionStrategy.MUTEX
+        return StampedePrevention(
+            enabled=data.get("enabled", True),
+            strategy=strategy,
+            lock_ttl=data.get("lock_ttl", 10),
+            lock_timeout=data.get("lock_timeout", 5),
+            early_refresh_threshold=data.get("early_refresh_threshold", 0.8),
+            probabilistic_threshold=data.get("probabilistic_threshold", 0.1),
+            max_waiters=data.get("max_waiters", 100),
+            description=data.get("description", ""),
+        )
+
+    def _parse_tier(self, data: dict[str, Any]) -> CacheTier:
+        """Parse một cache tier."""
+        return CacheTier.from_dict(data)
+
+    def _parse_warmup_config(self, data: dict[str, Any]) -> CacheWarmupConfig:
+        """Parse cache warmup config."""
+        strategy_str = data.get("strategy", "on_startup")
+        try:
+            strategy = CacheWarmupStrategy(strategy_str)
+        except ValueError:
+            strategy = CacheWarmupStrategy.ON_STARTUP
+        return CacheWarmupConfig(
+            strategy=strategy,
+            schedule_cron=data.get("schedule_cron", ""),
+            warmup_keys=data.get("warmup_keys", []),
+            warmup_query=data.get("warmup_query", ""),
+            batch_size=data.get("batch_size", 100),
+            max_keys=data.get("max_keys", 10000),
+            parallelism=data.get("parallelism", 4),
+            description=data.get("description", ""),
         )

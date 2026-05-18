@@ -1,0 +1,239 @@
+/**
+ * Multi-Tier Cache cho NestJS.
+ *
+ * Hỗ trợ multi-tier caching (L1: memory, L2: Redis, L3: disk).
+ * Read: L1 → L2 → L3 → source
+ * Write: tất cả tiers
+ *
+ * CP09: Caching & Performance
+ */
+
+import { Injectable, Logger } from "@nestjs/common";
+import { Redis } from "ioredis";
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+/**
+ * In-memory L1 cache store.
+ */
+interface CacheEntry {
+  value: string;
+  expiresAt: number;
+}
+
+/**
+ * Multi-tier cache result.
+ */
+interface TierResult<T> {
+  value: T;
+  from: string; // tier name
+}
+
+// ============================================================================
+// Multi-Tier Cache Service
+// ============================================================================
+
+/**
+ * Multi-Tier Cache Service.
+ *
+ * Architecture:
+ * - L1: In-memory (fastest, smallest, short TTL)
+ * - L2: Redis (fast, larger, medium TTL)
+ * - L3: External (optional, largest, longest TTL)
+ */
+@Injectable()
+export class MultiTierCacheService {
+  private readonly logger = new Logger(MultiTierCacheService.name);
+  private readonly l1: Map<string, CacheEntry> = new Map();
+  private readonly redis: Redis | null;
+  private readonly maxL1Size: number;
+
+  constructor(redisClient?: Redis, maxL1Size?: number) {
+    this.redis = redisClient || null;
+    this.maxL1Size = maxL1Size || 1000;
+  }
+
+  /**
+   * Get value với multi-tier fallback.
+   *
+   * Read path: L1 → L2(Redis) → L3(loader)
+   * Khi miss ở tier cao hơn, populate ngược lại xuống L1.
+   *
+   * @param key - Cache key
+   * @param loader - Async function để load data khi tất cả tiers miss
+   * @param ttl - Time-to-live (giây)
+   * @param tenantId - Tenant ID (optional)
+   * @returns Cached hoặc loaded value
+   */
+  async get<T>(
+    key: string,
+    loader: () => Promise<T>,
+    ttl: number = 300,
+    tenantId?: string,
+  ): Promise<T> {
+    const fullKey = this._buildKey(key, tenantId);
+
+    // L1: In-memory check
+    const l1Entry = this.l1.get(fullKey);
+    if (l1Entry && l1Entry.expiresAt > Date.now()) {
+      try {
+        return JSON.parse(l1Entry.value) as T;
+      } catch {
+        return l1Entry.value as unknown as T;
+      }
+    }
+
+    // L2: Redis check
+    if (this.redis) {
+      const l2Value = await this.redis.get(fullKey);
+      if (l2Value !== null) {
+        // Populate L1
+        this._setL1(fullKey, l2Value, ttl);
+        try {
+          return JSON.parse(l2Value) as T;
+        } catch {
+          return l2Value as unknown as T;
+        }
+      }
+    }
+
+    // L3: Load from source
+    const value = await loader();
+    const serialized = JSON.stringify(value);
+
+    // Write-back to all tiers
+    this._setL1(fullKey, serialized, ttl);
+    if (this.redis) {
+      await this.redis.set(fullKey, serialized, "EX", ttl);
+    }
+
+    return value;
+  }
+
+  /**
+   * Set value vào tất cả tiers.
+   *
+   * @param key - Cache key
+   * @param value - Value để cache
+   * @param ttl - Time-to-live (giây)
+   * @param tenantId - Tenant ID (optional)
+   */
+  async set(
+    key: string,
+    value: any,
+    ttl: number = 300,
+    tenantId?: string,
+  ): Promise<void> {
+    const fullKey = this._buildKey(key, tenantId);
+    const serialized = JSON.stringify(value);
+
+    this._setL1(fullKey, serialized, ttl);
+    if (this.redis) {
+      await this.redis.set(fullKey, serialized, "EX", ttl);
+    }
+  }
+
+  /**
+   * Delete value từ tất cả tiers.
+   *
+   * @param key - Cache key
+   * @param tenantId - Tenant ID (optional)
+   * @returns True nếu xóa thành công ở ít nhất 1 tier
+   */
+  async delete(key: string, tenantId?: string): Promise<boolean> {
+    const fullKey = this._buildKey(key, tenantId);
+    let deleted = false;
+
+    this.l1.delete(fullKey);
+    deleted = true;
+
+    if (this.redis) {
+      await this.redis.del(fullKey);
+    }
+
+    return deleted;
+  }
+
+  /**
+   * Invalidate theo pattern.
+   *
+   * @param pattern - Glob pattern
+   * @param tenantId - Tenant ID (optional)
+   * @returns Số lượng keys đã xóa
+   */
+  async invalidate(pattern: string, tenantId?: string): Promise<number> {
+    const fullPattern = this._buildKey(pattern, tenantId);
+    let deleted = 0;
+
+    // L1: pattern match
+    for (const [key] of this.l1) {
+      if (this._matchPattern(key, fullPattern)) {
+        this.l1.delete(key);
+        deleted++;
+      }
+    }
+
+    // L2: Redis SCAN
+    if (this.redis) {
+      let cursor = "0";
+      do {
+        const [nextCursor, keys] = await this.redis.scan(
+          cursor,
+          "MATCH",
+          fullPattern,
+          "COUNT",
+          "100",
+        );
+        cursor = nextCursor;
+        if (keys.length > 0) {
+          await this.redis.del(...keys);
+          deleted += keys.length;
+        }
+      } while (cursor !== "0");
+    }
+
+    return deleted;
+  }
+
+  /**
+   * Clear toàn bộ L1 cache.
+   *
+   * @returns Số lượng entries đã xóa
+   */
+  clearL1(): number {
+    const size = this.l1.size;
+    this.l1.clear();
+    this.logger.log(`[MultiTierCache] Cleared L1: ${size} entries`);
+    return size;
+  }
+
+  // ------------------------------------------------------------------
+  // Internal
+  // ------------------------------------------------------------------
+
+  private _setL1(key: string, value: string, ttl: number): void {
+    // Evict oldest if at capacity
+    if (this.l1.size >= this.maxL1Size) {
+      const firstKey = this.l1.keys().next().value;
+      if (firstKey) this.l1.delete(firstKey);
+    }
+    this.l1.set(key, {
+      value,
+      expiresAt: Date.now() + ttl * 1000,
+    });
+  }
+
+  private _buildKey(key: string, tenantId?: string): string {
+    return tenantId ? `${tenantId}:${key}` : key;
+  }
+
+  private _matchPattern(key: string, pattern: string): boolean {
+    // Simple glob matching: convert glob to regex
+    const regex = new RegExp(
+      "^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$",
+    );
+    return regex.test(key);
+  }
+}

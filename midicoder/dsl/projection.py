@@ -982,19 +982,45 @@ class CacheParams(TypedDict, total=False):
     Tham số cho Cache nodes.
 
     Cache định nghĩa các cache configurations.
-    Bao gồm type, TTL, và evicton policies.
+    Bao gồm backend, TTL, serialization, tenant isolation, CDN, stampede prevention.
 
     Fields:
-        id: Định danh của cache
-        type: Loại cache (redis, memcached, in-memory)
-        name: Tên cache
-        config: Cache configuration
+        id: Định danh duy nhất của cache profile
+        backend: Loại cache (redis, memcached, memory)
+        name: Tên cache (alias)
+        ttl: Time-to-live mặc định (giây)
+        max_size: Kích thước tối đa của cache
+        serializer: Serializer cho cache data (json, pickle)
+        key_prefix: Prefix cho cache keys
+        tenant_isolated: Có enforce tenant isolation không (KPI-029)
+        strategy: Strategy caching (read_through, write_through, cache_aside)
+        invalidation_strategy: Invalidation strategy (pattern, tag, event)
+        cdn_enabled: Có enable CDN cache không
+        cdn_provider: CDN provider (cloudflare, cloudfront, fastly, akamai)
+        stampede_prevention: Có enable stampede prevention không
+        stampede_strategy: Stampede strategy (mutex, early_update, probabilistic, lease)
+        multi_tier: Có enable multi-tier cache không
+        warmup_enabled: Có enable cache warmup không
+        config: Cache configuration (legacy, backward compat)
         tags: Danh sách tags
     """
 
     id: str
-    type: str
+    backend: str
     name: str
+    ttl: int
+    max_size: int
+    serializer: str
+    key_prefix: str
+    tenant_isolated: bool
+    strategy: str
+    invalidation_strategy: str
+    cdn_enabled: bool
+    cdn_provider: str
+    stampede_prevention: bool
+    stampede_strategy: str
+    multi_tier: bool
+    warmup_enabled: bool
     config: dict[str, Any]
     tags: list[str]
 

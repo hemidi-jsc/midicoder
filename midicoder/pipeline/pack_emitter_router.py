@@ -136,6 +136,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "NestJSEventEmitter",
         "cp05_event",
     ),
+    # CP09 – Cache (FastAPI)
+    "cp09.cache.fastapi": (
+        "midicoder.emitters.core.cp09_cache.fastapi",
+        "FastAPICacheEmitter",
+        "cp09_cache",
+    ),
+    # CP09 – Cache (NestJS)
+    "cp09.cache.nestjs": (
+        "midicoder.emitters.core.cp09_cache.nestjs",
+        "NestJSCacheEmitter",
+        "cp09_cache",
+    ),
+    # CP09 – Cache (Angular)
+    "cp09.cache.angular": (
+        "midicoder.emitters.core.cp09_cache.angular",
+        "AngularEmitter",
+        "cp09_cache",
+    ),
+    # CP09 – Cache (React)
+    "cp09.cache.react": (
+        "midicoder.emitters.core.cp09_cache.react",
+        "ReactEmitter",
+        "cp09_cache",
+    ),
 }
 
 
@@ -208,12 +232,20 @@ def _parse_event_dict(raw: dict[str, Any]) -> Any:
     return parser.parse([raw])
 
 
+def _parse_cache_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw MIR metadata into a CP09 CacheCollection."""
+    from midicoder.emitters.core.cp09_cache.parser import CacheParser
+    parser = CacheParser()
+    return parser.parse_from_metadata(raw)
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
     "cp03_auth": _parse_auth_dict,
     "cp10_search": _parse_search_dict,
     "cp05_event": _parse_event_dict,
+    "cp09_cache": _parse_cache_dict,
 }
 
 
