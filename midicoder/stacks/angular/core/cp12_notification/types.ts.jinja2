@@ -1,0 +1,162 @@
+/**
+ * Notification Types - CP12: Notification & Communication
+ *
+ * TypeScript interfaces và types cho notification system (Angular).
+ */
+
+/** Các kênh notification được hỗ trợ. */
+export type NotificationChannel = 'email' | 'sms' | 'push' | 'webhook' | 'in_app';
+
+/** Delivery status. */
+export type DeliveryStatus = 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced' | 'opened' | 'clicked';
+
+/** Webhook auth type. */
+export type WebhookAuthType = 'none' | 'basic' | 'bearer' | 'hmac';
+
+/** Request để dispatch notification. */
+export interface DispatchRequest {
+  /** ID của template. */
+  template_id: string;
+  /** Người nhận (email, phone, user_id). */
+  recipient: string;
+  /** Channel để gửi. */
+  channel: NotificationChannel;
+  /** Variable values cho template rendering. */
+  payload?: Record<string, any>;
+}
+
+/** Response sau khi dispatch notification. */
+export interface DispatchResponse {
+  /** Status kết quả (sent, failed, bounced). */
+  status: string;
+  /** Người nhận. */
+  recipient: string;
+  /** Channel đã sử dụng. */
+  channel: NotificationChannel;
+  /** Message bổ sung. */
+  message?: string;
+  /** Error code nếu failed. */
+  error_code?: string;
+}
+
+/** Request để đăng ký template mới. */
+export interface TemplateRequest {
+  /** ID duy nhất của template. */
+  template_id: string;
+  /** Channel của template. */
+  channel: NotificationChannel;
+  /** Subject line. */
+  subject?: string;
+  /** HTML body content. */
+  body_html?: string;
+  /** Plain text body content. */
+  body_text?: string;
+  /** Variable names trong template. */
+  variables?: string[];
+  /** Locale code. */
+  locale?: string;
+}
+
+/** Notification template. */
+export interface NotificationTemplate {
+  template_id: string;
+  channel: NotificationChannel;
+  subject: string;
+  body_html: string;
+  body_text: string;
+  variables?: string[];
+  locale: string;
+}
+
+/** Dispatch log entry. */
+export interface DispatchLogEntry {
+  template_id: string;
+  recipient: string;
+  channel: NotificationChannel;
+  status: string;
+  timestamp: string;
+}
+
+/** Delivery attempt record. */
+export interface DeliveryAttempt {
+  /** Unique ID. */
+  attemptId: string;
+  /** Attempt number. */
+  attemptNumber: number;
+  /** Timestamp. */
+  timestamp: string;
+  /** Status. */
+  status: string;
+  /** HTTP response code. */
+  responseCode: number;
+  /** Response body. */
+  responseBody: string;
+  /** Error message. */
+  errorMessage: string;
+}
+
+/** Delivery tracking record (end-to-end). */
+export interface DeliveryTracking {
+  /** Unique tracking ID. */
+  trackingId: string;
+  /** Dispatch ID. */
+  dispatchId: string;
+  /** Recipient. */
+  recipient: string;
+  /** Channel. */
+  channel: NotificationChannel;
+  /** Current delivery status. */
+  status: DeliveryStatus;
+  /** Attempt records. */
+  attempts: DeliveryAttempt[];
+  /** Created at. */
+  createdAt: string;
+  /** Updated at. */
+  updatedAt: string;
+  /** Delivered at. */
+  deliveredAt?: string;
+  /** Opened at. */
+  openedAt?: string;
+  /** Clicked at. */
+  clickedAt?: string;
+}
+
+/** Webhook config. */
+export interface WebhookConfig {
+  /** Webhook URL. */
+  url: string;
+  /** HTTP method. */
+  method?: 'POST' | 'PUT' | 'PATCH';
+  /** Auth type. */
+  authType?: WebhookAuthType;
+  /** Auth header. */
+  authHeader?: string;
+  /** HMAC secret. */
+  authSecret?: string;
+  /** Custom headers. */
+  headers?: Record<string, string>;
+  /** Timeout seconds. */
+  timeoutSeconds?: number;
+  /** Max retries. */
+  maxRetries?: number;
+}
+
+/** Webhook delivery result. */
+export interface WebhookDeliveryResult {
+  /** Status. */
+  status: 'sent' | 'failed';
+  /** Dispatch ID. */
+  dispatchId?: string;
+  /** URL. */
+  url: string;
+  /** HTTP status code. */
+  statusCode: number;
+  /** Response body. */
+  responseBody: string;
+  /** Attempts. */
+  attempts: number;
+  /** Timestamp. */
+  timestamp: string;
+  /** Error message. */
+  error?: string;
+}

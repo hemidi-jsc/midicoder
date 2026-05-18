@@ -7,10 +7,16 @@ Module này định nghĩa các data models cho CP12 Notification Emitter:
 - NotificationDispatch: Dispatch request cho notification
 - NotificationProvider: Provider config
 - DispatchResult: Kết quả sau khi dispatch
+- WebhookConfig, WebhookDelivery: Webhook channel
+- ChatIntegrationConfig, ChatPlatform: Chat integration
+- DeliveryStatus, DeliveryAttempt, DeliveryTracking: Delivery tracking
+- ABTestVariant, ABTestConfig: A/B Testing
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -115,12 +121,7 @@ class NotificationTemplate:
         return result
 
     def to_dict(self) -> dict[str, Any]:
-        """
-        Chuyển NotificationTemplate sang dictionary.
-
-        Returns:
-            Dictionary representation của NotificationTemplate
-        """
+        """Chuyển NotificationTemplate sang dictionary."""
         return {
             "template_id": self.template_id,
             "channel": self.channel.value,
@@ -133,15 +134,7 @@ class NotificationTemplate:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "NotificationTemplate":
-        """
-        Tạo NotificationTemplate từ dictionary.
-
-        Args:
-            data: Dictionary chứa template data
-
-        Returns:
-            NotificationTemplate instance
-        """
+        """Tạo NotificationTemplate từ dictionary."""
         channel_value = data.get("channel", "email")
         channel = NotificationChannel(channel_value)
 
@@ -214,12 +207,7 @@ class NotificationDispatch:
         self.error_message = reason
 
     def to_dict(self) -> dict[str, Any]:
-        """
-        Chuyển NotificationDispatch sang dictionary.
-
-        Returns:
-            Dictionary representation của NotificationDispatch
-        """
+        """Chuyển NotificationDispatch sang dictionary."""
         result: dict[str, Any] = {
             "dispatch_id": self.dispatch_id,
             "template_ref": self.template_ref,
@@ -270,12 +258,7 @@ class NotificationProvider:
             raise ValueError("provider_id không được để rỗng")
 
     def to_dict(self) -> dict[str, Any]:
-        """
-        Chuyển NotificationProvider sang dictionary.
-
-        Returns:
-            Dictionary representation của NotificationProvider
-        """
+        """Chuyển NotificationProvider sang dictionary."""
         return {
             "provider_id": self.provider_id,
             "channel": self.channel.value,
@@ -286,15 +269,7 @@ class NotificationProvider:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "NotificationProvider":
-        """
-        Tạo NotificationProvider từ dictionary.
-
-        Args:
-            data: Dictionary chứa provider data
-
-        Returns:
-            NotificationProvider instance
-        """
+        """Tạo NotificationProvider từ dictionary."""
         channel_value = data.get("channel", "email")
         channel = NotificationChannel(channel_value)
 
@@ -333,12 +308,7 @@ class DispatchResult:
     error_code: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """
-        Chuyển DispatchResult sang dictionary.
-
-        Returns:
-            Dictionary representation của DispatchResult
-        """
+        """Chuyển DispatchResult sang dictionary."""
         result: dict[str, Any] = {
             "dispatch_id": self.dispatch_id,
             "status": self.status,
@@ -372,6 +342,7 @@ class WebhookConfig:
         method: HTTP method (POST, PUT, PATCH)
         auth_type: Auth type (none, basic, bearer, hmac)
         auth_header: Auth header (Bearer token, Basic credentials)
+        auth_secret: HMAC secret key
         headers: Custom headers
         timeout_seconds: HTTP timeout
         max_retries: Số lần retry delivery
@@ -383,6 +354,7 @@ class WebhookConfig:
     method: str = "POST"
     auth_type: WebhookAuthType = WebhookAuthType.NONE
     auth_header: str = ""
+    auth_secret: str = ""
     headers: dict[str, str] = field(default_factory=dict)
     timeout_seconds: int = 30
     max_retries: int = 3
@@ -393,9 +365,12 @@ class WebhookConfig:
     def __post_init__(self) -> None:
         """Validate webhook config."""
         if not self.url or not self.url.strip():
-            EM.raise_error(ErrorCode.CP12_EMPTY_REQUIRED_FIELD, field="url")
+            raise ValueError("url không được để rỗng")
         if self.method.upper() not in ("POST", "PUT", "PATCH"):
-            EM.raise_error(ErrorCode.CP12_CHANNEL_CONFIG_INVALID, channel="webhook", field="method")
+            raise ValueError(
+                f"method không hợp lệ: {self.method}. "
+                "Phải là POST, PUT, hoặc PATCH"
+            )
         if self.timeout_seconds < 1:
             self.timeout_seconds = 30
 
@@ -406,6 +381,7 @@ class WebhookConfig:
             "method": self.method,
             "auth_type": self.auth_type.value,
             "auth_header": self.auth_header,
+            "auth_secret": self.auth_secret,
             "headers": self.headers,
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
@@ -422,6 +398,7 @@ class WebhookConfig:
             method=data.get("method", "POST"),
             auth_type=WebhookAuthType(data.get("auth_type", "none")),
             auth_header=data.get("auth_header", ""),
+            auth_secret=data.get("auth_secret", ""),
             headers=data.get("headers", {}),
             timeout_seconds=data.get("timeout_seconds", 30),
             max_retries=data.get("max_retries", 3),
@@ -429,6 +406,24 @@ class WebhookConfig:
             payload_template=data.get("payload_template", ""),
             description=data.get("description", ""),
         )
+
+    def compute_hmac_signature(self, body: str) -> str:
+        """
+        Tính HMAC signature cho webhook payload.
+
+        Args:
+            body: Body string cần sign
+
+        Returns:
+            HMAC-SHA256 signature (hex)
+        """
+        if not self.auth_secret:
+            return ""
+        return hmac.new(
+            self.auth_secret.encode("utf-8"),
+            body.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
 
 @dataclass
@@ -452,7 +447,20 @@ class WebhookDelivery:
     last_response_body: str = ""
     scheduled_at: str | None = None
     delivered_at: str | None = None
-    delivery_id: str = field(default_factory=lambda: str(uuid4()))
+    delivery_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def mark_attempted(self, response_code: int, response_body: str) -> None:
+        """Ghi nhận một lần thử delivery."""
+        self.attempts += 1
+        self.last_response_code = response_code
+        self.last_response_body = response_body
+        if 200 <= response_code < 300:
+            self.status = "delivered"
+            self.delivered_at = datetime.now().isoformat()
+        elif response_code >= 500 or response_code == 429:
+            self.status = "retried"
+        else:
+            self.status = "failed"
 
     def to_dict(self) -> dict[str, Any]:
         """Chuyển webhook delivery sang dict."""
@@ -555,6 +563,351 @@ class ChatIntegrationConfig:
 
 
 # ============================================================================
+# Delivery Tracking
+# ============================================================================
+
+
+class DeliveryStatus(str, Enum):
+    """Trạng thái delivery của notification."""
+    PENDING = "pending"
+    SENT = "sent"
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    BOUNCED = "bounced"
+    OPENED = "opened"
+    CLICKED = "clicked"
+
+
+@dataclass
+class DeliveryAttempt:
+    """Record của một lần thử delivery.
+
+    Attributes:
+        attempt_id: UUID định danh duy nhất
+        attempt_number: Số thứ tự của attempt
+        timestamp: Thời điểm attempt
+        status: Status của attempt
+        response_code: HTTP response code (nếu có)
+        response_body: Response body (nếu có)
+        error_message: Error message (nếu có)
+    """
+    attempt_number: int
+    timestamp: str
+    status: str
+    response_code: int = 0
+    response_body: str = ""
+    error_message: str = ""
+    attempt_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DeliveryAttempt sang dict."""
+        return {
+            "attempt_id": self.attempt_id,
+            "attempt_number": self.attempt_number,
+            "timestamp": self.timestamp,
+            "status": self.status,
+            "response_code": self.response_code,
+            "response_body": self.response_body,
+            "error_message": self.error_message,
+        }
+
+
+@dataclass
+class DeliveryTracking:
+    """Tracking record cho notification delivery (end-to-end).
+
+    Theo dõi lifecycle đầy đủ của một notification từ lúc pending
+    đến khi delivered/opened/clicked.
+
+    Attributes:
+        tracking_id: UUID định danh duy nhất
+        dispatch_id: Reference đến dispatch ID
+        recipient: Người nhận
+        channel: Channel đã sử dụng
+        status: Delivery status hiện tại
+        attempts: Danh sách attempts
+        created_at: Thời điểm tạo tracking record
+        updated_at: Thời điểm cập nhật cuối
+        delivered_at: Thời điểm delivered thành công
+        opened_at: Thời điểm opened (nếu có)
+        clicked_at: Thời điểm clicked (nếu có)
+        metadata: Metadata bổ sung
+    """
+    dispatch_id: str
+    recipient: str
+    channel: NotificationChannel
+    status: DeliveryStatus = DeliveryStatus.PENDING
+    attempts: list[DeliveryAttempt] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    delivered_at: str | None = None
+    opened_at: str | None = None
+    clicked_at: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    tracking_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def add_attempt(
+        self,
+        status: str,
+        response_code: int = 0,
+        response_body: str = "",
+        error_message: str = "",
+    ) -> DeliveryAttempt:
+        """Ghi nhận một lần thử delivery."""
+        attempt = DeliveryAttempt(
+            attempt_number=len(self.attempts) + 1,
+            timestamp=datetime.now().isoformat(),
+            status=status,
+            response_code=response_code,
+            response_body=response_body,
+            error_message=error_message,
+        )
+        self.attempts.append(attempt)
+        self.updated_at = attempt.timestamp
+
+        if status == "sent":
+            self.status = DeliveryStatus.SENT
+        elif status == "delivered":
+            self.status = DeliveryStatus.DELIVERED
+            self.delivered_at = attempt.timestamp
+        elif status == "failed":
+            self.status = DeliveryStatus.FAILED
+        elif status == "bounced":
+            self.status = DeliveryStatus.BOUNCED
+
+        return attempt
+
+    def mark_opened(self) -> None:
+        """Mark notification đã được mở."""
+        self.opened_at = datetime.now().isoformat()
+        self.status = DeliveryStatus.OPENED
+        self.updated_at = self.opened_at
+
+    def mark_clicked(self) -> None:
+        """Mark notification đã được click."""
+        self.clicked_at = datetime.now().isoformat()
+        self.status = DeliveryStatus.CLICKED
+        self.updated_at = self.clicked_at
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DeliveryTracking sang dict."""
+        return {
+            "tracking_id": self.tracking_id,
+            "dispatch_id": self.dispatch_id,
+            "recipient": self.recipient,
+            "channel": self.channel.value,
+            "status": self.status.value,
+            "attempts": [a.to_dict() for a in self.attempts],
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "delivered_at": self.delivered_at,
+            "opened_at": self.opened_at,
+            "clicked_at": self.clicked_at,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DeliveryTracking":
+        """Tạo DeliveryTracking từ dict."""
+        channel_value = data.get("channel", "email")
+        channel = NotificationChannel(channel_value)
+
+        status_value = data.get("status", "pending")
+        status = DeliveryStatus(status_value)
+
+        attempts_data = data.get("attempts", [])
+        attempts = [
+            DeliveryAttempt(
+                attempt_id=a.get("attempt_id", ""),
+                attempt_number=a.get("attempt_number", 0),
+                timestamp=a.get("timestamp", ""),
+                status=a.get("status", ""),
+                response_code=a.get("response_code", 0),
+                response_body=a.get("response_body", ""),
+                error_message=a.get("error_message", ""),
+            )
+            for a in attempts_data
+        ]
+
+        return cls(
+            tracking_id=data.get("tracking_id", ""),
+            dispatch_id=data.get("dispatch_id", ""),
+            recipient=data.get("recipient", ""),
+            channel=channel,
+            status=status,
+            attempts=attempts,
+            created_at=data.get("created_at", ""),
+            updated_at=data.get("updated_at", ""),
+            delivered_at=data.get("delivered_at"),
+            opened_at=data.get("opened_at"),
+            clicked_at=data.get("clicked_at"),
+            metadata=data.get("metadata", {}),
+        )
+
+
+# ============================================================================
+# A/B Testing
+# ============================================================================
+
+
+@dataclass
+class ABTestVariant:
+    """Variant trong A/B test cho notification.
+
+    Mỗi variant đại diện cho một phiên bản khác nhau của notification
+    (subject khác, content khác, gửi giờ khác, ...)
+
+    Attributes:
+        variant_id: ID của variant (vd: "A", "B", "control")
+        template_id: Template ID cho variant này
+        weight: Trọng số (tỷ lệ % người nhận được variant này)
+        name: Tên hiển thị của variant
+        description: Mô tả variant
+    """
+    variant_id: str
+    template_id: str
+    weight: float = 50.0
+    name: str = ""
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate variant."""
+        if not self.variant_id or not self.variant_id.strip():
+            raise ValueError("variant_id không được để rỗng")
+        if self.weight < 0 or self.weight > 100:
+            raise ValueError(
+                f"weight phải trong khoảng 0-100, nhận được: {self.weight}"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển ABTestVariant sang dict."""
+        return {
+            "variant_id": self.variant_id,
+            "template_id": self.template_id,
+            "weight": self.weight,
+            "name": self.name,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ABTestVariant":
+        """Tạo ABTestVariant từ dict."""
+        return cls(
+            variant_id=data.get("variant_id", ""),
+            template_id=data.get("template_id", ""),
+            weight=data.get("weight", 50.0),
+            name=data.get("name", ""),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class ABTestConfig:
+    """Configuration cho A/B test notification.
+
+    Cho phép test nhiều variant của notification để tìm ra
+    phiên bản có engagement cao nhất.
+
+    Attributes:
+        test_id: UUID định danh duy nhất của A/B test
+        name: Tên của test
+        channel: Channel để test (email, push, ...)
+        variants: Danh sách variants
+        start_at: Thời điểm bắt đầu test
+        end_at: Thời điểm kết thúc test (nullable)
+        is_active: Test có đang active không
+        metric: Metric để đánh giá (open_rate, click_rate, conversion_rate)
+        description: Mô tả test
+    """
+    name: str
+    channel: NotificationChannel
+    variants: list[ABTestVariant] = field(default_factory=list)
+    start_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    end_at: str | None = None
+    is_active: bool = True
+    metric: str = "open_rate"
+    description: str = ""
+    test_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def __post_init__(self) -> None:
+        """Validate A/B test config."""
+        if not self.name or not self.name.strip():
+            raise ValueError("name không được để rỗng")
+        if len(self.variants) < 2:
+            raise ValueError(
+                "A/B test cần ít nhất 2 variants"
+            )
+        total_weight = sum(v.weight for v in self.variants)
+        if abs(total_weight - 100.0) > 0.01:
+            raise ValueError(
+                f"Total weight của variants phải bằng 100, nhận được: {total_weight}"
+            )
+
+    def select_variant(self, recipient_hash: int) -> ABTestVariant:
+        """
+        Chọn variant dựa trên hash của recipient (deterministic).
+
+        Args:
+            recipient_hash: Hash value của recipient
+
+        Returns:
+            ABTestVariant được chọn
+        """
+        bucket = recipient_hash % 100
+        cumulative = 0.0
+        for variant in self.variants:
+            cumulative += variant.weight
+            if bucket < cumulative:
+                return variant
+        return self.variants[-1]
+
+    @staticmethod
+    def hash_recipient(recipient: str) -> int:
+        """Tính hash của recipient để chọn variant deterministic."""
+        return int(hashlib.sha256(recipient.encode()).hexdigest(), 16)
+
+    def get_variant_for_recipient(self, recipient: str) -> ABTestVariant:
+        """Lấy variant cho recipient cụ thể (deterministic)."""
+        h = self.hash_recipient(recipient)
+        return self.select_variant(h)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển ABTestConfig sang dict."""
+        return {
+            "test_id": self.test_id,
+            "name": self.name,
+            "channel": self.channel.value,
+            "variants": [v.to_dict() for v in self.variants],
+            "start_at": self.start_at,
+            "end_at": self.end_at,
+            "is_active": self.is_active,
+            "metric": self.metric,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ABTestConfig":
+        """Tạo ABTestConfig từ dict."""
+        channel_value = data.get("channel", "email")
+        channel = NotificationChannel(channel_value)
+
+        variants_data = data.get("variants", [])
+        variants = [ABTestVariant.from_dict(v) for v in variants_data]
+
+        return cls(
+            test_id=data.get("test_id", ""),
+            name=data.get("name", ""),
+            channel=channel,
+            variants=variants,
+            start_at=data.get("start_at", ""),
+            end_at=data.get("end_at"),
+            is_active=data.get("is_active", True),
+            metric=data.get("metric", "open_rate"),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
 # Exports
 # ============================================================================
 
@@ -566,6 +919,12 @@ __all__ = [
     "DispatchResult",
     "WebhookConfig",
     "WebhookDelivery",
+    "WebhookAuthType",
     "ChatIntegrationConfig",
     "ChatPlatform",
+    "DeliveryStatus",
+    "DeliveryAttempt",
+    "DeliveryTracking",
+    "ABTestVariant",
+    "ABTestConfig",
 ]

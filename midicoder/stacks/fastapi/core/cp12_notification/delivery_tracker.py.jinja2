@@ -1,0 +1,288 @@
+"""
+Delivery Tracker cho FastAPI.
+
+Cung cấp:
+- End-to-end delivery tracking cho tất cả notification channels
+- Theo dõi lifecycle: pending → sent → delivered → opened → clicked
+- Delivery attempt log
+- Query và report delivery status
+
+CP12: Notification & Communication
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class DeliveryStatus(str, Enum):
+    """Trạng thái delivery của notification."""
+    PENDING = "pending"
+    SENT = "sent"
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    BOUNCED = "bounced"
+    OPENED = "opened"
+    CLICKED = "clicked"
+
+
+@dataclass
+class DeliveryAttempt:
+    """Record của một lần thử delivery."""
+    attempt_number: int
+    timestamp: str
+    status: str
+    response_code: int = 0
+    response_body: str = ""
+    error_message: str = ""
+    attempt_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+
+@dataclass
+class DeliveryTracking:
+    """Tracking record cho notification delivery."""
+    dispatch_id: str
+    recipient: str
+    channel: str
+    status: str = "pending"
+    attempts: list[DeliveryAttempt] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    delivered_at: Optional[str] = None
+    opened_at: Optional[str] = None
+    clicked_at: Optional[str] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    tracking_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def add_attempt(
+        self,
+        status: str,
+        response_code: int = 0,
+        response_body: str = "",
+        error_message: str = "",
+    ) -> DeliveryAttempt:
+        """Ghi nhận một lần thử delivery."""
+        attempt = DeliveryAttempt(
+            attempt_number=len(self.attempts) + 1,
+            timestamp=datetime.now().isoformat(),
+            status=status,
+            response_code=response_code,
+            response_body=response_body,
+            error_message=error_message,
+        )
+        self.attempts.append(attempt)
+        self.updated_at = attempt.timestamp
+
+        if status == "sent":
+            self.status = "sent"
+        elif status == "delivered":
+            self.status = "delivered"
+            self.delivered_at = attempt.timestamp
+        elif status == "failed":
+            self.status = "failed"
+        elif status == "bounced":
+            self.status = "bounced"
+
+        return attempt
+
+    def mark_opened(self) -> None:
+        """Mark notification đã được mở."""
+        self.opened_at = datetime.now().isoformat()
+        self.status = "opened"
+        self.updated_at = self.opened_at
+
+    def mark_clicked(self) -> None:
+        """Mark notification đã được click."""
+        self.clicked_at = datetime.now().isoformat()
+        self.status = "clicked"
+        self.updated_at = self.clicked_at
+
+
+class DeliveryTracker:
+    """
+    Service cho delivery tracking.
+
+    Theo dõi lifecycle đầy đủ của notification từ lúc pending
+    đến khi delivered/opened/clicked.
+
+    Lưu trữ in-memory (trong production, replace bằng database).
+    """
+
+    def __init__(self) -> None:
+        """Khởi tạo DeliveryTracker."""
+        self._trackings: dict[str, DeliveryTracking] = {}
+
+    def create_tracking(
+        self,
+        dispatch_id: str,
+        recipient: str,
+        channel: str,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> DeliveryTracking:
+        """
+        Tạo tracking record mới.
+
+        Args:
+            dispatch_id: Dispatch ID liên quan
+            recipient: Người nhận
+            channel: Channel (email, sms, push, webhook)
+            metadata: Metadata bổ sung
+
+        Returns:
+            DeliveryTracking instance
+        """
+        tracking = DeliveryTracking(
+            dispatch_id=dispatch_id,
+            recipient=recipient,
+            channel=channel,
+            metadata=metadata or {},
+        )
+        self._trackings[tracking.tracking_id] = tracking
+        return tracking
+
+    def get_tracking(self, tracking_id: str) -> Optional[DeliveryTracking]:
+        """Lấy tracking record theo tracking_id."""
+        return self._trackings.get(tracking_id)
+
+    def get_by_dispatch(self, dispatch_id: str) -> Optional[DeliveryTracking]:
+        """Lấy tracking record theo dispatch_id."""
+        for tracking in self._trackings.values():
+            if tracking.dispatch_id == dispatch_id:
+                return tracking
+        return None
+
+    def record_attempt(
+        self,
+        tracking_id: str,
+        status: str,
+        response_code: int = 0,
+        response_body: str = "",
+        error_message: str = "",
+    ) -> Optional[DeliveryTracking]:
+        """
+        Ghi nhận delivery attempt.
+
+        Args:
+            tracking_id: Tracking ID
+            status: Status của attempt
+            response_code: HTTP response code (nếu có)
+            response_body: Response body (nếu có)
+            error_message: Error message (nếu có)
+
+        Returns:
+            DeliveryTracking đã cập nhật, hoặc None nếu không tìm thấy
+        """
+        tracking = self._trackings.get(tracking_id)
+        if not tracking:
+            return None
+
+        tracking.add_attempt(status, response_code, response_body, error_message)
+        return tracking
+
+    def mark_opened(self, tracking_id: str) -> Optional[DeliveryTracking]:
+        """Mark notification đã được mở."""
+        tracking = self._trackings.get(tracking_id)
+        if tracking:
+            tracking.mark_opened()
+        return tracking
+
+    def mark_clicked(self, tracking_id: str) -> Optional[DeliveryTracking]:
+        """Mark notification đã được click."""
+        tracking = self._trackings.get(tracking_id)
+        if tracking:
+            tracking.mark_clicked()
+        return tracking
+
+    def get_stats(self) -> dict[str, Any]:
+        """
+        Lấy thống kê delivery tổng quan.
+
+        Returns:
+            Dict với total, delivered, failed, bounced counts
+        """
+        stats = {
+            "total": len(self._trackings),
+            "pending": 0,
+            "sent": 0,
+            "delivered": 0,
+            "failed": 0,
+            "bounced": 0,
+            "opened": 0,
+            "clicked": 0,
+        }
+
+        for tracking in self._trackings.values():
+            status = tracking.status
+            if status in stats:
+                stats[status] += 1
+
+        return stats
+
+    def query_by_recipient(
+        self,
+        recipient: str,
+        limit: int = 50,
+    ) -> list[DeliveryTracking]:
+        """
+        Query tracking records theo recipient.
+
+        Args:
+            recipient: Người nhận
+            limit: Số record tối đa
+
+        Returns:
+            List of DeliveryTracking sorted by created_at desc
+        """
+        results = [
+            t for t in self._trackings.values()
+            if t.recipient == recipient
+        ]
+        results.sort(key=lambda t: t.created_at, reverse=True)
+        return results[:limit]
+
+    def query_by_channel(
+        self,
+        channel: str,
+        limit: int = 50,
+    ) -> list[DeliveryTracking]:
+        """
+        Query tracking records theo channel.
+
+        Args:
+            channel: Channel (email, sms, push, webhook)
+            limit: Số record tối đa
+
+        Returns:
+            List of DeliveryTracking sorted by created_at desc
+        """
+        results = [
+            t for t in self._trackings.values()
+            if t.channel == channel
+        ]
+        results.sort(key=lambda t: t.created_at, reverse=True)
+        return results[:limit]
+
+    def cleanup_before(self, timestamp: str) -> int:
+        """
+        Xóa tracking records cũ hơn timestamp.
+
+        Args:
+            timestamp: ISO timestamp — xóa tất cả records created_at < timestamp
+
+        Returns:
+            Số records đã xóa
+        """
+        keys_to_remove = [
+            k for k, v in self._trackings.items()
+            if v.created_at < timestamp
+        ]
+        for key in keys_to_remove:
+            del self._trackings[key]
+        return len(keys_to_remove)

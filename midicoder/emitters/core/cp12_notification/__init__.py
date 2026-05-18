@@ -2,15 +2,20 @@
 CP12: Notification & Communication Emitter.
 
 Module này cung cấp các class để generate notification code:
-- Models: NotificationChannel, NotificationTemplate, NotificationDispatch, NotificationProvider, DispatchResult
+- Models: NotificationChannel, NotificationTemplate, NotificationDispatch,
+           NotificationProvider, DispatchResult, WebhookConfig, WebhookDelivery,
+           ChatIntegrationConfig, ChatPlatform, DeliveryStatus, DeliveryAttempt,
+           DeliveryTracking, ABTestVariant, ABTestConfig
 - Parser: Parse notification definitions từ YAML
 - Template Engine: TemplateRenderer, TemplateValidator, RenderedTemplate
 - I18n: I18nTemplateRegistry cho multi-language templates
 - Rate Limiter: RateLimiter cho rate limiting per recipient
 - Retry Policy: RetryPolicy với exponential backoff
-- Providers: EmailGateway, SmsGateway, PushGateway (ABC) + SmtpEmailGateway
-- FastAPI Emitter: Generate notification service, router, models, tasks
-- NestJS Emitter: Generate NotificationModule, Service, Controller, DTOs
+- Providers: EmailGateway, SmsGateway, PushGateway, WebhookGateway (ABC)
+             + SmtpEmailGateway, SendGridEmailGateway, AwsSesEmailGateway,
+               TwilioSmsGateway, FirebasePushGateway, WebhookGatewayImpl
+- Recipes: Pattern recipes (SMTPEmailRecipe, SESEmailRecipe, SendGridEmailRecipe,
+           TwilioSMSRecipe, FCMRecipe, WebhookRecipe, DeliveryTrackingRecipe)
 
 CP12 depends on CP01 (Domain Model) và CP05 (Event-Driven Architecture).
 """
@@ -21,6 +26,16 @@ from midicoder.emitters.core.cp12_notification.models import (
     NotificationDispatch,
     NotificationProvider,
     DispatchResult,
+    WebhookConfig,
+    WebhookDelivery,
+    WebhookAuthType,
+    ChatIntegrationConfig,
+    ChatPlatform,
+    DeliveryStatus,
+    DeliveryAttempt,
+    DeliveryTracking,
+    ABTestVariant,
+    ABTestConfig,
 )
 from midicoder.emitters.core.cp12_notification.parser import (
     parse_notifications,
@@ -35,16 +50,26 @@ from midicoder.emitters.core.cp12_notification.template_engine import (
 from midicoder.emitters.core.cp12_notification.i18n import I18nTemplateRegistry
 from midicoder.emitters.core.cp12_notification.rate_limiter import RateLimiter
 from midicoder.emitters.core.cp12_notification.retry_policy import RetryPolicy
-from midicoder.emitters.core.cp12_notification.fastapi import FastAPINotificationEmitter
-from midicoder.emitters.core.cp12_notification.nestjs import NestJSNotificationEmitter
 from midicoder.emitters.core.cp12_notification.providers import (
     EmailGateway,
     SmsGateway,
     PushGateway,
+    WebhookGateway,
     SmtpEmailGateway,
     SendGridEmailGateway,
     AwsSesEmailGateway,
+    TwilioSmsGateway,
     FirebasePushGateway,
+    WebhookGatewayImpl,
+)
+from midicoder.emitters.core.cp12_notification.recipes import (
+    SMTPEmailRecipe,
+    SESEmailRecipe,
+    SendGridEmailRecipe,
+    TwilioSMSRecipe,
+    FCMRecipe,
+    WebhookRecipe,
+    DeliveryTrackingRecipe,
 )
 
 __all__ = [
@@ -54,6 +79,16 @@ __all__ = [
     "NotificationDispatch",
     "NotificationProvider",
     "DispatchResult",
+    "WebhookConfig",
+    "WebhookDelivery",
+    "WebhookAuthType",
+    "ChatIntegrationConfig",
+    "ChatPlatform",
+    "DeliveryStatus",
+    "DeliveryAttempt",
+    "DeliveryTracking",
+    "ABTestVariant",
+    "ABTestConfig",
     # Parser
     "parse_notifications",
     "parse_channels",
@@ -72,11 +107,19 @@ __all__ = [
     "EmailGateway",
     "SmsGateway",
     "PushGateway",
+    "WebhookGateway",
     "SmtpEmailGateway",
     "SendGridEmailGateway",
     "AwsSesEmailGateway",
+    "TwilioSmsGateway",
     "FirebasePushGateway",
-    # Emitters
-    "FastAPINotificationEmitter",
-    "NestJSNotificationEmitter",
+    "WebhookGatewayImpl",
+    # Recipes
+    "SMTPEmailRecipe",
+    "SESEmailRecipe",
+    "SendGridEmailRecipe",
+    "TwilioSMSRecipe",
+    "FCMRecipe",
+    "WebhookRecipe",
+    "DeliveryTrackingRecipe",
 ]

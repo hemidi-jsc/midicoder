@@ -1,0 +1,224 @@
+/**
+ * Webhook Service cho NestJS.
+ *
+ * Cung cấp:
+ * - HTTP webhook dispatch với auth (Bearer, HMAC-SHA256, Basic)
+ * - Retry với exponential backoff
+ * - Response tracking
+ * - Signature verification cho incoming webhooks
+ *
+ * CP12: Notification & Communication
+ */
+
+import { Injectable, Logger } from '@nestjs/common';
+import * as crypto from 'crypto';
+
+/** Auth type cho webhook. */
+export enum WebhookAuthType {
+  NONE = 'none',
+  BASIC = 'basic',
+  BEARER = 'bearer',
+  HMAC = 'hmac',
+}
+
+/** Config cho webhook dispatch. */
+export interface WebhookConfig {
+  /** Webhook endpoint URL. */
+  url: string;
+  /** HTTP method. */
+  method?: 'POST' | 'PUT' | 'PATCH';
+  /** Auth type. */
+  authType?: WebhookAuthType;
+  /** Auth header value (Bearer token, Basic credentials). */
+  authHeader?: string;
+  /** HMAC secret key. */
+  authSecret?: string;
+  /** Custom headers. */
+  headers?: Record<string, string>;
+  /** HTTP timeout (giây). */
+  timeoutSeconds?: number;
+  /** Số lần retry tối đa. */
+  maxRetries?: number;
+  /** Backoff giữa retries (giây). */
+  retryBackoffSeconds?: number;
+}
+
+/** Kết quả webhook delivery. */
+export interface WebhookDeliveryResult {
+  /** Status: sent hoặc failed. */
+  status: 'sent' | 'failed';
+  /** Dispatch ID. */
+  dispatchId?: string;
+  /** URL đã dispatch. */
+  url: string;
+  /** HTTP method. */
+  method: string;
+  /** HTTP status code. */
+  statusCode: number;
+  /** Response body. */
+  responseBody: string;
+  /** Số lần attempt. */
+  attempts: number;
+  /** Timestamp. */
+  timestamp: string;
+  /** Error message (nếu failed). */
+  error?: string;
+}
+
+@Injectable()
+export class WebhookService {
+  private readonly logger = new Logger(WebhookService.name);
+
+  private readonly defaultTimeout: number;
+  private readonly defaultMaxRetries: number;
+  private readonly defaultBackoff: number;
+  private readonly deliveryLog: WebhookDeliveryResult[] = [];
+
+  constructor(
+    defaultTimeout: number = 30,
+    defaultMaxRetries: number = 3,
+    defaultBackoff: number = 10,
+  ) {
+    this.defaultTimeout = defaultTimeout;
+    this.defaultMaxRetries = defaultMaxRetries;
+    this.defaultBackoff = defaultBackoff;
+  }
+
+  /**
+   * Gửi webhook notification.
+   *
+   * @param config - Webhook config (URL, auth, headers)
+   * @param payload - JSON body
+   * @param dispatchId - Dispatch ID để track
+   */
+  async send(
+    config: WebhookConfig,
+    payload: Record<string, any>,
+    dispatchId?: string,
+  ): Promise<WebhookDeliveryResult> {
+    const {
+      url,
+      method = 'POST',
+      authType = WebhookAuthType.NONE,
+      authHeader = '',
+      authSecret = '',
+      headers = {},
+      timeoutSeconds = this.defaultTimeout,
+      maxRetries = this.defaultMaxRetries,
+      retryBackoffSeconds = this.defaultBackoff,
+    } = config;
+
+    // Build request headers
+    const requestHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Midicoder-Webhook/1.0',
+      ...headers,
+    };
+
+    // Apply auth
+    if (authType === WebhookAuthType.BEARER && authHeader) {
+      requestHeaders['Authorization'] = `Bearer ${authHeader}`;
+    } else if (authType === WebhookAuthType.BASIC && authHeader) {
+      requestHeaders['Authorization'] = `Basic ${authHeader}`;
+    } else if (authType === WebhookAuthType.HMAC && authSecret) {
+      const bodyStr = JSON.stringify(payload);
+      const signature = crypto
+        .createHmac('sha256', authSecret)
+        .update(bodyStr)
+        .digest('hex');
+      requestHeaders['X-Webhook-Signature'] = signature;
+    }
+
+    const maxAttempts = maxRetries + 1;
+    let lastError = '';
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        // Use Node.js built-in fetch (Node 18+)
+        const response = await fetch(url, {
+          method,
+          headers: requestHeaders,
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(timeoutSeconds * 1000),
+        });
+
+        const responseBody = await response.text();
+
+        const result: WebhookDeliveryResult = {
+          status: response.ok ? 'sent' : 'failed',
+          dispatchId,
+          url,
+          method,
+          statusCode: response.status,
+          responseBody,
+          attempts: attempt + 1,
+          timestamp: new Date().toISOString(),
+        };
+
+        this.deliveryLog.push(result);
+
+        if (response.ok) {
+          return result;
+        }
+
+        // 4xx (except 429) - không retry
+        if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+          return result;
+        }
+
+        lastError = `HTTP ${response.status}`;
+
+      } catch (error: any) {
+        lastError = error.message || 'Unknown error';
+        this.logger.warn(
+          `Webhook HTTP error (attempt ${attempt + 1}/${maxAttempts}): ${lastError}`,
+        );
+      }
+
+      // Retry với exponential backoff
+      if (attempt < maxRetries) {
+        const delay = Math.min(retryBackoffSeconds * Math.pow(2, attempt), 60) * 1000;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    // All attempts exhausted
+    const result: WebhookDeliveryResult = {
+      status: 'failed',
+      dispatchId,
+      url,
+      method,
+      statusCode: 0,
+      responseBody: '',
+      attempts: maxAttempts,
+      error: lastError || 'All retry attempts exhausted',
+      timestamp: new Date().toISOString(),
+    };
+    this.deliveryLog.push(result);
+    return result;
+  }
+
+  /**
+   * Verify HMAC-SHA256 signature của incoming webhook.
+   *
+   * @param body - Raw request body
+   * @param signature - X-Webhook-Signature header
+   * @param secret - Shared HMAC secret
+   */
+  verifyIncomingSignature(body: string, signature: string, secret: string): boolean {
+    const computed = crypto
+      .createHmac('sha256', secret)
+      .update(body)
+      .digest('hex');
+
+    return crypto.timingSafeEqual(
+      Buffer.from(computed),
+      Buffer.from(signature),
+    );
+  }
+
+  /** Lấy delivery log gần đây. */
+  getDeliveryLog(limit = 100): WebhookDeliveryResult[] {
+    return this.deliveryLog.slice(-limit);
+  }
+}

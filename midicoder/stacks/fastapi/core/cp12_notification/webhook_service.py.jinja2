@@ -1,0 +1,208 @@
+"""
+Webhook Service cho FastAPI.
+
+Cung cấp:
+- HTTP webhook dispatch với auth (Bearer, HMAC-SHA256, Basic)
+- Retry với exponential backoff
+- Response tracking
+- Signature verification cho incoming webhooks
+
+CP12: Notification & Communication
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import logging
+import time
+from datetime import datetime
+from typing import Any, Optional
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+
+class WebhookService:
+    """
+    Service cho webhook dispatch.
+
+    Hỗ trợ:
+    - Gửi webhook qua HTTP POST/PUT/PATCH
+    - Auth: Bearer token, HMAC-SHA256, Basic
+    - Retry với exponential backoff
+    - Response tracking (status code, body, attempts)
+    - Signature verification cho incoming webhooks
+    """
+
+    def __init__(
+        self,
+        default_timeout: float = 30.0,
+        default_max_retries: int = 3,
+        default_backoff: float = 10.0,
+    ) -> None:
+        """
+        Khởi tạo WebhookService.
+
+        Args:
+            default_timeout: Default HTTP timeout (giây)
+            default_max_retries: Default số lần retry
+            default_backoff: Default backoff giữa retries (giây)
+        """
+        self._default_timeout = default_timeout
+        self._default_max_retries = default_max_retries
+        self._default_backoff = default_backoff
+        self._delivery_log: list[dict[str, Any]] = []
+
+    async def send(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        method: str = "POST",
+        auth_type: str = "none",
+        auth_header: str = "",
+        auth_secret: str = "",
+        headers: Optional[dict[str, str]] = None,
+        timeout: Optional[float] = None,
+        max_retries: Optional[int] = None,
+        backoff: Optional[float] = None,
+        dispatch_id: str = "",
+    ) -> dict[str, Any]:
+        """
+        Gửi webhook notification.
+
+        Args:
+            url: Webhook endpoint URL
+            payload: JSON body
+            method: HTTP method (POST, PUT, PATCH)
+            auth_type: Auth type (none, bearer, hmac, basic)
+            auth_header: Auth header value (Bearer token, Basic credentials)
+            auth_secret: HMAC secret key
+            headers: Custom headers
+            timeout: HTTP timeout (giây)
+            max_retries: Số lần retry
+            backoff: Backoff giữa retries (giây)
+            dispatch_id: Dispatch ID để track
+
+        Returns:
+            Dict với status, attempts, response info
+        """
+        timeout = timeout or self._default_timeout
+        max_retries = max_retries if max_retries is not None else self._default_max_retries
+        backoff = backoff if backoff is not None else self._default_backoff
+
+        # Build request headers
+        request_headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "User-Agent": "Midicoder-Webhook/1.0",
+        }
+        if headers:
+            request_headers.update(headers)
+
+        # Apply auth
+        if auth_type == "bearer" and auth_header:
+            request_headers["Authorization"] = f"Bearer {auth_header}"
+        elif auth_type == "basic" and auth_header:
+            request_headers["Authorization"] = f"Basic {auth_header}"
+        elif auth_type == "hmac" and auth_secret:
+            import json
+            body_str = json.dumps(payload)
+            signature = hmac.new(
+                auth_secret.encode("utf-8"),
+                body_str.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            request_headers["X-Webhook-Signature"] = signature
+
+        max_attempts = max_retries + 1
+        last_error: str = ""
+
+        for attempt in range(max_attempts):
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.request(
+                        method=method,
+                        url=url,
+                        json=payload,
+                        headers=request_headers,
+                    )
+
+                    result = {
+                        "status": "sent" if 200 <= response.status_code < 300 else "failed",
+                        "dispatch_id": dispatch_id,
+                        "url": url,
+                        "method": method,
+                        "status_code": response.status_code,
+                        "response_body": response.text,
+                        "attempts": attempt + 1,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+                    self._delivery_log.append(result)
+
+                    if 200 <= response.status_code < 300:
+                        return result
+
+                    # 4xx (except 429) - không retry
+                    if 400 <= response.status_code < 500 and response.status_code != 429:
+                        return result
+
+                    last_error = f"HTTP {response.status_code}"
+
+            except httpx.HTTPError as e:
+                last_error = str(e)
+                logger.warning(
+                    "Webhook HTTP error (attempt %d/%d): %s",
+                    attempt + 1, max_attempts, str(e),
+                )
+
+            # Retry với exponential backoff
+            if attempt < max_retries:
+                delay = min(backoff * (2 ** attempt), 60.0)
+                await asyncio.sleep(delay)
+
+        # All attempts exhausted
+        result = {
+            "status": "failed",
+            "dispatch_id": dispatch_id,
+            "url": url,
+            "method": method,
+            "status_code": 0,
+            "response_body": "",
+            "attempts": max_attempts,
+            "error": last_error or "All retry attempts exhausted",
+            "timestamp": datetime.now().isoformat(),
+        }
+        self._delivery_log.append(result)
+        return result
+
+    def verify_incoming_signature(
+        self,
+        body: str,
+        signature: str,
+        secret: str,
+    ) -> bool:
+        """
+        Verify HMAC-SHA256 signature của incoming webhook.
+
+        Args:
+            body: Raw request body
+            signature: X-Webhook-Signature header
+            secret: Shared HMAC secret
+
+        Returns:
+            True nếu signature hợp lệ
+        """
+        computed = hmac.new(
+            secret.encode("utf-8"),
+            body.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        return hmac.compare_digest(computed, signature)
+
+    def get_delivery_log(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Lấy delivery log gần đây."""
+        return self._delivery_log[-limit:]

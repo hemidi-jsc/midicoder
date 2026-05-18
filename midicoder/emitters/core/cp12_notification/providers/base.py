@@ -5,6 +5,7 @@ Module này định nghĩa các abstract gateway interfaces:
 - EmailGateway: Interface cho email providers
 - SmsGateway: Interface cho SMS providers
 - PushGateway: Interface cho push notification providers
+- WebhookGateway: Interface cho webhook providers
 """
 
 from __future__ import annotations
@@ -12,7 +13,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from midicoder.emitters.core.cp12_notification.models import DispatchResult
+from midicoder.emitters.core.cp12_notification.models import (
+    DispatchResult,
+    WebhookConfig,
+)
 
 
 class EmailGateway(ABC):
@@ -86,6 +90,30 @@ class PushGateway(ABC):
             title: Push notification title
             body: Push notification body
             **kwargs: Additional parameters (badge, sound, data)
+
+        Returns:
+            DispatchResult với status và provider response
+        """
+        pass
+
+
+class WebhookGateway(ABC):
+    """Abstract gateway cho webhook providers."""
+
+    @abstractmethod
+    def send(
+        self,
+        config: WebhookConfig,
+        payload: dict[str, Any],
+        **kwargs: Any,
+    ) -> DispatchResult:
+        """
+        Gửi webhook notification.
+
+        Args:
+            config: WebhookConfig chứa URL, auth, headers
+            payload: JSON payload để POST
+            **kwargs: Additional parameters
 
         Returns:
             DispatchResult với status và provider response

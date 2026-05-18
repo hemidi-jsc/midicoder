@@ -1,0 +1,257 @@
+/**
+ * Delivery Tracker Service cho NestJS.
+ *
+ * Cung cấp:
+ * - End-to-end delivery tracking cho tất cả notification channels
+ * - Theo dõi lifecycle: pending → sent → delivered → opened → clicked
+ * - Delivery attempt log
+ * - Query và report delivery status
+ *
+ * CP12: Notification & Communication
+ */
+
+import { Injectable, Logger } from '@nestjs/common';
+
+/** Trạng thái delivery của notification. */
+export enum DeliveryStatus {
+  PENDING = 'pending',
+  SENT = 'sent',
+  DELIVERED = 'delivered',
+  FAILED = 'failed',
+  BOUNCED = 'bounced',
+  OPENED = 'opened',
+  CLICKED = 'clicked',
+}
+
+/** Record của một lần thử delivery. */
+export interface DeliveryAttempt {
+  /** Unique ID của attempt. */
+  attemptId: string;
+  /** Số thứ tự của attempt. */
+  attemptNumber: number;
+  /** Timestamp. */
+  timestamp: string;
+  /** Status của attempt. */
+  status: string;
+  /** HTTP response code (nếu có). */
+  responseCode: number;
+  /** Response body (nếu có). */
+  responseBody: string;
+  /** Error message (nếu có). */
+  errorMessage: string;
+}
+
+/** Tracking record cho notification delivery. */
+export interface DeliveryTracking {
+  /** Unique ID. */
+  trackingId: string;
+  /** Dispatch ID liên quan. */
+  dispatchId: string;
+  /** Người nhận. */
+  recipient: string;
+  /** Channel. */
+  channel: string;
+  /** Delivery status hiện tại. */
+  status: string;
+  /** Danh sách attempts. */
+  attempts: DeliveryAttempt[];
+  /** Thời điểm tạo. */
+  createdAt: string;
+  /** Thời điểm cập nhật cuối. */
+  updatedAt: string;
+  /** Thời điểm delivered thành công. */
+  deliveredAt?: string;
+  /** Thời điểm opened. */
+  openedAt?: string;
+  /** Thời điểm clicked. */
+  clickedAt?: string;
+  /** Metadata bổ sung. */
+  metadata: Record<string, any>;
+}
+
+@Injectable()
+export class DeliveryTrackerService {
+  private readonly logger = new Logger(DeliveryTrackerService.name);
+  private readonly trackings: Map<string, DeliveryTracking> = new Map();
+
+  /**
+   * Tạo tracking record mới.
+   *
+   * @param dispatchId - Dispatch ID liên quan
+   * @param recipient - Người nhận
+   * @param channel - Channel (email, sms, push, webhook)
+   * @param metadata - Metadata bổ sung
+   */
+  createTracking(
+    dispatchId: string,
+    recipient: string,
+    channel: string,
+    metadata: Record<string, any> = {},
+  ): DeliveryTracking {
+    const now = new Date().toISOString();
+    const tracking: DeliveryTracking = {
+      trackingId: `trk_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      dispatchId,
+      recipient,
+      channel,
+      status: DeliveryStatus.PENDING,
+      attempts: [],
+      createdAt: now,
+      updatedAt: now,
+      metadata,
+    };
+    this.trackings.set(tracking.trackingId, tracking);
+    return tracking;
+  }
+
+  /** Lấy tracking record theo trackingId. */
+  getTracking(trackingId: string): DeliveryTracking | undefined {
+    return this.trackings.get(trackingId);
+  }
+
+  /** Lấy tracking record theo dispatchId. */
+  getByDispatch(dispatchId: string): DeliveryTracking | undefined {
+    for (const tracking of this.trackings.values()) {
+      if (tracking.dispatchId === dispatchId) {
+        return tracking;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Ghi nhận delivery attempt.
+   *
+   * @param trackingId - Tracking ID
+   * @param status - Status của attempt
+   * @param responseCode - HTTP response code (nếu có)
+   * @param responseBody - Response body (nếu có)
+   * @param errorMessage - Error message (nếu có)
+   */
+  recordAttempt(
+    trackingId: string,
+    status: string,
+    responseCode = 0,
+    responseBody = '',
+    errorMessage = '',
+  ): DeliveryTracking | undefined {
+    const tracking = this.trackings.get(trackingId);
+    if (!tracking) {
+      return undefined;
+    }
+
+    const attempt: DeliveryAttempt = {
+      attemptId: `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      attemptNumber: tracking.attempts.length + 1,
+      timestamp: new Date().toISOString(),
+      status,
+      responseCode,
+      responseBody,
+      errorMessage,
+    };
+
+    tracking.attempts.push(attempt);
+    tracking.updatedAt = attempt.timestamp;
+
+    if (status === 'sent') {
+      tracking.status = DeliveryStatus.SENT;
+    } else if (status === 'delivered') {
+      tracking.status = DeliveryStatus.DELIVERED;
+      tracking.deliveredAt = attempt.timestamp;
+    } else if (status === 'failed') {
+      tracking.status = DeliveryStatus.FAILED;
+    } else if (status === 'bounced') {
+      tracking.status = DeliveryStatus.BOUNCED;
+    }
+
+    return tracking;
+  }
+
+  /** Mark notification đã được mở. */
+  markOpened(trackingId: string): DeliveryTracking | undefined {
+    const tracking = this.trackings.get(trackingId);
+    if (!tracking) {
+      return undefined;
+    }
+    tracking.openedAt = new Date().toISOString();
+    tracking.status = DeliveryStatus.OPENED;
+    tracking.updatedAt = tracking.openedAt;
+    return tracking;
+  }
+
+  /** Mark notification đã được click. */
+  markClicked(trackingId: string): DeliveryTracking | undefined {
+    const tracking = this.trackings.get(trackingId);
+    if (!tracking) {
+      return undefined;
+    }
+    tracking.clickedAt = new Date().toISOString();
+    tracking.status = DeliveryStatus.CLICKED;
+    tracking.updatedAt = tracking.clickedAt;
+    return tracking;
+  }
+
+  /**
+   * Lấy thống kê delivery tổng quan.
+   */
+  getStats(): {
+    total: number;
+    pending: number;
+    sent: number;
+    delivered: number;
+    failed: number;
+    bounced: number;
+    opened: number;
+    clicked: number;
+  } {
+    const stats = {
+      total: this.trackings.size,
+      pending: 0,
+      sent: 0,
+      delivered: 0,
+      failed: 0,
+      bounced: 0,
+      opened: 0,
+      clicked: 0,
+    };
+
+    for (const tracking of this.trackings.values()) {
+      const key = tracking.status as keyof typeof stats;
+      if (key in stats) {
+        (stats as any)[key] += 1;
+      }
+    }
+
+    return stats;
+  }
+
+  /** Query tracking records theo recipient. */
+  queryByRecipient(recipient: string, limit = 50): DeliveryTracking[] {
+    const results = Array.from(this.trackings.values()).filter(
+      (t) => t.recipient === recipient,
+    );
+    results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return results.slice(0, limit);
+  }
+
+  /** Query tracking records theo channel. */
+  queryByChannel(channel: string, limit = 50): DeliveryTracking[] {
+    const results = Array.from(this.trackings.values()).filter(
+      (t) => t.channel === channel,
+    );
+    results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return results.slice(0, limit);
+  }
+
+  /** Xóa tracking records cũ hơn timestamp. */
+  cleanupBefore(timestamp: string): number {
+    let count = 0;
+    for (const [key, value] of this.trackings.entries()) {
+      if (value.createdAt < timestamp) {
+        this.trackings.delete(key);
+        count++;
+      }
+    }
+    return count;
+  }
+}

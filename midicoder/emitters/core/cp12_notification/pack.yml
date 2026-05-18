@@ -2,12 +2,12 @@ pack:
   id: "CP12"
   name: "Notification & Communication Generator"
   internal_id: "cp12_notification"
-  version: "1.0.0"
+  version: "2.0.0"
   status: "stable"
   category: "communication"
   depends_on: ["CP05"]
-  definitions_count: 8
-  obligations_count: 4
+  definitions_count: 15
+  obligations_count: 6
   error_codes:
     prefix: "MDC-CP12"
     range: "MDC-CP12-001 to MDC-CP12-007"
@@ -17,7 +17,8 @@ pack:
     - sms_dispatch
     - push_notification
     - webhook_dispatch
-    - chat_integration
+    - delivery_tracking
+    - ab_testing
   capabilities:
     - id: "email"
       emitter: "fastapi, nestjs"
@@ -29,11 +30,13 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "webhook"
       emitter: "fastapi, nestjs"
-    - id: "chat_integration"
+    - id: "delivery_tracking"
+      emitter: "fastapi, nestjs"
+    - id: "ab_testing"
       emitter: "fastapi, nestjs"
   definitions:
     - name: "NotificationChannel"
-      description: "Channel type: email, sms, push, in_app"
+      description: "Channel type: email, sms, push, in_app, webhook"
     - name: "NotificationTemplate"
       description: "Parameterized message template per channel"
     - name: "DispatchConfig"
@@ -48,6 +51,20 @@ pack:
       description: "Chat platform enum (slack, teams, discord, msteams, webex)"
     - name: "WebhookAuthType"
       description: "Webhook auth (none, basic, bearer, hmac)"
+    - name: "DeliveryStatus"
+      description: "Delivery status enum (pending, sent, delivered, failed, bounced, opened, clicked)"
+    - name: "DeliveryAttempt"
+      description: "Single delivery attempt record"
+    - name: "DeliveryTracking"
+      description: "End-to-end delivery tracking with lifecycle events"
+    - name: "ABTestVariant"
+      description: "A/B test variant with weight"
+    - name: "ABTestConfig"
+      description: "A/B test configuration with multiple variants"
+    - name: "TwilioSmsGateway"
+      description: "Twilio SMS provider with signature verification"
+    - name: "WebhookGatewayImpl"
+      description: "HTTP webhook provider with auth and retry"
   obligations:
     - name: "TemplateValidation"
       description: "Notification templates must have required variables"
@@ -57,18 +74,34 @@ pack:
       description: "Webhook deliveries must retry with backoff on failure"
     - name: "ChatSecurity"
       description: "Chat bot tokens must be stored securely, never in source code"
+    - name: "DeliveryTracking"
+      description: "All dispatches must have tracking records"
+    - name: "ABTestIntegrity"
+      description: "A/B test variants must sum to 100% weight"
   file_contributions:
     infrastructure:
+      # FastAPI backend
       - path: "app/notifications/email_service.py"
         file_type: "email_service"
         template: "cp12_notification/email_service.py.jinja2"
-        stacks: ["fastapi", "nestjs"]
+        stacks: ["fastapi"]
         pack_emitter: null
       - path: "app/notifications/notification_service.py"
         file_type: "notification_service"
         template: "cp12_notification/notification_service.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null
+      - path: "app/notifications/webhook_service.py"
+        file_type: "webhook_service"
+        template: "cp12_notification/webhook_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/notifications/delivery_tracker.py"
+        file_type: "delivery_tracker"
+        template: "cp12_notification/delivery_tracker.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # NestJS backend
       - path: "src/notifications/email.service.ts"
         file_type: "email_service"
         template: "cp12_notification/email.service.ts.jinja2"
@@ -79,6 +112,17 @@ pack:
         template: "cp12_notification/notification.module.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
+      - path: "src/notifications/webhook.service.ts"
+        file_type: "webhook_service"
+        template: "cp12_notification/webhook.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/notifications/delivery-tracker.service.ts"
+        file_type: "delivery_tracker"
+        template: "cp12_notification/delivery-tracker.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      # Angular frontend
       - path: "src/app/core/notification/notification.service.ts"
         file_type: "notification_service"
         template: "cp12_notification/notification.service.ts.jinja2"
@@ -89,6 +133,12 @@ pack:
         template: "cp12_notification/notification-toast.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
+      - path: "src/app/core/notification/types.ts"
+        file_type: "notification_types"
+        template: "cp12_notification/types.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      # React frontend
       - path: "src/notifications/NotificationContext.tsx"
         file_type: "notification_context"
         template: "cp12_notification/NotificationContext.tsx.jinja2"
@@ -108,6 +158,8 @@ pack:
     angular:
       - NotificationService
       - NotificationToastComponent
+      - NotificationTypes
     react:
       - useNotification
       - NotificationContext
+      - NotificationTypes
