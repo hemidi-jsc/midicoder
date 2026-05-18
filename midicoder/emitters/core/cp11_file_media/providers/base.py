@@ -2,8 +2,10 @@
 """
 Mô-đun Abstract Base Class cho storage providers của CP11 File Storage.
 
-Định nghĩa interface chung mà mọi storage provider (S3, Local, GCS, ...)
+Định nghĩa interface chung mà mọi storage provider (S3, Local, ...)
 phải implement — đảm bảo tính nhất quán khi đổi backend.
+
+Scope: chỉ AWS (S3) + Local (filesystem). Không hỗ trợ GCP/Azure.
 """
 
 from __future__ import annotations

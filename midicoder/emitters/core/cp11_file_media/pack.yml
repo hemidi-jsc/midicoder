@@ -2,20 +2,22 @@ pack:
   id: "CP11"
   name: "File Storage & Media Processing Generator"
   internal_id: "cp11_file_media"
-  version: "1.0.0"
+  version: "1.1.0"
   status: "developing"
   category: "storage"
   depends_on: ["CP07"]
-  definitions_count: 3
+  definitions_count: 5
   obligations_count: 1
   error_codes:
     prefix: "MDC-CP11"
-    range: "MDC-CP11-001 to MDC-CP11-010"
+    range: "MDC-CP11-001 to MDC-CP11-013"
   capabilities_provided:
     - file_upload
     - file_download
     - file_storage
     - media_transform
+    - cdn_integration
+    - presigned_url
   capabilities:
     - id: "s3_storage"
       emitter: "fastapi, nestjs"
@@ -25,6 +27,10 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "media_transform"
       emitter: "fastapi, nestjs"
+    - id: "cdn_integration"
+      emitter: "fastapi, nestjs"
+    - id: "presigned_url"
+      emitter: "fastapi, nestjs, angular, react"
   definitions:
     - name: "StorageProfile"
       description: "Storage backend configuration (S3, local)"
@@ -32,11 +38,16 @@ pack:
       description: "File size, type, and rate limits"
     - name: "MediaTransform"
       description: "Image/video transformation pipeline"
+    - name: "CDNIntegration"
+      description: "AWS CloudFront CDN configuration"
+    - name: "PresignedURLPolicy"
+      description: "Presigned URL expiration and operation policy"
   obligations:
     - name: "UploadValidation"
       description: "All uploads must validate type, size, and malware"
   file_contributions:
     infrastructure:
+      # === FastAPI ===
       - path: "app/storage/s3.py"
         file_type: "s3_client"
         template: "cp11_file_media/s3.py.jinja2"
@@ -57,6 +68,12 @@ pack:
         template: "cp11_file_media/storage_router.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null
+      - path: "app/storage/cdn_config.py"
+        file_type: "cdn_config"
+        template: "cp11_file_media/cdn_config.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # === NestJS ===
       - path: "src/storage/s3.module.ts"
         file_type: "s3_module"
         template: "cp11_file_media/s3.module.ts.jinja2"
@@ -77,6 +94,12 @@ pack:
         template: "cp11_file_media/media-transform.service.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
+      - path: "src/storage/cdn.service.ts"
+        file_type: "cdn_service"
+        template: "cp11_file_media/cdn.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      # === Angular ===
       - path: "src/app/core/storage/file-storage.module.ts"
         file_type: "storage_module"
         template: "cp11_file_media/file-storage.module.ts.jinja2"
@@ -97,6 +120,7 @@ pack:
         template: "cp11_file_media/file-upload.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
+      # === React ===
       - path: "src/storage/fileStorage.ts"
         file_type: "storage_client"
         template: "cp11_file_media/fileStorage.ts.jinja2"

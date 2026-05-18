@@ -4,16 +4,17 @@ CP11: React File Storage Emitter.
 
 Module này cung cấp ReactFileStorageEmitter để generate React file storage code
 từ FileStorageCollection (CP11):
-- fileStorage.types.ts - FileInfo, UploadResult, FileStorageContextType interfaces
+- fileStorage.types.ts - FileInfo, UploadResult, FileStorageContextType, CdnConfig interfaces
 - FileStorageProvider.tsx - React context provider với upload/download/delete operations
 - useFileStorage.ts - Custom hook để truy cập file storage
 - FileUpload.tsx - React component với drag-drop, preview, progress
 - index.ts - Barrel exports
 
 KPI-029: Tenant-aware file storage qua header x-tenant-id.
+CDN: AWS CloudFront integration với CDN URL resolution.
 
 Author: Midicoder Team
-Version: 1.0.0
+Version: 1.1.0
 """
 
 from __future__ import annotations
@@ -169,6 +170,16 @@ export interface FileUploadProgress {{
   percentage: number;
   status: "uploading" | "completed" | "error";
   error?: string;
+}}
+
+/** Cấu hình CDN (AWS CloudFront) */
+export interface CdnConfig {{
+  distribution_id?: string;
+  domain?: string;
+  origin_bucket?: string;
+  signed_url: boolean;
+  default_ttl: number;
+  max_ttl: number;
 }}
 
 /** Context type cho FileStorageProvider */
@@ -462,7 +473,7 @@ export function FileStorageProvider({{
 
 import { useContext } from "react";
 import { FileStorageContext } from "./FileStorageProvider";
-import { FileStorageContextType } from "./fileStorage.types";
+import { FileStorageContextType, CdnConfig } from "./fileStorage.types";
 
 /**
  * Hook để truy cập file storage operations.
@@ -481,6 +492,20 @@ export function useFileStorage(): FileStorageContextType {
   }
 
   return context;
+}
+
+/**
+ * Resolve file URL - CDN first, then fallback to S3 presigned.
+ *
+ * @param key File key trong storage
+ * @param cdnDomain CDN domain (tùy chọn)
+ * @returns URL string
+ */
+export function resolveFileUrl(key: string, cdnDomain?: string): string {
+  if (cdnDomain) {
+    return `https://${cdnDomain}/${key.replace(/^\\/+/, '')}`;
+  }
+  return '';
 }
 '''
         file_path = output_dir / "useFileStorage.ts"

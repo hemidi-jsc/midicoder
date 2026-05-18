@@ -4,16 +4,20 @@ Mô-đun File Storage & Media Processing Emitter (CP11).
 
 Cung cấp:
 - StorageProfile, UploadPolicy, MediaTransform: Data models cho file storage
+- CDNIntegration: Cấu hình CDN (AWS CloudFront)
+- PresignedURLPolicy: Policy cho presigned URLs
 - FileStorageCollection: Aggregate collection
 - FileStorageParser: Parse YAML DSL → models
 - FastAPIFileStorageEmitter, NestJSFileStorageEmitter: Backend emitters
 - AngularFileStorageEmitter, ReactFileStorageEmitter: Frontend emitters
 - StorageProvider: Provider abstraction (S3, Local)
+- Recipes: Pattern macro (S3StorageRecipe, LocalStorageRecipe, MinIORecipe, ImageUploadRecipe, DocumentUploadRecipe, VideoUploadRecipe, ImageResizeRecipe, ThumbnailRecipe, ImageTranscodeRecipe, CloudFrontRecipe, PresignedURLRecipe, FullStorageRecipe)
 
 KPI-029: Tenant Isolation - tenant_isolation=True mặc định
+Scope: AWS (S3, CloudFront) + Local (filesystem)
 
 Author: Midicoder Team
-Version: 1.0.0
+Version: 1.1.0
 """
 
 # Models
@@ -23,6 +27,8 @@ from midicoder.emitters.core.cp11_file_media.models import (
     StorageProfile,
     UploadPolicy,
     MediaTransform,
+    CDNIntegration,
+    PresignedURLPolicy,
     FileStorageCollection,
     _BACKEND_MAP,
     _TRANSFORM_MAP,
@@ -30,6 +36,22 @@ from midicoder.emitters.core.cp11_file_media.models import (
 
 # Parser
 from midicoder.emitters.core.cp11_file_media.parser import FileStorageParser
+
+# Recipes
+from midicoder.emitters.core.cp11_file_media.recipes import (
+    S3StorageRecipe,
+    LocalStorageRecipe,
+    MinIORecipe,
+    ImageUploadRecipe,
+    DocumentUploadRecipe,
+    VideoUploadRecipe,
+    ImageResizeRecipe,
+    ThumbnailRecipe,
+    ImageTranscodeRecipe,
+    CloudFrontRecipe,
+    PresignedURLRecipe,
+    FullStorageRecipe,
+)
 
 # Backend Emitters
 from midicoder.emitters.core.cp11_file_media.fastapi import FastAPIFileStorageEmitter
@@ -62,12 +84,27 @@ __all__ = [
     "StorageProfile",
     "UploadPolicy",
     "MediaTransform",
+    "CDNIntegration",
+    "PresignedURLPolicy",
     "FileStorageCollection",
     # Mappings
     "_BACKEND_MAP",
     "_TRANSFORM_MAP",
     # Parser
     "FileStorageParser",
+    # Recipes
+    "S3StorageRecipe",
+    "LocalStorageRecipe",
+    "MinIORecipe",
+    "ImageUploadRecipe",
+    "DocumentUploadRecipe",
+    "VideoUploadRecipe",
+    "ImageResizeRecipe",
+    "ThumbnailRecipe",
+    "ImageTranscodeRecipe",
+    "CloudFrontRecipe",
+    "PresignedURLRecipe",
+    "FullStorageRecipe",
     # Backend Emitters
     "FastAPIFileStorageEmitter",
     "NestJSFileStorageEmitter",

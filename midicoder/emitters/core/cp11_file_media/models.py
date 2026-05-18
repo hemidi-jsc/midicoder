@@ -395,6 +395,199 @@ class MediaTransform:
 
 
 # ===========================================================================
+# CDNIntegration (AWS CloudFront)
+# ===========================================================================
+
+
+@dataclass
+class CDNIntegration:
+    """
+    Cấu hình CDN integration — AWS CloudFront.
+
+    Scope: chỉ AWS CloudFront (không hỗ trợ Cloudflare, Akamai).
+
+    Attributes:
+        name: Định danh duy nhất của CDN config
+        distribution_id: CloudFront distribution ID
+        domain: CloudFront domain (e.g., d1234.cloudfront.net)
+        origin_bucket: S3 bucket origin
+        origin_access_identity: CloudFront OAI (Origin Access Identity) S3 canonical UID
+        signed_url: Có dùng signed URL (CloudFront signed cookies URLs) không
+        default_ttl: Default TTL (giây), mặc định 86400 (24h)
+        max_ttl: Max TTL (giây), mặc định 31536000 (1 năm)
+        behavior_path: Path pattern cho cache behavior (mặc định /*)
+    """
+    name: str = "default"
+    distribution_id: Optional[str] = None
+    domain: Optional[str] = None
+    origin_bucket: Optional[str] = None
+    origin_access_identity: Optional[str] = None
+    signed_url: bool = False
+    default_ttl: int = 86400
+    max_ttl: int = 31536000
+    behavior_path: str = "/*"
+    description: str = ""
+
+    def __post_init__(self):
+        """
+        Validation sau khi khởi tạo.
+
+        Throw MidicoderError nếu:
+        - distribution_id không hợp lệ (MDC-CP11-011)
+        - domain không hợp lệ (MDC-CP11-012)
+        - TTL < 0 (MDC-CP11-013)
+        """
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        # Validate distribution_id
+        if self.distribution_id and not self.distribution_id.strip():
+            EM.raise_error(
+                ErrorCode.CP11_TRANSFORM_INVALID_PARAM,
+                detail="CDNIntegration distribution_id không được để trống nếu có giá trị",
+            )
+
+        # Validate domain
+        if self.domain and not self.domain.strip():
+            EM.raise_error(
+                ErrorCode.CP11_TRANSFORM_INVALID_PARAM,
+                detail="CDNIntegration domain không được để trống nếu có giá trị",
+            )
+
+        # Validate TTL >= 0
+        if self.default_ttl < 0:
+            EM.raise_error(
+                ErrorCode.CP11_TRANSFORM_INVALID_PARAM,
+                detail="CDNIntegration default_ttl không được âm",
+            )
+        if self.max_ttl < 0:
+            EM.raise_error(
+                ErrorCode.CP11_TRANSFORM_INVALID_PARAM,
+                detail="CDNIntegration max_ttl không được âm",
+            )
+        if self.default_ttl > self.max_ttl:
+            EM.raise_error(
+                ErrorCode.CP11_TRANSFORM_INVALID_PARAM,
+                detail="CDNIntegration default_ttl không được lớn hơn max_ttl",
+            )
+
+    def get_cdn_url(self, key: str) -> str:
+        """
+        Trả về CDN URL cho một key.
+
+        Nếu CDN chưa cấu hình (không có domain) — trả về rỗng.
+
+        Args:
+            key: Key của file trong S3
+
+        Returns:
+            CDN URL string hoặc empty string nếu CDN chưa cấu hình
+        """
+        if not self.domain:
+            return ""
+        return f"https://{self.domain}/{key.lstrip('/')}"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển CDN config sang dict format."""
+        return {
+            "name": self.name,
+            "distribution_id": self.distribution_id,
+            "domain": self.domain,
+            "origin_bucket": self.origin_bucket,
+            "origin_access_identity": self.origin_access_identity,
+            "signed_url": self.signed_url,
+            "default_ttl": self.default_ttl,
+            "max_ttl": self.max_ttl,
+            "behavior_path": self.behavior_path,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CDNIntegration":
+        """Tạo CDNIntegration từ dict."""
+        return cls(
+            name=data.get("name", "default"),
+            distribution_id=data.get("distribution_id"),
+            domain=data.get("domain"),
+            origin_bucket=data.get("origin_bucket"),
+            origin_access_identity=data.get("origin_access_identity"),
+            signed_url=data.get("signed_url", False),
+            default_ttl=data.get("default_ttl", 86400),
+            max_ttl=data.get("max_ttl", 31536000),
+            behavior_path=data.get("behavior_path", "/*"),
+            description=data.get("description", ""),
+        )
+
+
+# ===========================================================================
+# PresignedURLPolicy
+# ===========================================================================
+
+
+@dataclass
+class PresignedURLPolicy:
+    """
+    Policy cho presigned URL — kiểm soát thời hạn và loại operation.
+
+    Attributes:
+        name: Định danh duy nhất của policy
+        expiration: Thời hạn mặc định (giây), mặc định 3600s = 1 giờ
+        max_expiration: Thời hạn tối đa (giây), mặc định 604800s = 7 ngày
+        allowed_operations: Operations được phép (get_object, put_object)
+        use_cdn_signed_url: Dùng CloudFront signed URL thay vì S3 presigned
+    """
+    name: str = "default"
+    expiration: int = 3600
+    max_expiration: int = 604800
+    allowed_operations: list[str] = field(default_factory=lambda: ["get_object"])
+    use_cdn_signed_url: bool = False
+
+    def __post_init__(self):
+        """
+        Validation sau khi khởi tạo.
+
+        Throw MidicoderError nếu:
+        - expiration <= 0 (MDC-CP11-005)
+        - expiration > max_expiration (MDC-CP11-005)
+        """
+        from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+        if self.expiration <= 0:
+            EM.raise_error(
+                ErrorCode.CP11_FILE_SIZE_EXCEEDED,
+                detail=f"PresignedURLPolicy '{self.name}': expiration phải > 0",
+            )
+        if self.expiration > self.max_expiration:
+            EM.raise_error(
+                ErrorCode.CP11_FILE_SIZE_EXCEEDED,
+                detail=f"PresignedURLPolicy '{self.name}': expiration không được > max_expiration",
+            )
+        if not self.allowed_operations:
+            EM.raise_error(
+                ErrorCode.CP11_INVALID_CONTENT_TYPE,
+                detail=f"PresignedURLPolicy '{self.name}': allowed_operations không được để trống",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "expiration": self.expiration,
+            "max_expiration": self.max_expiration,
+            "allowed_operations": self.allowed_operations,
+            "use_cdn_signed_url": self.use_cdn_signed_url,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PresignedURLPolicy":
+        return cls(
+            name=data.get("name", "default"),
+            expiration=data.get("expiration", 3600),
+            max_expiration=data.get("max_expiration", 604800),
+            allowed_operations=data.get("allowed_operations", ["get_object"]),
+            use_cdn_signed_url=data.get("use_cdn_signed_url", False),
+        )
+
+
+# ===========================================================================
 # FileStorageCollection
 # ===========================================================================
 
@@ -402,16 +595,21 @@ class MediaTransform:
 @dataclass
 class FileStorageCollection:
     """
-    Collection chứa tất cả storage profiles, upload policies, và media transforms.
+    Collection chứa tất cả storage profiles, upload policies, media transforms,
+    CDN config và presigned URL policies.
 
     Attributes:
         profiles: Danh sách storage profiles
         policies: Danh sách upload policies
         transforms: Danh sách media transforms
+        cdn_config: Cấu hình CDN (CloudFront) — None nếu không dùng CDN
+        presigned_policy: Policy cho presigned URLs
     """
     profiles: list[StorageProfile] = field(default_factory=list)
     policies: list[UploadPolicy] = field(default_factory=list)
     transforms: list[MediaTransform] = field(default_factory=list)
+    cdn_config: Optional[CDNIntegration] = None
+    presigned_policy: Optional[PresignedURLPolicy] = None
 
     def add_profile(self, profile: StorageProfile) -> None:
         """Thêm profile vào collection."""
@@ -424,6 +622,14 @@ class FileStorageCollection:
     def add_transform(self, transform: MediaTransform) -> None:
         """Thêm transform vào collection."""
         self.transforms.append(transform)
+
+    def set_cdn_config(self, config: CDNIntegration) -> None:
+        """Set CDN configuration."""
+        self.cdn_config = config
+
+    def has_cdn(self) -> bool:
+        """Trả về True nếu CDN được cấu hình."""
+        return self.cdn_config is not None and bool(self.cdn_config.domain)
 
     @property
     def total_count(self) -> int:
@@ -451,11 +657,16 @@ class FileStorageCollection:
 
     def to_dict(self) -> dict[str, Any]:
         """Chuyển collection sang dict format."""
-        return {
+        result: dict[str, Any] = {
             "profiles": [p.to_dict() for p in self.profiles],
             "policies": [pol.to_dict() for pol in self.policies],
             "transforms": [t.to_dict() for t in self.transforms],
         }
+        if self.cdn_config:
+            result["cdn_config"] = self.cdn_config.to_dict()
+        if self.presigned_policy:
+            result["presigned_policy"] = self.presigned_policy.to_dict()
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "FileStorageCollection":
@@ -470,4 +681,8 @@ class FileStorageCollection:
         result.transforms = [
             MediaTransform.from_dict(t) for t in data.get("transforms", [])
         ]
+        if "cdn_config" in data and data["cdn_config"]:
+            result.cdn_config = CDNIntegration.from_dict(data["cdn_config"])
+        if "presigned_policy" in data and data["presigned_policy"]:
+            result.presigned_policy = PresignedURLPolicy.from_dict(data["presigned_policy"])
         return result

@@ -190,3 +190,21 @@ export const DEFAULT_STORAGE_CONFIG: StorageConfig = {
 baseUrl: '/api/storage',
 timeout: 60000,
 };
+
+/**
+* Cau hinh CDN (AWS CloudFront).
+*/
+export interface CdnConfig {
+/** Distribution ID cua CloudFront */
+distribution_id?: string;
+/** Domain CDN (VD: d1234.cloudfront.net) */
+domain?: string;
+/** Bucket origin cua S3 */
+origin_bucket?: string;
+/** Co su dung signed URL khong */
+signed_url: boolean;
+/** TTL mac dinh (giay) */
+default_ttl: number;
+/** TTL toi da (giay) */
+max_ttl: number;
+}

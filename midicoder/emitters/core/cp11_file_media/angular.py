@@ -13,7 +13,7 @@ từ FileStorageCollection (CP11):
 KPI-029: Tenant-aware file storage qua header x-tenant-id.
 
 Author: Midicoder Team
-Version: 1.0.0
+Version: 1.1.0
 """
 
 from __future__ import annotations
@@ -164,6 +164,23 @@ export interface FileUploadProgress {
   status: "uploading" | "completed" | "error";
   error?: string;
 }
+
+/** Cấu hình CDN (AWS CloudFront) */
+export interface CdnConfig {
+  distribution_id?: string;
+  domain?: string;
+  origin_bucket?: string;
+  signed_url: boolean;
+  default_ttl: number;
+  max_ttl: number;
+}
+
+/** Kết quả CDN URL */
+export interface CdnUrlResult {
+  key: string;
+  cdn_url: string;
+  s3_key: string;
+}
 '''
         file_path = output_dir / "file-storage.models.ts"
         file_path.write_text(content, encoding="utf-8")
@@ -203,6 +220,17 @@ export interface FileUploadProgress {
 
         backend_desc = "S3 + Local" if has_s3 and has_local else ("S3" if has_s3 else "Local")
 
+        # CDN config
+        cdn_domain = ""
+        cdn_signed = False
+        cdn_default_ttl = 86400
+        cdn_max_ttl = 31536000
+        if collection.cdn_config and collection.cdn_config.domain:
+            cdn_domain = collection.cdn_config.domain
+            cdn_signed = collection.cdn_config.signed_url
+            cdn_default_ttl = collection.cdn_config.default_ttl
+            cdn_max_ttl = collection.cdn_config.max_ttl
+
         content = (
             '/**\n'
             ' * File Storage Service - CP11.\n'
@@ -219,7 +247,7 @@ export interface FileUploadProgress {
             'import { Injectable } from "@angular/core";\n'
             'import { HttpClient, HttpHeaders, HttpEvent } from "@angular/common/http";\n'
             'import { Observable, BehaviorSubject, of } from "rxjs";\n'
-            'import { FileInfo, UploadResult, StorageConfig, FileUploadProgress } from "./file-storage.models";\n'
+            'import { FileInfo, UploadResult, StorageConfig, FileUploadProgress, CdnConfig, CdnUrlResult } from "./file-storage.models";\n'
             '\n'
             '@Injectable({\n'
             '  providedIn: "root",\n'
@@ -228,6 +256,17 @@ export interface FileUploadProgress {
             '  private tenantId$ = new BehaviorSubject<string | undefined>(undefined);\n'
             f'  private defaultMaxSize = {default_max_size};\n'
             '\n'
+            '  /** Cấu hình CDN (AWS CloudFront) */\n'
+            + (
+                '  private cdnConfig: CdnConfig | null = null;\n'
+                if not cdn_domain else (
+                    f'  private cdnConfig: CdnConfig | null = '
+                    f'{{ distribution_id: undefined, domain: "{cdn_domain}", '
+                    f'origin_bucket: undefined, signed_url: {str(cdn_signed).lower()}, '
+                    f'default_ttl: {cdn_default_ttl}, max_ttl: {cdn_max_ttl} }};\n'
+                )
+            )
+            + '\n'
             '  /** Storage profiles đã cấu hình */\n'
             '  private profiles: Record<string, StorageConfig> = {\n'
             + profile_lines
@@ -409,6 +448,19 @@ export interface FileUploadProgress {
             '    }\n'
             '\n'
             '    return true;\n'
+            '  }\n'
+            '\n'
+            '  /**\n'
+            '   * Resolve CDN URL cho một key.\n'
+            '   * Nếu CDN cấu hình → trả về CDN URL.\n'
+            '   * Nếu không → trả về S3 presigned URL hoặc key.\n'
+            '   */\n'
+            '  resolveFileUrl(key: string): string {\n'
+            '    const cdnDomain = this.cdnConfig?.domain;\n'
+            '    if (cdnDomain) {\n'
+            r'      return `https://${cdnDomain}/${key.replace(/^\//, \'\')}`;\n'
+            '    }\n'
+            '    return \'\';\n'
             '  }\n'
             '}\n'
         )

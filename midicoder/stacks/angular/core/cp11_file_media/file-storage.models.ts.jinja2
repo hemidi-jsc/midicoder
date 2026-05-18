@@ -1,83 +1,102 @@
 /**
- * File Storage Models - CP11.
- *
- * TypeScript interfaces cho file storage layer.
- * KPI-029: Tenant-aware file storage.
- *
- * {% if collection.profiles %}
- * Profiles: {{ collection.profiles | map(attribute='name') | join(', ') }}
- * {% endif %}
- * {% if collection.policies %}
- * Policies: {{ collection.policies | map(attribute='name') | join(', ') }}
- * {% endif %}
- */
+* File Storage Models - CP11.
+*
+* TypeScript interfaces cho file storage layer.
+* KPI-029: Tenant-aware file storage.
+*
+* {% if collection.profiles %}
+* Profiles: {{ collection.profiles | map(attribute='name') | join(', ') }}
+* {% endif %}
+* {% if collection.policies %}
+* Policies: {{ collection.policies | map(attribute='name') | join(', ') }}
+* {% endif %}
+*/
 
 /** Thông tin file đã lưu trữ */
 export interface FileInfo {
-  key: string;
-  name: string;
-  size: number;
-  content_type: string;
-  storage_url: string;
-  tenant_id?: string;
-  created_at: string;
-  updated_at: string;
+key: string;
+name: string;
+size: number;
+content_type: string;
+storage_url: string;
+tenant_id?: string;
+created_at: string;
+updated_at: string;
 }
 
 /** Kết quả từ file upload */
 export interface UploadResult {
-  key: string;
-  url: string;
-  size: number;
-  content_type: string;
-  filename: string;
-  tenant_id?: string;
-  success: boolean;
-  error?: string;
+key: string;
+url: string;
+size: number;
+content_type: string;
+filename: string;
+tenant_id?: string;
+success: boolean;
+error?: string;
 }
 
 /** Cấu hình storage backend */
 export interface StorageConfig {
-  backend: "s3" | "local";
-  bucket?: string;
-  region?: string;
-  endpoint_url?: string;
-  tenant_isolation: boolean;
-  max_file_size: number;
-  allowed_content_types: string[];
-  allowed_extensions: string[];
+backend: "s3" | "local";
+bucket?: string;
+region?: string;
+endpoint_url?: string;
+tenant_isolation: boolean;
+max_file_size: number;
+allowed_content_types: string[];
+allowed_extensions: string[];
 }
 
 /** Tiến độ upload file */
 export interface FileUploadProgress {
-  key: string;
-  filename: string;
-  loaded: number;
-  total: number;
-  percentage: number;
-  status: "uploading" | "completed" | "error";
-  error?: string;
+key: string;
+filename: string;
+loaded: number;
+total: number;
+percentage: number;
+status: "uploading" | "completed" | "error";
+error?: string;
+}
+
+/** Cấu hình CDN (AWS CloudFront) */
+export interface CdnConfig {
+distribution_id?: string;
+domain?: string;
+origin_bucket?: string;
+signed_url: boolean;
+default_ttl: number;
+max_ttl: number;
+}
+
+/** Kết quả CDN URL */
+export interface CdnUrlResult {
+key: string;
+cdn_url: string;
+s3_key: string;
 }
 
 {% if collection.profiles %}
 /**
- * Storage profile names tự động generate từ collection.
- * Sử dụng để tham chiếu profile khi upload file.
- */
+* Storage profile names tự động generate từ collection.
+* Sử dụng để tham chiếu profile khi upload file.
+*/
 export const STORAGE_PROFILES: Readonly<string[]> = {{ collection.profiles | map(attribute='name') | list | tojson }};
 
-{% endif %}
-{% if collection.policies %}
-/**
- * Upload policy names tự động generate từ collection.
- * Sử dụng để validate file theo policy.
- */
-export const UPLOAD_POLICIES: Readonly<string[]> = {{ collection.policies | map(attribute='name') | list | tojson }};
+    {% endif %}
+    {% if collection.policies %}
+    /**
+    * Upload policy names tự động generate từ collection.
+    * Sử dụng để validate file theo policy.
+    */
+    export const UPLOAD_POLICIES: Readonly<string[]> = {{ collection.policies | map(attribute='name') | list | tojson
+        }};
 
-{% endif %}
-{% if collection.transforms %}
-/**
- * Media transform types.
- */
-export const MEDIA_TRANSFORMS: Readonly<string[]> = {{ collection.transforms | map(attribute='name') | list | tojson }};
-{% endif %}
+        {% endif %}
+        {% if collection.transforms %}
+        /**
+        * Media transform types.
+        */
+        export const MEDIA_TRANSFORMS: Readonly<string[]> = {{ collection.transforms | map(attribute='name') | list |
+            tojson }};
+            {% endif %}

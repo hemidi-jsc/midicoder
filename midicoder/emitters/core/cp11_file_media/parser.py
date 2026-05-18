@@ -5,8 +5,13 @@ File Storage Parser - Parse MIR metadata thành FileStorageCollection.
 Module này chứa FileStorageParser để parse storage config từ MIR metadata
 và từ YAML string thành FileStorageCollection.
 
+Hỗ trợ:
+- Parse profiles, policies, transforms
+- Parse CDN config (AWS CloudFront)
+- Parse PresignedURLPolicy
+
 Author: Midicoder Team
-Version: 1.0.0
+Version: 1.1.0
 """
 
 from __future__ import annotations
@@ -19,6 +24,8 @@ from midicoder.emitters.core.cp11_file_media.models import (
     StorageProfile,
     UploadPolicy,
     MediaTransform,
+    CDNIntegration,
+    PresignedURLPolicy,
     FileStorageCollection,
     StorageBackend,
     TransformType,
@@ -35,6 +42,8 @@ class FileStorageParser:
     - Parse từ MIR metadata (dict)
     - Parse từ YAML string
     - Validation và error throwing
+    - Parse CDN config (CloudFront)
+    - Parse PresignedURLPolicy
     """
 
     def parse(self, raw: str) -> FileStorageCollection:
@@ -42,7 +51,8 @@ class FileStorageParser:
         Parse YAML string thành FileStorageCollection.
 
         Args:
-            raw: YAML string chứa storage profiles, policies, transforms
+            raw: YAML string chứa storage profiles, policies, transforms,
+                 cdn_config, presigned_policy
 
         Returns:
             FileStorageCollection đầy đủ
@@ -73,7 +83,7 @@ class FileStorageParser:
         Parse storage config từ MIR metadata.
 
         Args:
-            metadata: Dict chứa profiles, policies, transforms
+            metadata: Dict chứa profiles, policies, transforms, cdn_config, presigned_policy
 
         Returns:
             FileStorageCollection đầy đủ
@@ -100,6 +110,22 @@ class FileStorageParser:
                 collection.add_transform(self._parse_transform(transform_data))
             except Exception:
                 continue
+
+        # Parse CDN config (CloudFront)
+        cdn_data = metadata.get("cdn_config")
+        if cdn_data and isinstance(cdn_data, dict):
+            try:
+                collection.set_cdn_config(self._parse_cdn_config(cdn_data))
+            except Exception:
+                pass
+
+        # Parse presigned URL policy
+        presigned_data = metadata.get("presigned_policy")
+        if presigned_data and isinstance(presigned_data, dict):
+            try:
+                collection.presigned_policy = self._parse_presigned_policy(presigned_data)
+            except Exception:
+                pass
 
         return collection
 
@@ -158,4 +184,29 @@ class FileStorageParser:
             format=data.get("format"),
             quality=data.get("quality", 80),
             description=data.get("description", ""),
+        )
+
+    def _parse_cdn_config(self, data: dict[str, Any]) -> CDNIntegration:
+        """Parse CDN config (AWS CloudFront)."""
+        return CDNIntegration(
+            name=data.get("name", "default"),
+            distribution_id=data.get("distribution_id"),
+            domain=data.get("domain"),
+            origin_bucket=data.get("origin_bucket"),
+            origin_access_identity=data.get("origin_access_identity"),
+            signed_url=data.get("signed_url", False),
+            default_ttl=data.get("default_ttl", 86400),
+            max_ttl=data.get("max_ttl", 31536000),
+            behavior_path=data.get("behavior_path", "/*"),
+            description=data.get("description", ""),
+        )
+
+    def _parse_presigned_policy(self, data: dict[str, Any]) -> PresignedURLPolicy:
+        """Parse presigned URL policy."""
+        return PresignedURLPolicy(
+            name=data.get("name", "default"),
+            expiration=data.get("expiration", 3600),
+            max_expiration=data.get("max_expiration", 604800),
+            allowed_operations=data.get("allowed_operations", ["get_object"]),
+            use_cdn_signed_url=data.get("use_cdn_signed_url", False),
         )

@@ -1,343 +1,383 @@
 /**
- * File Storage Service - CP11.
- *
- * Service nay xu ly file upload, download, delete, va presigned URL.
- * KPI-029: Tenant-aware file storage qua header x-tenant-id.
- * Su dung HttpClient voi FormData cho upload file.
- *
- * {% if collection.profiles %}
- * Backends: {{ collection.profiles | map(attribute='backend_type') | map(attribute='value') | list | tojson }}
- * Default profile: {{ collection.profiles[0].name }}
- * {% endif %}
- * {% if collection.policies %}
- * Default max file size: {{ collection.policies[0].max_file_size }} bytes
- * {% endif %}
- */
+* File Storage Service - CP11.
+*
+* Service nay xu ly file upload, download, delete, va presigned URL.
+* KPI-029: Tenant-aware file storage qua header x-tenant-id.
+* Su dung HttpClient voi FormData cho upload file.
+*
+* {% if collection.profiles %}
+* Backends: {{ collection.profiles | map(attribute='backend_type') | map(attribute='value') | list | tojson }}
+* Default profile: {{ collection.profiles[0].name }}
+* {% endif %}
+* {% if collection.policies %}
+* Default max file size: {{ collection.policies[0].max_file_size }} bytes
+* {% endif %}
+*/
 
 import { Injectable } from "@angular/core";
 import { HttpClient, HttpHeaders, HttpEvent } from "@angular/common/http";
 import { BehaviorSubject, Observable, of } from "rxjs";
 import {
-  FileInfo,
-  UploadResult,
-  StorageConfig,
-  FileUploadProgress,
+FileInfo,
+UploadResult,
+StorageConfig,
+FileUploadProgress,
+CdnConfig,
+CdnUrlResult,
 } from "./file-storage.models";
 
 /**
- * File Storage Service.
- *
- * Service nay cung cap cac phuong thuc de thao tac voi file storage.
- * KPI-029: Tenant isolation qua header x-tenant-id.
- */
+* File Storage Service.
+*
+* Service nay cung cap cac phuong thuc de thao tac voi file storage.
+* KPI-029: Tenant isolation qua header x-tenant-id.
+*/
 @Injectable({
-  providedIn: "root",
+providedIn: "root",
 })
 export class FileStorageService {
-  /** Tenant ID BehaviorSubject - KPI-029: Tenant Isolation */
-  private tenantId$ = new BehaviorSubject<string | undefined>(undefined);
+/** Tenant ID BehaviorSubject - KPI-029: Tenant Isolation */
+private tenantId$ = new BehaviorSubject<string | undefined>(undefined);
 
-{% if collection.policies %}
-  /** Default max file size tu policy dau tien */
-  private defaultMaxSize = {{ collection.policies[0].max_file_size }};
-{% else %}
-  /** Default max file size (10MB mac dinh) */
-  private defaultMaxSize = 10485760;
-{% endif %}
+    {% if collection.policies %}
+    /** Default max file size tu policy dau tien */
+    private defaultMaxSize = {{ collection.policies[0].max_file_size }};
+    {% else %}
+    /** Default max file size (10MB mac dinh) */
+    private defaultMaxSize = 10485760;
+    {% endif %}
 
-  /** Storage profiles da cau hinh */
-  private profiles: Record<string, StorageConfig> = {
-{% for profile in collection.profiles %}
-    /** {{ profile.description if profile.description else 'Storage profile: ' ~ profile.name }} */
-    {{ profile.name }}: {
-      backend: '{{ profile.backend_type.value }}',
-      tenant_isolation: {{ profile.tenant_isolation | lower }},
-{% if profile.bucket %}
-      bucket: '{{ profile.bucket }}',
-{% endif %}
-{% if profile.region %}
-      region: '{{ profile.region }}',
-{% endif %}
-{% if profile.endpoint_url %}
-      endpoint_url: '{{ profile.endpoint_url }}',
-{% endif %}
-      max_file_size: 0,
-      allowed_content_types: [],
-      allowed_extensions: [],
-    },
-{% endfor %}
-  };
+    {% if collection.cdn_config and collection.cdn_config.domain %}
+    /** Cấu hình CDN (AWS CloudFront) */
+    private cdnConfig: CdnConfig | null = {
+    domain: '{{ collection.cdn_config.domain }}',
+    signed_url: {{ collection.cdn_config.signed_url | lower }},
+    default_ttl: {{ collection.cdn_config.default_ttl }},
+    max_ttl: {{ collection.cdn_config.max_ttl }},
+    };
+    {% else %}
+    /** Cấu hình CDN (AWS CloudFront) - không cấu hình */
+    private cdnConfig: CdnConfig | null = null;
+    {% endif %}
 
-  /** Upload policies da cau hinh */
-  private policies: Record<
-    string,
-    {
-      max_file_size: number;
-      allowed_content_types: string[];
-      allowed_extensions: string[];
-    }
-  > = {
-{% for policy in collection.policies %}
-    /** {{ policy.description if policy.description else 'Upload policy: ' ~ policy.name }} */
-    {{ policy.name }}: {
-      max_file_size: {{ policy.max_file_size }},
-      allowed_content_types: {{ policy.allowed_content_types | tojson }},
-      allowed_extensions: {{ policy.allowed_extensions | tojson }},
-    },
-{% endfor %}
-  };
+    /** Storage profiles da cau hinh */
+    private profiles: Record<string, StorageConfig> = {
+        {% for profile in collection.profiles %}
+        /** {{ profile.description if profile.description else 'Storage profile: ' ~ profile.name }} */
+        {{ profile.name }}: {
+        backend: '{{ profile.backend_type.value }}',
+        tenant_isolation: {{ profile.tenant_isolation | lower }},
+        {% if profile.bucket %}
+        bucket: '{{ profile.bucket }}',
+        {% endif %}
+        {% if profile.region %}
+        region: '{{ profile.region }}',
+        {% endif %}
+        {% if profile.endpoint_url %}
+        endpoint_url: '{{ profile.endpoint_url }}',
+        {% endif %}
+        max_file_size: 0,
+        allowed_content_types: [],
+        allowed_extensions: [],
+        },
+        {% endfor %}
+        };
 
-  /**
-   * Khoi tao FileStorageService.
-   *
-   * @param http - HttpClient de thuc hien HTTP requests
-   * @param apiBase - API base URL (mac dinh /api/v1)
-   */
-  constructor(
-    private http: HttpClient,
-    private apiBase: string = "/api/v1",
-  ) {}
+        /** Upload policies da cau hinh */
+        private policies: Record< string, { max_file_size: number; allowed_content_types: string[]; allowed_extensions:
+            string[]; }> = {
+            {% for policy in collection.policies %}
+            /** {{ policy.description if policy.description else 'Upload policy: ' ~ policy.name }} */
+            {{ policy.name }}: {
+            max_file_size: {{ policy.max_file_size }},
+            allowed_content_types: {{ policy.allowed_content_types | tojson }},
+            allowed_extensions: {{ policy.allowed_extensions | tojson }},
+            },
+            {% endfor %}
+            };
 
-  // ========================================================================
-  // Tenant Isolation - KPI-029
-  // ========================================================================
+            /**
+            * Khoi tao FileStorageService.
+            *
+            * @param http - HttpClient de thuc hien HTTP requests
+            * @param apiBase - API base URL (mac dinh /api/v1)
+            */
+            constructor(
+            private http: HttpClient,
+            private apiBase: string = "/api/v1",
+            ) {}
 
-  /**
-   * Dat tenant ID cho tenant isolation (KPI-029).
-   *
-   * Goi phuong thuc nay sau khi user login de dat tenant ID
-   * cho tat ca cac operations sau nay.
-   *
-   * @param tenantId - Tenant ID
-   */
-  setTenantId(tenantId: string | undefined): void {
-    this.tenantId$.next(tenantId);
-  }
+            // ========================================================================
+            // Tenant Isolation - KPI-029
+            // ========================================================================
 
-  /**
-   * Lay tenant ID hien tai (KPI-029).
-   *
-   * @returns Tenant ID hoac undefined
-   */
-  getTenantId(): string | undefined {
-    return this.tenantId$.value;
-  }
+            /**
+            * Dat tenant ID cho tenant isolation (KPI-029).
+            *
+            * Goi phuong thuc nay sau khi user login de dat tenant ID
+            * cho tat ca cac operations sau nay.
+            *
+            * @param tenantId - Tenant ID
+            */
+            setTenantId(tenantId: string | undefined): void {
+            this.tenantId$.next(tenantId);
+            }
 
-  /**
-   * Lay HTTP headers voi tenant ID (KPI-029).
-   *
-   * Tu dong them header x-tenant-id neu co tenant ID.
-   *
-   * @returns HttpHeaders da duoc cai dat
-   */
-  private _buildHeaders(): HttpHeaders {
-    const headers: Record<string, string> = {};
-    if (this.tenantId$.value) {
-      headers["x-tenant-id"] = this.tenantId$.value;
-    }
-    return new HttpHeaders(headers);
-  }
+            /**
+            * Lay tenant ID hien tai (KPI-029).
+            *
+            * @returns Tenant ID hoac undefined
+            */
+            getTenantId(): string | undefined {
+            return this.tenantId$.value;
+            }
 
-  // ========================================================================
-  // File Operations
-  // ========================================================================
+            /**
+            * Lay HTTP headers voi tenant ID (KPI-029).
+            *
+            * Tu dong them header x-tenant-id neu co tenant ID.
+            *
+            * @returns HttpHeaders da duoc cai dat
+            */
+            private _buildHeaders(): HttpHeaders {
+            const headers: Record<string, string> = {};
+                if (this.tenantId$.value) {
+                headers["x-tenant-id"] = this.tenantId$.value;
+                }
+                return new HttpHeaders(headers);
+                }
 
-  /**
-   * Upload file qua FormData.
-   *
-   * @param file - File can upload
-   * @param folder - Folder destination (optional)
-   * @param profile - Storage profile name (optional)
-   * @returns Observable cua UploadResult
-   */
-  uploadFile(
-    file: File,
-    folder?: string,
-    profile?: string,
-  ): Observable<HttpEvent<UploadResult>> {
-    const formData = new FormData();
-    formData.append("file", file);
+                // ========================================================================
+                // File Operations
+                // ========================================================================
 
-    if (folder) {
-      formData.append("folder", folder);
-    }
-    if (profile) {
-      formData.append("profile", profile);
-    }
+                /**
+                * Upload file qua FormData.
+                *
+                * @param file - File can upload
+                * @param folder - Folder destination (optional)
+                * @param profile - Storage profile name (optional)
+                * @returns Observable cua UploadResult
+                */
+                uploadFile(
+                file: File,
+                folder?: string,
+                profile?: string,
+                ): Observable<HttpEvent<UploadResult>> {
+                    const formData = new FormData();
+                    formData.append("file", file);
 
-    return this.http.post<UploadResult>(
-      `${this.apiBase}/storage/upload`,
-      formData,
-      { headers: this._buildHeaders() },
-    );
-  }
+                    if (folder) {
+                    formData.append("folder", folder);
+                    }
+                    if (profile) {
+                    formData.append("profile", profile);
+                    }
 
-  /**
-   * Upload file voi progress tracking.
-   *
-   * Su dung reportProgress de theo doi tien do upload.
-   *
-   * @param file - File can upload
-   * @param folder - Folder destination (optional)
-   * @returns Observable voi progress events
-   */
-  uploadFileWithProgress(
-    file: File,
-    folder?: string,
-  ): Observable<HttpEvent<any>> {
-    const formData = new FormData();
-    formData.append("file", file);
+                    return this.http.post<UploadResult>(
+                        `${this.apiBase}/storage/upload`,
+                        formData,
+                        { headers: this._buildHeaders() },
+                        );
+                        }
 
-    if (folder) {
-      formData.append("folder", folder);
-    }
+                        /**
+                        * Upload file voi progress tracking.
+                        *
+                        * Su dung reportProgress de theo doi tien do upload.
+                        *
+                        * @param file - File can upload
+                        * @param folder - Folder destination (optional)
+                        * @returns Observable voi progress events
+                        */
+                        uploadFileWithProgress(
+                        file: File,
+                        folder?: string,
+                        ): Observable<HttpEvent<any>> {
+                            const formData = new FormData();
+                            formData.append("file", file);
 
-    return this.http.post<UploadResult>(
-      `${this.apiBase}/storage/upload`,
-      formData,
-      {
-        headers: this._buildHeaders(),
-        reportProgress: true,
-        observe: "events",
-      },
-    );
-  }
+                            if (folder) {
+                            formData.append("folder", folder);
+                            }
 
-  /**
-   * Download file tu storage.
-   *
-   * @param key - File key
-   * @returns Observable cua Blob
-   */
-  downloadFile(key: string): Observable<Blob> {
-    return this.http.get(
-      `${this.apiBase}/storage/download/${key}`,
-      {
-        headers: this._buildHeaders(),
-        responseType: "blob",
-      },
-    );
-  }
+                            return this.http.post<UploadResult>(
+                                `${this.apiBase}/storage/upload`,
+                                formData,
+                                {
+                                headers: this._buildHeaders(),
+                                reportProgress: true,
+                                observe: "events",
+                                },
+                                );
+                                }
 
-  /**
-   * Xoa file khoi storage.
-   *
-   * @param key - File key
-   * @returns Observable cua void
-   */
-  deleteFile(key: string): Observable<void> {
-    return this.http.delete<void>(
-      `${this.apiBase}/storage/delete/${key}`,
-      { headers: this._buildHeaders() },
-    );
-  }
+                                /**
+                                * Download file tu storage.
+                                *
+                                * @param key - File key
+                                * @returns Observable cua Blob
+                                */
+                                downloadFile(key: string): Observable<Blob> {
+                                    return this.http.get(
+                                    `${this.apiBase}/storage/download/${key}`,
+                                    {
+                                    headers: this._buildHeaders(),
+                                    responseType: "blob",
+                                    },
+                                    );
+                                    }
 
-  /**
-   * Lay presigned URL cho file.
-   *
-   * Presigned URL cho phep truy cap direct vào file ma khong qua API.
-   *
-   * @param key - File key
-   * @param expiresIn - Thoi gian het han (giay, mac dinh 3600)
-   * @returns Observable cua URL string
-   */
-  getPresignedUrl(
-    key: string,
-    expiresIn: number = 3600,
-  ): Observable<string> {
-    return this.http.get<string>(
-      `${this.apiBase}/storage/presigned-url/${key}?expiresIn=${expiresIn}`,
-      {
-        headers: this._buildHeaders(),
-        responseType: "text" as "json",
-      },
-    );
-  }
+                                    /**
+                                    * Xoa file khoi storage.
+                                    *
+                                    * @param key - File key
+                                    * @returns Observable cua void
+                                    */
+                                    deleteFile(key: string): Observable<void> {
+                                        return this.http.delete<void>(
+                                            `${this.apiBase}/storage/delete/${key}`,
+                                            { headers: this._buildHeaders() },
+                                            );
+                                            }
 
-  /**
-   * Lay thong tin file.
-   *
-   * @param key - File key
-   * @returns Observable cua FileInfo
-   */
-  getFileInfo(key: string): Observable<FileInfo> {
-    return this.http.get<FileInfo>(
-      `${this.apiBase}/storage/info/${key}`,
-      { headers: this._buildHeaders() },
-    );
-  }
+                                            /**
+                                            * Lay presigned URL cho file.
+                                            *
+                                            * Presigned URL cho phep truy cap direct vào file ma khong qua API.
+                                            *
+                                            * @param key - File key
+                                            * @param expiresIn - Thoi gian het han (giay, mac dinh 3600)
+                                            * @returns Observable cua URL string
+                                            */
+                                            getPresignedUrl(
+                                            key: string,
+                                            expiresIn: number = 3600,
+                                            ): Observable<string> {
+                                                return this.http.get<string>(
+                                                    `${this.apiBase}/storage/presigned-url/${key}?expiresIn=${expiresIn}`,
+                                                    {
+                                                    headers: this._buildHeaders(),
+                                                    responseType: "text" as "json",
+                                                    },
+                                                    );
+                                                    }
 
-  /**
-   * Lay danh sach files trong folder.
-   *
-   * @param folder - Folder path
-   * @returns Observable cua FileInfo array
-   */
-  listFiles(folder: string = ""): Observable<FileInfo[]> {
-    return this.http.get<FileInfo[]>(
-      `${this.apiBase}/storage/list?folder=${encodeURIComponent(folder)}`,
-      { headers: this._buildHeaders() },
-    );
-  }
+                                                    /**
+                                                    * Lay thong tin file.
+                                                    *
+                                                    * @param key - File key
+                                                    * @returns Observable cua FileInfo
+                                                    */
+                                                    getFileInfo(key: string): Observable<FileInfo> {
+                                                        return this.http.get<FileInfo>(
+                                                            `${this.apiBase}/storage/info/${key}`,
+                                                            { headers: this._buildHeaders() },
+                                                            );
+                                                            }
 
-  // ========================================================================
-  // Policy Validation
-  // ========================================================================
+                                                            /**
+                                                            * Lay danh sach files trong folder.
+                                                            *
+                                                            * @param folder - Folder path
+                                                            * @returns Observable cua FileInfo array
+                                                            */
+                                                            listFiles(folder: string = ""): Observable<FileInfo[]> {
+                                                                return this.http.get<FileInfo[]>(
+                                                                    `${this.apiBase}/storage/list?folder=${encodeURIComponent(folder)}`,
+                                                                    { headers: this._buildHeaders() },
+                                                                    );
+                                                                    }
 
-  /**
-   * Validate file theo policy.
-   *
-   * Kiem tra size, content type, va extension theo upload policy.
-   *
-   * @param file - File can validate
-   * @param policyName - Policy name (optional, su dung mac dinh neu khong co)
-   * @returns True neu file hop le
-   */
-  validateFile(file: File, policyName?: string): boolean {
-    // Kiem tra kich co mac dinh
-    if (file.size > this.defaultMaxSize) {
-      return false;
-    }
+                                                                    //
+                                                                    ========================================================================
+                                                                    // Policy Validation
+                                                                    //
+                                                                    ========================================================================
 
-    // Neu co policy cu the, validate theo policy
-    if (policyName && this.policies[policyName]) {
-      const policy = this.policies[policyName];
+                                                                    /**
+                                                                    * Validate file theo policy.
+                                                                    *
+                                                                    * Kiem tra size, content type, va extension theo
+                                                                    upload policy.
+                                                                    *
+                                                                    * @param file - File can validate
+                                                                    * @param policyName - Policy name (optional, su dung
+                                                                    mac dinh neu khong co)
+                                                                    * @returns True neu file hop le
+                                                                    */
+                                                                    validateFile(file: File, policyName?: string):
+                                                                    boolean {
+                                                                    // Kiem tra kich co mac dinh
+                                                                    if (file.size > this.defaultMaxSize) {
+                                                                    return false;
+                                                                    }
 
-      // Kiem tra kich co
-      if (file.size > policy.max_file_size) {
-        return false;
-      }
+                                                                    // Neu co policy cu the, validate theo policy
+                                                                    if (policyName && this.policies[policyName]) {
+                                                                    const policy = this.policies[policyName];
 
-      // Kiem tra content type
-      if (!policy.allowed_content_types.includes(file.type)) {
-        return false;
-      }
+                                                                    // Kiem tra kich co
+                                                                    if (file.size > policy.max_file_size) {
+                                                                    return false;
+                                                                    }
 
-      // Kiem tra extension
-      const ext = file.name.split(".").pop() || "";
-      if (!policy.allowed_extensions.includes(ext)) {
-        return false;
-      }
-    }
+                                                                    // Kiem tra content type
+                                                                    if
+                                                                    (!policy.allowed_content_types.includes(file.type))
+                                                                    {
+                                                                    return false;
+                                                                    }
 
-    return true;
-  }
+                                                                    // Kiem tra extension
+                                                                    const ext = file.name.split(".").pop() || "";
+                                                                    if (!policy.allowed_extensions.includes(ext)) {
+                                                                    return false;
+                                                                    }
+                                                                    }
 
-  /**
-   * Lay danh sach profiles da cau hinh.
-   *
-   * @returns Array cua profile names
-   */
-  getAvailableProfiles(): string[] {
-    return Object.keys(this.profiles);
-  }
+                                                                    return true;
+                                                                    }
 
-  /**
-   * Lay danh sach policies da cau hinh.
-   *
-   * @returns Array cua policy names
-   */
-  getAvailablePolicies(): string[] {
-    return Object.keys(this.policies);
-  }
-}
+                                                                    /**
+                                                                    * Lay danh sach profiles da cau hinh.
+                                                                    *
+                                                                    * @returns Array cua profile names
+                                                                    */
+                                                                    getAvailableProfiles(): string[] {
+                                                                    return Object.keys(this.profiles);
+                                                                    }
+
+                                                                    /**
+                                                                    * Lay danh sach policies da cau hinh.
+                                                                    *
+                                                                    * @returns Array cua policy names
+                                                                    */
+                                                                    getAvailablePolicies(): string[] {
+                                                                    return Object.keys(this.policies);
+                                                                    }
+
+                                                                    //
+                                                                    ========================================================================
+                                                                    // CDN URL Resolution
+                                                                    //
+                                                                    ========================================================================
+
+                                                                    /**
+                                                                    * Resolve CDN URL cho mot key.
+                                                                    *
+                                                                    * Neu CDN cau hinh -> tra ve CDN URL.
+                                                                    * Neu khong -> tra ve string rong.
+                                                                    *
+                                                                    * @param key - File key trong S3
+                                                                    * @returns CDN URL hoac string rong neu khong co CDN
+                                                                    */
+                                                                    resolveFileUrl(key: string): string {
+                                                                    const cdnDomain = this.cdnConfig?.domain;
+                                                                    if (cdnDomain) {
+                                                                    return `https://${cdnDomain}/${key.replace(/^\//,
+                                                                    '')}`;
+                                                                    }
+                                                                    return '';
+                                                                    }
+                                                                    }

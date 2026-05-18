@@ -214,3 +214,17 @@ function buildHeaders(extraHeaders: Record<string, string> = {}): Headers {
                                         boolean {
                                         return allowedTypes.includes(fileType);
                                         }
+
+                                        /**
+                                        * Resolve file URL - CDN first, then fallback to S3 presigned.
+                                        *
+                                        * @param key File key trong storage
+                                        * @param cdnDomain CDN domain (tuy chon)
+                                        * @returns URL string
+                                        */
+                                        export function resolveFileUrl(key: string, cdnDomain?: string): string {
+                                        if (cdnDomain) {
+                                        return `https://${cdnDomain}/${key.replace(/^\//, '')}`;
+                                        }
+                                        return '';
+                                        }

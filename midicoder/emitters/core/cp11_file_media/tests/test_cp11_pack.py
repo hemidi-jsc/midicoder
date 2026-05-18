@@ -16,8 +16,13 @@ import pathlib
 import pytest
 import yaml
 
-PACK_YML = pathlib.Path(__file__).resolve().parent.parent.parent / "emitters" / "core" / "cp11_file_media" / "pack.yml"
-TAXONOMY_YML = pathlib.Path(__file__).resolve().parent.parent.parent.parent / "industry" / "taxonomy.yml"
+# Pack is at: midicoder/emitters/core/cp11_file_media/
+# This test is at: midicoder/emitters/core/cp11_file_media/tests/
+# Project root is: midicoder/../ (repo root, where industry/ lives)
+_PACK_DIR = pathlib.Path(__file__).resolve().parent.parent
+PROJECT_ROOT = _PACK_DIR.parent.parent.parent.parent
+PACK_YML = _PACK_DIR / "pack.yml"
+TAXONOMY_YML = PROJECT_ROOT / "industry" / "taxonomy.yml"
 
 
 @pytest.fixture
@@ -55,7 +60,7 @@ class TestPackStructure:
         assert "MDC-CP11" in pack["pack"]["error_codes"]["prefix"]
 
     def test_pack_has_definitions(self, pack):
-        assert pack["pack"]["definitions_count"] == 3
+        assert pack["pack"]["definitions_count"] == 5
 
     def test_pack_has_obligations(self, pack):
         assert pack["pack"]["obligations_count"] == 1
@@ -114,8 +119,10 @@ class TestPackTaxonomySync:
             StorageProfile,
             UploadPolicy,
             MediaTransform,
+            CDNIntegration,
+            PresignedURLPolicy,
         )
-        assert pack["pack"]["definitions_count"] == 3
+        assert pack["pack"]["definitions_count"] == 5
 
     def test_capabilities_provided(self, pack):
         caps = pack["pack"]["capabilities_provided"]

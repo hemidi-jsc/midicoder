@@ -32,11 +32,10 @@ from .resolver import PackResolver
 
 
 # Mapping mặc định từ target_profiles → stacks
+# Scope: chỉ AWS + Local/on-premise (không hỗ trợ GCP/Azure)
 PROFILE_TO_STACKS: dict[str, list[str]] = {
     "local": ["fastapi", "angular"],
     "aws": ["fastapi", "angular"],
-    "gcp": ["fastapi", "angular"],
-    "azure": ["fastapi", "angular"],
     "on-premise": ["fastapi", "angular"],
 }
 

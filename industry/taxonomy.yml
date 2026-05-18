@@ -178,8 +178,8 @@ core_packs:
     name: File Storage & Media Processing Generator
     internal_id: cp11_file_media
     phase: P1
-    description: File storage profiles, upload policies, media transforms
-    definitions_count: 3
+    description: File storage (S3, local), upload policies, media transforms, CloudFront CDN
+    definitions_count: 5
     obligations_count: 1
     depends_on:
       - CP07
@@ -188,9 +188,11 @@ core_packs:
       - file_download
       - file_storage
       - media_transform
+      - cdn_integration
+      - presigned_url
     category: storage
     status: developing
-    version: 1.0.0
+    version: 1.1.0
   - id: CP12
     name: Notification & Communication Generator
     internal_id: cp12_notification
