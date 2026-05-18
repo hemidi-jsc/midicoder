@@ -2,36 +2,122 @@ pack:
   id: "CP06"
   name: "API Gateway & Service Mesh Generator"
   internal_id: "cp06_api_gateway"
-  version: "1.0.0"
-  status: "stable"
+  version: "1.1.0"
+  status: "developing"
   category: "integration"
   depends_on: ["CP01", "CP05"]
-  definitions_count: 2
-  obligations_count: 0
+  definitions_count: 29
+  obligations_count: 8
   error_codes:
     prefix: "MDC-CP06"
-    range: "MDC-CP06-001 to MDC-CP06-002"
+    range: "MDC-CP06-001 to MDC-CP06-008"
   capabilities_provided:
     - route_request
     - gateway_binding
     - service_mesh_config
+    - http_routing
+    - graphql_routing
+    - webhook_handling
+    - circuit_breaker
+    - rate_limiting
+    - tenant_isolation
+    - load_balancing
   capabilities:
     - id: "kong_gateway"
       emitter: "fastapi, nestjs"
     - id: "consul_mesh"
       emitter: "fastapi, nestjs"
     - id: "http_routing"
-      emitter: "fastapi, nestjs"
+      emitter: "fastapi, nestjs, angular, react"
     - id: "graphql_routing"
       emitter: "fastapi, nestjs"
+    - id: "webhook"
+      emitter: "fastapi, nestjs"
+    - id: "circuit_breaker"
+      emitter: "fastapi, nestjs"
+    - id: "rate_limiting"
+      emitter: "fastapi, nestjs"
+    - id: "tenant_aware"
+      emitter: "fastapi, nestjs, angular, react"
   definitions:
-    - name: "GatewayProfile"
-      description: "Gateway configuration with routing and upstream binding"
-    - name: "RouteSpec"
-      description: "Route definition: HTTP, GraphQL, or Webhook"
-  obligations: []
+    - name: "KongGateway"
+      description: "Kong Gateway main configuration"
+    - name: "KongService"
+      description: "Backend service trong Kong"
+    - name: "KongRoute"
+      description: "Route mapping trong Kong"
+    - name: "KongTarget"
+      description: "Backend instance trong Kong Upstream"
+    - name: "KongUpstream"
+      description: "Load balancing upstream trong Kong"
+    - name: "PluginName"
+      description: "Enum các plugin Kong (rate-limiting, cors, jwt...)"
+    - name: "KongPlugin"
+      description: "Plugin configuration trong Kong"
+    - name: "ConsulService"
+      description: "Service đăng ký trong Consul"
+    - name: "HealthCheckType"
+      description: "Enum các loại health check (http/tcp/exec/ttl)"
+    - name: "ConsulHealthCheck"
+      description: "Health check định nghĩa trong Consul"
+    - name: "ConsulUpstream"
+      description: "Upstream cho Consul Connect proxy"
+    - name: "ConsulConnect"
+      description: "Connect sidecar proxy configuration"
+    - name: "ConsulServiceMesh"
+      description: "Service Mesh configuration tổng thể"
+    - name: "HttpMethod"
+      description: "Enum HTTP methods (GET/POST/PUT/PATCH/DELETE)"
+    - name: "AuthMode"
+      description: "Enum auth modes (JWT/OAuth2/API_KEY/SESSION)"
+    - name: "RouteParam"
+      description: "Path parameter cho route"
+    - name: "QueryParam"
+      description: "Query parameter cho route"
+    - name: "SchemaField"
+      description: "Field trong request/response schema"
+    - name: "RouteAuthConfig"
+      description: "Auth config cho route (KPI-029)"
+    - name: "Route"
+      description: "HTTP REST route model"
+    - name: "GraphQLOperation"
+      description: "Enum GraphQL operations (query/mutation/subscription)"
+    - name: "GraphQLArg"
+      description: "Argument cho GraphQL resolver"
+    - name: "GraphQLField"
+      description: "Field trong GraphQL return type"
+    - name: "GraphQLResolver"
+      description: "GraphQL resolver model"
+    - name: "WebhookAuthType"
+      description: "Enum webhook auth types (hmac/bearer/custom)"
+    - name: "WebhookAuthConfig"
+      description: "Auth config cho webhook"
+    - name: "WebhookPayloadField"
+      description: "Field trong webhook payload"
+    - name: "WebhookHandler"
+      description: "Webhook endpoint model"
+    - name: "RouteCollection"
+      description: "Collection chứa routes, resolvers, webhooks"
+  obligations:
+    - name: "RouteAuthEnforced"
+      description: "Routes có auth config phải enforce authentication"
+    - name: "TenantIsolation"
+      description: "Routes phải enforce tenant scope (KPI-029)"
+    - name: "ValidHttpMethod"
+      description: "HTTP method phải là một trong GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS"
+    - name: "ValidPathPattern"
+      description: "Route path phải bắt đầu với / và có format hợp lệ"
+    - name: "WebhookSignatureVerify"
+      description: "Webhooks có verify_signature=true phải check HMAC"
+    - name: "GraphQLAuthRequired"
+      description: "GraphQL resolvers có auth_required=true phải enforce auth"
+    - name: "ConsulServiceRegistration"
+      description: "Consul service phải có name và port hợp lệ"
+    - name: "KongPluginScope"
+      description: "Kong plugin phải apply vào đúng scope (service/route/consumer/global)"
   file_contributions:
     infrastructure:
+      # FastAPI infrastructure
       - path: "app/gateway/__init__.py"
         file_type: "init"
         template: "cp06_api_gateway/__init__.py.jinja2"
@@ -67,6 +153,7 @@ pack:
         template: "cp06_api_gateway/route_config.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null
+      # NestJS infrastructure
       - path: "src/gateway/gateway.controller.ts"
         file_type: "gateway_controller"
         template: "cp06_api_gateway/gateway.controller.ts.jinja2"
@@ -97,6 +184,7 @@ pack:
         template: "cp06_api_gateway/route-config.service.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
+      # Angular infrastructure
       - path: "src/app/core/gateway/gateway.module.ts"
         file_type: "gateway_module"
         template: "cp06_api_gateway/gateway.module.ts.jinja2"
@@ -112,6 +200,7 @@ pack:
         template: "cp06_api_gateway/route-guard.service.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
+      # React infrastructure
       - path: "src/gateway/api-client.ts"
         file_type: "api_client"
         template: "cp06_api_gateway/api-client.ts.jinja2"
@@ -138,3 +227,10 @@ pack:
         template: "cp06_api_gateway/http_route.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
+  frontend_integration:
+    angular:
+      - ApiClientService
+      - RouteGuardService
+    react:
+      - ApiClient
+      - RouteGuard

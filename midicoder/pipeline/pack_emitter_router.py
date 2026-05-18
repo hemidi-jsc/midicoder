@@ -136,6 +136,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "NestJSEventEmitter",
         "cp05_event",
     ),
+    # CP06 – API Gateway (FastAPI)
+    "cp06.gateway.fastapi": (
+        "midicoder.emitters.core.cp06_api_gateway.fastapi",
+        "FastAPIGatewayEmitter",
+        "cp06_gateway",
+    ),
+    # CP06 – API Gateway (NestJS)
+    "cp06.gateway.nestjs": (
+        "midicoder.emitters.core.cp06_api_gateway.nestjs",
+        "NestJSGatewayEmitter",
+        "cp06_gateway",
+    ),
+    # CP06 – API Gateway (Angular)
+    "cp06.gateway.angular": (
+        "midicoder.emitters.core.cp06_api_gateway.angular",
+        "AngularGatewayEmitter",
+        "cp06_gateway",
+    ),
+    # CP06 – API Gateway (React)
+    "cp06.gateway.react": (
+        "midicoder.emitters.core.cp06_api_gateway.react",
+        "ReactGatewayEmitter",
+        "cp06_gateway",
+    ),
     # CP09 – Cache (FastAPI)
     "cp09.cache.fastapi": (
         "midicoder.emitters.core.cp09_cache.fastapi",
@@ -239,6 +263,17 @@ def _parse_cache_dict(raw: dict[str, Any]) -> Any:
     return parser.parse_from_metadata(raw)
 
 
+def _parse_gateway_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw MIR metadata into a CP06 RouteCollection."""
+    from midicoder.emitters.core.cp06_api_gateway.route_parser import RouteParser
+    parser = RouteParser()
+    return parser.parse_from_metadata(
+        routes_data=raw.get("routes"),
+        graphql_data=raw.get("graphql"),
+        webhooks_data=raw.get("webhooks"),
+    )
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
@@ -246,6 +281,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp10_search": _parse_search_dict,
     "cp05_event": _parse_event_dict,
     "cp09_cache": _parse_cache_dict,
+    "cp06_gateway": _parse_gateway_dict,
 }
 
 
@@ -377,6 +413,24 @@ class PackEmitterRouter:
                     return results if results else _fallback_placeholder(
                         file_path, "Search emitter produced no files"
                     )
+            except Exception as exc:
+                return _fallback_placeholder(file_path, str(exc))
+
+        elif parser_key == "cp06_gateway" or pack_emitter.startswith("cp06."):
+            # --- Gateway emitter dispatch ---
+            # Gateway emitters take (RouteCollection) via generate() and return
+            # dict[file_path, content].
+            try:
+                collection = PARSER_REGISTRY["cp06_gateway"](context)
+                if hasattr(emitter, "generate"):
+                    result = emitter.generate(collection)
+                    if isinstance(result, dict):
+                        return [{"path": k, "content": v} for k, v in result.items()]
+                    elif isinstance(result, list):
+                        return result
+                return _fallback_placeholder(
+                    file_path, "Gateway emitter returned unexpected type"
+                )
             except Exception as exc:
                 return _fallback_placeholder(file_path, str(exc))
 

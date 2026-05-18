@@ -15,7 +15,8 @@ Exports:
     Route Models: Route, RouteCollection, RouteAuthConfig, RouteParam, QueryParam, SchemaField, HttpMethod, AuthMode
     GraphQL Models: GraphQLResolver, GraphQLArg, GraphQLField, GraphQLOperation
     Webhook Models: WebhookHandler, WebhookAuthConfig, WebhookPayloadField, WebhookAuthType
-    Emitter: KongGatewayEmitter, FastAPIRouteEmitter, NestJSRouteEmitter, RouteParser
+    Emitter: KongGatewayEmitter, FastAPIGatewayEmitter, NestJSGatewayEmitter, AngularGatewayEmitter, ReactGatewayEmitter
+    Parser: RouteParser
 """
 
 # ===========================================================================
@@ -68,7 +69,13 @@ from midicoder.emitters.core.cp06_api_gateway.models import (
 # Route Parser
 from midicoder.emitters.core.cp06_api_gateway.route_parser import RouteParser
 
-# Route Emitters
+# Unified Gateway Emitters (all stacks)
+from midicoder.emitters.core.cp06_api_gateway.fastapi import FastAPIGatewayEmitter
+from midicoder.emitters.core.cp06_api_gateway.nestjs import NestJSGatewayEmitter
+from midicoder.emitters.core.cp06_api_gateway.angular import AngularGatewayEmitter
+from midicoder.emitters.core.cp06_api_gateway.react import ReactGatewayEmitter
+
+# Legacy sub-emitters (kept for backward compatibility)
 from midicoder.emitters.core.cp06_api_gateway.route_fastapi import (
     FastAPIRouteEmitter,
     FastAPIGraphQLResolverEmitter,
@@ -99,7 +106,7 @@ __all__ = [
     "ConsulUpstream",
     "ConsulServiceMesh",
     "HealthCheckType",
-    # -- Emitter --
+    # -- Kong Emitter --
     "KongGatewayEmitter",
     # -- Route Models --
     "Route",
@@ -122,11 +129,15 @@ __all__ = [
     "WebhookAuthType",
     # -- Parser --
     "RouteParser",
-    # -- FastAPI Emitters --
+    # -- Unified Gateway Emitters --
+    "FastAPIGatewayEmitter",
+    "NestJSGatewayEmitter",
+    "AngularGatewayEmitter",
+    "ReactGatewayEmitter",
+    # -- Legacy Sub-emitters --
     "FastAPIRouteEmitter",
     "FastAPIGraphQLResolverEmitter",
     "FastAPIWebhookEmitter",
-    # -- NestJS Emitters --
     "NestJSRouteEmitter",
     "NestJSGraphQLResolverEmitter",
     "NestJSWebhookEmitter",
