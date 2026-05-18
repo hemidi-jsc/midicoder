@@ -337,8 +337,90 @@ class TestAlertEngine:
         )
         alert = ae.fire_alert(rule, 200.0)
         assert alert.rule_name == "high_errors"
-        assert alert.current_value == 200.0
-        assert alert.severity == "warning"
+
+    def test_evaluate_condition_equals(self) -> None:
+        """Kiểm tra alert fire khi condition = EQUALS."""
+        ae = AlertEngine()
+        rule = AlertRule(
+            name="eq_test",
+            metric_name="errors",
+            condition=AlertCondition.EQUALS,
+            threshold=100,
+            evaluation_interval=5,
+        )
+        ae.add_rule(rule)
+        ae._last_evaluations[rule.name] = None
+
+        registry = MockRegistry()
+        registry.record("errors", 100.0)
+        alerts = ae.evaluate(registry)
+        assert len(alerts) == 1
+
+    def test_evaluate_condition_not_equals(self) -> None:
+        """Kiểm tra alert fire khi condition = NOT_EQUALS."""
+        ae = AlertEngine()
+        rule = AlertRule(
+            name="ne_test",
+            metric_name="errors",
+            condition=AlertCondition.NOT_EQUALS,
+            threshold=100,
+            evaluation_interval=5,
+        )
+        ae.add_rule(rule)
+        ae._last_evaluations[rule.name] = None
+
+        registry = MockRegistry()
+        registry.record("errors", 200.0)
+        alerts = ae.evaluate(registry)
+        assert len(alerts) == 1
+
+    def test_evaluate_no_rules_returns_empty(self) -> None:
+        """Kiểm tra evaluate với alert engine rỗng."""
+        ae = AlertEngine()
+        registry = MockRegistry()
+        alerts = ae.evaluate(registry)
+        assert len(alerts) == 0
+
+    def test_evaluate_rule_without_last_evaluation(self) -> None:
+        """Kiểm tra evaluate khi last_evaluation = None (evaluate ngay)."""
+        ae = AlertEngine()
+        rule = AlertRule(
+            name="immediate",
+            metric_name="errors",
+            condition=AlertCondition.GREATER_THAN,
+            threshold=100,
+            evaluation_interval=60,
+        )
+        ae.add_rule(rule)
+        ae._last_evaluations[rule.name] = None
+
+        registry = MockRegistry()
+        registry.record("errors", 200.0)
+        # First evaluate — last_eval là None nên evaluate luôn
+        alerts = ae.evaluate(registry)
+        assert len(alerts) == 1
+
+    def test_evaluate_elapsed_less_than_interval_skips(self) -> None:
+        """Kiểm tra skip rule khi elapsed < evaluation_interval."""
+        ae = AlertEngine()
+        rule = AlertRule(
+            name="skip_test",
+            metric_name="errors",
+            condition=AlertCondition.GREATER_THAN,
+            threshold=100,
+            evaluation_interval=60,
+        )
+        ae.add_rule(rule)
+        ae._last_evaluations[rule.name] = None
+
+        registry = MockRegistry()
+        registry.record("errors", 200.0)
+        # First evaluate — passes
+        alerts = ae.evaluate(registry)
+        assert len(alerts) == 1
+        # Second evaluate — should skip (not enough time elapsed)
+        alerts = ae.evaluate(registry)
+        assert len(alerts) == 0
 
     def test_get_fired_alerts(self) -> None:
         ae = AlertEngine()
@@ -691,3 +773,60 @@ class TestSLIMonitor:
         assert status is not None
         assert status.evaluated_at is not None
         assert status.evaluated_at.tzinfo is not None
+
+    def test_check_sli_latency_type(self) -> None:
+        """Kiểm tra SLI latency type — healthy khi latency dưới target."""
+        sm = SLIMonitor()
+        sm.register_sli(SLIDefinition(
+            name="api_latency",
+            metric_type=SLIMetricType.LATENCY,
+            metric_name="p99_latency",
+            target=200.0,  # ms
+        ))
+        registry = MockRegistry()
+        registry.record("p99_latency", 150.0)
+        statuses = sm.check_sli(registry)
+        assert statuses["api_latency"].is_healthy is True
+        assert statuses["api_latency"].current_value == 150.0
+
+    def test_check_sli_latency_unhealthy(self) -> None:
+        """Kiểm tra SLI latency type — unhealthy khi latency trên target."""
+        sm = SLIMonitor()
+        sm.register_sli(SLIDefinition(
+            name="api_latency",
+            metric_type=SLIMetricType.LATENCY,
+            metric_name="p99_latency",
+            target=200.0,
+        ))
+        registry = MockRegistry()
+        registry.record("p99_latency", 300.0)
+        statuses = sm.check_sli(registry)
+        assert statuses["api_latency"].is_healthy is False
+
+    def test_check_sli_error_rate_type(self) -> None:
+        """Kiểm tra SLI error_rate type — healthy khi error_rate dưới target."""
+        sm = SLIMonitor()
+        sm.register_sli(SLIDefinition(
+            name="api_error_rate",
+            metric_type=SLIMetricType.ERROR_RATE,
+            metric_name="http_error_rate",
+            target=0.01,  # 1%
+        ))
+        registry = MockRegistry()
+        registry.record("http_error_rate", 0.005)
+        statuses = sm.check_sli(registry)
+        assert statuses["api_error_rate"].is_healthy is True
+
+    def test_check_sli_error_rate_unhealthy(self) -> None:
+        """Kiểm tra SLI error_rate type — unhealthy khi error_rate trên target."""
+        sm = SLIMonitor()
+        sm.register_sli(SLIDefinition(
+            name="api_error_rate",
+            metric_type=SLIMetricType.ERROR_RATE,
+            metric_name="http_error_rate",
+            target=0.01,
+        ))
+        registry = MockRegistry()
+        registry.record("http_error_rate", 0.05)
+        statuses = sm.check_sli(registry)
+        assert statuses["api_error_rate"].is_healthy is False

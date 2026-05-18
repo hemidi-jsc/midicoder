@@ -57,10 +57,6 @@ class AlertRule:
     message: str = ""
     evaluation_interval: int = 60  # giây
 
-    def __post_init__(self) -> None:
-        if not self.message:
-            self.message = f"Cảnh báo: {self.metric} {self.operator} {self.threshold}"
-
 
 @dataclass
 class FiredAlert:

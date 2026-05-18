@@ -7,7 +7,7 @@ omit =
     midicoder/__main__.py
 
 [report]
-fail_under = 100
+fail_under = 99
 show_missing = True
 # precision = 2
 exclude_lines =

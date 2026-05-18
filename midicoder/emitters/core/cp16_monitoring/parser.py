@@ -28,9 +28,16 @@ from midicoder.emitters.core.cp16_monitoring.models import (
     AlertSeverity,
     DashboardProfile,
     DashboardType,
+    EscalationPolicy,
+    HealthCheck,
+    HealthCheckType,
+    NotificationChannel,
+    NotificationChannelType,
     Panel,
     SLIDefinition,
     SLIMetricType,
+    SLOBurnRate,
+    SLOTracking,
 )
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
@@ -58,7 +65,9 @@ class MonitoringParser:
             raw: YAML string
 
         Returns:
-            Dict với keys: "dashboards", "alerts", "slis"
+            Dict với keys: "dashboards", "alerts", "slis",
+                          "health_checks", "notification_channels",
+                          "escalation_policies", "slo_tracking"
 
         Raises:
             MidicoderError: Nếu YAML không hợp lệ (MDC-CP16-010)
@@ -69,6 +78,10 @@ class MonitoringParser:
                 "dashboards": [],
                 "alerts": [],
                 "slis": [],
+                "health_checks": [],
+                "notification_channels": [],
+                "escalation_policies": [],
+                "slo_tracking": [],
             }
 
         # Parse YAML
@@ -87,6 +100,10 @@ class MonitoringParser:
                 "dashboards": [],
                 "alerts": [],
                 "slis": [],
+                "health_checks": [],
+                "notification_channels": [],
+                "escalation_policies": [],
+                "slo_tracking": [],
             }
 
         # YAML phải là dict/mapping
@@ -100,6 +117,10 @@ class MonitoringParser:
             "dashboards": [],
             "alerts": [],
             "slis": [],
+            "health_checks": [],
+            "notification_channels": [],
+            "escalation_policies": [],
+            "slo_tracking": [],
         }
 
         # Parse dashboards section
@@ -122,6 +143,34 @@ class MonitoringParser:
             for sli_data in raw_slis:
                 definition = self._parse_sli_definition(sli_data)
                 result["slis"].append(definition)
+
+        # Parse health_checks section
+        raw_health_checks = data.get("health_checks", [])
+        if isinstance(raw_health_checks, list):
+            for hc_data in raw_health_checks:
+                hc = self._parse_health_check(hc_data)
+                result["health_checks"].append(hc)
+
+        # Parse notification_channels section
+        raw_channels = data.get("notification_channels", [])
+        if isinstance(raw_channels, list):
+            for ch_data in raw_channels:
+                ch = self._parse_notification_channel(ch_data)
+                result["notification_channels"].append(ch)
+
+        # Parse escalation_policies section
+        raw_escalations = data.get("escalation_policies", [])
+        if isinstance(raw_escalations, list):
+            for esc_data in raw_escalations:
+                esc = self._parse_escalation_policy(esc_data)
+                result["escalation_policies"].append(esc)
+
+        # Parse slo_tracking section
+        raw_slos = data.get("slo_tracking", [])
+        if isinstance(raw_slos, list):
+            for slo_data in raw_slos:
+                slo = self._parse_slo_tracking(slo_data)
+                result["slo_tracking"].append(slo)
 
         return result
 
@@ -286,4 +335,165 @@ class MonitoringParser:
             window_seconds=data.get("window_seconds", 3600),
             labels=data.get("labels", {}) if data.get("labels") else {},
             description=data.get("description", ""),
+        )
+
+    # ------------------------------------------------------------------
+    # Health Check parsing
+    # ------------------------------------------------------------------
+
+    def _parse_health_check(self, data: dict[str, Any]) -> HealthCheck:
+        """
+        Parse dict thành HealthCheck.
+
+        Args:
+            data: Dict chứa thông tin health check
+
+        Returns:
+            HealthCheck instance
+
+        Raises:
+            MidicoderError: Nếu dữ liệu không hợp lệ
+        """
+        if not isinstance(data, dict):
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                message="Health check entry phải là YAML mapping",
+            )
+
+        # Parse health check type
+        type_str = data.get("check_type", "liveness")
+        try:
+            check_type = HealthCheckType(type_str)
+        except ValueError:
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                check_type=type_str,
+                valid_types=[t.value for t in HealthCheckType],
+            )
+
+        return HealthCheck(
+            name=data.get("name", ""),
+            check_type=check_type,
+            path=data.get("path", "/health"),
+            interval_seconds=data.get("interval_seconds", 10),
+            timeout_seconds=data.get("timeout_seconds", 5),
+            unhealthy_threshold=data.get("unhealthy_threshold", 3),
+            tags=data.get("tags", {}) if data.get("tags") else {},
+        )
+
+    # ------------------------------------------------------------------
+    # Notification Channel parsing
+    # ------------------------------------------------------------------
+
+    def _parse_notification_channel(self, data: dict[str, Any]) -> NotificationChannel:
+        """
+        Parse dict thành NotificationChannel.
+
+        Args:
+            data: Dict chứa thông tin notification channel
+
+        Returns:
+            NotificationChannel instance
+
+        Raises:
+            MidicoderError: Nếu dữ liệu không hợp lệ
+        """
+        if not isinstance(data, dict):
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                message="Notification channel entry phải là YAML mapping",
+            )
+
+        # Parse channel type
+        type_str = data.get("channel_type", "email")
+        try:
+            channel_type = NotificationChannelType(type_str)
+        except ValueError:
+            EM.raise_error(
+                ErrorCode.CP16_INVALID_NOTIFICATION_CHANNEL_TYPE,
+                channel_type=type_str,
+                valid_types=[t.value for t in NotificationChannelType],
+            )
+
+        return NotificationChannel(
+            name=data.get("name", ""),
+            channel_type=channel_type,
+            endpoint=data.get("endpoint", ""),
+            severity_filter=data.get("severity_filter", []),
+            enabled=data.get("enabled", True),
+        )
+
+    # ------------------------------------------------------------------
+    # Escalation Policy parsing
+    # ------------------------------------------------------------------
+
+    def _parse_escalation_policy(self, data: dict[str, Any]) -> EscalationPolicy:
+        """
+        Parse dict thành EscalationPolicy.
+
+        Args:
+            data: Dict chứa thông tin escalation policy
+
+        Returns:
+            EscalationPolicy instance
+
+        Raises:
+            MidicoderError: Nếu dữ liệu không hợp lệ
+        """
+        if not isinstance(data, dict):
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                message="Escalation policy entry phải là YAML mapping",
+            )
+
+        return EscalationPolicy(
+            name=data.get("name", ""),
+            levels=data.get("levels", []),
+            timeout_seconds=data.get("timeout_seconds", 300),
+            channels=data.get("channels", []),
+        )
+
+    # ------------------------------------------------------------------
+    # SLO Tracking parsing
+    # ------------------------------------------------------------------
+
+    def _parse_slo_tracking(self, data: dict[str, Any]) -> SLOTracking:
+        """
+        Parse dict thành SLOTracking.
+
+        Args:
+            data: Dict chứa thông tin SLO tracking
+
+        Returns:
+            SLOTracking instance
+
+        Raises:
+            MidicoderError: Nếu dữ liệu không hợp lệ
+        """
+        if not isinstance(data, dict):
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                message="SLO tracking entry phải là YAML mapping",
+            )
+
+        # Parse burn rate
+        burn_str = data.get("burn_rate", "7d")
+        try:
+            burn_rate = SLOBurnRate(burn_str)
+        except ValueError:
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                burn_rate=burn_str,
+                valid_rates=[r.value for r in SLOBurnRate],
+            )
+
+        return SLOTracking(
+            name=data.get("name", ""),
+            sli_name=data.get("sli_name", ""),
+            target_percentage=data.get("target_percentage", 99.9),
+            budget_period_seconds=data.get("budget_period_seconds", 2592000),
+            burn_rate=burn_rate,
+            fast_burn_threshold=data.get("fast_burn_threshold", 14.4),
+            slow_burn_threshold=data.get("slow_burn_threshold", 1.0),
+            pages_enabled=data.get("pages_enabled", True),
         )

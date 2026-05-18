@@ -64,6 +64,31 @@ class DashboardType(str, Enum):
     BUSINESS = "business"
 
 
+class HealthCheckType(str, Enum):
+    """Loại health check."""
+    LIVENESS = "liveness"       # Process còn sống không
+    READINESS = "readiness"     # Sẵn sàng nhận traffic chưa
+    CUSTOM = "custom"           # Custom check
+
+
+class NotificationChannelType(str, Enum):
+    """Loại kênh thông báo."""
+    EMAIL = "email"
+    SLACK = "slack"
+    WEBHOOK = "webhook"
+    PAGERDUTY = "pagerduty"
+    OPSGENIE = "opsgenie"
+
+
+class SLOBurnRate(str, Enum):
+    """Tốc độ tiêu thụ error budget."""
+    ONE_HOUR = "1h"
+    SIX_HOUR = "6h"
+    TWELVE_HOUR = "12h"
+    TWO_DAY = "2d"
+    SEVEN_DAY = "7d"
+
+
 # ===========================================================================
 # DashboardProfile
 # ===========================================================================
@@ -234,7 +259,7 @@ class SLIDefinition:
         # Tên SLI không được để trống
         if not self.name or not self.name.strip():
             EM.raise_error(
-                ErrorCode.CP16_EMPTY_DASHBOARD_NAME,
+                ErrorCode.CP16_EMPTY_SLI_NAME,
                 field="name"
             )
         # Target phải > 0
@@ -389,3 +414,275 @@ class SLIStatus:
             "is_healthy": self.is_healthy,
             "evaluated_at": self.evaluated_at.isoformat(),
         }
+
+
+# ===========================================================================
+# HealthCheck
+# ===========================================================================
+
+
+@dataclass
+class HealthCheck:
+    """Định nghĩa health check cho service.
+
+    Attributes:
+        name: Tên health check (bắt buộc, không rỗng)
+        check_type: Loại check (liveness/readiness/custom)
+        path: HTTP path để check (vd: /health, /ready)
+        interval_seconds: Khoảng thời gian check (giây, >= 5)
+        timeout_seconds: Thời gian chờ response (giây, >= 1)
+        unhealthy_threshold: Số lần fail liên tiếp để đánh unhealthy
+        tags: Tags để group health checks
+    """
+    name: str
+    check_type: HealthCheckType = HealthCheckType.LIVENESS
+    path: str = "/health"
+    interval_seconds: int = 10
+    timeout_seconds: int = 5
+    unhealthy_threshold: int = 3
+    tags: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate health check sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(
+                ErrorCode.CP16_EMPTY_HEALTH_CHECK_NAME,
+                field="name"
+            )
+        if not self.path.startswith("/"):
+            EM.raise_error(
+                ErrorCode.CP16_INVALID_HEALTH_CHECK_PATH,
+                path=self.path
+            )
+        if self.interval_seconds < 5:
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                field="interval_seconds",
+                value=self.interval_seconds,
+                minimum=5
+            )
+        if self.timeout_seconds < 1:
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                field="timeout_seconds",
+                value=self.timeout_seconds,
+                minimum=1
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển HealthCheck sang dict format."""
+        return {
+            "name": self.name,
+            "check_type": self.check_type.value,
+            "path": self.path,
+            "interval_seconds": self.interval_seconds,
+            "timeout_seconds": self.timeout_seconds,
+            "unhealthy_threshold": self.unhealthy_threshold,
+            "tags": self.tags,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "HealthCheck":
+        """Tạo HealthCheck từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            check_type=HealthCheckType(data.get("check_type", "liveness")),
+            path=data.get("path", "/health"),
+            interval_seconds=data.get("interval_seconds", 10),
+            timeout_seconds=data.get("timeout_seconds", 5),
+            unhealthy_threshold=data.get("unhealthy_threshold", 3),
+            tags=data.get("tags", {}),
+        )
+
+
+# ===========================================================================
+# NotificationChannel
+# ===========================================================================
+
+
+@dataclass
+class NotificationChannel:
+    """Kênh thông báo cho alert.
+
+    Attributes:
+        name: Tên channel (bắt buộc, không rỗng)
+        channel_type: Loại kênh (email/slack/webhook/pagerduty/opsgenie)
+        endpoint: Địa chỉ endpoint (email address, webhook URL, Slack channel, ...)
+        severity_filter: Chỉ nhận severity nào (rỗng = nhận tất cả)
+        enabled: Có bật channel không
+    """
+    name: str
+    channel_type: NotificationChannelType
+    endpoint: str
+    severity_filter: list[str] = field(default_factory=list)
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        """Validate notification channel sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(
+                ErrorCode.CP16_EMPTY_ALERT_NAME,
+                field="name"
+            )
+        if not self.endpoint or not self.endpoint.strip():
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                field="endpoint",
+                message="Endpoint không được để trống"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển NotificationChannel sang dict format."""
+        return {
+            "name": self.name,
+            "channel_type": self.channel_type.value,
+            "endpoint": self.endpoint,
+            "severity_filter": self.severity_filter,
+            "enabled": self.enabled,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "NotificationChannel":
+        """Tạo NotificationChannel từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            channel_type=NotificationChannelType(data.get("channel_type", "email")),
+            endpoint=data.get("endpoint", ""),
+            severity_filter=data.get("severity_filter", []),
+            enabled=data.get("enabled", True),
+        )
+
+
+# ===========================================================================
+# EscalationPolicy
+# ===========================================================================
+
+
+@dataclass
+class EscalationPolicy:
+    """Chính sách upgrade alert.
+
+    Attributes:
+        name: Tên policy (bắt buộc, không rỗng)
+        levels: Danh sách escalation levels (từ thấp đến cao)
+        timeout_seconds: Thời gian không respond để escalate (giây, >= 60)
+        channels: Danh sách channel references
+    """
+    name: str
+    levels: list[str] = field(default_factory=list)
+    timeout_seconds: int = 300
+    channels: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate escalation policy sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(
+                ErrorCode.CP16_EMPTY_ESCALATION_NAME,
+                field="name"
+            )
+        if self.timeout_seconds < 60:
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                field="timeout_seconds",
+                value=self.timeout_seconds,
+                minimum=60
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển EscalationPolicy sang dict format."""
+        return {
+            "name": self.name,
+            "levels": self.levels,
+            "timeout_seconds": self.timeout_seconds,
+            "channels": self.channels,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "EscalationPolicy":
+        """Tạo EscalationPolicy từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            levels=data.get("levels", []),
+            timeout_seconds=data.get("timeout_seconds", 300),
+            channels=data.get("channels", []),
+        )
+
+
+# ===========================================================================
+# SLOTracking
+# ===========================================================================
+
+
+@dataclass
+class SLOTracking:
+    """Theo dõi SLO — Service Level Objective.
+
+    Khác với SLIDefinition (chỉ đo 1 metric), SLOTracking định nghĩa
+    error budget, burn rate detection, và multi-window alerting.
+
+    Attributes:
+        name: Tên SLO (bắt buộc, không rỗng)
+        sli_name: Reference đến SLIDefinition
+        target_percentage: Mục tiêu % (vd: 99.9)
+        budget_period_seconds: Chu kỳ budget (vd: 1 tháng = 2592000)
+        burn_rate: Tốc độ tiêu thụ budget để detect
+        fast_burn_threshold: Ngưỡng fast burn (số lần nhân với base rate)
+        slow_burn_threshold: Ngưỡng slow burn (số lần nhân với base rate)
+        pages_enabled: Có gửi page không (cho fast burn)
+    """
+    name: str
+    sli_name: str
+    target_percentage: float
+    budget_period_seconds: int = 2592000
+    burn_rate: SLOBurnRate = SLOBurnRate.SEVEN_DAY
+    fast_burn_threshold: float = 14.4
+    slow_burn_threshold: float = 1.0
+    pages_enabled: bool = True
+
+    def __post_init__(self) -> None:
+        """Validate SLO tracking sau khi khởi tạo."""
+        if not self.name or not self.name.strip():
+            EM.raise_error(
+                ErrorCode.CP16_EMPTY_SLO_NAME,
+                field="name"
+            )
+        if not (0 < self.target_percentage <= 100):
+            EM.raise_error(
+                ErrorCode.CP16_INVALID_SLO_TARGET,
+                target=self.target_percentage,
+                valid_range="0 < target <= 100"
+            )
+        if self.budget_period_seconds < 3600:
+            EM.raise_error(
+                ErrorCode.CP16_MONITORING_PARSE_ERROR,
+                field="budget_period_seconds",
+                value=self.budget_period_seconds,
+                minimum=3600
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển SLOTracking sang dict format."""
+        return {
+            "name": self.name,
+            "sli_name": self.sli_name,
+            "target_percentage": self.target_percentage,
+            "budget_period_seconds": self.budget_period_seconds,
+            "burn_rate": self.burn_rate.value,
+            "fast_burn_threshold": self.fast_burn_threshold,
+            "slow_burn_threshold": self.slow_burn_threshold,
+            "pages_enabled": self.pages_enabled,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SLOTracking":
+        """Tạo SLOTracking từ dict."""
+        return cls(
+            name=data.get("name", ""),
+            sli_name=data.get("sli_name", ""),
+            target_percentage=data.get("target_percentage", 99.9),
+            budget_period_seconds=data.get("budget_period_seconds", 2592000),
+            burn_rate=SLOBurnRate(data.get("burn_rate", "7d")),
+            fast_burn_threshold=data.get("fast_burn_threshold", 14.4),
+            slow_burn_threshold=data.get("slow_burn_threshold", 1.0),
+            pages_enabled=data.get("pages_enabled", True),
+        )

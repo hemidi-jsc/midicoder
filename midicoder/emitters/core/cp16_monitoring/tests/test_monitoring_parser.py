@@ -41,12 +41,20 @@ class TestMonitoringParser:
     def test_parse_empty_string_returns_empty_dicts(self):
         """Kiểm tra parse string rỗng trả về dict rỗng cho tất cả sections."""
         result = self.parser.parse("")
-        assert result == {"dashboards": [], "alerts": [], "slis": []}
+        assert result == {
+            "dashboards": [], "alerts": [], "slis": [],
+            "health_checks": [], "notification_channels": [],
+            "escalation_policies": [], "slo_tracking": [],
+        }
 
     def test_parse_whitespace_only_returns_empty_dicts(self):
         """Kiểm tra parse whitespace trả về dict rỗng."""
         result = self.parser.parse("   \n\n  ")
-        assert result == {"dashboards": [], "alerts": [], "slis": []}
+        assert result == {
+            "dashboards": [], "alerts": [], "slis": [],
+            "health_checks": [], "notification_channels": [],
+            "escalation_policies": [], "slo_tracking": [],
+        }
 
     def test_parse_comment_only_returns_empty_dicts(self):
         """Kiểm tra parse chỉ có comment YAML trả về dict rỗng."""
@@ -55,7 +63,11 @@ class TestMonitoringParser:
 # Không có dữ liệu
 """
         result = self.parser.parse(dsl)
-        assert result == {"dashboards": [], "alerts": [], "slis": []}
+        assert result == {
+            "dashboards": [], "alerts": [], "slis": [],
+            "health_checks": [], "notification_channels": [],
+            "escalation_policies": [], "slo_tracking": [],
+        }
 
     # =========================================================================
     # Valid dashboards section
@@ -542,3 +554,312 @@ dashboards:
         assert result["dashboards"][0].dashboard_type == DashboardType.API
         assert result["dashboards"][1].dashboard_type == DashboardType.SYSTEM
         assert result["dashboards"][2].dashboard_type == DashboardType.BUSINESS
+
+    # =========================================================================
+    # New sections: health_checks, notification_channels, escalation_policies, slo_tracking
+    # =========================================================================
+
+    def test_parse_health_checks_section(self):
+        """Kiểm tra parse health_checks section."""
+        dsl = """
+health_checks:
+  - name: api-health
+    check_type: liveness
+    path: /health
+    interval_seconds: 10
+    timeout_seconds: 5
+    unhealthy_threshold: 3
+"""
+        result = self.parser.parse(dsl)
+        assert len(result["health_checks"]) == 1
+        hc = result["health_checks"][0]
+        assert hc.name == "api-health"
+        assert hc.check_type.value == "liveness"
+        assert hc.path == "/health"
+        assert hc.interval_seconds == 10
+        assert hc.timeout_seconds == 5
+        assert hc.unhealthy_threshold == 3
+
+    def test_parse_health_check_all_types(self):
+        """Kiểm tra parse tất cả các loại health check."""
+        dsl = """
+health_checks:
+  - name: liveness-hc
+    check_type: liveness
+    path: /health
+  - name: readiness-hc
+    check_type: readiness
+    path: /ready
+  - name: custom-hc
+    check_type: custom
+    path: /custom-health
+"""
+        result = self.parser.parse(dsl)
+        assert len(result["health_checks"]) == 3
+        types = [hc.check_type.value for hc in result["health_checks"]]
+        assert types == ["liveness", "readiness", "custom"]
+
+    def test_parse_health_check_invalid_type_raises(self):
+        """Kiểm tra parse health check type không hợp lệ throw error."""
+        dsl = """
+health_checks:
+  - name: bad-hc
+    check_type: invalid_type
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code == ErrorCode.CP16_MONITORING_PARSE_ERROR
+
+    def test_parse_notification_channels_section(self):
+        """Kiểm tra parse notification_channels section."""
+        dsl = """
+notification_channels:
+  - name: ops-email
+    channel_type: email
+    endpoint: ops@company.com
+    severity_filter:
+      - critical
+  - name: slack-alerts
+    channel_type: slack
+    endpoint: "#alerts"
+    severity_filter:
+      - warning
+      - critical
+"""
+        result = self.parser.parse(dsl)
+        assert len(result["notification_channels"]) == 2
+        ch1 = result["notification_channels"][0]
+        assert ch1.name == "ops-email"
+        assert ch1.channel_type.value == "email"
+        assert ch1.endpoint == "ops@company.com"
+        assert ch1.severity_filter == ["critical"]
+        ch2 = result["notification_channels"][1]
+        assert ch2.channel_type.value == "slack"
+        assert ch2.severity_filter == ["warning", "critical"]
+
+    def test_parse_notification_channel_all_types(self):
+        """Kiểm tra parse tất cả channel types."""
+        dsl = """
+notification_channels:
+  - name: email-ch
+    channel_type: email
+    endpoint: test@test.com
+  - name: slack-ch
+    channel_type: slack
+    endpoint: "#test"
+  - name: webhook-ch
+    channel_type: webhook
+    endpoint: "https://hook.example.com"
+  - name: pd-ch
+    channel_type: pagerduty
+    endpoint: "routing-key-123"
+  - name: os-ch
+    channel_type: opsgenie
+    endpoint: "integration-key"
+"""
+        result = self.parser.parse(dsl)
+        types = [ch.channel_type.value for ch in result["notification_channels"]]
+        assert types == ["email", "slack", "webhook", "pagerduty", "opsgenie"]
+
+    def test_parse_escalation_policies_section(self):
+        """Kiểm tra parse escalation_policies section."""
+        dsl = """
+escalation_policies:
+  - name: infra-escalation
+    levels:
+      - l1-oncall
+      - l2-team
+      - engineering-lead
+    timeout_seconds: 300
+    channels:
+      - ops-email
+      - pager-duty
+"""
+        result = self.parser.parse(dsl)
+        assert len(result["escalation_policies"]) == 1
+        ep = result["escalation_policies"][0]
+        assert ep.name == "infra-escalation"
+        assert ep.levels == ["l1-oncall", "l2-team", "engineering-lead"]
+        assert ep.timeout_seconds == 300
+        assert ep.channels == ["ops-email", "pager-duty"]
+
+    def test_parse_slo_tracking_section(self):
+        """Kiểm tra parse slo_tracking section."""
+        dsl = """
+slo_tracking:
+  - name: api-availability-slo
+    sli_name: api-availability
+    target_percentage: 99.9
+    budget_period_seconds: 2592000
+    burn_rate: 1h
+    fast_burn_threshold: 14.4
+    slow_burn_threshold: 1.0
+    pages_enabled: true
+"""
+        result = self.parser.parse(dsl)
+        assert len(result["slo_tracking"]) == 1
+        slo = result["slo_tracking"][0]
+        assert slo.name == "api-availability-slo"
+        assert slo.sli_name == "api-availability"
+        assert slo.target_percentage == 99.9
+        assert slo.budget_period_seconds == 2592000
+        assert slo.burn_rate.value == "1h"
+        assert slo.fast_burn_threshold == 14.4
+        assert slo.pages_enabled is True
+
+    def test_parse_slo_tracking_all_burn_rates(self):
+        """Kiểm tra parse tất cả burn rate types."""
+        dsl = """
+slo_tracking:
+  - name: one-hour-slo
+    sli_name: api-availability
+    target_percentage: 99.9
+    burn_rate: 1h
+  - name: six-hour-slo
+    sli_name: api-availability
+    target_percentage: 99.9
+    burn_rate: 6h
+  - name: twelve-hour-slo
+    sli_name: api-availability
+    target_percentage: 99.9
+    burn_rate: 12h
+  - name: two-day-slo
+    sli_name: api-availability
+    target_percentage: 99.9
+    burn_rate: 2d
+  - name: seven-day-slo
+    sli_name: api-availability
+    target_percentage: 99.9
+    burn_rate: 7d
+"""
+        result = self.parser.parse(dsl)
+        assert len(result["slo_tracking"]) == 5
+        rates = [s.burn_rate.value for s in result["slo_tracking"]]
+        assert rates == ["1h", "6h", "12h", "2d", "7d"]
+
+    # =========================================================================
+    # to_dict methods coverage
+    # =========================================================================
+
+    def test_panel_to_dict(self):
+        """Kiểm tra Panel.to_dict()."""
+        from midicoder.emitters.core.cp16_monitoring.models import Panel
+        p = Panel(name="cpu-panel", metric_name="cpu_usage", panel_type="gauge", labels={"env": "prod"})
+        data = p.to_dict()
+        assert data["name"] == "cpu-panel"
+        assert data["metric_name"] == "cpu_usage"
+        assert data["panel_type"] == "gauge"
+        assert data["labels"] == {"env": "prod"}
+
+    def test_fired_alert_to_dict(self):
+        """Kiểm tra FiredAlert.to_dict()."""
+        from midicoder.emitters.core.cp16_monitoring.models import FiredAlert
+        import datetime
+        fa = FiredAlert(
+            rule_name="high-cpu",
+            metric_name="cpu_usage",
+            current_value=95.0,
+            threshold=90.0,
+            severity="critical",
+            fired_at=datetime.datetime(2024, 1, 1, 12, 0, 0),
+            condition=">",
+        )
+        data = fa.to_dict()
+        assert data["rule_name"] == "high-cpu"
+        assert data["current_value"] == 95.0
+        assert data["condition"] == ">"
+        assert data["severity"] == "critical"
+
+    def test_sli_status_to_dict(self):
+        """Kiểm tra SLIStatus.to_dict()."""
+        from midicoder.emitters.core.cp16_monitoring.models import SLIStatus
+        import datetime
+        ss = SLIStatus(
+            sli_name="api-availability",
+            metric_type="availability",
+            current_value=99.95,
+            target=99.9,
+            is_healthy=True,
+            evaluated_at=datetime.datetime(2024, 1, 1, 12, 0, 0),
+        )
+        data = ss.to_dict()
+        assert data["sli_name"] == "api-availability"
+        assert data["current_value"] == 99.95
+        assert data["is_healthy"] is True
+
+    def test_parse_non_dict_dashboard_raises(self):
+        """Kiểm tra parse dashboard entry không phải dict throw error."""
+        dsl = """
+dashboards:
+  - "not-a-dict"
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code == ErrorCode.CP16_MONITORING_PARSE_ERROR
+
+    def test_parse_non_dict_alert_raises(self):
+        """Kiểm tra parse alert entry không phải dict throw error."""
+        dsl = """
+alerts:
+  - "not-a-dict"
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code == ErrorCode.CP16_MONITORING_PARSE_ERROR
+
+    def test_parse_non_dict_sli_raises(self):
+        """Kiểm tra parse sli entry không phải dict throw error."""
+        dsl = """
+slis:
+  - "not-a-dict"
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code == ErrorCode.CP16_MONITORING_PARSE_ERROR
+
+    def test_parse_non_dict_health_check_raises(self):
+        """Kiểm tra parse health check entry không phải dict throw error."""
+        dsl = """
+health_checks:
+  - "not-a-dict"
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code == ErrorCode.CP16_MONITORING_PARSE_ERROR
+
+    def test_parse_non_dict_notification_channel_raises(self):
+        """Kiểm tra parse notification channel entry không phải dict throw error."""
+        dsl = """
+notification_channels:
+  - "not-a-dict"
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code == ErrorCode.CP16_MONITORING_PARSE_ERROR
+
+    def test_parse_non_dict_escalation_raises(self):
+        """Kiểm tra parse escalation policy entry không phải dict throw error."""
+        dsl = """
+escalation_policies:
+  - "not-a-dict"
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code == ErrorCode.CP16_MONITORING_PARSE_ERROR
+
+    def test_parse_non_dict_slo_raises(self):
+        """Kiểm tra parse slo tracking entry không phải dict throw error."""
+        dsl = """
+slo_tracking:
+  - "not-a-dict"
+"""
+        with pytest.raises(MidicoderError) as exc_info:
+            self.parser.parse(dsl)
+        assert exc_info.value.code == ErrorCode.CP16_MONITORING_PARSE_ERROR
+
+    def test_panel_empty_name_raises(self):
+        """Kiểm tra Panel tên rỗng throw error."""
+        from midicoder.emitters.core.cp16_monitoring.models import Panel
+        with pytest.raises(MidicoderError) as exc_info:
+            Panel(name="", metric_name="test")
+        assert exc_info.value.code == ErrorCode.CP16_EMPTY_PANEL_NAME

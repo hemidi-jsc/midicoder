@@ -6,21 +6,33 @@ pack:
   status: "stable"
   category: "observability"
   depends_on: ["CP15"]
-  definitions_count: 3
+  definitions_count: 7
   obligations_count: 1
   error_codes:
     prefix: "MDC-CP16"
-    range: "MDC-CP16-001 to MDC-CP16-010"
+    range: "MDC-CP16-001 to MDC-CP16-017"
   capabilities_provided:
     - dashboard_create
     - alert_define
     - sli_monitor
+    - health_check
+    - notification_route
+    - escalation_manage
+    - slo_track
   capabilities:
     - id: "dashboard"
-      emitter: "fastapi, nestjs"
+      emitter: "fastapi, nestjs, angular, react"
     - id: "alert_engine"
       emitter: "fastapi, nestjs"
     - id: "sli_tracker"
+      emitter: "fastapi, nestjs"
+    - id: "health_check"
+      emitter: "fastapi, nestjs"
+    - id: "notification"
+      emitter: "fastapi, nestjs"
+    - id: "escalation"
+      emitter: "fastapi, nestjs"
+    - id: "slo_tracking"
       emitter: "fastapi, nestjs"
   definitions:
     - name: "DashboardProfile"
@@ -29,21 +41,31 @@ pack:
       description: "Threshold-based alert with notification channel"
     - name: "SLIDefinition"
       description: "Service Level Indicator with target and measurement"
+    - name: "HealthCheck"
+      description: "Liveness, readiness, and custom health probes"
+    - name: "NotificationChannel"
+      description: "Alert routing channels (email, slack, webhook, pagerduty)"
+    - name: "EscalationPolicy"
+      description: "Multi-level escalation rules with timeout"
+    - name: "SLOTracking"
+      description: "Service Level Objective with error budget and burn rate"
   obligations:
     - name: "AlertNotification"
       description: "Alerts must route to configured notification channels"
   file_contributions:
     infrastructure:
+      # FastAPI (2 files)
       - path: "app/monitoring/monitoring_service.py"
         file_type: "monitoring_service"
         template: "cp16_monitoring/monitoring_service.py.jinja2"
-        stacks: ["fastapi", "nestjs"]
+        stacks: ["fastapi"]
         pack_emitter: null
       - path: "app/monitoring/monitoring_router.py"
         file_type: "monitoring_router"
         template: "cp16_monitoring/monitoring_router.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null
+      # NestJS (3 files)
       - path: "src/monitoring/monitoring.module.ts"
         file_type: "monitoring_module"
         template: "cp16_monitoring/monitoring.module.ts.jinja2"
@@ -59,16 +81,18 @@ pack:
         template: "cp16_monitoring/monitoring.controller.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
-      - path: "src/app/shared/components/alert-panel/alert-panel.component.ts"
+      # Angular (2 files)
+      - path: "src/app/core/monitoring/alert_panel.component.ts"
         file_type: "alert_component"
         template: "cp16_monitoring/alert_panel.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
-      - path: "src/app/shared/components/dashboard-widget/dashboard-widget.component.ts"
+      - path: "src/app/core/monitoring/dashboard_widget.component.ts"
         file_type: "dashboard_component"
         template: "cp16_monitoring/dashboard_widget.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
+      # React (3 files)
       - path: "src/monitoring/AlertBanner.tsx"
         file_type: "alert_component"
         template: "cp16_monitoring/AlertBanner.tsx.jinja2"

@@ -521,7 +521,7 @@ class TestSLIDefinition:
                 metric_name="test",
                 target=0.99,
             )
-        assert exc_info.value.code == ErrorCode.CP16_EMPTY_DASHBOARD_NAME
+        assert exc_info.value.code == ErrorCode.CP16_EMPTY_SLI_NAME
 
     def test_whitespace_only_name_raises_error(self):
         """Kiểm tra tên SLI chỉ whitespace throw error."""
@@ -532,7 +532,7 @@ class TestSLIDefinition:
                 metric_name="test",
                 target=0.99,
             )
-        assert exc_info.value.code == ErrorCode.CP16_EMPTY_DASHBOARD_NAME
+        assert exc_info.value.code == ErrorCode.CP16_EMPTY_SLI_NAME
 
     def test_zero_target_raises_error(self):
         """Kiểm tra target = 0 throw error."""

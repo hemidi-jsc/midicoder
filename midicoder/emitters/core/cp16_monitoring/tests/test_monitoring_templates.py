@@ -6,7 +6,7 @@ Kiểm tra templates của CP16 — existence và content validation.
 import os
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
 
 # Định nghĩa tất cả templates mong đợi
 TEMPLATES = {
