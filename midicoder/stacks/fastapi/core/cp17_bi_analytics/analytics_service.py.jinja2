@@ -49,7 +49,7 @@ class TimeGrain(str, Enum):
 @dataclass
 class AnalyticsEvent:
     """Một sự kiện analytics — đại diện cho hành động của người dùng hoặc hệ thống."""
-    id: str
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
     event_type: EventType
     entity_id: str  # user_id, session_id, hoặc order_id
     properties: Dict[str, Any] = field(default_factory=dict)
@@ -57,10 +57,6 @@ class AnalyticsEvent:
     session_id: Optional[str] = None
     user_id: Optional[str] = None
     metadata: Dict[str, str] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if not self.id:
-            self.id = str(uuid.uuid4())
 
 
 @dataclass
@@ -73,10 +69,6 @@ class KPIDefinition:
     target: Optional[float] = None
     unit: str = ""
     description: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.description:
-            self.description = f"KPI: {self.name} ({self.aggregation.value} of {self.metric})"
 
 
 @dataclass

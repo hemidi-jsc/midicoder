@@ -6,8 +6,8 @@ pack:
   status: "stable"
   category: "analytics"
   depends_on: ["CP08", "CP15"]
-  definitions_count: 3
-  obligations_count: 2
+  definitions_count: 9
+  obligations_count: 6
   error_codes:
     prefix: "MDC-CP17"
     range: "MDC-CP17-001 to MDC-CP17-015"
@@ -23,17 +23,37 @@ pack:
     - id: "report_scheduler"
       emitter: "fastapi, nestjs"
   definitions:
+    - name: "AnalyticsSourceType"
+      description: "Enum for analytics data source (metric_registry, database, external_api)"
+    - name: "AggregationType"
+      description: "Enum for aggregation operations (sum, average, count, max, min)"
+    - name: "VisualizationType"
+      description: "Enum for chart types (line_chart, bar_chart, pie_chart, gauge, table)"
+    - name: "ReportFrequency"
+      description: "Enum for report schedule frequency (hourly, daily, weekly, monthly)"
+    - name: "ReportFormat"
+      description: "Enum for report output format (json, csv, pdf, html, markdown)"
+    - name: "SchedulePolicy"
+      description: "Enum for schedule policy (once, hourly, daily, weekly, monthly)"
     - name: "AnalyticsModel"
-      description: "Aggregation model with dimensions and measures"
+      description: "Aggregation model with metrics, filters, and aggregations"
     - name: "DashboardDefinition"
-      description: "Visual dashboard with charts and filters"
+      description: "Visual dashboard with widgets and refresh interval"
     - name: "ScheduledReport"
       description: "Report with schedule, format, and delivery channel"
   obligations:
+    - name: "ModelNameRequired"
+      description: "AnalyticsModel.name must be non-empty"
     - name: "DataFreshness"
-      description: "Analytics data must respect defined freshness SLA"
-    - name: "TenantIsolation"
-      description: "Analytics queries must enforce tenant-scoped data"
+      description: "AnalyticsModel.max_stale_seconds must be >= 1"
+    - name: "DashboardNameRequired"
+      description: "DashboardDefinition.name must be non-empty"
+    - name: "RefreshIntervalMinimum"
+      description: "DashboardDefinition.refresh_interval_seconds must be >= 5"
+    - name: "ReportNameRequired"
+      description: "ScheduledReport.name must be non-empty"
+    - name: "ReportNextRunAuto"
+      description: "ScheduledReport.next_run auto-assigned when None"
   file_contributions:
     infrastructure:
       - path: "app/analytics/analytics_service.py"

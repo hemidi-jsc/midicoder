@@ -26,7 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Obligations:**
 
-1. **DataFreshness** — Analytics data must respect defined freshness SLA
-2. **TenantIsolation** — Analytics queries must enforce tenant-scoped data
+1. **ModelNameRequired** — AnalyticsModel.name must be non-empty
+2. **DataFreshness** — AnalyticsModel.max_stale_seconds must be >= 1
+3. **DashboardNameRequired** — DashboardDefinition.name must be non-empty
+4. **RefreshIntervalMinimum** — DashboardDefinition.refresh_interval_seconds must be >= 5
+5. **ReportNameRequired** — ScheduledReport.name must be non-empty
+6. **ReportNextRunAuto** — ScheduledReport.next_run auto-assigned when None
 
 **Dependencies:** CP08, CP15

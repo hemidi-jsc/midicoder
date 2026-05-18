@@ -6,15 +6,19 @@ Test tất cả templates tồn tại và có nội dung hợp lệ.
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
-# Repo root: d:\hemidi-labs\midicoder-ce (4 levels up from this file)
-# Package root: d:\hemidi-labs\midicoder-ce\midicoder (3 levels up, for imports)
-PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-REPO_ROOT = os.path.dirname(PACKAGE_ROOT)
-if PACKAGE_ROOT not in sys.path:
-    sys.path.insert(0, PACKAGE_ROOT)
+# Paths relative to this file (tests/ dir):
+# test_templates.py → tests/ → cp17_bi_analytics/ → core/ → emitters/ → midicoder/ → midicoder-ce/
+_ROOT = Path(__file__).resolve()
+# 5 up: midicoder/ (for sys.path / imports)
+_PACKAGE_ROOT = str(_ROOT.parent.parent.parent.parent.parent)
+# 6 up: midicoder-ce/ (repo root — template paths start with "midicoder/...")
+REPO_ROOT = str(_ROOT.parent.parent.parent.parent.parent.parent)
+if _PACKAGE_ROOT not in sys.path:
+    sys.path.insert(0, _PACKAGE_ROOT)
 
 
 # Định nghĩa danh sách templates mong đợi

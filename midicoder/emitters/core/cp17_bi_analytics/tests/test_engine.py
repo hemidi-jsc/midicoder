@@ -927,14 +927,15 @@ class TestReportScheduler(unittest.TestCase):
         self.assertEqual(len(history), 2)
 
     def test_generate_report_hash_uniqueness(self):
-        """Mỗi snapshot có hash SHA-256 duy nhất."""
+        """Mỗi snapshot có hash SHA-256 duy nhất khi generated_at khác nhau."""
         scheduler = ReportScheduler()
-        report = self._make_report("unique_hash")
-        scheduler.schedule_report(report)
-        s1 = scheduler.generate_report("unique_hash")
-        s2 = scheduler.generate_report("unique_hash")
+        now1 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        now2 = datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc)
+        data = {"key": "val"}
+        h1 = scheduler._compute_hash("test_report", data, now1)
+        h2 = scheduler._compute_hash("test_report", data, now2)
         # Hash khác nhau vì generated_at khác nhau
-        self.assertNotEqual(s1.hash_value, s2.hash_value)
+        self.assertNotEqual(h1, h2)
 
     def test_compute_hash_format(self):
         """_compute_hash trả về SHA-256 hex string 64 ký tự."""

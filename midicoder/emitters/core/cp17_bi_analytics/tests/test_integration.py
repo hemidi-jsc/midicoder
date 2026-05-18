@@ -18,8 +18,8 @@ from datetime import datetime, timezone
 import pytest
 import yaml
 
-# Thêm project root vào path
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Thêm project root vào path (4 levels up: tests → cp17_bi_analytics → core → emitters → midicoder)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
