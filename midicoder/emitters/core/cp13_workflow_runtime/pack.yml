@@ -95,7 +95,7 @@ pack:
       - path: "app/workflow/workflow_service.py"
         file_type: "workflow_service"
         template: "cp13_workflow_runtime/workflow_service.py.jinja2"
-        stacks: ["fastapi", "nestjs"]
+        stacks: ["fastapi"]
         pack_emitter: null
       - path: "app/workflow/workflow_router.py"
         file_type: "workflow_router"

@@ -76,6 +76,21 @@ pack:
         template: "cp10_search/search_service.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: "cp10.search.fastapi"
+      - path: "app/search/faceted_search.py"
+        file_type: "faceted_search"
+        template: "cp10_search/faceted_search.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp10.search.fastapi"
+      - path: "app/search/geo_search.py"
+        file_type: "geo_search"
+        template: "cp10_search/geo_search.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp10.search.fastapi"
+      - path: "app/search/vector_search.py"
+        file_type: "vector_search"
+        template: "cp10_search/vector_search.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp10.search.fastapi"
       - path: "src/search/search.module.ts"
         file_type: "search_module"
         template: "cp10_search/search.module.ts.jinja2"
@@ -91,6 +106,16 @@ pack:
         template: "cp10_search/search.decorators.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: "cp10.search.nestjs"
+      - path: "src/search/geo-search.service.ts"
+        file_type: "geo_search"
+        template: "cp10_search/geo-search.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp10.search.nestjs"
+      - path: "src/search/vector-search.service.ts"
+        file_type: "vector_search"
+        template: "cp10_search/vector-search.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp10.search.nestjs"
       - path: "src/app/core/search/search.module.ts"
         file_type: "search_module"
         template: "cp10_search/search.module.ts.jinja2"
@@ -101,6 +126,16 @@ pack:
         template: "cp10_search/search.service.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: "cp10.search.angular"
+      - path: "src/app/core/search/geo-search.service.ts"
+        file_type: "geo_search"
+        template: "cp10_search/geo-search.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: "cp10.search.angular"
+      - path: "src/app/core/search/vector-search.service.ts"
+        file_type: "vector_search"
+        template: "cp10_search/vector-search.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: "cp10.search.angular"
       - path: "src/search/SearchProvider.tsx"
         file_type: "search_provider"
         template: "cp10_search/SearchProvider.tsx.jinja2"
@@ -109,6 +144,16 @@ pack:
       - path: "src/search/useSearch.ts"
         file_type: "search_hook"
         template: "cp10_search/useSearch.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: "cp10.search.react"
+      - path: "src/search/useGeoSearch.ts"
+        file_type: "geo_search_hook"
+        template: "cp10_search/useGeoSearch.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: "cp10.search.react"
+      - path: "src/search/useVectorSearch.ts"
+        file_type: "vector_search_hook"
+        template: "cp10_search/useVectorSearch.ts.jinja2"
         stacks: ["react"]
         pack_emitter: "cp10.search.react"
   frontend_integration:

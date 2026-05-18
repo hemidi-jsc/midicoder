@@ -130,6 +130,7 @@ pack:
         stacks: ["nestjs"]
         pack_emitter: null
     per_command:
+      # FastAPI commands
       - path_pattern: "app/commands/{command_snake}.py"
         file_type: "command"
         template: "cp01_domain_model/command.py.jinja2"
@@ -160,7 +161,39 @@ pack:
         template: "cp01_domain_model/command_errors.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null
+      # NestJS commands
+      - path_pattern: "src/commands/{command_snake}.command.ts"
+        file_type: "command"
+        template: "cp01_domain_model/command.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.handler.ts"
+        file_type: "command_handler"
+        template: "cp01_domain_model/command.handler.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.validator.ts"
+        file_type: "command_validator"
+        template: "cp01_domain_model/command.validator.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.guards.ts"
+        file_type: "command_guards"
+        template: "cp01_domain_model/command.guards.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.effects.ts"
+        file_type: "command_effects"
+        template: "cp01_domain_model/command.effects.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.errors.ts"
+        file_type: "command_errors"
+        template: "cp01_domain_model/command.errors.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
     per_query:
+      # FastAPI queries
       - path_pattern: "app/queries/{query_snake}.py"
         file_type: "query"
         template: "cp01_domain_model/query.py.jinja2"
@@ -195,4 +228,53 @@ pack:
         file_type: "query_aggregation"
         template: "cp01_domain_model/query_aggregation.py.jinja2"
         stacks: ["fastapi"]
+        pack_emitter: null
+      # NestJS queries
+      - path_pattern: "src/queries/{query_snake}.query.ts"
+        file_type: "query"
+        template: "cp01_domain_model/query.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.handler.ts"
+        file_type: "query_handler"
+        template: "cp01_domain_model/query.handler.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.validator.ts"
+        file_type: "query_validator"
+        template: "cp01_domain_model/query.validator.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.guards.ts"
+        file_type: "query_guards"
+        template: "cp01_domain_model/query.guards.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.effects.ts"
+        file_type: "query_effects"
+        template: "cp01_domain_model/query.effects.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.output.ts"
+        file_type: "query_output"
+        template: "cp01_domain_model/query.output.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.aggregation.ts"
+        file_type: "query_aggregation"
+        template: "cp01_domain_model/query.aggregation.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+    per_vo:
+      # FastAPI value objects
+      - path_pattern: "app/value_objects/{vo_snake}.py"
+        file_type: "value_object"
+        template: "cp01_domain_model/value_object.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # NestJS value objects
+      - path_pattern: "src/value-objects/{vo_snake}.value-object.ts"
+        file_type: "value_object"
+        template: "cp01_domain_model/value-object.ts.jinja2"
+        stacks: ["nestjs"]
         pack_emitter: null

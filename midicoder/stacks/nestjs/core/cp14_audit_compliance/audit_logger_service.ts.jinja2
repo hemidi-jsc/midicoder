@@ -1,0 +1,299 @@
+/**
+ * Audit Logger Service - CP14: Audit Trail & Compliance.
+ *
+ * NestJS service cho audit trail logging và query.
+ * Cung cấp phương thức ghi audit log, query audit history,
+ * và verify hash integrity (tamper-evidence).
+ *
+ * CP14: Audit Trail & Compliance Generator
+ */
+
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { createHash } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import { AuditModuleConfig, AuditRecord } from './audit.module';
+
+/** Hành động audit */
+export enum AuditAction {
+  CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE',
+  READ = 'READ',
+  LOGIN = 'LOGIN',
+  LOGOUT = 'LOGOUT',
+  EXPORT = 'EXPORT',
+  APPROVE = 'APPROVE',
+  REJECT = 'REJECT',
+  CUSTOM = 'CUSTOM',
+}
+
+/** Payload để ghi audit log */
+export interface AuditLogPayload {
+  action: string;
+  entityType: string;
+  entityId: string;
+  actorId: string;
+  actorType?: 'user' | 'system' | 'background_job';
+  tenantId?: string;
+  oldValues?: Record<string, any>;
+  newValues?: Record<string, any>;
+  metadata?: Record<string, any>;
+}
+
+/** Query params để lọc audit logs */
+export interface AuditQueryParams {
+  entityType?: string;
+  actorId?: string;
+  tenantId?: string;
+  action?: string;
+  startTime?: Date;
+  endTime?: Date;
+  limit?: number;
+  offset?: number;
+}
+
+/** Kết quả query audit logs */
+export interface AuditQueryResult {
+  entries: AuditRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * Audit Logger Service.
+ *
+ * Ghi audit log vào database và append-only JSONL file
+ * cho redundancy và tamper-evidence.
+ *
+ * Usage:
+ *   constructor(private auditLogger: AuditLoggerService) {}
+ *
+ *   async onCreateOrder(dto: CreateOrderDto, userId: string) {
+ *     // ... business logic ...
+ *     await this.auditLogger.log({
+ *       action: AuditAction.CREATE,
+ *       entityType: 'Order',
+ *       entityId: order.id,
+ *       actorId: userId,
+ *       actorType: 'user',
+ *     });
+ *   }
+ */
+@Injectable()
+export class AuditLoggerService {
+  private readonly logger = new Logger(AuditLoggerService.name);
+  private readonly sensitiveFields = new Set([
+    'password',
+    'secret',
+    'token',
+    'creditCard',
+    'ssn',
+    'credit_card',
+  ]);
+
+  constructor(@Inject('AUDIT_CONFIG') private config: AuditModuleConfig) {}
+
+  /**
+   * Ghi audit log entry.
+   *
+   * Tự động compute SHA-256 hash cho tamper-evidence.
+   *
+   * @param payload Audit log payload
+   * @returns Audit record ID
+   */
+  async log(payload: AuditLogPayload): Promise<string> {
+    const entryId = uuidv4();
+    const now = new Date();
+
+    const record: AuditRecord = {
+      id: entryId,
+      timestamp: now,
+      action: payload.action,
+      entityType: payload.entityType,
+      entityId: payload.entityId,
+      actorId: payload.actorId,
+      actorType: payload.actorType || 'system',
+      tenantId: payload.tenantId || 'default',
+      oldValues: this._maskSensitiveData(payload.oldValues || null),
+      newValues: this._maskSensitiveData(payload.newValues || null),
+      metadata: payload.metadata || null,
+      immutableHash: '',
+    };
+
+    // Compute immutable hash
+    record.immutableHash = this._computeHash(record);
+
+    // Write to append-only JSONL file
+    if (this.config.logDir) {
+      this._writeToFile(record);
+    }
+
+    // TODO: Store to database via TypeORM repository
+    // await this.auditLogRepository.save(record);
+
+    this.logger.log(
+      `Audit: ${payload.action} | User: ${payload.actorId} | ` +
+      `Tenant: ${payload.tenantId} | Resource: ${payload.entityType}:${payload.entityId}`,
+    );
+
+    return entryId;
+  }
+
+  /**
+   * Query audit logs với filters.
+   *
+   * @param params Query params
+   * @returns Audit query result
+   */
+  async query(params: AuditQueryParams): Promise<AuditQueryResult> {
+    const limit = params.limit || 100;
+    const offset = params.offset || 0;
+
+    // TODO: Query from TypeORM repository with filters
+    // const [entries, total] = await this.auditLogRepository.findAndCount({
+    //   where: {
+    //     ...(params.tenantId && { tenantId: params.tenantId }),
+    //     ...(params.entityType && { entityType: params.entityType }),
+    //     ...(params.actorId && { actorId: params.actorId }),
+    //     ...(params.action && { action: params.action }),
+    //   },
+    //   take: limit,
+    //   skip: offset,
+    //   order: { timestamp: 'DESC' },
+    // });
+
+    return {
+      entries: [],
+      total: 0,
+      limit,
+      offset,
+    };
+  }
+
+  /**
+   * Lấy audit trail cho một entity cụ thể.
+   *
+   * @param entityType Entity type
+   * @param entityId Entity ID
+   * @param limit Max records
+   * @returns Audit records
+   */
+  async getEntityAuditTrail(
+    entityType: string,
+    entityId: string,
+    limit: number = 100,
+  ): Promise<AuditRecord[]> {
+    // TODO: Query from TypeORM repository
+    // return this.auditLogRepository.find({
+    //   where: { entityType, entityId },
+    //   order: { timestamp: 'DESC' },
+    //   take: limit,
+    // });
+
+    return [];
+  }
+
+  /**
+   * Xác minh hash integrity cho audit record.
+   *
+   * @param record Audit record
+   * @returns True nếu hash hợp lệ
+   */
+  verifyHash(record: AuditRecord): boolean {
+    const computedHash = this._computeHash(record);
+    return computedHash === record.immutableHash;
+  }
+
+  /**
+   * Compute SHA-256 hash cho audit record.
+   */
+  private _computeHash(record: AuditRecord): string {
+    const hashData = {
+      id: record.id,
+      timestamp: record.timestamp.toISOString(),
+      action: record.action,
+      entityType: record.entityType,
+      entityId: record.entityId,
+      actorId: record.actorId,
+      actorType: record.actorType,
+      tenantId: record.tenantId,
+      oldValues: record.oldValues || {},
+      newValues: record.newValues || {},
+      metadata: record.metadata || {},
+    };
+    const canonical = JSON.stringify(hashData);
+    return createHash('sha256').update(canonical).digest('hex');
+  }
+
+  /**
+   * Ghi audit record vào append-only JSONL file.
+   */
+  private _writeToFile(record: AuditRecord): void {
+    if (!this.config.logDir) {
+      return;
+    }
+
+    const dateStr = record.timestamp.toISOString().slice(0, 10);
+    const logFile = path.join(this.config.logDir, `audit_${dateStr}.jsonl`);
+
+    const dir = path.dirname(logFile);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    fs.appendFileSync(
+      logFile,
+      JSON.stringify(this._serializeRecord(record), null, 0) + '\n',
+      'utf-8',
+    );
+  }
+
+  /**
+   * Serialize audit record cho JSONL file.
+   */
+  private _serializeRecord(record: AuditRecord): Record<string, any> {
+    return {
+      id: record.id,
+      timestamp: record.timestamp.toISOString(),
+      action: record.action,
+      entityType: record.entityType,
+      entityId: record.entityId,
+      actorId: record.actorId,
+      actorType: record.actorType,
+      tenantId: record.tenantId,
+      oldValues: record.oldValues,
+      newValues: record.newValues,
+      metadata: record.metadata,
+      immutable_hash: record.immutableHash,
+    };
+  }
+
+  /**
+   * Mask sensitive data trong dictionary.
+   */
+  private _maskSensitiveData(
+    data: Record<string, any> | null,
+  ): Record<string, any> | null {
+    if (!data) {
+      return data;
+    }
+
+    const masked: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (
+        this.sensitiveFields.has(key.toLowerCase()) ||
+        [...this.sensitiveFields].some((s) => key.toLowerCase().includes(s))
+      ) {
+        masked[key] = '***MASKED***';
+      } else if (typeof value === 'object' && value !== null) {
+        masked[key] = this._maskSensitiveData(value as Record<string, any>);
+      } else {
+        masked[key] = value;
+      }
+    }
+    return masked;
+  }
+}

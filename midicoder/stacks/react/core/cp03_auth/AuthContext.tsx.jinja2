@@ -1,0 +1,136 @@
+/**
+ * Auth Context - CP03.
+ *
+ * React Context cung cấp authentication state và methods.
+ * Hỗ trợ login, logout, token refresh, và current user management.
+ *
+ * Usage:
+ *   <AuthContextProvider>
+ *     <App />
+ *   </AuthContextProvider>
+ *
+ *   const { user, login, logout, isLoggedIn } = useAuth();
+ */
+
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+  type PropsWithChildren,
+} from "react";
+import { authApiClient, type User } from "./api-client";
+
+/** Auth state */
+interface AuthState {
+  user: User | null;
+  isLoading: boolean;
+  isLoggedIn: boolean;
+}
+
+/** Auth context value */
+interface AuthContextValue extends AuthState {
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
+  getUser: () => User | null;
+}
+
+/** Default auth state */
+const defaultState: AuthContextValue = {
+  user: null,
+  isLoading: true,
+  isLoggedIn: false,
+  login: async () => {},
+  logout: async () => {},
+  refresh: async () => {},
+  getUser: () => null,
+};
+
+/** Auth Context */
+const AuthContext = createContext<AuthContextValue>(defaultState);
+
+/** AuthContextProvider */
+export function AuthContextProvider({ children }: PropsWithChildren<{}>) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  /** Login user bằng email/password */
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await authApiClient.login({ email, password });
+    setUser(response.user);
+  }, []);
+
+  /** Logout user và xóa tokens */
+  const logout = useCallback(async () => {
+    try {
+      await authApiClient.logout();
+    } finally {
+      setUser(null);
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      localStorage.removeItem("user");
+    }
+  }, []);
+
+  /** Refresh access token */
+  const refresh = useCallback(async () => {
+    const refreshToken = localStorage.getItem("refresh_token");
+    if (!refreshToken) {
+      setUser(null);
+      return;
+    }
+    const response = await authApiClient.refresh({ refresh_token: refreshToken });
+    setUser(response.user);
+  }, []);
+
+  /** Get current user */
+  const getUser = useCallback((): User | null => {
+    return user;
+  }, [user]);
+
+  /** Initialize user từ localStorage */
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    const token = localStorage.getItem("access_token");
+
+    if (storedUser && token) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem("user");
+        localStorage.removeItem("access_token");
+      }
+    }
+
+    setIsLoading(false);
+  }, []);
+
+  const value: AuthContextValue = {
+    user,
+    isLoading,
+    isLoggedIn: !!user && !!localStorage.getItem("access_token"),
+    login,
+    logout,
+    refresh,
+    getUser,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+/**
+ * useAuthContext Hook.
+ *
+ * Usage:
+ *   const { user, login, logout, isLoggedIn } = useAuthContext();
+ */
+export function useAuthContext(): AuthContextValue {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuthContext must be used within AuthContextProvider");
+  }
+  return context;
+}

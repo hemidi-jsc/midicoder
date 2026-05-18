@@ -13,6 +13,7 @@
 import { Module, Global, DynamicModule, Provider } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditService } from './audit.service';
+import { AuditLoggerService } from './audit_logger_service';
 import { AuditInterceptor } from './audit.interceptor';
 import { AuditController } from './audit.controller';
 import { AuditLogEntity } from './audit-log.entity';
@@ -94,8 +95,8 @@ oldValues?: Record<string, any> | null;
             @Global()
             @Module({
             imports: [TypeOrmModule.forFeature([AuditLogEntity])],
-            providers: [AuditService],
-            exports: [AuditService],
+            providers: [AuditService, AuditLoggerService],
+            exports: [AuditService, AuditLoggerService],
             })
             export class AuditModule {
             /**
@@ -121,8 +122,8 @@ oldValues?: Record<string, any> | null;
                 module: AuditModule,
                 imports: [TypeOrmModule.forFeature([AuditLogEntity])],
                 controllers: [AuditController],
-                providers: [AuditService, configProvider, interceptorProvider],
-                exports: [AuditService],
+                providers: [AuditService, AuditLoggerService, configProvider, interceptorProvider],
+                exports: [AuditService, AuditLoggerService],
                 };
                 }
 
