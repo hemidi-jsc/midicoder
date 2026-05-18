@@ -221,6 +221,7 @@ class FrontendApp:
     routes: list = field(default_factory=list)
     state_store: StateStoreConfig | None = None
     layout: AppShellLayout = AppShellLayout.SIDEBAR
+    router_strategy: RouterStrategy = RouterStrategy.LAZY
     description: str = ""
 
     def __post_init__(self) -> None:
@@ -237,6 +238,13 @@ class FrontendApp:
                 ErrorCode.CP18_INVALID_UI_FRAMEWORK,
                 ui_framework=self.ui_framework,
                 valid_frameworks=SUPPORTED_UI_FRAMEWORKS
+            )
+        # Router strategy phải hợp lệ
+        if not isinstance(self.router_strategy, RouterStrategy):
+            EM.raise_error(
+                ErrorCode.CP18_INVALID_ROUTER_STRATEGY,
+                router_strategy=self.router_strategy,
+                valid_strategies=[s.value for s in RouterStrategy]
             )
         # Kiểm tra route path không trùng lặp
         self._validate_unique_routes()
@@ -270,6 +278,7 @@ class FrontendApp:
             "routes": [r.to_dict() for r in self.routes],
             "state_store": self.state_store.to_dict() if self.state_store else None,
             "layout": self.layout.value,
+            "router_strategy": self.router_strategy.value,
             "description": self.description,
         }
 
@@ -294,6 +303,10 @@ class FrontendApp:
         layout_str = data.get("layout", "sidebar")
         layout = AppShellLayout(layout_str)
 
+        # Parse router strategy
+        strategy_str = data.get("router_strategy", "lazy")
+        router_strategy = RouterStrategy(strategy_str)
+
         return cls(
             name=data.get("name", ""),
             framework=framework,
@@ -301,6 +314,7 @@ class FrontendApp:
             routes=routes,
             state_store=state_store,
             layout=layout,
+            router_strategy=router_strategy,
             description=data.get("description", ""),
         )
 

@@ -181,6 +181,11 @@ from midicoder.dsl.projection import (
     ExternalServiceParams,
     LocalizationParams,
     SubledgerParams,
+
+    # CP18: Frontend Framework
+    FrontendAppParams,
+    FrontendRouteParams,
+    FrontendStoreParams,
 )
 
 __all__ = [
@@ -347,4 +352,9 @@ __all__ = [
     "CircuitBreakerParams",
     "CalendarScheduleParams",
     "SubledgerParams",
+
+    # CP18: Frontend Framework Params
+    "FrontendAppParams",
+    "FrontendRouteParams",
+    "FrontendStoreParams",
 ]

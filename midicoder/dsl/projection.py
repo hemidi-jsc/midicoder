@@ -3598,6 +3598,105 @@ class SubledgerParams(TypedDict, total=False):
 
 
 # ============================================================================
+# CP18: Frontend Framework Params
+# ============================================================================
+
+
+class FrontendAppParams(TypedDict, total=False):
+    """
+    Tham số cho FrontendApp nodes (CP18: Frontend Framework Generator).
+
+    FrontendApp định nghĩa cấu hình frontend application shell.
+    Bao gồm framework, UI framework, layout, routes, và state store.
+
+    Fields:
+        id: Định danh của frontend app
+        name: Tên hiển thị của app
+        framework: Frontend framework (angular, react)
+        ui_framework: UI framework (material, tailwind, bootstrap, antd, carbon)
+        layout: App shell layout (sidebar, topnav, split)
+        description: Mô tả app
+        routes: Danh sách route definitions
+        state_store: Config cho state store
+        router_strategy: Router strategy (eager, lazy)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    name: str
+    framework: str
+    ui_framework: str
+    layout: str
+    description: str
+    routes: list[dict[str, Any]]
+    state_store: dict[str, Any]
+    router_strategy: str
+    tags: list[str]
+    source: str
+
+
+class FrontendRouteParams(TypedDict, total=False):
+    """
+    Tham số cho FrontendRoute nodes (CP18: Frontend Framework Generator).
+
+    FrontendRoute định nghĩa route trong frontend application.
+    Bao gồm path, component binding, lazy loading, children.
+
+    Fields:
+        id: Định danh của route
+        path: Route path (bắt đầu bằng /)
+        component: Tên component để render
+        is_lazy: Có lazy load route này không
+        children: Danh sách sub-routes (nested routes)
+        guards: Danh sách guard names
+        required_permissions: Danh sách permissions cần thiết
+        data: Metadata tùy chỉnh
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    path: str
+    component: str
+    is_lazy: bool
+    children: list[dict[str, Any]]
+    guards: list[str]
+    required_permissions: list[str]
+    data: dict[str, Any]
+    tags: list[str]
+    source: str
+
+
+class FrontendStoreParams(TypedDict, total=False):
+    """
+    Tham số cho FrontendStore nodes (CP18: Frontend Framework Generator).
+
+    FrontendStore định nghĩa state store configuration.
+    Bao gồm store type, entities, selectors, actions.
+
+    Fields:
+        id: Định danh của store
+        store_type: Loại state store (angular_signals, zustand, ngxs, redux)
+        entities: Danh sách entity names cần quản lý state
+        selectors: Danh sách selector names tùy chỉnh
+        actions: Danh sách action names tùy chỉnh
+        persistence: Persistence strategy (none, localstorage, indexeddb)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    store_type: str
+    entities: list[str]
+    selectors: list[str]
+    actions: list[str]
+    persistence: str
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
 # CP06: API Gateway & Service Mesh Params (Kong + Consul)
 # ============================================================================
 
@@ -4007,6 +4106,10 @@ NodeParams = (
     | CircuitBreakerParams
     | CalendarScheduleParams
     | SubledgerParams
+    # CP18: Frontend Framework
+    | FrontendAppParams
+    | FrontendRouteParams
+    | FrontendStoreParams
     # Fallback cho other types
     | dict[str, Any]
 )
@@ -4259,6 +4362,11 @@ class NodeKind(Enum):
     SUBLEDGER = "finance.subledger"  # GAP-P3-06 (Complex accounting)
 
     # =========================================================================
+    # CP18: Frontend Framework (3 loại)
+    FRONTEND_APP = "frontend.app"
+    FRONTEND_ROUTE = "frontend.route"
+    FRONTEND_STORE = "frontend.store"
+
     # CP06: Kong Gateway (5 loại) - API Gateway & Service Mesh
     # =========================================================================
     KONG_GATEWAY = "gateway.kong"  # Kong Gateway configuration
@@ -4573,6 +4681,13 @@ class ProjectionNode:
             NodeKind.CIRCUIT_BREAKER: ["id", "target_service"],  # GAP-P3-08
             NodeKind.CALENDAR_SCHEDULE: ["id", "calendar_type"],  # GAP-P1-02
             NodeKind.SUBLEDGER: ["id", "ledger_type"],  # GAP-P3-06
+
+            # =========================================================================
+            # CP18: Frontend Framework
+            # =========================================================================
+            NodeKind.FRONTEND_APP: ["id", "name", "framework"],
+            NodeKind.FRONTEND_ROUTE: ["id", "path", "component"],
+            NodeKind.FRONTEND_STORE: ["id", "store_type"],
 
             # =========================================================================
             # CP06: Kong Gateway

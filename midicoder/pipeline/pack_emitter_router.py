@@ -208,6 +208,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "ReactEmitter",
         "cp09_cache",
     ),
+    # CP18 – Frontend Framework (Angular)
+    "cp18.frontend.angular": (
+        "midicoder.emitters.core.cp18_frontend_framework.angular",
+        "AngularComponentEmitter",
+        "cp18_frontend",
+    ),
+    # CP18 – Frontend Framework (React)
+    "cp18.frontend.react": (
+        "midicoder.emitters.core.cp18_frontend_framework.react",
+        "ReactComponentEmitter",
+        "cp18_frontend",
+    ),
+    # CP18 – Frontend Framework (FastAPI backend config)
+    "cp18.frontend.fastapi": (
+        "midicoder.emitters.core.cp18_frontend_framework.fastapi",
+        "FastAPIFrontendEmitter",
+        "cp18_frontend",
+    ),
+    # CP18 – Frontend Framework (NestJS backend config)
+    "cp18.frontend.nestjs": (
+        "midicoder.emitters.core.cp18_frontend_framework.nestjs",
+        "NestJSFrontendEmitter",
+        "cp18_frontend",
+    ),
 }
 
 
@@ -298,6 +322,18 @@ def _parse_gateway_dict(raw: dict[str, Any]) -> Any:
     )
 
 
+def _parse_frontend_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw frontend dict from DSL/MIR into CP18 FrontendApp dataclass."""
+    from midicoder.emitters.core.cp18_frontend_framework.parser import FrontendFrameworkParser
+    import yaml
+
+    # FrontendFrameworkParser expects a YAML string — serialize the raw dict
+    yaml_str = yaml.dump(raw)
+    parser = FrontendFrameworkParser()
+    result = parser.parse(yaml_str)
+    return result.get("frontend_app")
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
@@ -306,6 +342,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp05_event": _parse_event_dict,
     "cp09_cache": _parse_cache_dict,
     "cp06_gateway": _parse_gateway_dict,
+    "cp18_frontend": _parse_frontend_dict,
 }
 
 

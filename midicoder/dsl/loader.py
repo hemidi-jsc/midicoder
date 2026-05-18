@@ -553,6 +553,11 @@ def load_projection_tree(dsl_path: Path) -> ProjectionTree:
     if observability_file.exists():
         add_nodes(_load_observability(observability_file))
 
+    # Load frontends (CP18)
+    frontends_file = dsl_path / "frontends.yaml"
+    if frontends_file.exists():
+        add_nodes(_load_frontends(frontends_file))
+
     return tree
 
 
@@ -1168,6 +1173,89 @@ def _load_observability(path: Path) -> list[ProjectionNode]:
                 )
                 nodes.append(node)
     
+    return nodes
+
+
+# ============================================================================
+# CP18: Frontend Framework Loaders
+# ============================================================================
+
+def _load_frontends(path: Path) -> list[ProjectionNode]:
+    """Load frontends.yaml vào ProjectionNodes (CP18).
+
+    Parse cấu hình frontend application: app shell, routes, state store.
+
+    Args:
+        path: Đường dẫn đến frontends.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho frontend config
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Load frontend apps
+    if "apps" in data:
+        for app in data["apps"]:
+            node = ProjectionNode(
+                id=app.get("id", ""),
+                kind=NodeKind.FRONTEND_APP,
+                params={
+                    "id": app.get("id"),
+                    "name": app.get("name", ""),
+                    "framework": app.get("framework", "react"),
+                    "ui_framework": app.get("ui_framework", "material"),
+                    "layout": app.get("layout", "sidebar"),
+                    "description": app.get("description", ""),
+                    "routes": app.get("routes", []),
+                    "state_store": app.get("state_store"),
+                    "router_strategy": app.get("router_strategy", "lazy"),
+                    "tags": app.get("tags", []),
+                    "source": "frontends.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Load individual routes (nếu tách riêng)
+    if "routes" in data:
+        for route in data["routes"]:
+            node = ProjectionNode(
+                id=route.get("id", ""),
+                kind=NodeKind.FRONTEND_ROUTE,
+                params={
+                    "id": route.get("id"),
+                    "path": route.get("path", ""),
+                    "component": route.get("component", ""),
+                    "is_lazy": route.get("is_lazy", False),
+                    "children": route.get("children", []),
+                    "guards": route.get("guards", []),
+                    "required_permissions": route.get("required_permissions", []),
+                    "data": route.get("data", {}),
+                    "tags": route.get("tags", []),
+                    "source": "frontends.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Load state stores (nếu tách riêng)
+    if "stores" in data:
+        for store in data["stores"]:
+            node = ProjectionNode(
+                id=store.get("id", ""),
+                kind=NodeKind.FRONTEND_STORE,
+                params={
+                    "id": store.get("id"),
+                    "store_type": store.get("store_type", "zustand"),
+                    "entities": store.get("entities", []),
+                    "selectors": store.get("selectors", []),
+                    "actions": store.get("actions", []),
+                    "persistence": store.get("persistence", "none"),
+                    "tags": store.get("tags", []),
+                    "source": "frontends.yaml",
+                },
+            )
+            nodes.append(node)
+
     return nodes
 
 

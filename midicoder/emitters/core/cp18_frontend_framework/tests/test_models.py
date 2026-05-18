@@ -2,7 +2,6 @@
 """
 Tests cho models của Frontend Framework Generator (CP18).
 
-Module: midicoder/emitters/core/component/models.py
 Features: FrontendApp, RouteDefinition, StateStoreConfig + enums
 
 Author: Midicoder Team
@@ -18,13 +17,13 @@ class TestFrontendFramework:
 
     def test_frontend_framework_values(self):
         """Test enum values."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendFramework
+        from ..models import FrontendFramework
         assert FrontendFramework.ANGULAR.value == "angular"
         assert FrontendFramework.REACT.value == "react"
 
     def test_frontend_framework_from_string(self):
         """Test tạo enum từ string."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendFramework
+        from ..models import FrontendFramework
         assert FrontendFramework("angular") == FrontendFramework.ANGULAR
         assert FrontendFramework("react") == FrontendFramework.REACT
 
@@ -34,7 +33,7 @@ class TestStateStoreType:
 
     def test_state_store_type_values(self):
         """Test enum values."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import StateStoreType
+        from ..models import StateStoreType
         assert StateStoreType.ANGULAR_SIGNALS.value == "angular_signals"
         assert StateStoreType.ZUSTAND.value == "zustand"
         assert StateStoreType.NGXS.value == "ngxs"
@@ -46,7 +45,7 @@ class TestRouterStrategy:
 
     def test_router_strategy_values(self):
         """Test enum values."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouterStrategy
+        from ..models import RouterStrategy
         assert RouterStrategy.EAGER.value == "eager"
         assert RouterStrategy.LAZY.value == "lazy"
 
@@ -56,7 +55,7 @@ class TestAppShellLayout:
 
     def test_app_shell_layout_values(self):
         """Test enum values."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import AppShellLayout
+        from ..models import AppShellLayout
         assert AppShellLayout.SIDEBAR.value == "sidebar"
         assert AppShellLayout.TOPNAV.value == "topnav"
         assert AppShellLayout.SPLIT.value == "split"
@@ -67,7 +66,7 @@ class TestFrontendApp:
 
     def test_frontend_app_creation(self):
         """Test tạo FrontendApp hợp lệ."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp, FrontendFramework
+        from ..models import FrontendApp, FrontendFramework
         app = FrontendApp(
             name="my-app",
             framework=FrontendFramework.ANGULAR,
@@ -79,35 +78,35 @@ class TestFrontendApp:
 
     def test_frontend_app_empty_name_raises(self):
         """Test lỗi khi name rỗng."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp
+        from ..models import FrontendApp
         with pytest.raises(MidicoderError) as exc_info:
             FrontendApp(name="")
         assert exc_info.value.code == ErrorCode.CP18_EMPTY_APP_NAME
 
     def test_frontend_app_whitespace_name_raises(self):
         """Test lỗi khi name là whitespace."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp
+        from ..models import FrontendApp
         with pytest.raises(MidicoderError) as exc_info:
             FrontendApp(name="   ")
         assert exc_info.value.code == ErrorCode.CP18_EMPTY_APP_NAME
 
     def test_frontend_app_invalid_ui_framework_raises(self):
         """Test lỗi khi UI framework không hợp lệ."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp
+        from ..models import FrontendApp
         with pytest.raises(MidicoderError) as exc_info:
             FrontendApp(name="test-app", ui_framework="invalid_framework")
         assert exc_info.value.code == ErrorCode.CP18_INVALID_UI_FRAMEWORK
 
     def test_frontend_app_supported_ui_frameworks(self):
         """Test các UI framework được hỗ trợ."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp
+        from ..models import FrontendApp
         for fw in ["material", "tailwind", "bootstrap", "antd", "carbon"]:
             app = FrontendApp(name="test-app", ui_framework=fw)
             assert app.ui_framework == fw
 
     def test_frontend_app_default_values(self):
         """Test giá trị mặc định."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp, FrontendFramework
+        from ..models import FrontendApp, FrontendFramework
         app = FrontendApp(name="test-app")
         assert app.framework == FrontendFramework.REACT
         assert app.ui_framework == "material"
@@ -116,7 +115,7 @@ class TestFrontendApp:
 
     def test_frontend_app_to_dict(self):
         """Test chuyển sang dict."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp, FrontendFramework
+        from ..models import FrontendApp, FrontendFramework
         app = FrontendApp(name="my-app", framework=FrontendFramework.ANGULAR)
         d = app.to_dict()
         assert d["name"] == "my-app"
@@ -125,7 +124,7 @@ class TestFrontendApp:
 
     def test_frontend_app_from_dict(self):
         """Test tạo từ dict."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp, FrontendFramework
+        from ..models import FrontendApp, FrontendFramework
         data = {
             "name": "my-app",
             "framework": "angular",
@@ -138,7 +137,7 @@ class TestFrontendApp:
 
     def test_frontend_app_with_routes(self):
         """Test FrontendApp có routes."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp, RouteDefinition
+        from ..models import FrontendApp, RouteDefinition
         route = RouteDefinition(path="/orders", component="OrderList")
         app = FrontendApp(name="test-app", routes=[route])
         assert len(app.routes) == 1
@@ -150,7 +149,7 @@ class TestRouteDefinition:
 
     def test_route_definition_creation(self):
         """Test tạo RouteDefinition hợp lệ."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         route = RouteDefinition(
             path="/orders",
             component="OrderList",
@@ -162,28 +161,28 @@ class TestRouteDefinition:
 
     def test_route_definition_empty_path_raises(self):
         """Test lỗi khi path rỗng."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         with pytest.raises(MidicoderError) as exc_info:
             RouteDefinition(path="", component="Test")
         assert exc_info.value.code == ErrorCode.CP18_INVALID_ROUTE_PATH
 
     def test_route_definition_path_not_starting_with_slash_raises(self):
         """Test lỗi khi path không bắt đầu bằng /."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         with pytest.raises(MidicoderError) as exc_info:
             RouteDefinition(path="orders", component="Test")
         assert exc_info.value.code == ErrorCode.CP18_INVALID_ROUTE_PATH
 
     def test_route_definition_empty_component_raises(self):
         """Test lỗi khi component rỗng."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         with pytest.raises(MidicoderError) as exc_info:
             RouteDefinition(path="/test", component="")
         assert exc_info.value.code == ErrorCode.CP18_EMPTY_ROUTE_COMPONENT
 
     def test_route_definition_with_children(self):
         """Test route có children."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         child = RouteDefinition(path="/orders/:id", component="OrderDetail")
         parent = RouteDefinition(
             path="/orders",
@@ -195,7 +194,7 @@ class TestRouteDefinition:
 
     def test_route_definition_lazy(self):
         """Test route lazy loading."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         route = RouteDefinition(
             path="/admin",
             component="AdminPanel",
@@ -205,7 +204,7 @@ class TestRouteDefinition:
 
     def test_route_definition_to_dict(self):
         """Test chuyển sang dict."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         route = RouteDefinition(
             path="/orders",
             component="OrderList",
@@ -218,7 +217,7 @@ class TestRouteDefinition:
 
     def test_route_definition_from_dict(self):
         """Test tạo từ dict."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         data = {
             "path": "/products",
             "component": "ProductList",
@@ -231,13 +230,13 @@ class TestRouteDefinition:
 
     def test_route_definition_root_path(self):
         """Test root path (/)."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         route = RouteDefinition(path="/", component="Home")
         assert route.path == "/"
 
     def test_route_definition_with_params(self):
         """Test route với path parameters."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import RouteDefinition
+        from ..models import RouteDefinition
         route = RouteDefinition(
             path="/orders/:orderId/items/:itemId",
             component="OrderItemDetail",
@@ -246,7 +245,7 @@ class TestRouteDefinition:
 
     def test_duplicate_routes_detection(self):
         """Test phát hiện route trùng lặp."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp, RouteDefinition
+        from ..models import FrontendApp, RouteDefinition
         routes = [
             RouteDefinition(path="/orders", component="OrderList"),
             RouteDefinition(path="/orders", component="AnotherComponent"),
@@ -261,7 +260,7 @@ class TestStateStoreConfig:
 
     def test_state_store_config_creation(self):
         """Test tạo StateStoreConfig hợp lệ."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import StateStoreConfig, StateStoreType
+        from ..models import StateStoreConfig, StateStoreType
         config = StateStoreConfig(
             store_type=StateStoreType.ANGULAR_SIGNALS,
             entities=["Order", "Product"],
@@ -271,13 +270,13 @@ class TestStateStoreConfig:
 
     def test_state_store_config_empty_entities(self):
         """Test StateStoreConfig không có entities."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import StateStoreConfig, StateStoreType
+        from ..models import StateStoreConfig, StateStoreType
         config = StateStoreConfig(store_type=StateStoreType.ZUSTAND)
         assert config.entities == []
 
     def test_state_store_config_to_dict(self):
         """Test chuyển sang dict."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import StateStoreConfig, StateStoreType
+        from ..models import StateStoreConfig, StateStoreType
         config = StateStoreConfig(
             store_type=StateStoreType.ZUSTAND,
             entities=["User", "Order"],
@@ -288,7 +287,7 @@ class TestStateStoreConfig:
 
     def test_state_store_config_from_dict(self):
         """Test tạo từ dict."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import StateStoreConfig, StateStoreType
+        from ..models import StateStoreConfig, StateStoreType
         data = {
             "store_type": "zustand",
             "entities": ["Product", "Category"],
@@ -299,7 +298,7 @@ class TestStateStoreConfig:
 
     def test_state_store_config_with_selectors(self):
         """Test StateStoreConfig có selectors tùy chỉnh."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import StateStoreConfig, StateStoreType
+        from ..models import StateStoreConfig, StateStoreType
         config = StateStoreConfig(
             store_type=StateStoreType.ZUSTAND,
             entities=["Order"],
@@ -309,7 +308,7 @@ class TestStateStoreConfig:
 
     def test_state_store_config_invalid_type_raises(self):
         """Test lỗi khi store_type không hợp lệ."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import StateStoreConfig
+        from ..models import StateStoreConfig
         with pytest.raises(MidicoderError) as exc_info:
             StateStoreConfig(store_type="invalid_type")
         assert exc_info.value.code == ErrorCode.CP18_INVALID_STATE_STORE
@@ -320,7 +319,7 @@ class TestFrontendAppGenerateRoutes:
 
     def test_generate_routes_from_entities(self):
         """Test tự động generate routes từ entities."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp
+        from ..models import FrontendApp
         app = FrontendApp(name="test-app")
         entities = [
             {"id": "Order", "fields": [{"name": "total", "type": "float"}]},
@@ -338,7 +337,7 @@ class TestFrontendAppGenerateRoutes:
 
     def test_generate_routes_includes_routes_detail(self):
         """Test routes bao gồm list và detail."""
-        from midicoder.emitters.core.cp18_frontend_framework.models import FrontendApp
+        from ..models import FrontendApp
         app = FrontendApp(name="test-app")
         entities = [{"id": "Order", "fields": []}]
         routes = app.generate_routes(entities)

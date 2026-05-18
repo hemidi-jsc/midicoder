@@ -13,11 +13,11 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
-from midicoder.emitters.core.cp18_frontend_framework.react import ReactComponentEmitter
-from midicoder.emitters.core.cp18_frontend_framework.fastapi import FastAPIFrontendEmitter
-from midicoder.emitters.core.cp18_frontend_framework.nestjs import NestJSFrontendEmitter
-from midicoder.emitters.core.cp18_frontend_framework.models import (
+from ..angular import AngularComponentEmitter
+from ..react import ReactComponentEmitter
+from ..fastapi import FastAPIFrontendEmitter
+from ..nestjs import NestJSFrontendEmitter
+from ..models import (
     FrontendApp,
     FrontendFramework,
     RouteDefinition,

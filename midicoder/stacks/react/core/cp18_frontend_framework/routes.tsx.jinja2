@@ -6,35 +6,32 @@ import { createBrowserRouter, RouteObject } from "react-router-dom";
 import { Layout } from "./components/layout";
 
 {% for route in routes %}
-const {{ route.component }} = React.lazy(() => import('./components/{{ route.component|lower }}/{{ route.component|lower
-}}.tsx'));
+const {{ route.component }} = React.lazy(() => import('./components/{{ route.component|lower }}/{{ route.component|lower }}.tsx'));
 {% endfor %}
+
+{% macro render_route(route, indent_level) %}
+{{ '  ' * indent_level }}{
+{{ '  ' * indent_level }}  path: "{{ route.path | lstrip_slash }}",
+{{ '  ' * indent_level }}  element: <{{ route.component }} />,
+{% if route.children %}
+{{ '  ' * indent_level }}  children: [
+{% for child in route.children %}
+{{ render_route(child, indent_level + 2) }}
+{% endfor %}
+{{ '  ' * indent_level }}  ],
+{% endif %}
+{{ '  ' * indent_level }}},
+{% endmacro %}
 
 const routeElements: RouteObject[] = [
 {
-path: "/",
-element:
-<Layout />,
-children: [
+  path: "/",
+  element: <Layout />,
+  children: [
 {% for route in routes %}
-{
-path: "{{ route.path | lstrip_slash }}",
-element:
-<{{ route.component }} />,
-{% if route.children %}
-children: [
-{% for child in route.children %}
-{
-path: "{{ child.path | lstrip_slash }}",
-element:
-<{{ child.component }} />,
-},
+{{ render_route(route, 3) }}
 {% endfor %}
-],
-{% endif %}
-},
-{% endfor %}
-],
+  ],
 },
 ];
 

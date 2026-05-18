@@ -32,3 +32,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 2. **StateStoreIsolation** — State stores must be namespaced per feature module
 
 **Dependencies:** CP01
+
+**Known Scope Gaps (P2 backlog):**
+
+The following capabilities are NOT in scope for v1.0 — planned for future releases:
+
+| # | Capability | Priority | Rationale |
+|---|-----------|----------|-----------|
+| 1 | **API Service Layer** | HIGH | HttpClient/RTK Query service generation — owned by CP20 |
+| 2 | **Middleware/Interceptor** | HIGH | Auth/error/caching interceptors — requires CP03 integration |
+| 3 | **Theme Management** | MEDIUM | Dynamic theme, dark mode, CSS variables |
+| 4 | **Error Boundary** | MEDIUM | React ErrorBoundary / Angular global error handler |
+| 5 | **Loading/Skeleton** | MEDIUM | Loading spinner, skeleton screen components |
+| 6 | **Form Validation Library** | MEDIUM | react-hook-form, zod, yup integration |
+| 7 | **PWA Manifest** | MEDIUM | manifest.json, service worker |
+| 8 | **i18n/Localization** | MEDIUM | Translation files, locale config |
+| 9 | **Environment Config** | MEDIUM | .env, environment.ts templates |
+| 10 | **Module Federation** | LOW | Micro Frontend (Webpack/Vite Module Federation) |
+| 11 | **SSR/SSG** | LOW | Next.js/Nuxt.js support — SPA only in v1 |

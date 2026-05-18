@@ -17,7 +17,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_basic(self):
         """Test emit cơ bản tạo được files."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -30,7 +30,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_list_component(self):
         """Test emit List Component có table và pagination."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -44,7 +44,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_detail_component(self):
         """Test emit Detail Component."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -58,7 +58,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_form_component(self):
         """Test emit Form Component có validation."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -72,7 +72,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_dashboard(self):
         """Test emit Dashboard Component."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -86,7 +86,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_shell_layout(self):
         """Test emit Shell/Layout Component."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -100,7 +100,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_ui_framework(self):
         """Test emit với UI framework parameter."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -113,7 +113,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_standalone(self):
         """Test emit là standalone components (Angular v17+)."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -127,7 +127,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_multiple_entities(self):
         """Test emit nhiều entities."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -143,7 +143,7 @@ class TestAngularComponentEmitter:
 
     def test_angular_component_emitter_input_output(self):
         """Test emit có Input/Output decorators."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -162,7 +162,7 @@ class TestAngularComponentEmitterIntegration:
 
     def test_generated_files_written_to_disk(self):
         """Test files được ghi ra disk."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -177,7 +177,7 @@ class TestAngularComponentEmitterIntegration:
 
     def test_template_files_structure(self):
         """Test cấu trúc files output hợp lý."""
-        from midicoder.emitters.core.cp18_frontend_framework.angular import AngularComponentEmitter
+        from ..angular import AngularComponentEmitter
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
