@@ -95,6 +95,7 @@ _COMPONENT_TEMPLATE_MAP: dict[ComponentType, tuple[str | None, str, str]] = {
     ComponentType.CIRCULAR_PROGRESS: ("feedback", "CircularProgress.tsx.jinja2", "CircularProgress.tsx"),
     ComponentType.SKELETON:         ("feedback", "Skeleton.tsx.jinja2",         "Skeleton.tsx"),
     ComponentType.SPINNER:          ("feedback", "Spinner.tsx.jinja2",          "Spinner.tsx"),
+    ComponentType.ERROR_BOUNDARY:   ("feedback", "ErrorBoundary.tsx.jinja2",    "ErrorBoundary.tsx"),
 
     # ── Surface ─────────────────────────────────────────────────
     ComponentType.DRAWER:           ("surface", "Drawer.tsx.jinja2",           "Drawer.tsx"),

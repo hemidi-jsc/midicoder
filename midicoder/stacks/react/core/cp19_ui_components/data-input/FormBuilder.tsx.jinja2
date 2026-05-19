@@ -41,6 +41,8 @@ interface FormBuilderProps {
   onCancel?: () => void;
   initialValues?: Record<string, any>;
   className?: string;
+  /** Optional external validator — returns field-level errors (user-defined at runtime) */
+  validateFn?: (data: Record<string, any>, fields: FieldSchema[]) => Record<string, string>;
 }
 
 const FormBuilder: React.FC<FormBuilderProps> = ({
@@ -49,6 +51,7 @@ const FormBuilder: React.FC<FormBuilderProps> = ({
   onCancel,
   initialValues = {},
   className = '',
+  validateFn
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     const defaults: Record<string, any> = {};
@@ -72,26 +75,24 @@ const FormBuilder: React.FC<FormBuilderProps> = ({
     return schema.wizardSteps[activeStep]?.fields.map((name) => schema.fields.find((f) => f.name === name)).filter(Boolean) as FieldSchema[];
   }, [schema, activeStep]);
 
+  /** Run validation — uses external validateFn if provided, otherwise struct-only check */
   const validate = useCallback((): boolean => {
-    const newErrors: Record<string, string> = {};
     const fieldsToValidate = schema.layout === 'wizard' && schema.wizardSteps ? currentStepFields : visibleFields;
+    if (validateFn) {
+      const newErrors = validateFn(formData, fieldsToValidate);
+      setErrors(newErrors);
+      return Object.keys(newErrors).length === 0;
+    }
+    // Struct-only: check required fields (no regex, no domain logic)
+    const newErrors: Record<string, string> = {};
     for (const field of fieldsToValidate) {
       if (field.required && (!formData[field.name] || (typeof formData[field.name] === 'string' && !formData[field.name].trim()))) {
         newErrors[field.name] = `${field.label} is required`;
       }
-      if (field.type === 'email' && formData[field.name] && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData[field.name])) {
-        newErrors[field.name] = 'Invalid email address';
-      }
-      if (field.minLength && formData[field.name] && formData[field.name].length < field.minLength) {
-        newErrors[field.name] = `Minimum ${field.minLength} characters required`;
-      }
-      if (field.maxLength && formData[field.name] && formData[field.name].length > field.maxLength) {
-        newErrors[field.name] = `Maximum ${field.maxLength} characters allowed`;
-      }
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [visibleFields, currentStepFields, formData, schema]);
+  }, [visibleFields, currentStepFields, formData, schema, validateFn]);
 
   const handleChange = (name: string, value: any) => {
     setFormData((prev) => ({ ...prev, [name]: value }));

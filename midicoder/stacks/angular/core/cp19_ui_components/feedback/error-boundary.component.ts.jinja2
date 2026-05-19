@@ -1,0 +1,202 @@
+{% if ui_framework == "material" %}import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+
+@Component({
+  selector: '{[{ selector }]}',
+  standalone: true,
+  imports: [CommonModule, MatIconModule, MatButtonModule, MatCardModule],
+  template: `
+    <mat-card class="error-boundary" [style.maxWidth.px]="maxWidth">
+      <div class="error-content">
+        <mat-icon color="warn" class="error-icon">error_outline</mat-icon>
+        <h2 class="error-title">{{ title }}</h2>
+        <p class="error-message">{{ message }}</p>
+        <ng-content></ng-content>
+        <button mat-raised-button color="primary" (click)="onRetry()" *ngIf="showRetry">
+          {{ retryText }}
+        </button>
+      </div>
+    </mat-card>
+  `,
+  styles: [`
+    .error-boundary { padding: 24px; text-align: center; }
+    .error-content { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .error-icon { font-size: 48px; width: 48px; height: 48px; }
+    .error-title { margin: 0; font-size: 20px; }
+    .error-message { color: #666; margin: 0; }
+  `]
+})
+export class {{ component_class_name }}Component {
+  @Input() title: string = 'Something went wrong';
+  @Input() message: string = 'An unexpected error has occurred';
+  @Input() showRetry: boolean = true;
+  @Input() retryText: string = 'Try again';
+  @Input() maxWidth: number = 600;
+  @Output() retry = new EventEmitter<void>();
+
+  onRetry(): void {
+    this.retry.emit();
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{[{ selector }]}',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div class="max-w-md mx-auto p-6 bg-white rounded-lg shadow-md text-center">
+      <div class="text-red-500 text-5xl mb-4">&#9888;</div>
+      <h2 class="text-xl font-semibold text-gray-900 mb-2">{{ title }}</h2>
+      <p class="text-gray-600 mb-4">{{ message }}</p>
+      <ng-content></ng-content>
+      <button *ngIf="showRetry" (click)="onRetry()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+        {{ retryText }}
+      </button>
+    </div>
+  `,
+  styles: []
+})
+export class {{ component_class_name }}Component {
+  @Input() title: string = 'Something went wrong';
+  @Input() message: string = 'An unexpected error has occurred';
+  @Input() showRetry: boolean = true;
+  @Input() retryText: string = 'Try again';
+  @Output() retry = new EventEmitter<void>();
+
+  onRetry(): void {
+    this.retry.emit();
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+@Component({
+  selector: '{[{ selector }]}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  template: `
+    <div class="card mx-auto text-center" style="max-width: {{ maxWidth }}px;">
+      <div class="card-body p-4">
+        <div class="text-danger display-4 mb-3">&#9888;</div>
+        <h2 class="card-title h5">{{ title }}</h2>
+        <p class="card-text text-muted">{{ message }}</p>
+        <ng-content></ng-content>
+        <button *ngIf="showRetry" class="btn btn-primary mt-3" (click)="onRetry()">
+          {{ retryText }}
+        </button>
+      </div>
+    </div>
+  `
+})
+export class {{ component_class_name }}Component {
+  @Input() title: string = 'Something went wrong';
+  @Input() message: string = 'An unexpected error has occurred';
+  @Input() showRetry: boolean = true;
+  @Input() retryText: string = 'Try again';
+  @Input() maxWidth: number = 600;
+  @Output() retry = new EventEmitter<void>();
+
+  onRetry(): void {
+    this.retry.emit();
+  }
+}
+{% elif ui_framework == "antd" %}import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{[{ selector }]}',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div class="mx-auto text-center" style="max-width: {{ maxWidth }}px; border: 1px solid #f0f0f0; border-radius: 8px; padding: 24px;">
+      <div class="text-red-500 text-4xl mb-3">&#9888;</div>
+      <h2 class="text-lg font-medium mb-2">{{ title }}</h2>
+      <p class="text-gray-500">{{ message }}</p>
+      <ng-content></ng-content>
+      <button *ngIf="showRetry" class="mt-3" style="background: #1677ff; color: #fff; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer;" (click)="onRetry()">
+        {{ retryText }}
+      </button>
+    </div>
+  `
+})
+export class {{ component_class_name }}Component {
+  @Input() title: string = 'Something went wrong';
+  @Input() message: string = 'An unexpected error has occurred';
+  @Input() showRetry: boolean = true;
+  @Input() retryText: string = 'Try again';
+  @Input() maxWidth: number = 600;
+  @Output() retry = new EventEmitter<void>();
+
+  onRetry(): void {
+    this.retry.emit();
+  }
+}
+{% elif ui_framework == "carbon" %}import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{[{ selector }]}',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div class="cds--card mx-auto text-center" style="max-width: {{ maxWidth }}px;">
+      <div class="text-red-600 text-4xl mb-3">&#9888;</div>
+      <h2 class="text-lg font-semibold mb-2">{{ title }}</h2>
+      <p class="cds--label text-gray-600">{{ message }}</p>
+      <ng-content></ng-content>
+      <button *ngIf="showRetry" class="cds-btn cds-btn--primary mt-3" (click)="onRetry()">
+        {{ retryText }}
+      </button>
+    </div>
+  `
+})
+export class {{ component_class_name }}Component {
+  @Input() title: string = 'Something went wrong';
+  @Input() message: string = 'An unexpected error has occurred';
+  @Input() showRetry: boolean = true;
+  @Input() retryText: string = 'Try again';
+  @Input() maxWidth: number = 600;
+  @Output() retry = new EventEmitter<void>();
+
+  onRetry(): void {
+    this.retry.emit();
+  }
+}
+{% else %}import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{[{ selector }]}',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div class="border rounded p-4 text-center mx-auto" style="max-width: {{ maxWidth }}px;">
+      <div class="text-red-500 text-4xl mb-3">&#9888;</div>
+      <h2 class="font-semibold mb-2">{{ title }}</h2>
+      <p class="text-gray-600">{{ message }}</p>
+      <ng-content></ng-content>
+      <button *ngIf="showRetry" class="px-4 py-2 bg-blue-600 text-white rounded" (click)="onRetry()">
+        {{ retryText }}
+      </button>
+    </div>
+  `
+})
+export class {{ component_class_name }}Component {
+  @Input() title: string = 'Something went wrong';
+  @Input() message: string = 'An unexpected error has occurred';
+  @Input() showRetry: boolean = true;
+  @Input() retryText: string = 'Try again';
+  @Input() maxWidth: number = 600;
+  @Output() retry = new EventEmitter<void>();
+
+  onRetry(): void {
+    this.retry.emit();
+  }
+}
+{% endif %}

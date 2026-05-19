@@ -1,0 +1,702 @@
+{% if ui_framework == "material" %}import React from 'react';
+import {
+  Card,
+  CardMedia,
+  CardContent,
+  CardActions,
+  CardHeader,
+  Typography,
+  Button,
+  Grid,
+  Box,
+  Divider,
+  Pagination,
+  SortDirection,
+} from '@mui/material';
+import { Sort as SortIcon } from '@mui/icons-material';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: React.ReactNode; onClick: () => void }[];
+  [key: string]: any;
+}
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardListProps {
+  items?: CardItem[];
+  title?: string;
+  columns?: number;
+  variant?: 'grid' | 'list' | 'wrap';
+  paginated?: boolean;
+  pageSize?: number;
+  sortable?: boolean;
+  sx?: SxProps<Theme>;
+  className?: string;
+  emptyText?: string;
+  onSort?: (key: string, direction: SortDirection) => void;
+}
+
+function CardList({
+  items = [],
+  title,
+  columns = 3,
+  variant = 'grid',
+  paginated = false,
+  pageSize = 12,
+  sortable = false,
+  sx,
+  className,
+  emptyText = 'No items found',
+  onSort
+}: CardListProps) {
+  const [page, setPage] = React.useState(1);
+
+  const paginatedItems = paginated
+    ? items.slice((page - 1) * pageSize, page * pageSize)
+    : items;
+
+  const totalPages = paginated ? Math.ceil(items.length / pageSize) : 1;
+
+  const xs = Math.max(12 / columns, 1);
+
+  return (
+    <Box sx={sx} className={className}>
+      {title && (
+        <Typography variant="h5" component="h2" gutterBottom>
+          {title}
+        </Typography>
+      )}
+      {paginatedItems.length === 0 ? (
+        <Typography color="text.secondary">{emptyText}</Typography>
+      ) : (
+        <>
+          <Grid container spacing={2}>
+            {paginatedItems.map((item) => (
+              <Grid item xs={12} sm={6} md={xs} key={item.id}>
+                <Card variant="elevated">
+                  {item.imageUrl && (
+                    <CardMedia
+                      component="img"
+                      height="200"
+                      image={item.imageUrl}
+                      alt={item.imageAlt || ''}
+                    />
+                  )}
+                  {(item.title || item.subtitle) && (
+                    <CardHeader
+                      title={item.title}
+                      subheader={item.subtitle}
+                      titleTypographyProps=% raw %>{{ variant: 'h6' }}{% endraw %}
+                      subheaderTypographyProps=% raw %>{{ variant: 'body2' }}{% endraw %}
+                    />
+                  )}
+                  {item.description && (
+                    <CardContent>
+                      <Typography variant="body2" color="text.secondary">
+                        {item.description}
+                      </Typography>
+                    </CardContent>
+                  )}
+                  {item.actions && item.actions.length > 0 && (
+                    <>
+                      <Divider />
+                      <CardActions>
+                        {item.actions.map((action: Action, index: number) => (
+                          <Button key={index} size="small" onClick={action.onClick} startIcon={action.icon}>
+                            {action.label}
+                          </Button>
+                        ))}
+                      </CardActions>
+                    </>
+                  )}
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+          {paginated && totalPages > 1 && (
+            <Box sx=% raw %}{{ mt: 2, display: 'flex', justifyContent: 'center' }}{% endraw %}>
+              <Pagination
+                count={totalPages}
+                page={page}
+                onChange={(_event, value) => setPage(value)}
+                color="primary"
+              />
+            </Box>
+          )}
+        </>
+      )}
+    </Box>
+  );
+}
+
+export default CardList;
+{% elif ui_framework == "tailwind" %}import React from 'react';
+
+interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: React.ReactNode; onClick: () => void }[];
+  [key: string]: any;
+}
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardListProps {
+  items?: CardItem[];
+  title?: string;
+  columns?: number;
+  variant?: 'grid' | 'list' | 'masonry';
+  spacing?: 'sm' | 'md' | 'lg';
+  paginated?: boolean;
+  pageSize?: number;
+  bordered?: boolean;
+  className?: string;
+  emptyText?: string;
+}
+
+function CardList({
+  items = [],
+  title,
+  columns = 3,
+  variant = 'grid',
+  spacing = 'md',
+  paginated = false,
+  pageSize = 12,
+  bordered = false,
+  className = '',
+  emptyText = 'No items found'
+}: CardListProps) {
+  const [page, setPage] = React.useState(1);
+
+  const paginatedItems = paginated
+    ? items.slice((page - 1) * pageSize, page * pageSize)
+    : items;
+
+  const totalPages = paginated ? Math.ceil(items.length / pageSize) : 1;
+
+  const gapMap = { sm: 'gap-2', md: 'gap-4', lg: 'gap-6' };
+  const gapClass = gapMap[spacing] || 'gap-4';
+
+  const colMap: Record<number, string> = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-1 sm:grid-cols-2',
+    3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+    4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
+  };
+  const colClass = colMap[columns] || colMap[3];
+
+  return (
+    <div className={className}>
+      {title && (
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">{title}</h2>
+      )}
+      {paginatedItems.length === 0 ? (
+        <p className="text-gray-500">{emptyText}</p>
+      ) : (
+        <>
+          <div className={`grid ${colClass} ${gapClass}`}>
+            {paginatedItems.map((item) => {
+              const borderClass = bordered ? 'border border-gray-200' : 'shadow-md';
+              return (
+                <div
+                  key={item.id}
+                  className={`bg-white rounded-lg overflow-hidden ${borderClass} hover:shadow-lg transition-shadow`}
+                >
+                  {item.imageUrl && (
+                    <img
+                      src={item.imageUrl}
+                      alt={item.imageAlt || ''}
+                      className="w-full h-48 object-cover"
+                    />
+                  )}
+                  {(item.title || item.subtitle) && (
+                    <div className="p-5 pb-0">
+                      {item.title && (
+                        <h3 className="text-lg font-semibold text-gray-900">{item.title}</h3>
+                      )}
+                      {item.subtitle && (
+                        <p className="text-sm text-gray-500 mt-1">{item.subtitle}</p>
+                      )}
+                    </div>
+                  )}
+                  {item.description && (
+                    <div className="p-5 pt-3">
+                      <p className="text-sm text-gray-600">{item.description}</p>
+                    </div>
+                  )}
+                  {item.actions && item.actions.length > 0 && (
+                    <div className="flex flex-wrap gap-2 p-5 pt-3 border-t border-gray-100">
+                      {item.actions.map((action: Action, index: number) => (
+                        <button
+                          key={index}
+                          onClick={action.onClick}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+                        >
+                          {action.icon}
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {paginated && totalPages > 1 && (
+            <div className="flex justify-center mt-6">
+              {Array.from(% raw %){ length: totalPages }{% endraw %}.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPage(i + 1)}
+                  className=% raw %}`px-3 py-1 mx-1 rounded ${page === i + 1 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}{% endraw %}`
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export default CardList;
+{% elif ui_framework == "bootstrap" %}import React from 'react';
+
+interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: React.ReactNode; onClick: () => void }[];
+  [key: string]: any;
+}
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardListProps {
+  items?: CardItem[];
+  title?: string;
+  columns?: number;
+  variant?: 'grid' | 'list' | 'deck' | 'group';
+  paginated?: boolean;
+  pageSize?: number;
+  className?: string;
+  emptyText?: string;
+}
+
+function CardList({
+  items = [],
+  title,
+  columns = 3,
+  variant = 'grid',
+  paginated = false,
+  pageSize = 12,
+  className = '',
+  emptyText = 'No items found'
+}: CardListProps) {
+  const [page, setPage] = React.useState(1);
+
+  const paginatedItems = paginated
+    ? items.slice((page - 1) * pageSize, page * pageSize)
+    : items;
+
+  const totalPages = paginated ? Math.ceil(items.length / pageSize) : 1;
+
+  const colMap: Record<number, string> = {
+    1: 'col-12',
+    2: 'col-md-6',
+    3: 'col-md-4',
+    4: 'col-md-3',
+  };
+  const colClass = colMap[columns] || 'col-md-4';
+
+  const variantClass = variant === 'list' ? '' : 'row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4';
+
+  return (
+    <div className={className}>
+      {title && <h2 className="h4 mb-4">{title}</h2>}
+      {paginatedItems.length === 0 ? (
+        <p className="text-muted">{emptyText}</p>
+      ) : (
+        <>
+          <div className={variantClass}>
+            {paginatedItems.map((item) => (
+              <div key={item.id} className={colClass}>
+                <div className="card h-100">
+                  {item.imageUrl && (
+                    <img src={item.imageUrl} className="card-img-top" alt={item.imageAlt || ''} />
+                  )}
+                  <div className="card-body">
+                    {item.title && <h5 className="card-title">{item.title}</h5>}
+                    {item.subtitle && <h6 className="card-subtitle mb-2 text-muted">{item.subtitle}</h6>}
+                    {item.description && <p className="card-text">{item.description}</p>}
+                  </div>
+                  {item.actions && item.actions.length > 0 && (
+                    <div className="card-footer bg-transparent border-top">
+                      <div className="d-flex flex-wrap gap-2">
+                        {item.actions.map((action: Action, index: number) => (
+                          <button
+                            key={index}
+                            className="btn btn-sm btn-outline-primary"
+                            onClick={action.onClick}
+                          >
+                            {action.icon && <span className="me-1">{action.icon}</span>}
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {paginated && totalPages > 1 && (
+            <nav aria-label="Card list pagination">
+              <ul className="pagination justify-content-center mt-4">
+                {Array.from(% raw %){ length: totalPages }{% endraw %}.map((_, i) => (
+                  <li key={i} className=% raw %}`page-item ${page === i + 1 ? 'active' : ''}`{% endraw %}>
+                    <button
+                      className="page-link"
+                      onClick={() => setPage(i + 1)}
+                    >
+                      {i + 1}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export default CardList;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { Card, Col, Row, Button, Typography, Space, Pagination } from 'antd';
+import type { SizeType } from 'antd/lib/configPicker';
+
+const { Title, Text } = Typography;
+
+interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: React.ReactNode; onClick: () => void }[];
+  [key: string]: any;
+}
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardListProps {
+  items?: CardItem[];
+  title?: string;
+  columns?: number;
+  bordered?: boolean;
+  hoverable?: boolean;
+  size?: SizeType;
+  paginated?: boolean;
+  pageSize?: number;
+  className?: string;
+  style?: React.CSSProperties;
+  emptyText?: string;
+}
+
+function CardList({
+  items = [],
+  title,
+  columns = 3,
+  bordered = true,
+  hoverable = false,
+  size = 'default',
+  paginated = false,
+  pageSize = 12,
+  className,
+  style,
+  emptyText = 'No items found'
+}: CardListProps) {
+  const [page, setPage] = React.useState(1);
+
+  const paginatedItems = paginated
+    ? items.slice((page - 1) * pageSize, page * pageSize)
+    : items;
+
+  const totalPages = paginated ? Math.ceil(items.length / pageSize) : 1;
+
+  const span = Math.floor(24 / columns);
+
+  return (
+    <div className={className} style={style}>
+      {title && <Title level={3}>{title}</Title>}
+      {paginatedItems.length === 0 ? (
+        <Text type="secondary">{emptyText}</Text>
+      ) : (
+        <>
+          <Row gutter=% raw %}{{ xs: 8, sm: 16, md: 16, lg: 24 }}{% endraw %}>
+            {paginatedItems.map((item) => (
+              <Col key={item.id} xs={24} sm={span}>
+                <Card
+                  title={item.title}
+                  bordered={bordered}
+                  hoverable={hoverable}
+                  size={size}
+                  cover={item.imageUrl ? <img alt={item.imageAlt || ''} src={item.imageUrl} /> : undefined}
+                >
+                  {item.subtitle && <Text type="secondary">{item.subtitle}</Text>}
+                  {item.description && <p>{item.description}</p>}
+                  {item.actions && item.actions.length > 0 && (
+                    <Space>
+                      {item.actions.map((action: Action, index: number) => (
+                        <Button key={index} type="text" icon={action.icon} onClick={action.onClick}>
+                          {action.label}
+                        </Button>
+                      ))}
+                    </Space>
+                  )}
+                </Card>
+              </Col>
+            ))}
+          </Row>
+          {paginated && totalPages > 1 && (
+            <div style=% raw %}{{ textAlign: 'center', marginTop: 16 }}{% endraw %}>
+              <Pagination
+                current={page}
+                total={items.length}
+                pageSize={pageSize}
+                onChange={setPage}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export default CardList;
+{% elif ui_framework == "carbon" %}import React from 'react';
+
+interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: React.ReactNode; onClick: () => void }[];
+  [key: string]: any;
+}
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardListProps {
+  items?: CardItem[];
+  title?: string;
+  columns?: number;
+  size?: 'sm' | 'md' | 'lg';
+  fullWidth?: boolean;
+  paginated?: boolean;
+  pageSize?: number;
+  className?: string;
+  emptyText?: string;
+}
+
+function CardList({
+  items = [],
+  title,
+  columns = 3,
+  size = 'md',
+  fullWidth = false,
+  paginated = false,
+  pageSize = 12,
+  className = '',
+  emptyText = 'No items found'
+}: CardListProps) {
+  const [page, setPage] = React.useState(1);
+
+  const paginatedItems = paginated
+    ? items.slice((page - 1) * pageSize, page * pageSize)
+    : items;
+
+  const totalPages = paginated ? Math.ceil(items.length / pageSize) : 1;
+
+  const sizeMap: Record<string, string> = {
+    sm: 'p-3',
+    md: 'p-4',
+    lg: 'p-6'
+  };
+  const sizeClass = sizeMap[size] || 'p-4';
+
+  const colMap: Record<number, string> = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-1 sm:grid-cols-2',
+    3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+    4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
+  };
+  const colClass = colMap[columns] || colMap[3];
+
+  return (
+    <div className={className}>
+      {title && (
+        <h2 className="cds--title text-2xl font-semibold text-gray-900 mb-4">{title}</h2>
+      )}
+      {paginatedItems.length === 0 ? (
+        <p className="cds--label text-gray-500">{emptyText}</p>
+      ) : (
+        <>
+          <div className={`grid ${colClass} gap-4`}>
+            {paginatedItems.map((item) => (
+              <div
+                key={item.id}
+                className=% raw %}`cds--card bg-white border border-gray-200 rounded overflow-hidden ${sizeClass} ${fullWidth ? 'w-full' : ''}{% endraw %}`
+              >
+                {item.imageUrl && (
+                  <img
+                    src={item.imageUrl}
+                    alt={item.imageAlt || ''}
+                    className="w-full h-48 object-cover rounded-t"
+                  />
+                )}
+                <div className={item.imageUrl ? 'mt-4' : ''}>
+                  {item.title && (
+                    <h3 className="cds--title text-lg font-semibold text-gray-900">{item.title}</h3>
+                  )}
+                  {item.subtitle && (
+                    <p className="cds--label text-sm text-gray-500 mt-1">{item.subtitle}</p>
+                  )}
+                  {item.description && (
+                    <p className="text-sm text-gray-600 mt-2">{item.description}</p>
+                  )}
+                </div>
+                {item.actions && item.actions.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-200">
+                    {item.actions.map((action: Action, index: number) => (
+                      <button
+                        key={index}
+                        className="cds-btn cds-btn--primary"
+                        onClick={action.onClick}
+                      >
+                        {action.icon && <span className="mr-1">{action.icon}</span>}
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          {paginated && totalPages > 1 && (
+            <div className="flex justify-center mt-6">
+              {Array.from(% raw %){ length: totalPages }{% endraw %}.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPage(i + 1)}
+                  className=% raw %}`cds-btn cds-btn--ghost px-3 py-1 mx-1 ${page === i + 1 ? 'bg-gray-200' : ''}{% endraw %}`
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export default CardList;
+{% else %}import React from 'react';
+
+interface CardItem {
+  id: string;
+  title: string;
+  description?: string;
+  actions?: { label: string; onClick: () => void }[];
+  [key: string]: any;
+}
+
+interface CardListProps {
+  items?: CardItem[];
+  title?: string;
+  columns?: number;
+  className?: string;
+}
+
+function CardList({
+  items = [],
+  title,
+  columns = 3,
+  className = ''
+}: CardListProps) {
+  const colMap: Record<number, string> = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-2',
+    3: 'grid-cols-3',
+    4: 'grid-cols-4',
+  };
+  const colClass = colMap[columns] || 'grid-cols-3';
+
+  return (
+    <div className={className}>
+      {title && <h2 className="text-xl font-bold mb-4">{title}</h2>}
+      <div className={`grid ${colClass} gap-4`}>
+        {items.map((item) => (
+          <div key={item.id} className="border rounded p-4">
+            {item.title && <h3 className="font-semibold">{item.title}</h3>}
+            {item.description && <p className="text-sm mt-2">{item.description}</p>}
+            {item.actions && item.actions.length > 0 && (
+              <div className="flex gap-2 mt-3">
+                {item.actions.map((action, index) => (
+                  <button key={index} onClick={action.onClick}>{action.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default CardList;
+{% endif %}

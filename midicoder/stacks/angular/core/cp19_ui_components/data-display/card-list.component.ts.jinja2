@@ -1,0 +1,344 @@
+{% if ui_framework == "material" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+import { MatDividerModule } from '@angular/material/divider';
+import { MatGridListModule } from '@angular/material/grid-list';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatSortModule, Sort } from '@angular/material/sort';
+
+export interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: string; action: () => void }[];
+  [key: string]: any;
+}
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatCardModule,
+    MatIconModule,
+    MatButtonModule,
+    MatDividerModule,
+    MatGridListModule,
+    MatPaginatorModule,
+    MatSortModule
+  ],
+  templateUrl: './{{ template_file_name }}.html',
+  styles: []
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: CardItem[] = [];
+  @Input() title: string = '';
+  @Input() columns: number = 3;
+  @Input() fixedCols: boolean = false;
+  @Input() gutterSize: string = '16px';
+  @Input() rowHeight: string = '400px';
+  @Input() variant: 'grid' | 'list' | 'wrap' = 'grid';
+  @Input() paginated: boolean = false;
+  @Input() pageSize: number = 12;
+  @Input() sortable: boolean = false;
+
+  displayedItems: CardItem[] = [];
+  pageIndex: number = 0;
+  pageSizeValue: number = 12;
+  totalItems: number = 0;
+
+  ngOnInit(): void {
+    this.updateDisplayedItems();
+  }
+
+  ngOnChanges(): void {
+    this.updateDisplayedItems();
+  }
+
+  private updateDisplayedItems(): void {
+    if (this.paginated) {
+      this.totalItems = this.items.length;
+      const start = this.pageIndex * this.pageSize;
+      this.displayedItems = this.items.slice(start, start + this.pageSize);
+    } else {
+      this.displayedItems = this.items;
+    }
+  }
+
+  onPageChange(event: PageEvent): void {
+    this.pageIndex = event.pageIndex;
+    this.pageSizeValue = event.pageSize;
+    this.updateDisplayedItems();
+  }
+
+  onSort(event: Sort): void {
+    if (this.sortable && event.active) {
+      const isAsc = event.direction === 'asc';
+      this.displayedItems = [...this.displayedItems].sort((a, b) => {
+        const aVal = a[event.active || 'title'];
+        const bVal = b[event.active || 'title'];
+        if (aVal < bVal) return isAsc ? -1 : 1;
+        if (aVal > bVal) return isAsc ? 1 : -1;
+        return 0;
+      });
+    }
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+export interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: string; action: () => void }[];
+  [key: string]: any;
+}
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styles: []
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: CardItem[] = [];
+  @Input() title: string = '';
+  @Input() columns: number = 3;
+  @Input() variant: 'grid' | 'list' | 'masonry' = 'grid';
+  @Input() spacing: 'sm' | 'md' | 'lg' = 'md';
+  @Input() paginated: boolean = false;
+  @Input() pageSize: number = 12;
+  @Input() bordered: boolean = false;
+
+  displayedItems: CardItem[] = [];
+  pageIndex: number = 0;
+  totalItems: number = 0;
+
+  ngOnInit(): void {
+    this.updateDisplayedItems();
+  }
+
+  ngOnChanges(): void {
+    this.updateDisplayedItems();
+  }
+
+  private updateDisplayedItems(): void {
+    if (this.paginated) {
+      this.totalItems = this.items.length;
+      const start = this.pageIndex * this.pageSize;
+      this.displayedItems = this.items.slice(start, start + this.pageSize);
+    } else {
+      this.displayedItems = this.items;
+    }
+  }
+
+  get gridClasses(): string {
+    const base = 'grid gap-';
+    const spacingMap = { sm: '2', md: '4', lg: '6' };
+    const gap = spacingMap[this.spacing] || '4';
+    const colMap = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4' };
+    return `${base}${gap} ${colMap[this.columns] || 'grid-cols-3'} md:grid-cols-3 lg:grid-cols-4`;
+  }
+
+  onPageChange(page: number): void {
+    this.pageIndex = page;
+    this.updateDisplayedItems();
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+export interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: string; action: () => void }[];
+  [key: string]: any;
+}
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styles: []
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: CardItem[] = [];
+  @Input() title: string = '';
+  @Input() columns: number = 3;
+  @Input() variant: 'grid' | 'list' | 'deck' | 'group' = 'grid';
+  @Input() paginated: boolean = false;
+  @Input() pageSize: number = 12;
+
+  displayedItems: CardItem[] = [];
+  pageIndex: number = 0;
+  totalItems: number = 0;
+
+  ngOnInit(): void {
+    this.updateDisplayedItems();
+  }
+
+  ngOnChanges(): void {
+    this.updateDisplayedItems();
+  }
+
+  private updateDisplayedItems(): void {
+    if (this.paginated) {
+      this.totalItems = this.items.length;
+      const start = this.pageIndex * this.pageSize;
+      this.displayedItems = this.items.slice(start, start + this.pageSize);
+    } else {
+      this.displayedItems = this.items;
+    }
+  }
+
+  get colClass(): string {
+    const colMap = { 1: 'col-12', 2: 'col-md-6', 3: 'col-md-4', 4: 'col-md-3' };
+    return colMap[this.columns] || 'col-md-4';
+  }
+}
+{% elif ui_framework == "antd" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+export interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: string; action: () => void }[];
+  [key: string]: any;
+}
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styles: []
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: CardItem[] = [];
+  @Input() title: string = '';
+  @Input() columns: number = 3;
+  @Input() bordered: boolean = true;
+  @Input() hoverable: boolean = false;
+  @Input() size: 'default' | 'small' = 'default';
+  @Input() paginated: boolean = false;
+  @Input() pageSize: number = 12;
+
+  displayedItems: CardItem[] = [];
+  pageIndex: number = 0;
+  totalItems: number = 0;
+
+  ngOnInit(): void {
+    this.updateDisplayedItems();
+  }
+
+  ngOnChanges(): void {
+    this.updateDisplayedItems();
+  }
+
+  private updateDisplayedItems(): void {
+    if (this.paginated) {
+      this.totalItems = this.items.length;
+      const start = this.pageIndex * this.pageSize;
+      this.displayedItems = this.items.slice(start, start + this.pageSize);
+    } else {
+      this.displayedItems = this.items;
+    }
+  }
+}
+{% elif ui_framework == "carbon" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+export interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: { label: string; icon?: string; action: () => void }[];
+  [key: string]: any;
+}
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styles: []
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: CardItem[] = [];
+  @Input() title: string = '';
+  @Input() columns: number = 3;
+  @Input() size: 'sm' | 'md' | 'lg' = 'md';
+  @Input() fullWidth: boolean = false;
+  @Input() paginated: boolean = false;
+  @Input() pageSize: number = 12;
+
+  displayedItems: CardItem[] = [];
+  pageIndex: number = 0;
+  totalItems: number = 0;
+
+  ngOnInit(): void {
+    this.updateDisplayedItems();
+  }
+
+  ngOnChanges(): void {
+    this.updateDisplayedItems();
+  }
+
+  private updateDisplayedItems(): void {
+    if (this.paginated) {
+      this.totalItems = this.items.length;
+      const start = this.pageIndex * this.pageSize;
+      this.displayedItems = this.items.slice(start, start + this.pageSize);
+    } else {
+      this.displayedItems = this.items;
+    }
+  }
+}
+{% else %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+export interface CardItem {
+  id: string;
+  title: string;
+  description?: string;
+  [key: string]: any;
+}
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styles: []
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: CardItem[] = [];
+  @Input() title: string = '';
+  @Input() columns: number = 3;
+
+  ngOnInit(): void {}
+}
+{% endif %}

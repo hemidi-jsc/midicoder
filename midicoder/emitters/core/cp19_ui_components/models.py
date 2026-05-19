@@ -73,6 +73,7 @@ class ComponentType(str, Enum):
     CIRCULAR_PROGRESS = "circular_progress"
     SKELETON = "skeleton"
     SPINNER = "spinner"
+    ERROR_BOUNDARY = "error_boundary"
 
     # ── Navigation ─────────────────────────────────────────────
     NAVBAR = "navbar"
@@ -188,6 +189,7 @@ _COMPONENT_CATEGORIES: dict[ComponentType, str] = {
     ComponentType.CIRCULAR_PROGRESS: "feedback",
     ComponentType.SKELETON: "feedback",
     ComponentType.SPINNER: "feedback",
+    ComponentType.ERROR_BOUNDARY: "feedback",
     # Navigation
     ComponentType.NAVBAR: "navigation",
     ComponentType.SIDEBAR: "navigation",
