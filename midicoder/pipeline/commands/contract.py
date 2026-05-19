@@ -40,10 +40,10 @@ from midicoder.pipeline.llm.client import (
     load_llm_config,
 )
 
-# 7 categories bắt buộc theo DSL strict mode
+# 8 categories bắt buộc theo DSL strict mode
 REQUIRED_CATEGORIES = [
     "entities", "commands", "queries", "events",
-    "workflows", "value_objects", "guards"
+    "workflows", "value_objects", "guards", "ui_components"
 ]
 
 # Số lần thử tối đa để LLM fix contracts
@@ -63,6 +63,7 @@ _CATEGORY_PROMPT_MAP = {
     "workflows": "contract_workflows",
     "value_objects": "contract_value_objects",
     "guards": "contract_guards",
+    "ui_components": "contract_ui_components",
 }
 
 

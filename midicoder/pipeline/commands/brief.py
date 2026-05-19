@@ -206,15 +206,17 @@ def _analyze_with_llm(
     commands = json_data.get("commands", [])
     queries = json_data.get("queries", [])
     events = json_data.get("events", [])
+    ui_components = json_data.get("ui_components", [])
     confidence = json_data.get("confidence", 0.5)
     summary = json_data.get("summary", "")
-    
+
     text_summary = f"""Tóm tắt phân tích brief:
 - Domain: {final_domain.title()}
 - Số entities: {len(entities)} ({', '.join(e.get('name', '') for e in entities[:5])})
 - Số commands: {len(commands)}
 - Số queries: {len(queries)}
 - Số events: {len(events)}
+- Số UI components: {len(ui_components)}
 - Độ tin cậy: {confidence:.0%}
 - {summary}"""
     
