@@ -202,6 +202,7 @@ _COMPONENT_CATEGORIES: dict[ComponentType, str] = {
     ComponentType.EXPANSION_PANEL: "surface",
     # Utility
     ComponentType.THEME_PROVIDER: "utility",
+    ComponentType.DESIGN_TOKENS: "utility",
     ComponentType.ICON: "utility",
     ComponentType.IMAGE: "utility",
     ComponentType.BUTTON: "utility",
@@ -270,6 +271,9 @@ class FormFieldSpec:
         min_value: Giá trị tối thiểu (cho number)
         max_value: Giá trị tối đa (cho number)
         options: Danh sách option (cho select/radio)
+        aria_label: ARIA label cho accessibility (Phase 4)
+        aria_described_by: Element ID mô tả field (Phase 4)
+        i18n_key: i18n translation key (Phase 5)
     """
     field_name: str
     field_type: FieldType
@@ -279,6 +283,11 @@ class FormFieldSpec:
     min_value: Optional[float] = None
     max_value: Optional[float] = None
     options: list[str] = field(default_factory=list)
+    # Phase 4: Accessibility
+    aria_label: Optional[str] = None
+    aria_described_by: Optional[str] = None
+    # Phase 5: i18n
+    i18n_key: Optional[str] = None
 
     def __post_init__(self) -> None:
         """Validate FormFieldSpec sau khi khởi tạo."""
@@ -295,7 +304,7 @@ class FormFieldSpec:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise ra dict."""
-        return {
+        result: dict[str, Any] = {
             "field_name": self.field_name,
             "field_type": self.field_type.value,
             "label": self.label,
@@ -305,6 +314,13 @@ class FormFieldSpec:
             "max_value": self.max_value,
             "options": self.options,
         }
+        if self.aria_label:
+            result["aria_label"] = self.aria_label
+        if self.aria_described_by:
+            result["aria_described_by"] = self.aria_described_by
+        if self.i18n_key:
+            result["i18n_key"] = self.i18n_key
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "FormFieldSpec":
@@ -319,6 +335,9 @@ class FormFieldSpec:
             min_value=data.get("min_value"),
             max_value=data.get("max_value"),
             options=data.get("options", []),
+            aria_label=data.get("aria_label"),
+            aria_described_by=data.get("aria_described_by"),
+            i18n_key=data.get("i18n_key"),
         )
 
     @classmethod
@@ -601,6 +620,10 @@ class ComponentSpec:
         theme_spec: ThemeSpec (cho theme_provider)
         variants: Danh sách variant names ("outlined", "contained", "text")
         size: Component size ("small", "medium", "large")
+        accessible: Có inject ARIA attributes không (Phase 4)
+        aria_label: ARIA label override (Phase 4)
+        i18n_key: i18n translation key (Phase 5)
+        locale: Default locale (Phase 5)
     """
     component_type: ComponentType
     entity_id: str
@@ -612,6 +635,12 @@ class ComponentSpec:
     theme_spec: Optional[ThemeSpec] = None
     variants: list[str] = field(default_factory=list)
     size: str = "medium"
+    # Phase 4: Accessibility
+    accessible: bool = True
+    aria_label: Optional[str] = None
+    # Phase 5: i18n
+    i18n_key: Optional[str] = None
+    locale: Optional[str] = None
 
     def __post_init__(self) -> None:
         """Validate ComponentSpec sau khi khởi tạo."""
@@ -635,7 +664,14 @@ class ComponentSpec:
             "properties": self.properties,
             "variants": self.variants,
             "size": self.size,
+            "accessible": self.accessible,
         }
+        if self.aria_label:
+            result["aria_label"] = self.aria_label
+        if self.i18n_key:
+            result["i18n_key"] = self.i18n_key
+        if self.locale:
+            result["locale"] = self.locale
         if self.fields:
             result["fields"] = [f.to_dict() for f in self.fields]
         if self.table_spec:
@@ -653,7 +689,6 @@ class ComponentSpec:
         try:
             comp_type = ComponentType(comp_type_str)
         except ValueError:
-            # Fallback cho component type mới chưa có trong enum
             comp_type = ComponentType.FORM_FIELD
 
         result: dict[str, Any] = {
@@ -663,6 +698,10 @@ class ComponentSpec:
             "properties": data.get("properties", {}),
             "variants": data.get("variants", []),
             "size": data.get("size", "medium"),
+            "accessible": data.get("accessible", True),
+            "aria_label": data.get("aria_label"),
+            "i18n_key": data.get("i18n_key"),
+            "locale": data.get("locale"),
         }
 
         if "fields" in data:
