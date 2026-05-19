@@ -109,6 +109,12 @@ _COMPONENT_TEMPLATE_MAP: dict[ComponentType, tuple[str | None, str, str]] = {
     ComponentType.BUTTON:           ("utility", "Button.tsx.jinja2",           "Button.tsx"),
     ComponentType.ICON_BUTTON:      ("utility", "IconButton.tsx.jinja2",       "IconButton.tsx"),
     ComponentType.BADGE_BUTTON:     ("utility", "BadgeButton.tsx.jinja2",      "BadgeButton.tsx"),
+
+    # ── Service Layer (Phase 4) ─────────────────────────────────
+    ComponentType.API_HOOKS:        ("service", "use-api.ts.jinja2",           "use-api.ts"),
+
+    # ── Module Structure (Phase 5) ──────────────────────────────
+    ComponentType.APP_ROUTING:      ("module", "app-routes.tsx.jinja2",        "app-routes.tsx"),
 }
 
 

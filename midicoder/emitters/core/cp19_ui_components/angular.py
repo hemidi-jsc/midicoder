@@ -109,6 +109,15 @@ _COMPONENT_TEMPLATE_MAP: dict[ComponentType, tuple[str | None, str, str]] = {
     ComponentType.BUTTON:           ("utility", "button.component.ts.jinja2",           "button.component.ts"),
     ComponentType.ICON_BUTTON:      ("utility", "icon-button.component.ts.jinja2",      "icon-button.component.ts"),
     ComponentType.BADGE_BUTTON:     ("utility", "badge-button.component.ts.jinja2",     "badge-button.component.ts"),
+
+    # ── Service Layer (Phase 4) ─────────────────────────────────
+    ComponentType.HTTP_CLIENT:      ("service", "http-client.service.ts.jinja2",        "http-client.service.ts"),
+    ComponentType.API_INTERCEPTORS: ("service", "api-interceptors.service.ts.jinja2",   "api-interceptors.service.ts"),
+
+    # ── Module Structure (Phase 5) ──────────────────────────────
+    ComponentType.SHARED_MODULE:    ("module", "shared.module.ts.jinja2",               "shared.module.ts"),
+    ComponentType.APP_ROUTING:      ("module", "app-routing.module.ts.jinja2",          "app-routing.module.ts"),
+    ComponentType.AUTH_GUARD:       ("module", "auth.guard.ts.jinja2",                  "auth.guard.ts"),
 }
 
 

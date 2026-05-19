@@ -108,6 +108,16 @@ class ComponentType(str, Enum):
     ICON_BUTTON = "icon_button"
     BADGE_BUTTON = "badge_button"
 
+    # ── Service Layer (Phase 4) ────────────────────────────────
+    HTTP_CLIENT = "http_client"
+    API_HOOKS = "api_hooks"
+    API_INTERCEPTORS = "api_interceptors"
+
+    # ── Module Structure (Phase 5) ─────────────────────────────
+    SHARED_MODULE = "shared_module"
+    APP_ROUTING = "app_routing"
+    AUTH_GUARD = "auth_guard"
+
 
 class FieldType(str, Enum):
     """Loại form field để generate."""
@@ -208,6 +218,14 @@ _COMPONENT_CATEGORIES: dict[ComponentType, str] = {
     ComponentType.BUTTON: "utility",
     ComponentType.ICON_BUTTON: "utility",
     ComponentType.BADGE_BUTTON: "utility",
+    # Service Layer (Phase 4)
+    ComponentType.HTTP_CLIENT: "service",
+    ComponentType.API_HOOKS: "service",
+    ComponentType.API_INTERCEPTORS: "service",
+    # Module Structure (Phase 5)
+    ComponentType.SHARED_MODULE: "module",
+    ComponentType.APP_ROUTING: "module",
+    ComponentType.AUTH_GUARD: "module",
 }
 
 
