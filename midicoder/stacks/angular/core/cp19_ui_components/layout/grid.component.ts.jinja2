@@ -1,0 +1,110 @@
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+{% if ui_framework == "material" %}
+import { MatGridList, MatGridTile } from "@angular/material/grid-list";
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from "@ng-bootstrap/ng-bootstrap";
+{% endif %}
+
+@Component({
+  selector: 'app-grid',
+  standalone: true,
+  imports: [
+    CommonModule
+    {% if ui_framework == "material" %},
+    MatGridList,
+    MatGridTile{% elif ui_framework == "bootstrap" %},
+    NgbModule{% endif %}
+  ],
+  template: `
+    {% if ui_framework == "material" %}
+    <mat-grid-list [cols]="cols" rowHeight="{{ rowHeight }}" [gutterSize]="gutterSize + 'px'">
+      <ng-content></ng-content>
+    </mat-grid-list>
+    {% elif ui_framework == "tailwind" %}
+    <div [class]="gridClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "bootstrap" %}
+    <div class="row" [style.gap.px]="gutterSize" ngbRow>
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "antd" %}
+    <div class="midicoder-grid" [style.display]="'grid'"
+         [style.grid-template-columns]="gridColumns"
+         [style.gap.px]="gutterSize">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "carbon" %}
+    <div class="midicoder-grid" [style.display]="'grid'"
+         [style.grid-template-columns]="gridColumns"
+         [style.gap.px]="gutterSize">
+      <ng-content></ng-content>
+    </div>
+    {% endif %}
+  `,
+  styles: [`
+    {% if ui_framework == "material" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% endif %}
+  `]
+})
+export class GridComponent implements OnInit {
+  @Input() cols: number = 12;
+  @Input() rows: number = 1;
+  @Input() gutterSize: number = 16;
+  @Input() rowHeight: string = '1:1';
+  @Input() responsive: boolean = true;
+
+  {% if ui_framework == "material" %}
+  // Material GridList uses cols, rowHeight, gutterSize directly
+  {% elif ui_framework == "tailwind" %}
+  get gridClass(): string {
+    const colMap: Record<number, string> = {
+      1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3',
+      4: 'grid-cols-4', 6: 'grid-cols-6', 12: 'grid-cols-12'
+    };
+    const colsClass = colMap[this.cols] || `grid-cols-[repeat(${this.cols},minmax(0,1fr))]`;
+    const gutterClass = this.gutterSize > 0 ? `gap-${this.gutterSize / 4}` : 'gap-0';
+    const responsiveClass = this.responsive ? 'md:grid-cols-md lg:grid-cols-lg' : '';
+    return `grid ${colsClass} ${gutterClass} ${responsiveClass}`.trim();
+  }
+  {% elif ui_framework == "bootstrap" %}
+  // Bootstrap uses row with col-* children
+  {% elif ui_framework == "antd" %}
+  get gridColumns(): string {
+    return `repeat(${this.cols}, minmax(0, 1fr))`;
+  }
+  {% elif ui_framework == "carbon" %}
+  get gridColumns(): string {
+    return `repeat(${this.cols}, minmax(0, 1fr))`;
+  }
+  {% endif %}
+
+  ngOnInit(): void {
+  }
+}

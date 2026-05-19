@@ -3,14 +3,16 @@
 UI Component Models (CP19).
 
 Module này cung cấp các models cho UI Component Generator:
-- ComponentSpec: spec cho một UI component (form_field, data_table, card_list, dialog)
-- FormFieldSpec: spec cho một form field (field type, validators, binding)
-- TableSpec: spec cho data table (columns, sortable, paginated)
-- ComponentType: enum cho loại component
+- ComponentSpec: spec cho một UI component
+- FormFieldSpec: spec cho một form field
+- TableSpec: spec cho data table
+- FormBuilderSpec: spec cho dynamic form builder
+- ThemeSpec: spec cho theme / design tokens
+- ComponentType: enum cho loại component (~50 types)
 - FieldType: enum cho loại form field
 
 Author: Midicoder Team
-Version: 1.0.0
+Version: 2.0.0
 """
 
 from __future__ import annotations
@@ -29,10 +31,81 @@ from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
 class ComponentType(str, Enum):
     """Loại UI component để generate."""
+
+    # ── Data Input ──────────────────────────────────────────────
     FORM_FIELD = "form_field"
+    FORM_BUILDER = "form_builder"
+    INPUT = "input"
+    TEXTAREA = "textarea"
+    SELECT = "select"
+    CHECKBOX = "checkbox"
+    RADIO = "radio"
+    SWITCH = "switch"
+    SLIDER = "slider"
+    DATE_PICKER = "date_picker"
+    DATETIME_PICKER = "datetime_picker"
+    COLOR_PICKER = "color_picker"
+    FILE_UPLOAD = "file_upload"
+    AUTOCOMPLETE = "autocomplete"
+    RICH_TEXT_EDITOR = "rich_text_editor"
+
+    # ── Data Display ───────────────────────────────────────────
     DATA_TABLE = "data_table"
+    CARD = "card"
     CARD_LIST = "card_list"
+    LIST = "list"
+    TIMELINE = "timeline"
+    AVATAR = "avatar"
+    BADGE = "badge"
+    CHIP = "chip"
+    TOOLTIP = "tooltip"
+    POPOVER = "popover"
+    DESCRIPTION_LIST = "description_list"
+
+    # ── Feedback ───────────────────────────────────────────────
+    ALERT = "alert"
+    SNACKBAR = "snackbar"
+    TOAST = "toast"
     DIALOG = "dialog"
+    MODAL = "modal"
+    PROGRESS_BAR = "progress_bar"
+    LINEAR_PROGRESS = "linear_progress"
+    CIRCULAR_PROGRESS = "circular_progress"
+    SKELETON = "skeleton"
+    SPINNER = "spinner"
+
+    # ── Navigation ─────────────────────────────────────────────
+    NAVBAR = "navbar"
+    SIDEBAR = "sidebar"
+    BREADCRUMBS = "breadcrumbs"
+    PAGINATION = "pagination"
+    TABS = "tabs"
+    STEPPER = "stepper"
+    MENU = "menu"
+    TREE_VIEW = "tree_view"
+
+    # ── Layout ─────────────────────────────────────────────────
+    CONTAINER = "container"
+    GRID = "grid"
+    ROW = "row"
+    COLUMN = "column"
+    BOX = "box"
+    DIVIDER = "divider"
+    SPACER = "spacer"
+    FLEX = "flex"
+
+    # ── Surface ────────────────────────────────────────────────
+    DRAWER = "drawer"
+    ACCORDION = "accordion"
+    EXPANSION_PANEL = "expansion_panel"
+
+    # ── Utility ────────────────────────────────────────────────
+    THEME_PROVIDER = "theme_provider"
+    ICON = "icon"
+    IMAGE = "image"
+    BUTTON = "button"
+    ICON_BUTTON = "icon_button"
+    BADGE_BUTTON = "badge_button"
 
 
 class FieldType(str, Enum):
@@ -61,6 +134,78 @@ _FIELD_TYPE_MAP: dict[str, FieldType] = {
     "date": FieldType.DATE,
     "datetime": FieldType.DATE,
     "text": FieldType.TEXTAREA,
+}
+
+# Mapping: component category for template organization
+_COMPONENT_CATEGORIES: dict[ComponentType, str] = {
+    # Data Input
+    ComponentType.FORM_FIELD: "data-input",
+    ComponentType.FORM_BUILDER: "data-input",
+    ComponentType.INPUT: "data-input",
+    ComponentType.TEXTAREA: "data-input",
+    ComponentType.SELECT: "data-input",
+    ComponentType.CHECKBOX: "data-input",
+    ComponentType.RADIO: "data-input",
+    ComponentType.SWITCH: "data-input",
+    ComponentType.SLIDER: "data-input",
+    ComponentType.DATE_PICKER: "data-input",
+    ComponentType.DATETIME_PICKER: "data-input",
+    ComponentType.COLOR_PICKER: "data-input",
+    ComponentType.FILE_UPLOAD: "data-input",
+    ComponentType.AUTOCOMPLETE: "data-input",
+    ComponentType.RICH_TEXT_EDITOR: "data-input",
+    # Data Display
+    ComponentType.DATA_TABLE: "data-display",
+    ComponentType.CARD: "data-display",
+    ComponentType.CARD_LIST: "data-display",
+    ComponentType.LIST: "data-display",
+    ComponentType.TIMELINE: "data-display",
+    ComponentType.AVATAR: "data-display",
+    ComponentType.BADGE: "data-display",
+    ComponentType.CHIP: "data-display",
+    ComponentType.TOOLTIP: "data-display",
+    ComponentType.POPOVER: "data-display",
+    ComponentType.DESCRIPTION_LIST: "data-display",
+    # Feedback
+    ComponentType.ALERT: "feedback",
+    ComponentType.SNACKBAR: "feedback",
+    ComponentType.TOAST: "feedback",
+    ComponentType.DIALOG: "feedback",
+    ComponentType.MODAL: "feedback",
+    ComponentType.PROGRESS_BAR: "feedback",
+    ComponentType.LINEAR_PROGRESS: "feedback",
+    ComponentType.CIRCULAR_PROGRESS: "feedback",
+    ComponentType.SKELETON: "feedback",
+    ComponentType.SPINNER: "feedback",
+    # Navigation
+    ComponentType.NAVBAR: "navigation",
+    ComponentType.SIDEBAR: "navigation",
+    ComponentType.BREADCRUMBS: "navigation",
+    ComponentType.PAGINATION: "navigation",
+    ComponentType.TABS: "navigation",
+    ComponentType.STEPPER: "navigation",
+    ComponentType.MENU: "navigation",
+    ComponentType.TREE_VIEW: "navigation",
+    # Layout
+    ComponentType.CONTAINER: "layout",
+    ComponentType.GRID: "layout",
+    ComponentType.ROW: "layout",
+    ComponentType.COLUMN: "layout",
+    ComponentType.BOX: "layout",
+    ComponentType.DIVIDER: "layout",
+    ComponentType.SPACER: "layout",
+    ComponentType.FLEX: "layout",
+    # Surface
+    ComponentType.DRAWER: "surface",
+    ComponentType.ACCORDION: "surface",
+    ComponentType.EXPANSION_PANEL: "surface",
+    # Utility
+    ComponentType.THEME_PROVIDER: "utility",
+    ComponentType.ICON: "utility",
+    ComponentType.IMAGE: "utility",
+    ComponentType.BUTTON: "utility",
+    ComponentType.ICON_BUTTON: "utility",
+    ComponentType.BADGE_BUTTON: "utility",
 }
 
 
@@ -136,7 +281,6 @@ class FormFieldSpec:
 
     def __post_init__(self) -> None:
         """Validate FormFieldSpec sau khi khởi tạo."""
-        # Kiểm tra field_name và binding_path không rỗng
         if not self.field_name or not self.field_name.strip():
             EM.raise_error(
                 ErrorCode.CP19_MISSING_FORM_BINDING,
@@ -288,10 +432,151 @@ class TableSpec:
             columns.append(TableColumn(field_name=name, label=label))
 
         if not columns:
-            # Thêm column mặc định nếu entity không có fields
             columns.append(TableColumn(field_name="id", label="ID"))
 
         return cls(entity_id=entity_id, columns=columns)
+
+
+# ============================================================================
+# ConditionalRule — Rule cho conditional fields trong Form Builder
+# ============================================================================
+
+
+@dataclass
+class ConditionalRule:
+    """
+    Rule để hiển thị/ẩn field dựa trên value của field khác.
+
+    Attributes:
+        target_field: Field sẽ bị ẩn/hiện
+        condition_field: Field điều kiện
+        condition_operator: Toán tử so sánh (eq, neq, contains, gt, lt)
+        condition_value: Giá trị so sánh
+        show: True = hiện, False = ẩn
+    """
+    target_field: str
+    condition_field: str
+    condition_operator: str = "eq"
+    condition_value: Any = None
+    show: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "target_field": self.target_field,
+            "condition_field": self.condition_field,
+            "condition_operator": self.condition_operator,
+            "condition_value": self.condition_value,
+            "show": self.show,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ConditionalRule":
+        return cls(
+            target_field=data["target_field"],
+            condition_field=data["condition_field"],
+            condition_operator=data.get("condition_operator", "eq"),
+            condition_value=data.get("condition_value"),
+            show=data.get("show", True),
+        )
+
+
+# ============================================================================
+# FormBuilderSpec — Spec cho Dynamic Form Builder
+# ============================================================================
+
+
+@dataclass
+class FormBuilderSpec:
+    """
+    Spec cho Dynamic Form Builder — sinh form động từ schema.
+
+    Attributes:
+        entity_id: Tên entity
+        layout: Form layout (single_column, two_column, wizard)
+        fields: Danh sách FormFieldSpec
+        conditional_rules: Danh sách conditional rules
+        validation_schema: JSON Schema validation dict
+    """
+    entity_id: str
+    layout: str = "single_column"
+    fields: list[FormFieldSpec] = field(default_factory=list)
+    conditional_rules: list[ConditionalRule] = field(default_factory=list)
+    validation_schema: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "entity_id": self.entity_id,
+            "layout": self.layout,
+            "fields": [f.to_dict() for f in self.fields],
+            "conditional_rules": [r.to_dict() for r in self.conditional_rules],
+            "validation_schema": self.validation_schema,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FormBuilderSpec":
+        return cls(
+            entity_id=data["entity_id"],
+            layout=data.get("layout", "single_column"),
+            fields=[FormFieldSpec.from_dict(f) for f in data.get("fields", [])],
+            conditional_rules=[ConditionalRule.from_dict(r) for r in data.get("conditional_rules", [])],
+            validation_schema=data.get("validation_schema", {}),
+        )
+
+    @classmethod
+    def from_entity(cls, entity: dict[str, Any], layout: str = "single_column") -> "FormBuilderSpec":
+        """Tạo FormBuilderSpec từ entity definition của CP01."""
+        entity_id = entity["id"]
+        fields = []
+        for fdef in entity.get("fields", []):
+            fields.append(FormFieldSpec.from_entity_field(entity_id, fdef))
+        return cls(entity_id=entity_id, layout=layout, fields=fields)
+
+
+# ============================================================================
+# ThemeSpec — Spec cho Theme / Design Tokens
+# ============================================================================
+
+
+@dataclass
+class ThemeSpec:
+    """
+    Spec cho Theme / Design Tokens.
+
+    Attributes:
+        name: Tên theme (default, dark, custom)
+        primary_color: Màu primary
+        secondary_color: Màu secondary
+        font_family: Font family
+        border_radius: Border radius
+        dark_mode: Có support dark mode không
+    """
+    name: str = "default"
+    primary_color: str = "#1976d2"
+    secondary_color: str = "#9c27b0"
+    font_family: str = '"Roboto", "Helvetica", "Arial", sans-serif'
+    border_radius: str = "4px"
+    dark_mode: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "primary_color": self.primary_color,
+            "secondary_color": self.secondary_color,
+            "font_family": self.font_family,
+            "border_radius": self.border_radius,
+            "dark_mode": self.dark_mode,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ThemeSpec":
+        return cls(
+            name=data.get("name", "default"),
+            primary_color=data.get("primary_color", "#1976d2"),
+            secondary_color=data.get("secondary_color", "#9c27b0"),
+            font_family=data.get("font_family", '"Roboto", "Helvetica", "Arial", sans-serif'),
+            border_radius=data.get("border_radius", "4px"),
+            dark_mode=data.get("dark_mode", False),
+        )
 
 
 # ============================================================================
@@ -305,12 +590,16 @@ class ComponentSpec:
     Spec cho một UI component để generate.
 
     Attributes:
-        component_type: Loại component (form_field, data_table, card_list, dialog)
+        component_type: Loại component
         entity_id: Tên entity liên kết
         title: Tiêu đề (cho dialog/card_list)
-        properties: Thuộc tính bổ sung (grid_cols, ...)
+        properties: Thuộc tính bổ sung (grid_cols, variant, size, ...)
         fields: Danh sách FormFieldSpec (cho form_field)
         table_spec: TableSpec (cho data_table)
+        form_builder_spec: FormBuilderSpec (cho form_builder)
+        theme_spec: ThemeSpec (cho theme_provider)
+        variants: Danh sách variant names ("outlined", "contained", "text")
+        size: Component size ("small", "medium", "large")
     """
     component_type: ComponentType
     entity_id: str
@@ -318,6 +607,10 @@ class ComponentSpec:
     properties: dict[str, Any] = field(default_factory=dict)
     fields: list[FormFieldSpec] = field(default_factory=list)
     table_spec: Optional[TableSpec] = None
+    form_builder_spec: Optional[FormBuilderSpec] = None
+    theme_spec: Optional[ThemeSpec] = None
+    variants: list[str] = field(default_factory=list)
+    size: str = "medium"
 
     def __post_init__(self) -> None:
         """Validate ComponentSpec sau khi khởi tạo."""
@@ -327,6 +620,11 @@ class ComponentSpec:
                 entity=self.entity_id,
             )
 
+    @property
+    def category(self) -> str:
+        """Lấy category của component (data-input, data-display, ...)."""
+        return _COMPONENT_CATEGORIES.get(self.component_type, "utility")
+
     def to_dict(self) -> dict[str, Any]:
         """Serialise ra dict."""
         result: dict[str, Any] = {
@@ -334,24 +632,36 @@ class ComponentSpec:
             "entity_id": self.entity_id,
             "title": self.title,
             "properties": self.properties,
+            "variants": self.variants,
+            "size": self.size,
         }
         if self.fields:
             result["fields"] = [f.to_dict() for f in self.fields]
         if self.table_spec:
             result["table_spec"] = self.table_spec.to_dict()
+        if self.form_builder_spec:
+            result["form_builder_spec"] = self.form_builder_spec.to_dict()
+        if self.theme_spec:
+            result["theme_spec"] = self.theme_spec.to_dict()
         return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ComponentSpec":
         """Deserialise từ dict."""
-        comp_type = ComponentType(data["component_type"])
-        entity_id = data.get("entity_id", "")
+        comp_type_str = data.get("component_type", "form_field")
+        try:
+            comp_type = ComponentType(comp_type_str)
+        except ValueError:
+            # Fallback cho component type mới chưa có trong enum
+            comp_type = ComponentType.FORM_FIELD
 
         result: dict[str, Any] = {
             "component_type": comp_type,
-            "entity_id": entity_id,
+            "entity_id": data.get("entity_id", ""),
             "title": data.get("title"),
             "properties": data.get("properties", {}),
+            "variants": data.get("variants", []),
+            "size": data.get("size", "medium"),
         }
 
         if "fields" in data:
@@ -360,61 +670,35 @@ class ComponentSpec:
         if "table_spec" in data:
             result["table_spec"] = TableSpec.from_dict(data["table_spec"])
 
+        if "form_builder_spec" in data:
+            result["form_builder_spec"] = FormBuilderSpec.from_dict(data["form_builder_spec"])
+
+        if "theme_spec" in data:
+            result["theme_spec"] = ThemeSpec.from_dict(data["theme_spec"])
+
         return cls(**result)
+
+    # ── Factory methods ──────────────────────────────────────────
 
     @classmethod
     def generate_form(cls, entity: dict[str, Any]) -> "ComponentSpec":
-        """
-        Tạo ComponentSpec cho form field tự động từ entity.
-
-        Args:
-            entity: Dict entity từ CP01 (id, fields, ...)
-
-        Returns:
-            ComponentSpec với type FORM_FIELD
-        """
+        """Tạo ComponentSpec cho form field tự động từ entity."""
         entity_id = entity["id"]
         fields = []
         for fdef in entity.get("fields", []):
             fields.append(FormFieldSpec.from_entity_field(entity_id, fdef))
-
-        return cls(
-            component_type=ComponentType.FORM_FIELD,
-            entity_id=entity_id,
-            fields=fields,
-        )
+        return cls(component_type=ComponentType.FORM_FIELD, entity_id=entity_id, fields=fields)
 
     @classmethod
     def generate_table(cls, entity: dict[str, Any]) -> "ComponentSpec":
-        """
-        Tạo ComponentSpec cho data table tự động từ entity.
-
-        Args:
-            entity: Dict entity từ CP01 (id, fields, ...)
-
-        Returns:
-            ComponentSpec với type DATA_TABLE
-        """
+        """Tạo ComponentSpec cho data table tự động từ entity."""
         entity_id = entity["id"]
         table_spec = TableSpec.from_entity(entity)
-
-        return cls(
-            component_type=ComponentType.DATA_TABLE,
-            entity_id=entity_id,
-            table_spec=table_spec,
-        )
+        return cls(component_type=ComponentType.DATA_TABLE, entity_id=entity_id, table_spec=table_spec)
 
     @classmethod
     def generate_card_list(cls, entity: dict[str, Any]) -> "ComponentSpec":
-        """
-        Tạo ComponentSpec cho card list tự động từ entity.
-
-        Args:
-            entity: Dict entity từ CP01 (id, fields, ...)
-
-        Returns:
-            ComponentSpec với type CARD_LIST
-        """
+        """Tạo ComponentSpec cho card list tự động từ entity."""
         entity_id = entity["id"]
         return cls(
             component_type=ComponentType.CARD_LIST,
@@ -425,23 +709,35 @@ class ComponentSpec:
 
     @classmethod
     def generate_dialog(cls, entity: dict[str, Any], title: str | None = None) -> "ComponentSpec":
-        """
-        Tạo ComponentSpec cho dialog tự động từ entity.
-
-        Args:
-            entity: Dict entity từ CP01 (id, fields, ...)
-            title: Tiêu đề dialog (mặc định: entity_id Detail)
-
-        Returns:
-            ComponentSpec với type DIALOG
-        """
+        """Tạo ComponentSpec cho dialog tự động từ entity."""
         entity_id = entity["id"]
         dialog_title = title or f"{entity_id} Detail"
+        return cls(component_type=ComponentType.DIALOG, entity_id=entity_id, title=dialog_title)
 
+    @classmethod
+    def generate_all_for_entity(cls, entity: dict[str, Any]) -> list["ComponentSpec"]:
+        """Tạo TẤT CẢ component specs cho một entity."""
+        return [
+            cls.generate_form(entity),
+            cls.generate_table(entity),
+            cls.generate_card_list(entity),
+            cls.generate_dialog(entity),
+        ]
+
+    @classmethod
+    def generate_generic(cls, component_type: str, entity_id: str, **kwargs: Any) -> "ComponentSpec":
+        """Tạo ComponentSpec generic cho bất kỳ component type nào."""
+        try:
+            ct = ComponentType(component_type)
+        except ValueError:
+            ct = ComponentType.FORM_FIELD
         return cls(
-            component_type=ComponentType.DIALOG,
+            component_type=ct,
             entity_id=entity_id,
-            title=dialog_title,
+            title=kwargs.get("title", entity_id.title()),
+            properties=kwargs.get("properties", {}),
+            variants=kwargs.get("variants", []),
+            size=kwargs.get("size", "medium"),
         )
 
 
@@ -449,9 +745,14 @@ __all__ = [
     # Enums
     "ComponentType",
     "FieldType",
+    # Mapping
+    "_COMPONENT_CATEGORIES",
     # Models
     "TableColumn",
     "FormFieldSpec",
     "TableSpec",
+    "ConditionalRule",
+    "FormBuilderSpec",
+    "ThemeSpec",
     "ComponentSpec",
 ]

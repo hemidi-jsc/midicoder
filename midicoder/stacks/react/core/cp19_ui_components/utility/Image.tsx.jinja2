@@ -1,0 +1,190 @@
+/** Image Component - Responsive image with lazy loading and placeholder support. */
+
+import React, { useState } from "react";
+
+export type ImageShape = 'none' | 'rounded' | 'large' | 'circle';
+
+export interface ImageProps {
+  src: string;
+  alt?: string;
+  width?: string | number;
+  height?: number;
+  shape?: ImageShape;
+  objectFit?: 'cover' | 'contain' | 'fill' | 'scale-down';
+  caption?: string;
+  fallbackSrc?: string;
+  onLoad?: (event: React.SyntheticEvent<HTMLImageElement>) => void;
+  onError?: (event: React.SyntheticEvent<HTMLImageElement>) => void;
+  className?: string;
+}
+
+export const Image: React.FC<ImageProps> = ({
+  src,
+  alt = '',
+  width = '100%',
+  height,
+  shape = 'rounded',
+  objectFit = 'cover',
+  caption,
+  fallbackSrc,
+  onLoad,
+  onError,
+  className = '',
+}) => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [imgSrc, setImgSrc] = useState(src);
+
+  const handleLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    setIsLoading(false);
+    onLoad?.(event);
+  };
+
+  const handleError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    setIsLoading(false);
+    if (fallbackSrc) {
+      setImgSrc(fallbackSrc);
+    }
+    onError?.(event);
+  };
+
+  const radiusMap: Record<ImageShape, string> = {
+    none: '0',
+    rounded: '0.375rem',
+    large: '0.75rem',
+    circle: '50%',
+  };
+
+  {% if ui_framework == "material" %}
+  import { CardMedia, Typography, Card } from '@mui/material';
+
+  return (
+    <Card className={className}>
+      <CardMedia
+        component="img"
+        image={imgSrc}
+        alt={alt}
+        onLoad={handleLoad}
+        onError={handleError}
+        sx={% raw %}{{
+          width,
+          height: height || 'auto',
+          objectFit,
+          borderRadius: shape === 'circle' ? '50%' : shape === 'none' ? 0 : 2,
+        }}{% endraw %}
+      />
+      {caption && (
+        <Typography variant="caption" component="figcaption" sx={% raw %}{{ p: 1, textAlign: 'center' }}{% endraw %}>
+          {caption}
+        </Typography>
+      )}
+    </Card>
+  );
+  {% elif ui_framework == "tailwind" %}
+  return (
+    <figure className={`overflow-hidden ${className}`} style={{ width }}>
+      <div
+        className="overflow-hidden bg-gray-100 relative"
+        style={% raw %}{{
+          width,
+          height: height ? `${height}px` : 'auto',
+          borderRadius: radiusMap[shape],
+        }}{% endraw %}
+      >
+        <img
+          src={imgSrc}
+          alt={alt}
+          className={`w-full h-full ${isLoading ? 'opacity-0' : '{% raw %}{{ objectFit, height: height ? `${height}px` : 'auto' }}{% endraw %}eight}px` : 'auto' }}
+          onLoad={handleLoad}
+          onError={handleError}
+          loading="lazy"
+        />
+        {isLoading && (
+          <div className="absolute inset-0 bg-gray-200 animate-pulse" />
+        )}
+      </div>
+      {caption && (
+        <figcaption className="mt-2 text-sm text-gray-500">{caption}</figcaption>
+      )}
+    </figure>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const shapeClassMap: Record<ImageShape, string> = {
+    none: '',
+    rounded: 'rounded',
+    large: 'rounded-3',
+    circle: 'rounded-circle',
+  };
+
+  return (
+    <figure className={className} style={{ width }}>
+      <img
+        src={imgSrc}
+        alt={alt}
+        className={`img-flui{% raw %}{{
+          width: typeof width === 'number' ? `${width}px` : width,
+          height: height ? `${height}px` : 'auto',
+          objectFit,
+        }}{% endraw %} : 'auto',
+          objectFit,
+        }}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
+      {caption && (
+        <figcaption className="figure-caption text-center">{caption}</figcaption>
+      )}
+    </figure>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Image as AntImage } from 'antd';
+
+  return (
+    <div className={className}>
+      {% raw %}{{
+          width,
+          height: height ? `${height}px` : 'auto',
+          objectFit,
+          borderRadius: radiusMap[shape],
+        }}{% endraw %}objectFit,
+          borderRadius: radiusMap[shape],
+        }}
+        preview={false}
+      />
+      {caption && (
+        <div className="text-center text-gray-500 mt-1 text-sm">{caption}</div>
+      )}
+    </div>
+  );
+  {% elif ui_framework == "carbon" %}
+  return (
+    <figure {% raw %}{{
+          width,
+          height: height ? `${height}px` : 'auto',
+          overflow: 'hidden',
+          borderRadius: radiusMap[shape],
+        }}{% endraw %},
+          overflow: 'hidden',
+          borderRadius: radiusMap[shape],
+        }}
+      >
+        <img
+          src={imgSrc}
+          alt={alt}
+          style={% raw %}{{
+            width: '100%',
+            height: '100%',
+            objectFit,
+          }}{% endraw %}
+          onLoad={handleLoad}
+          onError={handleError}
+        />
+      </div>
+      {caption && (
+        <figcaption className="cds--caption">{caption}</figcaption>
+      )}
+    </figure>
+  );
+  {% endif %}
+};
+
+export default Image;

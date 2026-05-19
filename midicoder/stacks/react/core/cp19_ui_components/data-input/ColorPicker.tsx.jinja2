@@ -1,0 +1,228 @@
+/*
+ * Midicoder CP19 - Data Input: ColorPicker
+ * Standalone color picker component with preview and hex input.
+ */
+import React, { useState, useEffect } from 'react';
+
+interface ColorPickerProps {
+  label?: string;
+  hint?: string;
+  required?: boolean;
+  disabled?: boolean;
+  value?: string;
+  onChange?: (value: string) => void;
+  id?: string;
+  className?: string;
+}
+
+const ColorPicker: React.FC<ColorPickerProps> = ({
+  label,
+  hint,
+  required = false,
+  disabled = false,
+  value = '#000000',
+  onChange,
+  id,
+  className = '',
+}) => {
+  const [hexValue, setHexValue] = useState(value);
+
+  useEffect(() => {
+    setHexValue(value);
+  }, [value]);
+
+  const handleColorChange = (color: string) => {
+    setHexValue(color);
+    onChange?.(color);
+  };
+
+  const handleHexChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const hex = e.target.value;
+    setHexValue(hex);
+    if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+      onChange?.(hex);
+    }
+  };
+
+  return (
+{% if ui_framework == "material" %}
+    <div className={className} style={% raw %}{{ width: '100%', marginBottom: '16px' }}{% endraw %}>
+      {label && (
+        <div style={% raw %}{{ fontWeight: 500, marginBottom: '8px', color: '#333' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#d32f2f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div style={% raw %}{{ display: 'flex', alignItems: 'center', gap: '12px' }}{% endraw %}>
+        <div
+          onClick={() => !disabled && document.getElementById(id)?.click()}
+          style={% raw %}{{
+            width: '48px', height: '48px', borderRadius: '8px',
+            border: '2px solid #e0e0e0', cursor: disabled ? 'not-allowed' : 'pointer',
+            overflow: 'hidden', position: 'relative',
+          }}{% endraw %}
+        >
+          <input
+            id={id}
+            type="color"
+            value={value}
+            disabled={disabled}
+            onChange={(e) => handleColorChange(e.target.value)}
+            style={% raw %}{{ opacity: 0, width: '100%', height: '100%', cursor: 'pointer', position: 'absolute', top: 0, left: 0 }}{% endraw %}
+          />
+          <div style={% raw %}{{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', background: value }}{% endraw %} />
+        </div>
+        <input
+          type="text"
+          value={hexValue}
+          onChange={handleHexChange}
+          placeholder="#000000"
+          maxLength={7}
+          style={% raw %}{{ flex: 1, padding: '8px 12px', border: '1px solid #e0e0e0', borderRadius: '4px', fontFamily: 'monospace', fontSize: '14px', outline: 'none' }}{% endraw %}
+        />
+      </div>
+      {hint && <div style={% raw %}{{ fontSize: '12px', color: '#757575', marginTop: '4px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "tailwind" %}
+    <div className={`w-full ${className}`}>
+      {label && (
+        <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">
+          {label}
+          {required && <span className="text-red-500">*</span>}
+        </label>
+      )}
+      <div className="flex items-center gap-3">
+        <div
+          onClick={() => !disabled && document.getElementById(id)?.click()}
+          className="relative w-12 h-12 rounded-lg overflow-hidden border-2 border-gray-200 cursor-pointer hover:border-gray-400 transition-colors"
+        >
+          <input
+            id={id}
+            type="color"
+            value={value}
+            disabled={disabled}
+            onChange={(e) => handleColorChange(e.target.value)}
+            className="opacity-0 w-full h-full cursor-pointer absolute top-0 left-0"
+          />
+          <div className="absolute inset-0 pointer-events-none" style={% raw %}{{ background: value }}{% endraw %} />
+        </div>
+        <input
+          type="text"
+          value={hexValue}
+          onChange={handleHexChange}
+          placeholder="#000000"
+          maxLength={7}
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      {hint && <p className="mt-1 text-sm text-gray-500">{hint}</p>}
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div className={`w-100 ${className}`}>
+      {label && (
+        <label htmlFor={id} className="form-label">
+          {label}
+          {required && <span className="text-danger">*</span>}
+        </label>
+      )}
+      <div className="d-flex align-items-center gap-3">
+        <div
+          onClick={() => !disabled && document.getElementById(id)?.click()}
+          className="position-relative"
+          style={% raw %}{{ width: '48px', height: '48px', borderRadius: '0.5rem', overflow: 'hidden', border: '2px solid #dee2e6', cursor: disabled ? 'not-allowed' : 'pointer' }}{% endraw %}
+        >
+          <input
+            id={id}
+            type="color"
+            value={value}
+            disabled={disabled}
+            onChange={(e) => handleColorChange(e.target.value)}
+            style={% raw %}{{ opacity: 0, width: '100%', height: '100%', cursor: 'pointer', position: 'absolute', top: 0, left: 0 }}{% endraw %}
+          />
+          <div style={% raw %}{{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', background: value }}{% endraw %} />
+        </div>
+        <input
+          type="text"
+          value={hexValue}
+          onChange={handleHexChange}
+          placeholder="#000000"
+          maxLength={7}
+          className="form-control font-monospace"
+          style={% raw %}{{ flex: 1 }}{% endraw %}
+        />
+      </div>
+      {hint && <small className="form-text text-muted">{hint}</small>}
+    </div>
+{% elif ui_framework == "antd" %}
+    <div style={% raw %}{{ width: '100%', marginBottom: '16px' }}{% endraw %} className={className}>
+      {label && (
+        <div style={% raw %}{{ fontSize: '14px', marginBottom: '4px', color: '#262626' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#ff4d4f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div style={% raw %}{{ display: 'flex', alignItems: 'center', gap: '12px' }}{% endraw %}>
+        <div
+          onClick={() => !disabled && document.getElementById(id)?.click()}
+          style={% raw %}{{ width: '48px', height: '48px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #d9d9d9', cursor: disabled ? 'not-allowed' : 'pointer', position: 'relative' }}{% endraw %}
+        >
+          <input
+            id={id}
+            type="color"
+            value={value}
+            disabled={disabled}
+            onChange={(e) => handleColorChange(e.target.value)}
+            style={% raw %}{{ opacity: 0, width: '100%', height: '100%', cursor: 'pointer', position: 'absolute', top: 0, left: 0 }}{% endraw %}
+          />
+          <div style={% raw %}{{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', background: value }}{% endraw %} />
+        </div>
+        <input
+          type="text"
+          value={hexValue}
+          onChange={handleHexChange}
+          placeholder="#000000"
+          maxLength={7}
+          style={% raw %}{{ flex: 1, padding: '8px 11px', border: '1px solid #d9d9d9', borderRadius: '6px', fontSize: '14px', fontFamily: 'monospace', outline: 'none' }}{% endraw %}
+        />
+      </div>
+      {hint && <div style={% raw %}{{ color: '#8c8c8c', fontSize: '12px', marginTop: '4px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div style={% raw %}{{ width: '100%', marginBottom: '1rem' }}{% endraw %} className={className}>
+      {label && (
+        <div style={% raw %}{{ fontSize: '0.75rem', fontWeight: 400, color: '#525252', marginBottom: '0.25rem' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#da1e28', marginLeft: '0.25rem' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div style={% raw %}{{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}{% endraw %}>
+        <div
+          onClick={() => !disabled && document.getElementById(id)?.click()}
+          style={% raw %}{{ width: '48px', height: '48px', overflow: 'hidden', border: '1px solid #8d8d8d', cursor: disabled ? 'not-allowed' : 'pointer', position: 'relative' }}{% endraw %}
+        >
+          <input
+            id={id}
+            type="color"
+            value={value}
+            disabled={disabled}
+            onChange={(e) => handleColorChange(e.target.value)}
+            style={% raw %}{{ opacity: 0, width: '100%', height: '100%', cursor: 'pointer', position: 'absolute', top: 0, left: 0 }}{% endraw %}
+          />
+          <div style={% raw %}{{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', background: value }}{% endraw %} />
+        </div>
+        <input
+          type="text"
+          value={hexValue}
+          onChange={handleHexChange}
+          placeholder="#000000"
+          maxLength={7}
+          style={% raw %}{{ flex: 1, padding: '10px 12px', border: 'none', borderBottom: '1px solid #8d8d8d', fontSize: '0.875rem', fontFamily: 'monospace', outline: 'none', background: 'transparent' }}{% endraw %}
+        />
+      </div>
+      {hint && <p style={% raw %}{{ fontSize: '0.75rem', color: '#6f6f6f', margin: '0.25rem 0' }}{% endraw %}>{hint}</p>}
+    </div>
+{% endif %}
+  );
+};
+
+export default ColorPicker;

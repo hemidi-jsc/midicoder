@@ -1,0 +1,634 @@
+/* eslint-disable */
+import React, { useState, useCallback } from 'react';
+
+{% if ui_framework == "material" %}
+import Box from '@mui/material/Box';
+import TreeView from '@mui/lab/TreeView';
+import TreeItem from '@mui/lab/TreeItem';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import Checkbox from '@mui/material/Checkbox';
+import Search from '@mui/material/Search';
+import IconButton from '@mui/material/IconButton';
+import Collapse from '@mui/icons-material/Collapse';
+import Expand from '@mui/icons-material/Expand';
+{% elif ui_framework == "antd" %}
+import { Tree, Input, Space, Button } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { ComposedStructuredList, ExpandAll, CollapseAll } from '@carbon/react';
+{% endif %}
+
+export interface TreeNode {
+  key: string;
+  name: string;
+  icon?: React.ReactNode | string;
+  badge?: string | number;
+  checked?: boolean;
+  expanded?: boolean;
+  children?: TreeNode[];
+}
+
+export interface TreeViewProps {
+  data?: TreeNode[];
+  height?: number;
+  showCheckboxes?: boolean;
+  showSearch?: boolean;
+  showExpandAll?: boolean;
+  onSelect?: (node: TreeNode) => void;
+  onToggle?: (node: TreeNode) => void;
+  onSearch?: (value: string) => void;
+  defaultExpanded?: string[];
+  defaultSelected?: string[];
+}
+
+const TreeViewComponent: React.FC<TreeViewProps> = ({
+  data = [],
+  height = 400,
+  showCheckboxes = true,
+  showSearch = true,
+  showExpandAll = true,
+  onSelect,
+  onToggle,
+  onSearch,
+  defaultExpanded = [],
+  defaultSelected = [],
+}) => {
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(
+    new Set(defaultExpanded)
+  );
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
+    new Set(defaultSelected)
+  );
+  const [checkedKeys, setCheckedKeys] = useState<Set<string>>(
+    new Set(data.filter((n) => n.checked).map((n) => n.key))
+  );
+  const [searchValue, setSearchValue] = useState('');
+
+  const handleToggle = useCallback(
+    (event: React.SyntheticEvent, nodeIds: string[]) => {
+      setExpandedKeys(new Set(nodeIds));
+    },
+    []
+  );
+
+  const handleSelect = useCallback(
+    (event: React.SyntheticEvent, nodeIds: string[]) => {
+      setSelectedKeys(new Set(nodeIds));
+      const selectedNode = data.find((n) => n.key === nodeIds[0]);
+      if (selectedNode) {
+        onSelect?.(selectedNode);
+      }
+    },
+    [data, onSelect]
+  );
+
+  const handleCheck = useCallback(
+    (node: TreeNode) => {
+      const newChecked = new Set(checkedKeys);
+      if (newChecked.has(node.key)) {
+        newChecked.delete(node.key);
+      } else {
+        newChecked.add(node.key);
+      }
+      setCheckedKeys(newChecked);
+      onToggle?.(node);
+    },
+    [checkedKeys, onToggle]
+  );
+
+  const handleExpandAll = () => {
+    if (expandedKeys.size === 0) {
+      const allKeys = new Set<string>();
+      const collectKeys = (nodes: TreeNode[]) => {
+        nodes.forEach((node) => {
+          allKeys.add(node.key);
+          if (node.children) {
+            collectKeys(node.children);
+          }
+        });
+      };
+      collectKeys(data);
+      setExpandedKeys(allKeys);
+    } else {
+      setExpandedKeys(new Set());
+    }
+  };
+
+  const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    setSearchValue(value);
+    onSearch?.(value);
+  };
+
+  const filterTreeData = (nodes: TreeNode[], filter: string): TreeNode[] => {
+    if (!filter) return nodes;
+    return nodes
+      .map((node) => {
+        const matches = node.name.toLowerCase().includes(filter.toLowerCase());
+        const filteredChildren = node.children ? filterTreeData(node.children, filter) : [];
+        if (matches || filteredChildren.length > 0) {
+          return { ...node, children: filteredChildren, expanded: true };
+        }
+        return null;
+      })
+      .filter((node): node is TreeNode => node !== null);
+  };
+
+  const filteredData = filterTreeData(data, searchValue);
+
+{% if ui_framework == "material" %}
+  const renderTreeNodes = (nodes: TreeNode[]): JSX.Element[] => {
+    return nodes.map((node) => (
+      <TreeItem key={node.key} nodeId={node.key} label={
+        <Box sx={% raw %}{{ display: 'flex', alignItems: 'center', gap: 1 }}{% endraw %}>
+          {showCheckboxes && (
+            <Checkbox
+              size="small"
+              checked={checkedKeys.has(node.key)}
+              onChange={() => handleCheck(node)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+          {node.icon && (
+            <span>
+              {typeof node.icon === 'string' ? node.icon : node.icon}
+            </span>
+          )}
+          <span>{node.name}</span>
+          {node.badge && (
+            <Box
+              sx={% raw %}{{
+                bgcolor: 'primary.main',
+                color: 'white',
+                borderRadius: 1,
+                px: 1,
+                py: 0.25,
+                fontSize: '0.75rem',
+              }}{% endraw %}
+            >
+              {node.badge}
+            </Box>
+          )}
+        </Box>
+      }>
+        {node.children ? renderTreeNodes(node.children) : null}
+      </TreeItem>
+    ));
+  };
+
+  return (
+    <Box
+      sx={% raw %}{{
+        height,
+        border: '1px solid rgba(0, 0, 0, 0.12)',
+        borderRadius: 1,
+        display: 'flex',
+        flexDirection: 'column',
+      }}{% endraw %}
+    >
+      {(showSearch || showExpandAll) && (
+        <Box sx={% raw %}{{ p: 1, borderBottom: '1px solid rgba(0, 0, 0, 0.12)', display: 'flex', gap: 1 }}{% endraw %}>
+          {showSearch && (
+            <Input
+              placeholder="Search..."
+              value={searchValue}
+              onChange={handleSearch}
+              startAdornment={<Search />}
+              fullWidth
+              size="small"
+            />
+          )}
+          {showExpandAll && (
+            <IconButton size="small" onClick={handleExpandAll}>
+              {expandedKeys.size === 0 ? <Expand /> : <Collapse />}
+            </IconButton>
+          )}
+        </Box>
+      )}
+      <Box sx={% raw %}{{ flex: 1, overflow: 'auto', p: 1 }}{% endraw %}>
+        <TreeView
+          expanded={expandedKeys}
+          selected={selectedKeys}
+          onNodeToggle={handleToggle}
+          onNodeSelect={handleSelect}
+          defaultExpandIcon={<ExpandMoreIcon />}
+          defaultCollapseIcon={<ChevronRightIcon />}
+        >
+          {renderTreeNodes(filteredData)}
+        </TreeView>
+      </Box>
+    </Box>
+  );
+{% elif ui_framework == "tailwind" %}
+  const renderTreeItems = (nodes: TreeNode[], level: number = 0): JSX.Element[] => {
+    return nodes.map((node) => {
+      const isExpanded = expandedKeys.has(node.key);
+      const isSelected = selectedKeys.has(node.key);
+      const isChecked = checkedKeys.has(node.key);
+      const hasChildren = node.children && node.children.length > 0;
+
+      return (
+        <div key={node.key}>
+          <div
+            className={`flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-gray-50 ${
+              isSelected ? 'bg-indigo-50' : ''
+            }`}
+            style={% raw %}{{ paddingLeft: `${level * 20 + 8}px` }}{% endraw %}
+            onClick={() => {
+              setSelectedKeys(new Set([node.key]));
+              onSelect?.(node);
+            }}
+          >
+            {hasChildren ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const newExpanded = new Set(expandedKeys);
+                  if (newExpanded.has(node.key)) {
+                    newExpanded.delete(node.key);
+                  } else {
+                    newExpanded.add(node.key);
+                  }
+                  setExpandedKeys(newExpanded);
+                }}
+                className="w-5 h-5 flex items-center justify-center text-gray-500 hover:text-gray-700"
+              >
+                <span
+                  className={`transform transition-transform ${
+                    isExpanded ? 'rotate-90' : ''
+                  }`}
+                >
+                  ▶
+                </span>
+              </button>
+            ) : (
+              <span className="w-5" />
+            )}
+            {showCheckboxes && (
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  handleCheck(node);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+            )}
+            {node.icon && (
+              <span className="text-gray-500">
+                {typeof node.icon === 'string' ? node.icon : node.icon}
+              </span>
+            )}
+            <span className="text-sm text-gray-900 flex-1">{node.name}</span>
+            {node.badge && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                {node.badge}
+              </span>
+            )}
+          </div>
+          {hasChildren && isExpanded && (
+            <div>{renderTreeItems(node.children!, level + 1)}</div>
+          )}
+        </div>
+      );
+    });
+  };
+
+  return (
+    <div
+      className="border border-gray-200 rounded-lg bg-white"
+      style={{ height }}
+    >
+      {(showSearch || showExpandAll) && (
+        <div className="border-b border-gray-200 p-3">
+          {showSearch && (
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchValue}
+              onChange={handleSearch}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 mb-2"
+            />
+          )}
+          {showExpandAll && (
+            <button
+              onClick={handleExpandAll}
+              className="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+            >
+              {expandedKeys.size === 0 ? 'Expand All' : 'Collapse All'}
+            </button>
+          )}
+        </div>
+      )}
+      <div className="overflow-auto p-2" style={% raw %}{{ height: showSearch || showExpandAll ? height - 60 : height }}{% endraw %}>
+        {renderTreeItems(filteredData)}
+      </div>
+    </div>
+  );
+{% elif ui_framework == "bootstrap" %}
+  const renderTreeItems = (nodes: TreeNode[], level: number = 0): JSX.Element[] => {
+    return nodes.map((node) => {
+      const isExpanded = expandedKeys.has(node.key);
+      const isSelected = selectedKeys.has(node.key);
+      const isChecked = checkedKeys.has(node.key);
+      const hasChildren = node.children && node.children.length > 0;
+
+      return (
+        <div key={node.key}>
+          <div
+            className={`d-flex align-items-center gap-2 py-1 px-2 rounded hover:bg-light cursor-pointer ${
+              isSelected ? 'bg-primary-subtle' : ''
+            }{% raw %}{{ paddingLeft: `${level * 20 + 8}px` }}{% endraw %}level * 20 + 8}px` }}
+            onClick={() => {
+              setSelectedKeys(new Set([node.key]));
+              onSelect?.(node);
+            }}
+          >
+            {hasChildren ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const newExpanded = new Set(expandedKeys);
+                  if (newExpanded.has(node.key)) {
+                    newExpanded.delete(node.key);
+                  } else {
+                    newExpanded.add(node.key);
+                  }
+                  setExpandedKeys(newExpanded);
+                }}
+                className="btn btn-sm btn-link p-0 text-decoration-none"
+              >
+                <span className={isExpanded ? 'rotate-90' : ''}>▶</span>
+              </button>
+            ) : (
+              <span className="w-5" />
+            )}
+            {showCheckboxes && (
+              <input
+                type="checkbox"
+                className="form-check-input"
+                checked={isChecked}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  handleCheck(node);
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
+            {node.icon && <span>{typeof node.icon === 'string' ? node.icon : node.icon}</span>}
+            <span className="text-sm flex-grow-1">{node.name}</span>
+            {node.badge && (
+              <span className="badge bg-primary-subtle text-primary-emphasis">{node.badge}</span>
+            )}
+          </div>
+          {hasChildren && isExpanded && (
+            <div>{renderTreeItems(node.children!, level + 1)}</div>
+          )}
+        </div>
+      );
+    });
+  };
+
+  return (
+    <div className="border rounded bg-white" style={{ height }}>
+      {(showSearch || showExpandAll) && (
+        <div className="border-bottom p-3">
+          {showSearch && (
+            <input
+              type="text"
+              placeholder="Search..."
+              className="form-control form-control-sm mb-2"
+              value={searchValue}
+              onChange={handleSearch}
+            />
+          )}
+          {showExpandAll && (
+            <button className="btn btn-sm btn-outline-secondary" onClick={handleExpandAll}>
+              {expandedKeys.size === 0 ? 'Expand All' : 'Collapse All'}
+            </button>
+          )}
+        </div>
+      )}
+      <div className="overflow-auto p-2">
+        {renderTreeItems(filteredData)}
+      </div>
+    </div>
+  );
+{% elif ui_framework == "antd" %}
+  const buildTreeData = (nodes: TreeNode[]): any[] => {
+    return nodes.map((node) => ({
+      key: node.key,
+      title: (
+        <span style={% raw %}{{ display: 'flex', alignItems: 'center', gap: 4 }}{% endraw %}>
+          {node.icon && (
+            <span>{typeof node.icon === 'string' ? node.icon : node.icon}</span>
+          )}
+          <span>{node.name}</span>
+          {node.badge && (
+            <span
+              style={% raw %}{{
+                background: '#1890ff',
+                color: '#fff',
+                borderRadius: '10px',
+                padding: '0 6px',
+                fontSize: '12px',
+                marginLeft: 4,
+              }}{% endraw %}
+            >
+              {node.badge}
+            </span>
+          )}
+        </span>
+      ),
+      children: node.children ? buildTreeData(node.children) : undefined,
+    }));
+  };
+
+  return (
+    <div
+      style={% raw %}{{
+        border: '1px solid #f0f0f0',
+        borderRadius: 4,
+        background: '#fff',
+        height,
+        display: 'flex',
+        flexDirection: 'column',
+      }}{% endraw %}
+    >
+      {(showSearch || showExpandAll) && (
+        <div style={% raw %}{{ borderBottom: '1px solid #f0f0f0', padding: '8px 12px' }}{% endraw %}>
+          {showSearch && (
+            <Input
+              placeholder="Search..."
+              value={searchValue}
+              onChange={handleSearch}
+              style={% raw %}{{ marginBottom: 8 }}{% endraw %}
+              size="small"
+            />
+          )}
+          {showExpandAll && (
+            <Space>
+              <Button size="small" onClick={handleExpandAll}>
+                {expandedKeys.size === 0 ? 'Expand All' : 'Collapse All'}
+              </Button>
+            </Space>
+          )}
+        </div>
+      )}
+      <div style={% raw %}{{ flex: 1, overflow: 'auto', padding: 8 }}{% endraw %}>
+        <Tree
+          treeData={buildTreeData(filteredData)}
+          expandedKeys={Array.from(expandedKeys)}
+          selectedKeys={Array.from(selectedKeys)}
+          checkedKeys={Array.from(checkedKeys)}
+          onExpand={(keys) => setExpandedKeys(new Set(keys as string[]))}
+          onSelect={(keys) => {
+            setSelectedKeys(new Set(keys as string[]));
+            const node = data.find((n) => n.key === (keys as string[])[0]);
+            if (node) onSelect?.(node);
+          }}
+          onCheck={(keys, info) => {
+            setCheckedKeys(new Set(keys as string[]));
+            if (info.node) {
+              onToggle?.(info.node as any);
+            }
+          }}
+          checkable={showCheckboxes}
+        />
+      </div>
+    </div>
+  );
+{% elif ui_framework == "carbon" %}
+  return (
+    <div
+      style={% raw %}{{
+        border: '1px solid #e0e0e0',
+        borderRadius: 4,
+        background: '#ffffff',
+        height,
+        display: 'flex',
+        flexDirection: 'column',
+      }}{% endraw %}
+    >
+      {(showSearch || showExpandAll) && (
+        <div style={% raw %}{{ borderBottom: '1px solid #e0e0e0', padding: '8px 12px' }}{% endraw %}>
+          {showSearch && (
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchValue}
+              onChange={handleSearch}
+              style={% raw %}{{
+                width: '100%',
+                padding: '6px 8px',
+                border: '1px solid #8d8d8d',
+                borderRadius: 4,
+                fontSize: 13,
+                marginBottom: 8,
+                background: 'transparent',
+              }}{% endraw %}
+            />
+          )}
+          {showExpandAll && (
+            <button
+              onClick={handleExpandAll}
+              style={% raw %}{{
+                padding: '4px 12px',
+                border: '1px solid #8d8d8d',
+                borderRadius: 4,
+                background: 'transparent',
+                fontSize: 12,
+                color: '#525252',
+                cursor: 'pointer',
+              }}{% endraw %}
+            >
+              {expandedKeys.size === 0 ? 'Expand All' : 'Collapse All'}
+            </button>
+          )}
+        </div>
+      )}
+      <div style={% raw %}{{ flex: 1, overflow: 'auto', padding: 8 }}{% endraw %}>
+        {filteredData.map((node) => (
+          <div
+            key={node.key}
+            style={% raw %}{{
+              paddingLeft: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 8px',
+              cursor: 'pointer',
+              borderRadius: 4,
+              background: selectedKeys.has(node.key) ? '#e8e8e8' : 'transparent',
+              fontSize: 13,
+              color: '#525252',
+            }}{% endraw %}
+            onClick={() => {
+              setSelectedKeys(new Set([node.key]));
+              onSelect?.(node);
+            }}
+            onMouseOver={(e) => {
+              if (!selectedKeys.has(node.key)) {
+                (e.currentTarget as HTMLDivElement).style.background = '#e8e8e8';
+              }
+            }}
+            onMouseOut={(e) => {
+              if (!selectedKeys.has(node.key)) {
+                (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+              }
+            }}
+          >
+            {node.children && node.children.length > 0 && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const newExpanded = new Set(expandedKeys);
+                  if (newExpanded.has(node.key)) {
+                    newExpanded.delete(node.key);
+                  } else {
+                    newExpanded.add(node.key);
+                  }
+                  setExpandedKeys(newExpanded);
+                }}
+                style={% raw %}{{ cursor: 'pointer', width: 16, textAlign: 'center' }}{% endraw %}
+              >
+                {expandedKeys.has(node.key) ? '▼' : '▶'}
+              </span>
+            )}
+            {showCheckboxes && (
+              <input
+                type="checkbox"
+                checked={checkedKeys.has(node.key)}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  handleCheck(node);
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
+            {node.icon && <span>{typeof node.icon === 'string' ? node.icon : node.icon}</span>}
+            <span className="flex-1">{node.name}</span>
+            {node.badge && (
+              <span
+                style={% raw %}{{
+                  background: '#0f62fe',
+                  color: '#fff',
+                  borderRadius: 12,
+                  padding: '1px 8px',
+                  fontSize: 11,
+                }}{% endraw %}
+              >
+                {node.badge}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+{% endif %}
+};
+
+export default TreeViewComponent;

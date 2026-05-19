@@ -1,0 +1,130 @@
+import React from "react";
+
+{% if ui_framework == "material" %}
+import { Box as MuiBox } from "@mui/material";
+{% elif ui_framework == "antd" %}
+import { Row as AntdRow } from "antd";
+{% elif ui_framework == "carbon" %}
+import { Row as CarbonRow } from "@carbon/react";
+{% endif %}
+
+export interface RowProps {
+  justify?: 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly';
+  align?: 'start' | 'center' | 'end' | 'stretch' | 'baseline';
+  gutter?: number;
+  wrap?: 'wrap' | 'nowrap' | 'reverse';
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+  [key: string]: any;
+}
+
+export const Row: React.FC<RowProps> = ({
+  justify = 'start',
+  align = 'stretch',
+  gutter = 0,
+  wrap = 'wrap',
+  children,
+  className = '',
+  style,
+  ...rest
+}) => {
+  {% if ui_framework == "material" %}
+  const justifyMap: Record<string, string> = {
+    start: 'flex-start',
+    center: 'center',
+    end: 'flex-end',
+    between: 'space-between',
+    around: 'space-around',
+    evenly: 'space-evenly'
+  };
+  const alignMap: Record<string, string> = {
+    start: 'flex-start',
+    center: 'center',
+    end: 'flex-end',
+    stretch: 'stretch',
+    baseline: 'baseline'
+  };
+  const rowStyle: React.CSSProperties = {
+    display: 'flex',
+    flexWrap: wrap,
+    justifyContent: justifyMap[justify],
+    alignItems: alignMap[align],
+    gap: gutter,
+    width: '100%',
+    ...style
+  };
+
+  return (
+    <MuiBox className={className} style={rowStyle} {...rest}>
+      {children}
+    </MuiBox>
+  );
+  {% elif ui_framework == "tailwind" %}
+  const justifyMap: Record<string, string> = {
+    start: 'justify-start', center: 'justify-center',
+    end: 'justify-end', between: 'justify-between',
+    around: 'justify-around', evenly: 'justify-evenly'
+  };
+  const alignMap: Record<string, string> = {
+    start: 'items-start', center: 'items-center',
+    end: 'items-end', stretch: 'items-stretch', baseline: 'items-baseline'
+  };
+  const wrapMap: Record<string, string> = {
+    wrap: 'flex-wrap', nowrap: 'flex-nowrap', reverse: 'flex-wrap-reverse'
+  };
+  const gutterClass = gutter > 0 ? `gap-${gutter / 4}` : '';
+  const baseClass = `flex ${wrapMap[wrap]} ${justifyMap[justify]} ${alignMap[align]} ${gutterClass}`;
+
+  return (
+    <div className={`${baseClass} ${className}`} style={style} {...rest}>
+      {children}
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const justifyMap: Record<string, string> = {
+    start: 'justify-content-start', center: 'justify-content-center',
+    end: 'justify-content-end', between: 'justify-content-between',
+    around: 'justify-content-around', evenly: 'justify-content-evenly'
+  };
+  const alignMap: Record<string, string> = {
+    start: 'align-items-start', center: 'align-items-center',
+    end: 'align-items-end', stretch: 'align-items-stretch', baseline: 'align-items-baseline'
+  };
+  const baseClass = `d-flex flex-wrap ${justifyMap[justify]} ${alignMap[align]}`;
+
+  return (
+    <div className={`${baseClass} ${className}`} style={style} {...rest}>
+      {children}
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  return (
+    <AntdRow
+      justify={justify === 'between' ? 'space-between' : justify === 'around' ? 'space-around' : justify === 'evenly' ? 'space-evenly' : justify === 'start' ? 'start' : justify === 'center' ? 'center' : 'end'}
+      align={align === 'stretch' ? 'stretch' : align}
+      gutter={gutter}
+      wrap={wrap !== 'nowrap'}
+      className={className}
+      style={style}
+      {...rest}
+    >
+      {children}
+    </AntdRow>
+  );
+  {% elif ui_framework == "carbon" %}
+  return (
+    <CarbonRow
+      className={className}
+      style={style}
+      {...rest}
+    >
+      {children}
+    </CarbonRow>
+  );
+  {% endif %}
+};
+
+Row.displayName = 'Row';
+
+export default Row;

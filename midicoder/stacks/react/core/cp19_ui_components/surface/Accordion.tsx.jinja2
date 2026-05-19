@@ -1,0 +1,165 @@
+/** Accordion Component - Expandable content sections that collapse and expand. */
+
+import React, { ReactNode, useState } from "react";
+
+export interface AccordionItem {
+  title: string;
+  content: ReactNode;
+  isExpanded?: boolean;
+  isDisabled?: boolean;
+}
+
+export interface AccordionProps {
+  items: AccordionItem[];
+  allowMultiple?: boolean;
+  onChange?: (index: number, expanded: boolean) => void;
+  className?: string;
+}
+
+export const Accordion: React.FC<AccordionProps> = ({
+  items,
+  allowMultiple = false,
+  onChange,
+  className = '',
+}) => {
+  const [expandedIndices, setExpandedIndices] = useState<number[]>(() =>
+    items.map((item, index) => item.isExpanded ? index : -1).filter(i => i >= 0)
+  );
+
+  const handleToggle = (index: number) => {
+    if (items[index]?.isDisabled) return;
+
+    let newIndices: number[];
+    if (!allowMultiple) {
+      newIndices = expandedIndices.includes(index) ? [] : [index];
+    } else {
+      newIndices = expandedIndices.includes(index)
+        ? expandedIndices.filter(i => i !== index)
+        : [...expandedIndices, index];
+    }
+    setExpandedIndices(newIndices);
+    onChange?.(index, newIndices.includes(index));
+  };
+
+  {% if ui_framework == "material" %}
+  import { Accordion as MuiAccordion, AccordionSummary, AccordionDetails, Typography, ExpandMoreIcon } from '@mui/material';
+
+  return (
+    <div className={className}>
+      {items.map((item, index) => (
+        <MuiAccordion
+          key={index}
+          expanded={expandedIndices.includes(index)}
+          onChange={() => handleToggle(index)}
+          disabled={item.isDisabled}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography>{item.title}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Typography>{typeof item.content === 'string' ? item.content : null}</Typography>
+            {typeof item.content !== 'string' && item.content}
+          </AccordionDetails>
+        </MuiAccordion>
+      ))}
+    </div>
+  );
+  {% elif ui_framework == "tailwind" %}
+  return (
+    <div className={`space-y-2 ${className}`}>
+      {items.map((item, index) => (
+        <div key={index} className="border border-gray-200 rounded-lg overflow-hidden">
+          <button
+            onClick={() => handleToggle(index)}
+            className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
+              expandedIndices.includes(index) ? 'bg-gray-100' : 'bg-white'
+            } ${item.isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <span className="font-medium text-gray-900">{item.title}</span>
+            <span className={`transition-transform text-gray-500 ${expandedIndices.includes(index) ? 'rotate-180' : ''}`}>▼</span>
+          </button>
+          {expandedIndices.includes(index) && (
+            <div className="px-4 py-3 bg-white border-t border-gray-100">
+              {typeof item.content === 'string' ? (
+                <p className="text-gray-600">{item.content}</p>
+              ) : (
+                item.content
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  return (
+    <div className={`accordion ${className}`}>
+      {items.map((item, index) => (
+        <div key={index} className="accordion-item">
+          <h2 className="accordion-header">
+            <button
+              className={`accordion-button ${expandedIndices.includes(index) ? '' : 'collapsed'}`}
+              type="button"
+              onClick={() => handleToggle(index)}
+              aria-expanded={expandedIndices.includes(index)}
+              disabled={item.isDisabled}
+            >
+              {item.title}
+            </button>
+          </h2>
+          <div className={`collapse ${expandedIndices.includes(index) ? 'show' : ''}`}>
+            <div className="accordion-body">
+              {typeof item.content === 'string' ? <p>{item.content}</p> : item.content}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Collapse } from 'antd';
+
+  return (
+    <Collapse
+      activeKey={expandedIndices}
+      onChange={(keys) => {
+        const keyArray = Array.isArray(keys) ? keys : [keys];
+        const numericKeys = keyArray.map(k => items.findIndex((_, i) => String(i) === k)).filter(i => i >= 0);
+        setExpandedIndices(numericKeys);
+      }}
+      accordion={!allowMultiple}
+      className={className}
+    >
+      {items.map((item, index) => (
+        <Collapse.Panel
+          key={String(index)}
+          header={item.title}
+          disabled={item.isDisabled}
+        >
+          {typeof item.content === 'string' ? <p>{item.content}</p> : item.content}
+        </Collapse.Panel>
+      ))}
+    </Collapse>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { Accordion, AccordionItem } from '@carbon/react';
+
+  return (
+    <Accordion allowMultiple={allowMultiple} className={className}>
+      {items.map((item, index) => (
+        <AccordionItem
+          key={index}
+          title={item.title}
+          open={expandedIndices.includes(index)}
+          onClick={() => handleToggle(index)}
+          disabled={item.isDisabled}
+        >
+          {typeof item.content === 'string' ? <p>{item.content}</p> : item.content}
+        </AccordionItem>
+      ))}
+    </Accordion>
+  );
+  {% endif %}
+};
+
+export default Accordion;

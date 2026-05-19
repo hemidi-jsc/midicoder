@@ -1,0 +1,188 @@
+{% if ui_framework == "material" %}import { Component, OnInit, Input, OnDestroy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatTooltipModule } from '@angular/material/tooltip';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, MatTooltipModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit, OnDestroy {
+  @Input() message: string = '';
+  @Input() position: 'above' | 'below' | 'left' | 'right' | 'before' | 'after' = 'above';
+  @Input() showDelay: number = 0;
+  @Input() hideDelay: number = 0;
+  @Input() disabled: boolean = false;
+  @Input() manual: boolean = false;
+  @Input() visible: boolean = false;
+  @Input() ariaLabel: string = '';
+
+  isVisible: boolean = false;
+
+  ngOnInit(): void {
+    this.isVisible = this.visible;
+  }
+
+  ngOnDestroy(): void {}
+
+  toggleVisibility(): void {
+    if (!this.manual) {
+      this.isVisible = !this.isVisible;
+    }
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, OnInit, Input, ElementRef, Renderer2, HostListener, OnDestroy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit, OnDestroy {
+  @Input() message: string = '';
+  @Input() placement: 'top' | 'bottom' | 'left' | 'right' = 'top';
+  @Input() offset: number = 8;
+  @Input() theme: 'light' | 'dark' = 'dark';
+  @Input() disabled: boolean = false;
+  @Input() showDelay: number = 0;
+  @Input() hideDelay: number = 0;
+
+  isVisible: boolean = false;
+  private showTimeout: any;
+  private hideTimeout: any;
+
+  constructor(
+    private el: ElementRef,
+    private renderer: Renderer2
+  ) {}
+
+  ngOnInit(): void {}
+
+  ngOnDestroy(): void {
+    this.clearTimeouts();
+  }
+
+  @HostListener('mouseenter')
+  onMouseEnter(): void {
+    if (this.disabled) return;
+    this.clearTimeouts();
+    this.showTimeout = setTimeout(() => {
+      this.isVisible = true;
+    }, this.showDelay);
+  }
+
+  @HostListener('mouseleave')
+  onMouseLeave(): void {
+    if (this.disabled) return;
+    this.clearTimeouts();
+    this.hideTimeout = setTimeout(() => {
+      this.isVisible = false;
+    }, this.hideDelay);
+  }
+
+  private clearTimeouts(): void {
+    if (this.showTimeout) clearTimeout(this.showTimeout);
+    if (this.hideTimeout) clearTimeout(this.hideTimeout);
+  }
+
+  get placementClasses(): string {
+    switch (this.placement) {
+      case 'top': return 'bottom-full left-1/2 -translate-x-1/2 mb-2';
+      case 'bottom': return 'top-full left-1/2 -translate-x-1/2 mt-2';
+      case 'left': return 'right-full top-1/2 -translate-y-1/2 mr-2';
+      case 'right': return 'left-full top-1/2 -translate-y-1/2 ml-2';
+      default: return 'bottom-full left-1/2 -translate-x-1/2 mb-2';
+    }
+  }
+
+  get themeClasses(): string {
+    return this.theme === 'dark'
+      ? 'bg-gray-900 text-white'
+      : 'bg-white text-gray-900 border border-gray-200 shadow-lg';
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() message: string = '';
+  @Input() placement: 'top' | 'bottom' | 'left' | 'right' = 'top';
+  @Input() triggers: string = 'hover focus';
+  @Input() delay: number = 0;
+  @Input() autoClose: boolean = true;
+  @Input() container: string = 'body';
+
+  ngOnInit(): void {}
+}
+{% elif ui_framework == "antd" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() message: string = '';
+  @Input() placement: 'top' | 'topLeft' | 'topRight' | 'bottom' | 'bottomLeft' | 'bottomRight' | 'left' | 'right' = 'top';
+  @Input() color: string = '';
+  @Input() mouseEnterDelay: number = 0.1;
+  @Input() mouseLeaveDelay: number = 0.1;
+  @Input() overlayStyle: { [key: string]: string } = {};
+  @Input() destroyTooltipOnHide: boolean = true;
+
+  ngOnInit(): void {}
+}
+{% elif ui_framework == "carbon" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() message: string = '';
+  @Input() align: 'top' | 'right' | 'bottom' | 'left' = 'top';
+  @Input() orientation: 'horizontal' | 'vertical' | 'flipped' = 'horizontal';
+  @Input() a11yType: 'dialog' | 'label' = 'label';
+  @Input() delay: number = 0;
+  @Input() role: string = 'tooltip';
+
+  ngOnInit(): void {}
+}
+{% else %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() message: string = '';
+  @Input() placement: 'top' | 'bottom' | 'left' | 'right' = 'top';
+  @Input() disabled: boolean = false;
+
+  ngOnInit(): void {}
+}
+{% endif %}

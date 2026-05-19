@@ -1,0 +1,153 @@
+/** Accordion Component - Expandable content sections that collapse and expand. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatExpansionModule } from "@angular/material/expansion";
+{% endif %}
+
+export interface AccordionItem {
+  title: string;
+  content: string;
+  isExpanded?: boolean;
+  isDisabled?: boolean;
+}
+
+@Component({
+  selector: 'app-accordion',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatExpansionModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-accordion [multi]="allowMultiple" [disableRipple]="disableRipple">
+  <mat-expansion-panel
+    *ngFor="let item of items; let i = index"
+    [expanded]="item.isExpanded"
+    [disabled]="item.isDisabled"
+    (expandedChange)="onToggle(i)"
+  >
+    <mat-expansion-panel-header>
+      <mat-panel-title>{% raw %}{{ item.title }}{% endraw %}</mat-panel-title>
+    </mat-expansion-panel-header>
+    <div class="accordion-content">{% raw %}{{ item.content }}{% endraw %}</div>
+  </mat-expansion-panel>
+</mat-accordion>
+{% elif ui_framework == "tailwind" %}
+<div class="space-y-2">
+  <div *ngFor="let item of items; let i = index" class="border border-gray-200 rounded-lg overflow-hidden">
+    <button
+      (click)="!item.isDisabled && onToggle(i)"
+      [ngClass]="{
+        'bg-gray-100': expandedIndices.includes(i),
+        'bg-white': !expandedIndices.includes(i),
+        'opacity-50 cursor-not-allowed': item.isDisabled,
+      }"
+      class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+    >
+      <span class="font-medium text-gray-900">{% raw %}{{ item.title }}{% endraw %}</span>
+      <span [ngClass]="{'rotate-180': expandedIndices.includes(i)}" class="transition-transform text-gray-500">▼</span>
+    </button>
+    <div *ngIf="expandedIndices.includes(i)" class="px-4 py-3 bg-white border-t border-gray-100">
+      <p class="text-gray-600">{% raw %}{{ item.content }}{% endraw %}</p>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div class="accordion" id="{% raw %}{{ accordionId }}{% endraw %}">
+  <div *ngFor="let item of items; let i = index" class="accordion-item">
+    <h2 class="accordion-header">
+      <button
+        class="accordion-button {% if !expandedIndices.includes(i) %}collapsed{% endif %}"
+        type="button"
+        [attr.data-bs-toggle]="'collapse'"
+        [attr.data-bs-target]="'#' + accordionId + '-' + i"
+        (click)="onToggle(i)"
+        [attr.aria-expanded]="expandedIndices.includes(i)"
+        [disabled]="item.isDisabled"
+      >
+        {% raw %}{{ item.title }}{% endraw %}
+      </button>
+    </h2>
+    <div
+      [id]="accordionId + '-' + i"
+      [ngClass]="{'collapse': true, 'show': expandedIndices.includes(i)}"
+    >
+      <div class="accordion-body">{% raw %}{{ item.content }}{% endraw %}</div>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "antd" %}
+<div class="ant-collapse">
+  <div *ngFor="let item of items; let i = index" [ngClass]="'ant-collapse-item' + (item.isDisabled ? ' ant-collapse-item-disabled' : '')">
+    <div
+      class="ant-collapse-header"
+      [ngClass]="{'ant-collapse-header-active': expandedIndices.includes(i)}"
+      (click)="!item.isDisabled && onToggle(i)"
+    >
+      <span class="ant-collapse-arrow"></span>
+      <span>{% raw %}{{ item.title }}{% endraw %}</span>
+    </div>
+    <div *ngIf="expandedIndices.includes(i)" class="ant-collapse-content">
+      <div class="ant-collapse-content-box">{% raw %}{{ item.content }}{% endraw %}</div>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div class="cds--accordion">
+  <div *ngFor="let item of items; let i = index" class="cds--accordion__item">
+    <button
+      class="cds--accordion__heading"
+      [attr.aria-expanded]="expandedIndices.includes(i)"
+      (click)="!item.isDisabled && onToggle(i)"
+      [disabled]="item.isDisabled"
+    >
+      <span class="cds--accordion__icon" [attr.aria-hidden]="'true'"></span>
+      {% raw %}{{ item.title }}{% endraw %}
+    </button>
+    <div
+      *ngIf="expandedIndices.includes(i)"
+      class="cds--accordion__content"
+    >
+      <p>{% raw %}{{ item.content }}{% endraw %}</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+  `,
+})
+export class AccordionComponent implements OnInit {
+  @Input() items: AccordionItem[] = [];
+  @Input() allowMultiple: boolean = false;
+  @Input() disableRipple: boolean = false;
+  @Input() accordionId: string = 'accordion';
+  @Output() toggle = new EventEmitter<{ index: number; expanded: boolean }>();
+
+  expandedIndices: number[] = [];
+
+  ngOnInit() {
+    this.expandedIndices = this.items
+      .map((item, index) => item.isExpanded ? index : -1)
+      .filter(index => index >= 0);
+  }
+
+  onToggle(index: number) {
+    if (!this.allowMultiple) {
+      this.expandedIndices = this.expandedIndices.includes(index)
+        ? []
+        : [index];
+    } else {
+      const idx = this.expandedIndices.indexOf(index);
+      if (idx >= 0) {
+        this.expandedIndices.splice(idx, 1);
+      } else {
+        this.expandedIndices.push(index);
+      }
+    }
+    this.toggle.emit({ index, expanded: this.expandedIndices.includes(index) });
+  }
+}

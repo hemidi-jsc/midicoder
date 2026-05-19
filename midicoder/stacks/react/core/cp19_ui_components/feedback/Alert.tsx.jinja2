@@ -1,0 +1,132 @@
+/** Alert Component - Displayable alert messages with severity levels. */
+
+import React from "react";
+
+export type AlertSeverity = 'success' | 'warning' | 'error' | 'info';
+
+export interface AlertProps {
+  message: string;
+  severity?: AlertSeverity;
+  dismissible?: boolean;
+  onDismiss?: () => void;
+  className?: string;
+  isVisible?: boolean;
+}
+
+export const Alert: React.FC<AlertProps> = ({
+  message,
+  severity = 'info',
+  dismissible = true,
+  onDismiss,
+  className = '',
+  isVisible = true,
+}) => {
+  if (!isVisible) return null;
+
+  {% if ui_framework == "material" %}
+  import { Alert as MuiAlert, AlertTitle } from '@mui/material';
+
+  return (
+    <MuiAlert
+      severity={severity}
+      onClose={dismissible ? onDismiss : undefined}
+      className={className}
+    >
+      {message}
+    </MuiAlert>
+  );
+  {% elif ui_framework == "tailwind" %}
+  const severityStyles: Record<AlertSeverity, string> = {
+    success: 'bg-green-50 border-green-200 text-green-800',
+    warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+    error: 'bg-red-50 border-red-200 text-red-800',
+    info: 'bg-blue-50 border-blue-200 text-blue-800',
+  };
+
+  const icons: Record<AlertSeverity, string> = {
+    success: '✓',
+    warning: '⚠',
+    error: '✕',
+    info: 'ℹ',
+  };
+
+  return (
+    <div
+      role="alert"
+      className={`border rounded-lg px-4 py-3 flex items-start gap-3 ${severityStyles[severity]} ${className}`}
+    >
+      <span className="flex-shrink-0 mt-0.5">{icons[severity]}</span>
+      <span className="flex-1 text-sm">{message}</span>
+      {dismissible && (
+        <button
+          onClick={onDismiss}
+          className="flex-shrink-0 ml-2 text-current opacity-60 hover:opacity-100"
+        >
+          &times;
+        </button>
+      )}
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  import { Alert as BsAlert } from 'react-bootstrap';
+
+  const severityMap: Record<AlertSeverity, string> = {
+    success: 'success',
+    warning: 'warning',
+    error: 'danger',
+    info: 'info',
+  } as const;
+
+  return (
+    <BsAlert
+      variant={severityMap[severity]}
+      onClose={dismissible ? onDismiss : undefined}
+      dismissible={dismissible}
+      className={className}
+    >
+      {message}
+    </BsAlert>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Alert as AntAlert } from 'antd';
+
+  const typeMap: Record<AlertSeverity, 'success' | 'warning' | 'error' | 'info'> = {
+    success: 'success',
+    warning: 'warning',
+    error: 'error',
+    info: 'info',
+  };
+
+  return (
+    <AntAlert
+      message={message}
+      type={typeMap[severity]}
+      closable={dismissible}
+      onClose={onDismiss}
+      className={className}
+    />
+  );
+  {% elif ui_framework == "carbon" %}
+  import { InlineNotification } from '@carbon/react';
+
+  const kindMap: Record<AlertSeverity, 'success' | 'warning' | 'error' | 'info' | 'severe-error'> = {
+    success: 'success',
+    warning: 'warning',
+    error: 'error',
+    info: 'info',
+  };
+
+  return (
+    <InlineNotification
+      kind={kindMap[severity]}
+      title=""
+      subtitle={message}
+      onCloseButton={dismissible ? onDismiss : undefined}
+      lowContrast
+      className={className}
+    />
+  );
+  {% endif %}
+};
+
+export default Alert;

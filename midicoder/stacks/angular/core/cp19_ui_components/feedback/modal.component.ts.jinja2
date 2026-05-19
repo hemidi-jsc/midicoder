@@ -1,0 +1,133 @@
+/** Modal Component - Full-screen or centered modal overlay for focused interactions. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+@Component({
+  selector: 'app-modal',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+{% if ui_framework == "material" %}
+<div *ngIf="isOpen" class="mat-modal-overlay">
+  <div class="mat-modal-container mat-modal-{% raw %}{{ size }}{% endraw %}">
+    <div *ngIf="showHeader" class="mat-modal-header">
+      <h2 class="mat-modal-title">{% raw %}{{ title }}{% endraw %}</h2>
+      <button mat-icon-button (click)="onClose()">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+    <div class="mat-modal-body">
+      <ng-content></ng-content>
+    </div>
+    <div *ngIf="showFooter" class="mat-modal-footer">
+      <ng-content select="[modalFooter]"></ng-content>
+    </div>
+  </div>
+  <div class="mat-modal-backdrop" (click)="closeOnBackdrop && onClose()"></div>
+</div>
+{% elif ui_framework == "tailwind" %}
+<div *ngIf="isOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+  <div class="fixed inset-0 bg-black/50" (click)="closeOnBackdrop && onClose()"></div>
+  <div [ngClass]="{
+    'max-w-sm': size === 'sm',
+    'max-w-md': size === 'md',
+    'max-w-lg': size === 'lg',
+    'max-w-4xl': size === 'xl',
+    'max-w-none w-full h-full': size === 'full',
+  }" class="bg-white rounded-xl shadow-2xl z-10 w-full mx-4 flex flex-col max-h-[90vh]">
+    <div *ngIf="showHeader" class="flex items-center justify-between px-6 py-4 border-b">
+      <h2 class="text-lg font-semibold">{% raw %}{{ title }}{% endraw %}</h2>
+      <button (click)="onClose()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+    </div>
+    <div class="px-6 py-4 overflow-y-auto flex-1">
+      <ng-content></ng-content>
+    </div>
+    <div *ngIf="showFooter" class="px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+      <ng-content select="[modalFooter]"></ng-content>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div *ngIf="isOpen" class="fixed inset-0 z-50 d-flex align-items-center justify-center">
+  <div class="fixed inset-0 bg-dark bg-opacity-50" (click)="closeOnBackdrop && onClose()"></div>
+  <div [ngClass]="'modal-dialog modal-dialog-centered modal-' + size">
+    <div class="modal-content">
+      <div *ngIf="showHeader" class="modal-header">
+        <h5 class="modal-title">{% raw %}{{ title }}{% endraw %}</h5>
+        <button type="button" class="btn-close" (click)="onClose()"></button>
+      </div>
+      <div class="modal-body">
+        <ng-content></ng-content>
+      </div>
+      <div *ngIf="showFooter" class="modal-footer">
+        <ng-content select="[modalFooter]"></ng-content>
+      </div>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "antd" %}
+<div *ngIf="isOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+  <div class="fixed inset-0 bg-black/45" (click)="closeOnBackdrop && onClose()"></div>
+  <div class="ant-modal-root">
+    <div class="ant-modal" [ngStyle]="{'width': sizeWidth}">
+      <div class="ant-modal-content">
+        <div *ngIf="showHeader" class="ant-modal-header">
+          <span class="ant-modal-title">{% raw %}{{ title }}{% endraw %}</span>
+          <button class="ant-modal-close-x" (click)="onClose()">✕</button>
+        </div>
+        <div class="ant-modal-body">
+          <ng-content></ng-content>
+        </div>
+        <div *ngIf="showFooter" class="ant-modal-footer">
+          <ng-content select="[modalFooter]"></ng-content>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div *ngIf="isOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+  <div class="cds--modal-overlay" (click)="closeOnBackdrop && onClose()"></div>
+  <div class="cds--modal" [ngStyle]="{'width': sizeWidth}">
+    <div *ngIf="showHeader" class="cds--modal-header">
+      <button class="cds--btn cds--btn--ghost cds--btn--sm" (click)="onClose()">✕</button>
+      <h2 class="cds--modal-header__label">{% raw %}{{ title }}{% endraw %}</h2>
+    </div>
+    <div class="cds--modal-content">
+      <ng-content></ng-content>
+    </div>
+    <div *ngIf="showFooter" class="cds--modal-footer">
+      <ng-content select="[modalFooter]"></ng-content>
+    </div>
+  </div>
+</div>
+{% endif %}
+  `,
+})
+export class ModalComponent implements OnInit {
+  @Input() title: string = '';
+  @Input() isOpen: boolean = false;
+  @Input() size: 'sm' | 'md' | 'lg' | 'xl' | 'full' = 'md';
+  @Input() showHeader: boolean = true;
+  @Input() showFooter: boolean = true;
+  @Input() closeOnBackdrop: boolean = true;
+  @Output() close = new EventEmitter<void>();
+
+  ngOnInit() {}
+
+  get sizeWidth(): string {
+    const map: Record<string, string> = {
+      sm: '400px',
+      md: '600px',
+      lg: '800px',
+      xl: '900px',
+      full: '100vw',
+    };
+    return map[this.size] || '600px';
+  }
+
+  onClose() {
+    this.close.emit();
+  }
+}

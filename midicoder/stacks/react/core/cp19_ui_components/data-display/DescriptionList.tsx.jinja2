@@ -1,0 +1,380 @@
+{% if ui_framework == "material" %}import React from 'react';
+import {
+  List,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
+  Divider,
+  Avatar,
+  Paper,
+  Typography,
+  Grid
+} from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface DescriptionItem {
+  term: string;
+  description: string;
+  icon?: React.ReactNode;
+}
+
+interface DescriptionListProps {
+  items: DescriptionItem[];
+  horizontal?: boolean;
+  twoLines?: boolean;
+  inline?: boolean;
+  size?: 'medium' | 'small';
+  divider?: boolean;
+  sx?: SxProps<Theme>;
+  className?: string;
+}
+
+function DescriptionList({
+  items,
+  horizontal = false,
+  twoLines = false,
+  inline = false,
+  size = 'medium',
+  divider = true,
+  sx,
+  className
+}: DescriptionListProps) {
+  if (inline) {
+    return (
+      <div className={className} sx={% raw %}{{ display: 'flex', flexWrap: 'wrap', gap: 2, ...sx }}{% endraw %}>
+        {items.map((item, index) => (
+          <div key={index} className="flex items-center gap-1">
+            <Typography variant="subtitle2" component="dt" className="font-medium">
+              {item.term}:
+            </Typography>
+            <Typography variant="body2" component="dd" className="text-gray-600">
+              {item.description}
+            </Typography>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <Paper sx={sx} className={className} elevation={0}>
+      {horizontal ? (
+        <Grid cont{% raw %}{{ p: 2 }}{% endraw %}ing={2} sx={{ p: 2 }}>
+          {items.map((item, index) => (
+            <Grid item xs={12} key={index}>
+              <Grid container alignItems="center" spacing={2}>
+                <Grid item xs={3}>
+                  <Typography variant="subtitle2" component="dt" className="font-medium">
+                    {item.term}
+                  </Typography>
+                </Grid>
+                <Grid item xs={9}>
+                  {item.icon && <span className="mr-1">{item.icon}</span>}
+                  <Typography variant="body2" component="dd">
+                    {item.description}
+                  </Typography>
+                </Grid>
+              </Grid>
+              {divider &{% raw %}{{ my: 1 }}{% endraw %}tems.length - 1 && <Divider sx={{ my: 1 }} />}
+            </Grid>
+          ))}
+        </Grid>
+      ) : (
+        <List dense={size === 'small'}>
+          {items.map((item, index) => (
+            <React.Fragment key={index}>
+              <ListItem alignItems="flex-start" divider={divider && index < items.length - 1}>
+                {item.icon && (
+                  <ListItemAvatar>
+                    <Avatar variant="rounded">{item.icon}</Avatar>
+                  </ListItemAvatar>
+                )}
+                <ListItemText
+                  primary={
+                    <Typography variant="subtitle2" component="dt" className="font-medium">
+                      {item.term}
+                    </Typography>
+                  }
+                  secondary={
+                    <Typography component="dd" variant="body2" className="text-gray-600">
+                      {item.description}
+                    </Typography>
+                  }
+                />
+              </ListItem>
+            </React.Fragment>
+          ))}
+        </List>
+      )}
+    </Paper>
+  );
+}
+
+export default DescriptionList;
+{% elif ui_framework == "tailwind" %}import React from 'react';
+
+interface DescriptionItem {
+  term: string;
+  description: string;
+  icon?: React.ReactNode;
+}
+
+interface DescriptionListProps {
+  items: DescriptionItem[];
+  variant?: 'default' | 'alternate';
+  horizontal?: boolean;
+  divided?: boolean;
+  inline?: boolean;
+  bordered?: boolean;
+  className?: string;
+}
+
+function DescriptionList({
+  items,
+  variant = 'default',
+  horizontal = false,
+  divided = true,
+  inline = false,
+  bordered = false,
+  className = ''
+}: DescriptionListProps) {
+  const borderClass = bordered ? 'border border-gray-200 rounded-lg' : '';
+
+  if (inline) {
+    return (
+      <dl className={`flex flex-wrap gap-x-6 gap-y-2 ${className}`}>
+        {items.map((item, index) => (
+          <div key={index} className="flex items-center gap-1">
+            {item.icon && <span className="text-gray-400">{item.icon}</span>}
+            <dt className="font-medium text-gray-900">{item.term}:</dt>
+            <dd className="text-sm text-gray-600">{item.description}</dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
+
+  return (
+    <dl className={`${borderClass} ${className}`}>
+      {items.map((item, index) => {
+        const isAlternate = variant === 'alternate' && index % 2 === 1;
+        return (
+          <div
+            key={index}
+            className={`
+              ${horizontal ? 'flex' : ''}
+              ${divided && index < items.length - 1 ? 'border-b border-gray-200' : ''}
+              ${isAlternate ? 'bg-gray-50' : ''}
+            `}
+          >
+            <dt className={`
+              font-medium text-gray-900
+              ${horizontal ? 'w-1/3 px-4 py-3 flex items-center' : 'px-4 py-3'}
+            `}>
+              {item.icon && <span className="mr-2 text-gray-400">{item.icon}</span>}
+              {item.term}
+            </dt>
+            <dd className={`
+              text-sm text-gray-600
+              ${horizontal ? 'w-2/3 px-4 py-3' : 'px-4 pb-3'}
+            `}>
+              {item.description}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+export default DescriptionList;
+{% elif ui_framework == "bootstrap" %}import React from 'react';
+
+interface DescriptionItem {
+  term: string;
+  description: string;
+  icon?: React.ReactNode;
+}
+
+interface DescriptionListProps {
+  items: DescriptionItem[];
+  horizontal?: boolean;
+  divided?: boolean;
+  className?: string;
+}
+
+function DescriptionList({
+  items,
+  horizontal = false,
+  divided = true,
+  className = ''
+}: DescriptionListProps) {
+  return (
+    <dl className={`row ${horizontal ? 'description-horizontal' : ''} ${className}`}>
+      {items.map((item, index) => (
+        <React.Fragment key={index}>
+          <dt className={`col-sm-3 ${divided && index < items.length - 1 ? 'border-bottom pb-2 mb-2' : ''}`}>
+            {item.icon && <span className="me-1">{item.icon}</span>}
+            {item.term}
+          </dt>
+          <dd className={`col-sm-9 ${divided && index < items.length - 1 ? 'border-bottom pb-2 mb-2' : ''}`}>
+            {item.description}
+          </dd>
+        </React.Fragment>
+      ))}
+    </dl>
+  );
+}
+
+export default DescriptionList;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { Descriptions, Typography } from 'antd';
+import type { SizeType } from 'antd/lib/configPicker';
+
+interface DescriptionItem {
+  term: string;
+  description: string;
+  icon?: React.ReactNode;
+}
+
+interface DescriptionListProps {
+  items: DescriptionItem[];
+  bordered?: boolean;
+  column?: number;
+  size?: SizeType;
+  title?: string;
+  className?: string;
+}
+
+function DescriptionList({
+  items,
+  bordered = true,
+  column = 1,
+  size = 'default',
+  title,
+  className
+}: DescriptionListProps) {
+  const itemsList = items.map((item) => ({
+    key: item.term,
+    label: (
+      <span>
+        {item.icon && <span className="mr-1">{item.icon}</span>}
+        {item.term}
+      </span>
+    ),
+    children: item.description,
+  }));
+
+  return (
+    <Descriptions
+      title={title}
+      bordered={bordered}
+      column={column}
+      size={size}
+      className={className}
+    >
+      {itemsList.map((item) => (
+        <Descriptions.Item key={item.label} label={item.label}>
+          {item.children}
+        </Descriptions.Item>
+      ))}
+    </Descriptions>
+  );
+}
+
+export default DescriptionList;
+{% elif ui_framework == "carbon" %}import React from 'react';
+
+interface DescriptionItem {
+  term: string;
+  description: string;
+  icon?: React.ReactNode;
+}
+
+interface DescriptionListProps {
+  items: DescriptionItem[];
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+}
+
+function DescriptionList({
+  items,
+  size = 'md',
+  className = ''
+}: DescriptionListProps) {
+  const sizeClasses: Record<string, string> = {
+    sm: 'py-2',
+    md: 'py-3',
+    lg: 'py-4'
+  };
+
+  return (
+    <dl className={`cds-description-list border border-gray-200 rounded ${className}`}>
+      {items.map((item, index) => (
+        <div
+          key={index}
+          className={`
+            flex ${sizeClasses[size]}
+            ${index % 2 === 1 ? 'bg-gray-50' : ''}
+            ${index < items.length - 1 ? 'border-b border-gray-200' : ''}
+          `}
+        >
+          <dt className="w-1/3 px-4 font-medium text-gray-900 cds--label">
+            {item.icon && <span className="mr-2">{item.icon}</span>}
+            {item.term}
+          </dt>
+          <dd className="w-2/3 px-4 text-sm text-gray-600">
+            {item.description}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+export default DescriptionList;
+{% else %}import React from 'react';
+
+interface DescriptionItem {
+  term: string;
+  description: string;
+  icon?: React.ReactNode;
+}
+
+interface DescriptionListProps {
+  items: DescriptionItem[];
+  horizontal?: boolean;
+  className?: string;
+}
+
+function DescriptionList({
+  items,
+  horizontal = false,
+  className = ''
+}: DescriptionListProps) {
+  return (
+    <dl className={`border rounded ${className}`}>
+      {items.map((item, index) => (
+        <div
+          key={index}
+          className={`
+            ${horizontal ? 'flex' : ''}
+            ${index < items.length - 1 ? 'border-b' : ''}
+            px-4 py-3
+          `}
+        >
+          <dt className={`font-medium ${horizontal ? 'w-1/3' : 'mb-1'}`}>
+            {item.icon && <span className="mr-1">{item.icon}</span>}
+            {item.term}
+          </dt>
+          <dd className={`text-sm text-gray-600 ${horizontal ? 'w-2/3' : ''}`}>
+            {item.description}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+export default DescriptionList;
+{% endif %}

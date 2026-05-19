@@ -1,0 +1,131 @@
+/** Icon Component - Renders icons from various icon libraries. */
+
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatIconModule } from "@angular/material/icon";
+{% endif %}
+
+@Component({
+  selector: 'app-icon',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatIconModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-icon
+  [ngStyle]="{
+    'font-size': (size || '24px'),
+    'width': (size || '24px'),
+    'height': (size || '24px'),
+    'color': color,
+  }"
+  [fontIcon]="customFont ? name : null"
+  [fontSet]="customFont ? fontSet : null"
+>
+  {% if !customFont %}{% raw %}{{ name }}{% endraw %}{% endif %}
+</mat-icon>
+{% elif ui_framework == "tailwind" %}
+<span
+  class="inline-flex items-center justify-center"
+  [ngStyle]="{
+    'width': (size || '1em'),
+    'height': (size || '1em'),
+    'font-size': (size || '24px'),
+    'color': color,
+    'flex-shrink': '0',
+  }"
+  [innerHTML]="renderedIcon"
+></span>
+{% elif ui_framework == "bootstrap" %}
+<span
+  [ngClass]="bootstrapIconClass"
+  [ngStyle]="{
+    'font-size': (size || '1rem'),
+    'width': (size || '1em'),
+    'height': (size || '1em'),
+    'color': color,
+  }"
+  class="me-1"
+></span>
+{% elif ui_framework == "antd" %}
+<span
+  class="anticon"
+  [ngStyle]="{
+    'font-size': (size || '14px'),
+    'color': color,
+    'width': (size || '1em'),
+    'height': (size || '1em'),
+    'display': 'inline-flex',
+    'align-items': 'center',
+    'justify-content': 'center',
+  }"
+>
+  <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
+    <use [attr.xlink:href]="'#icon-' + name"></use>
+  </svg>
+</span>
+{% elif ui_framework == "carbon" %}
+<svg
+  class="cds--icon cds--icon--{% raw %}{{ carbonSize }}{% endraw %}"
+  [ngStyle]="{
+    'width': (size || '16px'),
+    'height': (size || '16px'),
+    'fill': color,
+  }"
+  viewBox="0 0 32 32"
+  aria-hidden="true"
+>
+  <use [attr.xlink:href]="'#cds--icon-' + name"></use>
+</svg>
+{% endif %}
+  `,
+})
+export class IconComponent implements OnInit {
+  @Input() name: string = 'info';
+  @Input() size: string = '24px';
+  @Input() color: string = '';
+  @Input() customFont: boolean = false;
+  @Input() fontSet: string = '';
+
+  ngOnInit() {}
+
+  get renderedIcon(): string {
+    const svgIcons: Record<string, string> = {
+      check: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>',
+      close: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>',
+      search: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>',
+      menu: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>',
+    };
+    return svgIcons[this.name] || `<span>${this.name}</span>`;
+  }
+
+  get bootstrapIconClass(): string {
+    const map: Record<string, string> = {
+      check: 'bi bi-check-circle',
+      close: 'bi bi-x-circle',
+      search: 'bi bi-search',
+      menu: 'bi bi-list',
+      info: 'bi bi-info-circle',
+      warning: 'bi bi-exclamation-triangle',
+      error: 'bi bi-exclamation-circle',
+      settings: 'bi bi-gear',
+      user: 'bi bi-person',
+    };
+    return map[this.name] || 'bi bi-info-circle';
+  }
+
+  get carbonSize(): string {
+    const sizeMap: Record<string, string> = {
+      '16px': 'sm--2',
+      '20px': 'sm--3',
+      '24px': 'md',
+      '32px': 'lg',
+    };
+    return sizeMap[this.size] || 'md';
+  }
+}

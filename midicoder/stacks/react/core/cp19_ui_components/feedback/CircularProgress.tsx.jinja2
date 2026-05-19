@@ -1,0 +1,103 @@
+/** CircularProgress Component - Circular loading spinner with size and color options. */
+
+import React from "react";
+
+export interface CircularProgressProps {
+  size?: number;
+  mode?: 'indeterminate' | 'determinate';
+  value?: number;
+  color?: 'primary' | 'accent' | 'warn' | 'default';
+  className?: string;
+}
+
+export const CircularProgress: React.FC<CircularProgressProps> = ({
+  size = 40,
+  mode = 'indeterminate',
+  value = 0,
+  color = 'primary',
+  className = '',
+}) => {
+  {% if ui_framework == "material" %}
+  import { CircularProgress as MuiCircularProgress } from '@mui/material';
+
+  const colorMap: Record<string, 'primary' | 'secondary' | 'error' | 'default'> = {
+    primary: 'primary',
+    accent: 'secondary',
+    warn: 'error',
+    default: 'default',
+  };
+
+  return (
+    <MuiCircularProgress
+      size={size}
+      variant={mode === 'determinate' ? 'determinate' : 'indeterminate'}
+      value={mode === 'determinate' ? value : undefined}
+      color={colorMap[color]}
+      className={className}
+    />
+  );
+  {% elif ui_framework == "tailwind" %}
+  const colorMap: Record<string, string> = {
+    primary: 'border-blue-500',
+    accent: 'border-green-500',
+    warn: 'border-red-500',
+    default: 'border-gray-400',
+  };
+
+  return (
+    <div
+      className={`border-4 border-gray-200 ${colorMap[color].replace('border-', 'border-t-')} rounded-full animate-spin ${className}`}
+      style={% raw %}{{ width: `${size}px`, height: `${size}px` }}{% endraw %}
+      role="status"
+      aria-label="Đang tải"
+    >
+      <span className="sr-only">Đang tải...</span>
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const colorMap: Record<string, string> = {
+    primary: 'text-primary',
+    accent: 'text-success',
+    warn: 'text-danger',
+    default: 'text-secondary',
+  };
+
+  return (
+    <div
+      className={`spinner-border ${colorMap[color]} ${clas{% raw %}{{ width: `${size / 3}rem`, height: `${size / 3}rem`, borderWidth: '0.25em' }}{% endraw %}derWidth: '0.25em' }}
+      role="status"
+    >
+      <span className="visually-hidden">Đang tải...</span>
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Spin } from 'antd';
+
+  const colorValueMap: Record<string, string> = {
+    primary: '#1890ff',
+    accent: '#52c41a',
+    warn: '#ff4d4f',
+    default: '#d9d9d9',
+  };
+
+  return (
+    <div className={className}>
+      <Spin size={size > 40 ? 'large' : size < 24 ? 'small' : 'default'} />
+    </div>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { ContentLoader } from '@carbon/react';
+
+  retu{% raw %}{{ width: `${size}px`, height: `${size}px` }}{% endraw %}width: `${size}p{% raw %}{{ width: `${size}px`, height: `${size}px` }}{% endraw %}der
+        style={{ width: `${size}px`, height: `${size}px` }}
+        width={size}
+        height={size}
+      >
+        <circle cx={size / 2} cy={size / 2} r={size / 3} />
+      </ContentLoader>
+    </div>
+  );
+  {% endif %}
+};
+
+export default CircularProgress;

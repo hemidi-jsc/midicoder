@@ -1,0 +1,174 @@
+/*
+ * Midicoder CP19 - Data Input: Radio
+ * Standalone radio button group component.
+ */
+import React from 'react';
+
+export interface RadioOption {
+  value: any;
+  label: string;
+  disabled?: boolean;
+}
+
+interface RadioProps {
+  label?: string;
+  hint?: string;
+  required?: boolean;
+  disabled?: boolean;
+  options: RadioOption[];
+  value?: any;
+  onChange?: (value: any) => void;
+  id?: string;
+  className?: string;
+}
+
+const Radio: React.FC<RadioProps> = ({
+  label,
+  hint,
+  required = false,
+  disabled = false,
+  options = [],
+  value,
+  onChange,
+  id,
+  className = '',
+}) => {
+  return (
+{% if ui_framework == "material" %}
+    <div className={className} style={% raw %}{{ marginBottom: '16px' }}{% endraw %}>
+      {label && (
+        <div style={% raw %}{{ fontSize: '12px', fontWeight: 500, color: '#616161', marginBottom: '8px', textTransform: 'uppercase' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#d32f2f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div style={% raw %}{{ display: 'flex', flexDirection: 'column', gap: '8px' }}{% endraw %}>
+        {options.map((opt) => (
+          <label key={String(opt.value)} style={% raw %}{{ display: 'flex', alignItems: 'center', gap: '8px', cursor: opt.disabled ? 'not-allowed' : 'pointer', opacity: opt.disabled || disabled ? 0.5 : 1 }}{% endraw %}>
+            <input
+              type="radio"
+              name={id || 'radio-group'}
+              value={opt.value}
+              checked={value === opt.value}
+              disabled={opt.disabled || disabled}
+              onChange={() => onChange?.(opt.value)}
+              style={% raw %}{{ accentColor: '#3f51b5' }}{% endraw %}
+            />
+            <span style={% raw %}{{ fontSize: '14px', color: '#212121' }}{% endraw %}>{opt.label}</span>
+          </label>
+        ))}
+      </div>
+      {hint && <div style={% raw %}{{ fontSize: '12px', color: '#9e9e9e', marginTop: '8px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "tailwind" %}
+    <div className={`w-full ${className}`}>
+      {label && (
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          {label}
+          {required && <span className="text-red-500 ml-1">*</span>}
+        </label>
+      )}
+      <div className="space-y-2">
+        {options.map((opt) => (
+          <label key={String(opt.value)} className="flex items-center" style={% raw %}{{ opacity: opt.disabled || disabled ? 0.5 : 1 }}{% endraw %}>
+            <input
+              type="radio"
+              name={id || 'radio-group'}
+              value={opt.value}
+              checked={value === opt.value}
+              disabled={opt.disabled || disabled}
+              onChange={() => onChange?.(opt.value)}
+              className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="ml-3 block text-sm text-gray-700 cursor-pointer select-none">{opt.label}</span>
+          </label>
+        ))}
+      </div>
+      {hint && <p className="mt-1 text-sm text-gray-500">{hint}</p>}
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div className={`w-100 ${className}`}>
+      {label && (
+        <label className="form-label">
+          {label}
+          {required && <span className="text-danger">*</span>}
+        </label>
+      )}
+      <div className="d-flex flex-column gap-2">
+        {options.map((opt) => (
+          <div key={String(opt.value)} className="form-check">
+            <input
+              type="radio"
+              id={`${id}-${String(opt.value)}`}
+              name={id || 'radio-group'}
+              value={opt.value}
+              checked={value === opt.value}
+              disabled={opt.disabled || disabled}
+              onChange={() => onChange?.(opt.value)}
+              className="form-check-input"
+            />
+            <label htmlFor={`${id}-${String(opt.value)}`} className="form-check-label" style={% raw %}{{ opacity: opt.disabled || disabled ? 0.5 : 1 }}{% endraw %}>
+              {opt.label}
+            </label>
+          </div>
+        ))}
+      </div>
+      {hint && <small className="form-text text-muted">{hint}</small>}
+    </div>
+{% elif ui_framework == "antd" %}
+    <div style={% raw %}{{ marginBottom: '16px' }}{% endraw %} className={className}>
+      {label && (
+        <div style={% raw %}{{ fontSize: '14px', marginBottom: '8px', color: '#262626' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#ff4d4f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div style={% raw %}{{ display: 'flex', flexDirection: 'column', gap: '8px' }}{% endraw %}>
+        {options.map((opt) => (
+          <label key={String(opt.value)} style={% raw %}{{ display: 'flex', alignItems: 'center', gap: '8px', cursor: opt.disabled ? 'not-allowed' : 'pointer', opacity: opt.disabled || disabled ? 0.5 : 1 }}{% endraw %}>
+            <input
+              type="radio"
+              name={id || 'radio-group'}
+              value={opt.value}
+              checked={value === opt.value}
+              disabled={opt.disabled || disabled}
+              onChange={() => onChange?.(opt.value)}
+              style={% raw %}{{ width: '16px', height: '16px' }}{% endraw %}
+            />
+            <span style={% raw %}{{ fontSize: '14px', color: '#262626' }}{% endraw %}>{opt.label}</span>
+          </label>
+        ))}
+      </div>
+      {hint && <div style={% raw %}{{ color: '#8c8c8c', fontSize: '12px', marginTop: '4px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div style={% raw %}{{ marginBottom: '1rem' }}{% endraw %} className={className}>
+      {label && (
+        <div style={% raw %}{{ fontSize: '0.875rem', fontWeight: 400, color: '#161616', marginBottom: '0.5rem' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#da1e28', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div style={% raw %}{{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}{% endraw %}>
+        {options.map((opt) => (
+          <label key={String(opt.value)} style={% raw %}{{ display: 'flex', alignItems: 'center', gap: '8px', cursor: opt.disabled ? 'not-allowed' : 'pointer', opacity: opt.disabled || disabled ? 0.5 : 1 }}{% endraw %}>
+            <input
+              type="radio"
+              name={id || 'radio-group'}
+              value={opt.value}
+              checked={value === opt.value}
+              disabled={opt.disabled || disabled}
+              onChange={() => onChange?.(opt.value)}
+              style={% raw %}{{ width: '16px', height: '16px' }}{% endraw %}
+            />
+            <span style={% raw %}{{ fontSize: '0.875rem', color: '#161616' }}{% endraw %}>{opt.label}</span>
+          </label>
+        ))}
+      </div>
+      {hint && <p style={% raw %}{{ fontSize: '0.75rem', color: '#6f6f6f', margin: '0.25rem 0' }}{% endraw %}>{hint}</p>}
+    </div>
+{% endif %}
+  );
+};
+
+export default Radio;

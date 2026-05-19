@@ -1,0 +1,729 @@
+/*
+ * Midicoder CP19 - Data Input: FormBuilder
+ * Dynamic form builder that renders fields from a JSON schema.
+ * Supports layouts: single_column, two_column, wizard.
+ * Supports conditional fields and validation.
+ */
+import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import {
+  FormArray,
+  FormControl,
+  FormGroup,
+  ReactiveFormsModule,
+  Validators,
+  AbstractControl,
+  ValidationErrors,
+} from '@angular/forms';
+{% if ui_framework == "material" %}
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatRadioModule } from '@angular/material/radio';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatSliderModule } from '@angular/material/slider';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatNativeDateModule } from '@angular/material/core';
+import { MatStepperModule } from '@angular/material/stepper';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% endif %}
+
+export interface FormBuilderFieldSchema {
+  name: string;
+  type: 'text' | 'textarea' | 'select' | 'checkbox' | 'radio' | 'switch' | 'slider' | 'date' | 'datetime' | 'number' | 'email' | 'file' | 'autocomplete';
+  label: string;
+  placeholder?: string;
+  hint?: string;
+  required?: boolean;
+  minLength?: number;
+  maxLength?: number;
+  min?: number;
+  max?: number;
+  pattern?: string;
+  options?: Array<{ label: string; value: any }>;
+  defaultValue?: any;
+  condition?: { field: string; equals: any };
+  disabled?: boolean;
+}
+
+export interface FormBuilderSchema {
+  title?: string;
+  description?: string;
+  layout: 'single_column' | 'two_column' | 'wizard';
+  wizardSteps?: Array<{ title: string; fields: string[] }>;
+  fields: FormBuilderFieldSchema[];
+}
+
+@Component({
+  selector: 'app-form-builder',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+{% if ui_framework == "material" %}
+    MatFormFieldModule,
+    MatInputModule,
+    MatSelectModule,
+    MatCheckboxModule,
+    MatRadioModule,
+    MatSlideToggleModule,
+    MatSliderModule,
+    MatDatepickerModule,
+    MatNativeDateModule,
+    MatStepperModule,
+    MatButtonModule,
+    MatCardModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbModule,
+{% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<div class="form-builder-container p-4">
+  {% if schema.title %}
+  <h2 class="text-h5 mb-2">{{ schema.title }}</h2>
+  {% endif %}
+  {% if schema.description %}
+  <p class="text-body mb-4">{{ schema.description }}</p>
+  {% endif %}
+
+  <form [formGroup]="form" (ngSubmit)="onSubmit()">
+    {% if schema.layout == 'single_column' %}
+    <div class="single-column">
+      <ng-container *ngFor="let field of visibleFields">
+        <mat-card class="mb-3">
+          <mat-card-content>
+            <mat-form-field appearance="outline" class="w-full">
+              <mat-label>{{ field.label }}{% if field.required %} *{% endif %}</mat-label>
+              <input *ngIf="field.type === 'text' || field.type === 'email' || field.type === 'number'"
+                     matInput [formControlName]="field.name"
+                     [placeholder]="field.placeholder"
+                     [type]="field.type === 'number' ? 'number' : 'text'" />
+              <textarea *ngIf="field.type === 'textarea'"
+                        matInput [formControlName]="field.name"
+                        [placeholder]="field.placeholder" rows="4"></textarea>
+              <mat-select *ngIf="field.type === 'select'" [formControlName]="field.name">
+                <mat-option *ngFor="let opt of field.options" [value]="opt.value">
+                  {{ opt.label }}
+                </mat-option>
+              </mat-select>
+              <mat-checkbox *ngIf="field.type === 'checkbox'" [formControlName]="field.name">
+                {{ field.label }}
+              </mat-checkbox>
+              <mat-slide-toggle *ngIf="field.type === 'switch'" [formControlName]="field.name">
+                {{ field.label }}
+              </mat-slide-toggle>
+              <mat-radio-group *ngIf="field.type === 'radio'" [formControlName]="field.name">
+                <mat-radio-button *ngFor="let opt of field.options" [value]="opt.value">
+                  {{ opt.label }}
+                </mat-radio-button>
+              </mat-radio-group>
+              <mat-slider *ngIf="field.type === 'slider'" [formControlName]="field.name">
+                <input matSliderThumb />
+              </mat-slider>
+              <input *ngIf="field.type === 'date' || field.type === 'datetime'"
+                     matInput [matDatepicker]="picker" [formControlName]="field.name"
+                     [placeholder]="field.placeholder" />
+              <mat-datepicker-toggle *ngIf="field.type === 'date' || field.type === 'datetime'"
+                                     matSuffix [for]="picker"></mat-datepicker-toggle>
+              <mat-datepicker #picker></mat-datepicker>
+              <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+              <mat-error *ngIf="getControl(field.name)?.hasError('required')">
+                {{ field.label }} is required
+              </mat-error>
+            </mat-form-field>
+          </mat-card-content>
+        </mat-card>
+      </ng-container>
+    </div>
+
+    {% elif schema.layout == 'two_column' %}
+    <div class="two-column" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+      <ng-container *ngFor="let field of visibleFields">
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>{{ field.label }}{% if field.required %} *{% endif %}</mat-label>
+          <input *ngIf="field.type === 'text' || field.type === 'email' || field.type === 'number'"
+                 matInput [formControlName]="field.name"
+                 [placeholder]="field.placeholder"
+                 [type]="field.type === 'number' ? 'number' : 'text'" />
+          <textarea *ngIf="field.type === 'textarea'"
+                    matInput [formControlName]="field.name"
+                    [placeholder]="field.placeholder" rows="3"></textarea>
+          <mat-select *ngIf="field.type === 'select'" [formControlName]="field.name">
+            <mat-option *ngFor="let opt of field.options" [value]="opt.value">
+              {{ opt.label }}
+            </mat-option>
+          </mat-select>
+          <mat-checkbox *ngIf="field.type === 'checkbox'" [formControlName]="field.name">
+            {{ field.label }}
+          </mat-checkbox>
+          <mat-slide-toggle *ngIf="field.type === 'switch'" [formControlName]="field.name">
+            {{ field.label }}
+          </mat-slide-toggle>
+          <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+          <mat-error *ngIf="getControl(field.name)?.hasError('required')">
+            {{ field.label }} is required
+          </mat-error>
+        </mat-form-field>
+      </ng-container>
+    </div>
+
+    {% elif schema.layout == 'wizard' && schema.wizardSteps %}
+    <mat-vertical-stepper #stepper [linear]="true">
+      <mat-step *ngFor="let step of schema.wizardSteps" [label]="step.title">
+        <div>
+          <ng-container *ngFor="let fieldName of step.fields">
+            <ng-container *ngIf="getFieldByName(fieldName) as field">
+              <mat-form-field appearance="outline" class="w-full mb-3">
+                <mat-label>{{ field.label }}{% if field.required %} *{% endif %}</mat-label>
+                <input *ngIf="field.type === 'text' || field.type === 'email'"
+                       matInput [formControlName]="field.name"
+                       [placeholder]="field.placeholder" />
+                <textarea *ngIf="field.type === 'textarea'"
+                          matInput [formControlName]="field.name" rows="3"></textarea>
+                <mat-select *ngIf="field.type === 'select'" [formControlName]="field.name">
+                  <mat-option *ngFor="let opt of field.options" [value]="opt.value">
+                    {{ opt.label }}
+                  </mat-option>
+                </mat-select>
+                <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+              </mat-form-field>
+            </ng-container>
+          </ng-container>
+          <div>
+            <button mat-raised-button color="primary" matStepperNext
+                    *ngIf="!isLastStep(step.index)" type="button">Next</button>
+            <button mat-raised-button color="primary" type="submit"
+                    *ngIf="isLastStep(step.index)">Submit</button>
+            <button mat-button matStepperPrevious
+                    *ngIf="step.index > 0" type="button">Back</button>
+          </div>
+        </div>
+      </mat-step>
+    </mat-vertical-stepper>
+    {% endif %}
+
+    {% if schema.layout != 'wizard' %}
+    <div class="form-actions" style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end;">
+      <button mat-stroked-button type="button" (click)="onReset()">Reset</button>
+      <button mat-raised-button color="primary" type="submit" [disabled]="form.invalid">
+        Submit
+      </button>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
+{% elif ui_framework == "tailwind" %}
+<div class="max-w-4xl mx-auto p-6">
+  {% if schema.title %}
+  <h2 class="text-2xl font-bold text-gray-900 mb-2">{{ schema.title }}</h2>
+  {% endif %}
+  {% if schema.description %}
+  <p class="text-gray-600 mb-6">{{ schema.description }}</p>
+  {% endif %}
+
+  <form [formGroup]="form" (ngSubmit)="onSubmit()">
+    {% if schema.layout == 'single_column' %}
+    <div class="space-y-4">
+      <ng-container *ngFor="let field of visibleFields">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            {{ field.label }}
+            <span *ngIf="field.required" class="text-red-500">*</span>
+          </label>
+          <input *ngIf="field.type === 'text' || field.type === 'email' || field.type === 'number'"
+                 [formControlName]="field.name"
+                 [type]="field.type === 'number' ? 'number' : (field.type === 'email' ? 'email' : 'text')"
+                 [placeholder]="field.placeholder"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+          <textarea *ngIf="field.type === 'textarea'"
+                    [formControlName]="field.name"
+                    [placeholder]="field.placeholder" rows="4"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+          <select *ngIf="field.type === 'select'"
+                  [formControlName]="field.name"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <option value="">Select...</option>
+            <option *ngFor="let opt of field.options" [value]="opt.value">{{ opt.label }}</option>
+          </select>
+          <div *ngIf="field.type === 'checkbox'" class="flex items-center">
+            <input type="checkbox" [formControlName]="field.name" id="{{ field.name }}"
+                   class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
+            <label for="{{ field.name }}" class="ml-2 block text-sm text-gray-700">{{ field.label }}</label>
+          </div>
+          <div *ngIf="field.type === 'switch'" class="flex items-center">
+            <button type="button" [formControlName]="field.name"
+                    [class.bg-blue-600]="getControl(field.name)?.value"
+                    [class.bg-gray-200]="!getControl(field.name)?.value"
+                    class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                    [class.translate-x-6]="getControl(field.name)?.value"
+                    [class.translate-x-1]="!getControl(field.name)?.value"></span>
+            </button>
+            <span class="ml-3 text-sm text-gray-700">{{ field.label }}</span>
+          </div>
+          <div *ngIf="field.type === 'radio'" class="space-y-2">
+            <div *ngFor="let opt of field.options" class="flex items-center">
+              <input type="radio" [formControlName]="field.name" [value]="opt.value" [id]="field.name + '-' + opt.value"
+                     class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <label [for]="field.name + '-' + opt.value" class="ml-2 block text-sm text-gray-700">{{ opt.label }}</label>
+            </div>
+          </div>
+          <input *ngIf="field.type === 'slider'" type="range" [formControlName]="field.name"
+                 [min]="field.min || 0" [max]="field.max || 100"
+                 class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" />
+          <input *ngIf="field.type === 'date'" type="date" [formControlName]="field.name"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input *ngIf="field.type === 'datetime'" type="datetime-local" [formControlName]="field.name"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p *ngIf="field.hint" class="mt-1 text-sm text-gray-500">{{ field.hint }}</p>
+          <p *ngIf="getControl(field.name)?.invalid && (getControl(field.name)?.dirty || getControl(field.name)?.touched)"
+             class="mt-1 text-sm text-red-600">
+            <span *ngIf="getControl(field.name)?.hasError('required')">{{ field.label }} is required</span>
+            <span *ngIf="getControl(field.name)?.hasError('email')">Please enter a valid email</span>
+          </p>
+        </div>
+      </ng-container>
+    </div>
+
+    {% elif schema.layout == 'two_column' %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <ng-container *ngFor="let field of visibleFields">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            {{ field.label }}
+            <span *ngIf="field.required" class="text-red-500">*</span>
+          </label>
+          <input *ngIf="field.type === 'text' || field.type === 'email'"
+                 [formControlName]="field.name" type="text"
+                 [placeholder]="field.placeholder"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <select *ngIf="field.type === 'select'" [formControlName]="field.name"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Select...</option>
+            <option *ngFor="let opt of field.options" [value]="opt.value">{{ opt.label }}</option>
+          </select>
+          <p *ngIf="field.hint" class="mt-1 text-sm text-gray-500">{{ field.hint }}</p>
+        </div>
+      </ng-container>
+    </div>
+
+    {% elif schema.layout == 'wizard' && schema.wizardSteps %}
+    <div>
+      <div class="mb-6">
+        <div class="flex items-center">
+          <ng-container *ngFor="let step of schema.wizardSteps; let i=index">
+            <div class="flex items-center">
+              <div [class]="i === activeStep ? 'w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium' : 'w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-sm font-medium'">
+                {{ i + 1 }}
+              </div>
+              <span [class]="i === activeStep ? 'ml-2 text-sm font-medium text-blue-600' : 'ml-2 text-sm text-gray-500'">
+                {{ step.title }}
+              </span>
+            </div>
+            <div *ngIf="i < schema.wizardSteps!.length - 1" class="w-12 h-px mx-2"
+                 [class.bg-blue-600]="i < activeStep" [class.bg-gray-200]="i >= activeStep"></div>
+          </ng-container>
+        </div>
+      </div>
+      <div>
+        <ng-container *ngFor="let fieldName of currentStepFields">
+          <ng-container *ngIf="getFieldByName(fieldName) as field">
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                {{ field.label }}
+                <span *ngIf="field.required" class="text-red-500">*</span>
+              </label>
+              <input *ngIf="field.type === 'text' || field.type === 'email'"
+                     [formControlName]="field.name" type="text"
+                     [placeholder]="field.placeholder"
+                     class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <p *ngIf="field.hint" class="mt-1 text-sm text-gray-500">{{ field.hint }}</p>
+            </div>
+          </ng-container>
+        </ng-container>
+      </div>
+      <div class="flex justify-between mt-6">
+        <button type="button" (click)="prevStep()" [disabled]="activeStep === 0"
+                class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+          Back
+        </button>
+        <div>
+          <button *ngIf="activeStep < schema.wizardSteps!.length - 1" type="button" (click)="nextStep()"
+                  class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700">
+            Next
+          </button>
+          <button *ngIf="activeStep === schema.wizardSteps!.length - 1" type="submit"
+                  [disabled]="form.invalid"
+                  class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+            Submit
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if schema.layout != 'wizard' %}
+    <div class="flex justify-end gap-3 mt-6">
+      <button type="button" (click)="onReset()"
+              class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+        Reset
+      </button>
+      <button type="submit" [disabled]="form.invalid"
+              class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+        Submit
+      </button>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="container-fluid p-4">
+  {% if schema.title %}
+  <h2 class="mb-2">{{ schema.title }}</h2>
+  {% endif %}
+  {% if schema.description %}
+  <p class="text-muted mb-4">{{ schema.description }}</p>
+  {% endif %}
+
+  <form [formGroup]="form" (ngSubmit)="onSubmit()">
+    {% if schema.layout == 'single_column' %}
+    <div class="row">
+      <ng-container *ngFor="let field of visibleFields">
+        <div class="col-12 mb-3">
+          <label class="form-label">
+            {{ field.label }}
+            <span *ngIf="field.required" class="text-danger">*</span>
+          </label>
+          <input *ngIf="field.type === 'text' || field.type === 'email' || field.type === 'number'"
+                 [formControlName]="field.name" type="{% raw %}{{ field.type === 'email' ? 'email' : (field.type === 'number' ? 'number' : 'text') }}{% endraw %}"
+                 [placeholder]="field.placeholder" class="form-control" />
+          <textarea *ngIf="field.type === 'textarea'" [formControlName]="field.name"
+                    [placeholder]="field.placeholder" rows="4" class="form-control"></textarea>
+          <select *ngIf="field.type === 'select'" [formControlName]="field.name" class="form-select">
+            <option value="">Select...</option>
+            <option *ngFor="let opt of field.options" [value]="opt.value">{{ opt.label }}</option>
+          </select>
+          <div *ngIf="field.type === 'checkbox'" class="form-check">
+            <input type="checkbox" [formControlName]="field.name" class="form-check-input" id="{{ field.name }}" />
+            <label class="form-check-label" for="{{ field.name }}">{{ field.label }}</label>
+          </div>
+          <div *ngIf="field.type === 'switch'" class="form-check form-switch">
+            <input type="checkbox" [formControlName]="field.name" class="form-check-input" role="switch" id="{{ field.name }}" />
+            <label class="form-check-label" for="{{ field.name }}">{{ field.label }}</label>
+          </div>
+          <div *ngIf="field.type === 'radio'" class="btn-group" role="group">
+            <div *ngFor="let opt of field.options" class="form-check">
+              <input type="radio" [formControlName]="field.name" [value]="opt.value" class="form-check-input" [id]="field.name + '-' + opt.value" />
+              <label class="form-check-label" [for]="field.name + '-' + opt.value">{{ opt.label }}</label>
+            </div>
+          </div>
+          <input *ngIf="field.type === 'slider'" type="range" [formControlName]="field.name"
+                 class="form-range" [min]="field.min || 0" [max]="field.max || 100" />
+          <input *ngIf="field.type === 'date'" type="date" [formControlName]="field.name" class="form-control" />
+          <input *ngIf="field.type === 'datetime'" type="datetime-local" [formControlName]="field.name" class="form-control" />
+          <small *ngIf="field.hint" class="form-text text-muted">{{ field.hint }}</small>
+          <div *ngIf="getControl(field.name)?.invalid && (getControl(field.name)?.dirty || getControl(field.name)?.touched)"
+               class="invalid-feedback d-block">
+            <span *ngIf="getControl(field.name)?.hasError('required')">{{ field.label }} is required</span>
+          </div>
+        </div>
+      </ng-container>
+    </div>
+
+    {% elif schema.layout == 'two_column' %}
+    <div class="row g-3">
+      <ng-container *ngFor="let field of visibleFields">
+        <div class="col-md-6">
+          <label class="form-label">
+            {{ field.label }}
+            <span *ngIf="field.required" class="text-danger">*</span>
+          </label>
+          <input *ngIf="field.type === 'text' || field.type === 'email'"
+                 [formControlName]="field.name" type="text"
+                 [placeholder]="field.placeholder" class="form-control" />
+          <select *ngIf="field.type === 'select'" [formControlName]="field.name" class="form-select">
+            <option value="">Select...</option>
+            <option *ngFor="let opt of field.options" [value]="opt.value">{{ opt.label }}</option>
+          </select>
+          <small *ngIf="field.hint" class="form-text text-muted">{{ field.hint }}</small>
+        </div>
+      </ng-container>
+    </div>
+
+    {% elif schema.layout == 'wizard' && schema.wizardSteps %}
+    <ul class="nav nav-tabs mb-4" role="tablist">
+      <li *ngFor="let step of schema.wizardSteps; let i=index" class="nav-item">
+        <button class="nav-link" [class.active]="i === activeStep" (click)="activeStep = i" type="button">
+          {{ step.title }}
+        </button>
+      </li>
+    </ul>
+    <div>
+      <ng-container *ngFor="let fieldName of currentStepFields">
+        <ng-container *ngIf="getFieldByName(fieldName) as field">
+          <div class="mb-3">
+            <label class="form-label">{{ field.label }}{% if field.required %} <span class="text-danger">*</span>{% endif %}</label>
+            <input *ngIf="field.type === 'text' || field.type === 'email'"
+                   [formControlName]="field.name" type="text" class="form-control" />
+            <small *ngIf="field.hint" class="form-text text-muted">{{ field.hint }}</small>
+          </div>
+        </ng-container>
+      </ng-container>
+    </div>
+    <div class="d-flex justify-content-between mt-4">
+      <button type="button" (click)="prevStep()" [disabled]="activeStep === 0"
+              class="btn btn-outline-secondary">Back</button>
+      <div>
+        <button *ngIf="activeStep < schema.wizardSteps!.length - 1" type="button" (click)="nextStep()"
+                class="btn btn-primary">Next</button>
+        <button *ngIf="activeStep === schema.wizardSteps!.length - 1" type="submit"
+                [disabled]="form.invalid" class="btn btn-primary">Submit</button>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if schema.layout != 'wizard' %}
+    <div class="d-flex justify-content-end gap-2 mt-4">
+      <button type="button" (click)="onReset()" class="btn btn-outline-secondary">Reset</button>
+      <button type="submit" [disabled]="form.invalid" class="btn btn-primary">Submit</button>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
+{% elif ui_framework == "antd" %}
+<div class="midicoder-antd-form-builder" style="max-width:800px; margin:0 auto; padding:24px;">
+  {% if schema.title %}
+  <h2 style="margin-bottom:8px; font-size:24px; font-weight:600;">{{ schema.title }}</h2>
+  {% endif %}
+  {% if schema.description %}
+  <p style="color:#8c8c8c; margin-bottom:24px;">{{ schema.description }}</p>
+  {% endif %}
+
+  <form [formGroup]="form" (ngSubmit)="onSubmit()">
+    <ng-container *ngFor="let field of visibleFields">
+      <div style="margin-bottom:24px;">
+        <label style="display:block; font-size:14px; margin-bottom:8px; color:#262626;">
+          {{ field.label }}
+          <span *ngIf="field.required" style="color:#ff4d4f; margin-left:4px;">*</span>
+        </label>
+        <input *ngIf="field.type === 'text' || field.type === 'email' || field.type === 'number'"
+               [formControlName]="field.name"
+               [type]="field.type === 'email' ? 'email' : (field.type === 'number' ? 'number' : 'text')"
+               [placeholder]="field.placeholder"
+               style="width:100%; padding:8px 11px; border:1px solid #d9d9d9; border-radius:6px; font-size:14px; outline:none; transition:border 0.3s;" />
+        <textarea *ngIf="field.type === 'textarea'" [formControlName]="field.name"
+                  [placeholder]="field.placeholder" rows="4"
+                  style="width:100%; padding:8px 11px; border:1px solid #d9d9d9; border-radius:6px; font-size:14px; outline:none; resize:vertical;"></textarea>
+        <select *ngIf="field.type === 'select'" [formControlName]="field.name"
+                style="width:100%; padding:8px 11px; border:1px solid #d9d9d9; border-radius:6px; font-size:14px; background:#fff;">
+          <option value="">Select...</option>
+          <option *ngFor="let opt of field.options" [value]="opt.value">{{ opt.label }}</option>
+        </select>
+        <div *ngIf="field.type === 'checkbox'" style="display:flex; align-items:center;">
+          <input type="checkbox" [formControlName]="field.name" id="{{ field.name }}"
+                 style="width:16px; height:16px; border:1px solid #d9d9d9; border-radius:2px; margin-right:8px;" />
+          <label for="{{ field.name }}" style="font-size:14px; color:#262626; cursor:pointer;">{{ field.label }}</label>
+        </div>
+        <div *ngIf="field.type === 'switch'" style="display:flex; align-items:center;">
+          <div [style.background]="getControl(field.name)?.value ? '#1677ff' : '#d9d9d9'"
+               style="width:44px; height:22px; border-radius:11px; cursor:pointer; position:relative; transition:background 0.3s;"
+               (click)="toggleSwitch(field.name)">
+            <div [style.left]="getControl(field.name)?.value ? '24px' : '2px'"
+                 style="width:18px; height:18px; border-radius:9px; background:#fff; position:absolute; top:2px; transition:left 0.3s;"></div>
+          </div>
+          <span style="margin-left:12px; font-size:14px; color:#262626;">{{ field.label }}</span>
+        </div>
+        <div *ngIf="field.type === 'radio'" style="display:flex; flex-direction:column; gap:8px;">
+          <div *ngFor="let opt of field.options" style="display:flex; align-items:center;">
+            <input type="radio" [formControlName]="field.name" [value]="opt.value" [id]="field.name + '-' + opt.value"
+                   style="width:16px; height:16px; margin-right:8px;" />
+            <label [for]="field.name + '-' + opt.value" style="font-size:14px; color:#262626; cursor:pointer;">{{ opt.label }}</label>
+          </div>
+        </div>
+        <p *ngIf="field.hint" style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ field.hint }}</p>
+        <p *ngIf="getControl(field.name)?.invalid && (getControl(field.name)?.dirty || getControl(field.name)?.touched)"
+           style="color:#ff4d4f; font-size:12px; margin-top:4px;">
+          <span *ngIf="getControl(field.name)?.hasError('required')">{{ field.label }} is required</span>
+        </p>
+      </div>
+    </ng-container>
+
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
+      <button type="button" (click)="onReset()"
+              style="padding:8px 16px; border:1px solid #d9d9d9; border-radius:6px; background:#fff; cursor:pointer; font-size:14px;">
+        Reset
+      </button>
+      <button type="submit" [disabled]="form.invalid"
+              style="padding:8px 16px; border:none; border-radius:6px; background:#1677ff; color:#fff; cursor:pointer; font-size:14px; opacity:1; transition:opacity 0.3s;"
+              [style.opacity]="form.invalid ? 0.5 : 1">
+        Submit
+      </button>
+    </div>
+  </form>
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div class="midicoder-carbon-form-builder" style="max-width:720px; margin:0 auto; padding:24px;">
+  {% if schema.title %}
+  <h2 style="margin-bottom:8px; font-size:1.75rem; font-weight:300; color:#161616;">{{ schema.title }}</h2>
+  {% endif %}
+  {% if schema.description %}
+  <p style="color:#525252; margin-bottom:24px;">{{ schema.description }}</p>
+  {% endif %}
+
+  <form [formGroup]="form" (ngSubmit)="onSubmit()">
+    <ng-container *ngFor="let field of visibleFields">
+      <div style="margin-bottom:1.5rem;">
+        <label style="display:block; font-size:0.75rem; font-weight:400; color:#525252; margin-bottom:0.25rem;">
+          {{ field.label }}
+          <span *ngIf="field.required" style="color:#da1e28; margin-left:0.25rem;">*</span>
+        </label>
+        <input *ngIf="field.type === 'text' || field.type === 'email' || field.type === 'number'"
+               [formControlName]="field.name"
+               [type]="field.type === 'email' ? 'email' : (field.type === 'number' ? 'number' : 'text')"
+               [placeholder]="field.placeholder"
+               style="width:100%; padding:10px 12px; border:none; border-bottom:1px solid #8d8d8d; font-size:0.875rem; outline:none; background:transparent; transition:border 0.15s;" />
+        <textarea *ngIf="field.type === 'textarea'" [formControlName]="field.name"
+                  [placeholder]="field.placeholder" rows="4"
+                  style="width:100%; padding:10px 12px; border:none; border-bottom:1px solid #8d8d8d; font-size:0.875rem; outline:none; background:transparent; resize:vertical;"></textarea>
+        <select *ngIf="field.type === 'select'" [formControlName]="field.name"
+                style="width:100%; padding:10px 12px; border:1px solid #8d8d8d; font-size:0.875rem; background:#fff;">
+          <option value="">Select...</option>
+          <option *ngFor="let opt of field.options" [value]="opt.value">{{ opt.label }}</option>
+        </select>
+        <div *ngIf="field.type === 'checkbox'" style="display:flex; align-items:center;">
+          <input type="checkbox" [formControlName]="field.name" id="{{ field.name }}"
+                 style="width:16px; height:16px; border:1px solid #8d8d8d; background:#fff; margin-right:8px;" />
+          <label for="{{ field.name }}" style="font-size:0.875rem; color:#161616; cursor:pointer;">{{ field.label }}</label>
+        </div>
+        <p *ngIf="field.hint" style="font-size:0.75rem; color:#6f6f6f; margin-top:0.25rem;">{{ field.hint }}</p>
+        <p *ngIf="getControl(field.name)?.invalid && (getControl(field.name)?.dirty || getControl(field.name)?.touched)"
+           style="font-size:0.75rem; color:#da1e28; margin-top:0.25rem;">
+          <span *ngIf="getControl(field.name)?.hasError('required')">{{ field.label }} is required</span>
+        </p>
+      </div>
+    </ng-container>
+
+    <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:2rem;">
+      <button type="button" (click)="onReset()"
+              style="padding:0.5rem 1.5rem; border:1px solid #8d8d8d; background:#fff; color:#161616; font-size:0.875rem; cursor:pointer;">
+        Reset
+      </button>
+      <button type="submit" [disabled]="form.invalid"
+              style="padding:0.5rem 1.5rem; border:none; background:#0f62fe; color:#fff; font-size:0.875rem; cursor:pointer;"
+              [style.opacity]="form.invalid ? 0.5 : 1">
+        Submit
+      </button>
+    </div>
+  </form>
+</div>
+
+{% endif %}
+  `,
+  styles: [`
+    .form-builder-container { max-width: 800px; margin: 0 auto; }
+  `],
+})
+export class FormBuilderComponent implements OnInit {
+  @Input() schema: FormBuilderSchema = { layout: 'single_column', fields: [] };
+  @Output() submit = new EventEmitter<any>();
+  @Output() cancel = new EventEmitter<void>();
+
+  form!: FormGroup;
+  activeStep = 0;
+
+  ngOnInit(): void {
+    this.buildForm();
+  }
+
+  buildForm(): void {
+    const group: { [key: string]: AbstractControl } = {};
+    for (const field of this.schema.fields) {
+      const validators: any[] = [];
+      if (field.required) validators.push(Validators.required);
+      if (field.minLength) validators.push(Validators.minLength(field.minLength));
+      if (field.maxLength) validators.push(Validators.maxLength(field.maxLength));
+      if (field.min !== undefined) validators.push(Validators.min(field.min));
+      if (field.max !== undefined) validators.push(Validators.max(field.max));
+      if (field.pattern) validators.push(Validators.pattern(field.pattern));
+      if (field.type === 'email') validators.push(Validators.email);
+
+      group[field.name] = new FormControl(field.defaultValue ?? '', validators);
+      if (field.disabled) {
+        group[field.name].disable();
+      }
+    }
+    this.form = new FormGroup(group);
+
+    // Subscribe to value changes for conditional fields
+    this.form.valueChanges.subscribe(() => {});
+  }
+
+  get visibleFields(): FormBuilderFieldSchema[] {
+    if (!this.schema.fields) return [];
+    return this.schema.fields.filter((field) => {
+      if (!field.condition) return true;
+      const control = this.form?.get(field.condition.field);
+      return control?.value === field.condition.equals;
+    });
+  }
+
+  get currentStepFields(): string[] {
+    if (!this.schema.wizardSteps || !this.schema.wizardSteps[this.activeStep]) return [];
+    return this.schema.wizardSteps[this.activeStep].fields;
+  }
+
+  getControl(name: string): AbstractControl | null {
+    return this.form?.get(name) ?? null;
+  }
+
+  getFieldByName(name: string): FormBuilderFieldSchema | undefined {
+    return this.schema.fields?.find((f) => f.name === name);
+  }
+
+  isLastStep(index: number): boolean {
+    return this.schema.wizardSteps ? index === this.schema.wizardSteps.length - 1 : true;
+  }
+
+  nextStep(): void {
+    if (this.activeStep < (this.schema.wizardSteps?.length ?? 1) - 1) {
+      this.activeStep++;
+    }
+  }
+
+  prevStep(): void {
+    if (this.activeStep > 0) {
+      this.activeStep--;
+    }
+  }
+
+  toggleSwitch(name: string): void {
+    const ctrl = this.form.get(name);
+    if (ctrl) ctrl.setValue(!ctrl.value);
+  }
+
+  onSubmit(): void {
+    if (this.form.valid) {
+      this.submit.emit({ ...this.form.value, valid: true });
+    }
+  }
+
+  onReset(): void {
+    this.form.reset();
+    for (const field of this.schema.fields) {
+      const ctrl = this.form.get(field.name);
+      if (ctrl && field.defaultValue !== undefined) {
+        ctrl.patchValue(field.defaultValue);
+      }
+    }
+    this.activeStep = 0;
+  }
+}

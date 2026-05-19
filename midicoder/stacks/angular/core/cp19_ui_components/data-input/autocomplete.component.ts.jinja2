@@ -1,0 +1,235 @@
+/*
+ * Midicoder CP19 - Data Input: Autocomplete
+ * Standalone autocomplete/search input component.
+ */
+import { Component, Input, forwardRef, OnInit, OnDestroy } from '@angular/core';
+import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule, AbstractControl, FormControl } from '@angular/forms';
+import { CommonModule } from '@angular/common';
+import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+
+export interface AutocompleteOption {
+  value: string;
+  label: string;
+  [key: string]: any;
+}
+
+@Component({
+  selector: 'app-autocomplete',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
+  providers: [
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => AutocompleteComponent),
+      multi: true,
+    },
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<div class="w-full">
+  <mat-form-field appearance="outline" [color]="color">
+    <mat-label>{{ label }}{% if required %} *{% endif %}</mat-label>
+    <input matInput
+           [formControl]="searchControl"
+           [placeholder]="placeholder"
+           [disabled]="disabled"
+           [matAutocomplete]="auto" />
+    <mat-autocomplete #auto="matAutocomplete" (optionSelected)="onSelect($event)">
+      <mat-option *ngFor="let option of filteredOptions" [value]="option.value">
+        {{ option.label }}
+      </mat-option>
+      <mat-option *ngIf="filteredOptions.length === 0 && searchControl?.value" disabled>
+        No results found
+      </mat-option>
+    </mat-autocomplete>
+    <mat-hint *ngIf="hint">{{ hint }}</mat-hint>
+  </mat-form-field>
+</div>
+
+{% elif ui_framework == "tailwind" %}
+<div class="w-full relative">
+  {% if label %}
+  <label class="block text-sm font-medium text-gray-700 mb-1" [attr.for]="autoId">
+    {{ label }}
+    <span *ngIf="required" class="text-red-500 ml-1">*</span>
+  </label>
+  {% endif %}
+  <input [id]="autoId"
+         [formControl]="searchControl"
+         [placeholder]="placeholder"
+         [disabled]="disabled"
+         (focus)="onFocus()"
+         (blur)="onBlur()"
+         class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100" />
+  {% if showDropdown && filteredOptions.length > 0 %}
+  <ul class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+    <li *ngFor="let option of filteredOptions"
+        (click)="onSelectOption(option)"
+        class="px-4 py-2 cursor-pointer hover:bg-blue-50 text-sm text-gray-700"
+        [class.bg-blue-50]="option.value === searchControl?.value">
+      {{ option.label }}
+    </li>
+  </ul>
+  {% elif showDropdown && searchControl?.value %}
+  <ul class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg">
+    <li class="px-4 py-2 text-sm text-gray-500">No results found</li>
+  </ul>
+  {% endif %}
+  {% if hint %}<p class="mt-1 text-sm text-gray-500">{{ hint }}</p>{% endif %}
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="w-100 position-relative">
+  {% if label %}
+  <label [attr.for]="autoId" class="form-label">
+    {{ label }}
+    <span *ngIf="required" class="text-danger">*</span>
+  </label>
+  {% endif %}
+  <input [id]="autoId"
+         [formControl]="searchControl"
+         [placeholder]="placeholder"
+         [disabled]="disabled"
+         (focus)="onFocus()"
+         (blur)="onBlur()"
+         class="form-control" />
+  {% if showDropdown && filteredOptions.length > 0 %}
+  <ul class="position-absolute w-100 mt-1 bg-white border rounded shadow-lg" style="max-height:240px; overflow:auto; z-index:1050;">
+    <li *ngFor="let option of filteredOptions"
+        (click)="onSelectOption(option)"
+        class="px-3 py-2 cursor-pointer text-sm"
+        [class.bg-light]="option.value === searchControl?.value">
+      {{ option.label }}
+    </li>
+  </ul>
+  {% endif %}
+  {% if hint %}<small class="form-text text-muted">{{ hint }}</small>{% endif %}
+</div>
+
+{% elif ui_framework == "antd" %}
+<div style="width:100%; margin-bottom:16px; position:relative;">
+  {% if label %}
+  <label style="display:block; font-size:14px; margin-bottom:4px; color:#262626;">
+    {{ label }}
+    <span *ngIf="required" style="color:#ff4d4f; margin-left:4px;">*</span>
+  </label>
+  {% endif %}
+  <input [formControl]="searchControl"
+         [placeholder]="placeholder"
+         [disabled]="disabled"
+         (focus)="onFocus()"
+         (blur)="onBlur()"
+         style="width:100%; padding:8px 11px; border:1px solid #d9d9d9; border-radius:6px; font-size:14px; outline:none;" />
+  {% if showDropdown && filteredOptions.length > 0 %}
+  <ul style="position:absolute; z-index:1050; width:100%; margin-top:4px; background:#fff; border:1px solid #d9d9d9; border-radius:6px; max-height:240px; overflow:auto;">
+    <li *ngFor="let option of filteredOptions"
+        (click)="onSelectOption(option)"
+        style="padding:8px 12px; cursor:pointer; font-size:14px;"
+        [style.background]="option.value === searchControl?.value ? '#e6f4ff' : '#fff'"
+        [style.color]="option.value === searchControl?.value ? '#1677ff' : '#262626'">
+      {{ option.label }}
+    </li>
+  </ul>
+  {% endif %}
+  {% if hint %}<div style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ hint }}</div>{% endif %}
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div style="width:100%; margin-bottom:1rem; position:relative;">
+  {% if label %}
+  <label [attr.for]="autoId" style="display:block; font-size:0.75rem; font-weight:400; color:#525252; margin-bottom:0.25rem;">
+    {{ label }}
+    <span *ngIf="required" style="color:#da1e28; margin-left:0.25rem;">*</span>
+  </label>
+  {% endif %}
+  <input [id]="autoId"
+         [formControl]="searchControl"
+         [placeholder]="placeholder"
+         [disabled]="disabled"
+         (focus)="onFocus()"
+         (blur)="onBlur()"
+         style="width:100%; padding:10px 12px; border:none; border-bottom:1px solid #8d8d8d; font-size:0.875rem; outline:none; background:transparent;" />
+  {% if showDropdown && filteredOptions.length > 0 %}
+  <ul style="position:absolute; z-index:1050; width:100%; margin-top:4px; background:#fff; border:1px solid #8d8d8d; max-height:240px; overflow:auto;">
+    <li *ngFor="let option of filteredOptions"
+        (click)="onSelectOption(option)"
+        style="padding:0.5rem 0.75rem; cursor:pointer; font-size:0.875rem;"
+        [style.background]="option.value === searchControl?.value ? '#e5e5e5' : '#fff'">
+      {{ option.label }}
+    </li>
+  </ul>
+  {% endif %}
+  {% if hint %}<p style="font-size:0.75rem; color:#6f6f6f; margin:0.25rem 0;">{{ hint }}</p>{% endif %}
+</div>
+
+{% endif %}
+  `,
+})
+export class AutocompleteComponent implements ControlValueAccessor, OnInit, OnDestroy {
+  @Input() label = '';
+  @Input() placeholder = '';
+  @Input() hint = '';
+  @Input() required = false;
+  @Input() disabled = false;
+  @Input() color = 'primary';
+  @Input() options: AutocompleteOption[] = [];
+  @Input() minChars = 0;
+  @Input() debounceMs = 200;
+  @Input() autoId = `ac-${Math.random().toString(36).slice(2, 9)}`;
+
+  protected searchControl = new FormControl('');
+  protected filteredOptions: AutocompleteOption[] = [];
+  protected showDropdown = false;
+
+  private _searchSubject = new Subject<string>();
+  private _onChange: (value: any) => void = () => {};
+  private _onTouched: () => void = () => {};
+
+  ngOnInit(): void {
+    this._searchSubject.pipe(
+      debounceTime(this.debounceMs),
+      distinctUntilChanged()
+    ).subscribe((term: string) => {
+      if (term.length >= this.minChars) {
+        this.filteredOptions = this.options.filter((opt) =>
+          opt.label.toLowerCase().includes(term.toLowerCase()) ||
+          opt.value.toLowerCase().includes(term.toLowerCase())
+        ).slice(0, 20);
+      } else {
+        this.filteredOptions = [];
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this._searchSubject.complete();
+  }
+
+  onFocus(): void {
+    this.showDropdown = true;
+  }
+
+  onBlur(): void {
+    setTimeout(() => { this.showDropdown = false; }, 200);
+  }
+
+  onSelectOption(option: AutocompleteOption): void {
+    this.searchControl.setValue(option.label, { emitEvent: false });
+    this._onChange(option);
+    this.showDropdown = false;
+  }
+
+  writeValue(value: any): void {
+    if (value && value.label) {
+      this.searchControl.setValue(value.label, { emitEvent: false });
+    } else if (value) {
+      this.searchControl.setValue(value, { emitEvent: false });
+    }
+  }
+  registerOnChange(fn: any): void { this._onChange = fn; }
+  registerOnTouched(fn: any): void { this._onTouched = fn; }
+  setDisabledState(isDisabled: boolean): void {
+    if (isDisabled) this.searchControl.disable();
+    else this.searchControl.enable();
+  }
+}

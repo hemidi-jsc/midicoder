@@ -1,0 +1,200 @@
+/* eslint-disable */
+import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+{% if ui_framework == "material" %}
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+{% elif ui_framework == "bootstrap" %}
+import { NgbPaginationModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif ui_framework == "tailwind" %}
+{% elif ui_framework == "antd" %}
+{% elif ui_framework == "carbon" %}
+{% endif %}
+
+@Component({
+  selector: 'app-pagination',
+  standalone: true,
+  imports: [
+    CommonModule,
+{% if ui_framework == "material" %}
+    MatPaginatorModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbPaginationModule,
+{% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+    <mat-paginator
+      [length]="totalItems"
+      [pageSize]="pageSize"
+      [pageIndex]="currentPage"
+      [pageSizeOptions]="pageSizeOptions"
+      [showFirstLastButtons]="showFirstLast"
+      (page)="onPageChange($event)"
+    ></mat-paginator>
+{% elif ui_framework == "tailwind" %}
+    <nav class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+      <div class="flex flex-1 justify-between sm:hidden">
+        <button
+          (click)="onPageChange({ pageIndex: Math.max(0, currentPage - 1) })"
+          [disabled]="currentPage === 0"
+          class="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <button
+          (click)="onPageChange({ pageIndex: currentPage + 1 })"
+          [disabled]="currentPage >= totalPages - 1"
+          class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+      </div>
+      <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p class="text-sm text-gray-700">
+            Showing <span class="font-medium">{{ (currentPage * pageSize) + 1 }}</span>
+            to
+            <span class="font-medium">{{ Math.min((currentPage + 1) * pageSize, totalItems) }}</span>
+            of
+            <span class="font-medium">{{ totalItems }}</span>
+            results
+          </p>
+        </div>
+        <div>
+          <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <button
+              (click)="onPageChange({ pageIndex: Math.max(0, currentPage - 1) })"
+              [disabled]="currentPage === 0"
+              class="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span class="sr-only">Previous</span>
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" />
+              </svg>
+            </button>
+            {% for i in totalPages | range %}
+            <button
+              (click)="onPageChange({ pageIndex: i })"
+              class="relative inline-flex items-center px-4 py-2 text-sm font-semibold {% raw %}{{ i === currentPage ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50' }}{% endraw %}"
+            >
+              {{ i + 1 }}
+            </button>
+            {% endfor %}
+            <button
+              (click)="onPageChange({ pageIndex: currentPage + 1 })"
+              [disabled]="currentPage >= totalPages - 1"
+              class="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span class="sr-only">Next</span>
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          </nav>
+        </div>
+      </div>
+    </nav>
+{% elif ui_framework == "bootstrap" %}
+    <nav>
+      <ul ngbPagination
+          [collectionSize]="totalItems"
+          [page]="currentPage + 1"
+          [pageSize]="pageSize"
+          [maxSize]="7"
+          [boundaryLinks]="showFirstLast"
+          [rotate]="false"
+          (pageChange)="onPageChange({ pageIndex: $event - 1 })"
+      ></ul>
+    </nav>
+{% elif ui_framework == "antd" %}
+    <div style="display:flex;justify-content:center;padding:16px;gap:4px">
+      <button
+        (click)="onPageChange({ pageIndex: Math.max(0, currentPage - 1) })"
+        [disabled]="currentPage === 0"
+        style="min-width:32px;height:32px;padding:0;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:rgba(0,0,0,0.85)"
+        [style.opacity]="currentPage === 0 ? '0.4' : '1'"
+        [style.pointerEvents]="currentPage === 0 ? 'none' : 'auto'"
+      >‹</button>
+      {% for i in totalPages | range %}
+      <button
+        (click)="onPageChange({ pageIndex: i })"
+        style="min-width:32px;height:32px;padding:0;border:1px solid {% raw %}{{ i === currentPage ? '#1890ff' : '#d9d9d9' }}{% endraw %};border-radius:4px;background:{% raw %}{{ i === currentPage ? '#1890ff' : '#fff' }}{% endraw %};cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:{% raw %}{{ i === currentPage ? '#fff' : 'rgba(0,0,0,0.85)' }}{% endraw %}"
+      >{{ i + 1 }}</button>
+      {% endfor %}
+      <button
+        (click)="onPageChange({ pageIndex: currentPage + 1 })"
+        [disabled]="currentPage >= totalPages - 1"
+        style="min-width:32px;height:32px;padding:0;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:rgba(0,0,0,0.85)"
+        [style.opacity]="currentPage >= totalPages - 1 ? '0.4' : '1'"
+        [style.pointerEvents]="currentPage >= totalPages - 1 ? 'none' : 'auto'"
+      >›</button>
+    </div>
+{% elif ui_framework == "carbon" %}
+    <nav style="display:flex;justify-content:center;align-items:center;gap:2px;padding:12px">
+      <button
+        (click)="onPageChange({ pageIndex: Math.max(0, currentPage - 1) })"
+        [disabled]="currentPage === 0"
+        style="min-width:28px;height:28px;border:1px solid #8d8d8d;border-radius:4px;background:transparent;cursor:pointer;color:#525252;font-size:13px;display:flex;align-items:center;justify-content:center"
+        [style.opacity]="currentPage === 0 ? '0.4' : '1'"
+        [style.pointerEvents]="currentPage === 0 ? 'none' : 'auto'"
+      >‹</button>
+      {% for i in totalPages | range %}
+      <button
+        (click)="onPageChange({ pageIndex: i })"
+        style="min-width:28px;height:28px;border:1px solid {% raw %}{{ i === currentPage ? '#0f62fe' : '#8d8d8d' }}{% endraw %};border-radius:4px;background:{% raw %}{{ i === currentPage ? '#0f62fe' : 'transparent' }}{% endraw %};cursor:pointer;color:{% raw %}{{ i === currentPage ? '#ffffff' : '#525252' }}{% endraw %};font-size:13px;font-weight:{% raw %}{{ i === currentPage ? '600' : '400' }}{% endraw %};display:flex;align-items:center;justify-content:center"
+      >{{ i + 1 }}</button>
+      {% endfor %}
+      <button
+        (click)="onPageChange({ pageIndex: currentPage + 1 })"
+        [disabled]="currentPage >= totalPages - 1"
+        style="min-width:28px;height:28px;border:1px solid #8d8d8d;border-radius:4px;background:transparent;cursor:pointer;color:#525252;font-size:13px;display:flex;align-items:center;justify-content:center"
+        [style.opacity]="currentPage >= totalPages - 1 ? '0.4' : '1'"
+        [style.pointerEvents]="currentPage >= totalPages - 1 ? 'none' : 'auto'"
+      >›</button>
+    </nav>
+{% endif %}
+  `,
+  styles: `
+{% if ui_framework == "material" %}
+    :host {
+      display: block;
+      padding: 16px;
+    }
+{% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+      padding: 16px;
+    }
+{% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+    }
+{% endif %}
+  `
+})
+export class PaginationComponent {
+  @Input() totalItems: number = 100;
+  @Input() pageSize: number = 10;
+  @Input() currentPage: number = 0;
+  @Input() pageSizeOptions: number[] = [5, 10, 25, 50];
+  @Input() showFirstLast: boolean = true;
+  @Output() pageChange = new EventEmitter<{ pageIndex: number }>();
+
+  get totalPages(): number {
+    return Math.ceil(this.totalItems / this.pageSize);
+  }
+
+  onPageChange(event: { pageIndex: number }): void {
+    const maxPage = Math.max(0, this.totalPages - 1);
+    const pageIndex = Math.min(event.pageIndex, maxPage);
+    this.pageChange.emit({ pageIndex });
+  }
+}

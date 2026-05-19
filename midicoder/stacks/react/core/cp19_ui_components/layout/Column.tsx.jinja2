@@ -1,0 +1,111 @@
+import React from "react";
+
+{% if ui_framework == "material" %}
+import { Grid as MuiGrid } from "@mui/material";
+{% elif ui_framework == "antd" %}
+import { Col as AntdCol } from "antd";
+{% elif ui_framework == "carbon" %}
+import { Column as CarbonColumn } from "@carbon/react";
+{% endif %}
+
+export interface ColumnProps {
+  size?: number;
+  offset?: number;
+  grow?: boolean;
+  shrink?: boolean;
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+  [key: string]: any;
+}
+
+export const Column: React.FC<ColumnProps> = ({
+  size = 12,
+  offset = 0,
+  grow = false,
+  shrink = true,
+  children,
+  className = '',
+  style,
+  ...rest
+}) => {
+  {% if ui_framework == "material" %}
+  return (
+    <MuiGrid
+      item
+      xs={size === 12 ? 12 : size}
+      offset={offset}
+      className={className}
+      style={% raw %}{{
+        flexGrow: grow ? 1 : 0,
+        flexShrink: shrink ? 1 : 0,
+        ...style
+      }}{% endraw %}
+      {...rest}
+    >
+      {children}
+    </MuiGrid>
+  );
+  {% elif ui_framework == "tailwind" %}
+  const sizeMap: Record<number, string> = {
+    1: 'md:col-span-1', 2: 'md:col-span-2', 3: 'md:col-span-3',
+    4: 'md:col-span-4', 5: 'md:col-span-5', 6: 'md:col-span-6',
+    7: 'md:col-span-7', 8: 'md:col-span-8', 9: 'md:col-span-9',
+    10: 'md:col-span-10', 11: 'md:col-span-11', 12: 'md:col-span-12'
+  };
+  const spanClass = sizeMap[size] || `md:col-span-${size}`;
+  const offsetClass = offset > 0 ? `md:col-start-${offset + 1}` : '';
+  const growClass = grow ? 'flex-grow' : '';
+  const shrinkClass = !shrink ? 'flex-shrink-0' : '';
+  const baseClass = `${spanClass} ${offsetClass} ${growClass} ${shrinkClass}`.trim();
+
+  return (
+    <div className={`${baseClass} ${className}`} style={style} {...rest}>
+      {children}
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const sizeClass = size <= 12 ? `col-${size}` : 'col';
+  const offsetClass = offset > 0 ? `offset-${offset}` : '';
+  const baseClass = `${sizeClass} ${offsetClass}`.trim();
+
+  return (
+    <div className={`${baseClass} ${className}`} style={style} {...rest}>
+      {children}
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  return (
+    <AntdCol
+      span={size}
+      offset={offset}
+      className={className}
+      style={style}
+      {...rest}
+    >
+      {children}
+    </AntdCol>
+  );
+  {% elif ui_framework == "carbon" %}
+  const sizeMap: Record<number, number> = {
+    1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6,
+    7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12
+  };
+
+  return (
+    <CarbonColumn
+      lg={sizeMap[size] || 12}
+      md={sizeMap[size] || 12}
+      className={className}
+      style={style}
+      {...rest}
+    >
+      {children}
+    </CarbonColumn>
+  );
+  {% endif %}
+};
+
+Column.displayName = 'Column';
+
+export default Column;

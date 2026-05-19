@@ -1,0 +1,219 @@
+{% if ui_framework == "material" %}import { Component, OnInit, Input, ViewContainerRef, ComponentFactoryResolver, OnDestroy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+import { MatDividerModule } from '@angular/material/divider';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatIconModule,
+    MatButtonModule,
+    MatDividerModule
+  ],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit, OnDestroy {
+  @Input() title: string = '';
+  @Input() description: string = '';
+  @Input() trigger: 'hover' | 'click' | 'focus' = 'click';
+  @Input() position: 'above' | 'below' | 'left' | 'right' = 'below';
+  @Input() hasBackdrop: boolean = true;
+  @Input() disableClose: boolean = false;
+  @Input() showDelay: number = 0;
+
+  isVisible: boolean = false;
+  private showTimeout: any;
+
+  constructor(
+    private viewContainerRef: ViewContainerRef,
+    private cfr: ComponentFactoryResolver
+  ) {}
+
+  ngOnInit(): void {}
+
+  ngOnDestroy(): void {
+    if (this.showTimeout) clearTimeout(this.showTimeout);
+  }
+
+  toggle(): void {
+    this.isVisible = !this.isVisible;
+  }
+
+  show(): void {
+    if (this.showDelay > 0) {
+      this.showTimeout = setTimeout(() => {
+        this.isVisible = true;
+      }, this.showDelay);
+    } else {
+      this.isVisible = true;
+    }
+  }
+
+  hide(): void {
+    if (this.showTimeout) clearTimeout(this.showTimeout);
+    this.isVisible = false;
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, OnInit, Input, HostListener } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() description: string = '';
+  @Input() placement: 'top' | 'bottom' | 'left' | 'right' = 'bottom';
+  @Input() offset: number = 10;
+  @Input() trigger: 'hover' | 'click' | 'focus' = 'click';
+  @Input() showArrow: boolean = true;
+  @Input() width: string = 'w-72';
+
+  isVisible: boolean = false;
+
+  ngOnInit(): void {}
+
+  toggle(): void {
+    if (this.trigger === 'click') {
+      this.isVisible = !this.isVisible;
+    }
+  }
+
+  @HostListener('mouseenter')
+  onMouseEnter(): void {
+    if (this.trigger === 'hover') {
+      this.isVisible = true;
+    }
+  }
+
+  @HostListener('mouseleave')
+  onMouseLeave(): void {
+    if (this.trigger === 'hover') {
+      this.isVisible = false;
+    }
+  }
+
+  get placementClasses(): string {
+    switch (this.placement) {
+      case 'top': return 'bottom-full left-1/2 -translate-x-1/2 mb-3';
+      case 'bottom': return 'top-full left-1/2 -translate-x-1/2 mt-3';
+      case 'left': return 'right-full top-1/2 -translate-y-1/2 mr-3';
+      case 'right': return 'left-full top-1/2 -translate-y-1/2 ml-3';
+      default: return 'top-full left-1/2 -translate-x-1/2 mt-3';
+    }
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() content: string = '';
+  @Input() placement: 'top' | 'bottom' | 'left' | 'right' = 'bottom';
+  @Input() triggers: string = 'click';
+  @Input() delay: { show: number; hide: number } = { show: 0, hide: 0 };
+  @Input() autoClose: boolean = true;
+  @Input() inside: boolean = false;
+
+  isOpen: boolean = false;
+
+  ngOnInit(): void {}
+
+  toggle(): void {
+    this.isOpen = !this.isOpen;
+  }
+}
+{% elif ui_framework == "antd" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() content: string = '';
+  @Input() placement: 'top' | 'topLeft' | 'topRight' | 'bottom' | 'bottomLeft' | 'bottomRight' | 'left' | 'leftTop' | 'leftBottom' | 'right' | 'rightTop' | 'rightBottom' = 'bottom';
+  @Input() trigger: 'hover' | 'click' | 'focus' | ('hover' | 'click' | 'focus')[] = 'hover';
+  @Input() arrowPointAtCenter: boolean = false;
+  @Input() mouseEnterDelay: number = 0.1;
+  @Input() mouseLeaveDelay: number = 0.1;
+
+  isVisible: boolean = false;
+
+  ngOnInit(): void {}
+
+  toggle(): void {
+    this.isVisible = !this.isVisible;
+  }
+}
+{% elif ui_framework == "carbon" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() label: string = '';
+  @Input() description: string = '';
+  @Input() align: 'top' | 'right' | 'bottom' | 'left' = 'bottom';
+  @Input() dropShadow: boolean = true;
+  @Input() size: 'sm' | 'md' | 'lg' | 'xl' | '2xl' = 'sm';
+  @Input() triggerAction: 'click' | 'enter' | 'hover' = 'click';
+
+  isOpen: boolean = false;
+
+  ngOnInit(): void {}
+
+  toggle(): void {
+    this.isOpen = !this.isOpen;
+  }
+}
+{% else %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() content: string = '';
+  @Input() placement: 'top' | 'bottom' | 'left' | 'right' = 'bottom';
+  @Input() trigger: 'hover' | 'click' = 'click';
+
+  isVisible: boolean = false;
+
+  ngOnInit(): void {}
+
+  toggle(): void {
+    this.isVisible = !this.isVisible;
+  }
+}
+{% endif %}

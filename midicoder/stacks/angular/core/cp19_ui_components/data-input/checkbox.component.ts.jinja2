@@ -1,0 +1,146 @@
+/*
+ * Midicoder CP19 - Data Input: Checkbox
+ * Standalone checkbox component.
+ */
+import { Component, Input, forwardRef } from '@angular/core';
+import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule, AbstractControl, FormControl } from '@angular/forms';
+{% if ui_framework == "material" %}
+import { MatCheckboxModule } from '@angular/material/checkbox';
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% endif %}
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: 'app-checkbox',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+{% if ui_framework == "material" %}
+    MatCheckboxModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbModule,
+{% endif %}
+  ],
+  providers: [
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => CheckboxComponent),
+      multi: true,
+    },
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-checkbox [formControl]="control"
+              [disabled]="disabled"
+              [color]="color"
+              [requireCheckedChange]="requireCheckedChange"
+              [aria-label]="label">
+  {{ label }}
+  <span *ngIf="required" style="color:#d32f2f; margin-left:4px;">*</span>
+</mat-checkbox>
+{% if hint %}<div style="margin-top:4px; font-size:12px; color:#757575;">{{ hint }}</div>{% endif %}
+<mat-error *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="color:#d32f2f; font-size:12px;">
+  {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+</mat-error>
+
+{% elif ui_framework == "tailwind" %}
+<div class="w-full">
+  <div class="flex items-center">
+    <input type="checkbox"
+           [formControl]="control"
+           [disabled]="disabled"
+           [id]="checkboxId"
+           class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:cursor-not-allowed"
+           [class.border-red-300]="control?.invalid && (control?.dirty || control?.touched)" />
+    <label [for]="checkboxId" class="ml-3 block text-sm text-gray-700 cursor-pointer select-none">
+      {{ label }}
+      <span *ngIf="required" class="text-red-500 ml-1">*</span>
+    </label>
+  </div>
+  {% if hint %}<p class="mt-1 text-sm text-gray-500">{{ hint }}</p>{% endif %}
+  <p *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="mt-1 text-sm text-red-600">
+    {% raw %}{{ requiredMessage || (label + ' must be checked') }}{% endraw %}
+  </p>
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="form-check w-100">
+  <input type="checkbox"
+         [formControl]="control"
+         [disabled]="disabled"
+         [id]="checkboxId"
+         [ngClass]="{'is-invalid': control?.invalid && (control?.dirty || control?.touched)}"
+         class="form-check-input" />
+  <label [for]="checkboxId" class="form-check-label">
+    {{ label }}
+    <span *ngIf="required" class="text-danger">*</span>
+  </label>
+  {% if hint %}<small class="form-text text-muted">{{ hint }}</small>{% endif %}
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="invalid-feedback">
+    {% raw %}{{ requiredMessage || (label + ' must be checked') }}{% endraw %}
+  </div>
+</div>
+
+{% elif ui_framework == "antd" %}
+<div style="width:100%; margin-bottom:16px;">
+  <div style="display:flex; align-items:center;">
+    <input type="checkbox"
+           [formControl]="control"
+           [disabled]="disabled"
+           [id]="checkboxId"
+           style="width:16px; height:16px; border:1px solid #d9d9d9; border-radius:2px; cursor:pointer;" />
+    <label [for]="checkboxId" style="margin-left:8px; font-size:14px; color:#262626; cursor:pointer; user-select:none;">
+      {{ label }}
+      <span *ngIf="required" style="color:#ff4d4f; margin-left:4px;">*</span>
+    </label>
+  </div>
+  {% if hint %}<div style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ hint }}</div>{% endif %}
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="color:#ff4d4f; font-size:12px; margin-top:4px;">
+    {% raw %}{{ requiredMessage || (label + ' must be checked') }}{% endraw %}
+  </div>
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div style="width:100%; margin-bottom:1rem;">
+  <div style="display:flex; align-items:center;">
+    <input type="checkbox"
+           [formControl]="control"
+           [disabled]="disabled"
+           [id]="checkboxId"
+           style="width:16px; height:16px; border:1px solid #8d8d8d; background:#fff; cursor:pointer;" />
+    <label [for]="checkboxId" style="margin-left:8px; font-size:0.875rem; color:#161616; cursor:pointer; user-select:none;">
+      {{ label }}
+      <span *ngIf="required" style="color:#da1e28; margin-left:4px;">*</span>
+    </label>
+  </div>
+  {% if hint %}<p style="font-size:0.75rem; color:#6f6f6f; margin:0.25rem 0;">{{ hint }}</p>{% endif %}
+  <p *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="font-size:0.75rem; color:#da1e28; margin:0.25rem 0;">
+    {% raw %}{{ requiredMessage || (label + ' must be checked') }}{% endraw %}
+  </p>
+</div>
+
+{% endif %}
+  `,
+})
+export class CheckboxComponent implements ControlValueAccessor {
+  @Input() label = '';
+  @Input() hint = '';
+  @Input() required = false;
+  @Input() requiredMessage = '';
+  @Input() disabled = false;
+  @Input() color = 'primary';
+  @Input() requireCheckedChange = false;
+  @Input() checkboxId = `cb-${Math.random().toString(36).slice(2, 9)}`;
+
+  protected control: AbstractControl | null = null;
+
+  private _onChange: (value: any) => void = () => {};
+  private _onTouched: () => void = () => {};
+
+  writeValue(value: any): void { this.control?.setValue(value, { emitEvent: false }); }
+  registerOnChange(fn: any): void { this._onChange = fn; }
+  registerOnTouched(fn: any): void { this._onTouched = fn; }
+  setDisabledState(isDisabled: boolean): void { this.disabled = isDisabled; }
+}

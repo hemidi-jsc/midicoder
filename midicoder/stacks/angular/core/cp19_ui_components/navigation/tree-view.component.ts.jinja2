@@ -1,0 +1,434 @@
+/* eslint-disable */
+import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+{% if ui_framework == "material" %}
+import { MatTreeModule } from '@angular/material/tree';
+import { MatIconModule } from '@angular/material/icon';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+{% elif ui_framework == "bootstrap" %}
+import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif ui_framework == "tailwind" %}
+{% elif ui_framework == "antd" %}
+{% elif ui_framework == "carbon" %}
+{% endif %}
+
+@Component({
+  selector: 'app-tree-view',
+  standalone: true,
+  imports: [
+    CommonModule,
+{% if ui_framework == "material" %}
+    MatTreeModule,
+    MatIconModule,
+    MatCheckboxModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbCollapseModule,
+{% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+    <div class="tree-view-container" [style.height.px]="height">
+      <div class="tree-header" *ngIf="showHeader">
+        {% if showSearch %}
+        <input
+          type="text"
+          placeholder="Search..."
+          class="tree-search"
+          (input)="onSearch.emit($event)"
+        />
+        {% endif %}
+        <div class="tree-actions">
+          <button mat-icon-button (click)="onExpandAll.emit()">
+            <mat-icon>{{ isAllExpanded ? 'unfold_less' : 'unfold_more' }}</mat-icon>
+          </button>
+          <button mat-icon-button (click)="onCheckAll.emit()">
+            <mat-icon>{{ isAllChecked ? 'check_box' : 'check_box_outline_blank' }}</mat-icon>
+          </button>
+        </div>
+      </div>
+      <div class="tree-scroll-area">
+        <mat-tree [dataSource]="data" [treeControl]="treeControl">
+          <mat-tree-node *matTreeNodeDef="let node" matTreeNodePadding>
+            <div class="tree-node">
+              {% if showCheckboxes %}
+              <mat-checkbox
+                [checked]="node.checked"
+                (change)="onToggle(node)"
+              ></mat-checkbox>
+              {% endif %}
+              <mat-icon class="node-icon">{% raw %}{{ node.icon || 'drive_file_rename_outline' }}{% endraw %}</mat-icon>
+              <span class="node-label" (click)="onSelect(node)">{{ node.name }}</span>
+              {% if node.badge %}
+              <span class="node-badge">{{ node.badge }}</span>
+              {% endif %}
+            </div>
+          </mat-tree-node>
+          <mat-nested-tree-node *matTreeNodeDef="let node; when: hasChild">
+            <div class="tree-node" (click)="treeControl.toggle(node)">
+              <mat-icon class="expand-icon">
+                {{ treeControl.isExpanded(node) ? 'expand_more' : 'chevron_right' }}
+              </mat-icon>
+              {% if showCheckboxes %}
+              <mat-checkbox
+                [checked]="node.checked"
+                (change)="onToggle(node)"
+              ></mat-checkbox>
+              {% endif %}
+              <mat-icon class="node-icon">{% raw %}{{ node.icon || 'folder' }}{% endraw %}</mat-icon>
+              <span class="node-label">{{ node.name }}</span>
+              {% if node.badge %}
+              <span class="node-badge">{{ node.badge }}</span>
+              {% endif %}
+            </div>
+            <div [class.tree-inner]="treeControl.isExpanded(node)">
+              <ng-container *matTreeNodeDef="let child; when: hasChild">
+                <!-- recursive children -->
+              </ng-container>
+            </div>
+          </mat-nested-tree-node>
+        </mat-tree>
+      </div>
+    </div>
+{% elif ui_framework == "tailwind" %}
+    <div class="tree-view-container border border-gray-200 rounded-lg bg-white" [style.height.px]="height">
+      {% if showHeader %}
+      <div class="tree-header border-b border-gray-200 p-3">
+        {% if showSearch %}
+        <input
+          type="text"
+          placeholder="Search..."
+          class="tree-search w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          (input)="onSearch.emit($event)"
+        />
+        {% endif %}
+        <div class="tree-actions flex gap-2 mt-2">
+          <button (click)="onExpandAll.emit()" class="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200">
+            {{ isAllExpanded ? 'Collapse All' : 'Expand All' }}
+          </button>
+          {% if showCheckboxes %}
+          <button (click)="onCheckAll.emit()" class="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200">
+            {{ isAllChecked ? 'Uncheck All' : 'Check All' }}
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="tree-scroll-area overflow-auto p-2">
+        {% for node in data %}
+        <div class="tree-item" [style.paddingLeft.px]="(node.level || 0) * 16">
+          <div class="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-gray-50 cursor-pointer" (click)="onSelect(node)">
+            {% if node.children && node.children.length > 0 %}
+            <button (click)="toggleNode(node)" class="w-4 h-4 flex items-center justify-center text-gray-400">
+              <span [class.rotate-90]="node.expanded">▶</span>
+            </button>
+            {% else %}
+            <span class="w-4"></span>
+            {% endif %}
+            {% if showCheckboxes %}
+            <input
+              type="checkbox"
+              [checked]="node.checked"
+              (change)="onToggle(node)"
+              (click)="$event.stopPropagation()"
+              class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            {% endif %}
+            <span class="node-icon text-gray-500">{% raw %}{{ node.icon || (node.children && node.children.length > 0 ? '📁' : '📄') }}{% endraw %}</span>
+            <span class="node-label text-sm text-gray-900 flex-1">{{ node.name }}</span>
+            {% if node.badge %}
+            <span class="node-badge inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">{{ node.badge }}</span>
+            {% endif %}
+          </div>
+          {% if node.children && node.expanded %}
+          <div class="tree-children">
+            {% for child in node.children %}
+            <!-- recursive child rendering -->
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div class="tree-view-container border rounded bg-white" [style.height.px]="height">
+      {% if showHeader %}
+      <div class="tree-header border-bottom p-3">
+        {% if showSearch %}
+        <input
+          type="text"
+          placeholder="Search..."
+          class="tree-search form-control form-control-sm"
+          (input)="onSearch.emit($event)"
+        />
+        {% endif %}
+        <div class="tree-actions d-flex gap-2 mt-2">
+          <button (click)="onExpandAll.emit()" class="btn btn-sm btn-outline-secondary">{{ isAllExpanded ? 'Collapse All' : 'Expand All' }}</button>
+          {% if showCheckboxes %}
+          <button (click)="onCheckAll.emit()" class="btn btn-sm btn-outline-secondary">{{ isAllChecked ? 'Uncheck All' : 'Check All' }}</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="tree-scroll-area overflow-auto p-2">
+        {% for node in data %}
+        <div class="tree-item" [style.paddingLeft.px]="(node.level || 0) * 16">
+          <div class="d-flex align-items-center gap-2 py-1 px-2 rounded hover:bg-light cursor-pointer" (click)="onSelect(node)">
+            {% if node.children && node.children.length > 0 %}
+            <button (click)="toggleNode(node)" class="btn btn-sm btn-link p-0 text-decoration-none">
+              <span [class.rotate-90]="node.expanded">▶</span>
+            </button>
+            {% else %}
+            <span class="w-4"></span>
+            {% endif %}
+            {% if showCheckboxes %}
+            <input
+              type="checkbox"
+              class="form-check-input"
+              [checked]="node.checked"
+              (change)="onToggle(node)"
+              (click)="$event.stopPropagation()"
+            />
+            {% endif %}
+            <span class="node-icon">{% raw %}{{ node.icon || (node.children && node.children.length > 0 ? '📁' : '📄') }}{% endraw %}</span>
+            <span class="node-label text-sm flex-grow-1">{{ node.name }}</span>
+            {% if node.badge %}
+            <span class="badge bg-primary-subtle text-primary-emphasis">{{ node.badge }}</span>
+            {% endif %}
+          </div>
+          {% if node.children && node.expanded %}
+          <div class="tree-children">
+            {% for child in node.children %}
+            <!-- recursive child rendering -->
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "antd" %}
+    <div class="tree-view-container" style="border:1px solid #f0f0f0;border-radius:4px;background:#fff;overflow:hidden" [style.height.px]="height">
+      {% if showHeader %}
+      <div class="tree-header" style="border-bottom:1px solid #f0f0f0;padding:8px 12px">
+        {% if showSearch %}
+        <input
+          type="text"
+          placeholder="Search..."
+          class="tree-search"
+          style="width:100%;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:14px"
+          (input)="onSearch.emit($event)"
+        />
+        {% endif %}
+        <div class="tree-actions" style="display:flex;gap:8px;margin-top:8px">
+          <button (click)="onExpandAll.emit()" style="padding:2px 12px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;font-size:12px;cursor:pointer">{{ isAllExpanded ? 'Collapse All' : 'Expand All' }}</button>
+          {% if showCheckboxes %}
+          <button (click)="onCheckAll.emit()" style="padding:2px 12px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;font-size:12px;cursor:pointer">{{ isAllChecked ? 'Uncheck All' : 'Check All' }}</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="tree-scroll-area" style="overflow:auto;padding:8px">
+        {% for node in data %}
+        <div class="tree-item" [style.paddingLeft.px]="(node.level || 0) * 24">
+          <div style="display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:14px;color:rgba(0,0,0,0.85)" (click)="onSelect(node)" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='transparent'">
+            {% if node.children && node.children.length > 0 %}
+            <span (click)="toggleNode(node)" style="cursor:pointer;width:16px;text-align:center">{{ node.expanded ? '▼' : '▶' }}</span>
+            {% else %}
+            <span style="width:16px"></span>
+            {% endif %}
+            {% if showCheckboxes %}
+            <input type="checkbox" [checked]="node.checked" (change)="onToggle(node)" (click)="$event.stopPropagation()" style="margin:0" />
+            {% endif %}
+            <span class="node-icon">{% raw %}{{ node.icon || (node.children && node.children.length > 0 ? '📁' : '📄') }}{% endraw %}</span>
+            <span class="node-label flex-1">{{ node.name }}</span>
+            {% if node.badge %}
+            <span style="background:#1890ff;color:#fff;border-radius:10px;padding:0 6px;font-size:12px">{{ node.badge }}</span>
+            {% endif %}
+          </div>
+          {% if node.children && node.expanded %}
+          <div class="tree-children">
+            {% for child in node.children %}
+            <!-- recursive -->
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div class="tree-view-container" style="border:1px solid #e0e0e0;border-radius:4px;background:#ffffff;overflow:hidden" [style.height.px]="height">
+      {% if showHeader %}
+      <div class="tree-header" style="border-bottom:1px solid #e0e0e0;padding:8px 12px">
+        {% if showSearch %}
+        <input
+          type="text"
+          placeholder="Search..."
+          class="tree-search"
+          style="width:100%;padding:6px 8px;border:1px solid #8d8d8d;border-radius:4px;font-size:13px;background:transparent"
+          (input)="onSearch.emit($event)"
+        />
+        {% endif %}
+        <div class="tree-actions" style="display:flex;gap:8px;margin-top:8px">
+          <button (click)="onExpandAll.emit()" style="padding:4px 12px;border:1px solid #8d8d8d;border-radius:4px;background:transparent;font-size:12px;color:#525252;cursor:pointer">{{ isAllExpanded ? 'Collapse All' : 'Expand All' }}</button>
+          {% if showCheckboxes %}
+          <button (click)="onCheckAll.emit()" style="padding:4px 12px;border:1px solid #8d8d8d;border-radius:4px;background:transparent;font-size:12px;color:#525252;cursor:pointer">{{ isAllChecked ? 'Uncheck All' : 'Check All' }}</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="tree-scroll-area" style="overflow:auto;padding:8px">
+        {% for node in data %}
+        <div class="tree-item" [style.paddingLeft.px]="(node.level || 0) * 20">
+          <div style="display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:13px;color:#525252" (click)="onSelect(node)" onmouseover="this.style.background='#e8e8e8'" onmouseout="this.style.background='transparent'">
+            {% if node.children && node.children.length > 0 %}
+            <span (click)="toggleNode(node)" style="cursor:pointer;width:16px;text-align:center">{{ node.expanded ? '▼' : '▶' }}</span>
+            {% else %}
+            <span style="width:16px"></span>
+            {% endif %}
+            {% if showCheckboxes %}
+            <input type="checkbox" [checked]="node.checked" (change)="onToggle(node)" (click)="$event.stopPropagation()" style="margin:0" />
+            {% endif %}
+            <span class="node-icon">{% raw %}{{ node.icon || (node.children && node.children.length > 0 ? '📁' : '📄') }}{% endraw %}</span>
+            <span class="node-label flex-1">{{ node.name }}</span>
+            {% if node.badge %}
+            <span style="background:#0f62fe;color:#fff;border-radius:12px;padding:1px 8px;font-size:11px">{{ node.badge }}</span>
+            {% endif %}
+          </div>
+          {% if node.children && node.expanded %}
+          <div class="tree-children">
+            {% for child in node.children %}
+            <!-- recursive -->
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% endif %}
+  `,
+  styles: `
+{% if ui_framework == "material" %}
+    :host {
+      display: block;
+    }
+    .tree-view-container {
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+    }
+    .tree-header {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+    }
+    .tree-search {
+      width: 100%;
+      padding: 6px 12px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 4px;
+      outline: none;
+    }
+    .tree-actions {
+      display: flex;
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .tree-scroll-area {
+      flex: 1;
+      overflow: auto;
+    }
+    .tree-node {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .tree-node:hover {
+      background: rgba(0, 0, 0, 0.04);
+    }
+    .expand-icon {
+      width: 16px;
+      height: 16px;
+      font-size: 16px;
+    }
+    .node-icon {
+      width: 20px;
+      height: 20px;
+      font-size: 18px;
+    }
+    .node-label {
+      flex: 1;
+      font-size: 14px;
+    }
+    .node-badge {
+      background: #1976d2;
+      color: white;
+      border-radius: 10px;
+      padding: 1px 6px;
+      font-size: 11px;
+    }
+    .tree-inner {
+      display: block;
+    }
+{% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+    }
+{% endif %}
+  `
+})
+export class TreeViewComponent {
+  @Input() data: Array<{
+    key: string;
+    name: string;
+    icon?: string;
+    badge?: string;
+    checked?: boolean;
+    expanded?: boolean;
+    level?: number;
+    children?: any[];
+  }> = [];
+  @Input() height: number = 400;
+  @Input() showCheckboxes: boolean = true;
+  @Input() showSearch: boolean = true;
+  @Input() showHeader: boolean = true;
+  @Input() isAllExpanded: boolean = false;
+  @Input() isAllChecked: boolean = false;
+  @Output() select = new EventEmitter<any>();
+  @Output() toggle = new EventEmitter<any>();
+  @Output() search = new EventEmitter<any>();
+  @Output() expandAll = new EventEmitter<void>();
+  @Output() checkAll = new EventEmitter<void>();
+
+  hasChild = (_: number, node: any) => !!node.children && node.children.length > 0;
+
+  toggleNode(node: any): void {
+    node.expanded = !node.expanded;
+  }
+
+  onSelect(node: any): void {
+    this.select.emit(node);
+  }
+
+  onToggle(node: any): void {
+    node.checked = !node.checked;
+    this.toggle.emit(node);
+  }
+}

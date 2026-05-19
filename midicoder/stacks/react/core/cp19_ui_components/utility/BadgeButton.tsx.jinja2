@@ -1,0 +1,196 @@
+/** BadgeButton Component - Button with a badge/count indicator overlay. */
+
+import React from "react";
+
+export type BadgeButtonVariant = 'primary' | 'secondary' | 'outline' | 'danger';
+
+export interface BadgeButtonProps {
+  label: string;
+  variant?: BadgeButtonVariant;
+  badgeContent?: string | number;
+  showBadge?: boolean;
+  isDisabled?: boolean;
+  isDot?: boolean;
+  badgeColor?: string;
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  className?: string;
+}
+
+export const BadgeButton: React.FC<BadgeButtonProps> = ({
+  label,
+  variant = 'primary',
+  badgeContent = 0,
+  showBadge = true,
+  isDisabled = false,
+  isDot = false,
+  badgeColor = '#ef4444',
+  onClick,
+  className = '',
+}) => {
+  {% if ui_framework == "material" %}
+  import { Button, Badge, IconButton } from '@mui/material';
+
+  const colorMap: Record<BadgeButtonVariant, 'inherit' | 'primary' | 'secondary' | 'error'> = {
+    primary: 'primary',
+    secondary: 'secondary',
+    outline: 'primary',
+    danger: 'error',
+  };
+
+  return (
+    <Badge
+      badgeContent={showBadge ? badgeContent : undefined}
+      color={badgeColor === '#22c55e' ? 'success' : badgeColor === '#f59e0b' ? 'warning' : 'error'}
+      overlap="circular"
+    >
+      <Button
+        variant={variant === 'outline' ? 'outlined' : 'contained'}
+        color={colorMap[variant]}
+        disabled={isDisabled}
+        onClick={onClick}
+        className={className}
+      >
+        {label}
+      </Button>
+    </Badge>
+  );
+  {% elif ui_framework == "tailwind" %}
+  const variantClasses: Record<BadgeButtonVariant, string> = {
+    primary: 'bg-blue-600 text-white hover:bg-blue-700',
+    secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300',
+    outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50',
+    danger: 'bg-red-600 text-white hover:bg-red-700',
+  };
+
+  return (
+    <button
+      className={`relative inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${variantClasses[variant]} ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
+      disabled={isDisabled}
+      onClick={onClick}
+      type="button"
+    >
+      <span>{label}</span>
+      {showBadge && !isDot && (
+        <span
+          className="absolute -top-2 -right-2 min-w-[1.25rem] h-5 flex items-center justify-center text-xs font-bold rounded-full px-1.5"
+          style={% raw %}{{ backgroundColor: badgeColor, color: badgeColor === '#f59e0b' ? '#000' : '#fff' }}{% endraw %}
+        >
+          {badgeContent}
+        </span>
+      )}
+      {showBadge && isDot && (
+        <span
+          className="absolute -top-1 -right-1 w-3 h-3 rounded-full"
+          style={% raw %}{{ backgroundColor: badgeColor }}{% endraw %}
+        />
+      )}
+    </button>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const variantClasses: Record<BadgeButtonVariant, string> = {
+    primary: 'btn-primary',
+    secondary: 'btn-secondary',
+    outline: 'btn-outline-primary',
+    danger: 'btn-danger',
+  };
+
+  const badgeColorMap: Record<string, string> = {
+    '#ef4444': 'bg-danger',
+    '#3b82f6': 'bg-primary',
+    '#22c55e': 'bg-success',
+    '#f59e0b': 'bg-warning text-dark',
+  };
+
+  return (
+    <button
+      className={`btn ${variantClasses[variant]} position-relative ${className}`}
+      disabled={isDisabled}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+      {showBadge && (
+        <span
+          className={`badge ${badgeColorMap[badgeColor] || 'bg-danger'} position-absolute top-0 end-0 translate-middle`}
+          style={% raw %}{{ marginTop: '-0.5rem', marginRight: '-0.5rem' }}{% endraw %}
+        >
+          {isDot ? '' : badgeContent}
+        </span>
+      )}
+    </button>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Button as AntButton, Badge as AntBadge } from 'antd';
+
+  const variantMap: Record<BadgeButtonVariant, 'primary' | 'default' | 'dashed' | 'link'> = {
+    primary: 'primary',
+    secondary: 'default',
+    outline: 'dashed',
+    danger: 'primary',
+  };
+
+  return (
+    <AntBadge
+      count={isDot ? undefined : badgeContent}
+      dot={isDot && showBadge}
+      offset={[-8, -8]}
+      color={badgeColor}
+      hidden={!showBadge}
+    >
+      <AntButton
+        type={variantMap[variant]}
+        disabled={isDisabled}
+        onClick={onClick}
+        danger={variant === 'danger'}
+        className={className}
+      >
+        {label}
+      </AntButton>
+    </AntBadge>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { Button, Tag } from '@carbon/react';
+
+  const variantMap: Record<BadgeButtonVariant, 'primary' | 'secondary' | 'ghost' | 'danger'> = {
+    primary: 'primary',
+    secondary: 'secondary',
+    outline: 'ghost',
+    danger: 'danger',
+  };
+
+  return (
+    <div className="position-relative d-inline-block" style={% raw %}{{ display: 'inline-block', position: 'relative' }}{% endraw %}>
+      <Button
+        kind={variantMap[variant]}
+        disabled={isDisabled}
+        onClick={onClick}
+        className={className}
+      >
+        {label}
+      </Button>
+      {showBadge && (
+        <Tag
+          type="red"
+          style={% raw %}{{
+            position: 'absolute',
+            top: '-0.5rem',
+            right: '-0.5rem',
+            minWidth: '1.25rem',
+            height: '1.25rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '0.625rem',
+            fontSize: '0.75rem',
+            padding: '0 0.25rem',
+          }}{% endraw %}
+        >
+          {isDot ? '' : badgeContent}
+        </Tag>
+      )}
+    </div>
+  );
+  {% endif %}
+};
+
+export default BadgeButton;

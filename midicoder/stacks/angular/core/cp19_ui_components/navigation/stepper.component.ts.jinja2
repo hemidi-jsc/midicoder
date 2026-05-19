@@ -1,0 +1,359 @@
+/* eslint-disable */
+import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+{% if ui_framework == "material" %}
+import { MatStepperModule } from '@angular/material/stepper';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+{% elif ui_framework == "bootstrap" %}
+{% elif ui_framework == "tailwind" %}
+{% elif ui_framework == "antd" %}
+{% elif ui_framework == "carbon" %}
+{% endif %}
+
+@Component({
+  selector: 'app-stepper',
+  standalone: true,
+  imports: [
+    CommonModule,
+{% if ui_framework == "material" %}
+    MatStepperModule,
+    MatButtonModule,
+    MatIconModule,
+{% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+    <mat-stepper
+      #stepper
+      [linear]="linear"
+      [orientation]="orientation"
+      [selectedIndex]="activeStep"
+      (selectionChange)="onStepChange(stepper.selected)"
+    >
+      {% for step in steps %}
+      <mat-step
+        [label]="step.label"
+        [completed]="step.completed"
+        [editable]="!step.disabled"
+        [optional]="step.optional"
+      >
+        <ng-template matStepLabel>
+          <div class="step-label">
+            {% if step.icon %}
+            <mat-icon>{{ step.icon }}</mat-icon>
+            {% endif %}
+            <span>{{ step.label }}</span>
+            {% if step.optional %}
+            <span class="optional-label">(Optional)</span>
+            {% endif %}
+          </div>
+        </ng-template>
+        <div class="step-content">
+          {% raw %}{{ step.content || '' }}{% endraw %}
+          <ng-content [select]="'[step-content-' + step.key + ']'"></ng-content>
+        </div>
+        <div class="step-actions">
+          {% if step.key !== steps[0].key %}
+          <button mat-button matStepperPrevious>Previous</button>
+          {% endif %}
+          {% if step.key !== steps[steps.length - 1].key %}
+          <button mat-button matStepperNext color="primary">Next</button>
+          {% else %}
+          <button mat-button (click)="onReset.emit()" color="warn">Reset</button>
+          <button mat-raised-button color="primary" (click)="onComplete.emit()">Done</button>
+          {% endif %}
+        </div>
+      </mat-step>
+      {% endfor %}
+    </mat-stepper>
+{% elif ui_framework == "tailwind" %}
+    <div class="stepper-container">
+      <nav aria-label="Progress">
+        <ol class="flex items-center">
+          {% for step in steps %}
+          <li class="{% raw %}{{ step.key === activeStep ? 'active' : '' }}{% endraw %} {{ step.completed ? 'complete' : '' }} {{ !loop.last ? 'flex-1' : '' }} mb-8">
+            <div class="group flex w-full flex-col border-l-4 {{ isActive(step) ? 'border-indigo-600' : (step.completed ? 'border-green-500' : 'border-gray-300') }} py-2 pl-4 relative">
+              <span class="absolute -top-3 left-0 flex h-6 w-6 items-center justify-center rounded-full {{ isActive(step) ? 'bg-indigo-600' : (step.completed ? 'bg-green-500' : 'bg-white border-2 border-gray-300') }}">
+                {% if step.completed %}
+                <svg class="h-3.5 w-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
+                {% else %}
+                <span class="text-xs font-medium {{ isActive(step) ? 'text-white' : 'text-gray-500' }}">{{ loop.index }}</span>
+                {% endif %}
+              </span>
+              <span class="text-sm font-medium {{ isActive(step) ? 'text-indigo-600' : (step.completed ? 'text-green-600' : 'text-gray-500') }}">
+                {{ step.label }}
+                {% if step.optional %}
+                <span class="text-xs font-normal text-gray-400 ml-1">(Optional)</span>
+                {% endif %}
+              </span>
+            </div>
+          </li>
+          {% endfor %}
+        </ol>
+      </nav>
+      <div class="mt-8 step-content">
+        {% for step in steps %}
+        <div *ngIf="activeStep === step.key" class="p-6 bg-white rounded-lg border border-gray-200">
+          {% raw %}{{ step.content || '' }}{% endraw %}
+          <ng-content [select]="'[step-content-' + step.key + ']'"></ng-content>
+          <div class="mt-6 flex justify-between">
+            {% for s in steps %}
+            {% if s.key === step.key %}
+            {% if s.key !== steps[0].key %}
+            <button (click)="previousStep()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Previous</button>
+            {% else %}
+            <span></span>
+            {% endif %}
+            {% if s.key !== steps[steps.length - 1].key %}
+            <button (click)="nextStep()" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">Next</button>
+            {% else %}
+            <div class="flex gap-2">
+              <button (click)="onReset.emit()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">Reset</button>
+              <button (click)="onComplete.emit()" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700">Complete</button>
+            </div>
+            {% endif %}
+            {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div class="stepper-container">
+      <div class="d-flex justify-content-center mb-4">
+        <div class="progress-stepper">
+          <div class="d-flex align-items-center">
+            {% for step in steps %}
+            <div class="text-center position-relative">
+              <div class="step-circle {{ isActive(step) ? 'active' : '' }} {{ step.completed ? 'completed' : '' }}">
+                {% if step.completed %}✓{% else %}{{ loop.index }}{% endif %}
+              </div>
+              <div class="step-label {{ isActive(step) ? 'text-primary' : '' }} mt-2 small">{{ step.label }}</div>
+            </div>
+            {% if not loop.last %}
+            <div class="step-connector {{ step.completed ? 'completed' : '' }}"></div>
+            {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="step-content p-4 border rounded">
+        {% for step in steps %}
+        <div *ngIf="activeStep === step.key">
+          <h5>{{ step.label }}</h5>
+          <p>{% raw %}{{ step.content || '' }}{% endraw %}</p>
+          <ng-content [select]="'[step-content-' + step.key + ']'"></ng-content>
+          <div class="d-flex justify-content-between mt-3">
+            {% if step.key !== steps[0].key %}
+            <button class="btn btn-outline-secondary btn-sm" (click)="previousStep()">Previous</button>
+            {% else %}
+            <span></span>
+            {% endif %}
+            {% if step.key !== steps[steps.length - 1].key %}
+            <button class="btn btn-primary btn-sm" (click)="nextStep()">Next</button>
+            {% else %}
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-danger btn-sm" (click)="onReset.emit()">Reset</button>
+              <button class="btn btn-success btn-sm" (click)="onComplete.emit()">Complete</button>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "antd" %}
+    <div style="max-width:600px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;margin-bottom:24px;position:relative">
+        <div style="position:absolute;top:12px;left:0;right:0;height:2px;background:#f0f0f0"></div>
+        {% for step in steps %}
+        <div style="position:relative;text-align:center;flex:1">
+          <div style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:{{ isActive(step) ? '#1890ff' : (step.completed ? '#52c41a' : '#fff') }};border:2px solid {{ isActive(step) ? '#1890ff' : (step.completed ? '#52c41a' : '#d9d9d9') }};color:{{ isActive(step) ? '#fff' : (step.completed ? '#fff' : 'rgba(0,0,0,0.25)') }}">
+            {% if step.completed %}✓{% else %}{{ loop.index }}{% endif %}
+          </div>
+          <div style="font-size:12px;color:{{ isActive(step) ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.45)' }};margin-top:4px">{{ step.label }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div style="border:1px solid #f0f0f0;border-radius:4px;padding:24px;background:#fff">
+        {% for step in steps %}
+        <div *ngIf="activeStep === step.key">
+          <h4 style="margin:0 0 16px;font-size:16px">{{ step.label }}</h4>
+          <p>{% raw %}{{ step.content || '' }}{% endraw %}</p>
+          <ng-content [select]="'[step-content-' + step.key + ']'"></ng-content>
+          <div style="display:flex;justify-content:space-between;margin-top:24px">
+            {% if step.key !== steps[0].key %}
+            <button (click)="previousStep()" style="padding:6px 16px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer">Previous</button>
+            {% else %}
+            <span></span>
+            {% endif %}
+            {% if step.key !== steps[steps.length - 1].key %}
+            <button (click)="nextStep()" style="padding:6px 16px;border:none;border-radius:4px;background:#1890ff;color:#fff;cursor:pointer">Next</button>
+            {% else %}
+            <div style="display:flex;gap:8px">
+              <button (click)="onReset.emit()" style="padding:6px 16px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer">Reset</button>
+              <button (click)="onComplete.emit()" style="padding:6px 16px;border:none;border-radius:4px;background:#52c41a;color:#fff;cursor:pointer">Complete</button>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div style="max-width:600px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;margin-bottom:32px;position:relative">
+        <div style="position:absolute;top:10px;left:0;right:0;height:2px;background:#e0e0e0"></div>
+        {% for step in steps %}
+        <div style="position:relative;text-align:center;flex:1">
+          <div style="width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:{{ isActive(step) ? '#0f62fe' : (step.completed ? '#198038' : '#e0e0e0') }};color:{{ isActive(step) ? '#fff' : (step.completed ? '#fff' : '#525252') }}">
+            {% if step.completed %}✓{% else %}{{ loop.index }}{% endif %}
+          </div>
+          <div style="font-size:12px;color:{{ isActive(step) ? '#161616' : '#525252' }};margin-top:4px;font-weight:{{ isActive(step) ? '600' : '400' }}">{{ step.label }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div style="border:1px solid #e0e0e0;border-radius:4px;padding:16px;background:#fafafa">
+        {% for step in steps %}
+        <div *ngIf="activeStep === step.key">
+          <h4 style="margin:0 0 12px;font-size:15px;color:#161616">{{ step.label }}</h4>
+          <p style="color:#525252;font-size:13px">{% raw %}{{ step.content || '' }}{% endraw %}</p>
+          <ng-content [select]="'[step-content-' + step.key + ']'"></ng-content>
+          <div style="display:flex;justify-content:space-between;margin-top:20px">
+            {% if step.key !== steps[0].key %}
+            <button (click)="previousStep()" style="padding:8px 16px;border:1px solid #8d8d8d;border-radius:4px;background:transparent;cursor:pointer;color:#525252;font-size:13px">Previous</button>
+            {% else %}
+            <span></span>
+            {% endif %}
+            {% if step.key !== steps[steps.length - 1].key %}
+            <button (click)="nextStep()" style="padding:8px 16px;border:none;border-radius:4px;background:#0f62fe;color:#fff;cursor:pointer;font-size:13px">Next</button>
+            {% else %}
+            <div style="display:flex;gap:8px">
+              <button (click)="onReset.emit()" style="padding:8px 16px;border:1px solid #da1e28;border-radius:4px;background:transparent;cursor:pointer;color:#da1e28;font-size:13px">Reset</button>
+              <button (click)="onComplete.emit()" style="padding:8px 16px;border:none;border-radius:4px;background:#198038;color:#fff;cursor:pointer;font-size:13px">Complete</button>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% endif %}
+  `,
+  styles: `
+{% if ui_framework == "material" %}
+    :host {
+      display: block;
+      padding: 16px;
+    }
+    .step-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .optional-label {
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.54);
+    }
+    .step-content {
+      padding: 16px 0;
+    }
+    .step-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+    }
+{% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+      padding: 16px;
+    }
+{% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+      padding: 16px;
+    }
+    .step-circle {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      background: #e9ecef;
+      border: 2px solid #dee2e6;
+    }
+    .step-circle.active {
+      background: #0d6efd;
+      border-color: #0d6efd;
+      color: white;
+    }
+    .step-circle.completed {
+      background: #198754;
+      border-color: #198754;
+      color: white;
+    }
+    .step-connector {
+      flex: 1;
+      height: 2px;
+      background: #dee2e6;
+      margin: 0 0.5rem;
+    }
+    .step-connector.completed {
+      background: #198754;
+    }
+{% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+      padding: 16px;
+    }
+{% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+      padding: 16px;
+    }
+{% endif %}
+  `
+})
+export class StepperComponent {
+  @Input() steps: Array<{ key: string; label: string; content?: string; completed?: boolean; disabled?: boolean; optional?: boolean; icon?: string }> = [];
+  @Input() activeStep: string = '';
+  @Input() linear: boolean = true;
+  @Input() orientation: 'horizontal' | 'vertical' = 'horizontal';
+  @Output() stepChange = new EventEmitter<{ key: string; index: number }>();
+  @Output() reset = new EventEmitter<void>();
+  @Output() complete = new EventEmitter<void>();
+
+  isActive(step: { key: string }): boolean {
+    return this.activeStep === step.key;
+  }
+
+  onStepChange(index: number): void {
+    if (index >= 0 && index < this.steps.length) {
+      this.activeStep = this.steps[index].key;
+      this.stepChange.emit({ key: this.activeStep, index });
+    }
+  }
+
+  nextStep(): void {
+    const index = this.steps.findIndex(s => s.key === this.activeStep);
+    if (index < this.steps.length - 1) {
+      this.activeStep = this.steps[index + 1].key;
+      this.stepChange.emit({ key: this.activeStep, index: index + 1 });
+    }
+  }
+
+  previousStep(): void {
+    const index = this.steps.findIndex(s => s.key === this.activeStep);
+    if (index > 0) {
+      this.activeStep = this.steps[index - 1].key;
+      this.stepChange.emit({ key: this.activeStep, index: index - 1 });
+    }
+  }
+}

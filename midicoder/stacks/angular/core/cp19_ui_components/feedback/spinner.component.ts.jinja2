@@ -1,0 +1,128 @@
+/** Spinner Component - Simple loading spinner with configurable size and color. */
+
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+{% endif %}
+
+@Component({
+  selector: 'app-spinner',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatProgressSpinnerModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-progress-spinner
+  [diameter]="size"
+  mode="indeterminate"
+  color="{% raw %}{{ color }}{% endraw %}"
+  [strokeWidth]="strokeWidth"
+></mat-progress-spinner>
+{% elif ui_framework == "tailwind" %}
+<div
+  [ngClass]="{
+    'animate-spin': true,
+    'h-4 w-4': size <= 16,
+    'h-5 w-5': size > 16 && size <= 20,
+    'h-6 w-6': size > 20 && size <= 24,
+    'h-8 w-8': size > 24 && size <= 32,
+    'h-10 w-10': size > 32,
+  }"
+  [ngStyle]="{
+    width: (size > 32 || size <= 16) ? size + 'px' : null,
+    height: (size > 32 || size <= 16) ? size + 'px' : null,
+  }"
+  class="border-2 border-gray-200 border-t-{% raw %}{{ tailwindColor }}{% endraw %}-500 rounded-full"
+  role="status"
+  aria-label="Đang tải"
+>
+  <span class="sr-only">Đang tải...</span>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div
+  class="spinner-border"
+  [ngClass]="'text-' + bootstrapColor"
+  [ngStyle]="{
+    width: (size / 1rem) + 'rem',
+    height: (size / 1rem) + 'rem',
+    'border-width': (strokeWidth / 100) + 'em',
+  }"
+  role="status"
+>
+  <span class="visually-hidden">Đang tải...</span>
+</div>
+{% elif ui_framework == "antd" %}
+<div
+  class="ant-spin ant-spin-dot"
+  [ngStyle]="{
+    width: size + 'px',
+    height: size + 'px',
+    color: antdColor,
+  }"
+  role="status"
+>
+  <i class="ant-spin-dot-item"></i>
+  <i class="ant-spin-dot-item"></i>
+  <i class="ant-spin-dot-item"></i>
+  <i class="ant-spin-dot-item"></i>
+</div>
+{% elif ui_framework == "carbon" %}
+<div
+  class="cds--content-loader cds--content-loader--circle"
+  [ngStyle]="{
+    width: size + 'px',
+    height: size + 'px',
+  }"
+  role="status"
+  aria-label="Đang tải"
+>
+  <span class="sr-only">Đang tải...</span>
+</div>
+{% endif %}
+  `,
+})
+export class SpinnerComponent implements OnInit {
+  @Input() size: number = 24;
+  @Input() color: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' = 'primary';
+  @Input() strokeWidth: number = 3.2;
+
+  ngOnInit() {}
+
+  get tailwindColor(): string {
+    const map: Record<string, string> = {
+      primary: 'blue',
+      secondary: 'gray',
+      success: 'green',
+      danger: 'red',
+      warning: 'yellow',
+    };
+    return map[this.color] || 'blue';
+  }
+
+  get bootstrapColor(): string {
+    const map: Record<string, string> = {
+      primary: 'primary',
+      secondary: 'secondary',
+      success: 'success',
+      danger: 'danger',
+      warning: 'warning',
+    };
+    return map[this.color] || 'primary';
+  }
+
+  get antdColor(): string {
+    const map: Record<string, string> = {
+      primary: '#1890ff',
+      secondary: '#8c8c8c',
+      success: '#52c41a',
+      danger: '#ff4d4f',
+      warning: '#faad14',
+    };
+    return map[this.color] || '#1890ff';
+  }
+}

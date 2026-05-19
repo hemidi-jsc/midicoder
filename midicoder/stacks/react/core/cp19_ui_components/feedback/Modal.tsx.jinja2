@@ -1,0 +1,173 @@
+/** Modal Component - Full-screen or centered overlay for focused interactions. */
+
+import React, { ReactNode } from "react";
+
+export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
+
+export interface ModalProps {
+  title?: string;
+  isOpen: boolean;
+  onClose: () => void;
+  size?: ModalSize;
+  showHeader?: boolean;
+  showFooter?: boolean;
+  closeOnBackdrop?: boolean;
+  children: ReactNode;
+  footerChildren?: ReactNode;
+  className?: string;
+}
+
+export const Modal: React.FC<ModalProps> = ({
+  title,
+  isOpen,
+  onClose,
+  size = 'md',
+  showHeader = true,
+  showFooter = true,
+  closeOnBackdrop = true,
+  children,
+  footerChildren,
+  className = '',
+}) => {
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && closeOnBackdrop) {
+      onClose();
+    }
+  };
+
+  {% if ui_framework == "material" %}
+  import { Dialog as MuiDialog, DialogTitle, DialogContent, DialogActions, IconButton } from '@mui/material';
+  import CloseIcon from '@mui/icons-material/Close';
+
+  const sizeMap: Record<ModalSize, 'xs' | 'sm' | 'md' | 'lg' | 'false'> = {
+    sm: 'xs',
+    md: 'sm',
+    lg: 'md',
+    xl: 'lg',
+    full: false,
+  };
+
+  return (
+    <MuiDialog
+      open={isOpen}
+      onClose={closeOnBackdrop ? onClose : undefined}
+      maxWidth={sizeMap[size]}
+      fullWidth
+      fullScreen={size === 'full'}
+    >
+      {showHeader && (
+        <DialogTitle sx={% raw %}{{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}{% endraw %}>
+          {title}
+          <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+        </DialogTitle>
+      )}
+      <DialogContent dividers>{children}</DialogContent>
+      {showFooter && <DialogActions sx={% raw %}{{ padding: 2 }}{% endraw %}>{footerChildren}</DialogActions>}
+    </MuiDialog>
+  );
+  {% elif ui_framework == "tailwind" %}
+  if (!isOpen) return null;
+
+  const sizeMap: Record<ModalSize, string> = {
+    sm: 'max-w-sm',
+    md: 'max-w-md',
+    lg: 'max-w-lg',
+    xl: 'max-w-4xl',
+    full: 'max-w-none w-full h-full',
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/50" onClick={handleBackdropClick} />
+      <div className={`${sizeMap[size]} bg-white rounded-xl shadow-2xl z-10 w-full mx-4 flex flex-col max-h-[90vh] ${className}`}>
+        {showHeader && (
+          <div className="flex items-center justify-between px-6 py-4 border-b">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+          </div>
+        )}
+        <div className="px-6 py-4 overflow-y-auto flex-1">{children}</div>
+        {showFooter && (
+          <div className="px-6 py-4 border-t bg-gray-50 rounded-b-xl">{footerChildren}</div>
+        )}
+      </div>
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  import { Modal as BsModal } from 'react-bootstrap';
+
+  return (
+    <BsModal
+      show={isOpen}
+      onHide={closeOnBackdrop ? onClose : undefined}
+      size={size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : size === 'xl' ? 'xl' : undefined}
+      centered
+      fullscreen={size === 'full'}
+      backdrop={closeOnBackdrop ? 'static' : false}
+    >
+      {showHeader && (
+        <BsModal.Header closeButton onClose={onClose}>
+          <BsModal.Title>{title}</BsModal.Title>
+        </BsModal.Header>
+      )}
+      <BsModal.Body>{children}</BsModal.Body>
+      {showFooter && <BsModal.Footer>{footerChildren}</BsModal.Footer>}
+    </BsModal>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Modal as AntModal } from 'antd';
+
+  const sizeWidthMap: Record<ModalSize, number> = {
+    sm: 400,
+    md: 600,
+    lg: 800,
+    xl: 900,
+    full: '100vw' as any,
+  };
+
+  return (
+    <AntModal
+      title={showHeader ? title : undefined}
+      open={isOpen}
+      onCancel={onClose}
+      footer={showFooter ? footerChildren : null}
+      maskClosable={closeOnBackdrop}
+      width={sizeWidthMap[size]}
+      destroyOnClose
+    >
+      {children}
+    </AntModal>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { ModalWrapper, ModalHeader, ModalBody } from '@carbon/react';
+
+  const sizeWidthMap: Record<ModalSize, string> = {
+    sm: '400px',
+    md: '600px',
+    lg: '800px',
+    xl: '900px',
+    full: '100vw',
+  };
+
+  return (
+    <ModalWrapper
+      open={isOpen}
+      onRequests={% raw %}{{ dismiss: onClose, cancel: onClose }}{% endraw %}
+      selectorPrimaryFocus="[data-modal-primary-focus]"
+      modalAriaLabel={title}
+      modalRole="dialog"
+      size="lg"
+    >
+      {showHeader && (
+        <ModalHeader onDismiss={onClose} title={title} />
+      )}
+      <ModalBody>{children}</ModalBody>
+      {showFooter && (
+        <div className="cds--modal-footer">{footerChildren}</div>
+      )}
+    </ModalWrapper>
+  );
+  {% endif %}
+};
+
+export default Modal;

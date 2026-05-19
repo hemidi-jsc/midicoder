@@ -1,0 +1,217 @@
+/*
+ * Midicoder CP19 - Data Input: Select
+ * Standalone dropdown select component.
+ */
+import { Component, Input, forwardRef, OnInit } from '@angular/core';
+import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule, AbstractControl, FormControl } from '@angular/forms';
+{% if ui_framework == "material" %}
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatSelectModule } from '@angular/material/select';
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% endif %}
+import { CommonModule } from '@angular/common';
+
+export interface SelectOption {
+  value: any;
+  label: string;
+  disabled?: boolean;
+  group?: string;
+}
+
+@Component({
+  selector: 'app-select',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+{% if ui_framework == "material" %}
+    MatFormFieldModule,
+    MatSelectModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbModule,
+{% endif %}
+  ],
+  providers: [
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => SelectComponent),
+      multi: true,
+    },
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-form-field appearance="outline" class="w-full" [color]="color">
+  <mat-label>{{ label }}{% if required %} *{% endif %}</mat-label>
+  <mat-select [formControl]="control" [disabled]="disabled" [multiple]="multi" placeholder="{% raw %}{{ placeholder || 'Select...' }}{% endraw %}">
+    <ng-container *ngIf="grouped; else flatOptions">
+      <mat-optgroup *ngFor="let group of optionGroups" [label]="group.label" [disabled]="group.disabled">
+        <mat-option *ngFor="let opt of group.options" [value]="opt.value" [disabled]="opt.disabled">
+          {{ opt.label }}
+        </mat-option>
+      </mat-optgroup>
+    </ng-container>
+    <ng-template #flatOptions>
+      <mat-option *ngIf="showPlaceholder" disabled value="">
+        {% raw %}{{ placeholder || 'Select...' }}{% endraw %}
+      </mat-option>
+      <mat-option *ngFor="let opt of options" [value]="opt.value" [disabled]="opt.disabled">
+        {{ opt.label }}
+      </mat-option>
+    </ng-template>
+  </mat-select>
+  <mat-hint *ngIf="hint">{{ hint }}</mat-hint>
+  <mat-error *ngIf="control?.hasError('required')">
+    {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+  </mat-error>
+</mat-form-field>
+
+{% elif ui_framework == "tailwind" %}
+<div class="w-full">
+  {% if label %}
+  <label class="block text-sm font-medium text-gray-700 mb-1" [attr.for]="selectId">
+    {{ label }}
+    <span *ngIf="required" class="text-red-500 ml-1">*</span>
+  </label>
+  {% endif %}
+  <select [id]="selectId"
+          [formControl]="control"
+          [disabled]="disabled"
+          [multiple]="multi"
+          class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+          [class.border-red-300]="control?.invalid && (control?.dirty || control?.touched)"
+          [class.border-gray-300]="!(control?.invalid && (control?.dirty || control?.touched))">
+    <option value="" disabled>{% raw %}{{ placeholder || 'Select...' }}{% endraw %}</option>
+    <ng-container *ngIf="grouped; else flatOptions">
+      <optgroup *ngFor="let group of optionGroups" [label]="group.label">
+        <option *ngFor="let opt of group.options" [value]="opt.value" [disabled]="opt.disabled">
+          {{ opt.label }}
+        </option>
+      </optgroup>
+    </ng-container>
+    <ng-template #flatOptions>
+      <option *ngFor="let opt of options" [value]="opt.value" [disabled]="opt.disabled">
+        {{ opt.label }}
+      </option>
+    </ng-template>
+  </select>
+  {% if hint %}<p class="mt-1 text-sm text-gray-500">{{ hint }}</p>{% endif %}
+  <p *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="mt-1 text-sm text-red-600">
+    <span *ngIf="control?.hasError('required')">{% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}</span>
+  </p>
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="form-group w-100">
+  {% if label %}
+  <label [attr.for]="selectId" class="form-label">
+    {{ label }}
+    <span *ngIf="required" class="text-danger">*</span>
+  </label>
+  {% endif %}
+  <select [id]="selectId"
+          [formControl]="control"
+          [disabled]="disabled"
+          [multiple]="multi"
+          [ngClass]="{'is-invalid': control?.invalid && (control?.dirty || control?.touched)}"
+          class="form-select">
+    <option value="" disabled>{% raw %}{{ placeholder || 'Select...' }}{% endraw %}</option>
+    <optgroup *ngIf="grouped" *ngFor="let group of optionGroups" [label]="group.label">
+      <option *ngFor="let opt of group.options" [value]="opt.value" [disabled]="opt.disabled">
+        {{ opt.label }}
+      </option>
+    </optgroup>
+    <option *ngIf="!grouped" *ngFor="let opt of options" [value]="opt.value" [disabled]="opt.disabled">
+      {{ opt.label }}
+    </option>
+  </select>
+  {% if hint %}<small class="form-text text-muted">{{ hint }}</small>{% endif %}
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="invalid-feedback d-block">
+    <span *ngIf="control?.hasError('required')">{% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}</span>
+  </div>
+</div>
+
+{% elif ui_framework == "antd" %}
+<div style="width:100%; margin-bottom:16px;">
+  {% if label %}
+  <label style="display:block; font-size:14px; margin-bottom:4px; color:#262626;">
+    {{ label }}
+    <span *ngIf="required" style="color:#ff4d4f; margin-left:4px;">*</span>
+  </label>
+  {% endif %}
+  <select [formControl]="control" [disabled]="disabled" [multiple]="multi"
+          style="width:100%; padding:8px 11px; border:1px solid #d9d9d9; border-radius:6px; font-size:14px; background:#fff; outline:none; transition:border-color 0.3s;"
+          [style.borderColor]="control?.invalid && (control?.dirty || control?.touched) ? '#ff4d4f' : '#d9d9d9'">
+    <option value="" disabled>{% raw %}{{ placeholder || 'Select...' }}{% endraw %}</option>
+    <option *ngFor="let opt of options" [value]="opt.value" [disabled]="opt.disabled">{{ opt.label }}</option>
+  </select>
+  {% if hint %}<div style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ hint }}</div>{% endif %}
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="color:#ff4d4f; font-size:12px; margin-top:4px;">
+    <span *ngIf="control?.hasError('required')">{% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}</span>
+  </div>
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div style="width:100%; margin-bottom:1rem;">
+  {% if label %}
+  <label [attr.for]="selectId" style="display:block; font-size:0.75rem; font-weight:400; color:#525252; margin-bottom:0.25rem;">
+    {{ label }}
+    <span *ngIf="required" style="color:#da1e28; margin-left:0.25rem;">*</span>
+  </label>
+  {% endif %}
+  <select [id]="selectId" [formControl]="control" [disabled]="disabled" [multiple]="multi"
+          style="width:100%; padding:10px 12px; border:1px solid #8d8d8d; font-size:0.875rem; background:#fff; outline:none;"
+          [style.borderColor]="control?.invalid && (control?.dirty || control?.touched) ? '#da1e28' : '#8d8d8d'">
+    <option value="" disabled>{% raw %}{{ placeholder || 'Select...' }}{% endraw %}</option>
+    <option *ngFor="let opt of options" [value]="opt.value" [disabled]="opt.disabled">{{ opt.label }}</option>
+  </select>
+  {% if hint %}<p style="font-size:0.75rem; color:#6f6f6f; margin:0.25rem 0;">{{ hint }}</p>{% endif %}
+  <p *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="font-size:0.75rem; color:#da1e28; margin:0.25rem 0;">
+    <span *ngIf="control?.hasError('required')">{% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}</span>
+  </p>
+</div>
+
+{% endif %}
+  `,
+})
+export class SelectComponent implements ControlValueAccessor, OnInit {
+  @Input() label = '';
+  @Input() placeholder = '';
+  @Input() hint = '';
+  @Input() required = false;
+  @Input() requiredMessage = '';
+  @Input() disabled = false;
+  @Input() multi = false;
+  @Input() grouped = false;
+  @Input() showPlaceholder = true;
+  @Input() color = 'primary';
+  @Input() selectId = `sel-${Math.random().toString(36).slice(2, 9)}`;
+
+  @Input() options: SelectOption[] = [];
+
+  get optionGroups(): Array<{ label: string; disabled?: boolean; options: SelectOption[] }> {
+    const groups: Map<string, SelectOption[]> = new Map();
+    for (const opt of this.options) {
+      const group = opt.group || 'Default';
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group)!.push(opt);
+    }
+    return Array.from(groups.entries()).map(([label, options]) => ({ label, options }));
+  }
+
+  protected control: AbstractControl | null = null;
+
+  ngOnInit(): void {
+    if (!this.control) {
+      this.control = new FormControl(null);
+    }
+  }
+
+  private _onChange: (value: any) => void = () => {};
+  private _onTouched: () => void = () => {};
+
+  writeValue(value: any): void { this.control?.setValue(value, { emitEvent: false }); }
+  registerOnChange(fn: any): void { this._onChange = fn; }
+  registerOnTouched(fn: any): void { this._onTouched = fn; }
+  setDisabledState(isDisabled: boolean): void { this.disabled = isDisabled; }
+}

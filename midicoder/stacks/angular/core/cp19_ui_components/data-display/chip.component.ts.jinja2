@@ -1,0 +1,212 @@
+{% if ui_framework == "material" %}import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatIconModule } from '@angular/material/icon';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, MatChipsModule, MatIconModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string = '';
+  @Input() removable: boolean = false;
+  @Input() selectable: boolean = false;
+  @Input() selected: boolean = false;
+  @Input() disabled: boolean = false;
+  @Input() avatarUrl: string = '';
+  @Input() trailingIcon: string = '';
+  @Input() color: 'primary' | 'accent' | 'warn' = 'primary';
+
+  @Output() removed = new EventEmitter<void>();
+  @Output() selectionChange = new EventEmitter<boolean>();
+
+  ngOnInit(): void {}
+
+  onRemove(): void {
+    this.removed.emit();
+  }
+
+  toggleSelected(): void {
+    if (!this.disabled) {
+      this.selectionChange.emit(!this.selected);
+    }
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string = '';
+  @Input() color: 'default' | 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info' = 'default';
+  @Input() variant: 'solid' | 'soft' | 'outline' = 'soft';
+  @Input() closable: boolean = false;
+  @Input() selectable: boolean = false;
+  @Input() selected: boolean = false;
+  @Input() disabled: boolean = false;
+  @Input() icon: string = '';
+
+  @Output() closed = new EventEmitter<void>();
+  @Output() selectionChange = new EventEmitter<boolean>();
+
+  ngOnInit(): void {}
+
+  get colorClasses(): string {
+    const solid = {
+      default: 'bg-gray-500 text-white',
+      primary: 'bg-blue-600 text-white',
+      secondary: 'bg-purple-600 text-white',
+      success: 'bg-green-600 text-white',
+      danger: 'bg-red-600 text-white',
+      warning: 'bg-yellow-600 text-white',
+      info: 'bg-cyan-600 text-white'
+    };
+    const soft = {
+      default: 'bg-gray-100 text-gray-700',
+      primary: 'bg-blue-100 text-blue-700',
+      secondary: 'bg-purple-100 text-purple-700',
+      success: 'bg-green-100 text-green-700',
+      danger: 'bg-red-100 text-red-700',
+      warning: 'bg-yellow-100 text-yellow-700',
+      info: 'bg-cyan-100 text-cyan-700'
+    };
+    const outline = {
+      default: 'border border-gray-300 text-gray-700 bg-white',
+      primary: 'border border-blue-300 text-blue-700 bg-blue-50',
+      secondary: 'border border-purple-300 text-purple-700 bg-purple-50',
+      success: 'border border-green-300 text-green-700 bg-green-50',
+      danger: 'border border-red-300 text-red-700 bg-red-50',
+      warning: 'border border-yellow-300 text-yellow-700 bg-yellow-50',
+      info: 'border border-cyan-300 text-cyan-700 bg-cyan-50'
+    };
+    return this.variant === 'solid' ? solid[this.color]
+      : this.variant === 'outline' ? outline[this.color]
+      : soft[this.color];
+  }
+
+  onClose(): void {
+    this.closed.emit();
+  }
+
+  toggleSelected(): void {
+    if (!this.disabled) {
+      this.selectionChange.emit(!this.selected);
+    }
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string = '';
+  @Input() variant: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info' | 'light' | 'dark' = 'secondary';
+  @Input() pill: boolean = true;
+  @Input() closable: boolean = false;
+
+  @Output() closed = new EventEmitter<void>();
+
+  ngOnInit(): void {}
+
+  onClose(): void {
+    this.closed.emit();
+  }
+}
+{% elif ui_framework == "antd" %}import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string = '';
+  @Input() color: string = 'default';
+  @Input() type: 'default' | 'geometric' = 'default';
+  @Input() closable: boolean = false;
+  @Input() avatar: string = '';
+  @Input() disabled: boolean = false;
+
+  @Output() closed = new EventEmitter<void>();
+
+  ngOnInit(): void {}
+
+  onClose(): void {
+    this.closed.emit();
+  }
+}
+{% elif ui_framework == "carbon" %}import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string = '';
+  @Input() type: 'default' | 'filter' | 'selection' | 'tag' = 'default';
+  @Input() size: 'sm' | 'md' | 'lg' = 'sm';
+  @Input() simple: boolean = false;
+
+  @Output() closed = new EventEmitter<void>();
+
+  ngOnInit(): void {}
+
+  onClose(): void {
+    this.closed.emit();
+  }
+
+  get sizeClass(): string {
+    switch (this.size) {
+      case 'sm': return 'text-xs py-0.5 px-1';
+      case 'lg': return 'text-sm py-1 px-2';
+      default: return 'text-xs py-0.5 px-1';
+    }
+  }
+}
+{% else %}import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string = '';
+  @Input() closable: boolean = false;
+  @Input() disabled: boolean = false;
+
+  @Output() closed = new EventEmitter<void>();
+
+  ngOnInit(): void {}
+
+  onClose(): void {
+    this.closed.emit();
+  }
+}
+{% endif %}

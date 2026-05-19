@@ -1,0 +1,161 @@
+/*
+ * Midicoder CP19 - Data Input: Radio
+ * Standalone radio button group component.
+ */
+import { Component, Input, forwardRef } from '@angular/core';
+import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule, AbstractControl } from '@angular/forms';
+{% if ui_framework == "material" %}
+import { MatRadioModule } from '@angular/material/radio';
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% endif %}
+import { CommonModule } from '@angular/common';
+
+export interface RadioOption {
+  value: any;
+  label: string;
+  disabled?: boolean;
+}
+
+@Component({
+  selector: 'app-radio',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+{% if ui_framework == "material" %}
+    MatRadioModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbModule,
+{% endif %}
+  ],
+  providers: [
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => RadioComponent),
+      multi: true,
+    },
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<div class="w-full">
+  {% if label %}<div style="font-weight:500; margin-bottom:8px;">{{ label }}{% if required %} <span style="color:#d32f2f;">*</span>{% endif %}</div>{% endif %}
+  <mat-radio-group [formControl]="control" [disabled]="disabled" [color]="color">
+    <mat-radio-button *ngFor="let opt of options" [value]="opt.value" [disabled]="opt.disabled">
+      {{ opt.label }}
+    </mat-radio-button>
+  </mat-radio-group>
+  {% if hint %}<div style="margin-top:4px; font-size:12px; color:#757575;">{{ hint }}</div>{% endif %}
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="color:#d32f2f; font-size:12px; margin-top:4px;">
+    {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+  </div>
+</div>
+
+{% elif ui_framework == "tailwind" %}
+<div class="w-full">
+  {% if label %}<label class="block text-sm font-medium text-gray-700 mb-2">{{ label }}{% if required %} <span class="text-red-500">*</span>{% endif %}</label>{% endif %}
+  <div class="space-y-2" [formControl]="control">
+    <div *ngFor="let opt of options" class="flex items-center">
+      <input type="radio"
+             [value]="opt.value"
+             [disabled]="opt.disabled"
+             [id]="radioGroupId + '-' + opt.value"
+             class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed" />
+      <label [for]="radioGroupId + '-' + opt.value"
+             class="ml-3 block text-sm text-gray-700 cursor-pointer select-none"
+             [class.text-gray-400]="opt.disabled">
+        {{ opt.label }}
+      </label>
+    </div>
+  </div>
+  {% if hint %}<p class="mt-1 text-sm text-gray-500">{{ hint }}</p>{% endif %}
+  <p *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="mt-1 text-sm text-red-600">
+    {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+  </p>
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="w-100">
+  {% if label %}<label class="form-label">{{ label }}{% if required %} <span class="text-danger">*</span>{% endif %}</label>{% endif %}
+  <div class="btn-group" role="group" [formControl]="control">
+    <div *ngFor="let opt of options" class="form-check">
+      <input type="radio"
+             [value]="opt.value"
+             [disabled]="opt.disabled"
+             [id]="radioGroupId + '-' + opt.value"
+             [ngClass]="{'is-invalid': control?.invalid && (control?.dirty || control?.touched)}"
+             class="form-check-input" />
+      <label [for]="radioGroupId + '-' + opt.value" class="form-check-label" [class.text-muted]="opt.disabled">
+        {{ opt.label }}
+      </label>
+    </div>
+  </div>
+  {% if hint %}<small class="form-text text-muted">{{ hint }}</small>{% endif %}
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="invalid-feedback d-block">
+    {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+  </div>
+</div>
+
+{% elif ui_framework == "antd" %}
+<div style="width:100%; margin-bottom:16px;">
+  {% if label %}<div style="font-size:14px; margin-bottom:8px; color:#262626;">{{ label }}{% if required %} <span style="color:#ff4d4f;">*</span>{% endif %}</div>{% endif %}
+  <div [formControl]="control" style="display:flex; flex-direction:column; gap:8px;">
+    <div *ngFor="let opt of options" style="display:flex; align-items:center;">
+      <input type="radio"
+             [value]="opt.value"
+             [disabled]="opt.disabled"
+             [id]="radioGroupId + '-' + opt.value"
+             style="width:16px; height:16px; cursor:pointer;" />
+      <label [for]="radioGroupId + '-' + opt.value"
+             style="margin-left:8px; font-size:14px; color:#262626; cursor:pointer; user-select:none;"
+             [style.color]="opt.disabled ? '#d9d9d9' : '#262626'">
+        {{ opt.label }}
+      </label>
+    </div>
+  </div>
+  {% if hint %}<div style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ hint }}</div>{% endif %}
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div style="width:100%; margin-bottom:1rem;">
+  {% if label %}<div style="font-size:0.875rem; font-weight:400; color:#161616; margin-bottom:0.5rem;">{{ label }}{% if required %} <span style="color:#da1e28;">*</span>{% endif %}</div>{% endif %}
+  <div [formControl]="control" style="display:flex; flex-direction:column; gap:0.5rem;">
+    <div *ngFor="let opt of options" style="display:flex; align-items:center;">
+      <input type="radio"
+             [value]="opt.value"
+             [disabled]="opt.disabled"
+             [id]="radioGroupId + '-' + opt.value"
+             style="width:16px; height:16px; cursor:pointer;" />
+      <label [for]="radioGroupId + '-' + opt.value"
+             style="margin-left:8px; font-size:0.875rem; color:#161616; cursor:pointer; user-select:none;"
+             [style.color]="opt.disabled ? '#8d8d8d' : '#161616'">
+        {{ opt.label }}
+      </label>
+    </div>
+  </div>
+  {% if hint %}<p style="font-size:0.75rem; color:#6f6f6f; margin:0.25rem 0;">{{ hint }}</p>{% endif %}
+</div>
+
+{% endif %}
+  `,
+})
+export class RadioComponent implements ControlValueAccessor {
+  @Input() label = '';
+  @Input() hint = '';
+  @Input() required = false;
+  @Input() requiredMessage = '';
+  @Input() disabled = false;
+  @Input() color = 'primary';
+  @Input() options: RadioOption[] = [];
+  @Input() radioGroupId = `rg-${Math.random().toString(36).slice(2, 9)}`;
+
+  protected control: AbstractControl | null = null;
+
+  private _onChange: (value: any) => void = () => {};
+  private _onTouched: () => void = () => {};
+
+  writeValue(value: any): void { this.control?.setValue(value, { emitEvent: false }); }
+  registerOnChange(fn: any): void { this._onChange = fn; }
+  registerOnTouched(fn: any): void { this._onTouched = fn; }
+  setDisabledState(isDisabled: boolean): void { this.disabled = isDisabled; }
+}

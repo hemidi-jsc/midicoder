@@ -1,0 +1,129 @@
+/*
+ * Midicoder CP19 - Data Input: Slider
+ * Standalone numeric slider/range component.
+ */
+import { Component, Input, forwardRef } from '@angular/core';
+import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule, AbstractControl } from '@angular/forms';
+{% if ui_framework == "material" %}
+import { MatSliderModule } from '@angular/material/slider';
+{% endif %}
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: 'app-slider',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+{% if ui_framework == "material" %}
+    MatSliderModule,
+{% endif %}
+  ],
+  providers: [
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => SliderComponent),
+      multi: true,
+    },
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<div class="w-full">
+  {% if label %}<div style="font-weight:500; margin-bottom:8px;">{{ label }}{% if required %} <span style="color:#d32f2f;">*</span>{% endif %}</div>{% endif %}
+  <div style="display:flex; align-items:center; gap:16px;">
+    <mat-slider [min]="min" [max]="max" [step]="step" [discrete]="discrete" [color]="color" [formControl]="control" [disabled]="disabled" style="flex:1;">
+      <input matSliderThumb />
+    </mat-slider>
+    <span style="min-width:40px; text-align:right; font-size:14px; color:#757575;">{% raw %}{{ control?.value ?? min }}{% endraw %}</span>
+  </div>
+  {% if hint %}<div style="margin-top:4px; font-size:12px; color:#757575;">{{ hint }}</div>{% endif %}
+</div>
+
+{% elif ui_framework == "tailwind" %}
+<div class="w-full">
+  {% if label %}<label class="block text-sm font-medium text-gray-700 mb-2">{{ label }}{% if required %} <span class="text-red-500">*</span>{% endif %}</label>{% endif %}
+  <div class="flex items-center gap-4">
+    <input type="range"
+           [formControl]="control"
+           [min]="min"
+           [max]="max"
+           [step]="step"
+           [disabled]="disabled"
+           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer range-blue-500 disabled:cursor-not-allowed" />
+    <span class="text-sm font-medium text-gray-700" style="min-width:3rem; text-align:right;">{% raw %}{{ control?.value ?? min }}{% endraw %}</span>
+  </div>
+  {% if hint %}<p class="mt-1 text-sm text-gray-500">{{ hint }}</p>{% endif %}
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="w-100">
+  {% if label %}<label class="form-label">{{ label }}{% if required %} <span class="text-danger">*</span>{% endif %}</label>{% endif %}
+  <div class="d-flex align-items-center gap-3">
+    <input type="range"
+           [formControl]="control"
+           [min]="min"
+           [max]="max"
+           [step]="step"
+           [disabled]="disabled"
+           class="form-range flex-grow-1" />
+    <span class="text-muted" style="min-width:3rem; text-align:right;">{% raw %}{{ control?.value ?? min }}{% endraw %}</span>
+  </div>
+  {% if hint %}<small class="form-text text-muted">{{ hint }}</small>{% endif %}
+</div>
+
+{% elif ui_framework == "antd" %}
+<div style="width:100%; margin-bottom:16px;">
+  {% if label %}<div style="font-size:14px; margin-bottom:8px; color:#262626;">{{ label }}{% if required %} <span style="color:#ff4d4f;">*</span>{% endif %}</div>{% endif %}
+  <div style="display:flex; align-items:center; gap:16px;">
+    <input type="range"
+           [formControl]="control"
+           [min]="min"
+           [max]="max"
+           [step]="step"
+           [disabled]="disabled"
+           style="flex:1; height:4px; background:#f5f5f5; border-radius:2px; outline:none; cursor:pointer;" />
+    <span style="min-width:3rem; text-align:right; font-size:14px; color:#262626;">{% raw %}{{ control?.value ?? min }}{% endraw %}</span>
+  </div>
+  {% if hint %}<div style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ hint }}</div>{% endif %}
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div style="width:100%; margin-bottom:1rem;">
+  {% if label %}<div style="font-size:0.875rem; color:#161616; margin-bottom:0.5rem;">{{ label }}{% if required %} <span style="color:#da1e28;">*</span>{% endif %}</div>{% endif %}
+  <div style="display:flex; align-items:center; gap:1rem;">
+    <input type="range"
+           [formControl]="control"
+           [min]="min"
+           [max]="max"
+           [step]="step"
+           [disabled]="disabled"
+           style="flex:1; height:4px; background:#e0e0e0; border-radius:2px; outline:none; cursor:pointer;" />
+    <span style="min-width:3rem; text-align:right; font-size:0.875rem; color:#161616;">{% raw %}{{ control?.value ?? min }}{% endraw %}</span>
+  </div>
+  {% if hint %}<p style="font-size:0.75rem; color:#6f6f6f; margin:0.25rem 0;">{{ hint }}</p>{% endif %}
+</div>
+
+{% endif %}
+  `,
+})
+export class SliderComponent implements ControlValueAccessor {
+  @Input() label = '';
+  @Input() hint = '';
+  @Input() required = false;
+  @Input() disabled = false;
+  @Input() color = 'primary';
+  @Input() min = 0;
+  @Input() max = 100;
+  @Input() step = 1;
+  @Input() discrete = true;
+
+  protected control: AbstractControl | null = null;
+
+  private _onChange: (value: any) => void = () => {};
+  private _onTouched: () => void = () => {};
+
+  writeValue(value: any): void { this.control?.setValue(value, { emitEvent: false }); }
+  registerOnChange(fn: any): void { this._onChange = fn; }
+  registerOnTouched(fn: any): void { this._onTouched = fn; }
+  setDisabledState(isDisabled: boolean): void { this.disabled = isDisabled; }
+}

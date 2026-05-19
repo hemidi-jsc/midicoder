@@ -1,0 +1,183 @@
+/* eslint-disable */
+import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+{% if ui_framework == "material" %}
+import { MatToolbarModule } from '@angular/material/toolbar';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDividerModule } from '@angular/material/divider';
+{% elif ui_framework == "bootstrap" %}
+import { NgbNavModule } from '@ng-bootstrap/ng-bootstrap';
+import { NgbDropdownModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif ui_framework == "tailwind" %}
+{% elif ui_framework == "antd" %}
+{% elif ui_framework == "carbon" %}
+{% endif %}
+
+@Component({
+  selector: 'app-navbar',
+  standalone: true,
+  imports: [
+    CommonModule,
+{% if ui_framework == "material" %}
+    MatToolbarModule,
+    MatButtonModule,
+    MatIconModule,
+    MatDividerModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbNavModule,
+    NgbDropdownModule,
+{% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+    <mat-toolbar color="{{ toolbarColor }}" class="navbar-toolbar">
+      <div class="navbar-brand">
+        <a href="{{ brandHref }}">{{ brandText }}</a>
+      </div>
+      <span class="spacer"></span>
+      <nav class="navbar-nav">
+        {% for item in items %}
+        <a mat-button href="{{ item.href }}" class="nav-item">
+          {% if item.icon %}
+          <mat-icon>{{ item.icon }}</mat-icon>
+          {% endif %}
+          {{ item.label }}
+        </a>
+        {% endfor %}
+      </nav>
+      {% if showActions %}
+      <div class="navbar-actions">
+        <button mat-icon-button aria-label="Actions menu">
+          <mat-icon>more_vert</mat-icon>
+        </button>
+      </div>
+      {% endif %}
+    </mat-toolbar>
+{% elif ui_framework == "tailwind" %}
+    <nav class="bg-white border-b border-gray-200 shadow-sm">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-16">
+          <div class="flex">
+            <div class="flex-shrink-0 flex items-center">
+              <a href="{{ brandHref }}" class="text-xl font-bold text-gray-900">{{ brandText }}</a>
+            </div>
+            <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+              {% for item in items %}
+              <a href="{{ item.href }}" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-900 border-b-2 border-transparent hover:border-indigo-500 transition-colors">
+                {{ item.label }}
+              </a>
+              {% endfor %}
+            </div>
+          </div>
+          {% if showActions %}
+          <div class="flex items-center">
+            <button type="button" class="ml-4 p-2 rounded-full text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500">
+              <span class="sr-only">Open menu</span>
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </nav>
+{% elif ui_framework == "bootstrap" %}
+    <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom shadow-sm">
+      <div class="container-fluid">
+        <a class="navbar-brand fw-bold" href="{{ brandHref }}">{{ brandText }}</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarContent">
+          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+            {% for item in items %}
+            <li class="nav-item">
+              <a class="nav-link" href="{{ item.href }}">{{ item.label }}</a>
+            </li>
+            {% endfor %}
+          </ul>
+          {% if showActions %}
+          <div class="d-flex">
+            <button class="btn btn-outline-secondary btn-sm">Actions</button>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </nav>
+{% elif ui_framework == "antd" %}
+    <nav class="navbar-antd" style="display:flex;align-items:center;padding:0 24px;height:64px;background:#fff;border-bottom:1px solid #f0f0f0;box-shadow:0 1px 4px rgba(0,0,0,0.05)">
+      <a href="{{ brandHref }}" style="font-size:18px;font-weight:700;color:#1890ff;margin-right:auto">{{ brandText }}</a>
+      <div style="display:flex;gap:16px">
+        {% for item in items %}
+        <a href="{{ item.href }}" style="color:rgba(0,0,0,0.85);text-decoration:none;padding:8px 12px;border-radius:4px;transition:background 0.3s" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='transparent'">{{ item.label }}</a>
+        {% endfor %}
+      </div>
+    </nav>
+{% elif ui_framework == "carbon" %}
+    <nav class="navbar-carbon" style="display:flex;align-items:center;padding:0 16px;height:48px;background:#161616;border-bottom:1px solid #393939">
+      <a href="{{ brandHref }}" style="color:#ffffff;font-size:15px;font-weight:600;margin-right:auto">{{ brandText }}</a>
+      <div style="display:flex;gap:8px">
+        {% for item in items %}
+        <a href="{{ item.href }}" style="color:#c6c6c6;text-decoration:none;padding:4px 12px;border-radius:4px;font-size:13px;font-weight:400" onmouseover="this.style.background='#353535'" onmouseout="this.style.background='transparent'">{{ item.label }}</a>
+        {% endfor %}
+      </div>
+    </nav>
+{% endif %}
+  `,
+  styles: `
+{% if ui_framework == "material" %}
+    :host {
+      display: block;
+    }
+    .navbar-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+    .navbar-brand a {
+      text-decoration: none;
+      color: inherit;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .navbar-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .spacer {
+      flex: 1 1 auto;
+    }
+    .navbar-actions {
+      display: flex;
+      align-items: center;
+    }
+{% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+    }
+{% endif %}
+  `
+})
+export class NavbarComponent {
+  @Input() brandText: string = 'Midicoder';
+  @Input() brandHref: string = '/';
+  @Input() items: Array<{ label: string; href: string; icon?: string }> = [];
+  @Input() toolbarColor: 'primary' | 'accent' | 'warn' | '' = 'primary';
+  @Input() showActions: boolean = true;
+  @Output() navClick = new EventEmitter<{ label: string; href: string }>();
+}

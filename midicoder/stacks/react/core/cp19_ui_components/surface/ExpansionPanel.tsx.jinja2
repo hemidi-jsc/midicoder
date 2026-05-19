@@ -1,0 +1,150 @@
+/** ExpansionPanel Component - Single expandable panel with header and content. */
+
+import React, { ReactNode, useState } from "react";
+
+export interface ExpansionPanelProps {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  isExpanded?: boolean;
+  isDisabled?: boolean;
+  hideToggle?: boolean;
+  onToggle?: (expanded: boolean) => void;
+  className?: string;
+}
+
+export const ExpansionPanel: React.FC<ExpansionPanelProps> = ({
+  title,
+  description,
+  children,
+  isExpanded: controlledExpanded,
+  isDisabled = false,
+  hideToggle = false,
+  onToggle,
+  className = '',
+}) => {
+  const [localExpanded, setLocalExpanded] = useState(controlledExpanded || false);
+  const isControlled = controlledExpanded !== undefined;
+  const isExpanded = isControlled ? controlledExpanded : localExpanded;
+
+  const handleToggle = () => {
+    if (isDisabled) return;
+    const nextExpanded = !isExpanded;
+    if (!isControlled) {
+      setLocalExpanded(nextExpanded);
+    }
+    onToggle?.(nextExpanded);
+  };
+
+  {% if ui_framework == "material" %}
+  import { Accordion as MuiAccordion, AccordionSummary, AccordionDetails, Typography, ExpandMoreIcon } from '@mui/material';
+
+  return (
+    <MuiAccordion
+      expanded={isExpanded}
+      onChange={() => handleToggle()}
+      disabled={isDisabled}
+      className={className}
+    >
+      <AccordionSummary expandIcon={!hideToggle ? <ExpandMoreIcon /> : undefined}>
+        <Typography>{title}</Typography>
+        {description && (
+          <Typography sx={% raw %}{{ color: 'text.secondary', fontSize: '0.875rem' }}{% endraw %}>
+            {description}
+          </Typography>
+        )}
+      </AccordionSummary>
+      <AccordionDetails>{children}</AccordionDetails>
+    </MuiAccordion>
+  );
+  {% elif ui_framework == "tailwind" %}
+  return (
+    <div className={`border border-gray-200 rounded-lg overflow-hidden ${className}`}>
+      <button
+        onClick={handleToggle}
+        className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
+          isExpanded ? 'bg-gray-50' : ''
+        } ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        aria-expanded={isExpanded}
+      >
+        <div className="flex flex-col items-start">
+          <span className="font-medium text-gray-900">{title}</span>
+          {description && <span className="text-sm text-gray-500">{description}</span>}
+        </div>
+        {!hideToggle && (
+          <span className={`transition-transform text-gray-500 ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+        )}
+      </button>
+      {isExpanded && (
+        <div className="px-4 py-3 bg-white border-t border-gray-100">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  return (
+    <div className={`accordion-item ${className}`}>
+      <h2 className="accordion-header">
+        <button
+          className={`accordion-button ${isExpanded ? '' : 'collapsed'}`}
+          type="button"
+          onClick={handleToggle}
+          aria-expanded={isExpanded}
+          disabled={isDisabled}
+        >
+          {title}
+        </button>
+      </h2>
+      <div className={`collapse ${isExpanded ? 'show' : ''}`}>
+        <div className="accordion-body">
+          {description && <p className="text-muted mb-2">{description}</p>}
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Collapse } from 'antd';
+
+  return (
+    <Collapse
+      activeKey={isExpanded ? ['0'] : []}
+      onChange={() => handleToggle()}
+      bordered={false}
+      className={className}
+    >
+      <Collapse.Panel
+        key="0"
+        header={
+          <span>
+            {title}
+            {description && <span className="ms-2 text-gray-500">{description}</span>}
+          </span>
+        }
+        disabled={isDisabled}
+      >
+        {children}
+      </Collapse.Panel>
+    </Collapse>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { Accordion, AccordionItem } from '@carbon/react';
+
+  return (
+    <Accordion className={className}>
+      <AccordionItem
+        title={title}
+        open={isExpanded}
+        onClick={handleToggle}
+        disabled={isDisabled}
+      >
+        {description && <p className="cds--caption">{description}</p>}
+        {children}
+      </AccordionItem>
+    </Accordion>
+  );
+  {% endif %}
+};
+
+export default ExpansionPanel;

@@ -1,0 +1,276 @@
+/* eslint-disable */
+import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+{% if ui_framework == "material" %}
+import { MatSidenavModule } from '@angular/material/sidenav';
+import { MatListModule } from '@angular/material/list';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDividerModule } from '@angular/material/divider';
+import { MatButtonModule } from '@angular/material/button';
+{% elif ui_framework == "bootstrap" %}
+import { NgbNavModule } from '@ng-bootstrap/ng-bootstrap';
+import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif ui_framework == "tailwind" %}
+{% elif ui_framework == "antd" %}
+{% elif ui_framework == "carbon" %}
+{% endif %}
+
+@Component({
+  selector: 'app-sidebar',
+  standalone: true,
+  imports: [
+    CommonModule,
+{% if ui_framework == "material" %}
+    MatSidenavModule,
+    MatListModule,
+    MatIconModule,
+    MatDividerModule,
+    MatButtonModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbNavModule,
+    NgbCollapseModule,
+{% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+    <mat-sidenav-container class="sidebar-container">
+      <mat-sidenav
+        #sidenav
+        mode="{{ mode }}"
+        opened="{{ opened }}"
+        fixedTopGap="64"
+        class="sidebar-drawer"
+      >
+        <div class="sidebar-header">
+          <h2>{{ title }}</h2>
+        </div>
+        <mat-nav-list>
+          {% for item in items %}
+          <mat-list-item
+            [class.active]="item.route === activeRoute"
+            (click)="onNavigate(item)"
+          >
+            <mat-icon matListItemIcon>{% raw %}{{ item.icon || 'dashboard' }}{% endraw %}</mat-icon>
+            <span matListItemTitle>{{ item.label }}</span>
+            {% if item.badge %}
+            <span matListItemLine class="badge">{{ item.badge }}</span>
+            {% endif %}
+          </mat-list-item>
+          {% endfor %}
+        </mat-nav-list>
+        <mat-divider></mat-divider>
+        <div class="sidebar-footer">
+          <button mat-button (click)="onLogout.emit()">
+            <mat-icon>logout</mat-icon>
+            <span>Logout</span>
+          </button>
+        </div>
+      </mat-sidenav>
+      <mat-sidenav-content>
+        <ng-content></ng-content>
+      </mat-sidenav-content>
+    </mat-sidenav-container>
+{% elif ui_framework == "tailwind" %}
+    <div class="flex h-full">
+      <aside class="bg-white border-r border-gray-200 w-64 flex-shrink-0 flex flex-col" [style.display]="opened ? 'flex' : 'none'">
+        <div class="h-16 flex items-center px-6 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">{{ title }}</h2>
+        </div>
+        <nav class="flex-1 overflow-y-auto py-4">
+          {% for item in items %}
+          <button
+            (click)="onNavigate(item)"
+            class="w-full flex items-center px-6 py-3 text-sm font-medium transition-colors {% raw %}{{ item.route === activeRoute ? 'bg-indigo-50 text-indigo-700 border-r-4 border-indigo-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900' }}{% endraw %}"
+          >
+            <span class="mr-3">{% raw %}{{ item.icon || '📄' }}{% endraw %}</span>
+            <span class="flex-1 text-left">{{ item.label }}</span>
+            {% if item.badge %}
+            <span class="ml-3 px-2.5 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-800">{{ item.badge }}</span>
+            {% endif %}
+          </button>
+          {% endfor %}
+        </nav>
+        <div class="border-t border-gray-200 p-4">
+          <button (click)="onLogout.emit()" class="w-full flex items-center px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md">
+            <span class="mr-3">🚪</span>
+            Logout
+          </button>
+        </div>
+      </aside>
+      <main class="flex-1 overflow-auto">
+        <ng-content></ng-content>
+      </main>
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div class="d-flex h-100">
+      <aside class="{{ opened ? 'd-flex' : 'd-none' }} flex-column bg-white border-end shadow-sm" style="width:260px;flex-shrink:0">
+        <div class="d-flex align-items-center px-4 py-3 border-bottom">
+          <h2 class="h5 mb-0 fw-bold">{{ title }}</h2>
+        </div>
+        <nav class="flex-grow-1 overflow-auto py-3">
+          {% for item in items %}
+          <button
+            (click)="onNavigate(item)"
+            class="w-100 d-flex align-items-center px-4 py-2 text-sm text-start {% raw %}{{ item.route === activeRoute ? 'bg-primary bg-opacity-10 text-primary border-end border-primary border-3' : 'text-body link-dark' }}{% endraw %}"
+          >
+            <span class="me-2">{% raw %}{{ item.icon || '📄' }}{% endraw %}</span>
+            <span class="flex-grow-1">{{ item.label }}</span>
+            {% if item.badge %}
+            <span class="badge bg-danger rounded-pill">{{ item.badge }}</span>
+            {% endif %}
+          </button>
+          {% endfor %}
+        </nav>
+        <div class="border-top p-3">
+          <button (click)="onLogout.emit()" class="btn btn-outline-secondary btn-sm w-100">
+            <span class="me-2">🚪</span>Logout
+          </button>
+        </div>
+      </aside>
+      <main class="flex-grow-1 overflow-auto">
+        <ng-content></ng-content>
+      </main>
+    </div>
+{% elif ui_framework == "antd" %}
+    <div style="display:flex;height:100%">
+      <aside style="width:220px;background:#fff;border-right:1px solid #f0f0f0;display:flex;flex-direction:column" [style.display]="opened ? 'flex' : 'none'">
+        <div style="height:48px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid #f0f0f0">
+          <h2 style="font-size:16px;font-weight:700;margin:0">{{ title }}</h2>
+        </div>
+        <nav style="flex:1;overflow-y:auto;padding:8px 0">
+          {% for item in items %}
+          <div
+            (click)="onNavigate(item)"
+            style="display:flex;align-items:center;padding:10px 16px;cursor:pointer;font-size:14px;color:rgba(0,0,0,0.85);transition:background 0.3s"
+            [style.background]="item.route === activeRoute ? '#e6f7ff' : 'transparent'"
+            [style.borderRight]="item.route === activeRoute ? '3px solid #1890ff' : 'none'"
+            [style.color]="item.route === activeRoute ? '#1890ff' : 'rgba(0,0,0,0.85)'"
+            onmouseover="if(!this.dataset.active)this.style.background='#f5f5f5'" onmouseout="if(!this.dataset.active)this.style.background='transparent'"
+            [attr.data-active]="item.route === activeRoute ? 'true' : 'false'"
+          >
+            <span style="margin-right:8px">{% raw %}{{ item.icon || '📄' }}{% endraw %}</span>
+            <span style="flex:1">{{ item.label }}</span>
+            {% if item.badge %}
+            <span style="background:#ff4d4f;color:#fff;border-radius:10px;padding:0 6px;font-size:12px;margin-left:8px">{{ item.badge }}</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </nav>
+        <div style="border-top:1px solid #f0f0f0;padding:8px">
+          <button (click)="onLogout.emit()" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center">
+            <span style="margin-right:4px">🚪</span>Logout
+          </button>
+        </div>
+      </aside>
+      <main style="flex:1;overflow:auto">
+        <ng-content></ng-content>
+      </main>
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div style="display:flex;height:100%">
+      <aside style="width:280px;background:#f4f4f4;border-right:1px solid #e0e0e0;display:flex;flex-direction:column" [style.display]="opened ? 'flex' : 'none'">
+        <div style="height:48px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid #e0e0e0">
+          <h2 style="font-size:15px;font-weight:600;margin:0;color:#161616">{{ title }}</h2>
+        </div>
+        <nav style="flex:1;overflow-y:auto;padding:8px 0">
+          {% for item in items %}
+          <button
+            (click)="onNavigate(item)"
+            style="display:flex;align-items:center;width:100%;padding:8px 16px;border:none;cursor:pointer;font-size:13px;background:{% raw %}{{ item.route === activeRoute ? '#e0e0e0' : 'transparent' }}{% endraw %};color:{% raw %}{{ item.route === activeRoute ? '#161616' : '#525252' }}{% endraw %};text-align:left"
+            onmouseover="this.style.background='#e8e8e8'" onmouseout="this.style.background={% raw %}{{ item.route === activeRoute ? '#e0e0e0' : 'transparent' }}{% endraw %}"
+          >
+            <span style="margin-right:12px">{% raw %}{{ item.icon || '📄' }}{% endraw %}</span>
+            <span style="flex:1">{{ item.label }}</span>
+            {% if item.badge %}
+            <span style="background:#da1e28;color:#ffffff;border-radius:12px;padding:1px 8px;font-size:11px;margin-left:8px">{{ item.badge }}</span>
+            {% endif %}
+          </button>
+          {% endfor %}
+        </nav>
+        <div style="border-top:1px solid #e0e0e0;padding:8px 16px">
+          <button (click)="onLogout.emit()" style="width:100%;padding:8px;border:1px solid #8d8d8d;border-radius:4px;background:transparent;cursor:pointer;color:#525252;font-size:13px">
+            Logout
+          </button>
+        </div>
+      </aside>
+      <main style="flex:1;overflow:auto">
+        <ng-content></ng-content>
+      </main>
+    </div>
+{% endif %}
+  `,
+  styles: `
+{% if ui_framework == "material" %}
+    :host {
+      display: block;
+      height: 100%;
+    }
+    .sidebar-container {
+      height: 100%;
+    }
+    .sidebar-drawer {
+      width: 280px;
+      background: #fafafa;
+    }
+    .sidebar-header {
+      padding: 16px;
+    }
+    .sidebar-header h2 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    mat-list-item {
+      cursor: pointer;
+    }
+    mat-list-item.active {
+      background: rgba(0, 0, 0, 0.04);
+      font-weight: 500;
+    }
+    .badge {
+      float: right;
+      background: #f44336;
+      color: white;
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 12px;
+    }
+    .sidebar-footer {
+      padding: 8px;
+    }
+{% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+      height: 100%;
+    }
+{% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+      height: 100%;
+    }
+{% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+      height: 100%;
+    }
+{% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+      height: 100%;
+    }
+{% endif %}
+  `
+})
+export class SidebarComponent {
+  @Input() title: string = 'Navigation';
+  @Input() items: Array<{ label: string; route: string; icon?: string; badge?: string }> = [];
+  @Input() activeRoute: string = '';
+  @Input() mode: 'over' | 'side' | 'push' = 'over';
+  @Input() opened: boolean = true;
+  @Output() navigate = new EventEmitter<{ label: string; route: string }>();
+  @Output() logout = new EventEmitter<void>();
+
+  onNavigate(item: { label: string; route: string }): void {
+    this.navigate.emit(item);
+  }
+}

@@ -1,0 +1,251 @@
+/* eslint-disable */
+import React, { useState } from 'react';
+
+{% if ui_framework == "material" %}
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import Box from '@mui/material/Box';
+import Badge from '@mui/material/Badge';
+{% elif ui_framework == "antd" %}
+import { Tabs as AntTabs } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Tabs, Tab, TabPanel } from '@carbon/react';
+{% endif %}
+
+export interface TabItem {
+  key: string;
+  label: string;
+  content?: React.ReactNode;
+  disabled?: boolean;
+  badge?: string | number;
+  icon?: React.ReactNode;
+}
+
+export interface TabsProps {
+  tabs?: TabItem[];
+  activeTab?: string;
+  variant?: 'standard' | 'scrollable' | 'fullWidth';
+  centered?: boolean;
+  size?: 'small' | 'medium' | 'large';
+  onChange?: (key: string) => void;
+}
+
+const TabsComponent: React.FC<TabsProps> = ({
+  tabs = [],
+  activeTab = '',
+  variant = 'standard',
+  centered = false,
+  size = 'medium',
+  onChange,
+}) => {
+  const [selectedTab, setSelectedTab] = useState(activeTab || (tabs[0]?.key || ''));
+
+  const handleTabChange = (_event: React.SyntheticEvent, key: string) => {
+    setSelectedTab(key);
+    onChange?.(key);
+  };
+
+  const activeTabData = tabs.find((tab) => tab.key === selectedTab);
+
+{% if ui_framework == "material" %}
+  return (
+    <Box sx={% raw %}{{ width: '100%' }}{% endraw %}>
+      <Box sx={% raw %}{{ borderBottom: 1, borderColor: 'divider' }}{% endraw %}>
+        <Tabs
+          value={selectedTab}
+          onChange={(_event, key) => {
+            setSelectedTab(key);
+            onChange?.(key);
+          }}
+          variant={variant}
+          centered={centered}
+          textColor="primary"
+          indicatorColor="primary"
+          aria-label="navigation tabs"
+        >
+          {tabs.map((tab) => (
+            <Tab
+              key={tab.key}
+              label={
+                tab.badge ? (
+                  <Badge badgeContent={tab.badge} color="error">
+                    {tab.label}
+                  </Badge>
+                ) : (
+                  tab.label
+                )
+              }
+              value={tab.key}
+              disabled={tab.disabled}
+              icon={tab.icon}
+              iconPosition="start"
+            />
+          ))}
+        </Tabs>
+      </Box>
+      <Box sx={% raw %}{{ p: 2 }}{% endraw %}>
+        {activeTabData && (
+          <div>
+            {typeof activeTabData.content === 'string'
+              ? activeTabData.content
+              : activeTabData.content}
+          </div>
+        )}
+      </Box>
+    </Box>
+  );
+{% elif ui_framework == "tailwind" %}
+  return (
+    <div className="w-full">
+      <div className="border-b border-gray-200">
+        <nav
+          className={`-mb-px flex ${centered ? 'justify-center' : ''} ${
+            variant === 'fullWidth' ? 'w-full' : 'space-x-8'
+          }`}
+          aria-label="Tabs"
+        >
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => {
+                if (!tab.disabled) {
+                  setSelectedTab(tab.key);
+                  onChange?.(tab.key);
+                }
+              }}
+              disabled={tab.disabled}
+              className={`
+                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                ${
+                  selectedTab === tab.key
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+                ${tab.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                ${variant === 'fullWidth' ? 'flex-1 text-center' : ''}
+                ${size === 'small' ? 'py-2 px-2 text-xs' : ''}
+                ${size === 'large' ? 'py-5 px-3 text-base' : ''}
+              `}
+            >
+              {tab.icon && <span className="mr-2">{tab.icon}</span>}
+              {tab.label}
+              {tab.badge && (
+                <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+      </div>
+      <div className="mt-4 p-4">
+        {activeTabData && (
+          <div>
+            {typeof activeTabData.content === 'string'
+              ? activeTabData.content
+              : activeTabData.content}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+{% elif ui_framework == "bootstrap" %}
+  return (
+    <div className="w-full">
+      <ul className="nav nav-tabs" role="tablist">
+        {tabs.map((tab) => (
+          <li className="nav-item" key={tab.key} role="presentation">
+            <button
+              className={`nav-link ${selectedTab === tab.key ? 'active' : ''} ${tab.disabled ? 'disabled' : ''}`}
+              onClick={() => {
+                if (!tab.disabled) {
+                  setSelectedTab(tab.key);
+                  onChange?.(tab.key);
+                }
+              }}
+              disabled={tab.disabled}
+              type="button"
+              role="tab"
+              aria-selected={selectedTab === tab.key}
+            >
+              {tab.icon && <span className="me-2">{tab.icon}</span>}
+              {tab.label}
+              {tab.badge && (
+                <span className="badge bg-primary ms-2">{tab.badge}</span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="tab-content p-3 border border-top-0 rounded-bottom">
+        {activeTabData && (
+          <div className="tab-pane fade show active">
+            {typeof activeTabData.content === 'string'
+              ? activeTabData.content
+              : activeTabData.content}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+{% elif ui_framework == "antd" %}
+  return (
+    <div className="w-full">
+      <AntTabs
+        activeKey={selectedTab}
+        onChange={(key) => {
+          setSelectedTab(key);
+          onChange?.(key);
+        }}
+        type={variant === 'fullWidth' ? 'card' : 'line'}
+        centered={centered}
+        items={tabs.map((tab) => ({
+          key: tab.key,
+          label: tab.badge ? (
+            <span>
+              {tab.label}
+              <AntTabs.TabBarx badge count={tab.badge} />
+            </span>
+          ) : (
+            tab.label
+          ),
+          disabled: tab.disabled,
+          children: tab.content,
+        }))}
+      />
+    </div>
+  );
+{% elif ui_framework == "carbon" %}
+  return (
+    <div className="w-full">
+      <Tabs>
+        <ul className="cds-c--tabs__menu">
+          {tabs.map((tab) => (
+            <Tab
+              key={tab.key}
+              label={tab.label}
+              selected={selectedTab === tab.key}
+              onClick={() => {
+                if (!tab.disabled) {
+                  setSelectedTab(tab.key);
+                  onChange?.(tab.key);
+                }
+              }}
+              disabled={tab.disabled}
+            />
+          ))}
+        </ul>
+        {activeTabData && (
+          <TabPanel selected={selectedTab === activeTabData.key}>
+            {typeof activeTabData.content === 'string'
+              ? activeTabData.content
+              : activeTabData.content}
+          </TabPanel>
+        )}
+      </Tabs>
+    </div>
+  );
+{% endif %}
+};
+
+export default TabsComponent;

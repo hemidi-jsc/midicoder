@@ -1,0 +1,288 @@
+/* eslint-disable */
+import React, { useState, useRef, useEffect } from 'react';
+
+{% if ui_framework == "material" %}
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import MenuList from '@mui/material/MenuList';
+import Divider from '@mui/material/Divider';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import IconButton from '@mui/material/IconButton';
+import { MoreVert as MoreVertIcon } from '@mui/icons-material';
+{% elif ui_framework == "antd" %}
+import { Dropdown, Button } from 'antd';
+import type { MenuProps } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { OverflowMenu, OverflowMenuItem } from '@carbon/react';
+{% endif %}
+
+export interface MenuItemData {
+  label: string;
+  type?: 'item' | 'divider' | 'header';
+  icon?: React.ReactNode | string;
+  disabled?: boolean;
+  shortcut?: string;
+  value?: any;
+  danger?: boolean;
+}
+
+export interface MenuProps {
+  triggerText?: string;
+  items?: MenuItemData[];
+  position?: 'left' | 'right' | 'center';
+  onItemClick?: (item: MenuItemData) => void;
+}
+
+const MenuComponent: React.FC<MenuProps> = ({
+  triggerText = 'Menu',
+  items = [],
+  position = 'right',
+  onItemClick,
+}) => {
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+    setIsOpen(true);
+  };
+
+  const handleClose = () => {
+    setAnchorEl(null);
+    setIsOpen(false);
+  };
+
+  const handleItemClick = (item: MenuItemData) => {
+    onItemClick?.(item);
+    handleClose();
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        handleClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+{% if ui_framework == "antd" %}
+  const menuItems: MenuProps['items'] = items.map((item, index) => {
+    if (item.type === 'divider') {
+      return { type: 'divider' } as any;
+    }
+    if (item.type === 'header') {
+      return {
+        label: item.label,
+        key: `header-${index}`,
+        type: 'group',
+      } as any;
+    }
+    return {
+      key: item.label,
+      label: (
+        <span style={% raw %}{{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}{% endraw %}>
+          {item.icon && typeof item.icon === 'string' && <span style={% raw %}{{ marginRight: 8 }}{% endraw %}>{item.icon}</span>}
+          {item.label}
+          {item.shortcut && (
+            <span style={% raw %}{{ fontSize: '12px', color: 'rgba(0,0,0,0.45)' }}{% endraw %}>{item.shortcut}</span>
+          )}
+        </span>
+      ),
+      icon: item.icon && typeof item.icon !== 'string' ? item.icon : undefined,
+      disabled: item.disabled,
+      danger: item.danger,
+      onClick: () => handleItemClick(item),
+    };
+  });
+
+{% endif %}
+  return (
+{% if ui_framework == "material" %}
+    <div ref={menuRef}>
+      <IconButton
+        aria-label="menu"
+        aria-controls="menu"
+        aria-haspopup="true"
+        onClick={handleOpen}
+        color="inherit"
+      >
+        {triggerText ? <span>{triggerText}</span> : <MoreVertIcon />}
+      </IconButton>
+      <Menu
+        id="menu"
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleClose}
+        anchorOrigin={% raw %}{{ vertical: 'bottom', horizontal: position }}{% endraw %}
+        transformOrigin={% raw %}{{ vertical: 'top', horizontal: position }}{% endraw %}
+      >
+        <MenuList>
+          {items.map((item, index) => {
+            if (item.type === 'divider') {
+              return <Divider key={`divider-${index}`} component="li" />;
+            }
+            if (item.type === 'header') {
+              return (
+                <MenuItem key={`header-${index}`} disabled>
+                  <ListItemText
+                    primary={item.label}
+                    primaryTypographyProps={% raw %}{{ fontWeight: 'bold', color: 'text.secondary' }}{% endraw %}
+                  />
+                </MenuItem>
+              );
+            }
+            return (
+              <MenuItem
+                key={item.label}
+                disabled={item.disabled}
+                onClick={() => handleItemClick(item)}
+                sx={% raw %}{{ color: item.danger ? 'error.main' : 'inherit' }}{% endraw %}
+              >
+                {item.icon && (
+                  <ListItemIcon>
+                    {typeof item.icon === 'string' ? <span>{item.icon}</span> : item.icon}
+                  </ListItemIcon>
+                )}
+                <ListItemText primary={item.label} />
+                {item.shortcut && (
+                  <span style={% raw %}{{ fontSize: '0.75rem', color: 'rgba(0,0,0,0.54)' }}{% endraw %}>
+                    {item.shortcut}
+                  </span>
+                )}
+              </MenuItem>
+            );
+          })}
+        </MenuList>
+      </Menu>
+    </div>
+{% elif ui_framework == "tailwind" %}
+    <div ref={menuRef} className="relative inline-block text-left">
+      <div>
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="inline-flex w-full justify-center gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+          aria-expanded={isOpen}
+          aria-haspopup="true"
+        >
+          {triggerText}
+          <svg className="-mr-1 h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div>
+      {isOpen && (
+        <div
+          className={`absolute z-10 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none ${
+            position === 'left' ? 'left-0' : position === 'center' ? 'left-1/2 -translate-x-1/2' : 'right-0'
+          }`}
+          role="menu"
+        >
+          <div className="py-1">
+            {items.map((item, index) => {
+              if (item.type === 'divider') {
+                return <div key={`divider-${index}`} className="my-1 border-t border-gray-200" />;
+              }
+              if (item.type === 'header') {
+                return (
+                  <div key={`header-${index}`} className="block px-4 py-2 text-xs text-gray-400 uppercase tracking-wider">
+                    {item.label}
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={item.label}
+                  onClick={() => handleItemClick(item)}
+                  disabled={item.disabled}
+                  className={`group flex w-full items-center gap-x-3 rounded-md px-4 py-2 text-sm ${
+                    item.danger ? 'text-red-700 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-100'
+                  } ${item.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  role="menuitem"
+                >
+                  {item.icon && (
+                    <span className="text-gray-400">
+                      {typeof item.icon === 'string' ? item.icon : item.icon}
+                    </span>
+                  )}
+                  {item.label}
+                  {item.shortcut && (
+                    <span className="ml-auto text-xs text-gray-400">{item.shortcut}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div ref={menuRef} className="dropdown">
+      <button
+        className="btn btn-outline-secondary dropdown-toggle"
+        type="button"
+        onClick={handleOpen}
+      >
+        {triggerText}
+      </button>
+      {isOpen && (
+        <ul
+          className={`dropdown-menu show ${position === 'right' ? 'dropdown-menu-end' : ''}`}
+          style={% raw %}{{ marginTop: '0.125rem' }}{% endraw %}
+        >
+          {items.map((item, index) => {
+            if (item.type === 'divider') {
+              return <li key={`divider-${index}`}><hr className="dropdown-divider" /></li>;
+            }
+            if (item.type === 'header') {
+              return <li key={`header-${index}`}><h6 className="dropdown-header">{item.label}</h6></li>;
+            }
+            return (
+              <li key={item.label}>
+                <button
+                  className={`dropdown-item d-flex align-items-center ${
+                    item.danger ? 'text-danger' : ''
+                  } ${item.disabled ? 'disabled' : ''}`}
+                  onClick={() => handleItemClick(item)}
+                  disabled={item.disabled}
+                >
+                  {item.icon && <span className="me-2">{typeof item.icon === 'string' ? item.icon : item.icon}</span>}
+                  <span className="flex-grow-1">{item.label}</span>
+                  {item.shortcut && <small className="text-muted ms-2">{item.shortcut}</small>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+{% elif ui_framework == "antd" %}
+    <Dropdown menu={% raw %}{{ items: menuItems }}{% endraw %} trigger={['click']}>
+      <Button>{triggerText}</Button>
+    </Dropdown>
+{% elif ui_framework == "carbon" %}
+    <OverflowMenu>
+      {items.map((item, index) => {
+        if (item.type === 'divider') {
+          return <div key={`divider-${index}`} style={% raw %}{{ height: '1px', background: '#e0e0e0', margin: '4px 0' }}{% endraw %} />;
+        }
+        return (
+          <OverflowMenuItem
+            key={item.label}
+            itemText={item.label}
+            isDisabled={item.disabled}
+            isDelete={item.danger}
+            onClick={() => handleItemClick(item)}
+          />
+        );
+      })}
+    </OverflowMenu>
+{% endif %}
+  );
+};
+
+export default MenuComponent;

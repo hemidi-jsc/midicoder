@@ -1,0 +1,421 @@
+{% if ui_framework == "material" %}import React from 'react';
+import { Avatar as MuiAvatar, Badge as MuiBadge } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface AvatarProps {
+  name?: string;
+  alt?: string;
+  src?: string;
+  size?: 'small' | 'medium' | 'large';
+  shape?: 'circle' | 'square';
+  initials?: boolean;
+  status?: 'online' | 'offline' | 'away' | 'busy' | null;
+  sx?: SxProps<Theme>;
+  className?: string;
+  onClick?: () => void;
+}
+
+function getInitials(name: string): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].substring(0, 2).toUpperCase();
+}
+
+function getSize(size: string): number {
+  switch (size) {
+    case 'small': return 24;
+    case 'large': return 56;
+    default: return 40;
+  }
+}
+
+function getStatusColor(status?: string): string {
+  switch (status) {
+    case 'online': return '#4caf50';
+    case 'offline': return '#9e9e9e';
+    case 'away': return '#ff9800';
+    case 'busy': return '#f44336';
+    default: return 'transparent';
+  }
+}
+
+function Avatar({
+  name = '',
+  alt = '',
+  src,
+  size = 'medium',
+  shape = 'circle',
+  initials = true,
+  status,
+  sx,
+  className,
+  onClick
+}: AvatarProps) {
+  const sizePx = getSize(size);
+  const borderRadius = shape === 'square' ? '4px' : '50%';
+
+  const avatar = (
+    <MuiAvatar
+      sx={% raw %}{{
+        width: sizePx,
+        height: sizePx,
+        borderRadius,
+        fontSize: size === 'small' ? '0.75rem' : size === 'large' ? '1.25rem' : '1rem',
+        ...sx
+      }}{% endraw %}
+      className={className}
+      src={src}
+      alt={alt || name}
+      onClick={onClick}
+      {...(onClick ? { style: { cursor: 'pointer' } } : {})}
+    >
+      {!src && initials && getInitials(name)}
+    </MuiAvatar>
+  );
+
+  if (status) {
+    return (
+      <MuiBadge
+        overlap="circular"
+{% raw %}{{ vertical: 'bottom', horizontal: 'right' }}{% endraw %}orizontal: 'right' }}
+        variant{% raw %}{{
+          '& .MuiBadge-badge': {
+            backgroundColor: getStatusColor(status),
+            border: '2px solid white',
+            bottom: 0,
+            right: 0
+          }
+        }}{% endraw %}           right: 0
+          }
+        }}
+      >
+        {avatar}
+      </MuiBadge>
+    );
+  }
+
+  return avatar;
+}
+
+export default Avatar;
+{% elif ui_framework == "tailwind" %}import React from 'react';
+
+interface AvatarProps {
+  name?: string;
+  alt?: string;
+  src?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  square?: boolean;
+  bordered?: boolean;
+  status?: 'online' | 'offline' | 'away' | 'busy' | null;
+  color?: string;
+  className?: string;
+  onClick?: () => void;
+}
+
+function getInitials(name: string): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].substring(0, 2).toUpperCase();
+}
+
+function getSizeClasses(size: string): string {
+  switch (size) {
+    case 'xs': return 'h-6 w-6 text-[10px]';
+    case 'sm': return 'h-8 w-8 text-xs';
+    case 'lg': return 'h-12 w-12 text-lg';
+    case 'xl': return 'h-16 w-16 text-xl';
+    default: return 'h-10 w-10 text-sm';
+  }
+}
+
+function getStatusColor(status?: string): string {
+  switch (status) {
+    case 'online': return 'bg-green-500';
+    case 'offline': return 'bg-gray-400';
+    case 'away': return 'bg-yellow-500';
+    case 'busy': return 'bg-red-500';
+    default: return '';
+  }
+}
+
+function Avatar({
+  name = '',
+  alt = '',
+  src,
+  size = 'md',
+  square = false,
+  bordered = false,
+  status,
+  color = 'bg-gray-400',
+  className = '',
+  onClick
+}: AvatarProps) {
+  const sizeClasses = getSizeClasses(size);
+  const shapeClasses = square ? 'rounded-lg' : 'rounded-full';
+  const borderClass = bordered ? 'ring-2 ring-white' : '';
+  const statusColor = getStatusColor(status);
+
+  return (
+    <div className="relative inline-block">
+      {src ? (
+        <img
+          src={src}
+          alt={alt || name}
+          className={`${sizeClasses} ${shapeClasses} object-cover ${borderClass} ${className} ${onClick ? 'cursor-pointer' : ''}`}
+          onClick={onClick}
+        />
+      ) : (
+        <div
+          className={`${sizeClasses} ${shapeClasses} ${color} text-white flex items-center justify-center font-medium ${borderClass} ${className} ${onClick ? 'cursor-pointer' : ''}`}
+          onClick={onClick}
+          title={name}
+        >
+          {getInitials(name)}
+        </div>
+      )}
+      {status && (
+        <span
+          className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-white ${statusColor}`}
+        />
+      )}
+    </div>
+  );
+}
+
+export default Avatar;
+{% elif ui_framework == "bootstrap" %}import React from 'react';
+
+interface AvatarProps {
+  name?: string;
+  alt?: string;
+  src?: string;
+  size?: 'sm' | 'md' | 'lg';
+  squared?: boolean;
+  className?: string;
+  onClick?: () => void;
+}
+
+function getInitials(name: string): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].substring(0, 2).toUpperCase();
+}
+
+function Avatar({
+  name = '',
+  alt = '',
+  src,
+  size = 'md',
+  squared = false,
+  className = '',
+  onClick
+}: AvatarProps) {
+  const sizeClasses: Record<string, string> = {
+    sm: 'w-8 h-8 text-xs',
+    lg: 'w-16 h-16 text-xl',
+    md: 'w-10 h-10 text-sm'
+  };
+  const shapeClass = squared ? 'rounded' : 'rounded-circle';
+
+  return (
+    <div
+      className={`${shapeClass} d-inline-flex align-items-center justify-content-center bg-secondary text-white ${sizeClasses[size]} ${className} ${onClick ? 'cursor-pointer' : ''}`}
+      onClick={onClick}
+      title={name}
+    >
+      {src ? (
+        <img src={src} alt={alt || name} className={`${shapeClass} w-100 h-100 object-cover`} />
+      ) : (
+        getInitials(name)
+      )}
+    </div>
+  );
+}
+
+export default Avatar;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { Avatar as AntdAvatar } from 'antd';
+
+interface AvatarProps {
+  name?: string;
+  alt?: string;
+  src?: string;
+  size?: 'small' | 'default' | 'large';
+  shape?: 'circle' | 'square';
+  icon?: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+  onClick?: () => void;
+}
+
+function getInitials(name: string): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].substring(0, 2).toUpperCase();
+}
+
+function Avatar({
+  name = '',
+  alt = '',
+  src,
+  size = 'default',
+  shape = 'circle',
+  icon,
+  className,
+  style,
+  onClick
+}: AvatarProps) {
+  return (
+    <AntdAvatar
+      size={size}
+      shape={shape}
+      src={src}
+      icon={icon}
+      className={className}
+      style={style}
+      onClick={onClick}
+    >
+      {!src && getInitials(name)}
+    </AntdAvatar>
+  );
+}
+
+export default Avatar;
+{% elif ui_framework == "carbon" %}import React from 'react';
+
+interface AvatarProps {
+  name?: string;
+  alt?: string;
+  src?: string;
+  size?: 'sm' | 'md' | 'lg';
+  status?: 'online' | 'offline' | 'unknown' | 'warning' | 'error' | 'disabled';
+  className?: string;
+  onClick?: () => void;
+}
+
+function getInitials(name: string): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].substring(0, 2).toUpperCase();
+}
+
+function getStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    online: '#198038',
+    offline: '#8d8d8d',
+    unknown: '#8d8d8d',
+    warning: '#d69e2e',
+    error: '#da1e28',
+    disabled: '#c6c6c6'
+  };
+  return colors[status] || '#8d8d8d';
+}
+
+function Avatar({
+  name = '',
+  alt = '',
+  src,
+  size = 'md',
+  status = 'unknown',
+  className = '',
+  onClick
+}: AvatarProps) {
+  const sizeClasses: Record<string, string> = {
+    sm: 'w-6 h-6 text-xs',
+    lg: 'w-12 h-12 text-lg',
+    md: 'w-8 h-8 text-sm'
+  };
+
+  return (
+    <div className={`relative inline-block ${className} ${onClick ? 'cursor-pointer' : ''}`} onClick={onClick}>
+      {src ? (
+        <img
+          src={src}
+          alt={alt || name}
+          className={`${sizeClasses[size]} rounded-full object-cover`}
+        />
+      ) : (
+        <div
+          className={`${sizeClasses[size]} rounded-full bg-gray-500 text-white flex items-center justify-center font-medium`}
+          title={name}
+        >
+          {getInitials(name)}
+        </div>
+      )}
+      {status && (
+        <span
+          className="absolute bottom-0 right-0 blo{% raw %}{{ backgroundColor: getStatusColor(status) }}{% endraw %}"
+          style={{ backgroundColor: getStatusColor(status) }}
+        />
+      )}
+    </div>
+  );
+}
+
+export default Avatar;
+{% else %}import React from 'react';
+
+interface AvatarProps {
+  name?: string;
+  alt?: string;
+  src?: string;
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+  onClick?: () => void;
+}
+
+function getInitials(name: string): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].substring(0, 2).toUpperCase();
+}
+
+function Avatar({
+  name = '',
+  alt = '',
+  src,
+  size = 'md',
+  className = '',
+  onClick
+}: AvatarProps) {
+  const sizeClasses: Record<string, string> = {
+    sm: 'w-6 h-6 text-xs',
+    lg: 'w-12 h-12 text-lg',
+    md: 'w-8 h-8 text-sm'
+  };
+
+  return (
+    <div
+      className={`${sizeClasses[size]} rounded-full bg-gray-400 text-white flex items-center justify-center ${className}`}
+      onClick={onClick}
+    >
+      {src ? (
+        <img src={src} alt={alt || name} className="w-full h-full rounded-full object-cover" />
+      ) : (
+        getInitials(name)
+      )}
+    </div>
+  );
+}
+
+export default Avatar;
+{% endif %}

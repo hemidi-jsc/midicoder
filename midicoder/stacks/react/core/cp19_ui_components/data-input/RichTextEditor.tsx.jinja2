@@ -1,0 +1,249 @@
+/*
+ * Midicoder CP19 - Data Input: RichTextEditor
+ * Standalone rich text editor using contentEditable div.
+ */
+import React, { useRef, useEffect, useCallback } from 'react';
+
+interface RichTextEditorProps {
+  label?: string;
+  placeholder?: string;
+  hint?: string;
+  required?: boolean;
+  disabled?: boolean;
+  minHeight?: number;
+  value?: string;
+  onChange?: (html: string) => void;
+  onBlur?: () => void;
+  id?: string;
+  className?: string;
+}
+
+const RichTextEditor: React.FC<RichTextEditorProps> = ({
+  label,
+  placeholder = 'Start typing...',
+  hint,
+  required = false,
+  disabled = false,
+  minHeight = 120,
+  value = '',
+  onChange,
+  onBlur,
+  id,
+  className = '',
+}) => {
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (editorRef.current && value !== editorRef.current.innerHTML) {
+      editorRef.current.innerHTML = value;
+    }
+  }, [value]);
+
+  const execCommand = useCallback((command: string, url?: string) => {
+    document.execCommand(command, false, url);
+    editorRef.current?.focus();
+    if (editorRef.current) {
+      onChange?.(editorRef.current.innerHTML);
+    }
+  }, [onChange]);
+
+  const handleInput = useCallback(() => {
+    if (editorRef.current) {
+      onChange?.(editorRef.current.innerHTML);
+    }
+  }, [onChange]);
+
+  const handleInsertLink = useCallback(() => {
+    const url = prompt('Enter URL:');
+    if (url) execCommand('createLink', url);
+  }, [execCommand]);
+
+  const ToolbarButton: React.FC<{ command: string; label: string; style?: React.CSSProperties; children?: React.ReactNode }> = ({ command, label, children }) => (
+    <button
+      type="button"
+      title={label}
+      onClick={() => execCommand(command)}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  );
+
+  return (
+{% if ui_framework == "material" %}
+    <div className={className} style={% raw %}{{ width: '100%', marginBottom: '16px' }}{% endraw %}>
+      {label && (
+        <div style={% raw %}{{ fontWeight: 500, marginBottom: '8px' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#d32f2f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div style={% raw %}{{ border: '1px solid #e0e0e0', borderRadius: '4px', overflow: 'hidden' }}{% endraw %}>
+        <div style={% raw %}{{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '8px', background: '#f5f5f5', borderBottom: '1px solid #e0e0e0' }}{% endraw %}>
+          <ToolbarButton command="bold" label="Bold" style={% raw %}{{ padding: '4px 8px', border: '1px solid #ddd', background: '#fff', borderRadius: '2px', cursor: 'pointer', fontWeight: 'bold' }}{% endraw %}>B</ToolbarButton>
+          <ToolbarButton command="italic" label="Italic" style={% raw %}{{ padding: '4px 8px', border: '1px solid #ddd', background: '#fff', borderRadius: '2px', cursor: 'pointer', fontStyle: 'italic' }}{% endraw %}>I</ToolbarButton>
+          <ToolbarButton command="underline" label="Underline" style={% raw %}{{ padding: '4px 8px', border: '1px solid #ddd', background: '#fff', borderRadius: '2px', cursor: 'pointer', textDecoration: 'underline' }}{% endraw %}>U</ToolbarButton>
+          <span style={% raw %}{{ borderLeft: '1px solid #ddd', margin: '0 4px' }}{% endraw %} />
+          <ToolbarButton command="insertUnorderedList" label="Bullet List" style={% raw %}{{ padding: '4px 8px', border: '1px solid #ddd', background: '#fff', borderRadius: '2px', cursor: 'pointer' }}{% endraw %}>&bull;</ToolbarButton>
+          <ToolbarButton command="insertOrderedList" label="Numbered List" style={% raw %}{{ padding: '4px 8px', border: '1px solid #ddd', background: '#fff', borderRadius: '2px', cursor: 'pointer' }}{% endraw %}>1.</ToolbarButton>
+          <span style={% raw %}{{ borderLeft: '1px solid #ddd', margin: '0 4px' }}{% endraw %} />
+          <ToolbarButton command="justifyLeft" label="Align Left" style={% raw %}{{ padding: '4px 8px', border: '1px solid #ddd', background: '#fff', borderRadius: '2px', cursor: 'pointer' }}{% endraw %}>&larr;</ToolbarButton>
+          <ToolbarButton command="justifyCenter" label="Align Center" style={% raw %}{{ padding: '4px 8px', border: '1px solid #ddd', background: '#fff', borderRadius: '2px', cursor: 'pointer' }}{% endraw %}>&harr;</ToolbarButton>
+          <ToolbarButton command="justifyRight" label="Align Right" style={% raw %}{{ padding: '4px 8px', border: '1px solid #ddd', background: '#fff', borderRadius: '2px', cursor: 'pointer' }}{% endraw %}>&rarr;</ToolbarButton>
+          <span style={% raw %}{{ borderLeft: '1px solid #ddd', margin: '0 4px' }}{% endraw %} />
+          <button type="button" title="Insert Link" onClick={handleInsertLink} disabled={disabled} style={% raw %}{{ padding: '4px 8px', border: '1px solid #ddd', background: '#fff', borderRadius: '2px', cursor: 'pointer' }}{% endraw %}>🔗</button>
+        </div>
+        <div
+          ref={editorRef}
+          contentEditable={!disabled}
+          onInput={handleInput}
+          onBlur={onBlur}
+          data-placeholder={placeholder}
+          style={% raw %}{{
+            minHeight: `${minHeight}px`,
+            padding: '16px',
+            outline: 'none',
+            fontSize: '14px',
+            overflow: 'auto',
+          }}{% endraw %}
+        />
+      </div>
+      {hint && <div style={% raw %}{{ fontSize: '12px', color: '#757575', marginTop: '4px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "tailwind" %}
+    <div className={`w-full ${className}`}>
+      {label && (
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {label}
+          {required && <span className="text-red-500 ml-1">*</span>}
+        </label>
+      )}
+      <div className="border border-gray-300 rounded-md overflow-hidden">
+        <div className="flex flex-wrap gap-1 p-2 bg-gray-50 border-b border-gray-200">
+          <ToolbarButton command="bold" label="Bold" children={
+            <span className="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100 font-bold">B</span>
+          } />
+          <ToolbarButton command="italic" label="Italic" children={
+            <span className="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100 italic">I</span>
+          } />
+          <ToolbarButton command="underline" label="Underline" children={
+            <span className="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100 underline">U</span>
+          } />
+          <div className="w-px bg-gray-300 mx-1" />
+          <ToolbarButton command="insertUnorderedList" label="Bullet List" children={
+            <span className="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">&bull;</span>
+          } />
+          <ToolbarButton command="insertOrderedList" label="Numbered List" children={
+            <span className="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">1.</span>
+          } />
+          <div className="w-px bg-gray-300 mx-1" />
+          <ToolbarButton command="justifyLeft" label="Align Left" children={
+            <span className="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">&larr;</span>
+          } />
+          <ToolbarButton command="justifyCenter" label="Align Center" children={
+            <span className="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">&harr;</span>
+          } />
+          <ToolbarButton command="justifyRight" label="Align Right" children={
+            <span className="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">&rarr;</span>
+          } />
+        </div>
+        <div
+          ref={editorRef}
+          contentEditable={!disabled}
+          onInput={handleInput}
+          onBlur={onBlur}
+          className="p-4 outline-none text{% raw %}{{ minHeight: `${minHeight}px`, overflow: 'auto' }}{% endraw %}, overflow: 'auto' }}
+        />
+      </div>
+      {hint && <p className="mt-1 text-sm text-gray-500">{hint}</p>}
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div className={`w-100 ${className}`}>
+      {label && (
+        <label className="form-label">
+          {label}
+          {required && <span className="text-danger">*</span>}
+        </label>
+      )}
+      <div className="border rounded overflow-hidden">
+        <div className="d-flex flex-wrap gap-1 p-2 bg-light border-bottom">
+          <ToolbarButton command="bold" label="Bold" children={
+            <span className="btn btn-sm btn-outline-secondary fw-bold">B</span>
+          } />
+          <ToolbarButton command="italic" label="Italic" children={
+            <span className="btn btn-sm btn-outline-secondary fst-italic">I</span>
+          } />
+          <ToolbarButton command="underline" label="Underline" children={
+            <span className="btn btn-sm btn-outline-secondary text-decoration-underline">U</span>
+          } />
+          <hr className="mx-1 align-self-stretch" style={% raw %}{{ width: '1px' }}{% endraw %} />
+          <ToolbarButton command="insertUnorderedList" label="Bullet List" children={
+            <span className="btn btn-sm btn-outline-secondary">&bull;</span>
+          } />
+          <ToolbarButton command="insertOrderedList" label="Numbered List" children={
+            <span className="btn btn-sm btn-outline-secondary">1.</span>
+          } />
+        </div>
+        <div
+          ref={editorRef}
+          contentEditable={!disabled}
+          onInput={handleInput}
+          onBlur={onBlur}
+{% raw %}{{ minHeight: `${minHeight}px`, outline: 'none', fontSize: '14px', overflow: 'auto' }}{% endraw %}ne', fontSize: '14px', overflow: 'auto' }}
+        />
+      </div>
+      {hint && <small className="form-text text-muted">{hint}</small>}
+    </div>
+{% elif ui_framework == "antd" %}
+    <div style={% raw %}{{ width: '100%', marginBottom: '16px' }}{% endraw %} className={className}>
+      {label && (
+        <div style={% raw %}{{ fontSize: '14px', marginBottom: '4px', color: '#262626' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#ff4d4f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div style={% raw %}{{ border: '1px solid #d9d9d9', borderRadius: '6px', overflow: 'hidden' }}{% endraw %}>
+        <div style={% raw %}{{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '8px', background: '#fafafa', borderBottom: '1px solid #d9d9d9' }}{% endraw %}>
+          <ToolbarButton command="bold" label="Bold" style={% raw %}{{ padding: '4px 8px', border: '1px solid #d9d9d9', background: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}{% endraw %}>B</ToolbarButton>
+          <ToolbarButton command="italic" label="Italic" style={% raw %}{{ padding: '4px 8px', border: '1px solid #d9d9d9', background: '#fff', borderRadius: '4px', cursor: 'pointer', fontStyle: 'italic', fontSize: '12px' }}{% endraw %}>I</ToolbarButton>
+          <ToolbarButton command="underline" label="Underline" style={% raw %}{{ padding: '4px 8px', border: '1px solid #d9d9d9', background: '#fff', borderRadius: '4px', cursor: 'pointer', textDecoration: 'underline', fontSize: '12px' }}{% endraw %}>U</ToolbarButton>
+          <ToolbarButton command="insertUnorderedList" label="Bullet List" style={% raw %}{{ padding: '4px 8px', border: '1px solid #d9d9d9', background: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}{% endraw %}>&bull;</ToolbarButton>
+          <ToolbarButton command="insertOrderedList" label="Numbered List" style={% raw %}{{ padding: '4px 8px', border: '1px solid #d9d9d9', background: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}{% endraw %}>1.</ToolbarButton>
+        </div>
+        <div
+          ref={editorRef}
+          contentEditable={!disabled}
+          o{% raw %}{{ minHeight: `${minHeight}px`, padding: '12px', outline: 'none', fontSize: '14px', overflow: 'auto' }}{% endraw %} '12px', outline: 'none', fontSize: '14px', overflow: 'auto' }}
+        />
+      </div>
+      <div style={% raw %}{{ color: '#8c8c8c', fontSize: '12px', marginTop: '4px' }}{% endraw %}>For full rich text features, consider integrating Quill.js or similar.</div>
+      {hint && <div style={% raw %}{{ color: '#8c8c8c', fontSize: '12px', marginTop: '4px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div style={% raw %}{{ width: '100%', marginBottom: '1rem' }}{% endraw %} className={className}>
+      {label && (
+        <div style={% raw %}{{ fontSize: '0.75rem', fontWeight: 400, color: '#525252', marginBottom: '0.25rem' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#da1e28', marginLeft: '0.25rem' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div style={% raw %}{{ border: '1px solid #8d8d8d', overflow: 'hidden' }}{% endraw %}>
+        <div style={% raw %}{{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '8px', background: '#f4f4f4', borderBottom: '1px solid #8d8d8d' }}{% endraw %}>
+          <ToolbarButton command="bold" label="Bold" style={% raw %}{{ padding: '4px 8px', border: '1px solid #8d8d8d', background: '#fff', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.75rem' }}{% endraw %}>B</ToolbarButton>
+          <ToolbarButton command="italic" label="Italic" style={% raw %}{{ padding: '4px 8px', border: '1px solid #8d8d8d', background: '#fff', cursor: 'pointer', fontStyle: 'italic', fontSize: '0.75rem' }}{% endraw %}>I</ToolbarButton>
+          <ToolbarButton command="underline" label="Underline" style={% raw %}{{ padding: '4px 8px', border: '1px solid #8d8d8d', background: '#fff', cursor: 'pointer', textDecoration: 'underline', fontSize: '0.75rem' }}{% endraw %}>U</ToolbarButton>
+          <ToolbarButton command="insertUnorderedList" label="Bullet List" style={% raw %}{{ padding: '4px 8px', border: '1px solid #8d8d8d', background: '#fff', cursor: 'pointer', fontSize: '0.75rem' }}{% endraw %}>&bull;</ToolbarButton>
+          <ToolbarButton command="insertOrderedList" label="Numbered List" style={% raw %}{{ padding: '4px 8px', border: '1px solid #8d8d8d', background: '#fff', cursor: 'pointer', fontSize: '0.75rem' }}{% endraw %}>1.</ToolbarButton>
+        </div>
+        <div
+          ref={editorRef}
+          contentEditable={!{% raw %}{{ minHeight: `${minHeight}px`, padding: '12px', outline: 'none', fontSize: '0.875rem', overflow: 'auto' }}{% endraw %}ght}px`, padding: '12px', outline: 'none', fontSize: '0.875rem', overflow: 'auto' }}
+        />
+      </div>
+      {hint && <p style={% raw %}{{ fontSize: '0.75rem', color: '#6f6f6f', margin: '0.25rem 0' }}{% endraw %}>{hint}</p>}
+    </div>
+{% endif %}
+  );
+};
+
+export default RichTextEditor;

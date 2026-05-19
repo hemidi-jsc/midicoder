@@ -1,0 +1,298 @@
+/* eslint-disable */
+import { Component, Input, Output, EventEmitter, OnInit, TemplateRef } from '@angular/core';
+import { CommonModule } from '@angular/common';
+{% if ui_framework == "material" %}
+import { MatMenuModule } from '@angular/material/menu';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+{% elif ui_framework == "bootstrap" %}
+import { NgbDropdownModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif ui_framework == "tailwind" %}
+{% elif ui_framework == "antd" %}
+{% elif ui_framework == "carbon" %}
+{% endif %}
+
+@Component({
+  selector: 'app-menu',
+  standalone: true,
+  imports: [
+    CommonModule,
+{% if ui_framework == "material" %}
+    MatMenuModule,
+    MatIconModule,
+    MatButtonModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbDropdownModule,
+{% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+    <div class="menu-container">
+      <button
+        mat-button
+        [matMenuTriggerFor]="menu"
+        class="menu-trigger"
+      >
+        {{ triggerText }}
+        <mat-icon>arrow_drop_down</mat-icon>
+      </button>
+      <mat-menu #menu="matMenu" [overlapTrigger]="false">
+        {% for item in items %}
+        {% if item.type === 'divider' %}
+        <mat-divider></mat-divider>
+        {% elif item.type === 'header' %}
+        <div mat-menu-item disabled class="menu-header">
+          {{ item.label }}
+        </div>
+        {% else %}
+        <button
+          mat-menu-item
+          [disabled]="item.disabled"
+          (click)="onItemClick(item)"
+        >
+          {% if item.icon %}
+          <mat-icon>{{ item.icon }}</mat-icon>
+          {% endif %}
+          <span>{{ item.label }}</span>
+          {% if item.shortcut %}
+          <span class="shortcut">{{ item.shortcut }}</span>
+          {% endif %}
+        </button>
+        {% endif %}
+        {% endfor %}
+      </mat-menu>
+    </div>
+{% elif ui_framework == "tailwind" %}
+    <div class="relative inline-block text-left menu-container" #menuContainer>
+      <div>
+        <button
+          (click)="toggleMenu()"
+          type="button"
+          class="inline-flex w-full justify-center gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+        >
+          {{ triggerText }}
+          <svg class="-mr-1 h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+      <div
+        *ngIf="menuOpen"
+        class="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+        role="menu"
+      >
+        <div class="py-1">
+          {% for item in items %}
+          {% if item.type === 'divider' %}
+          <div class="my-1 border-t border-gray-200"></div>
+          {% elif item.type === 'header' %}
+          <div class="block px-4 py-2 text-xs text-gray-400 uppercase tracking-wider">
+            {{ item.label }}
+          </div>
+          {% else %}
+          <button
+            (click)="onItemClick(item)"
+            [disabled]="item.disabled"
+            class="group flex w-full items-center gap-x-3 rounded-md px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ item.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer' }}"
+            role="menuitem"
+          >
+            {% if item.icon %}
+            <span class="text-gray-400">{{ item.icon }}</span>
+            {% endif %}
+            {{ item.label }}
+            {% if item.shortcut %}
+            <span class="ml-auto text-xs text-gray-400">{{ item.shortcut }}</span>
+            {% endif %}
+          </button>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div class="dropdown">
+      <button
+        class="btn btn-outline-secondary dropdown-toggle"
+        type="button"
+        (click)="toggleMenu()"
+      >
+        {{ triggerText }}
+      </button>
+      <ul *ngIf="menuOpen" class="dropdown-menu show">
+        {% for item in items %}
+        {% if item.type === 'divider' %}
+        <li><hr class="dropdown-divider" /></li>
+        {% elif item.type === 'header' %}
+        <li><h6 class="dropdown-header">{{ item.label }}</h6></li>
+        {% else %}
+        <li>
+          <button
+            (click)="onItemClick(item)"
+            [disabled]="item.disabled"
+            class="dropdown-item d-flex align-items-center {{ item.disabled ? 'disabled' : '' }}"
+          >
+            {% if item.icon %}
+            <span class="me-2">{{ item.icon }}</span>
+            {% endif %}
+            <span class="flex-grow-1">{{ item.label }}</span>
+            {% if item.shortcut %}
+            <small class="text-muted ms-2">{{ item.shortcut }}</small>
+            {% endif %}
+          </button>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+{% elif ui_framework == "antd" %}
+    <div class="relative inline-block menu-container" style="display:inline-block">
+      <button
+        (click)="toggleMenu()"
+        style="display:inline-flex;align-items:center;gap:4px;padding:6px 16px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;font-size:14px;color:rgba(0,0,0,0.85);transition:all 0.3s"
+      >
+        {{ triggerText }}
+        <span style="font-size:12px;transition:transform 0.3s" [style.transform]="menuOpen ? 'rotate(180deg)' : 'rotate(0deg)'">▼</span>
+      </button>
+      <div
+        *ngIf="menuOpen"
+        style="position:absolute;top:100%;left:0;z-index:1001;min-width:180px;margin-top:4px;background:#fff;border:1px solid #f0f0f0;border-radius:4px;box-shadow:0 3px 6px -4px rgba(0,0,0,0.12),0 6px 16px 0 rgba(0,0,0,0.08),0 9px 28px 8px rgba(0,0,0,0.05)"
+      >
+        {% for item in items %}
+        {% if item.type === 'divider' %}
+        <div style="margin:4px 0;border-top:1px solid #f0f0f0"></div>
+        {% elif item.type === 'header' %}
+        <div style="padding:8px 12px;font-size:12px;color:rgba(0,0,0,0.45)">
+          {{ item.label }}
+        </div>
+        {% else %}
+        <div
+          (click)="onItemClick(item)"
+          style="padding:8px 12px;cursor:pointer;font-size:14px;color:rgba(0,0,0,0.85);display:flex;align-items:center;gap:8px;transition:background 0.3s"
+          [style.opacity]="item.disabled ? '0.45' : '1'"
+          [style.pointerEvents]="item.disabled ? 'none' : 'auto'"
+          onmouseover="if(!this.dataset.disabled)this.style.background='#f5f5f5'" onmouseout="this.style.background='transparent'"
+          [attr.data-disabled]="item.disabled ? 'true' : 'false'"
+        >
+          {% if item.icon %}
+          <span>{{ item.icon }}</span>
+          {% endif %}
+          <span style="flex:1">{{ item.label }}</span>
+          {% if item.shortcut %}
+          <span style="font-size:12px;color:rgba(0,0,0,0.45)">{{ item.shortcut }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div class="relative inline-block menu-container" style="display:inline-block">
+      <button
+        (click)="toggleMenu()"
+        style="display:inline-flex;align-items:center;gap:4px;padding:8px 12px;border:1px solid #8d8d8d;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;color:#525252"
+      >
+        {{ triggerText }}
+        <span style="font-size:11px" [style.transform]="menuOpen ? 'rotate(180deg)' : 'rotate(0deg)'">▼</span>
+      </button>
+      <div
+        *ngIf="menuOpen"
+        style="position:absolute;top:100%;left:0;z-index:1001;min-width:180px;margin-top:2px;background:#f4f4f4;border:1px solid #e0e0e0;border-radius:4px;box-shadow:0 2px 6px rgba(0,0,0,0.1)"
+      >
+        {% for item in items %}
+        {% if item.type === 'divider' %}
+        <div style="margin:4px 0;border-top:1px solid #e0e0e0"></div>
+        {% elif item.type === 'header' %}
+        <div style="padding:6px 12px;font-size:11px;color:#525252;text-transform:uppercase;letter-spacing:0.5px">
+          {{ item.label }}
+        </div>
+        {% else %}
+        <div
+          (click)="onItemClick(item)"
+          style="padding:6px 12px;cursor:pointer;font-size:13px;color:#525252;display:flex;align-items:center;gap:8px;transition:background 0.15s"
+          [style.opacity]="item.disabled ? '0.45' : '1'"
+          [style.pointerEvents]="item.disabled ? 'none' : 'auto'"
+          onmouseover="if(!this.dataset.disabled)this.style.background='#e8e8e8'" onmouseout="this.style.background='transparent'"
+          [attr.data-disabled]="item.disabled ? 'true' : 'false'"
+        >
+          {% if item.icon %}
+          <span>{{ item.icon }}</span>
+          {% endif %}
+          <span style="flex:1">{{ item.label }}</span>
+          {% if item.shortcut %}
+          <span style="font-size:11px;color:#6f6f6f">{{ item.shortcut }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+{% endif %}
+  `,
+  styles: `
+{% if ui_framework == "material" %}
+    :host {
+      display: inline-block;
+    }
+    .menu-trigger {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .menu-header {
+      font-weight: 600;
+      color: rgba(0, 0, 0, 0.54);
+    }
+    .shortcut {
+      margin-left: auto;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.54);
+    }
+{% elif ui_framework == "tailwind" %}
+    :host {
+      display: inline-block;
+    }
+{% elif ui_framework == "bootstrap" %}
+    :host {
+      display: inline-block;
+    }
+{% elif ui_framework == "antd" %}
+    :host {
+      display: inline-block;
+    }
+{% elif ui_framework == "carbon" %}
+    :host {
+      display: inline-block;
+    }
+{% endif %}
+  `
+})
+export class MenuComponent implements OnInit {
+  @Input() triggerText: string = 'Menu';
+  @Input() items: Array<{
+    label: string;
+    type?: 'item' | 'divider' | 'header';
+    icon?: string;
+    disabled?: boolean;
+    shortcut?: string;
+    value?: any;
+  }> = [];
+  @Output() itemClick = new EventEmitter<any>();
+
+  menuOpen: boolean = false;
+
+  ngOnInit(): void {
+    this.items = this.items.map(item => ({
+      ...item,
+      type: item.type || 'item'
+    }));
+  }
+
+  toggleMenu(): void {
+    this.menuOpen = !this.menuOpen;
+  }
+
+  onItemClick(item: any): void {
+    this.itemClick.emit(item);
+    this.menuOpen = false;
+  }
+}

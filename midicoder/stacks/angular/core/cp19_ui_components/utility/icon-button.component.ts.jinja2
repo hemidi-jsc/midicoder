@@ -1,0 +1,162 @@
+/** IconButton Component - Icon-only button with tooltip support. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatButtonModule } from "@angular/material/button";
+import { MatIconModule } from "@angular/material/icon";
+{% endif %}
+
+export type IconButtonSize = 'sm' | 'md' | 'lg';
+
+@Component({
+  selector: 'app-icon-button',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatButtonModule,
+    MatIconModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<button
+  mat-icon-button
+  [color]="materialColor"
+  [disabled]="isDisabled"
+  [matTooltip]="tooltip"
+  [matTooltipPosition]="tooltipPosition"
+  (click)="onClick($event)"
+>
+  <mat-icon>{% raw %}{{ icon }}{% endraw %}</mat-icon>
+</button>
+{% elif ui_framework == "tailwind" %}
+<button
+  [ngClass]="buttonClasses"
+  [disabled]="isDisabled"
+  [title]="tooltip"
+  (click)="onClick($event)"
+  type="button"
+  aria-label="{% raw %}{{ tooltip || icon }}{% endraw %}"
+>
+  <span class="inline-flex items-center justify-center">{% raw %}{{ icon }}{% endraw %}</span>
+</button>
+{% elif ui_framework == "bootstrap" %}
+<button
+  [ngClass]="'btn ' + bootstrapClasses"
+  [disabled]="isDisabled"
+  [title]="tooltip"
+  (click)="onClick($event)"
+  type="button"
+>
+  {% raw %}{{ icon }}{% endraw %}
+</button>
+{% elif ui_framework == "antd" %}
+<button
+  [ngClass]="'ant-btn ant-btn-icon-only ' + antdClasses"
+  [disabled]="isDisabled"
+  [title]="tooltip"
+  (click)="onClick($event)"
+  type="button"
+>
+  <span class="anticon">{% raw %}{{ icon }}{% endraw %}</span>
+</button>
+{% elif ui_framework == "carbon" %}
+<button
+  [ngClass]="'cds--btn cds--btn--ghost ' + carbonClasses"
+  [disabled]="isDisabled"
+  [title]="tooltip"
+  (click)="onClick($event)"
+  type="button"
+  aria-label="{% raw %}{{ tooltip || icon }}{% endraw %}"
+>
+  <svg class="cds--btn__icon" viewBox="0 0 32 32" width="16" height="16" fill="currentColor">
+    <use [attr.xlink:href]="'#cds--icon-' + icon"></use>
+  </svg>
+</button>
+{% endif %}
+  `,
+})
+export class IconButtonComponent implements OnInit {
+  @Input() icon: string = 'more_vert';
+  @Input() tooltip: string = '';
+  @Input() tooltipPosition: string = 'below';
+  @Input() size: IconButtonSize = 'md';
+  @Input() isDisabled: boolean = false;
+  @Input() color: 'primary' | 'secondary' | 'danger' | 'default' = 'default';
+  @Output() click = new EventEmitter<Event>();
+
+  ngOnInit() {}
+
+  get materialColor(): 'primary' | 'accent' | 'warn' | 'basic' {
+    const map: Record<string, 'primary' | 'accent' | 'warn' | 'basic'> = {
+      primary: 'primary',
+      secondary: 'accent',
+      danger: 'warn',
+      default: 'basic',
+    };
+    return map[this.color] || 'basic';
+  }
+
+  get buttonClasses(): string {
+    const sizeMap: Record<string, string> = {
+      sm: 'w-8 h-8 text-sm',
+      md: 'w-10 h-10 text-base',
+      lg: 'w-12 h-12 text-lg',
+    };
+    const colorMap: Record<string, string> = {
+      primary: 'text-blue-600 hover:bg-blue-50',
+      secondary: 'text-gray-600 hover:bg-gray-100',
+      danger: 'text-red-600 hover:bg-red-50',
+      default: 'text-gray-500 hover:bg-gray-100',
+    };
+    const disabled = this.isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer';
+    return `inline-flex items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${sizeMap[this.size] || sizeMap.md} ${colorMap[this.color] || colorMap.default} ${disabled}`;
+  }
+
+  get bootstrapClasses(): string {
+    const sizeMap: Record<string, string> = {
+      sm: 'btn-sm',
+      md: '',
+      lg: 'btn-lg',
+    };
+    const colorMap: Record<string, string> = {
+      primary: 'btn-primary',
+      secondary: 'btn-secondary',
+      danger: 'btn-danger',
+      default: 'btn-light',
+    };
+    return `${colorMap[this.color] || ''} ${sizeMap[this.size] || ''} p-0 d-flex align-items-center justify-content-center`;
+  }
+
+  get antdClasses(): string {
+    const sizeMap: Record<string, string> = {
+      sm: 'ant-btn-sm',
+      md: '',
+      lg: 'ant-btn-lg',
+    };
+    const colorMap: Record<string, string> = {
+      primary: 'ant-btn-primary',
+      secondary: '',
+      danger: 'ant-btn-dangerous',
+      default: 'ant-btn-default',
+    };
+    return `${colorMap[this.color] || ''} ${sizeMap[this.size] || ''}`.trim();
+  }
+
+  get carbonClasses(): string {
+    const sizeMap: Record<string, string> = {
+      sm: 'cds--btn--sm',
+      md: '',
+      lg: 'cds--btn--lg',
+    };
+    return sizeMap[this.size] || '';
+  }
+
+  onClick(event: Event) {
+    if (!this.isDisabled) {
+      this.click.emit(event);
+    }
+  }
+}

@@ -1,0 +1,142 @@
+/** Drawer Component - Side panel that slides in from the edge of the screen. */
+
+import React, { ReactNode } from "react";
+
+export type DrawerPosition = 'start' | 'end' | 'left' | 'right';
+
+export interface DrawerProps {
+  title?: string;
+  isOpen: boolean;
+  onClose: () => void;
+  position?: DrawerPosition;
+  width?: number;
+  disableClose?: boolean;
+  children: ReactNode;
+  className?: string;
+}
+
+export const Drawer: React.FC<DrawerProps> = ({
+  title,
+  isOpen,
+  onClose,
+  position = 'end',
+  width = 320,
+  disableClose = false,
+  children,
+  className = '',
+}) => {
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && !disableClose) {
+      onClose();
+    }
+  };
+
+  const isLeft = position === 'start' || position === 'left';
+
+  {% if ui_framework == "material" %}
+  import { Drawer as MuiDrawer, Box, Typography, IconButton } from '@mui/material';
+  import CloseIcon from '@mui/icons-material/Close';
+
+  return (
+    <MuiDrawer
+      anchor={isLeft ? 'left' : 'right'}
+      open={isOpen}
+      onClose={!disableClose ? onClose : undefined}
+      onClick={handleBackdropClick}
+    >
+      <Box sx={% raw %}{{ width: width }}{% endraw %} role="presentation">
+        {title && (
+          <Box sx={% raw %}{{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 2, borderBottom: '1px solid #e0e0e0' }}{% endraw %}>
+            <Typography variant="h6">{title}</Typography>
+            <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+          </Box>
+        )}
+        <Box sx={% raw %}{{ p: 2, overflow: 'auto', height: '100%' }}{% endraw %}>{children}</Box>
+      </Box>
+    </MuiDrawer>
+  );
+  {% elif ui_framework == "tailwind" %}
+  if (!isOpen) return null;
+
+  return (
+    <div className="relative">
+      <div
+        className="fixed inset-0 bg-black/50 z-40 transition-opacity"
+        onClick={handleBackdropClick}
+      />
+      <aside
+        className={`fixed top-0 h-full w-80 bg-white shadow-xl z-50 transition-transform duration-300 ease-in-out ${className}`}
+        style={% raw %}{{
+          [isLeft ? 'left' : 'right']: '0',
+          transform: isOpen ? 'translateX(0)' : (isLeft ? '-translateX(100%)' : 'translateX(100%)'),
+          width: `${width}px`,
+        }}{% endraw %}
+      >
+        {title && (
+          <div className="flex items-center justify-between px-6 py-4 border-b">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+          </div>
+        )}
+        <div className="p-6 overflow-y-auto" style={% raw %}{{ height: 'calc(100%-64px)' }}{% endraw %}>
+          {children}
+        </div>
+      </aside>
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  import { Offcanvas } from 'react-bootstrap';
+
+  return (
+    <Offcanvas
+      show={isOpen}
+      onHide={!disableClose ? onClose : undefined}
+      placement={isLeft ? 'start' {% raw %}{{ width: `${width}px` }}{% endraw %}idth: `${width}px` }}
+      className={className}
+    >
+      <Offcanvas.Header closeButton onClose={onClose}>
+        <Offcanvas.Title>{title}</Offcanvas.Title>
+      </Offcanvas.Header>
+      <Offcanvas.Body>{children}</Offcanvas.Body>
+    </Offcanvas>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Drawer as AntDrawer } from 'antd';
+
+  return (
+    <AntDrawer
+      title={title}
+      placement={isLeft ? 'left' : 'right'}
+      onClose={!disableClose ? onClose : undefined}
+      open={isOpen}
+      width={width}
+      maskClosable={!disableClose}
+      className={className}
+    >
+      {children}
+    </AntDrawer>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { SideNav, SideNavItems, SideNavLink } from '@carbon/react';
+
+  return (
+    <SideNav
+      expanded={isOpen}
+      isChildOfFocusedElement={isOpen}
+      onOverlayClick={!disabl{% raw %}{{ width: isOpen ? `${width}px` : '0px' }}{% endraw %}{{ width: isOpen ? `${width}px` : '0px' }}
+      className={className}
+    >
+      <SideNavItems>
+        {title && (
+          <div className="cds--side-nav__name" style={% raw %}{{ padding: '1rem' }}{% endraw %}>
+            {title}
+          </div>
+        )}
+        {children}
+      </SideNavItems>
+    </SideNav>
+  );
+  {% endif %}
+};
+
+export default Drawer;

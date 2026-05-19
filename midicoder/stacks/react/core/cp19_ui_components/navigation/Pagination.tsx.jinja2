@@ -1,0 +1,275 @@
+/* eslint-disable */
+import React from 'react';
+
+{% if ui_framework == "material" %}
+import Pagination as MuiPagination from '@mui/material/Pagination';
+import PaginationItem from '@mui/material/PaginationItem';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
+{% elif ui_framework == "antd" %}
+import Pagination from 'antd/es/pagination';
+{% elif ui_framework == "carbon" %}
+import Pagination from '@carbon/react/es/Pagination/index';
+{% endif %}
+
+export interface PaginationProps {
+  totalItems?: number;
+  pageSize?: number;
+  currentPage?: number;
+  pageSizeOptions?: number[];
+  showFirstLast?: boolean;
+  showTotal?: boolean;
+  siblingCount?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  className?: string;
+}
+
+const PaginationComponent: React.FC<PaginationProps> = ({
+  totalItems = 100,
+  pageSize = 10,
+  currentPage = 1,
+  pageSizeOptions = [5, 10, 25, 50],
+  showFirstLast = true,
+  showTotal = true,
+  siblingCount = 1,
+  onPageChange,
+  onPageSizeChange,
+  className = '',
+}) => {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const startIndex = (currentPage - 1) * pageSize + 1;
+  const endIndex = Math.min(currentPage * pageSize, totalItems);
+
+  const handlePageChange = (_event: React.ChangeEvent<unknown> | null, page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      onPageChange?.(page);
+    }
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    onPageSizeChange?.(size);
+  };
+
+{% if ui_framework == "material" %}
+  return (
+    <div className={`d-flex align-items-center justify-content-between p-3 ${className}`}>
+      {showTotal && (
+        <Typography variant="body2" color="textSecondary">
+          Showing {startIndex} to {endIndex} of {totalItems} results
+        </Typography>
+      )}
+      <Stack spacing={2}>
+        <MuiPagination
+          count={totalPages}
+          page={currentPage}
+          onChange={handlePageChange}
+          color="primary"
+          showFirstButton={showFirstLast}
+          showLastButton={showFirstLast}
+          boundaryCount={2}
+          siblingCount={siblingCount}
+          shape="rounded"
+        />
+      </Stack>
+      <select
+        value={pageSize}
+        onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+        className="form-select form-select-sm"
+        style={% raw %}{{ width: 'auto' }}{% endraw %}
+      >
+        {pageSizeOptions.map((size) => (
+          <option key={size} value={size}>
+            {size} per page
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+{% elif ui_framework == "tailwind" %}
+  return (
+    <nav className={`flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6 ${className}`}>
+      <div className="flex flex-1 justify-between sm:hidden">
+        <button
+          onClick={() => onPageChange?.(Math.max(1, currentPage - 1))}
+          disabled={currentPage <= 1}
+          className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <button
+          onClick={() => onPageChange?.(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage >= totalPages}
+          className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+      </div>
+      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        {showTotal && (
+          <div>
+            <p className="text-sm text-gray-700">
+              Showing <span className="font-medium">{startIndex}</span>
+              to{' '}
+              <span className="font-medium">{endIndex}</span> of{' '}
+              <span className="font-medium">{totalItems}</span> results
+            </p>
+          </div>
+        )}
+        <div className="flex items-center gap-4">
+          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <button
+              onClick={() => onPageChange?.(Math.max(1, currentPage - 1))}
+              disabled={currentPage <= 1}
+              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="sr-only">Previous</span>
+              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+              </svg>
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => onPageChange?.(page)}
+                className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
+                  page === currentPage
+                    ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                    : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              onClick={() => onPageChange?.(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage >= totalPages}
+              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="sr-only">Next</span>
+              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </nav>
+          <select
+            value={pageSize}
+            onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+            className="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+          >
+            {pageSizeOptions.map((size) => (
+              <option key={size} value={size}>
+                {size} per page
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </nav>
+  );
+{% elif ui_framework == "bootstrap" %}
+  return (
+    <nav className={`d-flex align-items-center justify-content-between p-3 ${className}`}>
+      {showTotal && (
+        <span className="text-muted small">
+          Showing {startIndex} to {endIndex} of {totalItems}
+        </span>
+      )}
+      <ul className="pagination pagination-sm mb-0">
+        <li className={`page-item ${currentPage <= 1 ? 'disabled' : ''}`}>
+          <button
+            className="page-link"
+            onClick={() => onPageChange?.(Math.max(1, currentPage - 1))}
+            disabled={currentPage <= 1}
+          >
+            «
+          </button>
+        </li>
+        {Array.from({ length: totalPages }, (_, i) => i + 1)
+          .filter((page) => {
+            if (showFirstLast && (page === 1 || page === totalPages)) return true;
+            return Math.abs(page - currentPage) <= siblingCount;
+          })
+          .sort((a, b) => a - b)
+          .map((page, idx, arr) => {
+            const prev = arr[idx - 1];
+            const showEllipsis = prev && page - prev > 1;
+            return (
+              <React.Fragment key={page}>
+                {showEllipsis && (
+                  <li className="page-item disabled">
+                    <span className="page-link">...</span>
+                  </li>
+                )}
+                <li className={`page-item ${currentPage === page ? 'active' : ''}`}>
+                  <button
+                    className="page-link"
+                    onClick={() => onPageChange?.(page)}
+                  >
+                    {page}
+                  </button>
+                </li>
+              </React.Fragment>
+            );
+          })}
+        <li className={`page-item ${currentPage >= totalPages ? 'disabled' : ''}`}>
+          <button
+            className="page-link"
+            onClick={() => onPageChange?.(Math.min(totalPages, currentPage + 1))}
+            disabled={currentPage >= totalPages}
+          >
+            »
+          </button>
+        </li>
+      </ul>
+    </nav>
+  );
+{% elif ui_framework == "antd" %}
+  return (
+    <div className={className}>
+      <Pagination
+        current={currentPage}
+        pageSize={pageSize}
+        total={totalItems}
+        onChange={onPageChange}
+        onShowSizeChange={(page, size) => {
+          handlePageSizeChange(size);
+          onPageChange?.(page);
+        }}
+        showSizeChanger
+        pageSizeOptions={pageSizeOptions}
+        showQuickJumper
+        showTotal={(total, range) => `${range[0]}-${range[1]} of ${total} items`}
+        size="default"
+      />
+    </div>
+  );
+{% elif ui_framework == "carbon" %}
+  return (
+    <div className={className}>
+      <Pagination
+        totalItems={totalItems}
+        itemsPerPage={pageSize}
+        page={currentPage}
+        forwardText="Next page"
+        backwardText="Previous page"
+        isPageSelectable
+        className="pagination-carbon"
+        onChange={({ page, itemsPerPage }) => {
+          onPageChange?.(page);
+          if (itemsPerPage !== pageSize) {
+            handlePageSizeChange(itemsPerPage);
+          }
+        }}
+      />
+      {showTotal && (
+        <div className="text-muted small mt-2">
+          Showing {startIndex} to {endIndex} of {totalItems} results
+        </div>
+      )}
+    </div>
+  );
+{% endif %}
+};
+
+export default PaginationComponent;

@@ -1,0 +1,102 @@
+import React from "react";
+
+{% if ui_framework == "material" %}
+import { Divider as MuiDivider } from "@mui/material";
+{% elif ui_framework == "antd" %}
+import { Divider as AntdDivider } from "antd";
+{% elif ui_framework == "carbon" %}
+import { Divider as CarbonDivider } from "@carbon/react";
+{% endif %}
+
+export interface DividerProps {
+  inset?: boolean;
+  orientation?: 'horizontal' | 'vertical';
+  thickness?: number;
+  color?: string;
+  light?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+  [key: string]: any;
+}
+
+export const Divider: React.FC<DividerProps> = ({
+  inset = false,
+  orientation = 'horizontal',
+  thickness = 1,
+  color = '#e0e0e0',
+  light = false,
+  className = '',
+  style,
+  ...rest
+}) => {
+  {% if ui_framework == "material" %}
+  return (
+    <MuiDivider
+      absolute={inset}
+      orientation={orientation}
+      className={className}
+      style={% raw %}{{
+        ...(thickness !== 1 ? { borderWidth: `${thickness}px` } : {}),
+        ...(color !== '#e0e0e0' ? { borderColor: color } : {}),
+        ...style
+      }}{% endraw %}
+      {...rest}
+    />
+  );
+  {% elif ui_framework == "tailwind" %}
+  const thicknessClass = thickness > 1 ? `border-t-${thickness}` : 'border-t';
+  const insetClass = inset ? (orientation === 'horizontal' ? 'ml-4' : 'mt-4') : '';
+  const colorClass = color ? `border-${color}` : 'border-gray-200';
+  const orientationClass = orientation === 'vertical' ? 'h-full w-px border-t-0 border-r' : 'w-full';
+  const baseClass = `${thicknessClass} ${colorClass} ${insetClass} ${orientationClass}`;
+
+  return (
+    <hr
+      className={`${baseClass} ${className}`}
+      style={style}
+      {...rest}
+    />
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const insetClass = inset && orientation === 'horizontal' ? 'mx-4' : '';
+  const orientationClass = orientation === 'vertical' ? 'd-inline-block mx-2' : '';
+
+  return (
+    <hr
+      className={`${insetClass} ${orientationClass} my-4 ${className}`}
+      style={style}
+      {...rest}
+    />
+  );
+  {% elif ui_framework == "antd" %}
+  return (
+    <AntdDivider
+      orientation={orientation}
+      orientationMargin={inset ? '16px' : '0'}
+      className={cl{% raw %}{{
+        ...(thickness !== 1 ? { borderTopWidth: `${thickness}px` } : {}),
+        borderColor: color,
+        ...style
+      }}{% endraw %}    ...style
+      }}
+      {...rest}
+    />
+  );
+  {% elif ui_framework == "carbon" %}
+  return (
+    <CarbonDivide{% raw %}{{
+        ...(thickness !== 1 ? { borderTopWidth: `${thickness}px` } : {}),
+        borderColor: color,
+        ...style
+      }}{% endraw %}derColor: color,
+        ...style
+      }}
+      {...rest}
+    />
+  );
+  {% endif %}
+};
+
+Divider.displayName = 'Divider';
+
+export default Divider;

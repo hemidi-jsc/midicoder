@@ -1,0 +1,292 @@
+/*
+ * Midicoder CP19 - Data Input: FileUpload
+ * Standalone file upload component with drag-and-drop support.
+ */
+import React, { useState, useCallback } from 'react';
+
+export interface UploadedFile {
+  file: File;
+  name: string;
+  size: number;
+  type: string;
+  preview?: string;
+}
+
+interface FileUploadProps {
+  label?: string;
+  hint?: string;
+  required?: boolean;
+  disabled?: boolean;
+  multiple?: boolean;
+  accept?: string;
+  maxFileSize?: number;
+  value?: UploadedFile[];
+  onChange?: (files: UploadedFile[]) => void;
+  id?: string;
+  className?: string;
+}
+
+const FileUpload: React.FC<FileUploadProps> = ({
+  label,
+  hint,
+  required = false,
+  disabled = false,
+  multiple = false,
+  accept = '*/*',
+  maxFileSize = 10 * 1024 * 1024,
+  value = [],
+  onChange,
+  id,
+  className = '',
+}) => {
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>(value);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const processFiles = useCallback((files: FileList | File[]) => {
+    const newFiles: UploadedFile[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > maxFileSize) continue;
+      const uploaded: UploadedFile = { file, name: file.name, size: file.size, type: file.type };
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          uploaded.preview = reader.result as string;
+          setUploadedFiles((prev) => {
+            const next = multiple ? [...prev, uploaded] : [uploaded];
+            onChange?.(next);
+            return next;
+          });
+        };
+        reader.readAsDataURL(file);
+      } else {
+        newFiles.push(uploaded);
+      }
+    }
+    if (newFiles.length > 0) {
+      setUploadedFiles((prev) => {
+        const next = multiple ? [...prev, ...newFiles] : newFiles;
+        onChange?.(next);
+        return next;
+      });
+    }
+  }, [multiple, maxFileSize, onChange]);
+
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = () => setIsDragging(false);
+  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files) processFiles(e.dataTransfer.files); };
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files) processFiles(e.target.files); };
+  const handleRemove = (index: number) => {
+    const next = uploadedFiles.filter((_, i) => i !== index);
+    setUploadedFiles(next);
+    onChange?.(next);
+  };
+
+  return (
+{% if ui_framework == "material" %}
+    <div className={className} style={% raw %}{{ width: '100%', marginBottom: '16px' }}{% endraw %}>
+      {label && (
+        <div style={% raw %}{{ fontWeight: 500, marginBottom: '8px' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#d32f2f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !disabled && document.getElementById(id)?.click()}
+        style={% raw %}{{
+          border: `2px dashed ${isDragging ? '#3f51b5' : '#e0e0e0'}`,
+          borderRadius: '8px', padding: '24px', textAlign: 'center',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: isDragging ? '#e8eaf6' : '#fff',
+        }}{% endraw %}
+      >
+        <input id={id} type="file" multiple={multiple} accept={accept} onChange={handleFileChange} disabled={disabled} style={% raw %}{{ display: 'none' }}{% endraw %} />
+        <div style={% raw %}{{ fontSize: '32px', color: '#9e9e9e', marginBottom: '8px' }}{% endraw %}>📁</div>
+        <div style={% raw %}{{ fontSize: '14px', color: '#757575' }}{% endraw %}>
+          {isDragging ? 'Drop files here' : 'Drag & drop or <span style="color:#3f51b5;text-decoration:underline">browse</span>'}
+        </div>
+        <div style={% raw %}{{ fontSize: '12px', color: '#bdbdbd', marginTop: '4px' }}{% endraw %}>{accept !== '*/*' ? `Accepted: ${accept}` : 'Any file type'}</div>
+      </div>
+      {uploadedFiles.length > 0 && (
+        <div style={% raw %}{{ marginTop: '12px' }}{% endraw %}>
+          {uploadedFiles.map((f, i) => (
+            <div key={i} style={% raw %}{{ display: 'flex', alignItems: 'center', padding: '8px', border: '1px solid #e0e0e0', borderRadius: '4px', marginBottom: '4px' }}{% endraw %}>
+              {f.preview ? <img src={f.preview} style={% raw %}{{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', marginRight: '8px' }}{% endraw %} /> : <span style={% raw %}{{ fontSize: '20px', marginRight: '8px' }}{% endraw %}>📄</span>}
+              <div style={% raw %}{{ flex: 1, minWidth: 0 }}{% endraw %}>
+                <div style={% raw %}{{ fontSize: '13px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}{% endraw %}>{f.name}</div>
+                <div style={% raw %}{{ fontSize: '11px', color: '#757575' }}{% endraw %}>{formatSize(f.size)}</div>
+              </div>
+              <button type="button" onClick={() => handleRemove(i)} style={% raw %}{{ background: 'none', border: 'none', cursor: 'pointer', color: '#d32f2f', fontSize: '18px' }}{% endraw %}>&times;</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {hint && <div style={% raw %}{{ fontSize: '12px', color: '#757575', marginTop: '4px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "tailwind" %}
+    <div className={`w-full ${className}`}>
+      {label && (
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {label}
+          {required && <span className="text-red-500 ml-1">*</span>}
+        </label>
+      )}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !disabled && document.getElementById(id)?.click()}
+        className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
+      >
+        <input id={id} type="file" multiple={multiple} accept={accept} onChange={handleFileChange} disabled={disabled} className="hidden" />
+        <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+          <path d="M28 8H12a4 4 0 00-4 4v20m32-12v20a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-9-9m0 0l-9 9m9-9V12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <p className="mt-2 text-sm text-gray-600">{isDragging ? 'Drop files here' : 'Drag & drop or <span className="text-blue-600 underline">browse</span>'}</p>
+        <p className="mt-1 text-xs text-gray-500">{accept !== '*/*' ? `Accepted: ${accept}` : 'Any file type'}</p>
+      </div>
+      {uploadedFiles.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {uploadedFiles.map((f, i) => (
+            <div key={i} className="flex items-center p-2 border border-gray-200 rounded">
+              {f.preview ? <img src={f.preview} className="w-10 h-10 object-cover rounded mr-2" /> : <span className="text-2xl mr-2">📄</span>}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">{f.name}</div>
+                <div className="text-xs text-gray-500">{formatSize(f.size)}</div>
+              </div>
+              <button type="button" onClick={() => handleRemove(i)} className="text-red-500 hover:text-red-700 text-lg">&times;</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {hint && <p className="mt-1 text-sm text-gray-500">{hint}</p>}
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div className={`w-100 ${className}`}>
+      {label && (
+        <label className="form-label">
+          {label}
+          {required && <span className="text-danger">*</span>}
+        </label>
+      )}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !disabled && document.getElementById(id)?.click()}
+        className="border-2 border-dashed rounded p-4 text-center"
+        style={% raw %}{{ borderColor: isDragging ? '#0d6efd' : '#dee2e6', cursor: disabled ? 'not-allowed' : 'pointer' }}{% endraw %}
+      >
+        <input id={id} type="file" multiple={multiple} accept={accept} onChange={handleFileChange} disabled={disabled} className="d-none" />
+        <div className="fs-1 text-muted">&#128193;</div>
+        <small className="text-muted">{isDragging ? 'Drop files here' : 'Drag & drop or browse'}</small>
+        <br /><small className="text-muted">{accept !== '*/*' ? `Accepted: ${accept}` : 'Any file type'}</small>
+      </div>
+      {uploadedFiles.length > 0 && (
+        <div className="mt-2">
+          {uploadedFiles.map((f, i) => (
+            <div key={i} className="d-flex align-items-center p-2 border rounded mb-1">
+              {f.preview ? <img src={f.preview} className="me-2" style={% raw %}{{ width: '40px', height: '40px', objectFit: 'cover' }}{% endraw %} /> : <span className="fs-4 me-2">📄</span>}
+              <div className="flex-grow-1 text-truncate">
+                <small className="fw-bold">{f.name}</small>
+                <br /><small className="text-muted">{formatSize(f.size)}</small>
+              </div>
+              <button type="button" onClick={() => handleRemove(i)} className="btn btn-sm btn-outline-danger">&times;</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {hint && <small className="form-text text-muted">{hint}</small>}
+    </div>
+{% elif ui_framework == "antd" %}
+    <div style={% raw %}{{ width: '100%', marginBottom: '16px' }}{% endraw %} className={className}>
+      {label && (
+        <div style={% raw %}{{ fontSize: '14px', marginBottom: '4px', color: '#262626' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#ff4d4f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !disabled && document.getElementById(id)?.cl{% raw %}{{
+          border: `2px dashed ${isDragging ? '#1677ff' : '#d9d9d9'}`,
+          borderRadius: '6px', padding: '24px', textAlign: 'center',
+          cursor: disabled ? 'not-allowed' : 'pointer', background: isDragging ? '#e6f4ff' : '#fff',
+        }}{% endraw %} : '#fff',
+        }}
+      >
+        <input id={id} type="file" multiple={multiple} accept={accept} onChange={handleFileChange} disabled={disabled} style={% raw %}{{ display: 'none' }}{% endraw %} />
+        <div style={% raw %}{{ fontSize: '32px', color: '#bfbfbf', marginBottom: '8px' }}{% endraw %}>📁</div>
+        <div style={% raw %}{{ fontSize: '14px', color: '#8c8c8c' }}{% endraw %}>{isDragging ? 'Drop files here' : 'Click or drag file to upload'}</div>
+        <div style={% raw %}{{ fontSize: '12px', color: '#bfbfbf', marginTop: '4px' }}{% endraw %}>{accept !== '*/*' ? `Accepted: ${accept}` : 'Any file type'}</div>
+      </div>
+      {uploadedFiles.length > 0 && (
+        <div style={% raw %}{{ marginTop: '12px' }}{% endraw %}>
+          {uploadedFiles.map((f, i) => (
+            <div key={i} style={% raw %}{{ display: 'flex', alignItems: 'center', padding: '8px', border: '1px solid #f0f0f0', borderRadius: '4px', marginBottom: '4px' }}{% endraw %}>
+              <span style={% raw %}{{ fontSize: '20px', marginRight: '8px' }}{% endraw %}>📄</span>
+              <div style={% raw %}{{ flex: 1, minWidth: 0 }}{% endraw %}>
+                <div style={% raw %}{{ fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}{% endraw %}>{f.name}</div>
+                <div style={% raw %}{{ fontSize: '11px', color: '#8c8c8c' }}{% endraw %}>{formatSize(f.size)}</div>
+              </div>
+              <button type="button" onClick={() => handleRemove(i)} style={% raw %}{{ background: 'none', border: 'none', cursor: 'pointer', color: '#ff4d4f' }}{% endraw %}>&times;</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {hint && <div style={% raw %}{{ color: '#8c8c8c', fontSize: '12px', marginTop: '4px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div style={% raw %}{{ width: '100%', marginBottom: '1rem' }}{% endraw %} className={className}>
+      {label && (
+        <div style={% raw %}{{ fontSize: '0.75rem', fontWeight: 400, color: '#525252', marginBottom: '0.25rem' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#da1e28', marginLeft: '0.25rem' }}{% endraw %}>*</span>}
+        </div>
+      )}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !disabled && document.g{% raw %}{{
+          border: `2px dashed ${isDragging ? '#0f62fe' : '#8d8d8d'}`,
+          padding: '1.5rem', textAlign: 'center',
+          cursor: disabled ? 'not-allowed' : 'pointer', background: isDragging ? '#edf5ff' : '#fff',
+        }}{% endraw %}sDragging ? '#edf5ff' : '#fff',
+        }}
+      >
+        <input id={id} type="file" multiple={multiple} accept={accept} onChange={handleFileChange} disabled={disabled} style={% raw %}{{ display: 'none' }}{% endraw %} />
+        <div style={% raw %}{{ fontSize: '32px', color: '#8d8d8d', marginBottom: '0.5rem' }}{% endraw %}>📁</div>
+        <div style={% raw %}{{ fontSize: '0.875rem', color: '#6f6f6f' }}{% endraw %}>{isDragging ? 'Drop files here' : 'Click or drag file to upload'}</div>
+      </div>
+      {uploadedFiles.length > 0 && (
+        <div style={% raw %}{{ marginTop: '0.75rem' }}{% endraw %}>
+          {uploadedFiles.map((f, i) => (
+            <div key={i} style={% raw %}{{ display: 'flex', alignItems: 'center', padding: '0.5rem', border: '1px solid #e0e0e0', marginBottom: '0.25rem' }}{% endraw %}>
+              <span style={% raw %}{{ fontSize: '20px', marginRight: '0.5rem' }}{% endraw %}>📄</span>
+              <div style={% raw %}{{ flex: 1, minWidth: 0 }}{% endraw %}>
+                <div style={% raw %}{{ fontSize: '0.875rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}{% endraw %}>{f.name}</div>
+                <div style={% raw %}{{ fontSize: '0.75rem', color: '#6f6f6f' }}{% endraw %}>{formatSize(f.size)}</div>
+              </div>
+              <button type="button" onClick={() => handleRemove(i)} style={% raw %}{{ background: 'none', border: 'none', cursor: 'pointer', color: '#da1e28' }}{% endraw %}>&times;</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {hint && <p style={% raw %}{{ fontSize: '0.75rem', color: '#6f6f6f', margin: '0.25rem 0' }}{% endraw %}>{hint}</p>}
+    </div>
+{% endif %}
+  );
+};
+
+export default FileUpload;

@@ -1,0 +1,138 @@
+/** Dialog Component - Non-modal dialog for gathering user input or confirmation. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatButtonModule } from "@angular/material/button";
+{% endif %}
+
+@Component({
+  selector: 'app-dialog',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatButtonModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<div *ngIf="isOpen" class="mat-dialog-container">
+  <div class="mat-dialog-surface">
+    <div *ngIf="title" class="mat-dialog-title">{% raw %}{{ title }}{% endraw %}</div>
+    <div class="mat-dialog-content">
+      <ng-content></ng-content>
+      <p *ngIf="!hasContent()">{% raw %}{{ message }}{% endraw %}</p>
+    </div>
+    <div class="mat-dialog-actions">
+      <button *ngIf="showCancel" mat-button (click)="onCancel()">{% raw %}{{ cancelLabel }}{% endraw %}</button>
+      <button mat-raised-button color="primary" (click)="onConfirm()">{% raw %}{{ confirmLabel }}{% endraw %}</button>
+    </div>
+  </div>
+  <div class="mat-dialog-backdrop" (click)="closeOnBackdrop && onCancel()"></div>
+</div>
+{% elif ui_framework == "tailwind" %}
+<div *ngIf="isOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+  <div class="fixed inset-0 bg-black/50" (click)="closeOnBackdrop && onCancel()"></div>
+  <div class="bg-white rounded-xl shadow-2xl z-10 w-full max-w-md mx-4">
+    <div class="flex items-center justify-between px-6 py-4 border-b">
+      <h2 class="text-lg font-semibold">{% raw %}{{ title }}{% endraw %}</h2>
+      <button (click)="onCancel()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+    </div>
+    <div class="px-6 py-4">
+      <ng-content></ng-content>
+      <p *ngIf="!hasContent()" class="text-gray-600">{% raw %}{{ message }}{% endraw %}</p>
+    </div>
+    <div class="flex justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+      <button *ngIf="showCancel" (click)="onCancel()" class="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-100">{% raw %}{{ cancelLabel }}{% endraw %}</button>
+      <button (click)="onConfirm()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">{% raw %}{{ confirmLabel }}{% endraw %}</button>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div *ngIf="isOpen" class="fixed inset-0 z-50 d-flex align-items-center justify-center">
+  <div class="fixed inset-0 bg-dark bg-opacity-50" (click)="closeOnBackdrop && onCancel()"></div>
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div *ngIf="title" class="modal-header">
+        <h5 class="modal-title">{% raw %}{{ title }}{% endraw %}</h5>
+        <button type="button" class="btn-close" (click)="onCancel()"></button>
+      </div>
+      <div class="modal-body">
+        <ng-content></ng-content>
+        <p *ngIf="!hasContent()">{% raw %}{{ message }}{% endraw %}</p>
+      </div>
+      <div class="modal-footer">
+        <button *ngIf="showCancel" type="button" class="btn btn-secondary" (click)="onCancel()">{% raw %}{{ cancelLabel }}{% endraw %}</button>
+        <button type="button" class="btn btn-primary" (click)="onConfirm()">{% raw %}{{ confirmLabel }}{% endraw %}</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "antd" %}
+<div *ngIf="isOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+  <div class="fixed inset-0 bg-black/45" (click)="closeOnBackdrop && onCancel()"></div>
+  <div class="ant-modal ant-modal-centered" style="width: 416px;">
+    <div class="ant-modal-content">
+      <div class="ant-modal-header">
+        <span class="ant-modal-title">{% raw %}{{ title }}{% endraw %}</span>
+        <button class="ant-modal-close-x" (click)="onCancel()">✕</button>
+      </div>
+      <div class="ant-modal-body">
+        <ng-content></ng-content>
+        <p *ngIf="!hasContent()">{% raw %}{{ message }}{% endraw %}</p>
+      </div>
+      <div class="ant-modal-footer">
+        <button *ngIf="showCancel" class="ant-btn ant-btn-default" (click)="onCancel()">{% raw %}{{ cancelLabel }}{% endraw %}</button>
+        <button class="ant-btn ant-btn-primary" (click)="onConfirm()">{% raw %}{{ confirmLabel }}{% endraw %}</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div *ngIf="isOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+  <div class="fixed inset-0 bg-black/30" (click)="closeOnBackdrop && onCancel()"></div>
+  <div class="cds--modal-overlay" style="background: rgba(22,22,22,0.3);"></div>
+  <div class="cds--modal" style="width: 672px; max-width: 90vw;">
+    <div class="cds--modal-header">
+      <button class="cds--btn cds--btn--ghost cds--btn--sm" (click)="onCancel()">✕</button>
+      <h2 class="cds--modal-header__label">{% raw %}{{ title }}{% endraw %}</h2>
+    </div>
+    <div class="cds--modal-content">
+      <ng-content></ng-content>
+      <p *ngIf="!hasContent()">{% raw %}{{ message }}{% endraw %}</p>
+    </div>
+    <div class="cds--modal-footer">
+      <button *ngIf="showCancel" class="cds--btn cds--btn--secondary" (click)="onCancel()">{% raw %}{{ cancelLabel }}{% endraw %}</button>
+      <button class="cds--btn cds--btn--primary" (click)="onConfirm()">{% raw %}{{ confirmLabel }}{% endraw %}</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+  `,
+})
+export class DialogComponent implements OnInit {
+  @Input() title: string = 'Thông báo';
+  @Input() message: string = '';
+  @Input() isOpen: boolean = false;
+  @Input() showCancel: boolean = true;
+  @Input() closeOnBackdrop: boolean = true;
+  @Input() confirmLabel: string = 'Xác nhận';
+  @Input() cancelLabel: string = 'Hủy';
+  @Output() confirm = new EventEmitter<void>();
+  @Output() cancel = new EventEmitter<void>();
+
+  ngOnInit() {}
+
+  hasContent(): boolean {
+    return false;
+  }
+
+  onConfirm() {
+    this.confirm.emit();
+  }
+
+  onCancel() {
+    this.cancel.emit();
+  }
+}

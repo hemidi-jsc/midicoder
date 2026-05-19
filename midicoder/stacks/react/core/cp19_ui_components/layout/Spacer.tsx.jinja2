@@ -1,0 +1,106 @@
+import React from "react";
+
+{% if ui_framework == "material" %}
+import { Box as MuiBox } from "@mui/material";
+{% elif ui_framework == "carbon" %}
+import { Box as CarbonBox } from "@carbon/react";
+{% endif %}
+
+export interface SpacerProps {
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | number;
+  direction?: 'horizontal' | 'vertical' | 'both';
+  flex?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+  [key: string]: any;
+}
+
+export const Spacer: React.FC<SpacerProps> = ({
+  size = 'md',
+  direction = 'vertical',
+  flex = true,
+  className = '',
+  style,
+  ...rest
+}) => {
+  {% if ui_framework == "material" %}
+  const sizeMap: Record<string, number> = { xs: 8, sm: 16, md: 24, lg: 32, xl: 48 };
+  const px = typeof size === 'number' ? size : sizeMap[size] || 24;
+
+  const spacerStyle: React.CSSProperties = flex
+    ? { flexGrow: 1, ...style }
+    : direction === 'vertical'
+      ? { minHeight: px, height: px, ...style }
+      : direction === 'horizontal'
+        ? { minWidth: px, width: px, ...style }
+        : { minHeight: px, minWidth: px, height: px, width: px, ...style };
+
+  return (
+    <MuiBox className={`midicoder-spacer ${className}`} style={spacerStyle} {...rest} />
+  );
+  {% elif ui_framework == "tailwind" %}
+  const sizeMap: Record<string, string> = { xs: '2', sm: '4', md: '6', lg: '8', xl: '12' };
+  const sizeClass = typeof size === 'number' ? String(size / 4) : sizeMap[size] || '6';
+
+  const spacerClass = flex
+    ? 'flex-grow'
+    : direction === 'vertical'
+      ? `my-${sizeClass}`
+      : direction === 'horizontal'
+        ? `mx-${sizeClass}`
+        : `m-${sizeClass}`;
+
+  return (
+    <div className={`${spacerClass} ${className}`} style={style} {...rest} />
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const sizeMap: Record<string, string> = { xs: '1', sm: '2', md: '3', lg: '4', xl: '5' };
+  const sizeClass = typeof size === 'number' ? '3' : sizeMap[size] || '3';
+
+  const spacerClass = flex
+    ? 'flex-grow-1'
+    : direction === 'vertical'
+      ? `my-${sizeClass}`
+      : direction === 'horizontal'
+        ? `mx-${sizeClass}`
+        : `m-${sizeClass}`;
+
+  return (
+    <div className={`${spacerClass} ${className}`} style={style} {...rest} />
+  );
+  {% elif ui_framework == "antd" %}
+  const sizeMap: Record<string, number> = { xs: 8, sm: 16, md: 24, lg: 32, xl: 48 };
+  const px = typeof size === 'number' ? size : sizeMap[size] || 24;
+
+  const spacerStyle: React.CSSProperties = flex
+    ? { flexGrow: 1, ...style }
+    : direction === 'vertical'
+      ? { minHeight: px, height: px, flexShrink: 0, ...style }
+      : direction === 'horizontal'
+        ? { minWidth: px, width: px, flexShrink: 0, ...style }
+        : { minHeight: px, minWidth: px, flexShrink: 0, ...style };
+
+  return (
+    <div className={`midicoder-spacer ${className}`} style={spacerStyle} {...rest} />
+  );
+  {% elif ui_framework == "carbon" %}
+  const sizeMap: Record<string, number> = { xs: 8, sm: 16, md: 24, lg: 32, xl: 48 };
+  const px = typeof size === 'number' ? size : sizeMap[size] || 24;
+
+  const spacerStyle: React.CSSProperties = flex
+    ? { flexGrow: 1, ...style }
+    : direction === 'vertical'
+      ? { minHeight: px, height: px, flexShrink: 0, ...style }
+      : direction === 'horizontal'
+        ? { minWidth: px, width: px, flexShrink: 0, ...style }
+        : { minHeight: px, minWidth: px, flexShrink: 0, ...style };
+
+  return (
+    <CarbonBox className={`midicoder-spacer ${className}`} style={spacerStyle} {...rest} />
+  );
+  {% endif %}
+};
+
+Spacer.displayName = 'Spacer';
+
+export default Spacer;

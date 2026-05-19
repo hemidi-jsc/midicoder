@@ -1,0 +1,214 @@
+/** BadgeButton Component - Button with a badge/count indicator overlay. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatButtonModule } from "@angular/material/button";
+import { MatBadgeModule } from "@angular/material/badge";
+{% endif %}
+
+export type BadgeButtonVariant = 'primary' | 'secondary' | 'outline' | 'danger';
+
+@Component({
+  selector: 'app-badge-button',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatButtonModule,
+    MatBadgeModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<button
+  mat-raised-button
+  [color]="materialColor"
+  [disabled]="isDisabled"
+  [matBadge]="badgeContent"
+  [matBadgeHidden]="!showBadge"
+  [matBadgeColor]="badgeColor"
+  [matBadgeSize]="badgeSize === 'lg' ? 'large' : 'small'"
+  (click)="onClick($event)"
+>
+  {% raw %}{{ label }}{% endraw %}
+</button>
+{% elif ui_framework == "tailwind" %}
+<button
+  [ngClass]="buttonClasses"
+  [disabled]="isDisabled"
+  (click)="onClick($event)"
+  type="button"
+  class="relative inline-flex"
+>
+  <span>{% raw %}{{ label }}{% endraw %}</span>
+  <span
+    *ngIf="showBadge"
+    [ngClass]="badgeClasses"
+    class="absolute -top-2 -right-2 min-w-[1.25rem] h-5 flex items-center justify-center text-xs font-bold rounded-full px-1.5"
+  >
+    {% raw %}{{ badgeContent }}{% endraw %}
+  </span>
+</button>
+{% elif ui_framework == "bootstrap" %}
+<button
+  [ngClass]="'btn ' + bootstrapClasses"
+  [disabled]="isDisabled"
+  (click)="onClick($event)"
+  type="button"
+  style="position: relative;"
+>
+  {% raw %}{{ label }}{% endraw %}
+  <span
+    *ngIf="showBadge"
+    [ngClass]="'badge bg-' + badgeBootstrapColor"
+    style="position: absolute; top: -0.5rem; right: -0.5rem;"
+  >
+    {% raw %}{{ badgeContent }}{% endraw %}
+  </span>
+</button>
+{% elif ui_framework == "antd" %}
+<div class="ant-badge">
+  <button
+    [ngClass]="'ant-btn ' + antdClasses"
+    [disabled]="isDisabled"
+    (click)="onClick($event)"
+    type="button"
+  >
+    {% raw %}{{ label }}{% endraw %}
+  </button>
+  <span
+    *ngIf="showBadge"
+    [ngClass]="'ant-badge-dot ' + (isDot ? '' : 'ant-badge-count')"
+    [ngStyle]="{
+      backgroundColor: badgeColor,
+      top: '-8px',
+      right: '-8px',
+    }"
+    style="position: absolute;"
+  >
+    {% if !isDot %}{% raw %}{{ badgeContent }}{% endraw %}{% endif %}
+  </span>
+</div>
+{% elif ui_framework == "carbon" %}
+<div class="cds--btn-set" style="position: relative; display: inline-block;">
+  <button
+    [ngClass]="'cds--btn ' + carbonClasses"
+    [disabled]="isDisabled"
+    (click)="onClick($event)"
+    type="button"
+  >
+    {% raw %}{{ label }}{% endraw %}
+  </button>
+  <span
+    *ngIf="showBadge"
+    class="cds--tag cds--tag--red"
+    [ngStyle]="{
+      position: 'absolute',
+      top: '-0.5rem',
+      right: '-0.5rem',
+      'min-width': '1.25rem',
+      height: '1.25rem',
+      'display': 'inline-flex',
+      'align-items': 'center',
+      'justify-content': 'center',
+      'border-radius': '0.625rem',
+      'font-size': '0.75rem',
+      'padding': '0 0.25rem',
+    }"
+  >
+    {% raw %}{{ badgeContent }}{% endraw %}
+  </span>
+</div>
+{% endif %}
+  `,
+})
+export class BadgeButtonComponent implements OnInit {
+  @Input() label: string = 'Button';
+  @Input() variant: BadgeButtonVariant = 'primary';
+  @Input() badgeContent: string | number = 0;
+  @Input() showBadge: boolean = true;
+  @Input() isDisabled: boolean = false;
+  @Input() isDot: boolean = false;
+  @Input() badgeColor: string = '#ef4444';
+  @Input() badgeSize: 'sm' | 'lg' = 'sm';
+  @Output() click = new EventEmitter<Event>();
+
+  ngOnInit() {}
+
+  get materialColor(): 'primary' | 'accent' | 'warn' {
+    const map: Record<string, 'primary' | 'accent' | 'warn'> = {
+      primary: 'primary',
+      secondary: 'accent',
+      danger: 'warn',
+      outline: 'primary',
+    };
+    return map[this.variant] || 'primary';
+  }
+
+  get buttonClasses(): string {
+    const variantMap: Record<string, string> = {
+      primary: 'bg-blue-600 text-white hover:bg-blue-700',
+      secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300',
+      outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50',
+      danger: 'bg-red-600 text-white hover:bg-red-700',
+    };
+    return `inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${variantMap[this.variant] || variantMap.primary}`;
+  }
+
+  get badgeClasses(): string {
+    const colorMap: Record<string, string> = {
+      '#ef4444': 'bg-red-500 text-white',
+      '#3b82f6': 'bg-blue-500 text-white',
+      '#22c55e': 'bg-green-500 text-white',
+      '#f59e0b': 'bg-yellow-500 text-black',
+    };
+    return colorMap[this.badgeColor] || 'bg-red-500 text-white';
+  }
+
+  get badgeBootstrapColor(): string {
+    const colorMap: Record<string, string> = {
+      '#ef4444': 'danger',
+      '#3b82f6': 'primary',
+      '#22c55e': 'success',
+      '#f59e0b': 'warning text-dark',
+    };
+    return colorMap[this.badgeColor] || 'danger';
+  }
+
+  get bootstrapClasses(): string {
+    const variantMap: Record<string, string> = {
+      primary: 'btn-primary',
+      secondary: 'btn-secondary',
+      outline: 'btn-outline-primary',
+      danger: 'btn-danger',
+    };
+    return variantMap[this.variant] || 'btn-primary';
+  }
+
+  get antdClasses(): string {
+    const variantMap: Record<string, string> = {
+      primary: 'ant-btn-primary',
+      secondary: 'ant-btn-default',
+      outline: 'ant-btn-outline',
+      danger: 'ant-btn-dangerous',
+    };
+    return variantMap[this.variant] || 'ant-btn-primary';
+  }
+
+  get carbonClasses(): string {
+    const variantMap: Record<string, string> = {
+      primary: 'cds--btn--primary',
+      secondary: 'cds--btn--secondary',
+      outline: 'cds--btn--ghost',
+      danger: 'cds--btn--danger',
+    };
+    return variantMap[this.variant] || 'cds--btn--primary';
+  }
+
+  onClick(event: Event) {
+    if (!this.isDisabled) {
+      this.click.emit(event);
+    }
+  }
+}

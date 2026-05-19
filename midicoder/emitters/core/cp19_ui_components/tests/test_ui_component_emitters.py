@@ -61,8 +61,9 @@ class TestAngularUIEmitter:
         ]
         files = emitter.generate(components, tmp_path)
         assert len(files) == 1
+        # FORM_FIELD outputs to data-input/ subdirectory
         assert "form-field.component.ts" in str(files[0].path)
-        assert Path(tmp_path / "form-field.component.ts").exists()
+        assert Path(tmp_path / "data-input" / "form-field.component.ts").exists()
 
     def test_angular_emitter_generate_all_components(self, tmp_path: Path):
         """Test generate tất cả 4 components cho Angular."""
@@ -127,7 +128,7 @@ class TestReactUIEmitter:
         files = emitter.generate(components, tmp_path)
         assert len(files) == 1
         assert "FormField.tsx" in str(files[0].path)
-        assert Path(tmp_path / "FormField.tsx").exists()
+        assert Path(tmp_path / "data-input" / "FormField.tsx").exists()
 
     def test_react_emitter_generate_all_components(self, tmp_path: Path):
         """Test generate tất cả 4 components cho React."""

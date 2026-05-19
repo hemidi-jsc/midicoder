@@ -1,0 +1,447 @@
+{% if ui_framework == "material" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatTableModule } from '@angular/material/table';
+import { MatPaginatorModule } from '@angular/material/paginator';
+import { MatSortModule } from '@angular/material/sort';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatToolbarModule } from '@angular/material/toolbar';
+import { MatInputModule } from '@angular/material/input';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatTableModule,
+    MatPaginatorModule,
+    MatSortModule,
+    MatCheckboxModule,
+    MatProgressBarModule,
+    MatToolbarModule,
+    MatInputModule,
+    MatFormFieldModule,
+    MatButtonModule,
+    MatIconModule
+  ],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() data: {{ data_interface_name }}[] = [];
+  @Input() columns: string[] = [{% for col in columns %}'{{ col }}'{% if not loop.last %}, {% endif %}{% endfor %}];
+  @Input() withPagination: boolean = true;
+  @Input() withSorting: boolean = true;
+  @Input() withSelection: boolean = false;
+  @Input() withSearch: boolean = false;
+  @Input() isLoading: boolean = false;
+  @Input() pageSize: number = 10;
+  @Input() rowHref?: (row: {{ data_interface_name }}) => string;
+
+  displayedColumns: string[] = [];
+  filteredData: {{ data_interface_name }}[] = [];
+  searchQuery: string = '';
+  selection = new Set<number>();
+
+  ngOnInit(): void {
+    this.displayedColumns = [...this.columns];
+    if (this.withSelection) {
+      this.displayedColumns = ['select', ...this.displayedColumns];
+    }
+    this.filteredData = [...this.data];
+  }
+
+  applyFilter(): void {
+    const query = this.searchQuery.toLowerCase();
+    this.filteredData = this.data.filter(row =>
+      Object.values(row).some(val =>
+        String(val).toLowerCase().includes(query)
+      )
+    );
+  }
+
+  isRowSelected(index: number): boolean {
+    return this.selection.has(index);
+  }
+
+  toggleRowSelection(index: number): void {
+    if (this.isRowSelected(index)) {
+      this.selection.delete(index);
+    } else {
+      this.selection.add(index);
+    }
+  }
+
+  toggleAllSelection(): void {
+    if (this.selection.size === this.filteredData.length) {
+      this.selection.clear();
+    } else {
+      this.filteredData.forEach((_, i) => this.selection.add(i));
+    }
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() data: {{ data_interface_name }}[] = [];
+  @Input() columns: string[] = [{% for col in columns %}'{{ col }}'{% if not loop.last %}, {% endif %}{% endfor %}];
+  @Input() columnLabels: { [key: string]: string } = {};
+  @Input() withPagination: boolean = true;
+  @Input() withSorting: boolean = true;
+  @Input() withSelection: boolean = false;
+  @Input() withSearch: boolean = false;
+  @Input() isLoading: boolean = false;
+  @Input() pageSize: number = 10;
+  @Input() rowHref?: (row: {{ data_interface_name }}) => string;
+
+  displayedColumns: string[] = [];
+  filteredData: {{ data_interface_name }}[] = [];
+  searchQuery: string = '';
+  currentPage: number = 1;
+  sortColumn: string = '';
+  sortDirection: 'asc' | 'desc' = 'asc';
+  selection = new Set<number>();
+
+  ngOnInit(): void {
+    this.displayedColumns = [...this.columns];
+    this.filteredData = [...this.data];
+  }
+
+  get paginatedData(): {{ data_interface_name }}[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredData.slice(start, start + this.pageSize);
+  }
+
+  get totalPages(): number {
+    return Math.ceil(this.filteredData.length / this.pageSize);
+  }
+
+  applyFilter(): void {
+    const query = this.searchQuery.toLowerCase();
+    this.filteredData = this.data.filter(row =>
+      Object.values(row).some(val =>
+        String(val).toLowerCase().includes(query)
+      )
+    );
+    this.currentPage = 1;
+  }
+
+  toggleSort(column: string): void {
+    if (this.sortColumn === column) {
+      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortColumn = column;
+      this.sortDirection = 'asc';
+    }
+    this.filteredData.sort((a, b) => {
+      const aVal = String(a[column]);
+      const bVal = String(b[column]);
+      return this.sortDirection === 'asc'
+        ? aVal.localeCompare(bVal)
+        : bVal.localeCompare(aVal);
+    });
+  }
+
+  getSortArrow(column: string): string {
+    if (this.sortColumn !== column) return '';
+    return this.sortDirection === 'asc' ? '↑' : '↓';
+  }
+
+  isRowSelected(index: number): boolean {
+    return this.selection.has(index);
+  }
+
+  toggleRowSelection(index: number): void {
+    if (this.isRowSelected(index)) {
+      this.selection.delete(index);
+    } else {
+      this.selection.add(index);
+    }
+  }
+
+  toggleAllSelection(): void {
+    if (this.selection.size === this.paginatedData.length) {
+      this.selection.clear();
+    } else {
+      this.paginatedData.forEach((_, i) => this.selection.add(i));
+    }
+  }
+
+  getColumnLabel(column: string): string {
+    return this.columnLabels[column] || column.charAt(0).toUpperCase() + column.slice(1);
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() data: {{ data_interface_name }}[] = [];
+  @Input() columns: string[] = [{% for col in columns %}'{{ col }}'{% if not loop.last %}, {% endif %}{% endfor %}];
+  @Input() columnLabels: { [key: string]: string } = {};
+  @Input() withPagination: boolean = true;
+  @Input() withSorting: boolean = true;
+  @Input() withSelection: boolean = false;
+  @Input() withSearch: boolean = false;
+  @Input() isLoading: boolean = false;
+  @Input() pageSize: number = 10;
+  @Input() rowHref?: (row: {{ data_interface_name }}) => string;
+
+  displayedColumns: string[] = [];
+  filteredData: {{ data_interface_name }}[] = [];
+  searchQuery: string = '';
+  currentPage: number = 1;
+  sortColumn: string = '';
+  sortDirection: 'asc' | 'desc' = 'asc';
+  selection = new Set<number>();
+
+  ngOnInit(): void {
+    this.displayedColumns = [...this.columns];
+    this.filteredData = [...this.data];
+  }
+
+  get paginatedData(): {{ data_interface_name }}[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredData.slice(start, start + this.pageSize);
+  }
+
+  get totalPages(): number {
+    return Math.ceil(this.filteredData.length / this.pageSize);
+  }
+
+  applyFilter(): void {
+    const query = this.searchQuery.toLowerCase();
+    this.filteredData = this.data.filter(row =>
+      Object.values(row).some(val =>
+        String(val).toLowerCase().includes(query)
+      )
+    );
+    this.currentPage = 1;
+  }
+
+  toggleSort(column: string): void {
+    if (this.sortColumn === column) {
+      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortColumn = column;
+      this.sortDirection = 'asc';
+    }
+    this.filteredData.sort((a, b) => {
+      const aVal = String(a[column]);
+      const bVal = String(b[column]);
+      return this.sortDirection === 'asc'
+        ? aVal.localeCompare(bVal)
+        : bVal.localeCompare(aVal);
+    });
+  }
+
+  getSortIcon(column: string): string {
+    if (this.sortColumn !== column) return 'bi-chevron-expand';
+    return this.sortDirection === 'asc' ? 'bi-sort-up' : 'bi-sort-down';
+  }
+
+  getColumnLabel(column: string): string {
+    return this.columnLabels[column] || column.charAt(0).toUpperCase() + column.slice(1);
+  }
+}
+{% elif ui_framework == "antd" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() data: {{ data_interface_name }}[] = [];
+  @Input() columns: string[] = [{% for col in columns %}'{{ col }}'{% if not loop.last %}, {% endif %}{% endfor %}];
+  @Input() columnLabels: { [key: string]: string } = {};
+  @Input() withPagination: boolean = true;
+  @Input() withSorting: boolean = true;
+  @Input() withSelection: boolean = false;
+  @Input() withSearch: boolean = false;
+  @Input() isLoading: boolean = false;
+  @Input() pageSize: number = 10;
+
+  filteredData: {{ data_interface_name }}[] = [];
+  searchQuery: string = '';
+  currentPage: number = 1;
+  sortColumn: string = '';
+  sortDirection: 'ascend' | 'descend' | null = null;
+  selection = new Set<number>();
+
+  ngOnInit(): void {
+    this.filteredData = [...this.data];
+  }
+
+  get paginatedData(): {{ data_interface_name }}[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredData.slice(start, start + this.pageSize);
+  }
+
+  get totalPages(): number {
+    return Math.ceil(this.filteredData.length / this.pageSize);
+  }
+
+  applyFilter(): void {
+    const query = this.searchQuery.toLowerCase();
+    this.filteredData = this.data.filter(row =>
+      Object.values(row).some(val =>
+        String(val).toLowerCase().includes(query)
+      )
+    );
+    this.currentPage = 1;
+  }
+
+  toggleSort(column: string): void {
+    if (this.sortColumn === column) {
+      this.sortDirection = this.sortDirection === 'ascend' ? 'descend' : null;
+      this.sortColumn = this.sortDirection ? column : '';
+    } else {
+      this.sortColumn = column;
+      this.sortDirection = 'ascend';
+    }
+    if (this.sortDirection) {
+      this.filteredData.sort((a, b) => {
+        const aVal = String(a[column]);
+        const bVal = String(b[column]);
+        return this.sortDirection === 'ascend'
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      });
+    }
+  }
+
+  getSortIcon(column: string): string {
+    if (this.sortColumn !== column) return '↕';
+    return this.sortDirection === 'ascend' ? '↑' : '↓';
+  }
+
+  getColumnLabel(column: string): string {
+    return this.columnLabels[column] || column.charAt(0).toUpperCase() + column.slice(1);
+  }
+}
+{% elif ui_framework == "carbon" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() data: {{ data_interface_name }}[] = [];
+  @Input() columns: string[] = [{% for col in columns %}'{{ col }}'{% if not loop.last %}, {% endif %}{% endfor %}];
+  @Input() columnLabels: { [key: string]: string } = {};
+  @Input() withPagination: boolean = true;
+  @Input() withSorting: boolean = true;
+  @Input() withSelection: boolean = false;
+  @Input() withSearch: boolean = false;
+  @Input() isLoading: boolean = false;
+  @Input() pageSize: number = 10;
+
+  filteredData: {{ data_interface_name }}[] = [];
+  searchQuery: string = '';
+  currentPage: number = 1;
+  sortColumn: string = '';
+  sortDirection: 'asc' | 'desc' = 'asc';
+  selection = new Set<number>();
+
+  ngOnInit(): void {
+    this.filteredData = [...this.data];
+  }
+
+  get paginatedData(): {{ data_interface_name }}[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredData.slice(start, start + this.pageSize);
+  }
+
+  get totalPages(): number {
+    return Math.ceil(this.filteredData.length / this.pageSize);
+  }
+
+  applyFilter(): void {
+    const query = this.searchQuery.toLowerCase();
+    this.filteredData = this.data.filter(row =>
+      Object.values(row).some(val =>
+        String(val).toLowerCase().includes(query)
+      )
+    );
+    this.currentPage = 1;
+  }
+
+  toggleSort(column: string): void {
+    if (this.sortColumn === column) {
+      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortColumn = column;
+      this.sortDirection = 'asc';
+    }
+    this.filteredData.sort((a, b) => {
+      const aVal = String(a[column]);
+      const bVal = String(b[column]);
+      return this.sortDirection === 'asc'
+        ? aVal.localeCompare(bVal)
+        : bVal.localeCompare(aVal);
+    });
+  }
+
+  getSortIcon(column: string): string {
+    if (this.sortColumn !== column) return 'up';
+    return this.sortDirection === 'asc' ? 'down' : 'up';
+  }
+
+  getColumnLabel(column: string): string {
+    return this.columnLabels[column] || column.charAt(0).toUpperCase() + column.slice(1);
+  }
+}
+{% else %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() data: {{ data_interface_name }}[] = [];
+  @Input() columns: string[] = [{% for col in columns %}'{{ col }}'{% if not loop.last %}, {% endif %}{% endfor %}];
+  @Input() withPagination: boolean = true;
+  @Input() withSorting: boolean = true;
+  @Input() withSelection: boolean = false;
+  @Input() isLoading: boolean = false;
+  @Input() pageSize: number = 10;
+
+  displayedColumns: string[] = [];
+  filteredData: {{ data_interface_name }}[] = [];
+
+  ngOnInit(): void {
+    this.displayedColumns = [...this.columns];
+    this.filteredData = [...this.data];
+  }
+}
+{% endif %}

@@ -1,0 +1,116 @@
+/** LinearProgress Component - Linear loading indicator with determinate and indeterminate modes. */
+
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+{% endif %}
+
+@Component({
+  selector: 'app-linear-progress',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatProgressSpinnerModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-progress-bar
+  mode="{% raw %}{{ mode }}{% endraw %}"
+  [value]="mode === 'indeterminate' ? undefined : value"
+  [color]="color"
+  [ngStyle]="{height: thickness + 'px'}"
+></mat-progress-bar>
+{% elif ui_framework == "tailwind" %}
+<div
+  class="w-full bg-gray-200 overflow-hidden rounded-full"
+  [ngStyle]="{height: thickness + 'px'}"
+>
+  <div
+    [ngClass]="{
+      'bg-blue-500': color === 'primary',
+      'bg-green-500': color === 'success',
+      'bg-red-500': color === 'error',
+      'bg-yellow-500': color === 'warning',
+      'bg-gray-400': color === 'default',
+    }"
+    [ngStyle]="{
+      height: thickness + 'px',
+      width: mode === 'indeterminate' ? '60%' : value + '%',
+    }"
+    class="transition-all duration-300 ease-linear rounded-full"
+    *ngIf="mode !== 'indeterminate'"
+  ></div>
+  <div
+    *ngIf="mode === 'indeterminate'"
+    [ngClass]="{
+      'bg-blue-500': color === 'primary',
+      'bg-green-500': color === 'success',
+      'bg-red-500': color === 'error',
+      'bg-yellow-500': color === 'warning',
+      'bg-gray-400': color === 'default',
+    }"
+    [ngStyle]="{height: thickness + 'px'}"
+    class="w-1/3 rounded-full animate-[linear-progress_1.5s_ease-in-out_infinite]"
+  ></div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div
+  class="progress"
+  [ngClass]="{
+    'progress-bar-animated': mode === 'indeterminate',
+  }"
+  [ngStyle]="{height: thickness + 'px'}"
+  role="progressbar"
+  [attr.aria-valuenow]="value"
+>
+  <div
+    [ngClass]="'progress-bar ' + bootstrapColor"
+    [style.width.%]="mode === 'indeterminate' ? null : value"
+  ></div>
+</div>
+{% elif ui_framework == "antd" %}
+<div class="ant-progress ant-progress-line" style="width: 100%;">
+  <div class="ant-progress-bg" [ngStyle]="{height: thickness + 'px', width: value + '%'}"></div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div
+  class="cds--progress-bar"
+  [ngStyle]="{height: thickness + 'px'}"
+  role="progressbar"
+  [attr.aria-valuenow]="value"
+  [attr.aria-valuemin]="0"
+  [attr.aria-valuemax]="100"
+>
+  <div
+    class="cds--progress-bar__inner-track"
+    [ngStyle]="{
+      height: thickness + 'px',
+      width: mode === 'indeterminate' ? null : value + '%',
+    }"
+  ></div>
+</div>
+{% endif %}
+  `,
+})
+export class LinearProgressComponent implements OnInit {
+  @Input() value: number = 0;
+  @Input() mode: 'determinate' | 'indeterminate' = 'indeterminate';
+  @Input() color: 'primary' | 'success' | 'error' | 'warning' | 'default' = 'primary';
+  @Input() thickness: number = 4;
+
+  ngOnInit() {}
+
+  get bootstrapColor(): string {
+    const map: Record<string, string> = {
+      primary: 'bg-primary',
+      success: 'bg-success',
+      error: 'bg-danger',
+      warning: 'bg-warning',
+      default: 'bg-secondary',
+    };
+    return map[this.color] || 'bg-primary';
+  }
+}

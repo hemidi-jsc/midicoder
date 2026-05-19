@@ -1,0 +1,320 @@
+{% if ui_framework == "material" %}import React from 'react';
+import { Badge as MuiBadge, Chip } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface BadgeProps {
+  value?: string | number;
+  max?: number;
+  variant?: 'standard' | 'dot';
+  color?: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning';
+  overlap?: 'rectangular' | 'circular';
+  anchorOrigin?: {
+    vertical?: 'top' | 'bottom';
+    horizontal?: 'left' | 'right';
+  };
+  hidden?: boolean;
+  children?: React.ReactNode;
+  sx?: SxProps<Theme>;
+  className?: string;
+}
+
+function Badge({
+  value,
+  max = 99,
+  variant = 'standard',
+  color = 'error',
+  overlap = 'rectangular',
+  anchorOrigin = { vertical: 'top', horizontal: 'right' },
+  hidden = false,
+  children,
+  sx,
+  className
+}: BadgeProps) {
+  if (variant === 'dot') {
+    return (
+      <MuiBadge
+        badgeContent={value && !hidden ? Math.min(value as number, max) : undefined}
+        variant="dot"
+        color={color}
+        sx={sx}
+        className={className}
+      >
+        {children}
+      </MuiBadge>
+    );
+  }
+
+  return (
+    <MuiBadge
+      badgeContent={value && !hidden ? (typeof value === 'number' && value > max ? `${max}+` : value) : undefined}
+      color={color}
+      overlap={overlap}
+      anchorOrigin={anchorOrigin}
+      sx={sx}
+      className={className}
+    >
+      {children}
+    </MuiBadge>
+  );
+}
+
+export default Badge;
+{% elif ui_framework == "tailwind" %}import React from 'react';
+
+interface BadgeProps {
+  value?: string | number;
+  variant?: 'default' | 'subtle' | 'outline';
+  color?: 'default' | 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info';
+  size?: 'sm' | 'md' | 'lg';
+  rounded?: boolean;
+  dot?: boolean;
+  ribbon?: boolean;
+  children?: React.ReactNode;
+  className?: string;
+}
+
+function getColorClasses(color: string, variant: string): string {
+  const solid = {
+    default: 'bg-gray-500 text-white',
+    primary: 'bg-blue-600 text-white',
+    secondary: 'bg-purple-600 text-white',
+    success: 'bg-green-600 text-white',
+    danger: 'bg-red-600 text-white',
+    warning: 'bg-yellow-600 text-white',
+    info: 'bg-cyan-600 text-white'
+  };
+  const soft = {
+    default: 'bg-gray-100 text-gray-700',
+    primary: 'bg-blue-100 text-blue-700',
+    secondary: 'bg-purple-100 text-purple-700',
+    success: 'bg-green-100 text-green-700',
+    danger: 'bg-red-100 text-red-700',
+    warning: 'bg-yellow-100 text-yellow-700',
+    info: 'bg-cyan-100 text-cyan-700'
+  };
+  const outline = {
+    default: 'border border-gray-300 text-gray-700 bg-white',
+    primary: 'border border-blue-300 text-blue-700 bg-blue-50',
+    secondary: 'border border-purple-300 text-purple-700 bg-purple-50',
+    success: 'border border-green-300 text-green-700 bg-green-50',
+    danger: 'border border-red-300 text-red-700 bg-red-50',
+    warning: 'border border-yellow-300 text-yellow-700 bg-yellow-50',
+    info: 'border border-cyan-300 text-cyan-700 bg-cyan-50'
+  };
+
+  if (variant === 'outline') return outline[color] || outline.default;
+  if (variant === 'solid') return solid[color] || solid.default;
+  return soft[color] || soft.default;
+}
+
+function getSizeClasses(size: string): string {
+  switch (size) {
+    case 'sm': return 'text-xs px-2 py-0.5';
+    case 'lg': return 'text-base px-4 py-1';
+    default: return 'text-sm px-2.5 py-0.5';
+  }
+}
+
+function getDotColor(color: string): string {
+  const colors: Record<string, string> = {
+    default: 'bg-gray-500',
+    primary: 'bg-blue-500',
+    secondary: 'bg-purple-500',
+    success: 'bg-green-500',
+    danger: 'bg-red-500',
+    warning: 'bg-yellow-500',
+    info: 'bg-cyan-500'
+  };
+  return colors[color] || colors.default;
+}
+
+function Badge({
+  value,
+  variant = 'default',
+  color = 'default',
+  size = 'md',
+  rounded = true,
+  dot = false,
+  children,
+  className = ''
+}: BadgeProps) {
+  if (dot) {
+    return (
+      <span className={`inline-flex relative ${className}`}>
+        {children}
+        <span
+          className={`absolute -top-1 -right-1 block h-2.5 w-2.5 rounded-full ${getDotColor(color)}`}
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center ${getColorClasses(color, variant)} ${getSizeClasses(size)} ${rounded ? 'rounded-full' : 'rounded'} ${className}`}
+    >
+      {children || value}
+    </span>
+  );
+}
+
+export default Badge;
+{% elif ui_framework == "bootstrap" %}import React from 'react';
+
+interface BadgeProps {
+  value?: string | number;
+  variant?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info' | 'light' | 'dark';
+  pill?: boolean;
+  children?: React.ReactNode;
+  className?: string;
+}
+
+function Badge({
+  value,
+  variant = 'primary',
+  pill = true,
+  children,
+  className = ''
+}: BadgeProps) {
+  return (
+    <span className={`badge bg-${variant} ${pill ? 'rounded-pill' : ''} ${className}`}>
+      {children || value}
+    </span>
+  );
+}
+
+export default Badge;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { Badge as AntdBadge } from 'antd';
+
+interface BadgeProps {
+  value?: string | number;
+  color?: 'default' | 'blue' | 'green' | 'red' | 'orange' | 'purple' | string;
+  showDot?: boolean;
+  count?: number;
+  overflowCount?: number;
+  size?: 'default' | 'small';
+  offset?: [number, number];
+  children?: React.ReactNode;
+  className?: string;
+}
+
+function Badge({
+  value,
+  color = 'default',
+  showDot = false,
+  count,
+  overflowCount = 99,
+  size = 'default',
+  offset,
+  children,
+  className
+}: BadgeProps) {
+  const badgeColor = color === 'default' ? undefined : color;
+
+  if (showDot) {
+    return (
+      <AntdBadge dot color={badgeColor} className={className}>
+        {children}
+      </AntdBadge>
+    );
+  }
+
+  return (
+    <AntdBadge
+      count={count || value}
+      overflowCount={overflowCount}
+      color={badgeColor}
+      size={size}
+      offset={offset}
+      className={className}
+    >
+      {children}
+    </AntdBadge>
+  );
+}
+
+export default Badge;
+{% elif ui_framework == "carbon" %}import React from 'react';
+
+interface BadgeProps {
+  value?: string | number;
+  type?: 'red' | 'magenta' | 'purple' | 'blue' | 'cyan' | 'teal' | 'green' | 'gray' | 'cool-gray' | 'warm-gray';
+  size?: 'sm' | 'md' | 'lg';
+  children?: React.ReactNode;
+  className?: string;
+}
+
+function getTypeColor(type: string): string {
+  const colors: Record<string, string> = {
+    red: 'bg-[#da1e28] text-white',
+    magenta: 'bg-[#a2189e] text-white',
+    purple: 'bg-[#6929c4] text-white',
+    blue: 'bg-[#0f62fe] text-white',
+    cyan: 'bg-[#0070b8] text-white',
+    teal: 'bg-[#005396] text-white',
+    green: 'bg-[#198038] text-white',
+    gray: 'bg-[#8d8d8d] text-white',
+    'cool-gray': 'bg-[#6b6e72] text-white',
+    'warm-gray': 'bg-[#707070] text-white'
+  };
+  return colors[type] || colors['cool-gray'];
+}
+
+function getSizeClass(size: string): string {
+  switch (size) {
+    case 'sm': return 'text-xs px-2 py-0.5';
+    case 'lg': return 'text-sm px-3 py-1';
+    default: return 'text-xs px-2 py-0.5';
+  }
+}
+
+function Badge({
+  value,
+  type = 'cool-gray',
+  size = 'sm',
+  children,
+  className = ''
+}: BadgeProps) {
+  return (
+    <span
+      className={`cds-tag ${getTypeColor(type)} ${getSizeClass(size)} rounded-sm ${className}`}
+    >
+      {children || value}
+    </span>
+  );
+}
+
+export default Badge;
+{% else %}import React from 'react';
+
+interface BadgeProps {
+  value?: string | number;
+  color?: string;
+  size?: 'sm' | 'md' | 'lg';
+  children?: React.ReactNode;
+  className?: string;
+}
+
+function Badge({
+  value,
+  color = 'bg-gray-500 text-white',
+  size = 'md',
+  children,
+  className = ''
+}: BadgeProps) {
+  const sizeClasses: Record<string, string> = {
+    sm: 'text-xs px-2 py-0.5',
+    lg: 'text-base px-4 py-1',
+    md: 'text-sm px-2.5 py-0.5'
+  };
+
+  return (
+    <span className={`${color} ${sizeClasses[size]} rounded-full inline-flex items-center ${className}`}>
+      {children || value}
+    </span>
+  );
+}
+
+export default Badge;
+{% endif %}

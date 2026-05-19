@@ -1,0 +1,202 @@
+/*
+ * Midicoder CP19 - Data Input: FormField
+ * Standalone wrapper component for a labeled form field with validation display.
+ */
+import { Component, Input, ContentChild, forwardRef, EffectCallback } from '@angular/core';
+import { NG_VALUE_ACCESSOR, ControlValueAccessor, AbstractControl } from '@angular/forms';
+{% if ui_framework == "material" %}
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% endif %}
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: 'app-form-field',
+  standalone: true,
+  imports: [
+    CommonModule,
+{% if ui_framework == "material" %}
+    MatFormFieldModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbModule,
+{% endif %}
+  ],
+  providers: [
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => FormFieldComponent),
+      multi: true,
+    },
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-form-field appearance="outline" class="w-full" [color]="color">
+  <mat-label>
+    {{ label }}
+    <span *ngIf="required" class="text-danger">*</span>
+  </mat-label>
+  <ng-content select="[inputControl]"></ng-content>
+  <mat-hint *ngIf="hint" align="start">{{ hint }}</mat-hint>
+  <mat-hint *ngIf="characterCount" align="end">
+    {% raw %}{{ currentValue?.length || 0 }}{% endraw %}/{{ characterCount }}
+  </mat-hint>
+  <mat-error *ngIf="control?.hasError('required')">
+    {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+  </mat-error>
+  <mat-error *ngIf="control?.hasError('email')">
+    {% raw %}{{ errorMessage || 'Please enter a valid email' }}{% endraw %}
+  </mat-error>
+  <mat-error *ngIf="control?.hasError('minlength')">
+    Minimum {% raw %}{{ control?.errors?.['minlength']?.requiredLength }}{% endraw %} characters required
+  </mat-error>
+  <mat-error *ngIf="control?.hasError('maxlength')">
+    Maximum {% raw %}{{ control?.errors?.['maxlength']?.requiredLength }}{% endraw %} characters allowed
+  </mat-error>
+  <mat-error *ngIf="control?.hasError('pattern')">
+    {% raw %}{{ patternMessage || 'Invalid input format' }}{% endraw %}
+  </mat-error>
+  <mat-error *ngIf="control?.hasError('min')">
+    Minimum value is {% raw %}{{ control?.errors?.['min']?.min }}{% endraw %}
+  </mat-error>
+  <mat-error *ngIf="control?.hasError('max')">
+    Maximum value is {% raw %}{{ control?.errors?.['max']?.max }}{% endraw %}
+  </mat-error>
+</mat-form-field>
+
+{% elif ui_framework == "tailwind" %}
+<div class="w-full">
+  <label class="block text-sm font-medium text-gray-700 mb-1" [attr.for]="fieldId">
+    {{ label }}
+    <span *ngIf="required" class="text-red-500 ml-1">*</span>
+  </label>
+  <ng-content select="[inputControl]"></ng-content>
+  <div *ngIf="hint" class="mt-1 text-sm text-gray-500">{{ hint }}</div>
+  <div *ngIf="characterCount" class="mt-1 text-xs text-gray-400 text-right">
+    {% raw %}{{ currentValue?.length || 0 }}{% endraw %}/{{ characterCount }}
+  </div>
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="mt-1 text-sm text-red-600">
+    <span *ngIf="control?.hasError('required')">
+      {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+    </span>
+    <span *ngIf="control?.hasError('email')">
+      {% raw %}{{ errorMessage || 'Please enter a valid email' }}{% endraw %}
+    </span>
+    <span *ngIf="control?.hasError('minlength')">
+      Minimum {% raw %}{{ control?.errors?.['minlength']?.requiredLength }}{% endraw %} characters required
+    </span>
+    <span *ngIf="control?.hasError('maxlength')">
+      Maximum {% raw %}{{ control?.errors?.['maxlength']?.requiredLength }}{% endraw %} characters allowed
+    </span>
+    <span *ngIf="control?.hasError('pattern')">
+      {% raw %}{{ patternMessage || 'Invalid input format' }}{% endraw %}
+    </span>
+  </div>
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="form-group w-100">
+  <label [attr.for]="fieldId" class="form-label">
+    {{ label }}
+    <span *ngIf="required" class="text-danger">*</span>
+  </label>
+  <ng-content select="[inputControl]"></ng-content>
+  <small *ngIf="hint" class="form-text text-muted">{{ hint }}</small>
+  <small *ngIf="characterCount" class="form-text text-muted float-end">
+    {% raw %}{{ currentValue?.length || 0 }}{% endraw %}/{{ characterCount }}
+  </small>
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="invalid-feedback d-block">
+    <span *ngIf="control?.hasError('required')">
+      {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+    </span>
+    <span *ngIf="control?.hasError('email')">
+      {% raw %}{{ errorMessage || 'Please enter a valid email' }}{% endraw %}
+    </span>
+    <span *ngIf="control?.hasError('minlength')">
+      Minimum {% raw %}{{ control?.errors?.['minlength']?.requiredLength }}{% endraw %} characters required
+    </span>
+  </div>
+</div>
+
+{% elif ui_framework == "antd" %}
+<div class="midicoder-antd-form-field" style="width:100%; margin-bottom:16px;">
+  <label style="display:block; font-size:14px; font-weight:400; margin-bottom:4px; color:#262626;">
+    {{ label }}
+    <span *ngIf="required" style="color:#ff4d4f; margin-left:4px;">*</span>
+  </label>
+  <ng-content select="[inputControl]"></ng-content>
+  <div *ngIf="hint" style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ hint }}</div>
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="color:#ff4d4f; font-size:12px; margin-top:4px;">
+    <span *ngIf="control?.hasError('required')">
+      {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+    </span>
+    <span *ngIf="control?.hasError('email')">
+      {% raw %}{{ errorMessage || 'Please enter a valid email' }}{% endraw %}
+    </span>
+  </div>
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div class="midicoder-carbon-form-field" style="width:100%; margin-bottom:1rem;">
+  <label [attr.for]="fieldId" style="display:block; font-size:0.75rem; font-weight:400; color:#525252; margin-bottom:0.25rem;">
+    {{ label }}
+    <span *ngIf="required" style="color:#da1e28; margin-left:0.25rem;">*</span>
+  </label>
+  <ng-content select="[inputControl]"></ng-content>
+  <p *ngIf="hint" style="font-size:0.75rem; color:#6f6f6f; margin:0.25rem 0;">{{ hint }}</p>
+  <p *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="font-size:0.75rem; color:#da1e28; margin:0.25rem 0;">
+    <span *ngIf="control?.hasError('required')">
+      {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+    </span>
+    <span *ngIf="control?.hasError('email')">
+      {% raw %}{{ errorMessage || 'Please enter a valid email' }}{% endraw %}
+    </span>
+  </p>
+</div>
+
+{% endif %}
+  `,
+  styles: [`
+{% if ui_framework == "tailwind" %}
+/* Tailwind utilities handle all styling */
+{% elif ui_framework == "antd" %}
+.midicoder-antd-form-field:focus-within label { color: #1677ff; }
+{% elif ui_framework == "carbon" %}
+.midicoder-carbon-form-field:focus-within label { color: #0f62fe; }
+{% endif %}
+  `],
+})
+export class FormFieldComponent implements ControlValueAccessor {
+  @Input() label = '';
+  @Input() hint = '';
+  @Input() required = false;
+  @Input() requiredMessage = '';
+  @Input() errorMessage = '';
+  @Input() patternMessage = '';
+  @Input() color = 'primary';
+  @Input() characterCount: number | null = null;
+  @Input() fieldId = `ff-${Math.random().toString(36).slice(2, 9)}`;
+
+  @ContentChild(forwardRef(() => require('@angular/core').ContentChild), { static: false }) _childControl: any;
+
+  protected control: AbstractControl | null = null;
+  protected currentValue: any = null;
+
+  private _onChange: (value: any) => void = () => {};
+  private _onTouched: () => void = () => {};
+
+  writeValue(value: any): void {
+    this.currentValue = value;
+  }
+
+  registerOnChange(fn: (value: any) => void): void {
+    this._onChange = fn;
+  }
+
+  registerOnTouched(fn: () => void): void {
+    this._onTouched = fn;
+  }
+
+  setDisabledState(isDisabled: boolean): void {}
+}

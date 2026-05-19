@@ -1,0 +1,133 @@
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+@Component({
+  selector: 'app-spacer',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    {% if ui_framework == "material" %}
+    <div class="mat-spacer" [style]="spacerStyles"></div>
+    {% elif ui_framework == "tailwind" %}
+    <div [class]="spacerClass"></div>
+    {% elif ui_framework == "bootstrap" %}
+    <div [ngClass]="spacerClass"></div>
+    {% elif ui_framework == "antd" %}
+    <div class="midicoder-spacer" [style]="spacerStyles"></div>
+    {% elif ui_framework == "carbon" %}
+    <div class="midicoder-spacer" [style]="spacerStyles"></div>
+    {% endif %}
+  `,
+  styles: [`
+    {% if ui_framework == "material" %}
+    :host {
+      display: block;
+    }
+    .mat-spacer {
+      flex-shrink: 0;
+    }
+    {% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+    }
+    {% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+    }
+    {% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+    }
+    .midicoder-spacer {
+      flex-shrink: 0;
+    }
+    {% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+    }
+    .midicoder-spacer {
+      flex-shrink: 0;
+    }
+    {% endif %}
+  `]
+})
+export class SpacerComponent implements OnInit {
+  @Input() size: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | number = 'md';
+  @Input() direction: 'horizontal' | 'vertical' | 'both' = 'vertical';
+  @Input() flex: boolean = true;
+
+  {% if ui_framework == "material" %}
+  get spacerStyles(): string {
+    const sizeMap: Record<string, number> = { 'xs': 8, 'sm': 16, 'md': 24, 'lg': 32, 'xl': 48 };
+    const px = typeof this.size === 'number' ? this.size : sizeMap[this.size] || 24;
+    if (this.flex) {
+      return 'flex-grow: 1;';
+    }
+    if (this.direction === 'vertical') {
+      return `min-height: ${px}px; height: ${px}px;`;
+    } else if (this.direction === 'horizontal') {
+      return `min-width: ${px}px; width: ${px}px;`;
+    }
+    return `min-height: ${px}px; min-width: ${px}px; height: ${px}px; width: ${px}px;`;
+  }
+  {% elif ui_framework == "tailwind" %}
+  get spacerClass(): string {
+    if (this.flex) {
+      return 'flex-grow';
+    }
+    const sizeMap: Record<string, string> = { 'xs': '2', 'sm': '4', 'md': '6', 'lg': '8', 'xl': '12' };
+    const size = typeof this.size === 'number' ? String(this.size / 4) : sizeMap[this.size] || '6';
+    if (this.direction === 'vertical') {
+      return `my-${size}`;
+    } else if (this.direction === 'horizontal') {
+      return `mx-${size}`;
+    }
+    return `m-${size}`;
+  }
+  {% elif ui_framework == "bootstrap" %}
+  get spacerClass(): string {
+    if (this.flex) {
+      return 'flex-grow-1';
+    }
+    const sizeMap: Record<string, string> = { 'xs': '1', 'sm': '2', 'md': '3', 'lg': '4', 'xl': '5' };
+    const size = typeof this.size === 'number' ? '3' : sizeMap[this.size] || '3';
+    if (this.direction === 'vertical') {
+      return `my-${size}`;
+    } else if (this.direction === 'horizontal') {
+      return `mx-${size}`;
+    }
+    return `m-${size}`;
+  }
+  {% elif ui_framework == "antd" %}
+  get spacerStyles(): string {
+    const sizeMap: Record<string, number> = { 'xs': 8, 'sm': 16, 'md': 24, 'lg': 32, 'xl': 48 };
+    const px = typeof this.size === 'number' ? this.size : sizeMap[this.size] || 24;
+    if (this.flex) {
+      return 'flex-grow: 1;';
+    }
+    if (this.direction === 'vertical') {
+      return `min-height: ${px}px; height: ${px}px;`;
+    } else if (this.direction === 'horizontal') {
+      return `min-width: ${px}px; width: ${px}px;`;
+    }
+    return `min-height: ${px}px; min-width: ${px}px;`;
+  }
+  {% elif ui_framework == "carbon" %}
+  get spacerStyles(): string {
+    const sizeMap: Record<string, number> = { 'xs': 8, 'sm': 16, 'md': 24, 'lg': 32, 'xl': 48 };
+    const px = typeof this.size === 'number' ? this.size : sizeMap[this.size] || 24;
+    if (this.flex) {
+      return 'flex-grow: 1;';
+    }
+    if (this.direction === 'vertical') {
+      return `min-height: ${px}px; height: ${px}px;`;
+    } else if (this.direction === 'horizontal') {
+      return `min-width: ${px}px; width: ${px}px;`;
+    }
+    return `min-height: ${px}px; min-width: ${px}px;`;
+  }
+  {% endif %}
+
+  ngOnInit(): void {
+  }
+}

@@ -1,0 +1,151 @@
+/** Toast Component - Auto-dismissing notifications with stacking support. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatIconModule } from "@angular/material/icon";
+{% endif %}
+
+export type ToastPosition = 'top-right' | 'top-left' | 'top-center' | 'bottom-right' | 'bottom-left' | 'bottom-center';
+
+@Component({
+  selector: 'app-toast',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatIconModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<div *ngIf="isVisible" class="mat-toast" [ngClass]="position" role="alert" aria-live="polite">
+  <div class="mat-toast-container mat-toast-{% raw %}{{ type }}{% endraw %}">
+    <mat-icon *ngIf="type === 'success'">check_circle</mat-icon>
+    <mat-icon *ngIf="type === 'warning'">warning</mat-icon>
+    <mat-icon *ngIf="type === 'error'">error</mat-icon>
+    <mat-icon *ngIf="type === 'info'">info</mat-icon>
+    <div class="mat-toast-content">
+      <div *ngIf="title" class="mat-toast-title">{% raw %}{{ title }}{% endraw %}</div>
+      <div class="mat-toast-message">{% raw %}{{ message }}{% endraw %}</div>
+    </div>
+    <mat-icon class="mat-toast-close" (click)="onDismiss()">close</mat-icon>
+  </div>
+</div>
+{% elif ui_framework == "tailwind" %}
+<div *ngIf="isVisible" [ngClass]="{
+  'top-4 right-4': position === 'top-right',
+  'top-4 left-4': position === 'top-left',
+  'top-4 left-1/2 -translate-x-1/2': position === 'top-center',
+  'bottom-4 right-4': position === 'bottom-right',
+  'bottom-4 left-4': position === 'bottom-left',
+  'bottom-4 left-1/2 -translate-x-1/2': position === 'bottom-center',
+}" class="fixed z-50" role="alert" aria-live="polite">
+  <div [ngClass]="{
+    'bg-green-500': type === 'success',
+    'bg-yellow-500': type === 'warning',
+    'bg-red-500': type === 'error',
+    'bg-blue-500': type === 'info',
+  }" class="text-white px-4 py-3 rounded-lg shadow-lg max-w-sm flex items-start gap-3">
+    <span class="flex-shrink-0 mt-0.5">
+      <span *ngIf="type === 'success'">✓</span>
+      <span *ngIf="type === 'warning'">⚠</span>
+      <span *ngIf="type === 'error'">✕</span>
+      <span *ngIf="type === 'info'">ℹ</span>
+    </span>
+    <div class="flex-1">
+      <div *ngIf="title" class="font-semibold text-sm">{% raw %}{{ title }}{% endraw %}</div>
+      <div class="text-sm">{% raw %}{{ message }}{% endraw %}</div>
+    </div>
+    <button (click)="onDismiss()" class="flex-shrink-0 text-white opacity-70 hover:opacity-100">&times;</button>
+  </div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div *ngIf="isVisible" [ngClass]="toastPositionClass" class="fixed z-50 p-3" role="alert" aria-live="polite">
+  <div [ngClass]="'toast show'" style="min-width: 300px;">
+    <div [ngClass]="'toast-header text-white'" [ngStyle]="{'background-color': typeColor}">
+      <strong class="me-auto">{% raw %}{{ title || type | titlecase }}{% endraw %}</strong>
+      <button type="button" class="btn-close btn-close-white" (click)="onDismiss()"></button>
+    </div>
+    <div class="toast-body">{% raw %}{{ message }}{% endraw %}</div>
+  </div>
+</div>
+{% elif ui_framework == "antd" %}
+<div *ngIf="isVisible" class="ant-notification-notice" [ngClass]="'ant-notification-notice-' + type" style="position: fixed; top: 24px; right: 24px; z-index: 1010; min-width: 336px;" role="alert" aria-live="polite">
+  <div class="ant-notification-notice-content">
+    <button class="ant-notification-notice-close" (click)="onDismiss()">✕</button>
+    <span class="ant-notification-notice-icon" *ngIf="type === 'success'">✓</span>
+    <span class="ant-notification-notice-icon" *ngIf="type === 'warning'">⚠</span>
+    <span class="ant-notification-notice-icon" *ngIf="type === 'error'">✕</span>
+    <span class="ant-notification-notice-icon" *ngIf="type === 'info'">ℹ</span>
+    <div *ngIf="title" class="ant-notification-notice-message">{% raw %}{{ title }}{% endraw %}</div>
+    <div class="ant-notification-notice-description">{% raw %}{{ message }}{% endraw %}</div>
+  </div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div *ngIf="isVisible" class="cds--toast-notification cds--toast-notification--{% raw %}{{ type }}{% endraw %}" style="position: fixed; top: 1rem; right: 1rem; z-index: 6000; min-width: 340px;" role="alert" aria-live="polite">
+  <div class="cds--toast-notification__icon">
+    <span *ngIf="type === 'success'">✓</span>
+    <span *ngIf="type === 'warning'">⚠</span>
+    <span *ngIf="type === 'error'">✕</span>
+    <span *ngIf="type === 'info'">ℹ</span>
+  </div>
+  <div class="cds--toast-notification__content">
+    <span class="cds--toast-notification__text">{% raw %}{{ message }}{% endraw %}</span>
+  </div>
+  <button class="cds--btn cds--btn--ghost cds--toast-notification__close-button" (click)="onDismiss()">
+    <span class="cds--toast-notification__close-icon">&times;</span>
+  </button>
+</div>
+{% endif %}
+  `,
+})
+export class ToastComponent implements OnInit {
+  @Input() title: string = '';
+  @Input() message: string = '';
+  @Input() type: 'success' | 'warning' | 'error' | 'info' = 'info';
+  @Input() position: ToastPosition = 'top-right';
+  @Input() autoDismiss: boolean = true;
+  @Input() duration: number = 4000;
+  @Input() isVisible: boolean = false;
+  @Output() dismissed = new EventEmitter<void>();
+
+  private timer: any = null;
+
+  ngOnInit() {
+    if (this.autoDismiss && this.duration > 0) {
+      this.timer = setTimeout(() => this.onDismiss(), this.duration);
+    }
+  }
+
+  get toastPositionClass(): string {
+    const map: Record<ToastPosition, string> = {
+      'top-right': 'top-0 end-0',
+      'top-left': 'top-0 start-0',
+      'top-center': 'top-0 start-50 translate-middle-x',
+      'bottom-right': 'bottom-0 end-0',
+      'bottom-left': 'bottom-0 start-0',
+      'bottom-center': 'bottom-0 start-50 translate-middle-x',
+    };
+    return map[this.position];
+  }
+
+  get typeColor(): string {
+    const map: Record<string, string> = {
+      success: '#198754',
+      warning: '#ffc107',
+      error: '#dc3545',
+      info: '#0d6efd',
+    };
+    return map[this.type] || '#0d6efd';
+  }
+
+  onDismiss() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.isVisible = false;
+    this.dismissed.emit();
+  }
+}

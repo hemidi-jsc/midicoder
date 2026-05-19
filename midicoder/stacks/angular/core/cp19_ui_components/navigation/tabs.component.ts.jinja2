@@ -1,0 +1,230 @@
+/* eslint-disable */
+import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+{% if ui_framework == "material" %}
+import { MatTabsModule } from '@angular/material/tabs';
+{% elif ui_framework == "bootstrap" %}
+import { NgbNavModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif ui_framework == "tailwind" %}
+{% elif ui_framework == "antd" %}
+{% elif ui_framework == "carbon" %}
+{% endif %}
+
+@Component({
+  selector: 'app-tabs',
+  standalone: true,
+  imports: [
+    CommonModule,
+{% if ui_framework == "material" %}
+    MatTabsModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbNavModule,
+{% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+    <mat-tab-group
+      [(selectedIndex)]="activeTabIndex"
+      [animationDuration]="animationDuration"
+      [headerPosition]="headerPosition"
+      [disablePagination]="disablePagination"
+      (selectedIndexChange)="onTabChange($event)"
+      class="tabs-container"
+    >
+      {% for tab in tabs %}
+      <mat-tab
+        [label]="tab.label"
+        [disabled]="tab.disabled"
+      >
+        {% if tab.badge %}
+        <ng-template mat-tab-label>
+          {{ tab.label }}
+          <span class="tab-badge">{{ tab.badge }}</span>
+        </ng-template>
+        {% endif %}
+        <ng-content [select]="'[tab-panel-' + tab.key + ']'"></ng-content>
+        <div class="tab-content">
+          {% raw %}{{ tab.content || '' }}{% endraw %}
+        </div>
+      </mat-tab>
+      {% endfor %}
+    </mat-tab-group>
+{% elif ui_framework == "tailwind" %}
+    <div class="tabs-container">
+      <div class="border-b border-gray-200">
+        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+          {% for tab in tabs %}
+          <button
+            (click)="activateTab(tab.key)"
+            [disabled]="tab.disabled"
+            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm {% raw %}{{ activeTab === tab.key ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300' }}{% endraw %} {{ tab.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer' }}"
+          >
+            {{ tab.label }}
+            {% if tab.badge %}
+            <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+              {{ tab.badge }}
+            </span>
+            {% endif %}
+          </button>
+          {% endfor %}
+        </nav>
+      </div>
+      <div class="mt-4">
+        {% for tab in tabs %}
+        <div *ngIf="activeTab === tab.key" class="tab-panel">
+          {% raw %}{{ tab.content || '' }}{% endraw %}
+          <ng-content [select]="'[tab-panel-' + tab.key + ']'"></ng-content>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div>
+      <ul ngbNav #nav="ngbNav" [(activeId)]="activeTab" class="nav-tabs">
+        {% for tab in tabs %}
+        <li [ngbNavItem]="tab.key" [disabled]="tab.disabled">
+          <button ngbNavLink>
+            {{ tab.label }}
+            {% if tab.badge %}
+            <span class="badge bg-primary ms-2">{{ tab.badge }}</span>
+            {% endif %}
+          </button>
+          <ng-template ngbNavContent>
+            <div class="tab-content p-3">
+              {% raw %}{{ tab.content || '' }}{% endraw %}
+            </div>
+          </ng-template>
+        </li>
+        {% endfor %}
+      </ul>
+      <div [ngbNavOutlet]="nav" class="mt-3"></div>
+    </div>
+{% elif ui_framework == "antd" %}
+    <div style="border:1px solid #f0f0f0;border-radius:4px;overflow:hidden">
+      <div style="display:flex;border-bottom:1px solid #f0f0f0;background:#fafafa">
+        {% for tab in tabs %}
+        <button
+          (click)="activateTab(tab.key)"
+          [disabled]="tab.disabled"
+          style="padding:12px 24px;border:none;cursor:pointer;font-size:14px;background:transparent;color:{% raw %}{{ activeTab === tab.key ? '#1890ff' : 'rgba(0,0,0,0.85)' }}{% endraw %};border-bottom:2px solid {% raw %}{{ activeTab === tab.key ? '#1890ff' : 'transparent' }}{% endraw %};transition:all 0.3s"
+          [style.opacity]="tab.disabled ? '0.45' : '1'"
+          [style.pointerEvents]="tab.disabled ? 'none' : 'auto'"
+        >
+          {{ tab.label }}
+          {% if tab.badge %}
+          <span style="background:#1890ff;color:#fff;border-radius:10px;padding:0 6px;font-size:12px;margin-left:8px">{{ tab.badge }}</span>
+          {% endif %}
+        </button>
+        {% endfor %}
+      </div>
+      <div style="padding:16px">
+        {% for tab in tabs %}
+        <div *ngIf="activeTab === tab.key" class="tab-panel">
+          {% raw %}{{ tab.content || '' }}{% endraw %}
+          <ng-content [select]="'[tab-panel-' + tab.key + ']'"></ng-content>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div style="border:1px solid #e0e0e0;border-radius:4px;overflow:hidden">
+      <div style="display:flex;border-bottom:1px solid #e0e0e0;background:#f4f4f4">
+        {% for tab in tabs %}
+        <button
+          (click)="activateTab(tab.key)"
+          [disabled]="tab.disabled"
+          style="padding:12px 16px;border:none;cursor:pointer;font-size:13px;font-weight:{% raw %}{{ activeTab === tab.key ? '600' : '400' }}{% endraw %};background:transparent;color:{% raw %}{{ activeTab === tab.key ? '#0f62fe' : '#525252' }}{% endraw %};border-bottom:2px solid {% raw %}{{ activeTab === tab.key ? '#0f62fe' : 'transparent' }}{% endraw %};transition:all 0.15s"
+          [style.opacity]="tab.disabled ? '0.45' : '1'"
+          [style.pointerEvents]="tab.disabled ? 'none' : 'auto'"
+        >
+          {{ tab.label }}
+          {% if tab.badge %}
+          <span style="background:#0f62fe;color:#fff;border-radius:12px;padding:1px 8px;font-size:11px;margin-left:8px">{{ tab.badge }}</span>
+          {% endif %}
+        </button>
+        {% endfor %}
+      </div>
+      <div style="padding:16px">
+        {% for tab in tabs %}
+        <div *ngIf="activeTab === tab.key" class="tab-panel">
+          {% raw %}{{ tab.content || '' }}{% endraw %}
+          <ng-content [select]="'[tab-panel-' + tab.key + ']'"></ng-content>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+{% endif %}
+  `,
+  styles: `
+{% if ui_framework == "material" %}
+    :host {
+      display: block;
+    }
+    .tabs-container {
+      width: 100%;
+    }
+    .tab-badge {
+      background: #f44336;
+      color: white;
+      border-radius: 10px;
+      padding: 1px 6px;
+      font-size: 11px;
+      margin-left: 8px;
+    }
+    .tab-content {
+      padding: 16px;
+    }
+{% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+    }
+    .tabs-container {
+      width: 100%;
+    }
+{% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+    }
+{% endif %}
+  `
+})
+export class TabsComponent {
+  @Input() tabs: Array<{ key: string; label: string; content?: string; disabled?: boolean; badge?: string }> = [];
+  @Input() activeTab: string = '';
+  @Input() animationDuration: string = '500ms';
+  @Input() headerPosition: 'above' | 'below' = 'above';
+  @Input() disablePagination: boolean = true;
+  @Output() tabChange = new EventEmitter<{ key: string; index: number }>();
+
+  get activeTabIndex(): number {
+    const index = this.tabs.findIndex(t => t.key === this.activeTab);
+    return index >= 0 ? index : 0;
+  }
+
+  set activeTabIndex(value: number) {
+    if (value >= 0 && value < this.tabs.length) {
+      this.activeTab = this.tabs[value].key;
+    }
+  }
+
+  activateTab(key: string): void {
+    this.activeTab = key;
+    const index = this.tabs.findIndex(t => t.key === key);
+    this.tabChange.emit({ key, index });
+  }
+
+  onTabChange(index: number): void {
+    if (index >= 0 && index < this.tabs.length) {
+      this.activeTab = this.tabs[index].key;
+      this.tabChange.emit({ key: this.activeTab, index });
+    }
+  }
+}

@@ -1,0 +1,126 @@
+/** IconButton Component - Icon-only button with tooltip support. */
+
+import React from "react";
+
+export type IconButtonSize = 'sm' | 'md' | 'lg';
+
+export interface IconButtonProps {
+  icon: React.ReactNode;
+  tooltip?: string;
+  tooltipPosition?: 'top' | 'bottom' | 'left' | 'right';
+  size?: IconButtonSize;
+  isDisabled?: boolean;
+  color?: 'primary' | 'secondary' | 'danger' | 'default';
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  className?: string;
+}
+
+export const IconButton: React.FC<IconButtonProps> = ({
+  icon,
+  tooltip,
+  tooltipPosition = 'bottom',
+  size = 'md',
+  isDisabled = false,
+  color = 'default',
+  onClick,
+  className = '',
+}) => {
+  {% if ui_framework == "material" %}
+  import { IconButton as MuiIconButton, Tooltip } from '@mui/material';
+
+  return (
+    <Tooltip title={tooltip || ''} arrow placement={tooltipPosition}>
+      <MuiIconButton
+        color={color === 'danger' ? 'error' : color === 'primary' ? 'primary' : color === 'secondary' ? 'secondary' : 'default'}
+        size={size === 'sm' ? 'small' : size === 'lg' ? 'large' : 'medium'}
+        disabled={isDisabled}
+        onClick={onClick}
+        className={className}
+      >
+        {icon}
+      </MuiIconButton>
+    </Tooltip>
+  );
+  {% elif ui_framework == "tailwind" %}
+  const sizeMap: Record<IconButtonSize, string> = {
+    sm: 'w-8 h-8 text-sm',
+    md: 'w-10 h-10 text-base',
+    lg: 'w-12 h-12 text-lg',
+  };
+
+  const colorMap: Record<string, string> = {
+    primary: 'text-blue-600 hover:bg-blue-50',
+    secondary: 'text-gray-600 hover:bg-gray-100',
+    danger: 'text-red-600 hover:bg-red-50',
+    default: 'text-gray-500 hover:bg-gray-100',
+  };
+
+  return (
+    <button
+      className={`inline-flex items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${sizeMap[size]} ${colorMap[color]} ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${className}`}
+      disabled={isDisabled}
+      onClick={onClick}
+      type="button"
+      title={tooltip}
+      aria-label={tooltip || ''}
+    >
+      {icon}
+    </button>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const colorMap: Record<string, string> = {
+    primary: 'btn-primary',
+    secondary: 'btn-secondary',
+    danger: 'btn-danger',
+    default: 'btn-light',
+  };
+
+  return (
+    <button
+      className={`btn ${colorMap[color]} ${size === 'sm' ? 'btn-sm' : size === 'lg' ? 'btn-lg' : ''} p-0 d-flex align-items-center justify-content-center ${className}`}
+      disabled={isDisabled}
+      onClick={onClick}
+      type="button"
+      title={tooltip}
+    >
+      {icon}
+    </button>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Button as AntButton, Tooltip as AntTooltip } from 'antd';
+
+  return (
+    <AntTooltip title={tooltip} placement={tooltipPosition}>
+      <AntButton
+        type="text"
+        shape="circle"
+        size={size === 'sm' ? 'small' : size === 'lg' ? 'large' : 'middle'}
+        disabled={isDisabled}
+        onClick={onClick}
+        className={className}
+      >
+        {icon}
+      </AntButton>
+    </AntTooltip>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { Button } from '@carbon/react';
+
+  return (
+    <Button
+      kind="ghost"
+      size={size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : 'md'}
+      disabled={isDisabled}
+      onClick={onClick}
+      hasIconOnly
+      renderIcon={() => <span>{icon}</span>}
+      iconDescription={tooltip}
+      className={className}
+    >
+      {tooltip}
+    </Button>
+  );
+  {% endif %}
+};
+
+export default IconButton;

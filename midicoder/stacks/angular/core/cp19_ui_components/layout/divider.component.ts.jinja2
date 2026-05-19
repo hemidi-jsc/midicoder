@@ -1,0 +1,102 @@
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+{% if ui_framework == "material" %}
+import { MatDivider } from "@angular/material/divider";
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from "@ng-bootstrap/ng-bootstrap";
+{% endif %}
+
+@Component({
+  selector: 'app-divider',
+  standalone: true,
+  imports: [
+    CommonModule
+    {% if ui_framework == "material" %},
+    MatDivider{% elif ui_framework == "bootstrap" %},
+    NgbModule{% endif %}
+  ],
+  template: `
+    {% if ui_framework == "material" %}
+    <mat-divider [inset]="inset" [vertical]="orientation === 'vertical'"></mat-divider>
+    {% elif ui_framework == "tailwind" %}
+    <hr [class]="dividerClass" />
+    {% elif ui_framework == "bootstrap" %}
+    <hr [class]="dividerClass" [ngClass]="{'mx-4': inset}" />
+    {% elif ui_framework == "antd" %}
+    <div class="midicoder-divider" [style]="dividerStyles"></div>
+    {% elif ui_framework == "carbon" %}
+    <hr class="midicoder-divider" [style]="dividerStyles" />
+    {% endif %}
+  `,
+  styles: [`
+    {% if ui_framework == "material" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    .midicoder-divider {
+      border: none;
+      border-top: 1px solid #d9d9d9;
+      margin: 24px 0;
+    }
+    {% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    .midicoder-divider {
+      border: none;
+      border-top: 1px solid #e0e0e0;
+      margin: 1rem 0;
+    }
+    {% endif %}
+  `]
+})
+export class DividerComponent implements OnInit {
+  @Input() inset: boolean = false;
+  @Input() orientation: 'horizontal' | 'vertical' = 'horizontal';
+  @Input() thickness: number = 1;
+  @Input() color: string = '#e0e0e0';
+
+  {% if ui_framework == "material" %}
+  // MatDivider handles styling internally
+  {% elif ui_framework == "tailwind" %}
+  get dividerClass(): string {
+    const colorClass = this.color ? `border-${this.color}` : 'border-gray-200';
+    const thicknessClass = this.thickness > 1 ? `border-t-${this.thickness}` : 'border-t';
+    const insetClass = this.inset ? 'ml-4' : 'w-full';
+    return `my-6 ${thicknessClass} ${colorClass} ${insetClass}`;
+  }
+  {% elif ui_framework == "bootstrap" %}
+  get dividerClass(): string {
+    return `my-4`;
+  }
+  {% elif ui_framework == "antd" %}
+  get dividerStyles(): string {
+    return `border-top-width: ${this.thickness}px; border-top-color: ${this.color}; ${this.inset ? 'margin-left: 16px;' : ''}`;
+  }
+  {% elif ui_framework == "carbon" %}
+  get dividerStyles(): string {
+    return `border-top-width: ${this.thickness}px; border-top-color: ${this.color};`;
+  }
+  {% endif %}
+
+  ngOnInit(): void {
+  }
+}

@@ -1,0 +1,484 @@
+{% if ui_framework == "material" %}import React from 'react';
+import {
+  Card,
+  CardMedia,
+  CardContent,
+  CardActions,
+  CardHeader,
+  CardActionArea,
+  Typography,
+  Button,
+  Divider,
+  Box
+} from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardComponentProps {
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: Action[];
+  variant?: 'standard' | 'elevated' | 'outlined';
+  appearance?: 'fill' | 'outline';
+  clickable?: boolean;
+  disabled?: boolean;
+  children?: React.ReactNode;
+  sx?: SxProps<Theme>;
+  className?: string;
+  onClick?: () => void;
+}
+
+function Card({
+  title,
+  subtitle,
+  description,
+  imageUrl,
+  imageAlt = '',
+  actions = [],
+  variant = 'elevated',
+  appearance = 'fill',
+  clickable = false,
+  disabled = false,
+  children,
+  sx,
+  className,
+  onClick
+}: CardComponentProps) {
+  const headerSubheader = subtitle;
+  const cardVariant = variant === 'outlined' ? 'outlined' : 'elevated';
+
+  return (
+    <Card
+      sx={sx}
+      className={className}
+      variant={cardVariant}
+      raised={variant === 'elevated'}
+      onClick={clickable ? onClick : undefined}
+    >
+      {imageUrl && (
+        <CardMedia
+          component="img"
+          height="200"
+          image={imageUrl}
+          alt={imageAlt}
+        />
+      )}
+      {(title || subtitle) && (
+        <CardHeader
+          title={title}
+          subheader={headerSubheader}
+          titleTypographyProps={% raw %}{{ variant: 'h6' }}{% endraw %}
+          subh{% raw %}{{ variant: 'body2' }}{% endraw %}{ variant: 'body2' }}
+        />
+      )}
+      {(description || children) && (
+        <CardContent>
+          {description && (
+            <Typography variant="body2" color="text.secondary">
+              {description}
+            </Typography>
+          )}
+          {children}
+        </CardContent>
+      )}
+      {actions.length > 0 && (
+        <>
+          <Divider />
+          <CardActions>
+            {actions.map((action, index) => (
+              <Button
+                key={index}
+                size="small"
+                onClick={action.onClick}
+                disabled={disabled}
+                startIcon={action.icon}
+              >
+                {action.label}
+              </Button>
+            ))}
+          </CardActions>
+        </>
+      )}
+    </Card>
+  );
+}
+
+export default Card;
+{% elif ui_framework == "tailwind" %}import React from 'react';
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardComponentProps {
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: Action[];
+  variant?: 'default' | 'interactive' | 'plain';
+  horizontal?: boolean;
+  bordered?: boolean;
+  children?: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+}
+
+function Card({
+  title,
+  subtitle,
+  description,
+  imageUrl,
+  imageAlt = '',
+  actions = [],
+  variant = 'default',
+  horizontal = false,
+  bordered = false,
+  children,
+  className = '',
+  onClick
+}: CardComponentProps) {
+  const baseClasses = 'rounded-lg overflow-hidden';
+  const variantClasses = {
+    default: 'bg-white shadow-md hover:shadow-lg transition-shadow',
+    interactive: 'bg-white shadow-md hover:shadow-lg cursor-pointer transition-all hover:-translate-y-0.5',
+    plain: 'bg-transparent shadow-none'
+  };
+  const borderClass = bordered ? 'border border-gray-200' : '';
+  const layoutClass = horizontal ? 'flex flex-row' : 'flex flex-col';
+  const clickableClass = variant === 'interactive' ? 'active:scale-[0.98]' : '';
+
+  return (
+    <div
+      className={`${baseClasses} ${variantClasses[variant]} ${borderClass} ${layoutClass} ${clickableClass} ${className}`}
+      onClick={variant === 'interactive' ? onClick : undefined}
+    >
+      {imageUrl && (
+        <div className={horizontal ? 'w-48 flex-shrink-0' : 'w-full'}>
+          <img
+            src={imageUrl}
+            alt={imageAlt}
+            className={horizontal ? 'h-full w-full object-cover' : 'w-full h-48 object-cover'}
+          />
+        </div>
+      )}
+      <div className="flex flex-col flex-1">
+        {(title || subtitle) && (
+          <div className="p-5 pb-0">
+            {title && <h3 className="text-lg font-semibold text-gray-900">{title}</h3>}
+            {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+          </div>
+        )}
+        {(description || children) && (
+          <div className="p-5 pt-3">
+            {description && <p className="text-sm text-gray-600">{description}</p>}
+            {children}
+          </div>
+        )}
+        {actions.length > 0 && (
+          <div className="flex flex-wrap gap-2 p-5 pt-3 border-t border-gray-100">
+            {actions.map((action, index) => (
+              <button
+                key={index}
+                onClick={action.onClick}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+              >
+                {action.icon}
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default Card;
+{% elif ui_framework == "bootstrap" %}import React from 'react';
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardComponentProps {
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: Action[];
+  variant?: 'default' | 'primary' | 'success' | 'danger' | 'warning' | 'info';
+  bordered?: boolean;
+  children?: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+}
+
+function Card({
+  title,
+  subtitle,
+  description,
+  imageUrl,
+  imageAlt = '',
+  actions = [],
+  variant = 'default',
+  bordered = true,
+  children,
+  className = '',
+  onClick
+}: CardComponentProps) {
+  const borderClass = bordered ? 'border' : 'border-0';
+
+  return (
+    <div className={`card ${borderClass} h-100 ${className}`} onClick={onClick}>
+      {imageUrl && (
+        <img src={imageUrl} className="card-img-top" alt={imageAlt} />
+      )}
+      <div className="card-body">
+        {title && <h5 className="card-title">{title}</h5>}
+        {subtitle && <h6 className="card-subtitle mb-2 text-muted">{subtitle}</h6>}
+        {description && <p className="card-text">{description}</p>}
+        {children}
+      </div>
+      {actions.length > 0 && (
+        <div className="card-footer bg-transparent border-top">
+          <div className="d-flex flex-wrap gap-2">
+            {actions.map((action, index) => (
+              <button
+                key={index}
+                className="btn btn-sm btn-outline-primary"
+                onClick={action.onClick}
+              >
+                {action.icon && <span className="me-1">{action.icon}</span>}
+                {action.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Card;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { Card as AntdCard, Button, Space, Typography } from 'antd';
+import type { SizeType } from 'antd/lib/configPicker';
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardComponentProps {
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: Action[];
+  bordered?: boolean;
+  hoverable?: boolean;
+  size?: SizeType;
+  children?: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+  onClick?: () => void;
+}
+
+function Card({
+  title,
+  subtitle,
+  description,
+  imageUrl,
+  imageAlt = '',
+  actions = [],
+  bordered = true,
+  hoverable = false,
+  size = 'default',
+  children,
+  className,
+  style,
+  onClick
+}: CardComponentProps) {
+  const cover = imageUrl ? (
+    <img alt={imageAlt} src={imageUrl} />
+  ) : undefined;
+
+  const extra = actions.length > 0 ? (
+    <Space>
+      {actions.map((action, index) => (
+        <Button key={index} type="text" icon={action.icon} onClick={action.onClick}>
+          {action.label}
+        </Button>
+      ))}
+    </Space>
+  ) : undefined;
+
+  return (
+    <AntdCard
+      title={title}
+      extra={extra}
+      cover={cover}
+      bordered={bordered}
+      hoverable={hoverable}
+      size={size}
+      className={className}
+      style={style}
+      onClick={onClick}
+    >
+      {subtitle && <Typography.Text type="secondary">{subtitle}</Typography.Text>}
+      {description && <p>{description}</p>}
+      {children}
+    </AntdCard>
+  );
+}
+
+export default Card;
+{% elif ui_framework == "carbon" %}import React from 'react';
+
+interface Action {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}
+
+interface CardComponentProps {
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: Action[];
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'xs';
+  fullWidth?: boolean;
+  children?: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+}
+
+function Card({
+  title,
+  subtitle,
+  description,
+  imageUrl,
+  imageAlt = '',
+  actions = [],
+  size = 'md',
+  fullWidth = false,
+  children,
+  className = '',
+  onClick
+}: CardComponentProps) {
+  const sizeClasses: Record<string, string> = {
+    xs: 'p-2',
+    sm: 'p-3',
+    md: 'p-4',
+    lg: 'p-6',
+    xl: 'p-8'
+  };
+
+  return (
+    <div
+      className={`cds-card bg-white border border-gray-200 rounded overflow-hidden ${sizeClasses[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
+      onClick={onClick}
+    >
+      {imageUrl && (
+        <img
+          src={imageUrl}
+          alt={imageAlt}
+          className="w-full h-48 object-cover rounded-t"
+        />
+      )}
+      <div className={imageUrl ? 'mt-4' : ''}>
+        {title && <h3 className="text-lg font-semibold text-gray-900 cds--title">{title}</h3>}
+        {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+        {description && <p className="text-sm text-gray-600 mt-2">{description}</p>}
+        {children}
+      </div>
+      {actions.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-200">
+          {actions.map((action, index) => (
+            <button
+              key={index}
+              className="cds-btn--sm cds-btn cds-btn--primary"
+              onClick={action.onClick}
+            >
+              {action.icon && <span className="mr-1">{action.icon}</span>}
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Card;
+{% else %}import React from 'react';
+
+interface Action {
+  label: string;
+  onClick: () => void;
+}
+
+interface CardComponentProps {
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions?: Action[];
+  children?: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+}
+
+function Card({
+  title,
+  subtitle,
+  description,
+  imageUrl,
+  imageAlt = '',
+  actions = [],
+  children,
+  className = '',
+  onClick
+}: CardComponentProps) {
+  return (
+    <div className={`border rounded p-4 ${className}`} onClick={onClick}>
+      {imageUrl && <img src={imageUrl} alt={imageAlt} className="w-full h-48 object-cover rounded" />}
+      <div className="mt-2">
+        {title && <h3 className="font-semibold">{title}</h3>}
+        {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
+        {description && <p className="text-sm">{description}</p>}
+        {children}
+      </div>
+      {actions.length > 0 && (
+        <div className="flex gap-2 mt-3">
+          {actions.map((action, index) => (
+            <button key={index} onClick={action.onClick}>{action.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Card;
+{% endif %}

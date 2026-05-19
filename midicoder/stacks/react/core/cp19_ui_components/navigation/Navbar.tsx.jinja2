@@ -1,0 +1,196 @@
+/* eslint-disable */
+import React from 'react';
+import { NavItem } from './types';
+
+{% if ui_framework == "material" %}
+import AppBar from '@mui/material/AppBar';
+import Toolbar from '@mui/material/Toolbar';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import Box from '@mui/material/Box';
+import Divider from '@mui/material/Divider';
+import { MoreVert as MoreVertIcon } from '@mui/icons-material';
+{% elif ui_framework == "antd" %}
+import { Layout, Button, Space, Dropdown, Typography } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Header, HeaderName, HeaderGlobalBar, HeaderGlobalAction, SkipToContent, NavigationMenuItem } from '@carbon/react';
+import { applications, settings } from '@carbon/icons-react';
+{% endif %}
+
+export interface NavbarProps {
+  brandText?: string;
+  brandHref?: string;
+  items?: NavItem[];
+  toolbarColor?: 'primary' | 'secondary' | 'default';
+  showActions?: boolean;
+  position?: 'fixed' | 'sticky' | 'static';
+  onNavClick?: (item: NavItem) => void;
+}
+
+const Navbar: React.FC<NavbarProps> = ({
+  brandText = 'Midicoder',
+  brandHref = '/',
+  items = [],
+  toolbarColor = 'primary',
+  showActions = true,
+  position = 'sticky',
+  onNavClick,
+}) => {
+  const handleNavClick = (item: NavItem) => {
+    onNavClick?.(item);
+  };
+
+  return (
+{% if ui_framework == "material" %}
+    <AppBar position={position} color={toolbarColor} className="navbar-root">
+      <Toolbar>
+        <Typography variant="h6" component="div" sx={% raw %}{{ flexGrow: 0 }}{% endraw %}>
+          <a href={brandHref} style={% raw %}{{ textDecoration: 'none', color: 'inherit' }}{% endraw %}>
+            {brandText}
+          </a>
+        </Typography>
+        <Box sx={% raw %}{{ flexGrow: 1 }}{% endraw %} />
+        <Box sx={% raw %}{{ display: 'flex', alignItems: 'center', gap: 1 }}{% endraw %}>
+          {items.map((item) => (
+            <Button
+              key={item.label}
+              color="inherit"
+              href={item.href}
+              onClick={() => handleNavClick(item)}
+              startIcon={item.icon ? <span>{item.icon}</span> : undefined}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </Box>
+        {showActions && (
+          <IconButton color="inherit" aria-label="actions menu">
+            <MoreVertIcon />
+          </IconButton>
+        )}
+      </Toolbar>
+    </AppBar>
+{% elif ui_framework == "tailwind" %}
+    <nav className="bg-white border-b border-gray-200 shadow-sm" style={{ position }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16">
+          <div className="flex">
+            <div className="flex-shrink-0 flex items-center">
+              <a
+                href={brandHref}
+                className="text-xl font-bold text-gray-900 hover:text-gray-700 transition-colors"
+              >
+                {brandText}
+              </a>
+            </div>
+            <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
+              {items.map((item) => (
+                <a
+                  key={item.label}
+                  href={item.href}
+                  onClick={() => handleNavClick(item)}
+                  className="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-900 border-b-2 border-transparent hover:border-indigo-500 transition-colors"
+                >
+                  {item.label}
+                </a>
+              ))}
+            </div>
+          </div>
+          {showActions && (
+            <div className="flex items-center">
+              <button
+                type="button"
+                className="ml-4 p-2 rounded-full text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+              >
+                <span className="sr-only">Open menu</span>
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </nav>
+{% elif ui_framework == "bootstrap" %}
+    <nav className="navbar navbar-expand-lg navbar-light bg-white border-bottom shadow-sm" style={{ position }}>
+      <div className="container-fluid">
+        <a className="navbar-brand fw-bold" href={brandHref}>{brandText}</a>
+        <button className="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent">
+          <span className="navbar-toggler-icon"></span>
+        </button>
+        <div className="collapse navbar-collapse" id="navbarContent">
+          <ul className="navbar-nav me-auto mb-2 mb-lg-0">
+            {items.map((item) => (
+              <li className="nav-item" key={item.label}>
+                <a className="nav-link" href={item.href} onClick={() => handleNavClick(item)}>
+                  {item.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+          {showActions && (
+            <div className="d-flex">
+              <button className="btn btn-outline-secondary btn-sm">Actions</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </nav>
+{% elif ui_framework == "antd" %}
+    <Layout.Header style={% raw %}{{ display: 'flex', alignItems: 'center', padding: '0 24px', position }}{% endraw %}>
+      <a href={brandHref} style={% raw %}{{ marginRight: 'auto' }}{% endraw %}>
+        <Typography.Title level={4} style={% raw %}{{ margin: 0, color: '#1890ff' }}{% endraw %}>
+          {brandText}
+        </Typography.Title>
+      </a>
+      <Space>
+        {items.map((item) => (
+          <a
+            key={item.label}
+            href={item.href}
+            onClick={() => handleNavClick(item)}
+            style={% raw %}{{ color: 'rgba(0,0,0,0.85)' }}{% endraw %}
+          >
+            {item.label}
+          </a>
+        ))}
+        {showActions && (
+          <Button type="text" icon="⋮">Actions</Button>
+        )}
+      </Space>
+    </Layout.Header>
+{% elif ui_framework == "carbon" %}
+    <Header aria-label="Midicoder">
+      <SkipToContent />
+      <HeaderName href={brandHref} prefix="Midicoder">
+        {brandText}
+      </HeaderName>
+      <HeaderGlobalBar>
+        {items.map((item) => (
+          <HeaderGlobalAction
+            key={item.label}
+            href={item.href}
+            onClick={() => handleNavClick(item)}
+            tooltipText={item.label}
+            altText={item.label}
+          >
+            {item.icon || '●'}
+          </HeaderGlobalAction>
+        ))}
+        {showActions && (
+          <HeaderGlobalAction
+            tooltipText="Settings"
+            altText="Settings"
+          >
+            <settings size={20} />
+          </HeaderGlobalAction>
+        )}
+      </HeaderGlobalBar>
+    </Header>
+{% endif %}
+  );
+};
+
+export default Navbar;

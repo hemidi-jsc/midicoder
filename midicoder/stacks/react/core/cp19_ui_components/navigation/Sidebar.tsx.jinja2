@@ -1,0 +1,207 @@
+/* eslint-disable */
+import React, { useState } from 'react';
+
+{% if ui_framework == "material" %}
+import Box from '@mui/material/Box';
+import Drawer from '@mui/material/Drawer';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import Divider from '@mui/material/Divider';
+import Typography from '@mui/material/Typography';
+import { Logout as LogoutIcon } from '@mui/icons-material';
+{% elif ui_framework == "antd" %}
+import { Layout, Menu, Avatar, Divider, Typography, Tag } from 'antd';
+import { HomeOutlined, UserOutlined, LogoutOutlined } from '@ant-design/icons';
+{% elif ui_framework == "carbon" %}
+import { SideNav, SideNavItems, SideNavMenu, SideNavMenuItem, SideNavDivider } from '@carbon/react';
+import { home, user Avatar } from '@carbon/icons-react';
+{% endif %}
+
+export interface SidebarItem {
+  label: string;
+  route: string;
+  icon?: string;
+  badge?: string | number;
+  children?: SidebarItem[];
+}
+
+export interface SidebarProps {
+  title?: string;
+  items?: SidebarItem[];
+  activeRoute?: string;
+  width?: number;
+  collapsed?: boolean;
+  position?: 'fixed' | 'relative';
+  onNavigate?: (item: SidebarItem) => void;
+  onLogout?: () => void;
+  children?: React.ReactNode;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({
+  title = 'Navigation',
+  items = [],
+  activeRoute = '',
+  width = 280,
+  collapsed = false,
+  position = 'fixed',
+  onNavigate,
+  onLogout,
+  children,
+}) => {
+  const [isCollapsed, setIsCollapsed] = useState(collapsed);
+
+  const handleNavigate = (item: SidebarItem) => {
+    onNavigate?.(item);
+  };
+
+  const renderMenuItem = (item: SidebarItem, level = 0) => {
+    const isActive = item.route === activeRoute;
+    const paddingLeft = 16 + level * 16;
+
+{% if ui_framework == "material" %}
+    return (
+      <React.Fragment key={item.route}>
+        <ListItem disablePadding sx={% raw %}{{ pl: level * 2 }}{% endraw %}>
+          <ListItemButton
+            selected={isActive}
+            onClick={() => handleNavigate(item)}
+            sx={% raw %}{{
+              justifyContent: 'initial',
+              borderRadius: 1,
+              mx: 1,
+            }}{% endraw %}
+          >
+            <ListItemIcon>{item.icon ? <span>{item.icon}</span> : <span>📄</span>}</ListItemIcon>
+            <ListItemText primary={item.label} />
+            {item.badge && (
+              <Box
+                sx={% raw %}{{
+                  bgcolor: 'error.main',
+                  color: 'white',
+                  borderRadius: 1,
+                  px: 1,
+                  py: 0.5,
+                  fontSize: '0.75rem',
+                }}{% endraw %}
+              >
+                {item.badge}
+              </Box>
+            )}
+          </ListItemButton>
+        </ListItem>
+        {item.children?.map((child) => renderMenuItem(child, level + 1))}
+      </React.Fragment>
+    );
+{% elif ui_framework == "tailwind" %}
+    return (
+      <React.Fragment key={item.route}>
+        <button
+          onClick={() => handleNavigate(item)}
+          className={`w-full flex items-center px-4 py-2 text-sm font-medium transition-colors border-l-4 ${
+            isActive
+              ? 'bg-indigo-50 text-indigo-700 border-indigo-600'
+              : 'text-gray-700 hover:bg-gray-50 border-transparent'
+          }`}
+          style={% raw %}{{ paddingLeft: `${paddingLeft}px` }}{% endraw %}
+        >
+          {item.icon && <span className="mr-3">{item.icon}</span>}
+          <span className="flex-1 text-left">{item.label}</span>
+          {item.badge && (
+            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-800">
+              {item.badge}
+            </span>
+          )}
+        </button>
+        {item.children?.map((child) => renderMenuItem(child, level + 1))}
+      </React.Fragment>
+    );
+{% elif ui_framework == "bootstrap" %}
+    return (
+      <React.Fragment key={item.route}>
+        <button
+          onClick={() => handleNavigate(item)}
+          className={`w-100 d-flex align-items-center px-3 py-2 text-start text-decoration-none ${
+            isActive ? 'bg-primary bg-opacity-10 text-primary border-start border-primary border-3' : 'text-body'
+         {% raw %}{{ paddingLeft: `${paddingLeft}px` }}{% endraw %}`${paddingLeft}px` }}
+        >
+          {item.icon && <span className="me-2">{item.icon}</span>}
+          <span className="flex-grow-1">{item.label}</span>
+          {item.badge && (
+            <span className="badge bg-danger rounded-pill">{item.badge}</span>
+          )}
+        </button>
+        {item.children?.map((child) => renderMenuItem(child, level + 1))}
+      </React.Fragment>
+    );
+{% elif ui_framework == "antd" %}
+    return (
+      <Menu.Item key={item.route} icon={item.icon ? <span>{item.icon}</span> : <HomeOutlined />}>
+        {item.label}
+        {item.badge && <Tag color="red">{item.badge}</Tag>}
+      </Menu.Item>
+    );
+{% elif ui_framework == "carbon" %}
+    return (
+      <SideNavMenuItem
+        key={item.route}
+        title={item.label}
+        selector="current"
+        isActive={isActive}
+        onClick={() => handleNavigate(item)}
+      />
+    );
+{% endif %}
+  };
+
+  return (
+    <div className="d-flex h-100" style={% raw %}{{ display: 'flex', height: '100%' }}{% endraw %}>
+      <aside
+        style={% raw %}{{
+          width: isCollapsed ? 60 : width,
+          flexShrink: 0,
+          background: '#ffffff',
+          borderRight: '1px solid #e5e7eb',
+          display: 'flex',
+          flexDirection: 'column',
+          position,
+          transition: 'width 0.3s ease',
+        }}{% endraw %}
+      >
+        <div className="d-flex align-items-center px-3 py-2 border-bottom">
+          {!isCollapsed && (
+            <h2 className="h5 mb-0 fw-bold">{title}</h2>
+          )}
+          <button
+            className="btn btn-sm btn-outline-secondary ms-auto"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+          >
+            {isCollapsed ? '→' : '←'}
+          </button>
+        </div>
+        <nav className="flex-grow-1 overflow-auto py-2">
+          <div>
+            {items.map((item) => renderMenuItem(item))}
+          </div>
+        </nav>
+        <div className="border-top p-2">
+          {!isCollapsed && (
+            <button
+              className="btn btn-outline-danger btn-sm w-100"
+              onClick={onLogout}
+            >
+              <span className="me-2">🚪</span>Logout
+            </button>
+          )}
+        </div>
+      </aside>
+      <main className="flex-grow-1 overflow-auto">
+        {children}
+      </main>
+    </div>
+  );
+};
+
+export default Sidebar;

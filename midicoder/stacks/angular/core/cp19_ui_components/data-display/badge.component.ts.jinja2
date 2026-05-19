@@ -1,0 +1,195 @@
+{% if ui_framework == "material" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatIconModule } from '@angular/material/icon';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, MatIconModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string | number = '';
+  @Input() variant: 'standard' | 'accent' = 'standard';
+  @Input() overlap: string = '';
+  @Input() color: string = '';
+  @Input() ariaLabel: string = '';
+
+  ngOnInit(): void {}
+
+  get colorClasses(): string {
+    switch (this.color) {
+      case 'primary': return 'bg-primary text-primary-foreground';
+      case 'accent': return 'bg-accent text-accent-foreground';
+      case 'warn': return 'bg-warn text-warn-foreground';
+      case 'success': return 'bg-green-500 text-white';
+      case 'error': return 'bg-red-500 text-white';
+      case 'warning': return 'bg-orange-500 text-white';
+      case 'info': return 'bg-blue-500 text-white';
+      default: return 'bg-gray-500 text-white';
+    }
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string | number = '';
+  @Input() variant: 'default' | 'subtle' | 'outline' = 'default';
+  @Input() color: 'default' | 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info' = 'default';
+  @Input() size: 'sm' | 'md' | 'lg' = 'md';
+  @Input() rounded: boolean = true;
+  @Input() dot: boolean = false;
+  @Input() ribbon: boolean = false;
+
+  ngOnInit(): void {}
+
+  get colorClasses(): string {
+    const base = {
+      default: 'bg-gray-100 text-gray-800',
+      primary: 'bg-blue-100 text-blue-800',
+      secondary: 'bg-purple-100 text-purple-800',
+      success: 'bg-green-100 text-green-800',
+      danger: 'bg-red-100 text-red-800',
+      warning: 'bg-yellow-100 text-yellow-800',
+      info: 'bg-cyan-100 text-cyan-800'
+    };
+    return base[this.color] || base.default;
+  }
+
+  get sizeClasses(): string {
+    switch (this.size) {
+      case 'sm': return 'text-xs px-2 py-0.5';
+      case 'lg': return 'text-base px-4 py-1';
+      default: return 'text-sm px-2.5 py-0.5';
+    }
+  }
+
+  get dotColor(): string {
+    const colors = {
+      default: 'bg-gray-500',
+      primary: 'bg-blue-500',
+      secondary: 'bg-purple-500',
+      success: 'bg-green-500',
+      danger: 'bg-red-500',
+      warning: 'bg-yellow-500',
+      info: 'bg-cyan-500'
+    };
+    return colors[this.color] || colors.default;
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string | number = '';
+  @Input() variant: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info' | 'light' | 'dark' = 'primary';
+  @Input() pill: boolean = true;
+
+  ngOnInit(): void {}
+}
+{% elif ui_framework == "antd" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string | number = '';
+  @Input() color: 'default' | 'blue' | 'green' | 'red' | 'orange' | 'purple' = 'default';
+  @Input() showDot: boolean = false;
+  @Input() size: 'default' | 'small' = 'default';
+
+  ngOnInit(): void {}
+
+  get dotColor(): string {
+    const colors = {
+      default: 'bg-gray-500',
+      blue: 'bg-blue-500',
+      green: 'bg-green-500',
+      red: 'bg-red-500',
+      orange: 'bg-orange-500',
+      purple: 'bg-purple-500'
+    };
+    return colors[this.color] || colors.default;
+  }
+}
+{% elif ui_framework == "carbon" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string | number = '';
+  @Input() type: 'red' | 'magenta' | 'purple' | 'blue' | 'cyan' | 'teal' | 'green' | 'gray' | 'cool-gray' | 'warm-gray' = 'cool-gray';
+  @Input() size: 'sm' | 'md' | 'lg' = 'sm';
+
+  ngOnInit(): void {}
+
+  get typeColor(): string {
+    const colors: { [key: string]: string } = {
+      red: 'bg-[#da1e28] text-white',
+      magenta: 'bg-[#a2189e] text-white',
+      purple: 'bg-[#6929c4] text-white',
+      blue: 'bg-[#0f62fe] text-white',
+      cyan: 'bg-[#0070b8] text-white',
+      teal: 'bg-[#005396] text-white',
+      green: 'bg-[#198038] text-white',
+      gray: 'bg-[#8d8d8d] text-white',
+      'cool-gray': 'bg-[#6b6e72] text-white',
+      'warm-gray': 'bg-[#707070] text-white'
+    };
+    return colors[this.type] || colors['cool-gray'];
+  }
+
+  get sizeClass(): string {
+    switch (this.size) {
+      case 'sm': return 'text-xs px-2 py-0.5';
+      case 'lg': return 'text-sm px-3 py-1';
+      default: return 'text-xs px-2 py-0.5';
+    }
+  }
+}
+{% else %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() value: string | number = '';
+  @Input() color: string = 'bg-gray-500 text-white';
+  @Input() size: 'sm' | 'md' | 'lg' = 'md';
+
+  ngOnInit(): void {}
+}
+{% endif %}

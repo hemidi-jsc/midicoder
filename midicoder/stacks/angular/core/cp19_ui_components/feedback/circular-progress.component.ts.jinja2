@@ -1,0 +1,116 @@
+/** CircularProgress Component - Circular loading spinner with size and color options. */
+
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+{% endif %}
+
+@Component({
+  selector: 'app-circular-progress',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatProgressSpinnerModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-progress-spinner
+  [diameter]="size"
+  mode="{% raw %}{{ mode }}{% endraw %}"
+  [value]="mode === 'determinate' ? value : undefined"
+  color="{% raw %}{{ color }}{% endraw %}"
+></mat-progress-spinner>
+{% elif ui_framework == "tailwind" %}
+<div
+  class="border-4 rounded-full animate-spin"
+  [ngStyle]="{
+    width: size + 'px',
+    height: size + 'px',
+    'border-color': borderColor,
+    'border-right-color': spinnerColor,
+  }"
+  role="status"
+  aria-label="Đang tải"
+>
+  <span class="sr-only">Đang tải...</span>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div
+  class="spinner-border text-{% raw %}{{ bootstrapColor }}{% endraw %}"
+  [ngStyle]="{
+    width: (size / 3) + 'rem',
+    height: (size / 3) + 'rem',
+    'border-width': '0.25em',
+  }"
+  role="status"
+>
+  <span class="visually-hidden">Đang tải...</span>
+</div>
+{% elif ui_framework == "antd" %}
+<div class="ant-spin ant-spin-lg" [ngStyle]="{width: size + 'px', height: size + 'px'}">
+  <div class="ant-spin-dot">
+    <div class="ant-spin-dot-item" style="background: {% raw %}{{ antdColor }}{% endraw %};"></div>
+    <div class="ant-spin-dot-item" style="background: {% raw %}{{ antdColor }}{% endraw %};"></div>
+    <div class="ant-spin-dot-item" style="background: {% raw %}{{ antdColor }}{% endraw %};"></div>
+    <div class="ant-spin-dot-item" style="background: {% raw %}{{ antdColor }}{% endraw %};"></div>
+  </div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div
+  class="cds--content-loader cds--content-loader--circle"
+  [ngStyle]="{
+    width: size + 'px',
+    height: size + 'px',
+  }"
+  role="status"
+>
+  <span class="sr-only">Đang tải...</span>
+</div>
+{% endif %}
+  `,
+})
+export class CircularProgressComponent implements OnInit {
+  @Input() size: number = 40;
+  @Input() mode: 'indeterminate' | 'determinate' = 'indeterminate';
+  @Input() value: number = 0;
+  @Input() color: 'primary' | 'accent' | 'warn' | 'default' = 'primary';
+
+  ngOnInit() {}
+
+  get spinnerColor(): string {
+    const map: Record<string, string> = {
+      primary: '#3b82f6',
+      accent: '#10b981',
+      warn: '#ef4444',
+      default: '#6b7280',
+    };
+    return map[this.color] || '#3b82f6';
+  }
+
+  get borderColor(): string {
+    return 'transparent transparent transparent ' + this.spinnerColor;
+  }
+
+  get bootstrapColor(): string {
+    const map: Record<string, string> = {
+      primary: 'primary',
+      accent: 'success',
+      warn: 'danger',
+      default: 'secondary',
+    };
+    return map[this.color] || 'primary';
+  }
+
+  get antdColor(): string {
+    const map: Record<string, string> = {
+      primary: '#1890ff',
+      accent: '#52c41a',
+      warn: '#ff4d4f',
+      default: '#d9d9d9',
+    };
+    return map[this.color] || '#1890ff';
+  }
+}

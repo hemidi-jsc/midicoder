@@ -1,0 +1,322 @@
+{% if ui_framework == "material" %}import React from 'react';
+import { Tooltip as MuiTooltip, Fade } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface TooltipProps {
+  message: string;
+  position?: 'top' | 'bottom' | 'left' | 'right' | 'start' | 'end';
+  showDelay?: number;
+  hideDelay?: number;
+  disabled?: boolean;
+  children: React.ReactNode;
+  sx?: SxProps<Theme>;
+  className?: string;
+}
+
+function Tooltip({
+  message,
+  position = 'top',
+  showDelay = 0,
+  hideDelay = 0,
+  disabled = false,
+  children,
+  sx,
+  className
+}: TooltipProps) {
+  const placement: any = position;
+
+  return (
+    <MuiTooltip
+      title={disabled ? null : message}
+      placement={placement}
+      TransitionComponent={Fade}
+      TransitionProps={% raw %}{{
+        timeout: { enter: showDelay, exit: hideDelay }
+      }}{% endraw %}
+      sx={sx}
+      className={className}
+      arrow
+    >
+      <span>{children}</span>
+    </MuiTooltip>
+  );
+}
+
+export default Tooltip;
+{% elif ui_framework == "tailwind" %}import React, { useState, useRef, useEffect } from 'react';
+
+interface TooltipProps {
+  message: string;
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  offset?: number;
+  theme?: 'light' | 'dark';
+  disabled?: boolean;
+  showDelay?: number;
+  hideDelay?: number;
+  children: React.ReactNode;
+  className?: string;
+}
+
+function Tooltip({
+  message,
+  placement = 'top',
+  offset = 8,
+  theme = 'dark',
+  disabled = false,
+  showDelay = 0,
+  hideDelay = 0,
+  children,
+  className = ''
+}: TooltipProps) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const showTimeout = useRef<NodeJS.Timeout>();
+  const hideTimeout = useRef<NodeJS.Timeout>();
+
+  useEffect(() => {
+    setIsMounted(true);
+    return () => {
+      if (showTimeout.current) clearTimeout(showTimeout.current);
+      if (hideTimeout.current) clearTimeout(hideTimeout.current);
+    };
+  }, []);
+
+  const handleMouseEnter = () => {
+    if (disabled) return;
+    if (showTimeout.current) clearTimeout(showTimeout.current);
+    if (hideTimeout.current) clearTimeout(hideTimeout.current);
+    showTimeout.current = setTimeout(() => {
+      setIsVisible(true);
+    }, showDelay);
+  };
+
+  const handleMouseLeave = () => {
+    if (disabled) return;
+    if (showTimeout.current) clearTimeout(showTimeout.current);
+    hideTimeout.current = setTimeout(() => {
+      setIsVisible(false);
+    }, hideDelay);
+  };
+
+  const placementClasses: Record<string, string> = {
+    top: 'bottom-full left-1/2 -translate-x-1/2 mb-2',
+    bottom: 'top-full left-1/2 -translate-x-1/2 mt-2',
+    left: 'right-full top-1/2 -translate-y-1/2 mr-2',
+    right: 'left-full top-1/2 -translate-y-1/2 ml-2'
+  };
+
+  const themeClasses = theme === 'dark'
+    ? 'bg-gray-900 text-white'
+    : 'bg-white text-gray-900 border border-gray-200 shadow-lg';
+
+  const arrowPlacement: Record<string, string> = {
+    top: 'top-0 left-1/2 -translate-x-1/2 translate-y-full',
+    bottom: 'bottom-0 left-1/2 -translate-x-1/2 -translate-y-full',
+    left: 'left-0 top-1/2 -translate-y-1/2 translate-x-full',
+    right: 'right-0 top-1/2 -translate-y-1/2 -translate-x-full'
+  };
+
+  const arrowRotation: Record<string, string> = {
+    top: 'rotate-180',
+    bottom: '',
+    left: 'rotate-90',
+    right: '-rotate-90'
+  };
+
+  return (
+    <div
+      className={`relative inline-flex ${className}`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {children}
+      {isMounted && isVisible && (
+        <div
+          className={`absolute z-50 ${placementClasses[placement]} ${themeClasses} px-3 py-1.5 text-sm font-medium rounded whitespace-nowrap`}
+          role="tooltip"
+        >
+          {message}
+          <div
+            className={`absolute ${arrowPlacement[placement]} ${theme === 'dark' ? 'text-gray-900' : 'text-white border-gray-200'} ${arrowRotation[placement]}`}
+          >
+            <svg width="8" height="4" viewBox="0 0 8 4" fill="currentColor">
+              <path d="M0 0L4 4L8 0H0Z" />
+            </svg>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Tooltip;
+{% elif ui_framework == "bootstrap" %}import React, { useEffect, useRef } from 'react';
+import { Tooltip as BsTooltip } from 'bootstrap';
+
+interface TooltipProps {
+  message: string;
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  triggers?: string;
+  delay?: number;
+  autoClose?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}
+
+function Tooltip({
+  message,
+  placement = 'top',
+  triggers = 'hover focus',
+  delay = 0,
+  autoClose = true,
+  children,
+  className = ''
+}: TooltipProps) {
+  const tooltipRef = useRef<HTMLElement>(null);
+  const bsTooltipRef = useRef<BsTooltip | null>(null);
+
+  useEffect(() => {
+    if (!tooltipRef.current) return;
+    if (bsTooltipRef.current) bsTooltipRef.current.dispose();
+    bsTooltipRef.current = new BsTooltip(tooltipRef.current, {
+      title: message,
+      placement,
+      trigger: triggers,
+      delay: typeof delay === 'number' ? { show: delay, hide: delay } : delay,
+    });
+    return () => {
+      if (bsTooltipRef.current) bsTooltipRef.current.dispose();
+    };
+  }, [message, placement, triggers, delay]);
+
+  return React.cloneElement(children as React.ReactElement, {
+    ref: tooltipRef,
+    'data-bs-toggle': 'tooltip',
+    'title': message,
+    className: `${(children as React.ReactElement).props.className || ''} ${className}`.trim()
+  });
+}
+
+export default Tooltip;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { Tooltip as AntdTooltip } from 'antd';
+
+interface TooltipProps {
+  message: string;
+  placement?: 'top' | 'topLeft' | 'topRight' | 'bottom' | 'bottomLeft' | 'bottomRight' | 'left' | 'right';
+  color?: string;
+  mouseEnterDelay?: number;
+  mouseLeaveDelay?: number;
+  overlayStyle?: React.CSSProperties;
+  destroyTooltipOnHide?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}
+
+function Tooltip({
+  message,
+  placement = 'top',
+  color,
+  mouseEnterDelay = 0.1,
+  mouseLeaveDelay = 0.1,
+  overlayStyle,
+  destroyTooltipOnHide = true,
+  children,
+  className
+}: TooltipProps) {
+  return (
+    <AntdTooltip
+      title={message}
+      placement={placement}
+      color={color}
+      mouseEnterDelay={mouseEnterDelay}
+      mouseLeaveDelay={mouseLeaveDelay}
+      overlayStyle={overlayStyle}
+      destroyTooltipOnHide={destroyTooltipOnHide}
+      className={className}
+    >
+      {children}
+    </AntdTooltip>
+  );
+}
+
+export default Tooltip;
+{% elif ui_framework == "carbon" %}import React from 'react';
+
+interface TooltipProps {
+  message: string;
+  align?: 'top' | 'right' | 'bottom' | 'left';
+  orientation?: 'horizontal' | 'vertical' | 'flipped';
+  a11yType?: 'dialog' | 'label';
+  delay?: number;
+  role?: string;
+  children: React.ReactNode;
+  className?: string;
+}
+
+function Tooltip({
+  message,
+  align = 'top',
+  orientation = 'horizontal',
+  a11yType = 'label',
+  delay = 0,
+  role = 'tooltip',
+  children,
+  className = ''
+}: TooltipProps) {
+  return (
+    <div className={`cds-tooltip cds-tooltip--${align} relative inline-block ${className}`}>
+      <div className="cds-tooltip__trigger">{children}</div>
+      <div
+        className={`cds-tooltip__label absolute z-50 hidden group-hover:block bg-gray-900 text-white text-sm px-3 py-1.5 rounded whitespace-nowrap`}
+        role={role}
+      >
+        {message}
+      </div>
+    </div>
+  );
+}
+
+export default Tooltip;
+{% else %}import React, { useState } from 'react';
+
+interface TooltipProps {
+  message: string;
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  disabled?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}
+
+function Tooltip({
+  message,
+  placement = 'top',
+  disabled = false,
+  children,
+  className = ''
+}: TooltipProps) {
+  const [visible, setVisible] = useState(false);
+
+  if (disabled) return <>{children}</>;
+
+  return (
+    <div
+      className={`relative inline-block ${className}`}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      {visible && (
+        <div
+          className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-900 text-white text-sm px-2 py-1 rounded whitespace-nowrap"
+          role="tooltip"
+        >
+          {message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Tooltip;
+{% endif %}

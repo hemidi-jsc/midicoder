@@ -1,0 +1,265 @@
+{% if ui_framework == "material" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatIconModule } from '@angular/material/icon';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, MatIconModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() name: string = '';
+  @Input() alt: string = '';
+  @Input() src: string = '';
+  @Input() size: 'small' | 'medium' | 'large' = 'medium';
+  @Input() shape: 'circle' | 'square' = 'circle';
+  @Input() initials: boolean = true;
+  @Input() status: 'online' | 'offline' | 'away' | 'busy' | null = null;
+
+  ngOnInit(): void {}
+
+  getInitials(): string {
+    if (this.name) {
+      const parts = this.name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+    return '?';
+  }
+
+  getSizeClass(): string {
+    switch (this.size) {
+      case 'small': return 'w-8 h-8 text-xs';
+      case 'large': return 'w-16 h-16 text-xl';
+      default: return 'w-10 h-10 text-sm';
+    }
+  }
+
+  getStatusColor(): string {
+    switch (this.status) {
+      case 'online': return '#4caf50';
+      case 'offline': return '#9e9e9e';
+      case 'away': return '#ff9800';
+      case 'busy': return '#f44336';
+      default: return 'transparent';
+    }
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() name: string = '';
+  @Input() alt: string = '';
+  @Input() src: string = '';
+  @Input() size: 'xs' | 'sm' | 'md' | 'lg' | 'xl' = 'md';
+  @Input() square: boolean = false;
+  @Input() bordered: boolean = false;
+  @Input() status: 'online' | 'offline' | 'away' | 'busy' | null = null;
+  @Input() color: string = 'bg-gray-400';
+
+  ngOnInit(): void {}
+
+  getInitials(): string {
+    if (this.name) {
+      const parts = this.name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+    return '?';
+  }
+
+  get sizeClasses(): string {
+    switch (this.size) {
+      case 'xs': return 'h-6 w-6 text-[10px]';
+      case 'sm': return 'h-8 w-8 text-xs';
+      case 'lg': return 'h-12 w-12 text-lg';
+      case 'xl': return 'h-16 w-16 text-xl';
+      default: return 'h-10 w-10 text-sm';
+    }
+  }
+
+  get shapeClasses(): string {
+    return this.square ? 'rounded-lg' : 'rounded-full';
+  }
+
+  get statusColor(): string {
+    switch (this.status) {
+      case 'online': return 'bg-green-500';
+      case 'offline': return 'bg-gray-400';
+      case 'away': return 'bg-yellow-500';
+      case 'busy': return 'bg-red-500';
+      default: return '';
+    }
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() name: string = '';
+  @Input() alt: string = '';
+  @Input() src: string = '';
+  @Input() size: 'sm' | 'md' | 'lg' = 'md';
+  @Input() squared: boolean = false;
+
+  ngOnInit(): void {}
+
+  getInitials(): string {
+    if (this.name) {
+      const parts = this.name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+    return '?';
+  }
+
+  get sizeClass(): string {
+    switch (this.size) {
+      case 'sm': return 'w-8 h-8 text-xs';
+      case 'lg': return 'w-16 h-16 text-xl';
+      default: return 'w-10 h-10 text-sm';
+    }
+  }
+}
+{% elif ui_framework == "antd" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() name: string = '';
+  @Input() alt: string = '';
+  @Input() src: string = '';
+  @Input() size: 'small' | 'default' | 'large' = 'default';
+  @Input() shape: 'circle' | 'square' = 'circle';
+  @Input() icon: string = '';
+
+  ngOnInit(): void {}
+
+  getInitials(): string {
+    if (this.name) {
+      const parts = this.name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+    return '?';
+  }
+
+  get sizeClass(): string {
+    switch (this.size) {
+      case 'small': return 'w-6 h-6 text-xs';
+      case 'large': return 'w-12 h-12 text-lg';
+      default: return 'w-8 h-8 text-sm';
+    }
+  }
+}
+{% elif ui_framework == "carbon" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() name: string = '';
+  @Input() alt: string = '';
+  @Input() src: string = '';
+  @Input() size: 'sm' | 'md' | 'lg' = 'md';
+  @Input() status: 'online' | 'offline' | 'unknown' | 'warning' | 'error' | 'disabled' = 'unknown';
+
+  ngOnInit(): void {}
+
+  getInitials(): string {
+    if (this.name) {
+      const parts = this.name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+    return '?';
+  }
+
+  get sizeClass(): string {
+    switch (this.size) {
+      case 'sm': return 'w-6 h-6 text-xs';
+      case 'lg': return 'w-12 h-12 text-lg';
+      default: return 'w-8 h-8 text-sm';
+    }
+  }
+
+  get statusColor(): string {
+    switch (this.status) {
+      case 'online': return '#198038';
+      case 'offline': return '#8d8d8d';
+      case 'warning': return '#d69e2e';
+      case 'error': return '#da1e28';
+      case 'disabled': return '#c6c6c6';
+      default: return '#8d8d8d';
+    }
+  }
+}
+{% else %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() name: string = '';
+  @Input() alt: string = '';
+  @Input() src: string = '';
+  @Input() size: 'sm' | 'md' | 'lg' = 'md';
+
+  ngOnInit(): void {}
+
+  getInitials(): string {
+    if (this.name) {
+      const parts = this.name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+    return '?';
+  }
+}
+{% endif %}

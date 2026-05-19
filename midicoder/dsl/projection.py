@@ -3697,6 +3697,129 @@ class FrontendStoreParams(TypedDict, total=False):
 
 
 # ============================================================================
+# CP19: UI Component Generator Params
+# ============================================================================
+
+
+class UIComponentParams(TypedDict, total=False):
+    """
+    Tham số cho UI Component nodes (CP19: UI Component Generator).
+
+    UIComponent định nghĩa spec cho một reusable UI component.
+    Bao gồm component type, entity binding, properties, và fields.
+
+    Fields:
+        id: Định danh của component
+        component_type: Loại component (form_field, data_table, card_list, dialog, ...)
+        entity_id: Tên entity liên kết
+        title: Tiêu đề hiển thị
+        properties: Thuộc tính bổ sung (grid_cols, variant, size, ...)
+        fields: Danh sách FormFieldSpec dicts (cho form_field)
+        table_spec: TableSpec dict (cho data_table)
+        variants: Danh sách variant names ("outlined", "contained", "text")
+        size: Component size ("small", "medium", "large")
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    component_type: str
+    entity_id: str
+    title: str
+    properties: dict[str, Any]
+    fields: list[dict[str, Any]]
+    table_spec: dict[str, Any]
+    variants: list[str]
+    size: str
+    tags: list[str]
+    source: str
+
+
+class UIFormBuilderParams(TypedDict, total=False):
+    """
+    Tham số cho Dynamic Form Builder nodes (CP19: UI Component Generator).
+
+    UIFormBuilder định nghĩa form builder spec — sinh form động từ schema JSON.
+    Bao gồm fields, layout, conditional rules, và validation.
+
+    Fields:
+        id: Định danh của form builder
+        entity_id: Tên entity để sinh form
+        layout: Form layout (single_column, two_column, wizard)
+        fields: Danh sách field configs
+        conditional_rules: Danh sách conditional rule dicts
+        validation_schema: JSON Schema validation
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    entity_id: str
+    layout: str
+    fields: list[dict[str, Any]]
+    conditional_rules: list[dict[str, Any]]
+    validation_schema: dict[str, Any]
+    tags: list[str]
+    source: str
+
+
+class UILayoutParams(TypedDict, total=False):
+    """
+    Tham số cho UI Layout nodes (CP19: UI Component Generator).
+
+    UILayout định nghĩa page layout structure.
+    Bao gồm layout type, sections, navigation, breakpoints.
+
+    Fields:
+        id: Định danh của layout
+        layout_type: Loại layout (sidebar, topnav, split, full_width)
+        sections: Danh sách section configs
+        navigation: Navigation config
+        breakpoints: Responsive breakpoint overrides
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    layout_type: str
+    sections: list[dict[str, Any]]
+    navigation: dict[str, Any]
+    breakpoints: dict[str, Any]
+    tags: list[str]
+    source: str
+
+
+class UIThemeParams(TypedDict, total=False):
+    """
+    Tham số cho UI Theme nodes (CP19: UI Component Generator).
+
+    UITheme định nghĩa theme / design tokens cho application.
+    Bao gồm colors, typography, spacing, breakpoints, dark mode.
+
+    Fields:
+        id: Định danh của theme
+        name: Tên theme (default, dark, custom)
+        colors: Color palette dict
+        typography: Typography config dict
+        spacing: Spacing scale dict
+        breakpoints: Breakpoint overrides dict
+        dark_mode: Có support dark mode không
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    name: str
+    colors: dict[str, Any]
+    typography: dict[str, Any]
+    spacing: dict[str, Any]
+    breakpoints: dict[str, Any]
+    dark_mode: bool
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
 # CP06: API Gateway & Service Mesh Params (Kong + Consul)
 # ============================================================================
 
@@ -4367,6 +4490,13 @@ class NodeKind(Enum):
     FRONTEND_ROUTE = "frontend.route"
     FRONTEND_STORE = "frontend.store"
 
+    # =========================================================================
+    # CP19: UI Component Generator (4 loại)
+    UI_COMPONENT = "ui.component"        # UI component spec (form, table, card, dialog, ...)
+    UI_FORM_BUILDER = "ui.form_builder"   # Dynamic form builder spec
+    UI_LAYOUT = "ui.layout"               # Page layout spec (sidebar, header, grid)
+    UI_THEME = "ui.theme"                 # Theme / design tokens spec
+
     # CP06: Kong Gateway (5 loại) - API Gateway & Service Mesh
     # =========================================================================
     KONG_GATEWAY = "gateway.kong"  # Kong Gateway configuration
@@ -4688,6 +4818,14 @@ class ProjectionNode:
             NodeKind.FRONTEND_APP: ["id", "name", "framework"],
             NodeKind.FRONTEND_ROUTE: ["id", "path", "component"],
             NodeKind.FRONTEND_STORE: ["id", "store_type"],
+
+            # =========================================================================
+            # CP19: UI Component Generator
+            # =========================================================================
+            NodeKind.UI_COMPONENT: ["id", "component_type", "entity_id"],
+            NodeKind.UI_FORM_BUILDER: ["id", "entity_id"],
+            NodeKind.UI_LAYOUT: ["id", "layout_type"],
+            NodeKind.UI_THEME: ["id", "name"],
 
             # =========================================================================
             # CP06: Kong Gateway

@@ -1,0 +1,83 @@
+/** Skeleton Component - Placeholder loading animation for content structure. */
+
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+@Component({
+  selector: 'app-skeleton',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+{% if ui_framework == "material" %}
+<div class="mat-skeleton" [ngClass]="'mat-skeleton-' + variant">
+  <div
+    class="mat-skeleton-background"
+    [ngStyle]="{
+      width: variant === 'circle' ? size + 'px' : (variant === 'avatar' ? size + 'px' : '100%'),
+      height: (variant === 'circle' || variant === 'avatar') ? size + 'px' : height,
+      borderRadius: (variant === 'circle' || variant === 'avatar') ? '50%' : (variant === 'rounded' ? '8px' : '4px'),
+    }"
+  ></div>
+</div>
+{% elif ui_framework == "tailwind" %}
+<div
+  class="animate-pulse bg-gray-300"
+  [ngStyle]="{
+    width: variant === 'circle' ? size + 'px' : (variant === 'avatar' ? size + 'px' : '100%'),
+    height: (variant === 'circle' || variant === 'avatar') ? size + 'px' : height + 'px',
+    borderRadius: (variant === 'circle' || variant === 'avatar') ? '50%' : (variant === 'rounded' ? '0.5rem' : '0.25rem'),
+  }"
+></div>
+{% elif ui_framework == "bootstrap" %}
+<div
+  [ngClass]="skeletonClass"
+  [ngStyle]="{
+    width: variant === 'circle' ? size + 'px' : (variant === 'avatar' ? size + 'px' : '100%'),
+    height: (variant === 'circle' || variant === 'avatar') ? size + 'px' : height + 'px',
+    borderRadius: (variant === 'circle' || variant === 'avatar') ? '50%' : '0.25rem',
+  }"
+></div>
+{% elif ui_framework == "antd" %}
+<div class="ant-skeleton" [ngClass]="{'ant-skeleton-circle': variant === 'circle', 'ant-skeleton-avatar': variant === 'avatar'}">
+  <div
+    class="ant-skeleton-element"
+    [ngStyle]="{
+      width: variant === 'circle' ? size + 'px' : (variant === 'avatar' ? size + 'px' : '100%'),
+      height: (variant === 'circle' || variant === 'avatar') ? size + 'px' : height + 'px',
+      borderRadius: (variant === 'circle' || variant === 'avatar') ? '50%' : '4px',
+    }"
+  ></div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div
+  class="cds--skeleton-placeholder"
+  [ngClass]="{
+    'cds--skeleton-placeholder--circle': variant === 'circle',
+  }"
+  [ngStyle]="{
+    width: variant === 'circle' ? size + 'px' : (variant === 'avatar' ? size + 'px' : '100%'),
+    height: (variant === 'circle' || variant === 'avatar') ? size + 'px' : height + 'px',
+    borderRadius: (variant === 'circle' || variant === 'avatar') ? '50%' : '0',
+  }"
+></div>
+{% endif %}
+  `,
+})
+export class SkeletonComponent implements OnInit {
+  @Input() variant: 'text' | 'rect' | 'circle' | 'avatar' | 'rounded' = 'text';
+  @Input() width: string = '100%';
+  @Input() height: number = 16;
+  @Input() size: number = 40;
+
+  ngOnInit() {}
+
+  get skeletonClass(): string {
+    const base = 'skeleton-placeholder';
+    const variantMap: Record<string, string> = {
+      circle: base + ' rounded-circle',
+      avatar: base + ' rounded-circle',
+      default: base,
+    };
+    return variantMap[this.variant] || variantMap['default'];
+  }
+}

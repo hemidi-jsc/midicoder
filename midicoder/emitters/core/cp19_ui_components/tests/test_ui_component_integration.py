@@ -49,11 +49,11 @@ class TestUIComponentIntegration:
             assert f.content
             assert len(f.content) > 10  # Không rỗng
 
-        # Kiểm tra files tồn tại
-        assert (output_dir / "form-field.component.ts").exists()
-        assert (output_dir / "data-table.component.ts").exists()
-        assert (output_dir / "card-list.component.ts").exists()
-        assert (output_dir / "dialog.component.ts").exists()
+        # Kiểm tra files tồn tại (output theo subdirectory)
+        assert (output_dir / "data-input" / "form-field.component.ts").exists()
+        assert (output_dir / "data-display" / "data-table.component.ts").exists()
+        assert (output_dir / "card-list.component.ts").exists()  # root-level legacy
+        assert (output_dir / "feedback" / "dialog.component.ts").exists()
 
     def test_full_workflow_react_tailwind(self, tmp_path: Path):
         """Test workflow đầy đủ: React + Tailwind — sinh tất cả 4 components."""
@@ -79,10 +79,11 @@ class TestUIComponentIntegration:
         files = emitter.generate(components, output_dir)
 
         assert len(files) == 4
-        assert (output_dir / "FormField.tsx").exists()
-        assert (output_dir / "DataTable.tsx").exists()
-        assert (output_dir / "CardList.tsx").exists()
-        assert (output_dir / "Dialog.tsx").exists()
+        # Output theo subdirectory
+        assert (output_dir / "data-input" / "FormField.tsx").exists()
+        assert (output_dir / "data-display" / "DataTable.tsx").exists()
+        assert (output_dir / "CardList.tsx").exists()  # root-level legacy
+        assert (output_dir / "feedback" / "Dialog.tsx").exists()
 
     def test_backend_fastapi_integration(self, tmp_path: Path):
         """Test backend FastAPI: sinh form validation service."""

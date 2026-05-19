@@ -1,0 +1,94 @@
+/** Snackbar Component - Brief, low-priority messages at the bottom of the screen. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatSnackBarModule } from "@angular/material/snack-bar";
+{% endif %}
+
+@Component({
+  selector: 'app-snackbar',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatSnackBarModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<div *ngIf="isVisible" class="mat-snackbar-container" role="status" aria-live="polite">
+  <div class="mat-snackbar-surfaces">
+    <div class="mat-snackbar-label">{% raw %}{{ message }}{% endraw %}</div>
+    <button *ngIf="actionLabel" mat-button color="primary" (click)="onAction()">{% raw %}{{ actionLabel }}{% endraw %}</button>
+  </div>
+</div>
+{% elif ui_framework == "tailwind" %}
+<div *ngIf="isVisible" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50" role="status" aria-live="polite">
+  <div class="bg-gray-900 text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-4">
+    <span class="text-sm">{% raw %}{{ message }}{% endraw %}</span>
+    <button *ngIf="actionLabel" (click)="onAction()" class="text-white font-medium text-sm underline hover:no-underline">{% raw %}{{ actionLabel }}{% endraw %}</button>
+  </div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div *ngIf="isVisible" class="toast show position-fixed bottom-0 start-50 translate-middle-x mb-3" role="status" aria-live="polite" style="transform: translateX(-50%);">
+  <div class="toast-body d-flex align-items-center gap-3">
+    <span>{% raw %}{{ message }}{% endraw %}</span>
+    <button *ngIf="actionLabel" type="button" class="btn btn-sm btn-link text-white" (click)="onAction()">{% raw %}{{ actionLabel }}{% endraw %}</button>
+  </div>
+</div>
+{% elif ui_framework == "antd" %}
+<div *ngIf="isVisible" class="ant-message ant-message-notice" role="status" aria-live="polite" style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 1000;">
+  <div class="ant-message-notice-content">
+    <span class="ant-message-notice-icon">{% raw %}{{ severityIcon }}{% endraw %}</span>
+    <span class="ant-message-notice-message">{% raw %}{{ message }}{% endraw %}</span>
+    <a *ngIf="actionLabel" (click)="onAction()">{% raw %}{{ actionLabel }}{% endraw %}</a>
+  </div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div *ngIf="isVisible" class="cds--toast-notification cds--toast-notification--low-contrast" role="status" aria-live="polite" style="position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); z-index: 6000;">
+  <div class="cds--toast-notification__content">
+    <span class="cds--toast-notification__text">{% raw %}{{ message }}{% endraw %}</span>
+    <a *ngIf="actionLabel" class="cds--toast-notification__action" (click)="onAction()">{% raw %}{{ actionLabel }}{% endraw %}</a>
+  </div>
+</div>
+{% endif %}
+  `,
+})
+export class SnackbarComponent implements OnInit {
+  @Input() message: string = '';
+  @Input() actionLabel: string = '';
+  @Input() duration: number = 5000;
+  @Input() isVisible: boolean = false;
+  @Input() severity: 'success' | 'warning' | 'error' | 'info' = 'info';
+  @Output() action = new EventEmitter<void>();
+  @Output() closed = new EventEmitter<void>();
+
+  private timer: any = null;
+
+  ngOnInit() {}
+
+  get severityIcon(): string {
+    const icons: Record<string, string> = {
+      success: '✓',
+      warning: '⚠',
+      error: '✕',
+      info: 'ℹ',
+    };
+    return icons[this.severity] || 'ℹ';
+  }
+
+  onAction() {
+    this.action.emit();
+    this.close();
+  }
+
+  close() {
+    this.isVisible = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.closed.emit();
+  }
+}

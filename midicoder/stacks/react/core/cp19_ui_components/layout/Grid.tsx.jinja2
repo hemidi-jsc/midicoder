@@ -1,0 +1,100 @@
+import React from "react";
+
+{% if ui_framework == "material" %}
+import { Grid as MuiGrid } from "@mui/material";
+{% elif ui_framework == "antd" %}
+import { Row as AntdRow, Col as AntdCol } from "antd";
+{% elif ui_framework == "carbon" %}
+import { Grid as CarbonGrid } from "@carbon/react";
+{% endif %}
+
+export interface GridProps {
+  cols?: number;
+  gutter?: number;
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+  container?: boolean;
+  spacing?: number;
+  [key: string]: any;
+}
+
+export const Grid: React.FC<GridProps> = ({
+  cols = 12,
+  gutter = 16,
+  children,
+  className = '',
+  style,
+  container = true,
+  spacing,
+  ...rest
+}) => {
+  {% if ui_framework == "material" %}
+  return (
+    <MuiGrid
+      container
+      spacing={spacing || gutter / 8}
+      className={className}
+      style={style}
+      {...rest}
+    >
+      {children}
+    </MuiGrid>
+  );
+  {% elif ui_framework == "tailwind" %}
+  const colMap: Record<number, string> = {
+    1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3',
+    4: 'grid-cols-4', 6: 'grid-cols-6', 12: 'grid-cols-12'
+  };
+  const colsClass = colMap[cols] || `grid-cols-[repeat(${cols},minmax(0,1fr))]`;
+  const gutterClass = gutter > 0 ? `gap-${gutter / 4}` : 'gap-0';
+  const baseClass = `grid ${colsClass} ${gutterClass}`;
+
+  return (
+    <div className={`${baseClass} ${className}`} style={style} {...rest}>
+      {children}
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const gutterStyle: React.CSSProperties = gutter > 0
+    ? { '--bs-gutter-x': `${gutter}px`, ...style }
+    : { ...style };
+
+  return (
+    <div
+      className={`row ${className}`}
+      style={gutterStyle}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  return (
+    <AntdRow
+      gutter={gutter}
+      className={className}
+      style={style}
+      {...rest}
+    >
+      {children}
+    </AntdRow>
+  );
+  {% elif ui_framework == "carbon" %}
+  return (
+    <CarbonGrid
+      narrow={false}
+      condensed={gutter === 0}
+      className={className}
+      style={style}
+      {...rest}
+    >
+      {children}
+    </CarbonGrid>
+  );
+  {% endif %}
+};
+
+Grid.displayName = 'Grid';
+
+export default Grid;

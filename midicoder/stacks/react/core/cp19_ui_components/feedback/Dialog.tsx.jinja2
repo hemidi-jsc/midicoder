@@ -1,0 +1,187 @@
+/** Dialog Component - Non-modal dialog for confirmation and simple input. */
+
+import React, { ReactNode } from "react";
+
+export interface DialogProps {
+  title: string;
+  message?: string;
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm?: () => void;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  showCancel?: boolean;
+  closeOnBackdrop?: boolean;
+  children?: ReactNode;
+  className?: string;
+}
+
+export const Dialog: React.FC<DialogProps> = ({
+  title,
+  message,
+  isOpen,
+  onClose,
+  onConfirm,
+  confirmLabel = 'Xác nhận',
+  cancelLabel = 'Hủy',
+  showCancel = true,
+  closeOnBackdrop = true,
+  children,
+  className = '',
+}) => {
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && closeOnBackdrop) {
+      onClose();
+    }
+  };
+
+  {% if ui_framework == "material" %}
+  import { Dialog as MuiDialog, DialogTitle, DialogContent, DialogActions, Button, DialogContentText } from '@mui/material';
+
+  return (
+    <MuiDialog
+      open={isOpen}
+      onClose={closeOnBackdrop ? onClose : undefined}
+      onClick={handleBackdropClick}
+      maxWidth="sm"
+      fullWidth
+    >
+      <DialogTitle>{title}</DialogTitle>
+      <DialogContent>
+        {children || (
+          <DialogContentText>{message}</DialogContentText>
+        )}
+      </DialogContent>
+      <DialogActions>
+        {showCancel && (
+          <Button onClick={onClose}>{cancelLabel}</Button>
+        )}
+        <Button
+          onClick={() => { onConfirm?.(); onClose(); }}
+          variant="contained"
+          color="primary"
+        >
+          {confirmLabel}
+        </Button>
+      </DialogActions>
+    </MuiDialog>
+  );
+  {% elif ui_framework == "tailwind" %}
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      onClick={handleBackdropClick}
+    >
+      <div className="fixed inset-0 bg-black/50" />
+      <div className={`bg-white rounded-xl shadow-2xl z-10 w-full max-w-md mx-4 ${className}`}>
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+        <div className="px-6 py-4">
+          {children || <p className="text-gray-600">{message}</p>}
+        </div>
+        <div className="flex justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+          {showCancel && (
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+            >
+              {cancelLabel}
+            </button>
+          )}
+          <button
+            onClick={() => { onConfirm?.(); onClose(); }}
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  import { Modal } from 'react-bootstrap';
+
+  return (
+    <Modal
+      show={isOpen}
+      onHide={closeOnBackdrop ? onClose : undefined}
+      centered
+      size="sm"
+    >
+      <Modal.Header closeButton onClose={onClose}>
+        <Modal.Title>{title}</Modal.Title>
+      </Modal.Header>
+      <Modal.Body>
+        {children || <p>{message}</p>}
+      </Modal.Body>
+      <Modal.Footer>
+        {showCancel && (
+          <button className="btn btn-secondary" onClick={onClose}>{cancelLabel}</button>
+        )}
+        <button
+          className="btn btn-primary"
+          onClick={() => { onConfirm?.(); onClose(); }}
+        >
+          {confirmLabel}
+        </button>
+      </Modal.Footer>
+    </Modal>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Modal as AntModal } from 'antd';
+
+  return (
+    <AntModal
+      title={title}
+      open={isOpen}
+      onCancel={onClose}
+      onOk={() => { onConfirm?.(); onClose(); }}
+      okText={confirmLabel}
+      cancelText={cancelLabel}
+      maskClosable={closeOnBackdrop}
+      destroyOnClose
+    >
+      {children || <p>{message}</p>}
+    </AntModal>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { ModalWrapper, ModalHeader, ModalBody, ModalFooter, Button } from '@carbon/react';
+
+  return (
+    <ModalWrapper
+      open={isOpen}
+      onRequests={% raw %}{{ dismiss: onClose, cancel: onClose, submit: () => { onConfirm?.(); onClose(); } }}{% endraw %}
+      selectorPrimaryFocus="[data-modal-primary-focus]"
+      modalAriaLabel={title}
+      modalRole="dialog"
+    >
+      <ModalHeader
+        onDismiss={onClose}
+        title={title}
+        className="cds--modal-header"
+      />
+      <ModalBody>
+        {children || <p>{message}</p>}
+      </ModalBody>
+      <ModalFooter>
+        {showCancel && (
+          <Button kind="secondary" onClick={onClose}>{cancelLabel}</Button>
+        )}
+        <Button
+          kind="primary"
+          onClick={() => { onConfirm?.(); onClose(); }}
+          data-modal-primary-focus
+        >
+          {confirmLabel}
+        </Button>
+      </ModalFooter>
+    </ModalWrapper>
+  );
+  {% endif %}
+};
+
+export default Dialog;

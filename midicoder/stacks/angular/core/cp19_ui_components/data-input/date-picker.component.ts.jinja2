@@ -1,0 +1,183 @@
+/*
+ * Midicoder CP19 - Data Input: DatePicker
+ * Standalone date picker component.
+ */
+import { Component, Input, forwardRef } from '@angular/core';
+import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule, AbstractControl } from '@angular/forms';
+{% if ui_framework == "material" %}
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatDatepickerModule, MatDatepicker } from '@angular/material/datepicker';
+import { MatNativeDateModule, MatOption } from '@angular/material/core';
+import { MatIconModule } from '@angular/material/icon';
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% endif %}
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: 'app-date-picker',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+{% if ui_framework == "material" %}
+    MatFormFieldModule,
+    MatInputModule,
+    MatDatepickerModule,
+    MatNativeDateModule,
+    MatIconModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbModule,
+{% endif %}
+  ],
+  providers: [
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => DatePickerComponent),
+      multi: true,
+    },
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-form-field appearance="outline" class="w-full" [color]="color">
+  <mat-label>{{ label }}{% if required %} *{% endif %}</mat-label>
+  <input matInput
+         [matDatepicker]="picker"
+         [formControl]="control"
+         [placeholder]="placeholder"
+         [disabled]="disabled" />
+  <mat-icon matSuffix (click)="picker.open()" style="cursor:pointer;">calendar_today</mat-icon>
+  <mat-datepicker #picker [startAt]="startAt" [min]="minDate" [max]="maxDate"></mat-datepicker>
+  <mat-hint *ngIf="hint">{{ hint }}</mat-hint>
+  <mat-error *ngIf="control?.hasError('required')">
+    {% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}
+  </mat-error>
+  <mat-error *ngIf="control?.hasError('min')">
+    Date cannot be before {{ minDate | date }}
+  </mat-error>
+  <mat-error *ngIf="control?.hasError('max')">
+    Date cannot be after {{ maxDate | date }}
+  </mat-error>
+</mat-form-field>
+
+{% elif ui_framework == "tailwind" %}
+<div class="w-full">
+  {% if label %}
+  <label class="block text-sm font-medium text-gray-700 mb-1" [attr.for]="datePickerId">
+    {{ label }}
+    <span *ngIf="required" class="text-red-500 ml-1">*</span>
+  </label>
+  {% endif %}
+  <div class="relative">
+    <input [id]="datePickerId"
+           type="date"
+           [formControl]="control"
+           [placeholder]="placeholder"
+           [disabled]="disabled"
+           [attr.min]="minDate"
+           [attr.max]="maxDate"
+           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+           [class.border-red-300]="control?.invalid && (control?.dirty || control?.touched)"
+           [class.border-gray-300]="!(control?.invalid && (control?.dirty || control?.touched))" />
+  </div>
+  {% if hint %}<p class="mt-1 text-sm text-gray-500">{{ hint }}</p>{% endif %}
+  <p *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="mt-1 text-sm text-red-600">
+    <span *ngIf="control?.hasError('required')">{% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}</span>
+  </p>
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="form-group w-100">
+  {% if label %}
+  <label [attr.for]="datePickerId" class="form-label">
+    {{ label }}
+    <span *ngIf="required" class="text-danger">*</span>
+  </label>
+  {% endif %}
+  <input [id]="datePickerId"
+         type="date"
+         [formControl]="control"
+         [placeholder]="placeholder"
+         [disabled]="disabled"
+         [attr.min]="minDate"
+         [attr.max]="maxDate"
+         [ngClass]="{'is-invalid': control?.invalid && (control?.dirty || control?.touched)}"
+         class="form-control" />
+  {% if hint %}<small class="form-text text-muted">{{ hint }}</small>{% endif %}
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" class="invalid-feedback d-block">
+    <span *ngIf="control?.hasError('required')">{% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}</span>
+  </div>
+</div>
+
+{% elif ui_framework == "antd" %}
+<div style="width:100%; margin-bottom:16px;">
+  {% if label %}
+  <label style="display:block; font-size:14px; margin-bottom:4px; color:#262626;">
+    {{ label }}
+    <span *ngIf="required" style="color:#ff4d4f; margin-left:4px;">*</span>
+  </label>
+  {% endif %}
+  <input type="date"
+         [formControl]="control"
+         [placeholder]="placeholder"
+         [disabled]="disabled"
+         [attr.min]="minDate"
+         [attr.max]="maxDate"
+         style="width:100%; padding:8px 11px; border:1px solid #d9d9d9; border-radius:6px; font-size:14px; outline:none; transition:border-color 0.3s;"
+         [style.borderColor]="control?.invalid && (control?.dirty || control?.touched) ? '#ff4d4f' : '#d9d9d9'" />
+  {% if hint %}<div style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ hint }}</div>{% endif %}
+  <div *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="color:#ff4d4f; font-size:12px; margin-top:4px;">
+    <span *ngIf="control?.hasError('required')">{% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}</span>
+  </div>
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div style="width:100%; margin-bottom:1rem;">
+  {% if label %}
+  <label [attr.for]="datePickerId" style="display:block; font-size:0.75rem; font-weight:400; color:#525252; margin-bottom:0.25rem;">
+    {{ label }}
+    <span *ngIf="required" style="color:#da1e28; margin-left:0.25rem;">*</span>
+  </label>
+  {% endif %}
+  <input [id]="datePickerId"
+         type="date"
+         [formControl]="control"
+         [placeholder]="placeholder"
+         [disabled]="disabled"
+         [attr.min]="minDate"
+         [attr.max]="maxDate"
+         style="width:100%; padding:10px 12px; border:none; border-bottom:1px solid #8d8d8d; font-size:0.875rem; outline:none; background:transparent;"
+         [style.borderColor]="control?.invalid && (control?.dirty || control?.touched) ? '#da1e28' : '#8d8d8d'" />
+  {% if hint %}<p style="font-size:0.75rem; color:#6f6f6f; margin:0.25rem 0;">{{ hint }}</p>{% endif %}
+  <p *ngIf="control?.invalid && (control?.dirty || control?.touched)" style="font-size:0.75rem; color:#da1e28; margin:0.25rem 0;">
+    <span *ngIf="control?.hasError('required')">{% raw %}{{ requiredMessage || (label + ' is required') }}{% endraw %}</span>
+  </p>
+</div>
+
+{% endif %}
+  `,
+})
+export class DatePickerComponent implements ControlValueAccessor {
+  @Input() label = '';
+  @Input() placeholder = '';
+  @Input() hint = '';
+  @Input() required = false;
+  @Input() requiredMessage = '';
+  @Input() disabled = false;
+  @Input() color = 'primary';
+  @Input() minDate: string | null = null;
+  @Input() maxDate: string | null = null;
+  @Input() startAt: Date | null = null;
+  @Input() datePickerId = `dp-${Math.random().toString(36).slice(2, 9)}`;
+
+  protected control: AbstractControl | null = null;
+
+  private _onChange: (value: any) => void = () => {};
+  private _onTouched: () => void = () => {};
+
+  writeValue(value: any): void { this.control?.setValue(value, { emitEvent: false }); }
+  registerOnChange(fn: any): void { this._onChange = fn; }
+  registerOnTouched(fn: any): void { this._onTouched = fn; }
+  setDisabledState(isDisabled: boolean): void { this.disabled = isDisabled; }
+}

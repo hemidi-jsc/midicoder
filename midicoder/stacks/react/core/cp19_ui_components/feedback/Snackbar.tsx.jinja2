@@ -1,0 +1,169 @@
+/** Snackbar Component - Brief, low-priority messages at the bottom of the screen. */
+
+import React, { useEffect, useState } from "react";
+
+export interface SnackbarProps {
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  onClose?: () => void;
+  duration?: number;
+  isVisible?: boolean;
+  severity?: 'success' | 'warning' | 'error' | 'info';
+  className?: string;
+}
+
+export const Snackbar: React.FC<SnackbarProps> = ({
+  message,
+  actionLabel,
+  onAction,
+  onClose,
+  duration = 5000,
+  isVisible = false,
+  severity = 'info',
+  className = '',
+}) => {
+  const [open, setOpen] = useState(isVisible);
+
+  useEffect(() => {
+    setOpen(isVisible);
+  }, [isVisible]);
+
+  useEffect(() => {
+    if (open && duration > 0) {
+      const timer = setTimeout(() => {
+        setOpen(false);
+        onClose?.();
+      }, duration);
+      return () => clearTimeout(timer);
+    }
+  }, [open, duration, onClose]);
+
+  const handleClose = () => {
+    setOpen(false);
+    onClose?.();
+  };
+
+  const handleAction = () => {
+    onAction?.();
+    handleClose();
+  };
+
+  {% if ui_framework == "material" %}
+  import { Snackbar as MuiSnackbar, SnackbarContent, Button } from '@mui/material';
+
+  return (
+    <MuiSnackbar
+      open={open}
+      autoHideDuration={duration}
+      onClose={handleClose}
+      anchorOrigin={% raw %}{{ vertical: 'bottom', horizontal: 'center' }}{% endraw %}
+    >
+      <SnackbarContent
+        message={message}
+        action={
+          actionLabel && (
+            <Button size="small" onClick={handleAction}>
+              {actionLabel}
+            </Button>
+          )
+        }
+        className={className}
+      />
+    </MuiSnackbar>
+  );
+  {% elif ui_framework == "tailwind" %}
+  if (!open) return null;
+
+  return (
+    <div
+      className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 ${className}`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="bg-gray-900 text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-4">
+        <span className="text-sm">{message}</span>
+        {actionLabel && (
+          <button
+            onClick={handleAction}
+            className="text-white font-medium text-sm underline hover:no-underline"
+          >
+            {actionLabel}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  import { Toast } from 'react-bootstrap';
+
+  return (
+    <Toast
+      show={open}
+      delay={duration}
+      autohide
+      onClose={handleClose}
+      className={`position-fixed bottom-0 start-50 translate-middle-x mb-3 ${className}`}
+      style={% raw %}{{ transform: 'translateX(-50%)' }}{% endraw %}
+    >
+      <Toast.Body className="d-flex align-items-center gap-3">
+        {message}
+        {actionLabel && (
+          <button className="btn btn-sm btn-link text-white" onClick={handleAction}>
+            {actionLabel}
+          </button>
+        )}
+      </Toast.Body>
+    </Toast>
+  );
+  {% elif ui_framework == "antd" %}
+  import { message as antMessage } from 'antd';
+
+  useEffect(() => {
+    if (isVisible) {
+      if (actionLabel) {
+        antMessage.open({
+          content: message,
+          action: (
+            <a onClick={(e) => { e.preventDefault(); handleAction(); }}>
+              {actionLabel}
+            </a>
+          ),
+        });
+      } else {
+        antMessage.info(message);
+      }
+    }
+  }, [isVisible]);
+
+  return null;
+  {% elif ui_framework == "carbon" %}
+  import { ToastNotification } from '@carbon/react';
+
+  if (!open) return null;
+
+  return (
+    <ToastNotification
+      kind={severity}
+      title=""
+      caption={message}
+      onClose={handleClose}
+      closeButtonLabel="Đóng"
+      notifType="Low importance"
+      className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 ${className}`}
+      lowContrast
+    >
+      {actionLabel && (
+        <a
+          onClick={(e) => { e.preventDefault(); handleAction(); }}
+          href="#"
+        >
+          {actionLabel}
+        </a>
+      )}
+    </ToastNotification>
+  );
+  {% endif %}
+};
+
+export default Snackbar;

@@ -1,0 +1,199 @@
+/* eslint-disable */
+import { Component, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterModule } from '@angular/router';
+{% if ui_framework == "material" %}
+import { MatIconModule } from '@angular/material/icon';
+{% elif ui_framework == "bootstrap" %}
+{% elif ui_framework == "tailwind" %}
+{% elif ui_framework == "antd" %}
+{% elif ui_framework == "carbon" %}
+{% endif %}
+
+@Component({
+  selector: 'app-breadcrumbs',
+  standalone: true,
+  imports: [
+    CommonModule,
+    RouterModule,
+{% if ui_framework == "material" %}
+    MatIconModule,
+{% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+    <div class="breadcrumbs-wrapper">
+      <div class="breadcrumbs-container">
+        <mat-icon class="home-icon" (click)="onHomeClick()">home</mat-icon>
+        <span class="separator">{{ separator }}</span>
+        {% for crumb in crumbs %}
+        <a
+          *ngIf="crumb.url && !isLast(crumbs, crumb)"
+          [routerLink]="crumb.url"
+          (click)="onCrumbClick(crumb)"
+          class="breadcrumb-link"
+        >
+          {{ crumb.label }}
+        </a>
+        <span *ngIf="isLast(crumbs, crumb)" class="breadcrumb-current">
+          {{ crumb.label }}
+        </span>
+        {% if !isLast(crumbs, crumb) %}
+        <span class="separator">{{ separator }}</span>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "tailwind" %}
+    <nav class="flex" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-2">
+        <li>
+          <div>
+            <a (click)="onHomeClick()" class="flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 cursor-pointer">
+              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+              </svg>
+              <span class="sr-only">Home</span>
+            </a>
+          </div>
+        </li>
+        {% for crumb in crumbs %}
+        <li>
+          <div class="flex items-center">
+            <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+            </svg>
+            <a
+              *ngIf="crumb.url && !isLast(crumbs, crumb)"
+              [routerLink]="crumb.url"
+              (click)="onCrumbClick(crumb)"
+              class="ml-2 text-sm font-medium text-gray-500 hover:text-gray-700"
+            >
+              {{ crumb.label }}
+            </a>
+            <span *ngIf="isLast(crumbs, crumb)" class="ml-2 text-sm font-medium text-gray-900">
+              {{ crumb.label }}
+            </span>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </nav>
+{% elif ui_framework == "bootstrap" %}
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+          <a (click)="onHomeClick()" class="cursor-pointer">Home</a>
+        </li>
+        {% for crumb in crumbs %}
+        <li class="breadcrumb-item {{ isLast(crumbs, crumb) ? 'active' : '' }}" aria-current="{{ isLast(crumbs, crumb) ? 'page' : 'false' }}">
+          {% if isLast(crumbs, crumb) %}
+            {{ crumb.label }}
+          {% else %}
+            <a [routerLink]="crumb.url" (click)="onCrumbClick(crumb)" class="cursor-pointer">{{ crumb.label }}</a>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </nav>
+{% elif ui_framework == "antd" %}
+    <div style="padding:8px 0">
+      <div style="display:flex;align-items:center;gap:8px;font-size:14px">
+        <a (click)="onHomeClick()" style="color:#1890ff;cursor:pointer;font-size:14px">🏠</a>
+        {% for crumb in crumbs %}
+        <span style="color:rgba(0,0,0,0.45)">/</span>
+        {% if isLast(crumbs, crumb) %}
+        <span style="color:rgba(0,0,0,0.85)">{{ crumb.label }}</span>
+        {% else %}
+        <a [routerLink]="crumb.url" (click)="onCrumbClick(crumb)" style="color:#1890ff;cursor:pointer">{{ crumb.label }}</a>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div style="padding:8px 0">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+        <a (click)="onHomeClick()" style="color:#0f62fe;cursor:pointer;font-size:13px">🏠</a>
+        {% for crumb in crumbs %}
+        <span style="color:#6f6f6f">›</span>
+        {% if isLast(crumbs, crumb) %}
+        <span style="color:#161616;font-weight:600">{{ crumb.label }}</span>
+        {% else %}
+        <a [routerLink]="crumb.url" (click)="onCrumbClick(crumb)" style="color:#0f62fe;cursor:pointer;text-decoration:none">{{ crumb.label }}</a>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+{% endif %}
+  `,
+  styles: `
+{% if ui_framework == "material" %}
+    :host {
+      display: block;
+    }
+    .breadcrumbs-wrapper {
+      padding: 8px 16px;
+    }
+    .breadcrumbs-container {
+      display: flex;
+      align-items: center;
+      font-size: 14px;
+    }
+    .home-icon {
+      cursor: pointer;
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+    .separator {
+      margin: 0 8px;
+      color: rgba(0, 0, 0, 0.54);
+    }
+    .breadcrumb-link {
+      text-decoration: none;
+      color: #1976d2;
+      cursor: pointer;
+    }
+    .breadcrumb-link:hover {
+      text-decoration: underline;
+    }
+    .breadcrumb-current {
+      color: rgba(0, 0, 0, 0.87);
+      font-weight: 500;
+    }
+{% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+    }
+{% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+    }
+{% endif %}
+  `
+})
+export class BreadcrumbsComponent {
+  @Input() crumbs: Array<{ label: string; url?: string }> = [];
+  @Input() separator: string = '/';
+  @Input() showHome: boolean = true;
+
+  isLast(list: Array<{ label: string; url?: string }>, item: { label: string; url?: string }): boolean {
+    return list[list.length - 1] === item;
+  }
+
+  onHomeClick(): void {
+    // Handle home click
+  }
+
+  onCrumbClick(crumb: { label: string; url?: string }): void {
+    // Handle crumb click
+  }
+}

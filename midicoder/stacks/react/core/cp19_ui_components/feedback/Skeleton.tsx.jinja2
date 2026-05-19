@@ -1,0 +1,98 @@
+/** Skeleton Component - Placeholder loading animation for content structure. */
+
+import React from "react";
+
+export type SkeletonVariant = 'text' | 'rect' | 'circle' | 'avatar' | 'rounded';
+
+export interface SkeletonProps {
+  variant?: SkeletonVariant;
+  width?: string | number;
+  height?: number;
+  size?: number;
+  className?: string;
+}
+
+export const Skeleton: React.FC<SkeletonProps> = ({
+  variant = 'text',
+  width = '100%',
+  height = 16,
+  size = 40,
+  className = '',
+}) => {
+  const isCircle = variant === 'circle' || variant === 'avatar';
+
+  {% if ui_framework == "material" %}
+  import { Skeleton as MuiSkeleton } from '@mui/material';
+
+  const variantMap: Record<SkeletonVariant, 'rect' | 'circular' | 'rounded'> = {
+    text: 'rect',
+    rect: 'rect',
+    circle: 'circular',
+    avatar: 'circular',
+    rounded: 'rounded',
+  };
+
+  return (
+    <MuiSkeleton
+      variant={variantMap[variant]}
+      width={typeof width === 'number' ? width : isCircle ? size : width}
+      height={isCircle ? size : height}
+      className={className}
+    />
+  );
+  {% elif ui_framework == "tailwind" %}
+  return (
+    <div
+      className={`animate-pulse bg-gray-300 ${className}`}
+      style={% raw %}{{
+        width: isCircle ? `${size}px` : width,
+        height: isCircle ? `${size}px` : `${height}px`,
+        borderRadius: isCircle ? '50%' : variant === 'rounded' ? '0.5rem' : '0.25rem',
+      }}{% endraw %}
+    />
+  );
+  {% elif ui_framework == "bootstrap" %}
+  return (
+    <div
+      className={`skeleton-placeholder ${isCircle ? 'rounded-circle' : ''} ${clas{% raw %}{{
+        width: isCircle ? `${size}px` : width,
+        height: isCircle ? `${size}px` : `${height}px`,
+      }}{% endraw %}{height}px`,
+      }}
+    />
+  );
+  {% elif ui_framework == "antd" %}
+  import { Skeleton as AntSkeleton } from 'antd';
+
+  if (variant === 'circle' || variant === 'avatar') {
+    return (
+      <AntSkeleton.Avatar
+        size={size}
+        shape={variant === 'avatar' ? 'circle' : 'circle'}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <AntSkeleton
+      active
+      paragraph={{ width }}
+      className={className}
+    />
+  );
+  {% elif ui_framework == "carbon" %}
+  import { SkeletonPlaceholder } from '@carbon/react';
+
+  retu{% raw %}{{
+        width: isCircle ? `${size}px` : width,
+        height: isCircle ? `${size}px` : `${height}px`,
+      }}{% endraw %}le ? `${size}px` : `${height}px`,
+      }}
+      className={className}
+    />
+  );
+  {% endif %}
+};
+
+export default Skeleton;

@@ -232,6 +232,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "NestJSFrontendEmitter",
         "cp18_frontend",
     ),
+    # CP19 – UI Components (Angular)
+    "cp19.angular": (
+        "midicoder.emitters.core.cp19_ui_components.angular",
+        "AngularUIEmitter",
+        "cp19_ui_component",
+    ),
+    # CP19 – UI Components (React)
+    "cp19.react": (
+        "midicoder.emitters.core.cp19_ui_components.react",
+        "ReactUIEmitter",
+        "cp19_ui_component",
+    ),
+    # CP19 – UI Components (FastAPI)
+    "cp19.fastapi": (
+        "midicoder.emitters.core.cp19_ui_components.fastapi",
+        "FastAPIUIEmitter",
+        "cp19_ui_component",
+    ),
+    # CP19 – UI Components (NestJS)
+    "cp19.nestjs": (
+        "midicoder.emitters.core.cp19_ui_components.nestjs",
+        "NestJSUIEmitter",
+        "cp19_ui_component",
+    ),
 }
 
 
@@ -334,6 +358,22 @@ def _parse_frontend_dict(raw: dict[str, Any]) -> Any:
     return result.get("frontend_app")
 
 
+def _parse_ui_component_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw UI component dict from DSL/MIR into CP19 ComponentSpec list."""
+    from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec
+
+    # raw can be a single dict or a list of dicts
+    if isinstance(raw, list):
+        return [ComponentSpec.from_dict(item) for item in raw if isinstance(item, dict)]
+    elif isinstance(raw, dict):
+        # If it has a "components" key, unwrap it
+        if "components" in raw:
+            return [ComponentSpec.from_dict(item) for item in raw["components"]]
+        # Otherwise treat as single ComponentSpec
+        return [ComponentSpec.from_dict(raw)]
+    return []
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
@@ -343,6 +383,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp09_cache": _parse_cache_dict,
     "cp06_gateway": _parse_gateway_dict,
     "cp18_frontend": _parse_frontend_dict,
+    "cp19_ui_component": _parse_ui_component_dict,
 }
 
 
@@ -492,6 +533,59 @@ class PackEmitterRouter:
                 return _fallback_placeholder(
                     file_path, "Gateway emitter returned unexpected type"
                 )
+            except Exception as exc:
+                return _fallback_placeholder(file_path, str(exc))
+
+        elif parser_key == "cp19_ui_component" or pack_emitter.startswith("cp19."):
+            # --- UI Component emitter dispatch ---
+            # CP19 emitters take (list[ComponentSpec], output_dir) and return
+            # list[GeneratedFile] with path/content attributes.
+            try:
+                components_raw = (
+                    context.get("components")
+                    or context.get("ui_components")
+                    or [context] if context else []
+                )
+                # Parse via PARSER_REGISTRY
+                if components_raw:
+                    components = _parse_ui_component_dict(components_raw)
+                else:
+                    # Fallback: generate from entity if available
+                    from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec
+                    entity = context.get("entity")
+                    if entity:
+                        comps = [
+                            ComponentSpec.generate_form(entity),
+                            ComponentSpec.generate_table(entity),
+                            ComponentSpec.generate_card_list(entity),
+                            ComponentSpec.generate_dialog(entity),
+                        ]
+                        components = comps
+                    else:
+                        components = []
+
+                import tempfile
+                with tempfile.TemporaryDirectory() as tmp:
+                    output_dir = Path(tmp)
+                    generated = emitter.generate(components, output_dir)
+                    results = []
+                    for gf in generated:
+                        if hasattr(gf, "content"):
+                            content = gf.content
+                        elif hasattr(gf, "path") and gf.path.exists():
+                            content = gf.path.read_text(encoding="utf-8")
+                        else:
+                            continue
+                        rel = str(getattr(gf, "path", Path(file_path)))
+                        if tmp in rel:
+                            try:
+                                rel = str(Path(rel).relative_to(tmp))
+                            except ValueError:
+                                pass
+                        results.append({"path": rel, "content": content})
+                    return results if results else _fallback_placeholder(
+                        file_path, "UI Component emitter produced no files"
+                    )
             except Exception as exc:
                 return _fallback_placeholder(file_path, str(exc))
 

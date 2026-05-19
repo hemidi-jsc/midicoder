@@ -1,0 +1,141 @@
+/*
+ * Midicoder CP19 - Data Input: Switch
+ * Standalone toggle switch component.
+ */
+import { Component, Input, forwardRef } from '@angular/core';
+import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule, AbstractControl } from '@angular/forms';
+{% if ui_framework == "material" %}
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% endif %}
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: 'app-switch',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+{% if ui_framework == "material" %}
+    MatSlideToggleModule,
+{% elif ui_framework == "bootstrap" %}
+    NgbModule,
+{% endif %}
+  ],
+  providers: [
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => SwitchComponent),
+      multi: true,
+    },
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-slide-toggle [formControl]="control"
+                  [disabled]="disabled"
+                  [color]="color"
+                  [aria-label]="label">
+  {{ label }}
+  <span *ngIf="required" style="color:#d32f2f; margin-left:4px;">*</span>
+</mat-slide-toggle>
+{% if hint %}<div style="margin-top:4px; font-size:12px; color:#757575;">{{ hint }}</div>{% endif %}
+
+{% elif ui_framework == "tailwind" %}
+<div class="w-full">
+  <div class="flex items-center justify-between">
+    <span class="text-sm font-medium text-gray-700">
+      {{ label }}
+      <span *ngIf="required" class="text-red-500 ml-1">*</span>
+    </span>
+    <button type="button"
+            [formControl]="control"
+            [disabled]="disabled"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed"
+            [class.bg-blue-600]="control?.value"
+            [class.bg-gray-200]="!control?.value">
+      <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+            [class.translate-x-6]="control?.value"
+            [class.translate-x-1]="!control?.value"></span>
+    </button>
+  </div>
+  {% if hint %}<p class="mt-1 text-sm text-gray-500">{{ hint }}</p>{% endif %}
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="form-check form-switch w-100">
+  <input type="checkbox"
+         class="form-check-input"
+         role="switch"
+         [formControl]="control"
+         [disabled]="disabled"
+         [id]="switchId" />
+  <label class="form-check-label" [for]="switchId">
+    {{ label }}
+    <span *ngIf="required" class="text-danger">*</span>
+  </label>
+  {% if hint %}<small class="form-text text-muted">{{ hint }}</small>{% endif %}
+</div>
+
+{% elif ui_framework == "antd" %}
+<div style="width:100%; margin-bottom:16px;">
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <span style="font-size:14px; color:#262626;">
+      {{ label }}
+      <span *ngIf="required" style="color:#ff4d4f; margin-left:4px;">*</span>
+    </span>
+    <div [style.background]="control?.value ? '#1677ff' : '#d9d9d9'"
+         style="width:44px; height:22px; border-radius:11px; cursor:pointer; position:relative; transition:background 0.3s;"
+         [class.cursor-not-allowed]="disabled"
+         (click)="toggle()">
+      <div [style.left]="control?.value ? '24px' : '2px'"
+           style="width:18px; height:18px; border-radius:9px; background:#fff; position:absolute; top:2px; transition:left 0.3s;"></div>
+    </div>
+  </div>
+  {% if hint %}<div style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ hint }}</div>{% endif %}
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div style="width:100%; margin-bottom:1rem;">
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <span style="font-size:0.875rem; color:#161616;">
+      {{ label }}
+      <span *ngIf="required" style="color:#da1e28; margin-left:4px;">*</span>
+    </span>
+    <div [style.background]="control?.value ? '#0f62fe' : '#8d8d8d'"
+         style="width:44px; height:22px; border-radius:11px; cursor:pointer; position:relative; transition:background 0.3s;"
+         [class.cursor-not-allowed]="disabled"
+         (click)="toggle()">
+      <div [style.left]="control?.value ? '24px' : '2px'"
+           style="width:18px; height:18px; border-radius:9px; background:#fff; position:absolute; top:2px; transition:left 0.3s;"></div>
+    </div>
+  </div>
+  {% if hint %}<p style="font-size:0.75rem; color:#6f6f6f; margin:0.25rem 0;">{{ hint }}</p>{% endif %}
+</div>
+
+{% endif %}
+  `,
+})
+export class SwitchComponent implements ControlValueAccessor {
+  @Input() label = '';
+  @Input() hint = '';
+  @Input() required = false;
+  @Input() disabled = false;
+  @Input() color = 'primary';
+  @Input() switchId = `sw-${Math.random().toString(36).slice(2, 9)}`;
+
+  protected control: AbstractControl | null = null;
+
+  private _onChange: (value: any) => void = () => {};
+  private _onTouched: () => void = () => {};
+
+  writeValue(value: any): void { this.control?.setValue(value, { emitEvent: false }); }
+  registerOnChange(fn: any): void { this._onChange = fn; }
+  registerOnTouched(fn: any): void { this._onTouched = fn; }
+  setDisabledState(isDisabled: boolean): void { this.disabled = isDisabled; }
+
+  toggle(): void {
+    if (this.disabled) return;
+    this.control?.setValue(!this.control?.value);
+  }
+}

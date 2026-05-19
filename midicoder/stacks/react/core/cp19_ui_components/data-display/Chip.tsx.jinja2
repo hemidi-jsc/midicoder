@@ -1,0 +1,328 @@
+{% if ui_framework == "material" %}import React from 'react';
+import { Chip as MuiChip, Avatar } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface ChipProps {
+  value: string;
+  removable?: boolean;
+  selectable?: boolean;
+  selected?: boolean;
+  disabled?: boolean;
+  avatarUrl?: string;
+  trailingIcon?: React.ReactNode;
+  color?: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning';
+  variant?: 'filled' | 'outlined';
+  size?: 'small' | 'medium';
+  className?: string;
+  sx?: SxProps<Theme>;
+  onClose?: () => void;
+  onClick?: () => void;
+}
+
+function Chip({
+  value,
+  removable = false,
+  selectable = false,
+  selected = false,
+  disabled = false,
+  avatarUrl,
+  trailingIcon,
+  color = 'default',
+  variant = 'filled',
+  size = 'medium',
+  className,
+  sx,
+  onClose,
+  onClick
+}: ChipProps) {
+  const avatar = avatarUrl ? <Avatar src={avatarUrl} /> : undefined;
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClose?.();
+  };
+
+  return (
+    <MuiChip
+      label={value}
+      deleteIcon={trailingIcon}
+      avatar={avatar}
+      onDelete={removable ? handleDelete : undefined}
+      color={color as any}
+      variant={variant}
+      size={size}
+      selectable={selectable}
+      selected={selected}
+      disabled={disabled}
+      className={className}
+      sx={sx}
+      onClick={onClick}
+    />
+  );
+}
+
+export default Chip;
+{% elif ui_framework == "tailwind" %}import React from 'react';
+
+interface ChipProps {
+  value: string;
+  color?: 'default' | 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info';
+  variant?: 'solid' | 'soft' | 'outline';
+  closable?: boolean;
+  selectable?: boolean;
+  selected?: boolean;
+  disabled?: boolean;
+  icon?: React.ReactNode;
+  className?: string;
+  onClose?: () => void;
+  onClick?: () => void;
+}
+
+function getColorClasses(color: string, variant: string): string {
+  const solid = {
+    default: 'bg-gray-500 text-white',
+    primary: 'bg-blue-600 text-white',
+    secondary: 'bg-purple-600 text-white',
+    success: 'bg-green-600 text-white',
+    danger: 'bg-red-600 text-white',
+    warning: 'bg-yellow-600 text-white',
+    info: 'bg-cyan-600 text-white'
+  };
+  const soft = {
+    default: 'bg-gray-100 text-gray-700',
+    primary: 'bg-blue-100 text-blue-700',
+    secondary: 'bg-purple-100 text-purple-700',
+    success: 'bg-green-100 text-green-700',
+    danger: 'bg-red-100 text-red-700',
+    warning: 'bg-yellow-100 text-yellow-700',
+    info: 'bg-cyan-100 text-cyan-700'
+  };
+  const outline = {
+    default: 'border border-gray-300 text-gray-700 bg-white',
+    primary: 'border border-blue-300 text-blue-700 bg-blue-50',
+    secondary: 'border border-purple-300 text-purple-700 bg-purple-50',
+    success: 'border border-green-300 text-green-700 bg-green-50',
+    danger: 'border border-red-300 text-red-700 bg-red-50',
+    warning: 'border border-yellow-300 text-yellow-700 bg-yellow-50',
+    info: 'border border-cyan-300 text-cyan-700 bg-cyan-50'
+  };
+
+  if (variant === 'outline') return outline[color] || outline.default;
+  if (variant === 'solid') return solid[color] || solid.default;
+  return soft[color] || soft.default;
+}
+
+function Chip({
+  value,
+  color = 'default',
+  variant = 'soft',
+  closable = false,
+  selectable = false,
+  selected = false,
+  disabled = false,
+  icon,
+  className = '',
+  onClose,
+  onClick
+}: ChipProps) {
+  const selectedClass = selectable && selected ? 'ring-2 ring-offset-1 ring-blue-500' : '';
+  const disabledClass = disabled ? 'opacity-50 cursor-not-allowed' : selectable ? 'cursor-pointer' : '';
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${getColorClasses(color, variant)} ${selectedClass} ${disabledClass} ${className}`}
+      onClick={() => !disabled && onClick?.()}
+    >
+      {icon && <span className="w-4 h-4">{icon}</span>}
+      <span>{value}</span>
+      {closable && (
+        <button
+          type="button"
+          className="ml-1 w-4 h-4 flex items-center justify-center rounded-full hover:bg-black/10"
+          onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+          aria-label={`Remove ${value}`}
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+    </span>
+  );
+}
+
+export default Chip;
+{% elif ui_framework == "bootstrap" %}import React from 'react';
+
+interface ChipProps {
+  value: string;
+  variant?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info' | 'light' | 'dark';
+  pill?: boolean;
+  closable?: boolean;
+  disabled?: boolean;
+  className?: string;
+  onClose?: () => void;
+  onClick?: () => void;
+}
+
+function Chip({
+  value,
+  variant = 'secondary',
+  pill = true,
+  closable = false,
+  disabled = false,
+  className = '',
+  onClose,
+  onClick
+}: ChipProps) {
+  return (
+    <span
+      className={`d-inline-flex align-items-center gap-1 badge bg-${variant} ${pill ? 'rounded-pill' : ''} ${disabled ? 'opacity-50' : ''} ${className}`}
+      onClick={() => !disabled && onClick?.()}
+      style={% raw %}{{ cursor: disabled ? 'not-allowed' : 'pointer' }}{% endraw %}
+    >
+      {value}
+      {closable && (
+        <button
+          type="button"
+          className="btn-close btn-close-white ms-1 {% raw %}{{ width: '0.6em', height: '0.6em' }}{% endraw %}', height: '0.6em' }}
+          onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+          aria-label={`Remove ${value}`}
+        />
+      )}
+    </span>
+  );
+}
+
+export default Chip;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { Tag, Avatar } from 'antd';
+
+interface ChipProps {
+  value: string;
+  color?: string;
+  closable?: boolean;
+  avatar?: string;
+  disabled?: boolean;
+  className?: string;
+  onClose?: () => void;
+  onClick?: () => void;
+}
+
+function Chip({
+  value,
+  color = 'default',
+  closable = false,
+  avatar,
+  disabled = false,
+  className,
+  onClose,
+  onClick
+}: ChipProps) {
+  return (
+    <Tag
+      color={color}
+      closable={closable}
+      onClose={(e) => { e?.stopPropagation(); onClose?.(); }}
+      className={className}
+      onClick={() => !disabled && onClick?.()}
+      style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+    >
+      {avatar && <Avatar size="small" src={avatar} className="me-1" />}
+      {value}
+    </Tag>
+  );
+}
+
+export default Chip;
+{% elif ui_framework == "carbon" %}import React from 'react';
+
+interface ChipProps {
+  value: string;
+  type?: 'default' | 'filter' | 'selection' | 'tag';
+  size?: 'sm' | 'md' | 'lg';
+  simple?: boolean;
+  className?: string;
+  onClose?: () => void;
+  onClick?: () => void;
+}
+
+function getSizeClass(size: string): string {
+  switch (size) {
+    case 'sm': return 'text-xs py-0.5 px-1';
+    case 'lg': return 'text-sm py-1 px-2';
+    default: return 'text-xs py-0.5 px-1';
+  }
+}
+
+function Chip({
+  value,
+  type = 'default',
+  size = 'sm',
+  simple = false,
+  className = '',
+  onClose,
+  onClick
+}: ChipProps) {
+  return (
+    <span
+      className={`cds-tag cds-tag--${type} bg-gray-100 text-gray-800 ${getSizeClass(size)} rounded-sm inline-flex items-center gap-1 ${className}`}
+      onClick={() => onClick?.()}
+    >
+      {value}
+      {!simple && (
+        <button
+          type="button"
+          className="cds-tag__close-button ml-1 focus:outline-none"
+          onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+          aria-label={`Remove ${value}`}
+        >
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 320 320">
+            <path d="M205.66 291.663L160 246 114.34 291.66 94.68 271.99 140.34 226.33 94.68 180.67 114.34 161 160 206.66 205.66 161 225.32 180.66 179.66 226.33 225.32 272l-19.66 19.66z" />
+          </svg>
+        </button>
+      )}
+    </span>
+  );
+}
+
+export default Chip;
+{% else %}import React from 'react';
+
+interface ChipProps {
+  value: string;
+  closable?: boolean;
+  disabled?: boolean;
+  className?: string;
+  onClose?: () => void;
+  onClick?: () => void;
+}
+
+function Chip({
+  value,
+  closable = false,
+  disabled = false,
+  className = '',
+  onClose,
+  onClick
+}: ChipProps) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-700 ${disabled ? 'opacity-50' : ''} ${className}`}
+      onClick={() => !disabled && onClick?.()}
+    >
+      {value}
+      {closable && (
+        <button
+          className="w-4 h-4 flex items-center justify-center"
+          onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+        >
+          ×
+        </button>
+      )}
+    </span>
+  );
+}
+
+export default Chip;
+{% endif %}

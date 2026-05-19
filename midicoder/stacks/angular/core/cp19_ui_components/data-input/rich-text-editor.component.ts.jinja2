@@ -1,0 +1,184 @@
+/*
+ * Midicoder CP19 - Data Input: RichTextEditor
+ * Standalone rich text editor component using contentEditable.
+ */
+import { Component, Input, forwardRef, ViewChild, ElementRef, OnInit, AfterViewInit } from '@angular/core';
+import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule, AbstractControl, FormControl } from '@angular/forms';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: 'app-rich-text-editor',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
+  providers: [
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => RichTextEditorComponent),
+      multi: true,
+    },
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<div class="w-full">
+  {% if label %}<div style="font-weight:500; margin-bottom:8px;">{{ label }}{% if required %} <span style="color:#d32f2f;">*</span>{% endif %}</div>{% endif %}
+  <div style="border:1px solid #e0e0e0; border-radius:4px; overflow:hidden;">
+    <div style="display:flex; flex-wrap:wrap; gap:4px; padding:8px; background:#f5f5f5; border-bottom:1px solid #e0e0e0;">
+      <button type="button" (click)="exec('bold')" title="Bold" style="padding:4px 8px; border:1px solid #ddd; background:#fff; border-radius:2px; cursor:pointer; font-weight:bold;">B</button>
+      <button type="button" (click)="exec('italic')" title="Italic" style="padding:4px 8px; border:1px solid #ddd; background:#fff; border-radius:2px; cursor:pointer; font-style:italic;">I</button>
+      <button type="button" (click)="exec('underline')" title="Underline" style="padding:4px 8px; border:1px solid #ddd; background:#fff; border-radius:2px; cursor:pointer; text-decoration:underline;">U</button>
+      <span style="border:1px solid #ddd; margin:0 4px;"></span>
+      <button type="button" (click)="exec('insertUnorderedList')" title="Bullet List" style="padding:4px 8px; border:1px solid #ddd; background:#fff; border-radius:2px; cursor:pointer;">&#8226;</button>
+      <button type="button" (click)="exec('insertOrderedList')" title="Numbered List" style="padding:4px 8px; border:1px solid #ddd; background:#fff; border-radius:2px; cursor:pointer;">1.</button>
+      <span style="border:1px solid #ddd; margin:0 4px;"></span>
+      <button type="button" (click)="exec('justifyLeft')" title="Align Left" style="padding:4px 8px; border:1px solid #ddd; background:#fff; border-radius:2px; cursor:pointer;">&#8592;</button>
+      <button type="button" (click)="exec('justifyCenter')" title="Align Center" style="padding:4px 8px; border:1px solid #ddd; background:#fff; border-radius:2px; cursor:pointer;">&#8596;</button>
+      <button type="button" (click)="exec('justifyRight')" title="Align Right" style="padding:4px 8px; border:1px solid #ddd; background:#fff; border-radius:2px; cursor:pointer;">&#8594;</button>
+      <span style="border:1px solid #ddd; margin:0 4px;"></span>
+      <button type="button" (click)="exec('createLink')" title="Insert Link" style="padding:4px 8px; border:1px solid #ddd; background:#fff; border-radius:2px; cursor:pointer;">&#128279;</button>
+    </div>
+    <div #editor contenteditable="true"
+         (input)="onContentChange()"
+         (blur)="onTouched()"
+         [attr.data-placeholder]="placeholder"
+         style="min-height:{{ minHeight }}px; padding:16px; outline:none; font-size:14px;"
+         [attr.contenteditable]="!disabled.toString()"></div>
+  </div>
+  {% if hint %}<div style="margin-top:4px; font-size:12px; color:#757575;">{{ hint }}</div>{% endif %}
+</div>
+
+{% elif ui_framework == "tailwind" %}
+<div class="w-full">
+  {% if label %}
+  <label class="block text-sm font-medium text-gray-700 mb-1">{{ label }}{% if required %} <span class="text-red-500">*</span>{% endif %}</label>
+  {% endif %}
+  <div class="border border-gray-300 rounded-md overflow-hidden">
+    <div class="flex flex-wrap gap-1 p-2 bg-gray-50 border-b border-gray-200">
+      <button type="button" (click)="exec('bold')" class="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100 font-bold">B</button>
+      <button type="button" (click)="exec('italic')" class="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100 italic">I</button>
+      <button type="button" (click)="exec('underline')" class="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100 underline">U</button>
+      <div class="w-px bg-gray-300 mx-1"></div>
+      <button type="button" (click)="exec('insertUnorderedList')" class="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">&bull;</button>
+      <button type="button" (click)="exec('insertOrderedList')" class="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">1.</button>
+      <div class="w-px bg-gray-300 mx-1"></div>
+      <button type="button" (click)="exec('justifyLeft')" class="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">&larr;</button>
+      <button type="button" (click)="exec('justifyCenter')" class="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">&harr;</button>
+      <button type="button" (click)="exec('justifyRight')" class="px-2 py-1 border border-gray-300 bg-white rounded text-sm hover:bg-gray-100">&rarr;</button>
+    </div>
+    <div #editor contenteditable="true"
+         (input)="onContentChange()"
+         (blur)="onTouched()"
+         class="p-4 outline-none text-sm min-h-[120px]"
+         [style.minHeight]="minHeight + 'px'"
+         [attr.contenteditable]="!disabled.toString()"></div>
+  </div>
+  {% if hint %}<p class="mt-1 text-sm text-gray-500">{{ hint }}</p>{% endif %}
+</div>
+
+{% elif ui_framework == "bootstrap" %}
+<div class="w-100">
+  {% if label %}<label class="form-label">{{ label }}{% if required %} <span class="text-danger">*</span>{% endif %}</label>{% endif %}
+  <div class="border rounded overflow-hidden">
+    <div class="d-flex flex-wrap gap-1 p-2 bg-light border-bottom">
+      <button type="button" (click)="exec('bold')" class="btn btn-sm btn-outline-secondary fw-bold">B</button>
+      <button type="button" (click)="exec('italic')" class="btn btn-sm btn-outline-secondary fst-italic">I</button>
+      <button type="button" (click)="exec('underline')" class="btn btn-sm btn-outline-secondary text-decoration-underline">U</button>
+      <hr class="mx-1 align-self-stretch" style="width:1px;" />
+      <button type="button" (click)="exec('insertUnorderedList')" class="btn btn-sm btn-outline-secondary">&bull;</button>
+      <button type="button" (click)="exec('insertOrderedList')" class="btn btn-sm btn-outline-secondary">1.</button>
+    </div>
+    <div #editor contenteditable="true"
+         (input)="onContentChange()"
+         (blur)="onTouched()"
+         class="p-3" style="min-height:{{ minHeight }}px; outline:none; font-size:14px;"
+         [attr.contenteditable]="!disabled.toString()"></div>
+  </div>
+  {% if hint %}<small class="form-text text-muted">{{ hint }}</small>{% endif %}
+</div>
+
+{% elif ui_framework == "antd" %}
+<div style="width:100%; margin-bottom:16px;">
+  {% if label %}<div style="font-size:14px; margin-bottom:4px; color:#262626;">{{ label }}{% if required %} <span style="color:#ff4d4f;">*</span>{% endif %}</div>{% endif %}
+  <div style="border:1px solid #d9d9d9; border-radius:6px; overflow:hidden;">
+    <div style="display:flex; flex-wrap:wrap; gap:4px; padding:8px; background:#fafafa; border-bottom:1px solid #d9d9d9;">
+      <button type="button" (click)="exec('bold')" style="padding:4px 8px; border:1px solid #d9d9d9; background:#fff; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px;">B</button>
+      <button type="button" (click)="exec('italic')" style="padding:4px 8px; border:1px solid #d9d9d9; background:#fff; border-radius:4px; cursor:pointer; font-style:italic; font-size:12px;">I</button>
+      <button type="button" (click)="exec('underline')" style="padding:4px 8px; border:1px solid #d9d9d9; background:#fff; border-radius:4px; cursor:pointer; text-decoration:underline; font-size:12px;">U</button>
+    </div>
+    <div #editor contenteditable="true"
+         (input)="onContentChange()"
+         (blur)="onTouched()"
+         style="min-height:{{ minHeight }}px; padding:12px; outline:none; font-size:14px;"
+         [attr.contenteditable]="!disabled.toString()"></div>
+  </div>
+  <div style="color:#8c8c8c; font-size:12px; margin-top:4px;">For full rich text features, consider integrating Quill.js or similar.</div>
+  {% if hint %}<div style="color:#8c8c8c; font-size:12px; margin-top:4px;">{{ hint }}</div>{% endif %}
+</div>
+
+{% elif ui_framework == "carbon" %}
+<div style="width:100%; margin-bottom:1rem;">
+  {% if label %}<div style="font-size:0.75rem; font-weight:400; color:#525252; margin-bottom:0.25rem;">{{ label }}{% if required %} <span style="color:#da1e28;">*</span>{% endif %}</div>{% endif %}
+  <div style="border:1px solid #8d8d8d; overflow:hidden;">
+    <div style="display:flex; flex-wrap:wrap; gap:4px; padding:8px; background:#f4f4f4; border-bottom:1px solid #8d8d8d;">
+      <button type="button" (click)="exec('bold')" style="padding:4px 8px; border:1px solid #8d8d8d; background:#fff; cursor:pointer; font-weight:bold; font-size:0.75rem;">B</button>
+      <button type="button" (click)="exec('italic')" style="padding:4px 8px; border:1px solid #8d8d8d; background:#fff; cursor:pointer; font-style:italic; font-size:0.75rem;">I</button>
+      <button type="button" (click)="exec('underline')" style="padding:4px 8px; border:1px solid #8d8d8d; background:#fff; cursor:pointer; text-decoration:underline; font-size:0.75rem;">U</button>
+    </div>
+    <div #editor contenteditable="true"
+         (input)="onContentChange()"
+         (blur)="onTouched()"
+         style="min-height:{{ minHeight }}px; padding:12px; outline:none; font-size:0.875rem;"
+         [attr.contenteditable]="!disabled.toString()"></div>
+  </div>
+  {% if hint %}<p style="font-size:0.75rem; color:#6f6f6f; margin:0.25rem 0;">{{ hint }}</p>{% endif %}
+</div>
+
+{% endif %}
+  `,
+})
+export class RichTextEditorComponent implements ControlValueAccessor, AfterViewInit {
+  @Input() label = '';
+  @Input() placeholder = '';
+  @Input() hint = '';
+  @Input() required = false;
+  @Input() disabled = false;
+  @Input() minHeight = 120;
+
+  @ViewChild('editor') editorEl!: ElementRef<HTMLDivElement>;
+
+  private _onChange: (value: any) => void = () => {};
+  private _onTouched: () => void = () => {};
+  private _initialized = false;
+
+  ngAfterViewInit(): void {
+    this._initialized = true;
+  }
+
+  exec(command: string): void {
+    if (command === 'createLink') {
+      const url = prompt('Enter URL:');
+      if (url) document.execCommand(command, false, url);
+    } else {
+      document.execCommand(command, false);
+    }
+    this.editorEl?.nativeElement?.focus();
+    this.onContentChange();
+  }
+
+  onContentChange(): void {
+    const html = this.editorEl?.nativeElement?.innerHTML || '';
+    this._onChange(html);
+  }
+
+  onTouched(): void {
+    this._onTouched();
+  }
+
+  writeValue(value: any): void {
+    if (this._initialized && this.editorEl?.nativeElement) {
+      this.editorEl.nativeElement.innerHTML = value || '';
+    }
+  }
+  registerOnChange(fn: any): void { this._onChange = fn; }
+  registerOnTouched(fn: any): void { this._onTouched = fn; }
+  setDisabledState(isDisabled: boolean): void { this.disabled = isDisabled; }
+}

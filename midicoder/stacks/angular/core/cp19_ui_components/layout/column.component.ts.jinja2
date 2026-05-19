@@ -1,0 +1,116 @@
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+{% if ui_framework == "material" %}
+import { MatGridTile } from "@angular/material/grid-list";
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from "@ng-bootstrap/ng-bootstrap";
+{% endif %}
+
+@Component({
+  selector: 'app-column',
+  standalone: true,
+  imports: [
+    CommonModule
+    {% if ui_framework == "material" %},
+    MatGridTile{% elif ui_framework == "bootstrap" %},
+    NgbModule{% endif %}
+  ],
+  template: `
+    {% if ui_framework == "material" %}
+    <div [class]="columnClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "tailwind" %}
+    <div [class]="columnClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "bootstrap" %}
+    <div [ngClass]="columnClass" ngbCol>
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "antd" %}
+    <div class="midicoder-column" [style.flex]="'0 0 ' + flexBasis"
+         [style.max-width.px]="maxWidthPx">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "carbon" %}
+    <div class="midicoder-column" [style.flex]="'0 0 ' + flexBasis"
+         [style.max-width.px]="maxWidthPx">
+      <ng-content></ng-content>
+    </div>
+    {% endif %}
+  `,
+  styles: [`
+    {% if ui_framework == "material" %}
+    :host {
+      display: block;
+    }
+    {% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+    }
+    {% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+    }
+    {% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+    }
+    {% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+    }
+    {% endif %}
+  `]
+})
+export class ColumnComponent implements OnInit {
+  @Input() size: number = 12;
+  @Input() offset: number = 0;
+  @Input() grow: boolean = false;
+  @Input() shrink: boolean = true;
+
+  {% if ui_framework == "material" %}
+  get columnClass(): string {
+    return `flex-fill`;
+  }
+  {% elif ui_framework == "tailwind" %}
+  get columnClass(): string {
+    const sizeMap: Record<number, string> = {
+      1: 'md:col-span-1', 2: 'md:col-span-2', 3: 'md:col-span-3',
+      4: 'md:col-span-4', 5: 'md:col-span-5', 6: 'md:col-span-6',
+      7: 'md:col-span-7', 8: 'md:col-span-8', 9: 'md:col-span-9',
+      10: 'md:col-span-10', 11: 'md:col-span-11', 12: 'md:col-span-12'
+    };
+    const spanClass = sizeMap[this.size] || `md:col-span-${this.size}`;
+    const offsetClass = this.offset > 0 ? `md:col-start-${this.offset + 1}` : '';
+    const growClass = this.grow ? 'flex-grow' : '';
+    const shrinkClass = !this.shrink ? 'flex-shrink-0' : '';
+    return `${spanClass} ${offsetClass} ${growClass} ${shrinkClass}`.trim();
+  }
+  {% elif ui_framework == "bootstrap" %}
+  get columnClass(): string {
+    const sizeClass = `col-${this.size}`;
+    const offsetClass = this.offset > 0 ? `offset-${this.offset}` : '';
+    return `${sizeClass} ${offsetClass}`.trim();
+  }
+  {% elif ui_framework == "antd" %}
+  get flexBasis(): string {
+    return `${(this.size / 12) * 100}%`;
+  }
+  get maxWidthPx(): number | null {
+    return null;
+  }
+  {% elif ui_framework == "carbon" %}
+  get flexBasis(): string {
+    return `${(this.size / 12) * 100}%`;
+  }
+  get maxWidthPx(): number | null {
+    return null;
+  }
+  {% endif %}
+
+  ngOnInit(): void {
+  }
+}

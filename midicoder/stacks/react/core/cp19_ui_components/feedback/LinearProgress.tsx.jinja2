@@ -1,0 +1,128 @@
+/** LinearProgress Component - Linear loading indicator with determinate and indeterminate modes. */
+
+import React from "react";
+
+export interface LinearProgressProps {
+  value?: number;
+  mode?: 'determinate' | 'indeterminate';
+  color?: 'primary' | 'success' | 'error' | 'warning' | 'default';
+  thickness?: number;
+  className?: string;
+}
+
+export const LinearProgress: React.FC<LinearProgressProps> = ({
+  value = 0,
+  mode = 'indeterminate',
+  color = 'primary',
+  thickness = 4,
+  className = '',
+}) => {
+  {% if ui_framework == "material" %}
+  import { LinearProgress as MuiLinearProgress } from '@mui/material';
+
+  const colorMap: Record<string, 'primary' | 'secondary' | 'error'> = {
+    primary: 'primary',
+    success: 'secondary',
+    error: 'error',
+    warning: 'primary',
+    default: 'primary',
+  };
+
+  return (
+    <MuiLinearProgress
+      variant={mode}
+      value={mode === 'determinate' ? value : undefined}
+      color={colorMap[color]}
+      thickness={thickness}
+      className={className}
+    />
+  );
+  {% elif ui_framework == "tailwind" %}
+  const colorMap: Record<string, string> = {
+    primary: 'bg-blue-500',
+    success: 'bg-green-500',
+    error: 'bg-red-500',
+    warning: 'bg-yellow-500',
+    default: 'bg-gray-400',
+  };
+
+  return (
+    <div
+      className={`w-full bg-gray-200 overflow-hidden rounded-full ${className}`}
+      style={% raw %}{{ height: `${thickness}px` }}{% endraw %}
+    >
+      {mode !== 'indeterminate' ? (
+        <div
+          className={`transition-all duration-300 ease-linear rounded-full ${colorMap[color{% raw %}{{ height: `${thickness}px`, width: `${value}%` }}{% endraw %}width: `${value}%` }}
+        />
+      ) : (
+        <div
+          className={`w-1/3 rounded-{% raw %}{{
+            height: `${thickness}px`,
+            animation: 'linear-progress 1.5s ease-in-out infinite',
+          }}{% endraw %}s 1.5s ease-in-out infinite',
+          }}
+        />
+      )}
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const colorMap: Record<string, string> = {
+    primary: 'bg-primary',
+    success: 'bg-success',
+    error: 'bg-danger',
+    warning: 'bg-warning',
+    default: 'bg-secondary',
+  };
+
+  return (
+    <div
+      className={`progress ${{% raw %}{{ height: `${thickness}px` }}{% endraw %}: ''} ${className}`}
+      style={{ height: `${thickness}px` }}
+      role="progressbar"
+      aria-valuenow={value}
+    >
+      <div
+        className={`progress-bar ${mode ==={% raw %}{{ width: mode === 'indeterminate' ? undefined : `${value}%` }}{% endraw %}or]}`}
+        style={{ width: mode === 'indeterminate' ? undefined : `${value}%` }}
+      />
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Progress } from 'antd';
+
+  const colorValueMap: Record<string, string> = {
+    primary: '#1890ff',
+    success: '#52c41a',
+    error: '#ff4d4f',
+    warning: '#faad14',
+    default: '#d9d9d9',
+  };
+
+  return (
+    <div className={className}>
+      <Progress
+        percent={mode === 'determinate' ? value : 75}
+        size="small"
+        strokeColor={colorValueMap[color]}
+        showInfo={false}
+        status={mode === 'indeterminate' ? 'active' : 'normal'}
+      />
+    </div>
+  );
+  {% elif ui_framework == "ca{% raw %}{{ height: `${thickness}px` }}{% endraw %}r } from '@carbon/react';
+
+  return (
+    <div className={className} style={{ height: `${thickness}px` }}>
+      <ProgressBar
+        label=""
+        value={mode === 'determinate' ? value : 50}
+        max={100}
+        status={mode === 'indeterminate' ? 'active' : 'default'}
+      />
+    </div>
+  );
+  {% endif %}
+};
+
+export default LinearProgress;

@@ -1,0 +1,121 @@
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+{% if ui_framework == "material" %}
+import { MatLine } from "@angular/material/core";
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from "@ng-bootstrap/ng-bootstrap";
+{% endif %}
+
+@Component({
+  selector: 'app-row',
+  standalone: true,
+  imports: [
+    CommonModule
+    {% if ui_framework == "material" %},
+    MatLine{% elif ui_framework == "bootstrap" %},
+    NgbModule{% endif %}
+  ],
+  template: `
+    {% if ui_framework == "material" %}
+    <div class="mdc-layout-grid__inner" [class]="rowClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "tailwind" %}
+    <div [class]="rowClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "bootstrap" %}
+    <div class="row" [class]="rowClass" ngbRow>
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "antd" %}
+    <div class="midicoder-row" [style.display]="'flex'" [style.flex-wrap]="'wrap'"
+         [style.gap.px]="gutter">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "carbon" %}
+    <div class="midicoder-row" [style.display]="'flex'" [style.flex-wrap]="'wrap'"
+         [style.gap.px]="gutter">
+      <ng-content></ng-content>
+    </div>
+    {% endif %}
+  `,
+  styles: [`
+    {% if ui_framework == "material" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% endif %}
+  `]
+})
+export class RowComponent implements OnInit {
+  @Input() gutter: number = 0;
+  @Input() justify: 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly' = 'start';
+  @Input() align: 'start' | 'center' | 'end' | 'stretch' = 'stretch';
+  @Input() wrap: 'wrap' | 'nowrap' | 'reverse' = 'wrap';
+
+  {% if ui_framework == "material" %}
+  get rowClass(): string {
+    return '';
+  }
+  {% elif ui_framework == "tailwind" %}
+  get rowClass(): string {
+    const justifyMap: Record<string, string> = {
+      'start': 'justify-start', 'center': 'justify-center',
+      'end': 'justify-end', 'between': 'justify-between',
+      'around': 'justify-around', 'evenly': 'justify-evenly'
+    };
+    const alignMap: Record<string, string> = {
+      'start': 'items-start', 'center': 'items-center',
+      'end': 'items-end', 'stretch': 'items-stretch'
+    };
+    const wrapMap: Record<string, string> = {
+      'wrap': 'flex-wrap', 'nowrap': 'flex-nowrap', 'reverse': 'flex-wrap-reverse'
+    };
+    const gutterClass = this.gutter > 0 ? `gap-${this.gutter / 4}` : '';
+    return `flex ${wrapMap[this.wrap]} ${justifyMap[this.justify]} ${alignMap[this.align]} ${gutterClass}`.trim();
+  }
+  {% elif ui_framework == "bootstrap" %}
+  get rowClass(): string {
+    const justifyMap: Record<string, string> = {
+      'start': 'justify-content-start', 'center': 'justify-content-center',
+      'end': 'justify-content-end', 'between': 'justify-content-between',
+      'around': 'justify-content-around', 'evenly': 'justify-content-evenly'
+    };
+    const alignMap: Record<string, string> = {
+      'start': 'align-items-start', 'center': 'align-items-center',
+      'end': 'align-items-end', 'stretch': 'align-items-stretch'
+    };
+    return `${justifyMap[this.justify]} ${alignMap[this.align]}`;
+  }
+  {% elif ui_framework == "antd" %}
+  // Uses inline styles for justify/align via gap
+  {% elif ui_framework == "carbon" %}
+  // Uses inline styles for justify/align via gap
+  {% endif %}
+
+  ngOnInit(): void {
+  }
+}

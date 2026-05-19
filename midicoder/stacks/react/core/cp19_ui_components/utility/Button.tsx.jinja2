@@ -1,0 +1,183 @@
+/** Button Component - Versatile button with multiple variants and states. */
+
+import React from "react";
+
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'text' | 'danger';
+export type ButtonSize = 'sm' | 'md' | 'lg';
+
+export interface ButtonProps {
+  label: string;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  isDisabled?: boolean;
+  isLoading?: boolean;
+  isFullWidth?: boolean;
+  icon?: React.ReactNode;
+  iconPosition?: 'before' | 'after';
+  tooltip?: string;
+  type?: 'button' | 'submit' | 'reset';
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  className?: string;
+}
+
+export const Button: React.FC<ButtonProps> = ({
+  label,
+  variant = 'primary',
+  size = 'md',
+  isDisabled = false,
+  isLoading = false,
+  isFullWidth = false,
+  icon,
+  iconPosition = 'before',
+  tooltip,
+  type = 'button',
+  onClick,
+  className = '',
+}) => {
+  const spinner = (
+    <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+  );
+
+  {% if ui_framework == "material" %}
+  import { Button as MuiButton } from '@mui/material';
+
+  const colorMap: Record<ButtonVariant, 'inherit' | 'primary' | 'secondary' | 'error'> = {
+    primary: 'primary',
+    secondary: 'secondary',
+    outline: 'primary',
+    text: 'inherit',
+    danger: 'error',
+  };
+
+  const variantMap: Record<ButtonVariant, 'contained' | 'outlined' | 'text'> = {
+    primary: 'contained',
+    secondary: 'contained',
+    outline: 'outlined',
+    text: 'text',
+    danger: 'contained',
+  };
+
+  return (
+    <MuiButton
+      variant={variantMap[variant]}
+      color={colorMap[variant]}
+      size={size === 'sm' ? 'small' : size === 'lg' ? 'large' : 'medium'}
+      disabled={isDisabled || isLoading}
+      fullWidth={isFullWidth}
+      onClick={onClick}
+      type={type}
+      title={tooltip}
+      startIcon={iconPosition === 'before' ? (isLoading ? <MuiButton sx={{ display: 'inline-block', width: 16, height: 16, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' />} /> : icon) : undefined}
+      endIcon={iconPosition === 'after' ? icon : undefined}
+      className={className}
+    >
+      {label}
+    </MuiButton>
+  );
+  {% elif ui_framework == "tailwind" %}
+  const variantClasses: Record<ButtonVariant, string> = {
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
+    secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300 focus:ring-gray-500',
+    outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-blue-500',
+    text: 'text-blue-600 hover:bg-blue-50 focus:ring-blue-500',
+    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+  };
+
+  const sizeClasses: Record<ButtonSize, string> = {
+    sm: 'px-3 py-1.5 text-sm',
+    md: 'px-4 py-2 text-sm',
+    lg: 'px-6 py-3 text-base',
+  };
+
+  return (
+    <button
+      className={`inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${variantClasses[variant]} ${sizeClasses[size]} ${isDisabled || isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${isFullWidth ? 'w-full' : ''} ${className}`}
+      disabled={isDisabled || isLoading}
+      onClick={onClick}
+      type={type}
+      title={tooltip}
+      style={isFullWidth ? { width: '100%' } : undefined}
+    >
+      {isLoading && <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin me-2" />}
+      {iconPosition === 'before' && icon && <span className="me-2">{icon}</span>}
+      <span>{label}</span>
+      {iconPosition === 'after' && icon && <span className="ms-2">{icon}</span>}
+    </button>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const variantClasses: Record<ButtonVariant, string> = {
+    primary: 'btn-primary',
+    secondary: 'btn-secondary',
+    outline: 'btn-outline-primary',
+    text: 'btn-link',
+    danger: 'btn-danger',
+  };
+
+  return (
+    <button
+      className={`btn ${variantClasses[variant]} ${isFullWidth ? 'w-100' : ''} ${className}`}
+      disabled={isDisabled || isLoading}
+      onClick={onClick}
+      type={type}
+      title={tooltip}
+    >
+      {isLoading && <span className="spinner-border spinner-border-sm me-2" role="status" />}
+      {label}
+    </button>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Button as AntButton } from 'antd';
+
+  const variantMap: Record<ButtonVariant, 'primary' | 'default' | 'dashed' | 'link' | 'text'> = {
+    primary: 'primary',
+    secondary: 'default',
+    outline: 'dashed',
+    text: 'link',
+    danger: 'primary',
+  };
+
+  return (
+    <AntButton
+      type={variantMap[variant]}
+      size={size === 'sm' ? 'small' : size === 'lg' ? 'large' : 'middle'}
+      disabled={isDisabled || isLoading}
+      block={isFullWidth}
+      onClick={onClick}
+      type={type === 'button' ? variantMap[variant] : variantMap[variant]}
+      danger={variant === 'danger'}
+      loading={isLoading}
+      icon={icon}
+      className={className}
+    >
+      {label}
+    </AntButton>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { Button as CarbonButton } from '@carbon/react';
+
+  const variantMap: Record<ButtonVariant, 'primary' | 'secondary' | 'tertiary' | 'ghost' | 'danger' | 'danger--primary'> = {
+    primary: 'primary',
+    secondary: 'secondary',
+    outline: 'ghost',
+    text: 'tertiary',
+    danger: 'danger',
+  };
+
+  return (
+    <CarbonButton
+      kind={variantMap[variant]}
+      size={size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : 'md'}
+      disabled={isDisabled || isLoading}
+      fullWidth={isFullWidth}
+      onClick={onClick}
+      renderIcon={icon ? () => <span>{icon}</span> : undefined}
+      iconDescription={tooltip}
+      className={className}
+    >
+      {label}
+    </CarbonButton>
+  );
+  {% endif %}
+};
+
+export default Button;

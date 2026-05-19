@@ -1,0 +1,184 @@
+/** Image Component - Responsive image with lazy loading and placeholder support. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+@Component({
+  selector: 'app-image',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+{% if ui_framework == "material" %}
+<figure class="mat-image" [ngStyle]="figureStyle">
+  <img
+    [src]="src"
+    [alt]="alt"
+    [ngStyle]="imageStyle"
+    [ngClass]="'mat-image-img mat-image-' + shape"
+    (load)="onLoad($event)"
+    (error)="onError($event)"
+    *ngIf="!isLoading"
+  />
+  <app-skeleton *ngIf="isLoading" variant="rect" [height]="height || 200"></app-skeleton>
+  <figcaption *ngIf="caption" class="mat-image-caption">{% raw %}{{ caption }}{% endraw %}</figcaption>
+</figure>
+{% elif ui_framework == "tailwind" %}
+<figure [ngStyle]="{width: width || '100%'}" class="overflow-hidden">
+  <div
+    [ngStyle]="{
+      width: width || '100%',
+      height: height ? height + 'px' : 'auto',
+      borderRadius: borderRadius,
+    }"
+    [ngClass]="{
+      'rounded-none': shape === 'none',
+      'rounded': shape === 'rounded',
+      'rounded-lg': shape === 'large',
+      'rounded-full': shape === 'circle',
+    }"
+    class="overflow-hidden bg-gray-100"
+  >
+    <img
+      [src]="src"
+      [alt]="alt"
+      [ngClass]="{
+        'w-full h-full object-cover': true,
+        'animate-pulse': isLoading,
+        'opacity-0': isLoading,
+      }"
+      (load)="onLoad($event)"
+      (error)="onError($event)"
+      loading="lazy"
+    />
+    <div *ngIf="isLoading" class="absolute inset-0 bg-gray-200 animate-pulse"></div>
+  </div>
+  <figcaption *ngIf="caption" class="mt-2 text-sm text-gray-500">{% raw %}{{ caption }}{% endraw %}</figcaption>
+</figure>
+{% elif ui_framework == "bootstrap" %}
+<figure [ngStyle]="{width: width || '100%'}">
+  <img
+    [src]="src"
+    [alt]="alt"
+    [ngClass]="bootstrapImageClasses"
+    [ngStyle]="{
+      width: width || '100%',
+      height: height ? height + 'px' : 'auto',
+      objectFit: objectFit,
+    }"
+    (load)="onLoad($event)"
+    (error)="onError($event)"
+    class="img-fluid"
+  />
+  <figcaption *ngIf="caption" class="figure-caption text-center">{% raw %}{{ caption }}{% endraw %}</figcaption>
+</figure>
+{% elif ui_framework == "antd" %}
+<div class="ant-image-preview-parent">
+  <div class="ant-image" [ngStyle]="{width: width || '100%'}">
+    <div
+      class="ant-image-img"
+      [ngStyle]="{
+        width: width || '100%',
+        height: height ? height + 'px' : 'auto',
+        borderRadius: borderRadius,
+        overflow: 'hidden',
+      }"
+    >
+      <img
+        [src]="src"
+        [alt]="alt"
+        class="ant-image-src"
+        [ngStyle]="{width: '100%', height: '100%', objectFit: objectFit}"
+        (load)="onLoad($event)"
+        (error)="onError($event)"
+      />
+    </div>
+  </div>
+  <div *ngIf="caption" class="text-center text-gray-500 mt-1 text-sm">{% raw %}{{ caption }}{% endraw %}</div>
+</div>
+{% elif ui_framework == "carbon" %}
+<figure class="cds--content" [ngStyle]="{width: width || '100%'}">
+  <div [ngStyle]="{
+    width: width || '100%',
+    height: height ? height + 'px' : 'auto',
+    overflow: 'hidden',
+    borderRadius: borderRadius,
+  }">
+    <img
+      [src]="src"
+      [alt]="alt"
+      [ngStyle]="{
+        width: '100%',
+        height: '100%',
+        objectFit: objectFit,
+      }"
+      (load)="onLoad($event)"
+      (error)="onError($event)"
+    />
+  </div>
+  <figcaption *ngIf="caption" class="cds--caption">{% raw %}{{ caption }}{% endraw %}</figcaption>
+</figure>
+{% endif %}
+  `,
+})
+export class ImageComponent implements OnInit {
+  @Input() src: string = '';
+  @Input() alt: string = '';
+  @Input() width: string = '100%';
+  @Input() height: number = 0;
+  @Input() shape: 'none' | 'rounded' | 'large' | 'circle' = 'rounded';
+  @Input() objectFit: 'cover' | 'contain' | 'fill' | 'scale-down' = 'cover';
+  @Input() caption: string = '';
+  @Input() borderRadius: string = '';
+  @Input() fallbackSrc: string = '';
+  @Output() load = new EventEmitter<Event>();
+  @Output() error = new EventEmitter<Event>();
+
+  isLoading: boolean = true;
+
+  ngOnInit() {}
+
+  get figureStyle(): { [key: string]: string } {
+    const style: { [key: string]: string } = {};
+    if (this.width) style.width = this.width;
+    return style;
+  }
+
+  get imageStyle(): { [key: string]: string } {
+    const style: { [key: string]: string } = {
+      objectFit: this.objectFit,
+    };
+    if (this.width) style.width = this.width;
+    if (this.height) style.height = this.height + 'px';
+    const radiusMap: Record<string, string> = {
+      none: '0',
+      rounded: '4px',
+      large: '12px',
+      circle: '50%',
+    };
+    style.borderRadius = radiusMap[this.shape] || '4px';
+    return style;
+  }
+
+  get bootstrapImageClasses(): string {
+    const map: Record<string, string> = {
+      none: '',
+      rounded: 'rounded',
+      large: 'rounded-3',
+      circle: 'rounded-circle',
+    };
+    return map[this.shape] || 'rounded';
+  }
+
+  onLoad(event: Event) {
+    this.isLoading = false;
+    this.load.emit(event);
+  }
+
+  onError(event: Event) {
+    this.isLoading = false;
+    if (this.fallbackSrc) {
+      (event.target as HTMLImageElement).src = this.fallbackSrc;
+    }
+    this.error.emit(event);
+  }
+}

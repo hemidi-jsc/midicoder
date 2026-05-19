@@ -1,0 +1,142 @@
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+{% if ui_framework == "material" %}
+import { MatToolbar } from "@angular/material/toolbar";
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from "@ng-bootstrap/ng-bootstrap";
+{% endif %}
+
+@Component({
+  selector: 'app-flex',
+  standalone: true,
+  imports: [
+    CommonModule
+    {% if ui_framework == "material" %},
+    MatToolbar{% elif ui_framework == "bootstrap" %},
+    NgbModule{% endif %}
+  ],
+  template: `
+    {% if ui_framework == "material" %}
+    <div [class]="flexClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "tailwind" %}
+    <div [class]="flexClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "bootstrap" %}
+    <div [ngClass]="flexClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "antd" %}
+    <div class="midicoder-flex" [style]="flexStyles">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "carbon" %}
+    <div class="midicoder-flex" [style]="flexStyles">
+      <ng-content></ng-content>
+    </div>
+    {% endif %}
+  `,
+  styles: [`
+    {% if ui_framework == "material" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% endif %}
+  `]
+})
+export class FlexComponent implements OnInit {
+  @Input() direction: 'row' | 'column' | 'row-reverse' | 'column-reverse' = 'row';
+  @Input() justify: 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly' = 'start';
+  @Input() align: 'start' | 'center' | 'end' | 'stretch' | 'baseline' = 'stretch';
+  @Input() wrap: 'wrap' | 'nowrap' | 'reverse' = 'nowrap';
+  @Input() gap: number = 0;
+  @Input() fillHeight: boolean = false;
+
+  {% if ui_framework == "material" %}
+  get flexClass(): string {
+    return 'd-flex';
+  }
+  {% elif ui_framework == "tailwind" %}
+  get flexClass(): string {
+    const dirMap: Record<string, string> = {
+      'row': 'flex-row', 'column': 'flex-col',
+      'row-reverse': 'flex-row-reverse', 'column-reverse': 'flex-col-reverse'
+    };
+    const justifyMap: Record<string, string> = {
+      'start': 'justify-start', 'center': 'justify-center',
+      'end': 'justify-end', 'between': 'justify-between',
+      'around': 'justify-around', 'evenly': 'justify-evenly'
+    };
+    const alignMap: Record<string, string> = {
+      'start': 'items-start', 'center': 'items-center',
+      'end': 'items-end', 'stretch': 'items-stretch', 'baseline': 'items-baseline'
+    };
+    const wrapMap: Record<string, string> = {
+      'wrap': 'flex-wrap', 'nowrap': 'flex-nowrap', 'reverse': 'flex-wrap-reverse'
+    };
+    const gapClass = this.gap > 0 ? `gap-${this.gap / 4}` : '';
+    const heightClass = this.fillHeight ? 'h-full' : '';
+    return `flex ${dirMap[this.direction]} ${wrapMap[this.wrap]} ${justifyMap[this.justify]} ${alignMap[this.align]} ${gapClass} ${heightClass}`.trim();
+  }
+  {% elif ui_framework == "bootstrap" %}
+  get flexClass(): string {
+    const dirMap: Record<string, string> = {
+      'row': 'flex-row', 'column': 'flex-column',
+      'row-reverse': 'flex-row-reverse', 'column-reverse': 'flex-column-reverse'
+    };
+    const justifyMap: Record<string, string> = {
+      'start': 'justify-content-start', 'center': 'justify-content-center',
+      'end': 'justify-content-end', 'between': 'justify-content-between',
+      'around': 'justify-content-around', 'evenly': 'justify-content-evenly'
+    };
+    const alignMap: Record<string, string> = {
+      'start': 'align-items-start', 'center': 'align-items-center',
+      'end': 'align-items-end', 'stretch': 'align-items-stretch', 'baseline': 'align-items-baseline'
+    };
+    const wrapMap: Record<string, string> = {
+      'wrap': 'flex-wrap', 'nowrap': 'flex-nowrap', 'reverse': 'flex-wrap-reverse'
+    };
+    const heightClass = this.fillHeight ? 'h-100' : '';
+    return `d-flex ${dirMap[this.direction]} ${wrapMap[this.wrap]} ${justifyMap[this.justify]} ${alignMap[this.align]} ${heightClass}`;
+  }
+  {% elif ui_framework == "antd" %}
+  get flexStyles(): string {
+    const gapStyle = this.gap > 0 ? `gap: ${this.gap}px; ` : '';
+    const heightStyle = this.fillHeight ? `height: 100%; ` : '';
+    return `display: flex; flex-direction: ${this.direction}; flex-wrap: ${this.wrap}; justify-content: ${this.justify === 'between' ? 'space-between' : this.justify === 'around' ? 'space-around' : this.justify === 'evenly' ? 'space-evenly' : this.justify}; align-items: ${this.align}; ${gapStyle}${heightStyle}`;
+  }
+  {% elif ui_framework == "carbon" %}
+  get flexStyles(): string {
+    const gapStyle = this.gap > 0 ? `gap: ${this.gap}px; ` : '';
+    const heightStyle = this.fillHeight ? `height: 100%; ` : '';
+    return `display: flex; flex-direction: ${this.direction}; flex-wrap: ${this.wrap}; justify-content: ${this.justify === 'between' ? 'space-between' : this.justify === 'around' ? 'space-around' : this.justify === 'evenly' ? 'space-evenly' : this.justify}; align-items: ${this.align}; ${gapStyle}${heightStyle}`;
+  }
+  {% endif %}
+
+  ngOnInit(): void {
+  }
+}

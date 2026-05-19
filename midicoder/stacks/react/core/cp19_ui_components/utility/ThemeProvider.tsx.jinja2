@@ -1,0 +1,273 @@
+/** ThemeProvider Component - Application-wide theme configuration and context provider. */
+
+import React, { ReactNode, createContext, useContext, useState, useEffect } from "react";
+
+export type ThemeMode = 'light' | 'dark';
+
+export interface ThemeColors {
+  primary: string;
+  primaryHover: string;
+  primaryActive: string;
+  secondary: string;
+  accent: string;
+  background: string;
+  surface: string;
+  text: string;
+  textSecondary: string;
+  error: string;
+  warning: string;
+  success: string;
+}
+
+export interface ThemeConfig {
+  mode: ThemeMode;
+  colors: ThemeColors;
+  fontFamily?: string;
+  borderRadius?: string;
+}
+
+export interface ThemeProviderProps {
+  children: ReactNode;
+  mode?: ThemeMode;
+  primaryColor?: string;
+  secondaryColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
+  surfaceColor?: string;
+  textColor?: string;
+  errorColor?: string;
+  warningColor?: string;
+  successColor?: string;
+  fontFamily?: string;
+  borderRadius?: string;
+}
+
+const defaultColors: ThemeColors = {
+  primary: '#3b82f6',
+  primaryHover: '#2563eb',
+  primaryActive: '#1d4ed8',
+  secondary: '#64748b',
+  accent: '#8b5cf6',
+  background: '#ffffff',
+  surface: '#f8fafc',
+  text: '#1e293b',
+  textSecondary: '#64748b',
+  error: '#ef4444',
+  warning: '#f59e0b',
+  success: '#22c55e',
+};
+
+const ThemeContext = createContext<{
+  mode: ThemeMode;
+  colors: ThemeColors;
+  setMode: (mode: ThemeMode) => void;
+}>({
+  mode: 'light',
+  colors: defaultColors,
+  setMode: () => {},
+});
+
+export const useTheme = () => useContext(ThemeContext);
+
+export const ThemeProvider: React.FC<ThemeProviderProps> = ({
+  children,
+  mode: initialMode = 'light',
+  primaryColor,
+  secondaryColor,
+  accentColor,
+  backgroundColor,
+  surfaceColor,
+  textColor,
+  errorColor,
+  warningColor,
+  successColor,
+  fontFamily,
+  borderRadius,
+}) => {
+  const [currentMode, setCurrentMode] = useState<ThemeMode>(initialMode);
+
+  const colors: ThemeColors = {
+    ...defaultColors,
+    primary: primaryColor || defaultColors.primary,
+    secondary: secondaryColor || defaultColors.secondary,
+    accent: accentColor || defaultColors.accent,
+    background: backgroundColor || defaultColors.background,
+    surface: surfaceColor || defaultColors.surface,
+    text: textColor || defaultColors.text,
+    error: errorColor || defaultColors.error,
+    warning: warningColor || defaultColors.warning,
+    success: successColor || defaultColors.success,
+  };
+
+  useEffect(() => {
+    {% if ui_framework == "tailwind" %}
+    if (currentMode === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    {% elif ui_framework == "bootstrap" %}
+    document.documentElement.setAttribute('data-bs-theme', currentMode);
+    {% elif ui_framework == "antd" %}
+    // AntD theme is handled via ConfigProvider below
+    {% endif %}
+  }, [currentMode]);
+
+  {% if ui_framework == "material" %}
+  import { ThemeProvider as MuiThemeProvider, createTheme, type ThemeOptions } from '@mui/material/styles';
+
+  const themeOptions: ThemeOptions = {
+    palette: {
+      mode: currentMode,
+      primary: {
+        main: colors.primary,
+        dark: colors.primaryActive,
+        light: colors.primaryHover,
+      },
+      secondary: {
+        main: colors.secondary,
+      },
+      error: {
+        main: colors.error,
+      },
+      warning: {
+        main: colors.warning,
+      },
+      success: {
+        main: colors.success,
+      },
+      background: {
+        default: colors.background,
+        paper: colors.surface,
+      },
+      text: {
+        primary: colors.text,
+        secondary: colors.textSecondary,
+      },
+    },
+    typography: {
+      fontFamily: fontFamily || 'Roboto, sans-serif',
+    },
+    shape: {
+      borderRadius: parseInt(borderRadius || '6', 10),
+    },
+  };
+
+  const theme = React.useMemo(() => createTheme(themeOptions), [currentMode, colors, fontFamily, borderRadius]);
+
+  return (
+    <ThemeContext.Provider value={% raw %}{{ mode: currentMode, colors, setMode: setCurrentMode }}{% endraw %}>
+      <MuiThemeProvider theme={theme}>
+        {children}
+      </MuiThemeProvider>
+    </ThemeContext.Provider>
+  );
+  {% elif ui_framework == "tailwind" %}
+  return (
+    <ThemeContext.Provider value={% raw %}{{ mode: currentMode, colors, setMode: setCurrentMode }}{% endraw %}>
+      <style>{`
+        :root {
+          --color-primary: ${colors.primary};
+          --color-primary-hover: ${colors.primaryHover};
+          --color-primary-active: ${colors.primaryActive};
+          --color-secondary: ${colors.secondary};
+          --color-accent: ${colors.accent};
+          --color-background: ${colors.background};
+          --color-surface: ${colors.surface};
+          --color-text: ${colors.text};
+          --color-text-secondary: ${colors.textSecondary};
+          --color-error: ${colors.error};
+          --color-warning: ${colors.warning};
+          --color-success: ${colors.success};
+          ${fontFamily ? `--font-family: ${fontFamily};` : ''}
+          ${borderRadius ? `--border-radius: ${borderRadius};` : ''}
+        }
+        .dark {
+          --color-background: #0f172a;
+          --color-surface: #1e293b;
+          --color-text: #f8fafc;
+          --color-text-secondary: #94a3b8;
+        }
+      `}</style>
+      <div className={currentMode === 'dark' ? 'dark' : ''}>
+        {children}
+      </div>
+    </ThemeContext.Provider>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  return (
+    <ThemeContext.Provider value={% raw %}{{ mode: currentMode, colors, setMode: setCurrentMode }}{% endraw %}>
+      <style>{`
+        :root, [data-bs-theme="${currentMode}"] {
+          --bs-primary: ${colors.primary};
+          --bs-secondary: ${colors.secondary};
+          --bs-success: ${colors.success};
+          --bs-danger: ${colors.error};
+          --bs-warning: ${colors.warning};
+          --bs-info: ${colors.accent};
+          --bs-body-bg: ${colors.background};
+          --bs-body-color: ${colors.text};
+          ${borderRadius ? `--bs-border-radius: ${borderRadius};` : ''}
+          ${fontFamily ? `--bs-font-sans-serif: ${fontFamily};` : ''}
+        }
+      `}</style>
+      <div data-bs-theme={currentMode}>
+        {children}
+      </div>
+    </ThemeContext.Provider>
+  );
+  {% elif ui_framework == "antd" %}
+  import { ConfigProvider, theme as antTheme } from 'antd';
+
+  return (
+    <ThemeContext.Provider value={% raw %}{{ mode: currentMode, colors, setMode: setCurrentMode }}{% endraw %}>
+      <ConfigProvider
+        theme={% raw %}{{
+          algorithm: currentMode === 'dark' ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
+          token: {
+            colorPrimary: colors.primary,
+            colorSuccess: colors.success,
+            colorWarning: colors.warning,
+            colorError: colors.error,
+            colorInfo: colors.accent,
+            colorText: colors.text,
+            colorTextSecondary: colors.textSecondary,
+            colorBgBase: colors.background,
+            colorBgContainer: colors.surface,
+            borderRadius: borderRadius ? parseFloat(borderRadius) : 6,
+            fontFamily: fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          },
+        }}{% endraw %}
+      >
+        {children}
+      </ConfigProvider>
+    </ThemeContext.Provider>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { Theme } from '@carbon/react';
+
+  return (
+    <ThemeContext.Provider value={% raw %}{{ mode: currentMode, colors, setMode: setCurrentMode }}{% endraw %}>
+      <Theme theme={currentMode === 'dark' ? 'g100' : 'white'}>
+        <style>{`
+          :root {
+            --cds--brand-01: ${colors.primary};
+            --cds--interactive-01: ${colors.primary};
+            --cds--support-01: ${colors.success};
+            --cds--support-02: ${colors.warning};
+            --cds--support-03: ${colors.error};
+            --cds--text-01: ${colors.text};
+            --cds--text-02: ${colors.textSecondary};
+            --cds--background: ${colors.background};
+            --cds--layer-01: ${colors.surface};
+            ${fontFamily ? `--cds--type-01: ${fontFamily};` : ''}
+          }
+        `}</style>
+        {children}
+      </Theme>
+    </ThemeContext.Provider>
+  );
+  {% endif %}
+};
+
+export default ThemeProvider;

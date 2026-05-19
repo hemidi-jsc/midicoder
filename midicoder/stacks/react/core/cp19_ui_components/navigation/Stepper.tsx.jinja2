@@ -1,0 +1,390 @@
+/* eslint-disable */
+import React, { useState } from 'react';
+
+{% if ui_framework == "material" %}
+import Stepper from '@mui/material/Stepper';
+import Step from '@mui/material/Step';
+import StepLabel from '@mui/material/StepLabel';
+import StepContent from '@mui/material/StepContent';
+import Button from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Check from '@mui/icons-material/Check';
+{% elif ui_framework == "antd" %}
+import { Steps, Button, Divider } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Stepper, StepperHorizontal, StepperStep, Button } from '@carbon/react';
+{% endif %}
+
+export interface StepperStep {
+  key: string;
+  label: string;
+  description?: string;
+  content?: React.ReactNode;
+  disabled?: boolean;
+  optional?: boolean;
+  icon?: React.ReactNode;
+}
+
+export interface StepperProps {
+  steps?: StepperStep[];
+  activeStep?: number;
+  orientation?: 'horizontal' | 'vertical';
+  linear?: boolean;
+  alternativeLabel?: boolean;
+  onStepChange?: (step: number) => void;
+  onReset?: () => void;
+  onComplete?: () => void;
+}
+
+const StepperComponent: React.FC<StepperProps> = ({
+  steps = [],
+  activeStep = 0,
+  orientation = 'horizontal',
+  linear = true,
+  alternativeLabel = false,
+  onStepChange,
+  onReset,
+  onComplete,
+}) => {
+  const [currentStep, setCurrentStep] = useState(activeStep);
+
+  const handleNext = () => {
+    const nextStep = currentStep + 1;
+    if (nextStep < steps.length) {
+      setCurrentStep(nextStep);
+      onStepChange?.(nextStep);
+    }
+  };
+
+  const handleBack = () => {
+    const prevStep = currentStep - 1;
+    if (prevStep >= 0) {
+      setCurrentStep(prevStep);
+      onStepChange?.(prevStep);
+    }
+  };
+
+  const handleReset = () => {
+    setCurrentStep(0);
+    onReset?.();
+  };
+
+  const handleComplete = () => {
+    onComplete?.();
+  };
+
+  const activeStepData = steps[currentStep];
+
+{% if ui_framework == "material" %}
+  return (
+    <Box sx={% raw %}{{ width: '100%' }}{% endraw %}>
+      <Stepper
+        activeStep={currentStep}
+        orientation={orientation}
+        alternativeLabel={alternativeLabel}
+      >
+        {steps.map((step, index) => (
+          <Step key={step.key} completed={index < currentStep}>
+            <StepLabel
+              optional={step.optional ? <Typography variant="caption">(Optional)</Typography> : undefined}
+            >
+              {step.label}
+            </StepLabel>
+            {orientation === 'vertical' && (
+              <StepContent>
+                <Typography>{step.description || ''}</Typography>
+                <Box sx={% raw %}{{ mb: 2 }}{% endraw %}>{step.content}</Box>
+                <Box sx={% raw %}{{ mb: 2 }}{% endraw %}>
+                  <Button variant="contained" onClick={handleNext}>
+                    {index === steps.length - 1 ? 'Finish' : 'Continue'}
+                  </Button>
+                  <Button
+                    disabled={index === 0}
+                    onClick={handleBack}
+                    sx={% raw %}{{ mt: 1, ml: 1 }}{% endraw %}
+                  >
+                    Back
+                  </Button>
+                </Box>
+              </StepContent>
+            )}
+          </Step>
+        ))}
+      </Stepper>
+      {orientation === 'horizontal' && (
+        <Paper sx={% raw %}{{ mt: 3, p: 2 }}{% endraw %}>
+          <Typography variant="h6" gutterBottom>
+            {activeStepData?.label}
+          </Typography>
+          {activeStepData?.description && (
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              {activeStepData.description}
+            </Typography>
+          )}
+          <Box sx={% raw %}{{ mt: 2 }}{% endraw %}>{activeStepData?.content}</Box>
+          <Box sx={% raw %}{{ display: 'flex', justifyContent: 'space-between', mt: 3 }}{% endraw %}>
+            <Button
+              disabled={currentStep === 0}
+              onClick={handleBack}
+            >
+              Back
+            </Button>
+            <Box>
+              {currentStep === steps.length - 1 ? (
+                <Button
+                  variant="contained"
+                  color="success"
+                  onClick={handleComplete}
+                >
+                  Complete
+                </Button>
+              ) : (
+                <Button
+                  variant="contained"
+                  onClick={handleNext}
+                >
+                  Next
+                </Button>
+              )}
+            </Box>
+          </Box>
+        </Paper>
+      )}
+    </Box>
+  );
+{% elif ui_framework == "tailwind" %}
+  return (
+    <div className="w-full">
+      <nav aria-label="Progress">
+        <ol className="flex items-center w-full">
+          {steps.map((step, index) => (
+            <li
+              key={step.key}
+              className={`relative flex-1 ${
+                index < currentStep ? 'text-indigo-600' : 'text-gray-500'
+              }`}
+            >
+              <div className="flex items-center">
+                <span
+                  className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
+                    index < currentStep
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : index === currentStep
+                      ? 'border-indigo-600 text-indigo-600 bg-white'
+                      : 'border-gray-300 text-gray-300 bg-white'
+                  }`}
+                >
+                  {index < currentStep ? (
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    index + 1
+                  )}
+                </span>
+                <div className="ml-3">
+                  <span className="text-sm font-medium">{step.label}</span>
+                  {step.optional && (
+                    <span className="block text-xs text-gray-500">(Optional)</span>
+                  )}
+                </div>
+              </div>
+              {index < steps.length - 1 && (
+                <div
+                  className={`absolute top-4 left-1/2 w-full h-0.5 ${
+                    index < currentStep ? 'bg-indigo-600' : 'bg-gray-300'
+                  }`}
+                  style={% raw %}{{ transform: 'translateX(50%)' }}{% endraw %}
+                />
+              )}
+            </li>
+          ))}
+        </ol>
+      </nav>
+      <div className="mt-8 p-6 bg-white rounded-lg border border-gray-200">
+        <h3 className="text-lg font-medium text-gray-900">{activeStepData?.label}</h3>
+        {activeStepData?.description && (
+          <p className="mt-2 text-sm text-gray-500">{activeStepData.description}</p>
+        )}
+        <div className="mt-4">{activeStepData?.content}</div>
+        <div className="mt-6 flex justify-between">
+          <button
+            onClick={handleBack}
+            disabled={currentStep === 0}
+            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Back
+          </button>
+          {currentStep === steps.length - 1 ? (
+            <button
+              onClick={handleComplete}
+              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
+            >
+              Complete
+            </button>
+          ) : (
+            <button
+              onClick={handleNext}
+              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+            >
+              Next
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+{% elif ui_framework == "bootstrap" %}
+  return (
+    <div className="w-full">
+      <div className="progress mb-4" style={% raw %}{{ height: '8px' }}{% endraw %}>
+        <div
+          className="progress-bar bg-success"
+          role="progressbar"
+          style={% raw %}{{ width: `${((currentStep + 1) / steps.length) * 100}%` }}{% endraw %}
+          aria-valuenow={((currentStep + 1) / steps.length) * 100}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        />
+      </div>
+      <div className="d-flex justify-content-center mb-4">
+        {steps.map((step, index) => (
+          <div key={step.key} className="text-center position-relative">
+            <div
+              className={`d-flex align-items-center justify-content-center rounded-circle mx-auto ${
+                index <= currentStep ? 'bg-primary text-white' : 'bg-secondary text-white'
+              }`}
+              style={% raw %}{{ width: '40px', height: '40px' }}{% endraw %}
+            >
+              {index < currentStep ? (
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z" />
+                </svg>
+              ) : (
+                index + 1
+              )}
+            </div>
+            <div className="mt-2 small">{step.label}</div>
+            {step.optional && (
+              <div className="text-muted" style={% raw %}{{ fontSize: '0.7rem' }}{% endraw %}>(Optional)</div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="card">
+        <div className="card-body">
+          <h5 className="card-title">{activeStepData?.label}</h5>
+          {activeStepData?.description && (
+            <p className="card-text text-muted">{activeStepData.description}</p>
+          )}
+          <div className="mb-3">{activeStepData?.content}</div>
+          <div className="d-flex justify-content-between">
+            <button
+              className="btn btn-outline-secondary"
+              onClick={handleBack}
+              disabled={currentStep === 0}
+            >
+              Back
+            </button>
+            {currentStep === steps.length - 1 ? (
+              <button className="btn btn-success" onClick={handleComplete}>
+                Complete
+              </button>
+            ) : (
+              <button className="btn btn-primary" onClick={handleNext}>
+                Next
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+{% elif ui_framework == "antd" %}
+  return (
+    <div className="w-full">
+      <Steps
+        current={currentStep}
+        orientation={orientation}
+        items={steps.map((step) => ({
+          title: step.label,
+          description: step.description,
+          disabled: step.disabled,
+        }))}
+      />
+      <div className="mt-4 p-4 border rounded" style={% raw %}{{ borderColor: '#f0f0f0' }}{% endraw %}>
+        <h4>{activeStepData?.label}</h4>
+        {activeStepData?.description && <p className="text-muted">{activeStepData.description}</p>}
+        <div className="my-3">{activeStepData?.content}</div>
+        <div className="d-flex justify-content-between">
+          <Button onClick={handleBack} disabled={currentStep === 0}>
+            Back
+          </Button>
+          {currentStep === steps.length - 1 ? (
+            <Button type="primary" ghost onClick={handleComplete}>
+              Complete
+            </Button>
+          ) : (
+            <Button type="primary" onClick={handleNext}>
+              Next
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+{% elif ui_framework == "carbon" %}
+  return (
+    <div className="w-full">
+      <Stepper>
+        <StepperHorizontal
+          stepperOrientation={orientation}
+          currentStep={currentStep}
+          totalCount={steps.length}
+        >
+          {steps.map((step, index) => (
+            <StepperStep
+              key={step.key}
+              title={step.label}
+              label={step.description}
+              onClick={() => {
+                if (!step.disabled) {
+                  setCurrentStep(index);
+                  onStepChange?.(index);
+                }
+              }}
+            />
+          ))}
+        </StepperHorizontal>
+      </Stepper>
+      <div className="mt-4 p-3 border rounded" style={% raw %}{{ borderColor: '#e0e0e0', background: '#f4f4f4' }}{% endraw %}>
+        <h5>{activeStepData?.label}</h5>
+        {activeStepData?.description && <p className="text-muted small">{activeStepData.description}</p>}
+        <div className="my-3">{activeStepData?.content}</div>
+        <div className="d-flex justify-content-between">
+          <Button
+            kind="secondary"
+            onClick={handleBack}
+            disabled={currentStep === 0}
+          >
+            Back
+          </Button>
+          {currentStep === steps.length - 1 ? (
+            <Button kind="success" onClick={handleComplete}>
+              Complete
+            </Button>
+          ) : (
+            <Button kind="primary" onClick={handleNext}>
+              Next
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+{% endif %}
+};
+
+export default StepperComponent;

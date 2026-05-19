@@ -1,0 +1,133 @@
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+{% if ui_framework == "material" %}
+import { MatSidenavContainer } from "@angular/material/sidenav";
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from "@ng-bootstrap/ng-bootstrap";
+{% endif %}
+
+@Component({
+  selector: 'app-container',
+  standalone: true,
+  imports: [
+    CommonModule
+    {% if ui_framework == "material" %},
+    MatSidenavContainer{% elif ui_framework == "bootstrap" %},
+    NgbModule{% endif %}
+  ],
+  template: `
+    {% if ui_framework == "material" %}
+    <div class="mdc-layout-grid" [class]="containerClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "tailwind" %}
+    <div [class]="containerClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "bootstrap" %}
+    <div [ngClass]="containerClass" ngbContainer>
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "antd" %}
+    <div class="midicoder-container" [style.max-width.px]="maxWidthPx">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "carbon" %}
+    <div class="midicoder-container" [style.max-width.px]="maxWidthPx">
+      <ng-content></ng-content>
+    </div>
+    {% endif %}
+  `,
+  styles: [`
+    {% if ui_framework == "material" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    .fluid {
+      max-width: 100%;
+      padding: 0 16px;
+    }
+    {% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    {% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    .midicoder-container {
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 16px;
+      box-sizing: border-box;
+    }
+    {% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+      width: 100%;
+    }
+    .midicoder-container {
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 16px;
+      box-sizing: border-box;
+    }
+    {% endif %}
+  `]
+})
+export class ContainerComponent implements OnInit {
+  @Input() maxWidth: 'xs' | 'sm' | 'md' | 'lg' | 'xl' = 'lg';
+  @Input() fluid: boolean = false;
+
+  {% if ui_framework == "material" %}
+  get containerClass(): string {
+    return this.fluid ? 'fluid' : '';
+  }
+  {% elif ui_framework == "tailwind" %}
+  get containerClass(): string {
+    if (this.fluid) {
+      return 'w-full px-4';
+    }
+    const sizeMap: Record<string, string> = {
+      'xs': 'max-w-xl mx-auto px-4',
+      'sm': 'max-w-2xl mx-auto px-4',
+      'md': 'max-w-4xl mx-auto px-4',
+      'lg': 'max-w-7xl mx-auto px-4',
+      'xl': 'max-w-screen-2xl mx-auto px-4'
+    };
+    return sizeMap[this.maxWidth] || 'max-w-7xl mx-auto px-4';
+  }
+  {% elif ui_framework == "bootstrap" %}
+  get containerClass(): string {
+    return this.fluid ? 'container-fluid' : 'container';
+  }
+  {% elif ui_framework == "antd" %}
+  get maxWidthPx(): number | null {
+    if (this.fluid) return null;
+    const sizeMap: Record<string, number> = {
+      'xs': 576, 'sm': 768, 'md': 992, 'lg': 1200, 'xl': 1400
+    };
+    return sizeMap[this.maxWidth] || 1200;
+  }
+  {% elif ui_framework == "carbon" %}
+  get maxWidthPx(): number | null {
+    if (this.fluid) return null;
+    const sizeMap: Record<string, number> = {
+      'xs': 576, 'sm': 768, 'md': 992, 'lg': 1200, 'xl': 1400
+    };
+    return sizeMap[this.maxWidth] || 1200;
+  }
+  {% endif %}
+
+  ngOnInit(): void {
+  }
+}

@@ -1,0 +1,142 @@
+/*
+ * Midicoder CP19 - Data Input: Switch
+ * Standalone toggle switch component.
+ */
+import React from 'react';
+
+interface SwitchProps {
+  label: string;
+  hint?: string;
+  required?: boolean;
+  disabled?: boolean;
+  checked?: boolean;
+  onChange?: (checked: boolean) => void;
+  id?: string;
+  className?: string;
+}
+
+const Switch: React.FC<SwitchProps> = ({
+  label,
+  hint,
+  required = false,
+  disabled = false,
+  checked = false,
+  onChange,
+  id,
+  className = '',
+}) => {
+  return (
+{% if ui_framework == "material" %}
+    <div className={className} style={% raw %}{{ marginBottom: '16px' }}{% endraw %}>
+      <label style={% raw %}{{ display: 'flex', alignItems: 'center', gap: '12px', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}{% endraw %}>
+        <div
+          onClick={() => !disabled && onChange?.(!checked)}
+          style={% raw %}{{
+            width: '36px', height: '18px', borderRadius: '9px',
+            background: checked ? '#3f51b5' : '#bdbdbd',
+            position: 'relative', transition: 'background 0.3s',
+          }}{% endraw %}
+        >
+          <div style={% raw %}{{
+            width: '14px', height: '14px', borderRadius: '7px', background: '#fff',
+            position: 'absolute', top: '2px',
+            left: checked ? '20px' : '2px', transition: 'left 0.3s',
+          }}{% endraw %} />
+        </div>
+        <span style={% raw %}{{ fontSize: '14px', color: '#212121' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#d32f2f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </span>
+      </label>
+      {hint && <div style={% raw %}{{ fontSize: '12px', color: '#9e9e9e', marginTop: '4px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "tailwind" %}
+    <div className={`w-full ${className}`}>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-700">
+          {label}
+          {required && <span className="text-red-500 ml-1">*</span>}
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange?.(!checked)}
+          disabled={disabled}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed ${checked ? 'bg-blue-600' : 'bg-gray-200'}`}
+        >
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
+        </button>
+      </div>
+      {hint && <p className="mt-1 text-sm text-gray-500">{hint}</p>}
+    </div>
+{% elif ui_framework == "bootstrap" %}
+    <div className={`form-check form-switch w-100 ${className}`}>
+      <input
+        className="form-check-input"
+        role="switch"
+        type="checkbox"
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange?.(e.target.checked)}
+      />
+      <label className="form-check-label" htmlFor={id}>
+        {label}
+        {required && <span className="text-danger">*</span>}
+      </label>
+      {hint && <small className="form-text text-muted">{hint}</small>}
+    </div>
+{% elif ui_framework == "antd" %}
+    <div style={% raw %}{{ marginBottom: '16px' }}{% endraw %} className={className}>
+      <div style={% raw %}{{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}{% endraw %}>
+        <span style={% raw %}{{ fontSize: '14px', color: '#262626' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#ff4d4f', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </span>
+        <div
+          onClick={() => !disabled && onChange?.(!checked)}
+          style={% raw %}{{
+            width: '44px', height: '22px', borderRadius: '11px',
+            background: checked ? '#1677ff' : '#d9d9d9',
+            position: 'relative', cursor: disabled ? 'not-allowed' : 'pointer',
+            transition: 'background 0.3s',
+          }}{% endraw %}
+        >
+          <div style={% raw %}{{
+            width: '18px', height: '18px', borderRadius: '9px', background: '#fff',
+            position: 'absolute', top: '2px',
+            left: checked ? '24px' : '2px', transition: 'left 0.3s',
+          }}{% endraw %} />
+        </div>
+      </div>
+      {hint && <div style={% raw %}{{ color: '#8c8c8c', fontSize: '12px', marginTop: '4px' }}{% endraw %}>{hint}</div>}
+    </div>
+{% elif ui_framework == "carbon" %}
+    <div style={% raw %}{{ marginBottom: '1rem' }}{% endraw %} className={className}>
+      <div style={% raw %}{{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}{% endraw %}>
+        <span style={% raw %}{{ fontSize: '0.875rem', color: '#161616' }}{% endraw %}>
+          {label}
+          {required && <span style={% raw %}{{ color: '#da1e28', marginLeft: '4px' }}{% endraw %}>*</span>}
+        </span>
+        <div
+          onClick={() => !disabled && onChange?.(!checked)}
+          style={% raw %}{{
+            width: '44px', height: '22px', borderRadius: '11px',
+            background: checked ? '#0f62fe' : '#8d8d8d',
+            position: 'relative', cursor: disabled ? 'not-allowed' : 'pointer',
+            transition: 'background 0.3s',
+          }}{% endraw %}
+        >
+          <div style={% raw %}{{
+            width: '18px', height: '18px', borderRadius: '9px', background: '#fff',
+            position: 'absolute', top: '2px',
+            left: checked ? '24px' : '2px', transition: 'left 0.3s',
+          }}{% endraw %} />
+        </div>
+      </div>
+      {hint && <p style={% raw %}{{ fontSize: '0.75rem', color: '#6f6f6f', margin: '0.25rem 0' }}{% endraw %}>{hint}</p>}
+    </div>
+{% endif %}
+  );
+};
+
+export default Switch;

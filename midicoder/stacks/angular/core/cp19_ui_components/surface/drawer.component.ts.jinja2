@@ -1,0 +1,188 @@
+/** Drawer Component - Side panel that slides in from the edge of the screen. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatSidenavModule } from "@angular/material/sidenav";
+import { MatIconModule } from "@angular/material/icon";
+{% endif %}
+
+export type DrawerPosition = 'start' | 'end' | 'left' | 'right';
+
+@Component({
+  selector: 'app-drawer',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatSidenavModule,
+    MatIconModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-sidenav-container class="mat-drawer-container">
+  <mat-sidenav
+    #drawer
+    [mode]="mode"
+    [opened]="isOpen"
+    [position]="position"
+    [disableClose]="disableClose"
+    (closedStart)="onClose()"
+  >
+    <div class="mat-drawer-header" *ngIf="title">
+      <h2>{% raw %}{{ title }}{% endraw %}</h2>
+      <button mat-icon-button (click)="onToggle()">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+    <ng-content></ng-content>
+  </mat-sidenav>
+  <mat-sidenav-content *ngIf="showContent">
+    <ng-content select="[drawerContent]"></ng-content>
+  </mat-sidenav-content>
+</mat-sidenav-container>
+{% elif ui_framework == "tailwind" %}
+<div class="relative">
+  <div
+    *ngIf="isOpen"
+    class="fixed inset-0 bg-black/50 z-40 transition-opacity"
+    (click)="!disableClose && onToggle()"
+  ></div>
+  <aside
+    [ngClass]="{
+      'left-0': position === 'start' || position === 'left',
+      'right-0': position === 'end' || position === 'right',
+      'translate-x-0': isOpen,
+      '-translate-x-full': (!isOpen && (position === 'start' || position === 'left')),
+      'translate-x-full': (!isOpen && (position === 'end' || position === 'right')),
+    }"
+    class="fixed top-0 h-full w-80 bg-white shadow-xl z-50 transition-transform duration-300 ease-in-out"
+  >
+    <div *ngIf="title" class="flex items-center justify-between px-6 py-4 border-b">
+      <h2 class="text-lg font-semibold">{% raw %}{{ title }}{% endraw %}</h2>
+      <button (click)="onToggle()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+    </div>
+    <div class="p-6 overflow-y-auto h-full">
+      <ng-content></ng-content>
+    </div>
+  </aside>
+  <div *ngIf="showContent">
+    <ng-content select="[drawerContent]"></ng-content>
+  </div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div class="position-relative">
+  <div
+    *ngIf="isOpen"
+    class="fixed inset-0 bg-dark bg-opacity-50 z-40"
+    (click)="!disableClose && onToggle()"
+  ></div>
+  <aside
+    [ngClass]="bootstrapPositionClass"
+    class="fixed top-0 h-100 w-250 bg-white shadow z-50 transform transition-transform duration-300"
+    [ngStyle]="{transform: isOpen ? 'translateX(0)' : bootstrapTranslate}"
+  >
+    <div *ngIf="title" class="d-flex align-items-center justify-content-between px-4 py-3 border-bottom">
+      <h5 class="mb-0">{% raw %}{{ title }}{% endraw %}</h5>
+      <button type="button" class="btn-close" (click)="onToggle()"></button>
+    </div>
+    <div class="p-4 overflow-auto h-100">
+      <ng-content></ng-content>
+    </div>
+  </aside>
+  <div *ngIf="showContent">
+    <ng-content select="[drawerContent]"></ng-content>
+  </div>
+</div>
+{% elif ui_framework == "antd" %}
+<div class="ant-drawer-root">
+  <div
+    *ngIf="isOpen"
+    class="fixed inset-0 bg-black/45 z-40"
+    (click)="!disableClose && onToggle()"
+  ></div>
+  <div
+    class="ant-drawer ant-drawer-right"
+    [ngClass]="{'ant-drawer-left': position === 'start' || position === 'left'}"
+    [ngStyle]="{
+      width: width + 'px',
+      transform: isOpen ? 'translateX(0)' : (position === 'start' || position === 'left' ? 'translateX(-100%)' : 'translateX(100%)'),
+    }"
+    style="position: fixed; top: 0; height: 100%; z-index: 500; background: white; transition: transform 0.3s;"
+  >
+    <div *ngIf="title" class="ant-drawer-header">
+      <span class="ant-drawer-title">{% raw %}{{ title }}{% endraw %}</span>
+      <button class="ant-drawer-close" (click)="onToggle()">✕</button>
+    </div>
+    <div class="ant-drawer-body">
+      <ng-content></ng-content>
+    </div>
+  </div>
+  <div *ngIf="showContent">
+    <ng-content select="[drawerContent]"></ng-content>
+  </div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div class="cds--side-nav cds--side-nav--ux">
+  <div
+    *ngIf="isOpen"
+    class="cds--side-nav__overlay"
+    (click)="!disableClose && onToggle()"
+  ></div>
+  <aside
+    class="cds--side-nav__panel"
+    [ngClass]="{'cds--side-nav__panel--expanded': isOpen}"
+    [ngStyle]="{width: isOpen ? width + 'px' : '0px'}"
+  >
+    <div *ngIf="title" class="cds--side-nav__title-bar">
+      <h2 class="cds--side-nav__name">{% raw %}{{ title }}{% endraw %}</h2>
+      <button class="cds--btn cds--btn--ghost" (click)="onToggle()">✕</button>
+    </div>
+    <div class="cds--side-nav__overlay">
+      <ng-content></ng-content>
+    </div>
+  </aside>
+  <div *ngIf="showContent">
+    <ng-content select="[drawerContent]"></ng-content>
+  </div>
+</div>
+{% endif %}
+  `,
+})
+export class DrawerComponent implements OnInit {
+  @Input() title: string = '';
+  @Input() isOpen: boolean = false;
+  @Input() position: DrawerPosition = 'end';
+  @Input() mode: 'over' | 'side' | 'push' = 'over';
+  @Input() width: number = 320;
+  @Input() disableClose: boolean = false;
+  @Input() showContent: boolean = false;
+  @Output() toggle = new EventEmitter<boolean>();
+  @Output() close = new EventEmitter<void>();
+
+  ngOnInit() {}
+
+  onToggle() {
+    this.isOpen = !this.isOpen;
+    this.toggle.emit(this.isOpen);
+  }
+
+  onClose() {
+    this.close.emit();
+  }
+
+  get bootstrapPositionClass(): string {
+    if (this.position === 'start' || this.position === 'left') {
+      return 'start-0';
+    }
+    return 'end-0';
+  }
+
+  get bootstrapTranslate(): string {
+    if (this.position === 'start' || this.position === 'left') {
+      return 'translateX(-100%)';
+    }
+    return 'translateX(100%)';
+  }
+}

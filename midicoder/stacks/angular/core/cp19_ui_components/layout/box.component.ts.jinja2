@@ -1,0 +1,161 @@
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+{% if ui_framework == "material" %}
+import { MatCard, MatCardContent } from "@angular/material/card";
+{% elif ui_framework == "bootstrap" %}
+import { NgbModule } from "@ng-bootstrap/ng-bootstrap";
+{% endif %}
+
+@Component({
+  selector: 'app-box',
+  standalone: true,
+  imports: [
+    CommonModule
+    {% if ui_framework == "material" %},
+    MatCard,
+    MatCardContent{% elif ui_framework == "bootstrap" %},
+    NgbModule{% endif %}
+  ],
+  template: `
+    {% if ui_framework == "material" %}
+    <mat-card [class]="boxClass">
+      <mat-card-content>
+        <ng-content></ng-content>
+      </mat-card-content>
+    </mat-card>
+    {% elif ui_framework == "tailwind" %}
+    <div [class]="boxClass">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "bootstrap" %}
+    <div [ngClass]="boxClass" ngbCard>
+      <div class="card-body">
+        <ng-content></ng-content>
+      </div>
+    </div>
+    {% elif ui_framework == "antd" %}
+    <div class="midicoder-box" [style]="boxStyles">
+      <ng-content></ng-content>
+    </div>
+    {% elif ui_framework == "carbon" %}
+    <div class="midicoder-box" [style]="boxStyles">
+      <ng-content></ng-content>
+    </div>
+    {% endif %}
+  `,
+  styles: [`
+    {% if ui_framework == "material" %}
+    :host {
+      display: block;
+    }
+    {% elif ui_framework == "tailwind" %}
+    :host {
+      display: block;
+    }
+    {% elif ui_framework == "bootstrap" %}
+    :host {
+      display: block;
+    }
+    {% elif ui_framework == "antd" %}
+    :host {
+      display: block;
+    }
+    .midicoder-box {
+      position: relative;
+    }
+    {% elif ui_framework == "carbon" %}
+    :host {
+      display: block;
+    }
+    .midicoder-box {
+      position: relative;
+    }
+    {% endif %}
+  `]
+})
+export class BoxComponent implements OnInit {
+  @Input() width: string | number = 'auto';
+  @Input() height: string | number = 'auto';
+  @Input() padding: string | number = 0;
+  @Input() margin: string | number = 0;
+  @Input() borderRadius: string | number = 0;
+  @Input() display: string = 'block';
+  @Input() backgroundColor: string = '';
+  @Input() overflow: string = 'visible';
+  @Input() textAlign: 'left' | 'center' | 'right' = 'left';
+
+  {% if ui_framework == "material" %}
+  get boxClass(): string {
+    return '';
+  }
+  {% elif ui_framework == "tailwind" %}
+  get boxClass(): string {
+    const paddingMap: Record<number, string> = {
+      0: 'p-0', 1: 'p-1', 2: 'p-2', 3: 'p-3', 4: 'p-4',
+      6: 'p-6', 8: 'p-8', 12: 'p-12', 16: 'p-16'
+    };
+    const marginMap: Record<number, string> = {
+      0: 'm-0', 1: 'm-1', 2: 'm-2', 3: 'm-3', 4: 'm-4',
+      6: 'm-6', 8: 'm-8', 12: 'm-12', 16: 'm-16'
+    };
+    const radiusMap: Record<number, string> = {
+      0: 'rounded-none', 4: 'rounded-sm', 8: 'rounded',
+      12: 'rounded-lg', 16: 'rounded-xl', 9999: 'rounded-full'
+    };
+    let cls = `box-border`;
+    if (this.width !== 'auto') cls += ` ${typeof this.width === 'number' ? 'w-' + this.width : this.width}`;
+    if (this.height !== 'auto') cls += ` ${typeof this.height === 'number' ? 'h-' + this.height : this.height}`;
+    if (typeof this.padding === 'number') cls += ` ${paddingMap[this.padding] || 'p-' + this.padding}`;
+    if (typeof this.margin === 'number') cls += ` ${marginMap[this.margin] || 'm-' + this.margin}`;
+    if (typeof this.borderRadius === 'number') cls += ` ${radiusMap[this.borderRadius] || 'rounded-' + this.borderRadius}`;
+    cls += ` ${this.display === 'flex' ? 'flex' : this.display === 'grid' ? 'grid' : ''}`;
+    cls += ` text-${this.textAlign}`;
+    return cls.trim();
+  }
+  {% elif ui_framework == "bootstrap" %}
+  get boxClass(): string {
+    const paddingMap: Record<number, string> = {
+      0: 'p-0', 1: 'p-1', 2: 'p-2', 3: 'p-3', 4: 'p-4', 5: 'p-5'
+    };
+    const marginMap: Record<number, string> = {
+      0: 'm-0', 1: 'm-1', 2: 'm-2', 3: 'm-3', 4: 'm-4', 5: 'm-5'
+    };
+    const radiusMap: Record<number, string> = {
+      0: 'rounded-0', 1: 'rounded-1', 2: 'rounded-2', 3: 'rounded-3', 4: 'rounded-circle'
+    };
+    let cls = '';
+    if (typeof this.padding === 'number') cls += ` ${paddingMap[this.padding] || 'p-3'}`;
+    if (typeof this.margin === 'number') cls += ` ${marginMap[this.margin] || 'm-3'}`;
+    if (typeof this.borderRadius === 'number') cls += ` ${radiusMap[this.borderRadius] || 'rounded'}`;
+    return cls.trim();
+  }
+  {% elif ui_framework == "antd" %}
+  get boxStyles(): string {
+    let styles = '';
+    if (this.width !== 'auto') styles += `width: ${typeof this.width === 'number' ? this.width + 'px' : this.width}; `;
+    if (this.height !== 'auto') styles += `height: ${typeof this.height === 'number' ? this.height + 'px' : this.height}; `;
+    if (this.padding !== 0) styles += `padding: ${typeof this.padding === 'number' ? this.padding + 'px' : this.padding}; `;
+    if (this.margin !== 0) styles += `margin: ${typeof this.margin === 'number' ? this.margin + 'px' : this.margin}; `;
+    if (this.borderRadius !== 0) styles += `border-radius: ${typeof this.borderRadius === 'number' ? this.borderRadius + 'px' : this.borderRadius}; `;
+    styles += `display: ${this.display}; overflow: ${this.overflow}; text-align: ${this.textAlign}; `;
+    if (this.backgroundColor) styles += `background-color: ${this.backgroundColor}; `;
+    return styles;
+  }
+  {% elif ui_framework == "carbon" %}
+  get boxStyles(): string {
+    let styles = '';
+    if (this.width !== 'auto') styles += `width: ${typeof this.width === 'number' ? this.width + 'px' : this.width}; `;
+    if (this.height !== 'auto') styles += `height: ${typeof this.height === 'number' ? this.height + 'px' : this.height}; `;
+    if (this.padding !== 0) styles += `padding: ${typeof this.padding === 'number' ? this.padding + 'px' : this.padding}; `;
+    if (this.margin !== 0) styles += `margin: ${typeof this.margin === 'number' ? this.margin + 'px' : this.margin}; `;
+    if (this.borderRadius !== 0) styles += `border-radius: ${typeof this.borderRadius === 'number' ? this.borderRadius + 'px' : this.borderRadius}; `;
+    styles += `display: ${this.display}; overflow: ${this.overflow}; text-align: ${this.textAlign}; `;
+    if (this.backgroundColor) styles += `background-color: ${this.backgroundColor}; `;
+    return styles;
+  }
+  {% endif %}
+
+  ngOnInit(): void {
+  }
+}

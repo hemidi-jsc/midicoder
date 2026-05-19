@@ -1,0 +1,446 @@
+{% if ui_framework == "material" %}import React from 'react';
+import {
+  List,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
+  ListItemIcon,
+  ListItemButton,
+  ListItemAction,
+  Divider,
+  Avatar,
+  Chip
+} from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface ListItemData {
+  primary: string;
+  secondary?: string;
+  avatar?: string | React.ReactNode;
+  icon?: React.ReactNode;
+  action?: React.ReactNode;
+  disabled?: boolean;
+}
+
+interface ListComponentProps {
+  items: ListItemData[];
+  type?: 'simple' | 'one-line' | 'two-line' | 'three-line';
+  withAvatar?: boolean;
+  withActions?: boolean;
+  clickable?: boolean;
+  selected?: number | null;
+  dense?: boolean;
+  divider?: boolean;
+  children?: React.ReactNode;
+  sx?: SxProps<Theme>;
+  className?: string;
+  onItemClick?: (index: number) => void;
+}
+
+function List({
+  items,
+  type = 'two-line',
+  clickable = false,
+  selected = null,
+  dense = false,
+  divider = true,
+  children,
+  sx,
+  className,
+  onItemClick
+}: ListComponentProps) {
+  return (
+    <List
+      sx={sx}
+      className={className}
+      dense={dense}
+      subheader=""
+    >
+      {items.map((item, index) => {
+        const isSelected = selected === index;
+        const isMultiLine = type === 'two-line' || type === 'three-line';
+
+        return (
+          <React.Fragment key={index}>
+            {clickable ? (
+              <ListItemButton
+                selected={isSelected}
+                disabled={item.disabled}
+                onClick={() => onItemClick?.(index)}
+              >
+                {item.icon && <ListItemIcon>{item.icon}</ListItemIcon>}
+                {item.avatar && (
+                  <ListItemAvatar>
+                    {typeof item.avatar === 'string' ? (
+                      <Avatar src={item.avatar} />
+                    ) : (
+                      item.avatar
+                    )}
+                  </ListItemAvatar>
+                )}
+                <ListItemText
+                  primary={item.primary}
+                  secondary={isMultiLine && item.secondary}
+                  secondaryTypographyProps={% raw %}{{
+                    noWrap: type === 'one-line',
+                    variant: type === 'three-line' ? 'body2' : undefined
+                  }}{% endraw %}
+                />
+                {item.action && <ListItemAction>{item.action}</ListItemAction>}
+              </ListItemButton>
+            ) : (
+              <ListItem divider={divider && index < items.length - 1}>
+                {item.icon && <ListItemIcon>{item.icon}</ListItemIcon>}
+                {item.avatar && (
+                  <ListItemAvatar>
+                    {typeof item.avatar === 'string' ? (
+                      <Avatar src={item.avatar} />
+                    ) : (
+                      item.avatar
+                    )}
+                  </ListItemAvatar>
+                )}
+                <ListItemText
+                  primary={item.primary}
+                  secondary={isMultiLine && item.secondary}
+                />
+                {item.action && <ListItemAction>{item.action}</ListItemAction>}
+              </ListItem>
+            )}
+          </React.Fragment>
+        );
+      })}
+      {children}
+    </List>
+  );
+}
+
+export default List;
+{% elif ui_framework == "tailwind" %}import React from 'react';
+
+interface ListItemData {
+  primary: string;
+  secondary?: string;
+  avatar?: string;
+  icon?: React.ReactNode;
+  disabled?: boolean;
+}
+
+interface ListComponentProps {
+  items: ListItemData[];
+  divider?: boolean;
+  bullet?: boolean;
+  numbered?: boolean;
+  clickable?: boolean;
+  selected?: number | null;
+  hoverEffect?: boolean;
+  className?: string;
+  onItemClick?: (index: number) => void;
+}
+
+function List({
+  items,
+  divider = true,
+  bullet = false,
+  numbered = false,
+  clickable = false,
+  selected = null,
+  hoverEffect = true,
+  className = '',
+  onItemClick
+}: ListComponentProps) {
+  const listClass = numbered ? 'list-decimal list-inside' : bullet ? 'list-disc list-inside' : '';
+
+  return (
+    <ul className={`divide-y divide-gray-100 ${listClass} ${className}`}>
+      {items.map((item, index) => {
+        const isSelected = selected === index;
+        return (
+          <li
+            key={index}
+            className={`px-4 py-3 ${
+              bullet || numbered ? 'list-none pl-0' : ''
+            } ${
+              divider && index < items.length - 1 ? 'border-b border-gray-100' : ''
+            } ${
+              clickable
+                ? hoverEffect
+                  ? 'cursor-pointer hover:bg-gray-50 transition-colors'
+                  : 'cursor-pointer'
+                : ''
+            } ${isSelected ? 'bg-blue-50' : ''} ${item.disabled ? 'opacity-50' : ''}`}
+            onClick={() => !item.disabled && clickable && onItemClick?.(index)}
+          >
+            <div className="flex items-center gap-3">
+              {item.avatar && (
+                <img
+                  src={item.avatar}
+                  alt=""
+                  className="w-10 h-10 rounded-full flex-shrink-0"
+                />
+              )}
+              {item.icon && (
+                <span className="text-gray-400 flex-shrink-0">{item.icon}</span>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {item.primary}
+                </p>
+                {item.secondary && (
+                  <p className="text-sm text-gray-500 truncate">{item.secondary}</p>
+                )}
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export default List;
+{% elif ui_framework == "bootstrap" %}import React from 'react';
+
+interface ListItemData {
+  primary: string;
+  secondary?: string;
+  avatar?: string;
+  disabled?: boolean;
+}
+
+interface ListComponentProps {
+  items: ListItemData[];
+  flush?: boolean;
+  numbered?: boolean;
+  horizontal?: boolean;
+  action?: boolean;
+  selected?: number | null;
+  className?: string;
+  onItemClick?: (index: number) => void;
+}
+
+function List({
+  items,
+  flush = false,
+  numbered = false,
+  horizontal = false,
+  action = false,
+  selected = null,
+  className = '',
+  onItemClick
+}: ListComponentProps) {
+  const listClass = numbered
+    ? 'ol list-group list-group-numbered'
+    : `list-group ${flush ? 'list-group-flush' : ''} ${horizontal ? 'list-group-horizontal gap-2' : ''}`;
+
+  return (
+    <div className={listClass}>
+      {items.map((item, index) => {
+        const isSelected = selected === index;
+        if (action) {
+          return (
+            <a
+              key={index}
+              href="#"
+              className={`list-group-item list-group-item-action ${isSelected ? 'active' : ''} ${item.disabled ? 'disabled' : ''}`}
+              onClick={(e) => {
+                e.preventDefault();
+                if (!item.disabled) onItemClick?.(index);
+              }}
+            >
+              {item.avatar && (
+                <img src={item.avatar} alt="" className="rounded-circle me-2" width="32" height="32" />
+              )}
+              <strong>{item.primary}</strong>
+              {item.secondary && <small className="d-block text-muted">{item.secondary}</small>}
+            </a>
+          );
+        }
+        return (
+          <li key={index} className={`list-group-item ${item.disabled ? 'disabled' : ''}`}>
+            {item.avatar && (
+              <img src={item.avatar} alt="" className="rounded-circle me-2" width="32" height="32" />
+            )}
+            {item.primary}
+            {item.secondary && <div className="text-muted small">{item.secondary}</div>}
+          </li>
+        );
+      })}
+    </div>
+  );
+}
+
+export default List;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { List as AntdList, Avatar } from 'antd';
+
+interface ListItemData {
+  primary: string;
+  secondary?: string;
+  avatar?: string;
+  description?: React.ReactNode;
+}
+
+interface ListComponentProps {
+  items: ListItemData[];
+  bordered?: boolean;
+  header?: string;
+  footer?: React.ReactNode;
+  size?: 'default' | 'small';
+  loading?: boolean;
+  split?: boolean;
+  className?: string;
+}
+
+function List({
+  items,
+  bordered = true,
+  header,
+  footer,
+  size = 'default',
+  loading = false,
+  split = true,
+  className
+}: ListComponentProps) {
+  return (
+    <AntdList
+      bordered={bordered}
+      header={header && <div>{header}</div>}
+      footer={footer}
+      loading={loading}
+      loadMore={null}
+      className={className}
+      size={size}
+      itemLayout="horizontal"
+      dataSource={items}
+      renderItem={(item, index) => (
+        <AntdList.Item>
+          <AntdList.Item.Meta
+            avatar={item.avatar && <Avatar src={item.avatar} />}
+            title={item.primary}
+            description={item.secondary}
+          />
+        </AntdList.Item>
+      )}
+    />
+  );
+}
+
+export default List;
+{% elif ui_framework == "carbon" %}import React from 'react';
+
+interface ListItemData {
+  primary: string;
+  secondary?: string;
+  avatar?: string;
+  disabled?: boolean;
+}
+
+interface ListComponentProps {
+  items: ListItemData[];
+  selection?: 'single' | 'multi';
+  selectedItems?: number[];
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+  divider?: boolean;
+  className?: string;
+  onItemSelect?: (index: number) => void;
+}
+
+function List({
+  items,
+  selection = 'single',
+  selectedItems = [],
+  size = 'md',
+  divider = true,
+  className = '',
+  onItemSelect
+}: ListComponentProps) {
+  const sizeClasses: Record<string, string> = {
+    sm: 'py-2',
+    md: 'py-3',
+    lg: 'py-4',
+    xl: 'py-5',
+    '2xl': 'py-6'
+  };
+
+  const handleSelect = (index: number) => {
+    onItemSelect?.(index);
+  };
+
+  return (
+    <div className={`cds-content-list ${className}`}>
+      {items.map((item, index) => {
+        const isSelected = selectedItems.includes(index);
+        return (
+          <div
+            key={index}
+            className={`cds-content-list__item ${sizeClasses[size]} px-4 cursor-pointer ${
+              divider && index < items.length - 1 ? 'border-b border-gray-200' : ''
+            } ${isSelected ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''} ${
+              !item.disabled ? 'hover:bg-gray-50' : 'opacity-50'
+            }`}
+            onClick={() => !item.disabled && handleSelect(index)}
+          >
+            <div className="flex items-center gap-3">
+              {item.avatar && (
+                <img
+                  src={item.avatar}
+                  alt=""
+                  className="w-8 h-8 rounded-full flex-shrink-0"
+                />
+              )}
+              <div>
+                <div className="text-sm font-medium text-gray-900">{item.primary}</div>
+                {item.secondary && (
+                  <div className="text-xs text-gray-500">{item.secondary}</div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export default List;
+{% else %}import React from 'react';
+
+interface ListItemData {
+  primary: string;
+  secondary?: string;
+}
+
+interface ListComponentProps {
+  items: ListItemData[];
+  divider?: boolean;
+  selected?: number | null;
+  className?: string;
+}
+
+function List({
+  items,
+  divider = true,
+  selected = null,
+  className = ''
+}: ListComponentProps) {
+  return (
+    <ul className={className}>
+      {items.map((item, index) => {
+        const isSelected = selected === index;
+        return (
+          <li
+            key={index}
+            className={`px-4 py-2 ${divider ? 'border-b' : ''} ${isSelected ? 'bg-blue-50' : ''}`}
+          >
+            <div>{item.primary}</div>
+            {item.secondary && <div className="text-sm text-gray-500">{item.secondary}</div>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export default List;
+{% endif %}

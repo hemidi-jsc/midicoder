@@ -1,0 +1,99 @@
+import React from "react";
+
+{% if ui_framework == "material" %}
+import { Container as MuiContainer } from "@mui/material";
+{% endif %}
+
+export interface ContainerProps {
+  maxWidth?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | false;
+  fluid?: boolean;
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+  [key: string]: any;
+}
+
+export const Container: React.FC<ContainerProps> = ({
+  maxWidth = 'lg',
+  fluid = false,
+  children,
+  className = '',
+  style,
+  ...rest
+}) => {
+  {% if ui_framework == "material" %}
+  return (
+    <MuiContainer
+      maxWidth={fluid ? false : maxWidth}
+      className={className}
+      style={style}
+      {...rest}
+    >
+      {children}
+    </MuiContainer>
+  );
+  {% elif ui_framework == "tailwind" %}
+  const sizeMap: Record<string, string> = {
+    xs: 'max-w-xl',
+    sm: 'max-w-2xl',
+    md: 'max-w-4xl',
+    lg: 'max-w-7xl',
+    xl: 'max-w-screen-2xl'
+  };
+  const baseClass = fluid
+    ? 'w-full px-4'
+    : `mx-auto px-4 ${sizeMap[maxWidth] || 'max-w-7xl'}`;
+
+  return (
+    <div className={`${baseClass} ${className}`} style={style} {...rest}>
+      {children}
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  return (
+    <div
+      className={`${fluid ? 'container-fluid' : 'container'} ${className}`}
+      style={style}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  const sizeMap: Record<string, number> = {
+    xs: 576, sm: 768, md: 992, lg: 1200, xl: 1400
+  };
+  const containerStyle: React.CSSProperties = {
+    width: '100%',
+    margin: '0 auto',
+    padding: '0 16px',
+    boxSizing: 'border-box',
+    maxWidth: fluid ? '100%' : `${sizeMap[maxWidth] || 1200}px`,
+    ...style
+  };
+
+  return (
+    <div className={className} style={containerStyle} {...rest}>
+      {children}
+    </div>
+  );
+  {% elif ui_framework == "carbon" %}
+  const containerStyle: React.CSSProperties = {
+    width: '100%',
+    margin: '0 auto',
+    padding: '0 1rem',
+    boxSizing: 'border-box',
+    ...style
+  };
+
+  return (
+    <div className={className} style={containerStyle} {...rest}>
+      {children}
+    </div>
+  );
+  {% endif %}
+};
+
+Container.displayName = 'Container';
+
+export default Container;

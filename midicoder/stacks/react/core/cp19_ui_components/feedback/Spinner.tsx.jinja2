@@ -1,0 +1,102 @@
+/** Spinner Component - Simple loading spinner with configurable size and color. */
+
+import React from "react";
+
+export interface SpinnerProps {
+  size?: number;
+  color?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning';
+  strokeWidth?: number;
+  className?: string;
+}
+
+export const Spinner: React.FC<SpinnerProps> = ({
+  size = 24,
+  color = 'primary',
+  strokeWidth = 3.2,
+  className = '',
+}) => {
+  {% if ui_framework == "material" %}
+  import { CircularProgress as MuiCircularProgress } from '@mui/material';
+
+  const colorMap: Record<string, 'primary' | 'secondary' | 'error' | 'default'> = {
+    primary: 'primary',
+    secondary: 'default',
+    success: 'secondary',
+    danger: 'error',
+    warning: 'primary',
+  };
+
+  return (
+    <MuiCircularProgress
+      size={size}
+      thickness={strokeWidth}
+      color={colorMap[color]}
+      className={className}
+    />
+  );
+  {% elif ui_framework == "tailwind" %}
+  const colorMap: Record<string, string> = {
+    primary: 'border-t-blue-500',
+    secondary: 'border-t-gray-500',
+    success: 'border-t-green-500',
+    danger: 'border-t-red-500',
+    warning: 'border-t-yellow-500',
+  };
+
+  return (
+    <div
+      className={`border-2 border-gray-200 ${colorMap[color]} rounded-full animate-spin ${className}`}
+      style={% raw %}{{ width: `${size}px`, height: `${size}px` }}{% endraw %}
+      role="status"
+      aria-label="Đang tải"
+    >
+      <span className="sr-only">Đang tải...</span>
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const colorMap: Record<string, string> = {
+    primary: 'text-primary',
+    secondary: 'text-secondary',
+    success: 'text-success',
+    danger: 'text-danger',
+    warning: 'text-warning',
+  };
+
+  return (
+    <div
+      className={`spinner-border ${colorMap[color]} ${clas{% raw %}{{
+        width: `${size / 16}rem`,
+        height: `${size / 16}rem`,
+        borderWidth: `${strokeWidth / 100}em`,
+      }}{% endraw %}h / 100}em`,
+      }}
+      role="status"
+    >
+      <span className="visually-hidden">Đang tải...</span>
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Spin } from 'antd';
+
+  return (
+    <div className={className}>
+      <Spin size={size > 40 ? 'large' : size < 24 ? 'small' : 'default'} />
+    </div>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { ContentLoader } from '@carbon/react';
+
+  retu{% raw %}{{ width: `${size}px`, height: `${size}px` }}{% endraw %}width: `${size}px`, height: `${size}px` }}>
+      <ContentLoader
+        width={size}
+        height={size}
+        speed={2}
+      >
+        <circle cx={size / 2} cy={size / 2} r={size / 3} />
+      </ContentLoader>
+    </div>
+  );
+  {% endif %}
+};
+
+export default Spinner;

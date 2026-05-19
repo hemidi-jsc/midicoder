@@ -1,0 +1,179 @@
+/** Toast Component - Auto-dismissing notifications with stacking support. */
+
+import React from "react";
+
+export type ToastPosition = 'top-right' | 'top-left' | 'top-center' | 'bottom-right' | 'bottom-left' | 'bottom-center';
+export type ToastType = 'success' | 'warning' | 'error' | 'info';
+
+export interface ToastProps {
+  title?: string;
+  message: string;
+  type?: ToastType;
+  position?: ToastPosition;
+  autoDismiss?: boolean;
+  duration?: number;
+  isVisible?: boolean;
+  onDismiss?: () => void;
+  className?: string;
+}
+
+export const Toast: React.FC<ToastProps> = ({
+  title,
+  message,
+  type = 'info',
+  position = 'top-right',
+  autoDismiss = true,
+  duration = 4000,
+  isVisible = false,
+  onDismiss,
+  className = '',
+}) => {
+  {% if ui_framework == "material" %}
+  import { Snackbar, Alert as MuiAlert } from '@mui/material';
+
+  const anchorOriginMap: Record<ToastPosition, { vertical: 'top' | 'bottom'; horizontal: 'left' | 'center' | 'right' }> = {
+    'top-right': { vertical: 'top', horizontal: 'right' },
+    'top-left': { vertical: 'top', horizontal: 'left' },
+    'top-center': { vertical: 'top', horizontal: 'center' },
+    'bottom-right': { vertical: 'bottom', horizontal: 'right' },
+    'bottom-left': { vertical: 'bottom', horizontal: 'left' },
+    'bottom-center': { vertical: 'bottom', horizontal: 'center' },
+  };
+
+  return (
+    <Snackbar
+      open={isVisible}
+      autoHideDuration={autoDismiss ? duration : undefined}
+      onClose={onDismiss}
+      anchorOrigin={anchorOriginMap[position]}
+    >
+      <MuiAlert severity={type} onClose={onDismiss} variant="filled" sx={% raw %}{{ minWidth: 300 }}{% endraw %}>
+        {title && <strong>{title}</strong>}
+        {title && <br />}
+        {message}
+      </MuiAlert>
+    </Snackbar>
+  );
+  {% elif ui_framework == "tailwind" %}
+  if (!isVisible) return null;
+
+  const positionMap: Record<ToastPosition, string> = {
+    'top-right': 'top-4 right-4',
+    'top-left': 'top-4 left-4',
+    'top-center': 'top-4 left-1/2 -translate-x-1/2',
+    'bottom-right': 'bottom-4 right-4',
+    'bottom-left': 'bottom-4 left-4',
+    'bottom-center': 'bottom-4 left-1/2 -translate-x-1/2',
+  };
+
+  const typeStyles: Record<ToastType, string> = {
+    success: 'bg-green-500',
+    warning: 'bg-yellow-500',
+    error: 'bg-red-500',
+    info: 'bg-blue-500',
+  };
+
+  const icons: Record<ToastType, string> = {
+    success: '✓',
+    warning: '⚠',
+    error: '✕',
+    info: 'ℹ',
+  };
+
+  return (
+    <div
+      className={`fixed z-50 ${positionMap[position]} ${className}`}
+      role="alert"
+      aria-live="polite"
+    >
+      <div className={`${typeStyles[type]} text-white px-4 py-3 rounded-lg shadow-lg max-w-sm flex items-start gap-3`}>
+        <span className="flex-shrink-0 mt-0.5">{icons[type]}</span>
+        <div className="flex-1">
+          {title && <div className="font-semibold text-sm">{title}</div>}
+          <div className="text-sm">{message}</div>
+        </div>
+        <button
+          onClick={onDismiss}
+          className="flex-shrink-0 text-white opacity-70 hover:opacity-100"
+        >
+          &times;
+        </button>
+      </div>
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  import { Toast as BsToast } from 'react-bootstrap';
+
+  const positionMap: Record<ToastPosition, string> = {
+    'top-right': 'top-0 end-0',
+    'top-left': 'top-0 start-0',
+    'top-center': 'top-0 start-50 translate-middle-x',
+    'bottom-right': 'bottom-0 end-0',
+    'bottom-left': 'bottom-0 start-0',
+    'bottom-center': 'bottom-0 start-50 translate-middle-x',
+  };
+
+  return (
+    <div className={`fixed z-50 p-3 ${positionMap[position]}`}>
+      <BsToast show={isVisible} delay={duration} autohide={autoDismiss} onClose={onDismiss} style={% raw %}{{ minWidth: 300 }}{% endraw %}>
+        <BsToast.Header closeButton closeLabel="Đóng">
+          <strong className="me-auto">{title || type}</strong>
+        </BsToast.Header>
+        <BsToast.Body>{message}</BsToast.Body>
+      </BsToast>
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  import { notification, type NotificationPlacement } from 'antd';
+
+  React.useEffect(() => {
+    if (isVisible) {
+      const placementMap: Record<ToastPosition, NotificationPlacement> = {
+        'top-right': 'topRight',
+        'top-left': 'topLeft',
+        'top-center': 'top',
+        'bottom-right': 'bottomRight',
+        'bottom-left': 'bottomLeft',
+        'bottom-center': 'bottom',
+      };
+
+      notification[type]({
+        message: title,
+        description: message,
+        placement: placementMap[position],
+        duration: autoDismiss ? duration / 1000 : 0,
+        onClose: onDismiss,
+      });
+    }
+  }, [isVisible]);
+
+  return null;
+  {% elif ui_framework == "carbon" %}
+  import { ToastNotification } from '@carbon/react';
+
+  if (!isVisible) return null;
+
+  const positionStyle: Record<ToastPosition, React.CSSProperties> = {
+    'top-right': { top: '1rem', right: '1rem' },
+    'top-left': { top: '1rem', left: '1rem' },
+    'top-center': { top: '1rem', left: '50%', transform: 'translateX(-50%)' },
+    'bottom-right': { bottom: '1rem', right: '1rem' },
+    'bottom-left': { bottom: '1rem', left: '1rem' },
+    'bottom-center': { bottom: '1rem', left: '50%', transform: 'translateX(-50%)' },
+  };
+
+  return (
+    <ToastNotification
+      kind={type}
+      title={title}
+      caption={message}
+      onClose={onDismiss}
+      closeButtonLabel="Đóng"
+      style={% raw %}{{ position: 'fixed', zIndex: 6000, ...positionStyle[position] }}{% endraw %}
+      className={className}
+    />
+  );
+  {% endif %}
+};
+
+export default Toast;

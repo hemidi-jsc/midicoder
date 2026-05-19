@@ -1,0 +1,155 @@
+{% if ui_framework == "material" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatListModule } from '@angular/material/list';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDividerModule } from '@angular/material/divider';
+import { MatButtonModule } from '@angular/material/button';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatListModule,
+    MatIconModule,
+    MatDividerModule,
+    MatButtonModule
+  ],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: {{ data_interface_name }}[] = [];
+  @Input() type: 'simple' | 'one-line' | 'two-line' | 'three-line' = 'two-line';
+  @Input() withAvatar: boolean = false;
+  @Input() withActions: boolean = false;
+  @Input() clickable: boolean = false;
+  @Input() selected: number | null = null;
+
+  ngOnInit(): void {}
+
+  isSelected(index: number): boolean {
+    return this.selected === index;
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: {{ data_interface_name }}[] = [];
+  @Input() divider: boolean = true;
+  @Input() bullet: boolean = false;
+  @Input() numbered: boolean = false;
+  @Input() clickable: boolean = false;
+  @Input() selected: number | null = null;
+  @Input() hoverEffect: boolean = true;
+
+  ngOnInit(): void {}
+
+  isSelected(index: number): boolean {
+    return this.selected === index;
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: {{ data_interface_name }}[] = [];
+  @Input() flush: boolean = false;
+  @Input() numbered: boolean = false;
+  @Input() horizontal: boolean = false;
+  @Input() action: boolean = false;
+  @Input() selected: number | null = null;
+
+  ngOnInit(): void {}
+
+  isSelected(index: number): boolean {
+    return this.selected === index;
+  }
+}
+{% elif ui_framework == "antd" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: {{ data_interface_name }}[] = [];
+  @Input() bordered: boolean = true;
+  @Input() header: string = '';
+  @Input() footer: string = '';
+  @Input() size: 'default' | 'small' = 'default';
+  @Input() loading: boolean = false;
+  @Input() split: boolean = true;
+  @Input() selected: number | null = null;
+
+  ngOnInit(): void {}
+
+  isSelected(index: number): boolean {
+    return this.selected === index;
+  }
+}
+{% elif ui_framework == "carbon" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: {{ data_interface_name }}[] = [];
+  @Input() selection: 'single' | 'multi' = 'single';
+  @Input() selectedItems: number[] = [];
+  @Input() size: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' = 'md';
+  @Input() divider: boolean = true;
+
+  ngOnInit(): void {}
+
+  isItemSelected(index: number): boolean {
+    return this.selectedItems.includes(index);
+  }
+}
+{% else %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() items: {{ data_interface_name }}[] = [];
+  @Input() divider: boolean = true;
+  @Input() selected: number | null = null;
+
+  ngOnInit(): void {}
+
+  isSelected(index: number): boolean {
+    return this.selected === index;
+  }
+}
+{% endif %}

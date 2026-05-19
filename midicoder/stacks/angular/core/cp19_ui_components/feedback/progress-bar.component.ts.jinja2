@@ -1,0 +1,88 @@
+/** ProgressBar Component - Horizontal progress bar with optional label. */
+
+import { Component, Input, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatProgressBarModule } from "@angular/material/progress-bar";
+{% endif %}
+
+@Component({
+  selector: 'app-progress-bar',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatProgressBarModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-progress-bar
+  mode="{% raw %}{{ mode }}{% endraw %}"
+  [value]="mode === 'indeterminate' ? undefined : value"
+  color="{% raw %}{{ color }}{% endraw %}"
+></mat-progress-bar>
+{% elif ui_framework == "tailwind" %}
+<div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+  <div
+    class="h-full rounded-full transition-all duration-300"
+    [ngClass]="{
+      'bg-blue-600': color === 'primary',
+      'bg-green-600': color === 'accent',
+      'bg-red-600': color === 'warn',
+      'animate-pulse': mode === 'indeterminate',
+    }"
+    [ngStyle]="{
+      'width': mode === 'indeterminate' ? '40%' : (value + '%'),
+    }"
+  ></div>
+</div>
+{% if showLabel %}<div class="text-sm text-gray-500 mt-1">{% raw %}{{ value }}{% endraw %}%</div>{% endif %}
+{% elif ui_framework == "bootstrap" %}
+<div class="progress" role="progressbar" aria-valuenow="{% raw %}{{ value }}{% endraw %}" aria-valuemin="0" aria-valuemax="100">
+  <div
+    [ngClass]="'progress-bar ' + (mode === 'indeterminate' ? 'progress-bar-animated' : '') + ' bg-' + colorName"
+    [style.width.%]="mode === 'indeterminate' ? null : value"
+  >{% if showLabel && mode !== 'indeterminate' %}{% raw %}{{ value }}{% endraw %}%{% endif %}</div>
+</div>
+{% elif ui_framework == "antd" %}
+<ant-progress
+  [ngStyle]="{width: '100%'}"
+  [ngClass]="'ant-progress-line'"
+  [percent]="value"
+  [status]="mode === 'indeterminate' ? 'active' : (value >= 100 ? 'success' : 'normal')"
+  [strokeColor]="colorName"
+></ant-progress>
+{% elif ui_framework == "carbon" %}
+<div class="cds--progress-bar" role="progressbar" aria-valuenow="{% raw %}{{ value }}{% endraw %}" aria-valuemin="0" aria-valuemax="100">
+  {% if showLabel %}<div class="cds--progress-bar__label">{% raw %}{{ value }}{% endraw %}%</div>{% endif %}
+  <div
+    class="cds--progress-bar__inner-track"
+    [ngClass]="{
+      'cds--progress-bar__inner-track--active': mode === 'indeterminate',
+    }"
+    [ngStyle]="{
+      'width': mode === 'indeterminate' ? null : (value + '%'),
+    }"
+  ></div>
+</div>
+{% endif %}
+  `,
+})
+export class ProgressBarComponent implements OnInit {
+  @Input() value: number = 0;
+  @Input() mode: 'determinate' | 'indeterminate' | 'buffer' | 'query' = 'determinate';
+  @Input() color: 'primary' | 'accent' | 'warn' = 'primary';
+  @Input() showLabel: boolean = false;
+
+  ngOnInit() {}
+
+  get colorName(): string {
+    const map: Record<string, string> = {
+      primary: '#0d6efd',
+      accent: '#198754',
+      warn: '#dc3545',
+    };
+    return map[this.color] || '#0d6efd';
+  }
+}

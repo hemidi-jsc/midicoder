@@ -1,0 +1,190 @@
+/** ThemeProvider Component - Application-wide theme configuration and context provider. */
+
+import { Component, Input, OnInit, ViewEncapsulation } from "@angular/core";
+import { CommonModule } from "@angular/common";
+
+@Component({
+  selector: 'app-theme-provider',
+  standalone: true,
+  imports: [CommonModule],
+  encapsulation: ViewEncapsulation.None,
+  template: `
+{% if ui_framework == "material" %}
+<!-- Material: Theme is applied via CSS variables and MCD theme configuration -->
+<style>
+  :root {
+    --mdc-theme-primary: {% raw %}{{ primaryColor }}{% endraw %};
+    --mdc-theme-secondary: {% raw %}{{ secondaryColor }}{% endraw %};
+    --mdc-theme-background: {% raw %}{{ backgroundColor }}{% endraw %};
+    --mdc-theme-surface: {% raw %}{{ surfaceColor }}{% endraw %};
+    --mdc-theme-error: {% raw %}{{ errorColor }}{% endraw %};
+    --mdc-theme-text-primary: {% raw %}{{ textColor }}{% endraw %};
+    --mdc-theme-text-secondary: {% raw %}{{ secondaryTextColor }}{% endraw %};
+    {% if fontFamily %}--mdc-typography-font-family: {% raw %}{{ fontFamily }}{% endraw %};{% endif %}
+  }
+
+  .mat-theme-{% raw %}{{ mode }}{% endraw %} {
+    {% if mode === 'dark' %}
+    --mdc-theme-background: #121212;
+    --mdc-theme-surface: #1e1e1e;
+    --mdc-theme-text-primary: #ffffff;
+    --mdc-theme-text-secondary: #b0b0b0;
+    {% endif %}
+  }
+</style>
+<ng-content></ng-content>
+{% elif ui_framework == "tailwind" %}
+<!-- Tailwind: CSS custom properties for theme configuration -->
+<style>
+  :root {
+    --color-primary-50: {% raw %}{{ primary50 }}{% endraw %};
+    --color-primary-100: {% raw %}{{ primary100 }}{% endraw %};
+    --color-primary-200: {% raw %}{{ primary200 }}{% endraw %};
+    --color-primary-300: {% raw %}{{ primary300 }}{% endraw %};
+    --color-primary-400: {% raw %}{{ primary400 }}{% endraw %};
+    --color-primary-500: {% raw %}{{ primaryColor }}{% endraw %};
+    --color-primary-600: {% raw %}{{ primary600 }}{% endraw %};
+    --color-primary-700: {% raw %}{{ primary700 }}{% endraw %};
+    --color-primary-800: {% raw %}{{ primary800 }}{% endraw %};
+    --color-primary-900: {% raw %}{{ primary900 }}{% endraw %};
+    --color-secondary-500: {% raw %}{{ secondaryColor }}{% endraw %};
+    --color-accent-500: {% raw %}{{ accentColor }}{% endraw %};
+    --color-background: {% raw %}{{ backgroundColor }}{% endraw %};
+    --color-surface: {% raw %}{{ surfaceColor }}{% endraw %};
+    --color-text: {% raw %}{{ textColor }}{% endraw %};
+    --color-text-secondary: {% raw %}{{ secondaryTextColor }}{% endraw %};
+    --color-error: {% raw %}{{ errorColor }}{% endraw %};
+    --color-warning: {% raw %}{{ warningColor }}{% endraw %};
+    --color-success: {% raw %}{{ successColor }}{% endraw %};
+    {% if borderRadius %}--border-radius: {% raw %}{{ borderRadius }}{% endraw %};{% endif %}
+    {% if fontFamily %}--font-family: {% raw %}{{ fontFamily }}{% endraw %};{% endif %}
+  }
+
+  {% if mode === 'dark' %}
+  .dark {
+    --color-background: #0f172a;
+    --color-surface: #1e293b;
+    --color-text: #f8fafc;
+    --color-text-secondary: #94a3b8;
+  }
+  {% endif %}
+</style>
+<body [ngClass]="{'dark': mode === 'dark'}">
+  <ng-content></ng-content>
+</body>
+{% elif ui_framework == "bootstrap" %}
+<!-- Bootstrap: Custom variable overrides -->
+<style>
+  :root, [data-bs-theme="{% raw %}{{ mode }}{% endraw %}"] {
+    --bs-primary: {% raw %}{{ primaryColor }}{% endraw %};
+    --bs-secondary: {% raw %}{{ secondaryColor }}{% endraw %};
+    --bs-success: {% raw %}{{ successColor }}{% endraw %};
+    --bs-danger: {% raw %}{{ errorColor }}{% endraw %};
+    --bs-warning: {% raw %}{{ warningColor }}{% endraw %};
+    --bs-info: {% raw %}{{ accentColor }}{% endraw %};
+    --bs-body-bg: {% raw %}{{ backgroundColor }}{% endraw %};
+    --bs-body-color: {% raw %}{{ textColor }}{% endraw %};
+    {% if borderRadius %}--bs-border-radius: {% raw %}{{ borderRadius }}{% endraw %};{% endif %}
+    {% if fontFamily %}--bs-font-sans-serif: {% raw %}{{ fontFamily }}{% endraw %};{% endif %}
+  }
+</style>
+<div [attr.data-bs-theme]="'{% raw %}{{ mode }}{% endraw %}'">
+  <ng-content></ng-content>
+</div>
+{% elif ui_framework == "antd" %}
+<!-- AntD: Theme token overrides via CSS custom properties -->
+<style>
+  :root {
+    --ant-primary-color: {% raw %}{{ primaryColor }}{% endraw %};
+    --ant-primary-color-hover: {% raw %}{{ primaryHover }}{% endraw %};
+    --ant-primary-color-active: {% raw %}{{ primaryActive }}{% endraw %};
+    --ant-success-color: {% raw %}{{ successColor }}{% endraw %};
+    --ant-error-color: {% raw %}{{ errorColor }}{% endraw %};
+    --ant-warning-color: {% raw %}{{ warningColor }}{% endraw %};
+    --ant-info-color: {% raw %}{{ accentColor }}{% endraw %};
+    --ant-text-color: {% raw %}{{ textColor }}{% endraw %};
+    --ant-text-color-secondary: {% raw %}{{ secondaryTextColor }}{% endraw %};
+    --ant-bg-color-body: {% raw %}{{ backgroundColor }}{% endraw %};
+    --ant-bg-color-container: {% raw %}{{ surfaceColor }}{% endraw %};
+    {% if borderRadius %}--ant-border-radius: {% raw %}{{ borderRadius }}{% endraw %};{% endif %}
+    {% if fontFamily %}--ant-font-family: {% raw %}{{ fontFamily }}{% endraw %};{% endif %}
+  }
+
+  {% if mode === 'dark' %}
+  .ant-theme-dark {
+    --ant-bg-color-body: #001529;
+    --ant-bg-color-container: #000c17;
+    --ant-text-color: rgba(255,255,255,0.85);
+    --ant-text-color-secondary: rgba(255,255,255,0.45);
+  }
+  {% endif %}
+</style>
+<div [ngClass]="{'ant-theme-dark': mode === 'dark'}">
+  <ng-content></ng-content>
+</div>
+{% elif ui_framework == "carbon" %}
+<!-- Carbon: G100-G900 color palette and theme tokens -->
+<style>
+  :root {
+    --cds--brand-01: {% raw %}{{ primaryColor }}{% endraw %};
+    --cds--brand-02: {% raw %}{{ primaryHover }}{% endraw %};
+    --cds--brand-03: {% raw %}{{ primaryActive }}{% endraw %};
+    --cds--interactive-01: {% raw %}{{ primaryColor }}{% endraw %};
+    --cds--interactive-02: {% raw %}{{ secondaryColor }}{% endraw %};
+    --cds--support-01: {% raw %}{{ successColor }}{% endraw %};
+    --cds--support-02: {% raw %}{{ warningColor }}{% endraw %};
+    --cds--support-03: {% raw %}{{ errorColor }}{% endraw %};
+    --cds--text-01: {% raw %}{{ textColor }}{% endraw %};
+    --cds--text-02: {% raw %}{{ secondaryTextColor }}{% endraw %};
+    --cds--background: {% raw %}{{ backgroundColor }}{% endraw %};
+    --cds--layer-01: {% raw %}{{ surfaceColor }}{% endraw %};
+    {% if borderRadius %}--cds--border-radius: {% raw %}{{ borderRadius }}{% endraw %};{% endif %}
+    {% if fontFamily %}--cds--type-01: {% raw %}{{ fontFamily }}{% endraw %};{% endif %}
+  }
+
+  {% if mode === 'dark' %}
+  .cds--g10 {
+    --cds--background: #161616;
+    --cds--layer-01: #262626;
+    --cds--text-01: #f4f4f4;
+    --cds--text-02: #c6c6c6;
+  }
+  {% endif %}
+</style>
+<div>
+  <ng-content></ng-content>
+</div>
+{% endif %}
+  `,
+})
+export class ThemeProviderComponent implements OnInit {
+  @Input() mode: 'light' | 'dark' = 'light';
+  @Input() primaryColor: string = '#3b82f6';
+  @Input() primaryHover: string = '#2563eb';
+  @Input() primaryActive: string = '#1d4ed8';
+  @Input() secondaryColor: string = '#64748b';
+  @Input() accentColor: string = '#8b5cf6';
+  @Input() backgroundColor: string = '#ffffff';
+  @Input() surfaceColor: string = '#f8fafc';
+  @Input() textColor: string = '#1e293b';
+  @Input() secondaryTextColor: string = '#64748b';
+  @Input() errorColor: string = '#ef4444';
+  @Input() warningColor: string = '#f59e0b';
+  @Input() successColor: string = '#22c55e';
+  @Input() fontFamily: string = '';
+  @Input() borderRadius: string = '0.375rem';
+
+  // Tailwind shade palette
+  @Input() primary50: string = '#eff6ff';
+  @Input() primary100: string = '#dbeafe';
+  @Input() primary200: string = '#bfdbfe';
+  @Input() primary300: string = '#93c5fd';
+  @Input() primary400: string = '#60a5fa';
+  @Input() primary500: string = '#3b82f6';
+  @Input() primary600: string = '#2563eb';
+  @Input() primary700: string = '#1d4ed8';
+  @Input() primary800: string = '#1e40af';
+  @Input() primary900: string = '#1e3a8a';
+
+  ngOnInit() {}
+}

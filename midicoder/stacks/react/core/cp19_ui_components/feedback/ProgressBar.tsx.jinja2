@@ -1,0 +1,110 @@
+/** ProgressBar Component - Horizontal progress bar with optional label. */
+
+import React from "react";
+
+export interface ProgressBarProps {
+  value: number;
+  mode?: 'determinate' | 'indeterminate' | 'buffer' | 'query';
+  color?: 'primary' | 'accent' | 'warn';
+  showLabel?: boolean;
+  className?: string;
+}
+
+export const ProgressBar: React.FC<ProgressBarProps> = ({
+  value,
+  mode = 'determinate',
+  color = 'primary',
+  showLabel = false,
+  className = '',
+}) => {
+  {% if ui_framework == "material" %}
+  import { LinearProgress } from '@mui/material';
+
+  const colorMap: Record<string, 'primary' | 'secondary' | 'error'> = {
+    primary: 'primary',
+    accent: 'secondary',
+    warn: 'error',
+  };
+
+  return (
+    <div className={className}>
+      <LinearProgress
+        variant={mode}
+        value={mode === 'determinate' ? value : undefined}
+        color={colorMap[color]}
+      />
+      {showLabel && <span className="text-sm text-gray-500 mt-1">{value}%</span>}
+    </div>
+  );
+  {% elif ui_framework == "tailwind" %}
+  const colorMap: Record<string, string> = {
+    primary: 'bg-blue-600',
+    accent: 'bg-green-600',
+    warn: 'bg-red-600',
+  };
+
+  return (
+    <div className={`w-full ${className}`}>
+      <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-300 ${colorMap[color]} ${mode === 'indeterminate' ? 'animate-pulse' : ''}`}
+          style={% raw %}{{ width: mode === 'indeterminate' ? '40%' : `${value}%` }}{% endraw %}
+        />
+      </div>
+      {showLabel && <div className="text-sm text-gray-500 mt-1">{value}%</div>}
+    </div>
+  );
+  {% elif ui_framework == "bootstrap" %}
+  const colorMap: Record<string, string> = {
+    primary: 'bg-primary',
+    accent: 'bg-success',
+    warn: 'bg-danger',
+  };
+
+  return (
+    <div className={`progress ${className}`} role="progressbar" aria-valuenow={value} aria-valuemin={0} aria-valuemax={100}>
+      <div
+        className={`progress-bar ${mode === 'indeterminate' ? 'progress-bar-animated' : ''} ${colorMap[col{% raw %}{{ width: mode === 'indeterminate' ? undefined : `${value}%` }}{% endraw %}ined : `${value}%` }}
+      >
+        {showLabel && mode !== 'indeterminate' && `${value}%`}
+      </div>
+    </div>
+  );
+  {% elif ui_framework == "antd" %}
+  import { Progress } from 'antd';
+
+  const colorValueMap: Record<string, string> = {
+    primary: '#1890ff',
+    accent: '#52c41a',
+    warn: '#ff4d4f',
+  };
+
+  return (
+    <div className={className}>
+      <Progress
+        percent={value}
+        status={mode === 'indeterminate' ? 'active' : value >= 100 ? 'success' : 'normal'}
+        strokeColor={colorValueMap[color]}
+        showInfo={showLabel}
+      />
+    </div>
+  );
+  {% elif ui_framework == "carbon" %}
+  import { ProgressBar as CarbonProgressBar } from '@carbon/react';
+
+  return (
+    <div className={className}>
+      <CarbonProgressBar
+        label={showLabel ? `${value}%` : ''}
+        value={value}
+        max={100}
+        barOptions={% raw %}{{
+          className: color === 'warn' ? 'cds--progress-bar--error' : color === 'accent' ? 'cds--progress-bar--success' : '',
+        }}{% endraw %}
+      />
+    </div>
+  );
+  {% endif %}
+};
+
+export default ProgressBar;

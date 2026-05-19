@@ -1,0 +1,169 @@
+{% if ui_framework == "material" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+import { MatDividerModule } from '@angular/material/divider';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatCardModule,
+    MatIconModule,
+    MatButtonModule,
+    MatDividerModule
+  ],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() subtitle: string = '';
+  @Input() description: string = '';
+  @Input() imageUrl: string = '';
+  @Input() imageAlt: string = '';
+  @Input() actions: { label: string; icon?: string; action: () => void }[] = [];
+  @Input() variant: 'standard' | 'elevated' | 'outlined' = 'elevated';
+  @Input() appearance: 'fill' | 'outline' = 'fill';
+  @Input() clickable: boolean = false;
+  @Input() disabled: boolean = false;
+
+  ngOnInit(): void {}
+
+  onCardClick(): void {
+    if (this.clickable && !this.disabled) {
+      // emit click event
+    }
+  }
+}
+{% elif ui_framework == "tailwind" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() subtitle: string = '';
+  @Input() description: string = '';
+  @Input() imageUrl: string = '';
+  @Input() imageAlt: string = '';
+  @Input() actions: { label: string; icon?: string; action: () => void }[] = [];
+  @Input() variant: 'default' | 'interactive' | 'plain' = 'default';
+  @Input() horizontal: boolean = false;
+  @Input() bordered: boolean = false;
+
+  ngOnInit(): void {}
+
+  get cardClasses(): string {
+    const classes: string[] = ['rounded-lg'];
+    if (this.variant === 'default') {
+      classes.push('bg-white', 'shadow-md', 'hover:shadow-lg', 'transition-shadow');
+    } else if (this.variant === 'interactive') {
+      classes.push('bg-white', 'shadow-md', 'hover:shadow-lg', 'cursor-pointer', 'transition-all', 'hover:-translate-y-0.5');
+    } else {
+      classes.push('bg-transparent', 'shadow-none');
+    }
+    if (this.bordered) {
+      classes.push('border', 'border-gray-200');
+    }
+    return classes.join(' ');
+  }
+}
+{% elif ui_framework == "bootstrap" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { NgBootstrapModule } from 'ng-bootstrap';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule, NgBootstrapModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() subtitle: string = '';
+  @Input() description: string = '';
+  @Input() imageUrl: string = '';
+  @Input() imageAlt: string = '';
+  @Input() actions: { label: string; icon?: string; action: () => void }[] = [];
+  @Input() variant: 'default' | 'primary' | 'success' | 'danger' | 'warning' | 'info' = 'default';
+  @Input() bordered: boolean = false;
+  @Input() textVariant: 'light' | 'dark' = 'dark';
+
+  ngOnInit(): void {}
+}
+{% elif ui_framework == "antd" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() subtitle: string = '';
+  @Input() description: string = '';
+  @Input() imageUrl: string = '';
+  @Input() imageAlt: string = '';
+  @Input() actions: { label: string; icon?: string; action: () => void }[] = [];
+  @Input() bordered: boolean = true;
+  @Input() hoverable: boolean = false;
+  @Input() size: 'default' | 'small' = 'default';
+  @Input() style: { [key: string]: string } = {};
+
+  ngOnInit(): void {}
+}
+{% elif ui_framework == "carbon" %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() subtitle: string = '';
+  @Input() description: string = '';
+  @Input() imageUrl: string = '';
+  @Input() imageAlt: string = '';
+  @Input() actions: { label: string; icon?: string; action: () => void }[] = [];
+  @Input() size: 'sm' | 'md' | 'lg' | 'xl' | 'xs' = 'md';
+  @Input() fullWidth: boolean = false;
+  @Input() children: string = '';
+
+  ngOnInit(): void {}
+}
+{% else %}import { Component, OnInit, Input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: '{{ selector }}',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './{{ template_file_name }}.html',
+  styleUrls: ['./{{ style_file_name }}.css']
+})
+export class {{ component_class_name }}Component implements OnInit {
+  @Input() title: string = '';
+  @Input() subtitle: string = '';
+  @Input() description: string = '';
+  @Input() imageUrl: string = '';
+  @Input() actions: { label: string; action: () => void }[] = [];
+
+  ngOnInit(): void {}
+}
+{% endif %}

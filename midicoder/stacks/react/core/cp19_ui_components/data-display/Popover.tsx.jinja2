@@ -1,0 +1,486 @@
+{% if ui_framework == "material" %}import React, { useState } from 'react';
+import {
+  Popover as MuiPopover,
+  Typography,
+  Box,
+  IconButton
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface PopoverProps {
+  title?: string;
+  description?: string;
+  trigger?: 'hover' | 'click' | 'focus';
+  position?: 'top' | 'bottom' | 'left' | 'right';
+  hasBackdrop?: boolean;
+  disableClose?: boolean;
+  showDelay?: number;
+  children: React.ReactNode;
+  content?: React.ReactNode;
+  sx?: SxProps<Theme>;
+  className?: string;
+}
+
+function Popover({
+  title,
+  description,
+  trigger = 'click',
+  position = 'bottom',
+  hasBackdrop = true,
+  disableClose = false,
+  showDelay = 0,
+  children,
+  content,
+  sx,
+  className
+}: PopoverProps) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+
+  const isOpen = Boolean(anchorEl);
+
+  const handleClick = (event: React.MouseEvent<HTMLElement>) => {
+    if (trigger === 'click') {
+      setAnchorEl(isOpen ? null : event.currentTarget);
+    }
+  };
+
+  const handleHoverEnter = (event: React.MouseEvent<HTMLElement>) => {
+    if (trigger === 'hover') {
+      if (showDelay > 0) {
+        setTimeout(() => setAnchorEl(event.currentTarget), showDelay);
+      } else {
+        setAnchorEl(event.currentTarget);
+      }
+    }
+  };
+
+  const handleHoverLeave = () => {
+    if (trigger === 'hover') {
+      setAnchorEl(null);
+    }
+  };
+
+  const handleClose = () => {
+    if (!disableClose) {
+      setAnchorEl(null);
+    }
+  };
+
+  const handleFocus = (event: React.FocusEvent<HTMLElement>) => {
+    if (trigger === 'focus') {
+      setAnchorEl(event.currentTarget);
+    }
+  };
+
+  const handleBlur = () => {
+    if (trigger === 'focus') {
+      setAnchorEl(null);
+    }
+  };
+
+  const placement: any = position;
+
+  return (
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleClick}
+        onMouseEnter={handleHoverEnter}
+        onMouseLeave={handleHoverLeave}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        className={className}
+      >
+        {children}
+      </div>
+      <MuiPopover
+        open={isOpen}
+        anchorEl={anchorEl}
+        onClose={handleClose}
+        anchorOrigin={% raw %}{{
+          vertical: position === 'top' ? 'top' : position === 'bottom' ? 'bottom' : 'center',
+          horizontal: position === 'left' ? 'left' : position === 'right' ? 'right' : 'center',
+        }}{% endraw %}
+   {% raw %}{{
+          vertical: position === 'top' ? 'bottom' : position === 'bottom' ? 'top' : 'center',
+          horizontal: position === 'left' ? 'right' : position === 'right' ? 'left' : 'center',
+        }}{% endraw %} 'center',
+    {% raw %}{{
+          sx: { maxHeight: '70vh', maxWidth: 'sm' }
+        }}{% endraw %}eigh{% raw %}{{ p: 2, position: 'relative' }}{% endraw %}    }}
+      >
+        <Box sx={{ p: 2, position: 'relative' }}>
+          {title && (
+            <Typography variant="h6" component="h3" gutterBottom>
+              {title}
+            </Typography>
+          )}
+          {description && (
+            <Typography variant="body2" color="text.secondary">
+             {% raw %}{{ mt: 1 }}{% endraw %}on}
+            </Typography>
+          )}
+          {content && <Box sx={{ mt: 1 }}>{content}</Box>}
+          {!disableClose && ({% raw %}{{ position: 'absolute', top: 8, right: 8 }}{% endraw %}"small"
+              onClick={handleClose}
+              sx={{ position: 'absolute', top: 8, right: 8 }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          )}
+        </Box>
+      </MuiPopover>
+    </>
+  );
+}
+
+export default Popover;
+{% elif ui_framework == "tailwind" %}import React, { useState, useRef, useEffect } from 'react';
+
+interface PopoverProps {
+  title?: string;
+  description?: string;
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  offset?: number;
+  trigger?: 'hover' | 'click' | 'focus';
+  showArrow?: boolean;
+  width?: string;
+  children: React.ReactNode;
+  content?: React.ReactNode;
+  className?: string;
+}
+
+function Popover({
+  title,
+  description,
+  placement = 'bottom',
+  offset = 10,
+  trigger = 'click',
+  showArrow = true,
+  width = 'w-72',
+  children,
+  content,
+  className = ''
+}: PopoverProps) {
+  const [isVisible, setIsVisible] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        if (trigger === 'click') {
+          setIsVisible(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [trigger]);
+
+  const toggle = () => {
+    if (trigger === 'click') {
+      setIsVisible(!isVisible);
+    }
+  };
+
+  const handleMouseEnter = () => {
+    if (trigger === 'hover') {
+      setIsVisible(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (trigger === 'hover') {
+      setIsVisible(false);
+    }
+  };
+
+  const placementClasses: Record<string, string> = {
+    top: 'bottom-full left-1/2 -translate-x-1/2 mb-3',
+    bottom: 'top-full left-1/2 -translate-x-1/2 mt-3',
+    left: 'right-full top-1/2 -translate-y-1/2 mr-3',
+    right: 'left-full top-1/2 -translate-y-1/2 ml-3'
+  };
+
+  const arrowPlacement: Record<string, string> = {
+    top: 'top-0 left-1/2 -translate-x-1/2 translate-y-full',
+    bottom: 'bottom-0 left-1/2 -translate-x-1/2 -translate-y-full',
+    left: 'left-0 top-1/2 -translate-y-1/2 translate-x-full',
+    right: 'right-0 top-1/2 -translate-y-1/2 -translate-x-full'
+  };
+
+  const arrowRotation: Record<string, string> = {
+    top: 'rotate-180',
+    bottom: '',
+    left: 'rotate-90',
+    right: '-rotate-90'
+  };
+
+  return (
+    <div
+      className={`relative inline-block ${className}`}
+      onClick={toggle}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      ref={popoverRef}
+    >
+      {children}
+      {isVisible && (
+        <div
+          className={`absolute z-50 ${placementClasses[placement]} ${width} bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden`}
+          role="dialog"
+        >
+          {showArrow && (
+            <div className={`absolute ${arrowPlacement[placement]} text-white border-gray-200 ${arrowRotation[placement]}`}>
+              <svg width="12" height="6" viewBox="0 0 12 6" fill="white" stroke="gray" strokeWidth="1">
+                <path d="M0 0L6 6L12 0H0Z" />
+              </svg>
+            </div>
+          )}
+          <div className="p-4">
+            {title && <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>}
+            {description && <p className="text-sm text-gray-600">{description}</p>}
+            {content && <div className="mt-3">{content}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Popover;
+{% elif ui_framework == "bootstrap" %}import React, { useState } from 'react';
+
+interface PopoverProps {
+  title?: string;
+  content?: string;
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  triggers?: string;
+  delay?: { show: number; hide: number };
+  autoClose?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}
+
+function Popover({
+  title,
+  content,
+  placement = 'bottom',
+  triggers = 'click',
+  delay = { show: 0, hide: 0 },
+  autoClose = true,
+  children,
+  className = ''
+}: PopoverProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const toggle = () => {
+    setIsOpen(!isOpen);
+  };
+
+  const placementClasses: Record<string, string> = {
+    top: 'bottom-100 left-50 translate-x--50 mb-3',
+    bottom: 'top-100 left-50 translate-x--50 mt-3',
+    left: 'right-100 top-50 translate-y--50 mr-3',
+    right: 'left-100 top-50 translate-y--50 ml-3'
+  };
+
+  return (
+    <div className={`position-relative d-inline-block ${className}`}>
+      <div onClick={toggle}>{children}</div>
+      {isOpen && (
+        <div
+          className={`position-absolute ${placementClasses[placement]} start-50 translate-middle-x w-auto min-w-[200px] max-w-[280px] bg-white border rounded shadow-lg`}
+          role="tooltip"
+        >
+          {title && (
+            <div className="px-4 py-2 border-bottom bg-light fw-bold">{title}</div>
+          )}
+          {content && (
+            <div className="px-4 py-3 text-sm">{content}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Popover;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { Popover as AntdPopover, Typography } from 'antd';
+import type { PopoverProps as AntdPopoverProps } from 'antd/es/popover';
+
+interface PopoverProps {
+  title?: React.ReactNode;
+  content?: React.ReactNode;
+  placement?: AntdPopoverProps['placement'];
+  trigger?: AntdPopoverProps['trigger'];
+  arrowPointAtCenter?: boolean;
+  mouseEnterDelay?: number;
+  mouseLeaveDelay?: number;
+  children: React.ReactNode;
+  className?: string;
+}
+
+function Popover({
+  title,
+  content,
+  placement = 'bottom',
+  trigger = 'hover',
+  arrowPointAtCenter = false,
+  mouseEnterDelay = 0.1,
+  mouseLeaveDelay = 0.1,
+  children,
+  className
+}: PopoverProps) {
+  return (
+    <AntdPopover
+      title={title}
+      content={content}
+      placement={placement}
+      trigger={trigger}
+      arrowPointAtCenter={arrowPointAtCenter}
+      mouseEnterDelay={mouseEnterDelay}
+      mouseLeaveDelay={mouseLeaveDelay}
+      className={className}
+    >
+      {children}
+    </AntdPopover>
+  );
+}
+
+export default Popover;
+{% elif ui_framework == "carbon" %}import React, { useState, useRef, useEffect } from 'react';
+
+interface PopoverProps {
+  label?: string;
+  description?: string;
+  align?: 'top' | 'right' | 'bottom' | 'left';
+  dropShadow?: boolean;
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  triggerAction?: 'click' | 'enter' | 'hover';
+  children: React.ReactNode;
+  content?: React.ReactNode;
+  className?: string;
+}
+
+function Popover({
+  label,
+  description,
+  align = 'bottom',
+  dropShadow = true,
+  size = 'sm',
+  triggerAction = 'click',
+  children,
+  content,
+  className = ''
+}: PopoverProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggle = () => {
+    setIsOpen(!isOpen);
+  };
+
+  const sizeClasses: Record<string, string> = {
+    sm: 'w-64',
+    md: 'w-80',
+    lg: 'w-96',
+    xl: 'w-[28rem]',
+    '2xl': 'w-[32rem]'
+  };
+
+  const alignClasses: Record<string, string> = {
+    top: 'bottom-full left-1/2 -translate-x-1/2 mb-3',
+    right: 'left-full top-0 ml-3',
+    bottom: 'top-full left-1/2 -translate-x-1/2 mt-3',
+    left: 'right-full top-0 mr-3'
+  };
+
+  return (
+    <div
+      className={`relative inline-block ${className}`}
+      onClick={toggle}
+      onMouseEnter={() => triggerAction === 'hover' && setIsOpen(true)}
+      onMouseLeave={() => triggerAction === 'hover' && setIsOpen(false)}
+      ref={popoverRef}
+    >
+      {children}
+      {isOpen && (
+        <div
+          className={`absolute z-50 ${alignClasses[align]} ${sizeClasses[size]} bg-white rounded border border-gray-200 ${dropShadow ? 'shadow-lg' : ''}`}
+          role="dialog"
+        >
+          <div className="p-4">
+            {label && <h3 className="text-base font-semibold cds--title">{label}</h3>}
+            {description && <p className="text-sm text-gray-600 mt-1">{description}</p>}
+            {content && <div className="mt-3">{content}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Popover;
+{% else %}import React, { useState } from 'react';
+
+interface PopoverProps {
+  title?: string;
+  content?: string;
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  trigger?: 'hover' | 'click';
+  children: React.ReactNode;
+  className?: string;
+}
+
+function Popover({
+  title,
+  content,
+  placement = 'bottom',
+  trigger = 'click',
+  children,
+  className = ''
+}: PopoverProps) {
+  const [visible, setVisible] = useState(false);
+
+  const toggle = () => {
+    if (trigger === 'click') {
+      setVisible(!visible);
+    }
+  };
+
+  return (
+    <div
+      className={`relative inline-block ${className}`}
+      onClick={toggle}
+      onMouseEnter={() => trigger === 'hover' && setVisible(true)}
+      onMouseLeave={() => trigger === 'hover' && setVisible(false)}
+    >
+      {children}
+      {visible && (
+        <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-white border rounded shadow-lg p-4">
+          {title && <h3 className="font-semibold mb-2">{title}</h3>}
+          {content && <p className="text-sm">{content}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Popover;
+{% endif %}

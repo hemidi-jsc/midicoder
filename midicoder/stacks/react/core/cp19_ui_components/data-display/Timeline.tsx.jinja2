@@ -1,0 +1,439 @@
+{% if ui_framework == "material" %}import React from 'react';
+import {
+  Stepper,
+  Step,
+  StepLabel,
+  StepContent,
+  StepConnector,
+  stepConnectorClasses,
+  Box,
+  Stack,
+  Typography
+} from '@mui/material';
+import { styled } from '@mui/material/styles';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+interface TimelineEvent {
+  title: string;
+  date: string | Date;
+  description?: string;
+  status?: 'in-progress' | 'completed' | 'pending';
+  icon?: React.ReactNode;
+}
+
+interface TimelineProps {
+  events: TimelineEvent[];
+  mode?: 'standard' | 'dense';
+  alternativeLabel?: boolean;
+  sx?: SxProps<Theme>;
+  className?: string;
+}
+
+const QstepperConnector = styled(StepConnector)(({ theme }) => ({
+  [`&.${stepConnectorClasses.alternativeLabel}`]: {
+    marginLeft: 12,
+  },
+  [`&.${stepConnectorClasses.active}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      borderColor: theme.palette.primary.main,
+    },
+  },
+  [`&.${stepConnectorClasses.completed}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      borderColor: theme.palette.primary.main,
+    },
+  },
+  [`& .${stepConnectorClasses.line}`]: {
+    borderColor:
+      theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[300],
+    borderWidth: 3,
+  },
+}));
+
+function getStatusColor(status?: string): string {
+  switch (status) {
+    case 'in-progress': return '#2196f3';
+    case 'completed': return '#4caf50';
+    case 'pending': return '#ff9800';
+    default: return '#757575';
+  }
+}
+
+function formatDate(date: string | Date): string {
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+function Timeline({
+  events,
+  mode = 'standard',
+  alternativeLabel = false,
+  sx,
+  className
+}: TimelineProps) {
+  const activeStep = events.findIndex((e) => e.status === 'in-progress');
+  const completedSteps = events.filter((e) => e.status === 'completed').length;
+
+  return (
+    <Stack sx={sx} className={className} spacing={mode === 'dense' ? 0 : 2}>
+      <Stepper
+        activeStep={activeStep >= 0 ? activeStep : completedSteps}
+        alternativeLabel={alternativeLabel}
+        connector={<QstepperConnector />}
+      >
+        {events.map((event, index) => {
+          const stepStatus = event.status === 'completed'
+            ? 'completed'
+            : event.status === 'in-progress'
+              ? 'active'
+              : 'waiting';
+
+          return (
+            <Step key={index} completed={stepStatus === 'completed'}>
+              <StepLabel
+                error={stepStatus === 'error'}
+                optional={
+                  <Typography variant="caption" color="text.secondary">
+                    {formatDate(event.date)}
+                  </Typography>
+                }
+              >
+                {event.title}
+              </StepLabel>
+              {event.description && (
+                <StepContent>
+                  <Typography>{event.description}</Typography>
+                </StepContent>
+              )}
+            </Step>
+          );
+        })}
+      </Stepper>
+    </Stack>
+  );
+}
+
+export default Timeline;
+{% elif ui_framework == "tailwind" %}import React from 'react';
+
+interface TimelineEvent {
+  title: string;
+  date: string | Date;
+  description?: string;
+  status?: 'in-progress' | 'completed' | 'pending';
+  icon?: React.ReactNode;
+}
+
+interface TimelineProps {
+  events: TimelineEvent[];
+  variant?: 'default' | 'alternate';
+  direction?: 'left' | 'right';
+  hideDates?: boolean;
+  className?: string;
+}
+
+function getStatusClasses(status?: string): string {
+  switch (status) {
+    case 'in-progress': return 'bg-blue-500 ring-blue-100';
+    case 'completed': return 'bg-green-500 ring-green-100';
+    case 'pending': return 'bg-yellow-500 ring-yellow-100';
+    default: return 'bg-gray-500 ring-gray-100';
+  }
+}
+
+function formatDate(date: string | Date): string {
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+function Timeline({
+  events,
+  variant = 'default',
+  direction = 'left',
+  hideDates = false,
+  className = ''
+}: TimelineProps) {
+  return (
+    <div className={`relative ${className}`}>
+      <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
+      {events.map((event, index) => {
+        const isAlternate = variant === 'alternate' && index % 2 === 1;
+        return (
+          <div
+            key={index}
+            className={`relative flex items-start mb-6 last:mb-0 ${
+              isAlternate ? 'flex-row-reverse' : ''
+            }`}
+          >
+            <div className="absolute left-4 -translate-x-1/2 z-10">
+              <div
+                className={`w-3 h-3 rounded-full ring-4 ${getStatusClasses(event.status)}`}
+              />
+            </div>
+            <div
+              className={`ml-12 ${isAlternate ? 'text-right ml-0 mr-12' : ''}`}
+            >
+              <div className="bg-white rounded-lg shadow-sm p-4 inline-block">
+                {event.icon && (
+                  <span className={`mb-2 block ${isAlternate ? 'float-right' : ''}`}>
+                    {event.icon}
+                  </span>
+                )}
+                <h4 className="text-sm font-semibold text-gray-900">{event.title}</h4>
+                {!hideDates && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {formatDate(event.date)}
+                  </p>
+                )}
+                {event.description && (
+                  <p className="text-sm text-gray-600 mt-2">{event.description}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export default Timeline;
+{% elif ui_framework == "bootstrap" %}import React from 'react';
+
+interface TimelineEvent {
+  title: string;
+  date: string | Date;
+  description?: string;
+  status?: 'in-progress' | 'completed' | 'pending';
+  icon?: React.ReactNode;
+}
+
+interface TimelineProps {
+  events: TimelineEvent[];
+  alternate?: boolean;
+  className?: string;
+}
+
+function getStatusBadge(status?: string): string {
+  switch (status) {
+    case 'in-progress': return 'bg-primary';
+    case 'completed': return 'bg-success';
+    case 'pending': return 'bg-warning';
+    default: return 'bg-secondary';
+  }
+}
+
+function formatDate(date: string | Date): string {
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+function Timeline({
+  events,
+  alternate = false,
+  className = ''
+}: TimelineProps) {
+  return (
+    <ul className={`list-unstyled timeline ${className}`}>
+      {events.map((event, index) => (
+        <li key={index} className="mb-4 ps-4 border-start border-2 border-light">
+          <div className="d-flex align-items-start">
+            <span
+              className={`position-absolute start--8 translate-middle-x rounded-circle ${getStatusBadge(event.status)} d-flex align-items-center justify-content-center`}
+              style={% raw %}{{ width: '1.5rem', height: '1.5rem', left: '-0.75rem' }}{% endraw %}
+            />
+            <div className="ms-3">
+              {event.icon && <span className="mb-1 d-inline-block">{event.icon}</span>}
+              <h6 className="mb-1 fw-bold">{event.title}</h6>
+              <small className="text-muted d-block">{formatDate(event.date)}</small>
+              {event.description && <p className="mb-0 text-muted small">{event.description}</p>}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export default Timeline;
+{% elif ui_framework == "antd" %}import React from 'react';
+import { Timeline as AntdTimeline, Typography } from 'antd';
+
+interface TimelineEvent {
+  title: string;
+  date: string | Date;
+  description?: string;
+  status?: 'in-progress' | 'finished' | 'error' | 'default';
+  icon?: React.ReactNode;
+}
+
+interface TimelineProps {
+  events: TimelineEvent[];
+  pending?: boolean;
+  reverse?: boolean;
+  mode?: 'default' | 'clear';
+  className?: string;
+}
+
+function formatDate(date: string | Date): string {
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+function Timeline({
+  events,
+  pending = false,
+  reverse = false,
+  mode = 'default',
+  className
+}: TimelineProps) {
+  const pendingDot = pending ? <span className="ant-timeline-dot">⋯</span> : undefined;
+
+  return (
+    <AntdTimeline
+      mode={mode}
+      reverse={reverse}
+      pending={pending}
+      pendingDot={pendingDot}
+      className={className}
+    >
+      {events.map((event, index) => (
+        <AntdTimeline.Item
+          key={index}
+          color={
+            event.status === 'finished' ? 'green'
+              : event.status === 'in-progress' ? 'blue'
+              : event.status === 'error' ? 'red'
+              : 'gray'
+          }
+          dot={event.icon}
+        >
+          <Typography.Text strong>{event.title}</Typography.Text>
+          <Typography.Text className="d-block" type="secondary">
+            {formatDate(event.date)}
+          </Typography.Text>
+          {event.description && <p className="mb-0">{event.description}</p>}
+        </AntdTimeline.Item>
+      ))}
+    </AntdTimeline>
+  );
+}
+
+export default Timeline;
+{% elif ui_framework == "carbon" %}import React from 'react';
+
+interface TimelineEvent {
+  title: string;
+  date: string | Date;
+  description?: string;
+  status?: 'in-progress' | 'completed' | 'pending';
+  icon?: React.ReactNode;
+}
+
+interface TimelineProps {
+  events: TimelineEvent[];
+  size?: 'sm' | 'md';
+  className?: string;
+}
+
+function getStatusColor(status?: string): string {
+  switch (status) {
+    case 'in-progress': return '#0f62fe';
+    case 'completed': return '#198038';
+    case 'pending': return '#d69e2e';
+    default: return '#8d8d8d';
+  }
+}
+
+function formatDate(date: string | Date): string {
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+function Timeline({
+  events,
+  size = 'md',
+  className = ''
+}: TimelineProps) {
+  const dotSize = size === 'sm' ? 'w-2 h-2' : 'w-3 h-3';
+
+  return (
+    <div className={`cds-timeline ${className}`}>
+      {events.map((event, index) => (
+        <div
+          key={index}
+          className={`relative pl-8 pb-6 last:pb-0 before:absolute before:left-2 before:top-2 before:w-px before:h-full before:bg-gray-200`}
+        >
+          <div
+            className={`absolute left-0 top-1 ${dotSize} rounded-full{% raw %}{{ backgroundColor: getStatusColor(event.status) }}{% endraw %}olor(event.status) }}
+          />
+          <div>
+            {event.icon && <span className="mb-1 inline-block">{event.icon}</span>}
+            <h4 className="text-sm font-semibold cds--title">{event.title}</h4>
+            <p className="text-xs text-gray-500 cds--label">{formatDate(event.date)}</p>
+            {event.description && (
+              <p className="text-sm text-gray-600 mt-1">{event.description}</p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default Timeline;
+{% else %}import React from 'react';
+
+interface TimelineEvent {
+  title: string;
+  date: string | Date;
+  description?: string;
+}
+
+interface TimelineProps {
+  events: TimelineEvent[];
+  className?: string;
+}
+
+function formatDate(date: string | Date): string {
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+function Timeline({
+  events,
+  className = ''
+}: TimelineProps) {
+  return (
+    <div className={`border-l-2 border-gray-200 pl-4 ${className}`}>
+      {events.map((event, index) => (
+        <div key={index} className="mb-4 last:mb-0">
+          <h4 className="font-semibold">{event.title}</h4>
+          <p className="text-sm text-gray-500">{formatDate(event.date)}</p>
+          {event.description && <p className="text-sm mt-1">{event.description}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default Timeline;
+{% endif %}

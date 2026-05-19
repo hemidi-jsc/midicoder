@@ -1,0 +1,135 @@
+/** ExpansionPanel Component - Single expandable panel with header and content. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatExpansionModule } from "@angular/material/expansion";
+{% endif %}
+
+@Component({
+  selector: 'app-expansion-panel',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatExpansionModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<mat-expansion-panel
+  [expanded]="isExpanded"
+  [disabled]="isDisabled"
+  [hideToggle]="hideToggle"
+  [accordion]="parentAccordion"
+  (expandedChange)="onToggle($event)"
+>
+  <mat-expansion-panel-header>
+    <mat-panel-title>{% raw %}{{ title }}{% endraw %}</mat-panel-title>
+    <mat-panel-description *ngIf="description">{% raw %}{{ description }}{% endraw %}</mat-panel-description>
+  </mat-expansion-panel-header>
+  <ng-content></ng-content>
+  <div *ngIf="!hasContent()" class="expansion-panel-content">{% raw %}{{ content }}{% endraw %}</div>
+</mat-expansion-panel>
+{% elif ui_framework == "tailwind" %}
+<div class="border border-gray-200 rounded-lg overflow-hidden">
+  <button
+    (click)="!isDisabled && onToggle(!isExpanded)"
+    [ngClass]="{
+      'bg-gray-50': isExpanded,
+      'opacity-50 cursor-not-allowed': isDisabled,
+    }"
+    class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+    [attr.aria-expanded]="isExpanded"
+  >
+    <div class="flex flex-col items-start">
+      <span class="font-medium text-gray-900">{% raw %}{{ title }}{% endraw %}</span>
+      <span *ngIf="description" class="text-sm text-gray-500">{% raw %}{{ description }}{% endraw %}</span>
+    </div>
+    <span *ngIf="!hideToggle" [ngClass]="{'rotate-180': isExpanded}" class="transition-transform text-gray-500">▼</span>
+  </button>
+  <div *ngIf="isExpanded" class="px-4 py-3 bg-white border-t border-gray-100">
+    <ng-content></ng-content>
+    <p *ngIf="!hasContent()" class="text-gray-600">{% raw %}{{ content }}{% endraw %}</p>
+  </div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div class="accordion-item">
+  <h2 class="accordion-header">
+    <button
+      [ngClass]="{'accordion-button': true, 'collapsed': !isExpanded}"
+      type="button"
+      (click)="!isDisabled && onToggle(!isExpanded)"
+      [attr.aria-expanded]="isExpanded"
+      [disabled]="isDisabled"
+    >
+      {% raw %}{{ title }}{% endraw %}
+    </button>
+  </h2>
+  <div [ngClass]="{'collapse': true, 'show': isExpanded}">
+    <div class="accordion-body">
+      <ng-content></ng-content>
+      <p *ngIf="!hasContent()">{% raw %}{{ content }}{% endraw %}</p>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "antd" %}
+<div class="ant-collapse ant-collapse-borderless">
+  <div class="ant-collapse-item" [ngClass]="{'ant-collapse-item-disabled': isDisabled}">
+    <div
+      class="ant-collapse-header"
+      [ngClass]="{'ant-collapse-header-active': isExpanded}"
+      (click)="!isDisabled && onToggle(!isExpanded)"
+    >
+      <span *ngIf="!hideToggle" class="ant-collapse-arrow"></span>
+      <span>{% raw %}{{ title }}{% endraw %}</span>
+      <span *ngIf="description" class="ant-collapse-subtitle">{% raw %}{{ description }}{% endraw %}</span>
+    </div>
+    <div *ngIf="isExpanded" class="ant-collapse-content ant-collapse-content-active">
+      <div class="ant-collapse-content-box">
+        <ng-content></ng-content>
+        <p *ngIf="!hasContent()">{% raw %}{{ content }}{% endraw %}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div class="cds--accordion__item">
+  <button
+    class="cds--accordion__heading"
+    [attr.aria-expanded]="isExpanded"
+    (click)="!isDisabled && onToggle(!isExpanded)"
+    [disabled]="isDisabled"
+  >
+    <span class="cds--accordion__icon" [attr.aria-hidden]="'true'"></span>
+    {% raw %}{{ title }}{% endraw %}
+  </button>
+  <div *ngIf="isExpanded" class="cds--accordion__content">
+    <ng-content></ng-content>
+    <p *ngIf="!hasContent()">{% raw %}{{ content }}{% endraw %}</p>
+  </div>
+</div>
+{% endif %}
+  `,
+})
+export class ExpansionPanelComponent implements OnInit {
+  @Input() title: string = '';
+  @Input() description: string = '';
+  @Input() content: string = '';
+  @Input() isExpanded: boolean = false;
+  @Input() isDisabled: boolean = false;
+  @Input() hideToggle: boolean = false;
+  @Input() parentAccordion: any = null;
+  @Output() toggle = new EventEmitter<boolean>();
+
+  ngOnInit() {}
+
+  hasContent(): boolean {
+    return false;
+  }
+
+  onToggle(expanded: boolean) {
+    this.isExpanded = expanded;
+    this.toggle.emit(expanded);
+  }
+}

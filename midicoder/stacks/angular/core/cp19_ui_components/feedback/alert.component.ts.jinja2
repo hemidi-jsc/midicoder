@@ -1,0 +1,91 @@
+/** Alert Component - Displayable alert messages with severity levels. */
+
+import { Component, Input, Output, EventEmitter, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == "material" %}
+import { MatIconModule } from "@angular/material/icon";
+{% endif %}
+
+export type AlertSeverity = 'success' | 'warning' | 'error' | 'info';
+
+@Component({
+  selector: 'app-alert',
+  standalone: true,
+  imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatIconModule,
+    {% endif %}
+  ],
+  template: `
+{% if ui_framework == "material" %}
+<div class="mat-alert mat-alert-{% raw %}{{ severity }}{% endraw %}" role="alert" *ngIf="isVisible">
+  <mat-icon *ngIf="severity === 'success'">check_circle</mat-icon>
+  <mat-icon *ngIf="severity === 'warning'">warning</mat-icon>
+  <mat-icon *ngIf="severity === 'error'">error</mat-icon>
+  <mat-icon *ngIf="severity === 'info'">info</mat-icon>
+  <span class="mat-alert-message">{% raw %}{{ message }}{% endraw %}</span>
+  <mat-icon *ngIf="dismissible" class="mat-alert-close" (click)="onDismiss()">close</mat-icon>
+</div>
+{% elif ui_framework == "tailwind" %}
+<div *ngIf="isVisible" role="alert" [ngClass]="{
+  'bg-green-50 border-green-200 text-green-800': severity === 'success',
+  'bg-yellow-50 border-yellow-200 text-yellow-800': severity === 'warning',
+  'bg-red-50 border-red-200 text-red-800': severity === 'error',
+  'bg-blue-50 border-blue-200 text-blue-800': severity === 'info'
+}" class="border rounded-lg px-4 py-3 flex items-start gap-3">
+  <span class="flex-shrink-0 mt-0.5">
+    <span *ngIf="severity === 'success'">✓</span>
+    <span *ngIf="severity === 'warning'">⚠</span>
+    <span *ngIf="severity === 'error'">✕</span>
+    <span *ngIf="severity === 'info'">ℹ</span>
+  </span>
+  <span class="flex-1 text-sm">{% raw %}{{ message }}{% endraw %}</span>
+  <button *ngIf="dismissible" (click)="onDismiss()" class="flex-shrink-0 ml-2 text-current opacity-60 hover:opacity-100">&times;</button>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div *ngIf="isVisible" [ngClass]="'alert alert-' + severity + ' alert-dismissible'" role="alert">
+  {% raw %}{{ message }}{% endraw %}
+  <button *ngIf="dismissible" type="button" class="btn-close" (click)="onDismiss()"></button>
+</div>
+{% elif ui_framework == "antd" %}
+<div *ngIf="isVisible" [ngClass]="'ant-alert ant-alert-' + severity" role="alert">
+  <span class="ant-alert-icon" *ngIf="severity === 'success'">✓</span>
+  <span class="ant-alert-icon" *ngIf="severity === 'warning'">⚠</span>
+  <span class="ant-alert-icon" *ngIf="severity === 'error'">✕</span>
+  <span class="ant-alert-icon" *ngIf="severity === 'info'">ℹ</span>
+  <span class="ant-alert-message">{% raw %}{{ message }}{% endraw %}</span>
+  <span *ngIf="dismissible" class="ant-alert-close-icon" (click)="onDismiss()">&times;</span>
+</div>
+{% elif ui_framework == "carbon" %}
+<div *ngIf="isVisible" [ngClass]="'cds--notification cds--inline-notification cds--inline-notification--' + severity" role="alert">
+  <div class="cds--inline-notification__icon">
+    <span *ngIf="severity === 'success'">✓</span>
+    <span *ngIf="severity === 'warning'">⚠</span>
+    <span *ngIf="severity === 'error'">✕</span>
+    <span *ngIf="severity === 'info'">ℹ</span>
+  </div>
+  <div class="cds--inline-notification__content">
+    <span class="cds--inline-notification__text">{% raw %}{{ message }}{% endraw %}</span>
+  </div>
+  <button *ngIf="dismissible" class="cds--btn cds--btn--ghost cds--inline-notification__close-button" (click)="onDismiss()">
+    <span class="cds--inline-notification__close-icon">&times;</span>
+  </button>
+</div>
+{% endif %}
+  `,
+})
+export class AlertComponent implements OnInit {
+  @Input() message: string = '';
+  @Input() severity: AlertSeverity = 'info';
+  @Input() dismissible: boolean = true;
+  @Input() isVisible: boolean = true;
+  @Output() dismissed = new EventEmitter<void>();
+
+  ngOnInit() {}
+
+  onDismiss() {
+    this.isVisible = false;
+    this.dismissed.emit();
+  }
+}

@@ -1,0 +1,211 @@
+/* eslint-disable */
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+{% if ui_framework == "material" %}
+import Breadcrumbs from '@mui/material/Breadcrumbs';
+import Typography from '@mui/material/Typography';
+import Link from '@mui/material/Link';
+import HomeIcon from '@mui/icons-material/Home';
+{% elif ui_framework == "antd" %}
+import { Breadcrumb } from 'antd';
+import { HomeOutlined } from '@ant-design/icons';
+{% elif ui_framework == "carbon" %}
+import { Breadcrumb, BreadcrumbItem } from '@carbon/react';
+{% endif %}
+
+export interface BreadcrumbItem {
+  label: string;
+  href?: string;
+}
+
+export interface BreadcrumbsProps {
+  items?: BreadcrumbItem[];
+  separator?: React.ReactNode;
+  showHome?: boolean;
+  homeHref?: string;
+  onHomeClick?: () => void;
+  onItemClick?: (item: BreadcrumbItem) => void;
+}
+
+const BreadcrumbsComponent: React.FC<BreadcrumbsProps> = ({
+  items = [],
+  separator = '/',
+  showHome = true,
+  homeHref = '/',
+  onHomeClick,
+  onItemClick,
+}) => {
+  const allItems = showHome
+    ? [{ label: 'Home', href: homeHref }, ...items]
+    : items;
+
+  const handleItemClick = (item: BreadcrumbItem) => {
+    onItemClick?.(item);
+  };
+
+  const handleHomeClick = () => {
+    onHomeClick?.();
+  };
+
+{% if ui_framework == "material" %}
+  return (
+    <nav aria-label="breadcrumb">
+      <Breadcrumbs separator={separator}>
+        {showHome && (
+          <Link
+            underline="hover"
+            color="inherit"
+            href={homeHref}
+            onClick={handleHomeClick}
+            sx={% raw %}{{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}{% endraw %}
+          >
+            <HomeIcon sx={% raw %}{{ mr: 0.5 }}{% endraw %} fontSize="small" />
+            Home
+          </Link>
+        )}
+        {allItems.map((item, index) => {
+          const isLast = index === allItems.length - 1;
+          return isLast ? (
+            <Typography key={item.label} color="text.primary">
+              {item.label}
+            </Typography>
+          ) : (
+            <Link
+              key={item.label}
+              underline="hover"
+              color="inherit"
+              href={item.href}
+              onClick={() => handleItemClick(item)}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </Breadcrumbs>
+    </nav>
+  );
+{% elif ui_framework == "tailwind" %}
+  return (
+    <nav className="flex" aria-label="Breadcrumb">
+      <ol className="flex items-center space-x-2">
+        {showHome && (
+          <li>
+            <div>
+              <a
+                href={homeHref}
+                onClick={handleHomeClick}
+                className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 cursor-pointer"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+                </svg>
+                <span className="sr-only">Home</span>
+              </a>
+            </div>
+          </li>
+        )}
+        {allItems.map((item, index) => {
+          const isLast = index === allItems.length - 1;
+          return (
+            <li key={item.label}>
+              <div className="flex items-center">
+                <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                </svg>
+                {isLast ? (
+                  <span className="ml-2 text-sm font-medium text-gray-900">
+                    {item.label}
+                  </span>
+                ) : (
+                  <a
+                    href={item.href}
+                    onClick={() => handleItemClick(item)}
+                    className="ml-2 text-sm font-medium text-gray-500 hover:text-gray-700"
+                  >
+                    {item.label}
+                  </a>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+{% elif ui_framework == "bootstrap" %}
+  return (
+    <nav aria-label="breadcrumb">
+      <ol className="breadcrumb">
+        {showHome && (
+          <li className="breadcrumb-item">
+            <a href={homeHref} onClick={handleHomeClick}>Home</a>
+          </li>
+        )}
+        {allItems.map((item, index) => {
+          const isLast = index === allItems.length - 1;
+          return (
+            <li
+              key={item.label}
+              className={`breadcrumb-item ${isLast ? 'active' : ''}`}
+              aria-current={isLast ? 'page' : undefined}
+            >
+              {isLast ? (
+                item.label
+              ) : (
+                <a href={item.href} onClick={() => handleItemClick(item)}>
+                  {item.label}
+                </a>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+{% elif ui_framework == "antd" %}
+  return (
+    <Breadcrumb separator={separator}>
+      {showHome && (
+        <Breadcrumb.Item href={homeHref} onClick={handleHomeClick}>
+          <HomeOutlined />
+        </Breadcrumb.Item>
+      )}
+      {allItems.map((item, index) => {
+        const isLast = index === allItems.length - 1;
+        return isLast ? (
+          <Breadcrumb.Item key={item.label}>{item.label}</Breadcrumb.Item>
+        ) : (
+          <Breadcrumb.Item key={item.label} href={item.href} onClick={() => handleItemClick(item)}>
+            {item.label}
+          </Breadcrumb.Item>
+        );
+      })}
+    </Breadcrumb>
+  );
+{% elif ui_framework == "carbon" %}
+  return (
+    <Breadcrumb>
+      {showHome && (
+        <BreadcrumbItem href={homeHref} onClick={handleHomeClick}>
+          Home
+        </BreadcrumbItem>
+      )}
+      {allItems.map((item, index) => {
+        const isLast = index === allItems.length - 1;
+        return isLast ? (
+          <BreadcrumbItem key={item.label} isCurrentPage>
+            {item.label}
+          </BreadcrumbItem>
+        ) : (
+          <BreadcrumbItem key={item.label} href={item.href} onClick={() => handleItemClick(item)}>
+            {item.label}
+          </BreadcrumbItem>
+        );
+      })}
+    </Breadcrumb>
+  );
+{% endif %}
+};
+
+export default BreadcrumbsComponent;
