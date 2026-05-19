@@ -57,7 +57,7 @@ _COMPONENT_TEMPLATE_MAP: dict[ComponentType, tuple[str | None, str, str]] = {
     # ── Data Display ────────────────────────────────────────────
     ComponentType.DATA_TABLE:       ("data-display", "data-table.component.ts.jinja2",       "data-table.component.ts"),
     ComponentType.CARD:             ("data-display", "card.component.ts.jinja2",             "card.component.ts"),
-    ComponentType.CARD_LIST:        (None,           "card-list.component.ts.jinja2",        "card-list.component.ts"),  # legacy root
+    ComponentType.CARD_LIST:        ("data-display", "card.component.ts.jinja2",             "card-list.component.ts"),
     ComponentType.LIST:             ("data-display", "list.component.ts.jinja2",             "list.component.ts"),
     ComponentType.TIMELINE:         ("data-display", "timeline.component.ts.jinja2",         "timeline.component.ts"),
     ComponentType.AVATAR:           ("data-display", "avatar.component.ts.jinja2",           "avatar.component.ts"),
@@ -103,6 +103,7 @@ _COMPONENT_TEMPLATE_MAP: dict[ComponentType, tuple[str | None, str, str]] = {
 
     # ── Utility ─────────────────────────────────────────────────
     ComponentType.THEME_PROVIDER:   ("utility", "theme-provider.component.ts.jinja2",   "theme-provider.component.ts"),
+    ComponentType.DESIGN_TOKENS:    ("utility", "design-tokens.scss.jinja2",            "design-tokens.scss"),
     ComponentType.ICON:             ("utility", "icon.component.ts.jinja2",             "icon.component.ts"),
     ComponentType.IMAGE:            ("utility", "image.component.ts.jinja2",            "image.component.ts"),
     ComponentType.BUTTON:           ("utility", "button.component.ts.jinja2",           "button.component.ts"),

@@ -103,6 +103,7 @@ _COMPONENT_TEMPLATE_MAP: dict[ComponentType, tuple[str | None, str, str]] = {
 
     # ── Utility ─────────────────────────────────────────────────
     ComponentType.THEME_PROVIDER:   ("utility", "ThemeProvider.tsx.jinja2",    "ThemeProvider.tsx"),
+    ComponentType.DESIGN_TOKENS:    ("utility", "DesignTokens.ts.jinja2",      "DesignTokens.ts"),
     ComponentType.ICON:             ("utility", "Icon.tsx.jinja2",             "Icon.tsx"),
     ComponentType.IMAGE:            ("utility", "Image.tsx.jinja2",            "Image.tsx"),
     ComponentType.BUTTON:           ("utility", "Button.tsx.jinja2",           "Button.tsx"),

@@ -101,6 +101,7 @@ class ComponentType(str, Enum):
 
     # ── Utility ────────────────────────────────────────────────
     THEME_PROVIDER = "theme_provider"
+    DESIGN_TOKENS = "design_tokens"
     ICON = "icon"
     IMAGE = "image"
     BUTTON = "button"

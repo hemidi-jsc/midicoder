@@ -52,7 +52,7 @@ class TestUIComponentIntegration:
         # Kiểm tra files tồn tại (output theo subdirectory)
         assert (output_dir / "data-input" / "form-field.component.ts").exists()
         assert (output_dir / "data-display" / "data-table.component.ts").exists()
-        assert (output_dir / "card-list.component.ts").exists()  # root-level legacy
+        assert (output_dir / "data-display" / "card-list.component.ts").exists()  # moved from root to data-display
         assert (output_dir / "feedback" / "dialog.component.ts").exists()
 
     def test_full_workflow_react_tailwind(self, tmp_path: Path):
