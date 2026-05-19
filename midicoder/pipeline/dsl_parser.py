@@ -40,6 +40,11 @@ _CATEGORY_TO_NODE_KIND = {
     "value_objects": NodeKind.VALUE_OBJECT,
     "guards": NodeKind.GUARD,
     "roles": NodeKind.ROLE,
+    # CP19: UI Component Generator
+    "ui_components": NodeKind.UI_COMPONENT,
+    "ui_layouts": NodeKind.UI_LAYOUT,
+    "ui_themes": NodeKind.UI_THEME,
+    "ui_form_builders": NodeKind.UI_FORM_BUILDER,
 }
 
 # Key trong YAML dict tương ứng mỗi category
@@ -52,6 +57,10 @@ _CATEGORY_YAML_KEY = {
     "value_objects": "value_objects",
     "guards": "guards",
     "roles": "roles",
+    "ui_components": "ui_components",
+    "ui_layouts": "ui_layouts",
+    "ui_themes": "ui_themes",
+    "ui_form_builders": "ui_form_builders",
 }
 
 
@@ -105,6 +114,10 @@ class DSLParser:
             "value_objects": self._parse_value_objects_string,
             "guards": self._parse_guards_string,
             "roles": self._parse_roles_string,
+            "ui_components": self._parse_ui_components_string,
+            "ui_layouts": self._parse_ui_layouts_string,
+            "ui_themes": self._parse_ui_themes_string,
+            "ui_form_builders": self._parse_ui_form_builders_string,
         }
 
         return parser_map[category](yaml_content)
@@ -413,6 +426,127 @@ class DSLParser:
             node = ProjectionNode(
                 id=role_id,
                 kind=NodeKind.ROLE,
+                params=params,
+            )
+            nodes.append(node)
+
+        return nodes
+
+    # ========================================================================
+    # UI Component Parsing (CP19)
+    # ========================================================================
+
+    def _parse_ui_components_string(self, yaml_content: str) -> list[ProjectionNode]:
+        """Parse ui_components YAML string → ProjectionNodes."""
+        data = yaml.safe_load(yaml_content)
+        if not data or "ui_components" not in data:
+            return []
+
+        nodes = []
+        for comp_def in data["ui_components"]:
+            if not comp_def.get("id"):
+                continue
+
+            comp_id = comp_def["id"]
+            params = {
+                "id": comp_id,
+                "description": comp_def.get("description", ""),
+                "component_type": comp_def.get("component_type", "form_field"),
+                "entity_id": comp_def.get("entity_id"),
+                "properties": comp_def.get("properties", {}),
+            }
+
+            node = ProjectionNode(
+                id=comp_id,
+                kind=NodeKind.UI_COMPONENT,
+                params=params,
+            )
+            nodes.append(node)
+
+        return nodes
+
+    def _parse_ui_layouts_string(self, yaml_content: str) -> list[ProjectionNode]:
+        """Parse ui_layouts YAML string → ProjectionNodes."""
+        data = yaml.safe_load(yaml_content)
+        if not data or "ui_layouts" not in data:
+            return []
+
+        nodes = []
+        for layout_def in data["ui_layouts"]:
+            if not layout_def.get("id"):
+                continue
+
+            layout_id = layout_def["id"]
+            params = {
+                "id": layout_id,
+                "description": layout_def.get("description", ""),
+                "layout_type": layout_def.get("layout_type", "page"),
+                "regions": layout_def.get("regions", []),
+                "properties": layout_def.get("properties", {}),
+            }
+
+            node = ProjectionNode(
+                id=layout_id,
+                kind=NodeKind.UI_LAYOUT,
+                params=params,
+            )
+            nodes.append(node)
+
+        return nodes
+
+    def _parse_ui_themes_string(self, yaml_content: str) -> list[ProjectionNode]:
+        """Parse ui_themes YAML string → ProjectionNodes."""
+        data = yaml.safe_load(yaml_content)
+        if not data or "ui_themes" not in data:
+            return []
+
+        nodes = []
+        for theme_def in data["ui_themes"]:
+            if not theme_def.get("id"):
+                continue
+
+            theme_id = theme_def["id"]
+            params = {
+                "id": theme_id,
+                "description": theme_def.get("description", ""),
+                "name": theme_def.get("name", "default"),
+                "tokens": theme_def.get("tokens", {}),
+                "dark_mode": theme_def.get("dark_mode", False),
+            }
+
+            node = ProjectionNode(
+                id=theme_id,
+                kind=NodeKind.UI_THEME,
+                params=params,
+            )
+            nodes.append(node)
+
+        return nodes
+
+    def _parse_ui_form_builders_string(self, yaml_content: str) -> list[ProjectionNode]:
+        """Parse ui_form_builders YAML string → ProjectionNodes."""
+        data = yaml.safe_load(yaml_content)
+        if not data or "ui_form_builders" not in data:
+            return []
+
+        nodes = []
+        for fb_def in data["ui_form_builders"]:
+            if not fb_def.get("id"):
+                continue
+
+            fb_id = fb_def["id"]
+            params = {
+                "id": fb_id,
+                "description": fb_def.get("description", ""),
+                "entity_id": fb_def.get("entity_id"),
+                "fields": fb_def.get("fields", []),
+                "conditional_rules": fb_def.get("conditional_rules", []),
+                "properties": fb_def.get("properties", {}),
+            }
+
+            node = ProjectionNode(
+                id=fb_id,
+                kind=NodeKind.UI_FORM_BUILDER,
                 params=params,
             )
             nodes.append(node)

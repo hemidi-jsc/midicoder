@@ -193,6 +193,11 @@ def _build_mir_from_projection_tree(tree: ProjectionTree) -> MIR:
     _store_workflows_in_metadata(builder, tree)
     _store_value_objects_in_metadata(builder, tree)
     _store_roles_in_metadata(builder, tree)
+    # CP19: Store UI components/layouts/themes/form_builders into metadata
+    _store_ui_components_in_metadata(builder, tree)
+    _store_ui_layouts_in_metadata(builder, tree)
+    _store_ui_themes_in_metadata(builder, tree)
+    _store_ui_form_builders_in_metadata(builder, tree)
 
     # Process Commands → Operations
     for command in tree.get_commands():
@@ -244,6 +249,16 @@ def _build_mir_from_projection_tree(tree: ProjectionTree) -> MIR:
     # Process Faceted Search Index → Operations
     for faceted_search in tree.get_nodes_by_kind(NodeKind.FACETED_SEARCH_INDEX):
         _process_faceted_search_to_mir(builder, faceted_search)
+
+    # CP19: Process UI Components → Operations (no MIR ops, metadata only for code gen)
+    for ui_comp in tree.get_ui_components():
+        _process_ui_component_to_mir(builder, ui_comp)
+    for ui_layout in tree.get_ui_layouts():
+        _process_ui_layout_to_mir(builder, ui_layout)
+    for ui_theme in tree.get_ui_themes():
+        _process_ui_theme_to_mir(builder, ui_theme)
+    for ui_fb in tree.get_ui_form_builders():
+        _process_ui_form_builder_to_mir(builder, ui_fb)
 
     # Auto-generate IAC operations nếu có backend services (commands/queries)
     # Theo CP07: luôn generate cả 2 IAC ops (docker cho local dev, terraform cho AWS prod)
@@ -799,6 +814,137 @@ def _store_roles_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
             "tenant_scope": role.params.get("tenant_scope", "global"),
         })
     builder.mir.metadata["roles"] = roles
+
+
+# =========================================================================
+# CP19: UI Component Generator — Store & Process functions
+# =========================================================================
+
+def _store_ui_components_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
+    """Store UI components into MIR metadata for CP19 code gen."""
+    ui_components = []
+    for comp in tree.get_ui_components():
+        ui_components.append({
+            "id": comp.params.get("id", "UIComponent"),
+            "component_type": comp.params.get("component_type", "form_field"),
+            "entity_id": comp.params.get("entity_id"),
+            "properties": comp.params.get("properties", {}),
+            "description": comp.params.get("description", ""),
+        })
+    builder.mir.metadata["ui_components"] = ui_components
+
+
+def _store_ui_layouts_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
+    """Store UI layouts into MIR metadata for CP19 code gen."""
+    ui_layouts = []
+    for layout in tree.get_ui_layouts():
+        ui_layouts.append({
+            "id": layout.params.get("id", "UILayout"),
+            "layout_type": layout.params.get("layout_type", "page"),
+            "regions": layout.params.get("regions", []),
+            "properties": layout.params.get("properties", {}),
+            "description": layout.params.get("description", ""),
+        })
+    builder.mir.metadata["ui_layouts"] = ui_layouts
+
+
+def _store_ui_themes_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
+    """Store UI themes into MIR metadata for CP19 code gen."""
+    ui_themes = []
+    for theme in tree.get_ui_themes():
+        ui_themes.append({
+            "id": theme.params.get("id", "UITheme"),
+            "name": theme.params.get("name", "default"),
+            "tokens": theme.params.get("tokens", {}),
+            "dark_mode": theme.params.get("dark_mode", False),
+            "description": theme.params.get("description", ""),
+        })
+    builder.mir.metadata["ui_themes"] = ui_themes
+
+
+def _store_ui_form_builders_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
+    """Store UI form builders into MIR metadata for CP19 code gen."""
+    ui_form_builders = []
+    for fb in tree.get_ui_form_builders():
+        ui_form_builders.append({
+            "id": fb.params.get("id", "UIFormBuilder"),
+            "entity_id": fb.params.get("entity_id"),
+            "fields": fb.params.get("fields", []),
+            "conditional_rules": fb.params.get("conditional_rules", []),
+            "properties": fb.params.get("properties", {}),
+            "description": fb.params.get("description", ""),
+        })
+    builder.mir.metadata["ui_form_builders"] = ui_form_builders
+
+
+def _process_ui_component_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:
+    """Process UI component node — adds operation for component generation."""
+    params = node.params
+    comp_id = params.get("id", node.id)
+    comp_type = params.get("component_type", "form_field")
+
+    builder.add_operation(
+        op_id=f"{comp_id}_gen",
+        op_type=f"generate_ui_{comp_type}",
+        params={
+            "component_id": comp_id,
+            "component_type": comp_type,
+            "entity_id": params.get("entity_id"),
+            "properties": params.get("properties", {}),
+        },
+    )
+
+
+def _process_ui_layout_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:
+    """Process UI layout node — adds operation for layout generation."""
+    params = node.params
+    layout_id = params.get("id", node.id)
+
+    builder.add_operation(
+        op_id=f"{layout_id}_gen",
+        op_type="generate_ui_layout",
+        params={
+            "layout_id": layout_id,
+            "layout_type": params.get("layout_type", "page"),
+            "regions": params.get("regions", []),
+            "properties": params.get("properties", {}),
+        },
+    )
+
+
+def _process_ui_theme_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:
+    """Process UI theme node — adds operation for theme generation."""
+    params = node.params
+    theme_id = params.get("id", node.id)
+
+    builder.add_operation(
+        op_id=f"{theme_id}_gen",
+        op_type="generate_ui_theme",
+        params={
+            "theme_id": theme_id,
+            "name": params.get("name", "default"),
+            "tokens": params.get("tokens", {}),
+            "dark_mode": params.get("dark_mode", False),
+        },
+    )
+
+
+def _process_ui_form_builder_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:
+    """Process UI form builder node — adds operation for form builder generation."""
+    params = node.params
+    fb_id = params.get("id", node.id)
+
+    builder.add_operation(
+        op_id=f"{fb_id}_gen",
+        op_type="generate_ui_form_builder",
+        params={
+            "form_builder_id": fb_id,
+            "entity_id": params.get("entity_id"),
+            "fields": params.get("fields", []),
+            "conditional_rules": params.get("conditional_rules", []),
+            "properties": params.get("properties", {}),
+        },
+    )
 
 
 def _process_value_object_to_mir(builder: MIRBuilder, vo: ProjectionNode) -> None:

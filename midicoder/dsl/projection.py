@@ -5190,6 +5190,26 @@ class ProjectionTree:
         return self.get_nodes_by_kind(NodeKind.FULL_TEXT_FIELD)
 
     # =========================================================================
+    # CP19: UI Component Generator Getters
+    # =========================================================================
+
+    def get_ui_components(self) -> list[ProjectionNode]:
+        """Lấy tất cả UI component nodes."""
+        return self.get_nodes_by_kind(NodeKind.UI_COMPONENT)
+
+    def get_ui_form_builders(self) -> list[ProjectionNode]:
+        """Lấy tất cả UI form builder nodes."""
+        return self.get_nodes_by_kind(NodeKind.UI_FORM_BUILDER)
+
+    def get_ui_layouts(self) -> list[ProjectionNode]:
+        """Lấy tất cả UI layout nodes."""
+        return self.get_nodes_by_kind(NodeKind.UI_LAYOUT)
+
+    def get_ui_themes(self) -> list[ProjectionNode]:
+        """Lấy tất cả UI theme nodes."""
+        return self.get_nodes_by_kind(NodeKind.UI_THEME)
+
+    # =========================================================================
     # P2: Pagination & Versioning Getters
     # =========================================================================
 

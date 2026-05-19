@@ -558,7 +558,109 @@ def load_projection_tree(dsl_path: Path) -> ProjectionTree:
     if frontends_file.exists():
         add_nodes(_load_frontends(frontends_file))
 
+    # Load UI components (CP19)
+    ui_components_file = dsl_path / "ui-components.yaml"
+    if ui_components_file.exists():
+        add_nodes(_load_ui_components(ui_components_file))
+
     return tree
+
+# ============================================================================
+# CP19: UI Component Loaders
+# ============================================================================
+
+def _load_ui_components(path: Path) -> list[ProjectionNode]:
+    """Load ui-components.yaml into ProjectionNodes (CP19).
+
+    Supports four categories:
+    - ui_components: individual UI component declarations
+    - ui_layouts: page layout declarations
+    - ui_themes: theme/design token declarations
+    - ui_form_builders: dynamic form builder declarations
+
+    Args:
+        path: Path to ui-components.yaml
+
+    Returns:
+        List of ProjectionNodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # UI Components
+    if "ui_components" in data:
+        for comp in data["ui_components"]:
+            node = ProjectionNode(
+                id=comp.get("id", ""),
+                kind=NodeKind.UI_COMPONENT,
+                params={
+                    "id": comp.get("id"),
+                    "description": comp.get("description"),
+                    "component_type": comp.get("component_type", "form_field"),
+                    "entity_id": comp.get("entity_id"),
+                    "properties": comp.get("properties", {}),
+                    "tags": comp.get("tags", []),
+                    "source": "ui-components.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # UI Layouts
+    if "ui_layouts" in data:
+        for layout in data["ui_layouts"]:
+            node = ProjectionNode(
+                id=layout.get("id", ""),
+                kind=NodeKind.UI_LAYOUT,
+                params={
+                    "id": layout.get("id"),
+                    "description": layout.get("description"),
+                    "layout_type": layout.get("layout_type", "page"),
+                    "regions": layout.get("regions", []),
+                    "properties": layout.get("properties", {}),
+                    "tags": layout.get("tags", []),
+                    "source": "ui-components.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # UI Themes
+    if "ui_themes" in data:
+        for theme in data["ui_themes"]:
+            node = ProjectionNode(
+                id=theme.get("id", ""),
+                kind=NodeKind.UI_THEME,
+                params={
+                    "id": theme.get("id"),
+                    "description": theme.get("description"),
+                    "name": theme.get("name", "default"),
+                    "tokens": theme.get("tokens", {}),
+                    "dark_mode": theme.get("dark_mode", False),
+                    "tags": theme.get("tags", []),
+                    "source": "ui-components.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # UI Form Builders
+    if "ui_form_builders" in data:
+        for fb in data["ui_form_builders"]:
+            node = ProjectionNode(
+                id=fb.get("id", ""),
+                kind=NodeKind.UI_FORM_BUILDER,
+                params={
+                    "id": fb.get("id"),
+                    "description": fb.get("description"),
+                    "entity_id": fb.get("entity_id"),
+                    "fields": fb.get("fields", []),
+                    "conditional_rules": fb.get("conditional_rules", []),
+                    "properties": fb.get("properties", {}),
+                    "tags": fb.get("tags", []),
+                    "source": "ui-components.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
 
 
 # ============================================================================
