@@ -79,10 +79,10 @@ class TestUIComponentIntegration:
         files = emitter.generate(components, output_dir)
 
         assert len(files) == 4
-        # Output theo subdirectory
+        # Output theo subdirectory — tất cả trong category folders
         assert (output_dir / "data-input" / "FormField.tsx").exists()
         assert (output_dir / "data-display" / "DataTable.tsx").exists()
-        assert (output_dir / "CardList.tsx").exists()  # root-level legacy
+        assert (output_dir / "data-display" / "CardList.tsx").exists()
         assert (output_dir / "feedback" / "Dialog.tsx").exists()
 
     def test_backend_fastapi_integration(self, tmp_path: Path):

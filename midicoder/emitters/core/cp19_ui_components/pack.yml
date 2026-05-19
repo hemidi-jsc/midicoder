@@ -6,7 +6,7 @@ pack:
   status: "stable"
   category: "frontend"
   depends_on: ["CP18"]
-  definitions_count: 3
+  definitions_count: 6
   obligations_count: 1
   error_codes:
     prefix: "MDC-CP19"
@@ -31,6 +31,12 @@ pack:
       description: "Form field with type, validation, and binding"
     - name: "TableSpec"
       description: "Data table with columns, sorting, and pagination"
+    - name: "FormBuilderSpec"
+      description: "Dynamic form builder with conditional fields"
+    - name: "ConditionalRule"
+      description: "Conditional visibility/validation rule for form fields"
+    - name: "ThemeSpec"
+      description: "Theme and design token configuration"
   obligations:
     - name: "ComponentSchemaConsistency"
       description: "Component schemas must match entity field types from CP01"
@@ -56,56 +62,74 @@ pack:
         stacks: ["nestjs"]
         pack_emitter: "cp19.nestjs"
         context_keys: ["components"]
-      # ── Angular (frontend: UI components) ──
-      - path: "src/app/shared/components/form-field/form-field.component.ts"
+
+    # ── PER ENTITY × COMPONENT TYPE — generates UI components per entity ──
+    per_ui_component:
+      # ── Angular: Form Field ──
+      - path_pattern: "src/app/shared/components/{entity_pascal}/form-{entity_snake}.component.ts"
         file_type: "form_field_component"
-        template: "cp19_ui_components/form-field.component.ts.jinja2"
+        template: "cp19_ui_components/data-input/form-field.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: "cp19.angular"
-        context_keys: ["components"]
-      - path: "src/app/shared/components/data-table/data-table.component.ts"
+        component_types: ["form_field"]
+        context_keys: ["entity"]
+      # ── Angular: Data Table ──
+      - path_pattern: "src/app/shared/components/{entity_pascal}/table-{entity_snake}.component.ts"
         file_type: "data_table_component"
-        template: "cp19_ui_components/data-table.component.ts.jinja2"
+        template: "cp19_ui_components/data-display/data-table.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: "cp19.angular"
-        context_keys: ["components"]
-      - path: "src/app/shared/components/card-list/card-list.component.ts"
+        component_types: ["data_table"]
+        context_keys: ["entity"]
+      # ── Angular: Card List ──
+      - path_pattern: "src/app/shared/components/{entity_pascal}/card-list-{entity_snake}.component.ts"
         file_type: "card_list_component"
-        template: "cp19_ui_components/card-list.component.ts.jinja2"
+        template: "cp19_ui_components/data-display/card-list.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: "cp19.angular"
-        context_keys: ["components"]
-      - path: "src/app/shared/components/dialog/dialog.component.ts"
+        component_types: ["card_list"]
+        context_keys: ["entity"]
+      # ── Angular: Dialog ──
+      - path_pattern: "src/app/shared/components/{entity_pascal}/dialog-{entity_snake}.component.ts"
         file_type: "dialog_component"
-        template: "cp19_ui_components/dialog.component.ts.jinja2"
+        template: "cp19_ui_components/feedback/dialog.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: "cp19.angular"
-        context_keys: ["components"]
-      # ── React (frontend: UI components) ──
-      - path: "src/components/FormField.tsx"
+        component_types: ["dialog"]
+        context_keys: ["entity"]
+
+      # ── React: Form Field ──
+      - path_pattern: "src/components/{entity_pascal}/Form{entity_pascal}.tsx"
         file_type: "form_field_component"
-        template: "cp19_ui_components/FormField.tsx.jinja2"
+        template: "cp19_ui_components/data-input/FormField.tsx.jinja2"
         stacks: ["react"]
         pack_emitter: "cp19.react"
-        context_keys: ["components"]
-      - path: "src/components/DataTable.tsx"
+        component_types: ["form_field"]
+        context_keys: ["entity"]
+      # ── React: Data Table ──
+      - path_pattern: "src/components/{entity_pascal}/Table{entity_pascal}.tsx"
         file_type: "data_table_component"
-        template: "cp19_ui_components/DataTable.tsx.jinja2"
+        template: "cp19_ui_components/data-display/DataTable.tsx.jinja2"
         stacks: ["react"]
         pack_emitter: "cp19.react"
-        context_keys: ["components"]
-      - path: "src/components/CardList.tsx"
+        component_types: ["data_table"]
+        context_keys: ["entity"]
+      # ── React: Card List ──
+      - path_pattern: "src/components/{entity_pascal}/CardList{entity_pascal}.tsx"
         file_type: "card_list_component"
-        template: "cp19_ui_components/CardList.tsx.jinja2"
+        template: "cp19_ui_components/data-display/CardList.tsx.jinja2"
         stacks: ["react"]
         pack_emitter: "cp19.react"
-        context_keys: ["components"]
-      - path: "src/components/Dialog.tsx"
+        component_types: ["card_list"]
+        context_keys: ["entity"]
+      # ── React: Dialog ──
+      - path_pattern: "src/components/{entity_pascal}/Dialog{entity_pascal}.tsx"
         file_type: "dialog_component"
-        template: "cp19_ui_components/Dialog.tsx.jinja2"
+        template: "cp19_ui_components/feedback/Dialog.tsx.jinja2"
         stacks: ["react"]
         pack_emitter: "cp19.react"
-        context_keys: ["components"]
+        component_types: ["dialog"]
+        context_keys: ["entity"]
   frontend_integration:
     angular:
       - FormFieldComponent

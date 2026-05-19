@@ -435,7 +435,12 @@ class PackEmitterRouter:
         # Import and instantiate emitter
         mod = importlib.import_module(module_path)
         emitter_cls = getattr(mod, class_name)
-        emitter = emitter_cls(stack_dir=stack_dir)
+
+        # CP19 emitters accept (ui_framework=...) not (stack_dir=...)
+        if pack_emitter.startswith("cp19."):
+            emitter = emitter_cls()
+        else:
+            emitter = emitter_cls(stack_dir=stack_dir)
 
         # Get raw data from FileSpec context
         context = file_spec.get("context", {})
@@ -446,7 +451,78 @@ class PackEmitterRouter:
         entity_data = context.get("entity")
         vo_data = context.get("vo")
 
-        if entity_data and parser_key and parser_key in PARSER_REGISTRY:
+        # ── CP19: UI Component emitter (must be FIRST — uses raw entity dict) ──
+        if parser_key == "cp19_ui_component" or pack_emitter.startswith("cp19."):
+            # --- UI Component emitter dispatch ---
+            # CP19 emitters take (list[ComponentSpec], output_dir) and return
+            # list[GeneratedFile] with path/content attributes.
+            try:
+                from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec
+
+                entity = context.get("entity")
+                components = []
+
+                # Case 1: components is a list of strings (component_type names) from per_ui_component expansion
+                components_raw = context.get("components")
+                if isinstance(components_raw, list) and components_raw and isinstance(components_raw[0], str):
+                    if entity:
+                        type_to_factory = {
+                            "form_field": ComponentSpec.generate_form,
+                            "data_table": ComponentSpec.generate_table,
+                            "card_list": ComponentSpec.generate_card_list,
+                            "dialog": ComponentSpec.generate_dialog,
+                        }
+                        for ct in components_raw:
+                            factory = type_to_factory.get(ct)
+                            if factory:
+                                try:
+                                    components.append(factory(entity))
+                                except Exception:
+                                    pass
+
+                # Case 2: components is a list of dicts (explicit ComponentSpec from MIR)
+                elif components_raw:
+                    components = _parse_ui_component_dict(components_raw)
+
+                # Case 3: fallback — ui_components key
+                elif context.get("ui_components"):
+                    components = _parse_ui_component_dict(context["ui_components"])
+
+                # Case 4: single entity, no components — generate all 4 types
+                elif entity and not components:
+                    components = [
+                        ComponentSpec.generate_form(entity),
+                        ComponentSpec.generate_table(entity),
+                        ComponentSpec.generate_card_list(entity),
+                        ComponentSpec.generate_dialog(entity),
+                    ]
+
+                import tempfile
+                with tempfile.TemporaryDirectory() as tmp:
+                    output_dir = Path(tmp)
+                    generated = emitter.generate(components, output_dir)
+                    results = []
+                    for gf in generated:
+                        if hasattr(gf, "content"):
+                            content = gf.content
+                        elif hasattr(gf, "path") and gf.path.exists():
+                            content = gf.path.read_text(encoding="utf-8")
+                        else:
+                            continue
+                        rel = str(getattr(gf, "path", Path(file_path)))
+                        if tmp in rel:
+                            try:
+                                rel = str(Path(rel).relative_to(tmp))
+                            except ValueError:
+                                pass
+                        results.append({"path": rel, "content": content})
+                    return results if results else _fallback_placeholder(
+                        file_path, "UI Component emitter produced no files"
+                    )
+            except Exception as exc:
+                return _fallback_placeholder(file_path, str(exc))
+
+        elif entity_data and parser_key and parser_key in PARSER_REGISTRY:
             entity = PARSER_REGISTRY[parser_key](entity_data)
             if entity is None:
                 return _fallback_placeholder(file_path, "Failed to parse entity dict")
@@ -541,28 +617,45 @@ class PackEmitterRouter:
             # CP19 emitters take (list[ComponentSpec], output_dir) and return
             # list[GeneratedFile] with path/content attributes.
             try:
-                components_raw = (
-                    context.get("components")
-                    or context.get("ui_components")
-                    or [context] if context else []
-                )
-                # Parse via PARSER_REGISTRY
-                if components_raw:
-                    components = _parse_ui_component_dict(components_raw)
-                else:
-                    # Fallback: generate from entity if available
-                    from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec
-                    entity = context.get("entity")
+                from midicoder.emitters.core.cp19_ui_components.models import ComponentSpec
+
+                entity = context.get("entity")
+                components = []
+
+                # Case 1: components is a list of strings (component_type names) from per_ui_component expansion
+                components_raw = context.get("components")
+                if isinstance(components_raw, list) and components_raw and isinstance(components_raw[0], str):
                     if entity:
-                        comps = [
-                            ComponentSpec.generate_form(entity),
-                            ComponentSpec.generate_table(entity),
-                            ComponentSpec.generate_card_list(entity),
-                            ComponentSpec.generate_dialog(entity),
-                        ]
-                        components = comps
-                    else:
-                        components = []
+                        type_to_factory = {
+                            "form_field": ComponentSpec.generate_form,
+                            "data_table": ComponentSpec.generate_table,
+                            "card_list": ComponentSpec.generate_card_list,
+                            "dialog": ComponentSpec.generate_dialog,
+                        }
+                        for ct in components_raw:
+                            factory = type_to_factory.get(ct)
+                            if factory:
+                                try:
+                                    components.append(factory(entity))
+                                except Exception:
+                                    pass
+
+                # Case 2: components is a list of dicts (explicit ComponentSpec from MIR)
+                elif components_raw:
+                    components = _parse_ui_component_dict(components_raw)
+
+                # Case 3: fallback — ui_components key
+                elif context.get("ui_components"):
+                    components = _parse_ui_component_dict(context["ui_components"])
+
+                # Case 4: single entity, no components — generate all 4 types
+                elif entity and not components:
+                    components = [
+                        ComponentSpec.generate_form(entity),
+                        ComponentSpec.generate_table(entity),
+                        ComponentSpec.generate_card_list(entity),
+                        ComponentSpec.generate_dialog(entity),
+                    ]
 
                 import tempfile
                 with tempfile.TemporaryDirectory() as tmp:

@@ -57,7 +57,7 @@ _COMPONENT_TEMPLATE_MAP: dict[ComponentType, tuple[str | None, str, str]] = {
     # ── Data Display ────────────────────────────────────────────
     ComponentType.DATA_TABLE:       ("data-display", "DataTable.tsx.jinja2",       "DataTable.tsx"),
     ComponentType.CARD:             ("data-display", "Card.tsx.jinja2",            "Card.tsx"),
-    ComponentType.CARD_LIST:        (None,           "CardList.tsx.jinja2",        "CardList.tsx"),  # legacy root
+    ComponentType.CARD_LIST:        ("data-display", "Card.tsx.jinja2",             "CardList.tsx"),
     ComponentType.LIST:             ("data-display", "List.tsx.jinja2",            "List.tsx"),
     ComponentType.TIMELINE:         ("data-display", "Timeline.tsx.jinja2",        "Timeline.tsx"),
     ComponentType.AVATAR:           ("data-display", "Avatar.tsx.jinja2",          "Avatar.tsx"),

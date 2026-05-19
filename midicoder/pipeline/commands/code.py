@@ -677,6 +677,12 @@ def _plan_frontend_files(mir: dict) -> List[dict]:
         f.setdefault("metadata", {})["stack"] = frontend_stack
     _merge_files(files, per_entity_files)
 
+    # --- Pack-declared per-ui-component files (entities × component_types) ---
+    per_ui_component_files = loader.resolve_all_per_ui_component(frontend_stack, entities)
+    for f in per_ui_component_files:
+        f.setdefault("metadata", {})["stack"] = frontend_stack
+    _merge_files(files, per_ui_component_files)
+
     # --- Inject ui_framework into all frontend file contexts ---
     ui_framework = _get_ui_framework(frontend_stack)
     for f in files:

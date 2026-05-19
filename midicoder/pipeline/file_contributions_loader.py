@@ -106,6 +106,23 @@ class PerQueryFile:
 
 
 @dataclass
+class PerUIComponentFile:
+    """A file emitted once per entity × component_type combo (CP19).
+
+    Iterates over ``entities × component_types`` so that each entity
+    gets a set of UI component files (form, table, card list, dialog, …).
+    """
+
+    path_pattern: str  # e.g. "src/components/{entity_pascal}/Form{entity_pascal}.tsx"
+    file_type: str
+    template: str
+    stacks: list[str] = field(default_factory=list)
+    pack_emitter: str | None = None
+    component_types: list[str] = field(default_factory=list)
+    context_keys: list[str] = field(default_factory=list)
+
+
+@dataclass
 class FileContributions:
     """All file contributions declared by a single pack."""
 
@@ -115,10 +132,11 @@ class FileContributions:
     per_entity: list[PerEntityFile] = field(default_factory=list)
     per_command: list[PerCommandFile] = field(default_factory=list)
     per_query: list[PerQueryFile] = field(default_factory=list)
+    per_ui_component: list[PerUIComponentFile] = field(default_factory=list)
 
     @property
     def is_empty(self) -> bool:
-        return not (self.infrastructure or self.per_entity or self.per_command or self.per_query)
+        return not (self.infrastructure or self.per_entity or self.per_command or self.per_query or self.per_ui_component)
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +257,7 @@ class FileContributionsLoader:
         per_entity = [_parse_per_entity(f) for f in raw.get("per_entity", [])]
         per_command = [_parse_per_command(f) for f in raw.get("per_command", [])]
         per_query = [_parse_per_query(f) for f in raw.get("per_query", [])]
+        per_ui_component = [_parse_per_ui_component(f) for f in raw.get("per_ui_component", [])]
 
         # Filter by stack if requested
         if stack:
@@ -246,6 +265,7 @@ class FileContributionsLoader:
             per_entity = [e for e in per_entity if stack in e.stacks]
             per_command = [e for e in per_command if stack in e.stacks]
             per_query = [e for e in per_query if stack in e.stacks]
+            per_ui_component = [e for e in per_ui_component if stack in e.stacks]
 
         return FileContributions(
             pack_id=pack_id,
@@ -254,6 +274,7 @@ class FileContributionsLoader:
             per_entity=per_entity,
             per_command=per_command,
             per_query=per_query,
+            per_ui_component=per_ui_component,
         )
 
     def load_all(
@@ -324,12 +345,14 @@ class FileContributionsLoader:
             per_entity = [_parse_per_entity(f) for f in raw.get("per_entity", [])]
             per_command = [_parse_per_command(f) for f in raw.get("per_command", [])]
             per_query = [_parse_per_query(f) for f in raw.get("per_query", [])]
+            per_ui_component = [_parse_per_ui_component(f) for f in raw.get("per_ui_component", [])]
 
             if stack:
                 infra = [e for e in infra if stack in e.stacks]
                 per_entity = [e for e in per_entity if stack in e.stacks]
                 per_command = [e for e in per_command if stack in e.stacks]
                 per_query = [e for e in per_query if stack in e.stacks]
+                per_ui_component = [e for e in per_ui_component if stack in e.stacks]
 
             fc = FileContributions(
                 pack_id=pack_id,
@@ -338,6 +361,7 @@ class FileContributionsLoader:
                 per_entity=per_entity,
                 per_command=per_command,
                 per_query=per_query,
+                per_ui_component=per_ui_component,
             )
             if not fc.is_empty:
                 contributions.append(fc)
@@ -513,8 +537,55 @@ class FileContributionsLoader:
                 })
         return files
 
-    # ------------------------------------------------------------------
-    # Aggregate helper — used by code.py
+    @staticmethod
+    def expand_per_ui_component(
+        contributions: FileContributions,
+        entities: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Expand ``per_ui_component`` entries into concrete file plans.
+
+        Iterates over ``entities × component_types`` so that each entity
+        gets a set of UI component files (form, table, card list, dialog, …).
+
+        Args:
+            contributions: Loaded ``FileContributions`` for a pack.
+            entities: Raw entity dicts from ``MIR.metadata.entities``.
+
+        Returns:
+            List of file plan dicts.
+        """
+        files: list[dict[str, Any]] = []
+        for entry in contributions.per_ui_component:
+            for entity in entities:
+                # Resolve path with entity placeholders (entity_pascal, entity_snake, etc.)
+                path = _expand_path_pattern(entry.path_pattern, entity)
+
+                # Build component list from entity — one spec per declared component_type
+                comp_types = entry.component_types or ["form_field", "data_table", "card_list", "dialog"]
+                ctx = {
+                    "entity": entity,
+                    "all_entities": entities,
+                    "components": comp_types,
+                }
+                # Inject additional context keys if declared
+                for key in entry.context_keys:
+                    if key in entity:
+                        ctx[key] = entity[key]
+
+                metadata: dict[str, Any] = {}
+                if entry.pack_emitter:
+                    metadata["pack_emitter"] = entry.pack_emitter
+                    metadata["stack"] = entry.stacks[0] if entry.stacks else "fastapi"
+
+                files.append({
+                    "path": path,
+                    "type": entry.file_type,
+                    "template": entry.template,
+                    "context": ctx,
+                    "metadata": metadata,
+                })
+        return files
+
     # ------------------------------------------------------------------
 
     def resolve_all_infrastructure(
@@ -583,6 +654,31 @@ class FileContributionsLoader:
                     result.append(f)
         return result
 
+    def resolve_all_per_ui_component(
+        self,
+        stack: str,
+        entities: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Load per-ui-component files from ALL packs for the given stack.
+
+        Iterates over entities × component_types per pack declaration.
+
+        Args:
+            stack: Target stack (e.g. ``"react"``, ``"angular"``).
+            entities: Raw entity dicts from ``MIR.metadata.entities``.
+
+        Returns:
+            Deduplicated list of file plan dicts.
+        """
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
+        for fc in self.load_all(stack=stack):
+            for f in self.expand_per_ui_component(fc, entities):
+                if f["path"] not in seen:
+                    seen.add(f["path"])
+                    result.append(f)
+        return result
+
 
 # ---------------------------------------------------------------------------
 # Internal parsers
@@ -642,6 +738,18 @@ def _parse_per_query(raw: dict[str, Any]) -> PerQueryFile:
     )
 
 
+def _parse_per_ui_component(raw: dict[str, Any]) -> PerUIComponentFile:
+    return PerUIComponentFile(
+        path_pattern=raw["path_pattern"],
+        file_type=raw["file_type"],
+        template=raw["template"],
+        stacks=raw.get("stacks", ["fastapi"]),
+        pack_emitter=raw.get("pack_emitter"),
+        component_types=raw.get("component_types", ["form_field", "data_table", "card_list", "dialog"]),
+        context_keys=raw.get("context_keys", []),
+    )
+
+
 __all__ = [
     "FileContributionsLoader",
     "FileContributions",
@@ -649,6 +757,7 @@ __all__ = [
     "PerEntityFile",
     "PerCommandFile",
     "PerQueryFile",
+    "PerUIComponentFile",
     "_expand_path_pattern",
     "BACKEND_STACKS",
     "FRONTEND_STACKS",
