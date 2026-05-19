@@ -62,6 +62,104 @@ pack:
         stacks: ["nestjs"]
         pack_emitter: "cp19.nestjs"
         context_keys: ["components"]
+      # ── React: Phase 2 — Theme & Design System ──
+      - path: "src/ui/ThemeProvider.tsx"
+        file_type: "theme_provider"
+        template: "cp19_ui_components/utility/ThemeProvider.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/ui/DesignTokens.ts"
+        file_type: "design_tokens"
+        template: "cp19_ui_components/utility/DesignTokens.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/ui/ThemeConfig.ts"
+        file_type: "theme_config"
+        template: "cp19_ui_components/utility/ThemeConfig.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      # ── Angular: Phase 2 — Theme & Design System ──
+      - path: "src/app/shared/ui/theme-provider.component.ts"
+        file_type: "theme_provider"
+        template: "cp19_ui_components/utility/theme-provider.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/shared/ui/design-tokens.scss"
+        file_type: "design_tokens"
+        template: "cp19_ui_components/utility/design-tokens.scss.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/shared/ui/theme.config.ts"
+        file_type: "theme_config"
+        template: "cp19_ui_components/utility/theme.config.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # ── React: Phase 3 — FormBuilder (dynamic from JSON schema) ──
+      - path: "src/components/ui/FormBuilder.tsx"
+        file_type: "form_builder"
+        template: "cp19_ui_components/data-input/FormBuilder.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      # ── Angular: Phase 3 — FormBuilder (dynamic from JSON schema) ──
+      - path: "src/app/shared/components/form-builder.component.ts"
+        file_type: "form_builder"
+        template: "cp19_ui_components/data-input/form-builder.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # ── React: Phase 4 — API hooks (useQuery, useMutation) ──
+      - path: "src/services/use-api.ts"
+        file_type: "api_hooks"
+        template: "cp19_ui_components/service/use-api.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      # ── Angular: Phase 4 — HttpClient + Interceptors ──
+      - path: "src/app/shared/services/http-client.service.ts"
+        file_type: "http_client"
+        template: "cp19_ui_components/service/http-client.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/shared/services/api-interceptors.service.ts"
+        file_type: "api_interceptors"
+        template: "cp19_ui_components/service/api-interceptors.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # ── React: Phase 5 — Barrel exports + Route config ──
+      - path: "src/routes/app-routes.tsx"
+        file_type: "app_routing"
+        template: "cp19_ui_components/module/app-routes.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      # ── Angular: Phase 5 — SharedModule + Routing + AuthGuard ──
+      - path: "src/app/shared/shared.module.ts"
+        file_type: "shared_module"
+        template: "cp19_ui_components/module/shared.module.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/app-routing.module.ts"
+        file_type: "app_routing"
+        template: "cp19_ui_components/module/app-routing.module.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/guards/auth.guard.ts"
+        file_type: "auth_guard"
+        template: "cp19_ui_components/module/auth.guard.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
 
     # ── PER ENTITY × COMPONENT TYPE — generates UI components per entity ──
     per_ui_component:

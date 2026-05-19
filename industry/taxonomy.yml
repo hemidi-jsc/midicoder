@@ -1,7 +1,7 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created_date: "2026-04-17"
-  updated_date: "2026-05-06"
+  updated_date: "2026-05-19"
   schema_version: taxonomy-v1
   status: approved
 core_packs:
@@ -10,261 +10,307 @@ core_packs:
     internal_id: cp01_domain_model
     phase: P0
     description: "Core domain primitives: entities, value objects, commands,
-      queries, workflows"
-    definitions_count: 14
-    obligations_count: 4
+      queries, workflows, aggregates, temporal entities, saga"
+    definitions_count: 56
+    obligations_count: 2
     depends_on: []
     capabilities_provided:
-      - dsl_parsing
-      - projection_tree_build
-      - ir_build
-      - domain_model_recipes
-      - cqrs_recipes
-      - event_sourcing_recipes
+      - entity_modeling
+      - command_query_separation
+      - value_object
+      - aggregate_root
+      - domain_events
+      - cqrs_projection
+      - event_sourcing
+      - temporal_entity
+      - polymorphic_entity
+      - saga
+      - recipes
     category: domain-modeling
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP02
     name: Multi-Tenant Architecture Generator
     internal_id: cp02_multi_tenant
     phase: P0
-    description: Tenant isolation strategies and provisioning workflows
-    definitions_count: 2
-    obligations_count: 1
-    depends_on:
-      - CP01
-    capabilities_provided:
-      - enforce_tenant_scope
-      - tenant_isolation
-    category: architecture
-    status: stable
-    version: 1.0.0
-  - id: CP03
-    name: Authentication & Authorization Framework
-    internal_id: cp03_auth
-    phase: P0
-    description: JWT/OAuth2/SAML/LDAP/mTLS auth, session management, rate limiting, MFA
-    definitions_count: 19
-    obligations_count: 10
-    depends_on:
-      - CP01
-      - CP02
-    capabilities_provided:
-      - authorize_permission
-      - authenticate_user
-    category: security
-    status: stable
-    version: 1.1.0
-  - id: CP04
-    name: RBAC & Policy Engine
-    internal_id: cp04_rbac
-    phase: P0
-    description: Role-based access control, permissions, ABAC policy engine with expression DSL
-    definitions_count: 11
-    obligations_count: 1
-    depends_on:
-      - CP02
-      - CP03
-    capabilities_provided:
-      - authorize_role
-      - check_policy
-    category: security
-    status: stable
-    version: 1.1.0
-  - id: CP07
-    name: Infrastructure as Code Generator
-    internal_id: cp07_iac
-    phase: P0
-    description: Local runtime (docker-compose) and AWS baseline profiles
-    definitions_count: 2
-    obligations_count: 1
-    depends_on: []
-    capabilities_provided:
-      - emit_iac_docker
-      - emit_iac_aws
-    category: infrastructure
-    status: stable
-    version: 1.0.0
-  - id: CP05
-    name: Event-Driven Architecture Generator
-    internal_id: cp05_event_driven
-    phase: P1
-    description: Event topics, publishing, subscriptions, outbox pattern
-    definitions_count: 4
-    obligations_count: 1
-    depends_on:
-      - CP01
-    capabilities_provided:
-      - publish_event
-      - subscribe_event
-      - event_outbox
-    category: architecture
-    status: stable
-    version: 1.0.0
-  - id: CP06
-    name: API Gateway & Service Mesh Generator
-    internal_id: cp06_api_gateway
-    phase: P1
-    description: Gateway profiles, routing, upstream binding
-    definitions_count: 2
-    obligations_count: 0
-    depends_on:
-      - CP01
-      - CP05
-    capabilities_provided:
-      - route_request
-      - gateway_binding
-      - service_mesh_config
-    category: integration
-    status: stable
-    version: 1.0.0
-  - id: CP08
-    name: Database & Data Access Layer Generator
-    internal_id: cp08_database
-    phase: P1
-    description: Datasource declarations, table mappings, column definitions
-    definitions_count: 6
-    obligations_count: 1
-    depends_on:
-      - CP01
-    capabilities_provided:
-      - create_record
-      - update_record
-      - delete_record
-      - query_records
-      - load_entity
-      - begin_transaction
-      - commit_transaction
-    category: persistence
-    status: developing
-    version: 1.0.0
-  - id: CP09
-    name: Caching & Performance Layer Generator
-    internal_id: cp09_cache
-    phase: P1
-    description: Cache profiles, bindings, invalidation strategies
-    definitions_count: 3
-    obligations_count: 2
-    depends_on:
-      - CP08
-    capabilities_provided:
-      - cache_get
-      - cache_set
-      - cache_invalidate
-      - cache_warm
-    category: performance
-    status: developing
-    version: 1.0.0
-  - id: CP10
-    name: Search & Indexing Generator
-    internal_id: cp10_search
-    phase: P1
-    description: Search index declarations, query bindings, sync strategies, vector/geo/faceted search
-    definitions_count: 9
-    obligations_count: 3
-    depends_on:
-      - CP08
-    capabilities_provided:
-      - search_index
-      - search_query
-      - fulltext_search
-      - vector_search
-      - geo_search
-      - faceted_aggregation
-    category: performance
-    status: developing
-    version: 1.0.0
-  - id: CP11
-    name: File Storage & Media Processing Generator
-    internal_id: cp11_file_media
-    phase: P1
-    description: File storage (S3, local), upload policies, media transforms, CloudFront CDN
-    definitions_count: 5
-    obligations_count: 1
-    depends_on:
-      - CP07
-    capabilities_provided:
-      - file_upload
-      - file_download
-      - file_storage
-      - media_transform
-      - cdn_integration
-      - presigned_url
-    category: storage
-    status: developing
-    version: 1.1.0
-  - id: CP12
-    name: Notification & Communication Generator
-    internal_id: cp12_notification
-    phase: P1
-    description: Notification channels, templates, dispatch workflows
-    definitions_count: 3
-    obligations_count: 2
-    depends_on:
-      - CP05
-    capabilities_provided:
-      - send_notification
-      - email_dispatch
-      - sms_dispatch
-      - push_notification
-    category: communication
-    status: stable
-    version: 1.0.0
-  - id: CP13
-    name: Background Job & Workflow Generator
-    internal_id: cp13_workflow_runtime
-    phase: P1
-    description: Job queues, background workers, workflow orchestration
-    definitions_count: 3
-    obligations_count: 1
-    depends_on:
-      - CP05
-    capabilities_provided:
-      - schedule_job
-      - background_worker
-      - workflow_orchestrate
-    category: runtime
-    status: stable
-    version: 1.0.0
-  - id: CP14
-    name: Audit Trail & Compliance Generator
-    internal_id: cp14_audit_compliance
-    phase: P1
-    description: Audit trails, immutable ledger, compliance controls, GDPR/HIPAA/SOX/PCI-DSS
-    definitions_count: 17
+    description: "Tenant isolation strategies (row/schema/db), provisioning, cross-tenant access"
+    definitions_count: 12
     obligations_count: 4
     depends_on:
       - CP01
     capabilities_provided:
-      - write_audit_log
-      - audit_query
-      - compliance_report
-      - immutable_ledger
-      - compliance_reporting
-      - tamper_detection
-      - audit_export
-    category: compliance
+      - tenant_middleware
+      - tenant_context
+      - schema_isolation
+      - tenant_provisioning
+      - cross_tenant_access
+    category: architecture
     status: stable
-    version: 1.0.0
-  - id: CP15
-    name: Observability Stack Generator
-    internal_id: cp15_observability
+    version: 1.1.0
+  - id: CP03
+    name: Authentication & Authorization Framework
+    internal_id: cp03_auth
+    phase: P0
+    description: "JWT/OAuth2/SAML/LDAP/mTLS auth, session management, rate limiting, MFA"
+    definitions_count: 23
+    obligations_count: 13
+    depends_on:
+      - CP01
+      - CP02
+    capabilities_provided:
+      - jwt_auth
+      - oauth2_auth
+      - saml_sso
+      - ldap_auth
+      - mtls_auth
+      - stateful_session
+      - session_management
+      - permission_authorization
+      - rate_limiting
+      - mfa_totp
+      - mfa_webauthn
+    category: security
+    status: stable
+    version: 1.2.0
+  - id: CP04
+    name: RBAC & Policy Engine
+    internal_id: cp04_rbac
+    phase: P0
+    description: "Role-based access control, permissions, ABAC policy engine with expression DSL"
+    definitions_count: 10
+    obligations_count: 2
+    depends_on:
+      - CP02
+      - CP03
+    capabilities_provided:
+      - role_check
+      - policy_evaluation
+      - role_hierarchy
+      - abac_engine
+    category: security
+    status: stable
+    version: 1.2.0
+  - id: CP07
+    name: Infrastructure as Code Generator
+    internal_id: cp07_iac
+    phase: P0
+    description: "Local runtime (docker-compose) and AWS baseline profiles"
+    definitions_count: 2
+    obligations_count: 1
+    depends_on: []
+    capabilities_provided:
+      - docker_compose
+      - terraform_aws
+    category: infrastructure
+    status: stable
+    version: 1.1.0
+  - id: CP05
+    name: Event-Driven Architecture Generator
+    internal_id: cp05_event_driven
     phase: P1
-    description: Logging, metrics, tracing, OpenTelemetry, log shipping baseline profiles
-    definitions_count: 9
+    description: "Event topics, publishing, subscriptions, outbox, transport abstraction, DLQ, event sourcing"
+    definitions_count: 19
+    obligations_count: 9
+    depends_on:
+      - CP01
+    capabilities_provided:
+      - event_publisher
+      - event_subscriber
+      - outbox_pattern
+      - transport_abstraction
+      - dlq
+      - event_sourcing
+      - idempotent_consumer
+      - schema_versioning
+      - cqrs_projection
+    category: architecture
+    status: stable
+    version: 1.1.0
+  - id: CP06
+    name: API Gateway & Service Mesh Generator
+    internal_id: cp06_api_gateway
+    phase: P1
+    description: "Gateway profiles (Kong/Consul), routing (HTTP/GraphQL/Webhook), circuit breaker, tenant-aware"
+    definitions_count: 29
+    obligations_count: 11
+    depends_on:
+      - CP01
+      - CP05
+    capabilities_provided:
+      - kong_gateway
+      - consul_mesh
+      - http_routing
+      - graphql_routing
+      - webhook
+      - circuit_breaker
+      - rate_limiting
+      - tenant_aware
+    category: integration
+    status: stable
+    version: 1.1.0
+  - id: CP08
+    name: Database & Data Access Layer Generator
+    internal_id: cp08_database
+    phase: P1
+    description: "Datasource, entity, repository, migration, spatial, time-series, CQRS, distributed tx, JSONB"
+    definitions_count: 29
+    obligations_count: 15
+    depends_on:
+      - CP01
+    capabilities_provided:
+      - datasource
+      - entity_generation
+      - repository_pattern
+      - migration
+      - spatial
+      - time_series
+      - cqrs_read_model
+      - distributed_transaction
+      - jsonb
+    category: persistence
+    status: stable
+    version: 1.1.0
+  - id: CP09
+    name: Caching & Performance Layer Generator
+    internal_id: cp09_cache
+    phase: P1
+    description: "Cache profiles (Redis/Memory/Memcached), invalidation, CDN, stampede prevention, multi-tier, warmup"
+    definitions_count: 15
+    obligations_count: 9
+    depends_on:
+      - CP08
+    capabilities_provided:
+      - redis
+      - memory
+      - memcached
+      - tenant_aware
+      - invalidation
+      - cdn
+      - stampede_prevention
+      - multi_tier
+      - cache_warmup
+    category: performance
+    status: stable
+    version: 1.1.0
+  - id: CP10
+    name: Search & Indexing Generator
+    internal_id: cp10_search
+    phase: P1
+    description: "Search (Elasticsearch/Meilisearch), fulltext, vector similarity, geospatial, faceted aggregation"
+    definitions_count: 19
+    obligations_count: 9
+    depends_on:
+      - CP08
+    capabilities_provided:
+      - elasticsearch
+      - meilisearch
+      - tenant_aware
+      - fulltext
+      - vector_similarity
+      - geospatial_search
+      - faceted_aggregation
+    category: performance
+    status: stable
+    version: 1.1.0
+  - id: CP11
+    name: File Storage & Media Processing Generator
+    internal_id: cp11_file_media
+    phase: P1
+    description: "File storage (S3, local), upload policies, media transforms, CloudFront CDN, presigned URL"
+    definitions_count: 8
     obligations_count: 5
     depends_on:
       - CP07
     capabilities_provided:
-      - emit_metric
+      - s3_storage
+      - local_storage
+      - upload_policy
+      - media_transform
+      - cdn_integration
+      - presigned_url
+    category: storage
+    status: stable
+    version: 1.2.0
+  - id: CP12
+    name: Notification & Communication Generator
+    internal_id: cp12_notification
+    phase: P1
+    description: "Notification channels (email/SMS/push/webhook), templates, delivery tracking, A/B testing"
+    definitions_count: 15
+    obligations_count: 6
+    depends_on:
+      - CP05
+    capabilities_provided:
+      - email
+      - sms
+      - push
+      - template_engine
+      - webhook
+      - delivery_tracking
+      - ab_testing
+    category: communication
+    status: stable
+    version: 1.1.0
+  - id: CP13
+    name: Background Job & Workflow Generator
+    internal_id: cp13_workflow_runtime
+    phase: P1
+    description: "Job scheduler, background worker, workflow/DAG, saga orchestrator, queue provider, DLQ, retry"
+    definitions_count: 17
+    obligations_count: 7
+    depends_on:
+      - CP05
+    capabilities_provided:
+      - job_scheduler
+      - background_worker
+      - workflow_engine
+      - dag_executor
+      - saga_orchestrator
+      - queue_provider
+      - dead_letter_queue
+      - retry_policy
+    category: runtime
+    status: stable
+    version: 1.1.0
+  - id: CP14
+    name: Audit Trail & Compliance Generator
+    internal_id: cp14_audit_compliance
+    phase: P1
+    description: "Audit trails, immutable ledger, compliance (GDPR/HIPAA/SOX/PCI-DSS), tamper detection, export"
+    definitions_count: 18
+    obligations_count: 6
+    depends_on:
+      - CP01
+    capabilities_provided:
+      - audit_logger
+      - audit_middleware
+      - audit_module
+      - audit_api_routes
+      - immutable_ledger
+      - compliance_report
+      - audit_frontend
+    category: compliance
+    status: stable
+    version: 1.1.0
+  - id: CP15
+    name: Observability Stack Generator
+    internal_id: cp15_observability
+    phase: P1
+    description: "Logging, metrics, tracing, OpenTelemetry, log shipping, span propagation baseline profiles"
+    definitions_count: 14
+    obligations_count: 7
+    depends_on:
+      - CP07
+    capabilities_provided:
+      - metrics
       - structured_logging
-      - distributed_tracing
-      - opentelemetry_export
+      - tracing
+      - opentelemetry
       - log_shipping
       - span_propagation
     category: observability
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP23
     name: Testing Framework Generator
     internal_id: cp23_testing_framework
@@ -286,84 +332,90 @@ core_packs:
     name: API & System Monitoring Generator
     internal_id: cp16_monitoring
     phase: P2
-    description: Dashboards, SLI definitions, alert policies
-    definitions_count: 3
-    obligations_count: 1
+    description: "Dashboards, SLI/SLO tracking, alert engine, health check, escalation policy"
+    definitions_count: 17
+    obligations_count: 8
     depends_on:
       - CP15
     capabilities_provided:
-      - dashboard_create
-      - alert_define
-      - sli_monitor
+      - dashboard
+      - alert_engine
+      - sli_tracker
+      - health_check
+      - notification
+      - escalation
+      - slo_tracking
     category: observability
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP17
     name: Business Intelligence & Analytics Generator
     internal_id: cp17_bi_analytics
     phase: P2
-    description: Analytics models, dashboards, scheduled jobs
+    description: "Analytics query engine, dashboard builder, report scheduler"
     definitions_count: 9
-    obligations_count: 6
+    obligations_count: 3
     depends_on:
       - CP08
       - CP15
     capabilities_provided:
-      - analytics_query
-      - dashboard_build
-      - report_schedule
+      - analytics_query_engine
+      - dashboard_builder
+      - report_scheduler
     category: analytics
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP18
     name: Frontend Framework Generator
     internal_id: cp18_frontend_framework
     phase: P2
-    description: Frontend app shells, routing, state stores
-    definitions_count: 3
-    obligations_count: 2
+    description: "Frontend app shells, routing, state stores (Angular/React)"
+    definitions_count: 7
+    obligations_count: 3
     depends_on:
       - CP01
     capabilities_provided:
-      - app_shell_scaffold
-      - route_define
-      - state_store_init
+      - app_shell
+      - routing
+      - state_store
     category: frontend
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP19
     name: UI Component Generator
     internal_id: cp19_ui_components
     phase: P2
-    description: Reusable components, forms, tables
-    definitions_count: 3
-    obligations_count: 1
+    description: "Reusable UI components: forms, data tables, card lists, dialogs (5 UI frameworks × 2 stacks)"
+    definitions_count: 9
+    obligations_count: 3
     depends_on:
       - CP18
     capabilities_provided:
-      - component_render
-      - form_generate
-      - table_generate
+      - form_fields
+      - data_tables
+      - card_lists
+      - dialogs
     category: frontend
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP20
     name: API Client & Integration Generator
     internal_id: cp20_api_client
     phase: P2
-    description: API clients, bindings, realtime bridges
-    definitions_count: 3
+    description: "Typed API clients, WebSocket/SSE bridge, OpenAPI binding (Angular/React)"
+    definitions_count: 6
     obligations_count: 3
     depends_on:
       - CP06
       - CP18
     capabilities_provided:
-      - api_client_generate
-      - realtime_bridge
-      - openapi_bind
+      - typed_client
+      - websocket_bridge
+      - sse_bridge
+      - openapi_binding
     category: frontend
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP21
     name: Authentication UI Generator
     internal_id: cp21_auth_ui
@@ -950,48 +1002,46 @@ core_packs:
     name: Blueprint Composition Engine
     internal_id: cp51_blueprint
     phase: P0
-    description: Compiler engine to compose CPs + DPs + RXs into complete blueprint
-    definitions_count: 4
-    obligations_count: 3
+    description: "Compiler engine to compose CPs + DPs + RXs into complete blueprint, recipe macros"
+    definitions_count: 14
+    obligations_count: 6
     depends_on:
       - CP01
-    capabilities_provided:
-      - compose_blueprint
-      - validate_blueprint
+    capabilities_provided: []
     category: compiler
     status: stable
-    version: 1.0.0
+    version: 1.1.0
   - id: CP52
     name: Invariant Gate Framework
     internal_id: cp52_invariant
     phase: P0
-    description: Compile-time invariant checker for blueprint validation
-    definitions_count: 3
-    obligations_count: 2
+    description: "Compile-time invariant checker for blueprint validation, gate evaluator"
+    definitions_count: 8
+    obligations_count: 1
     depends_on:
       - CP51
     capabilities_provided:
-      - enforce_invariant
-      - gate_check
+      - invariant_checker
+      - gate_evaluator
     category: compiler
-    status: developing
-    version: 1.0.0
+    status: stable
+    version: 1.1.0
   - id: CP53
     name: Domain Pack Runtime Bridge
     internal_id: cp53_domain_bridge
     phase: P0
-    description: Runtime bridge between generic CPs and domain-specific semantics
+    description: "Runtime bridge between generic CPs and domain-specific semantics, invoker"
     definitions_count: 3
-    obligations_count: 2
+    obligations_count: 3
     depends_on:
       - CP01
       - CP51
     capabilities_provided:
-      - bridge_domain_pack
-      - runtime_invoke
+      - domain_bridge
+      - runtime_invoker
     category: compiler
     status: stable
-    version: 1.0.0
+    version: 1.1.0
 domain_packs:
   - id: DP01
     name: Commerce Core

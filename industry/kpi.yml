@@ -5,9 +5,9 @@
 # Aligned with: CORE_PACK_SPECIFICATION, DOMAIN_PACK_SPECIFICATION, REGULATORY_OVERLAY_SPECIFICATION
 ---
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   created_date: "2026-04-17"
-  updated_date: "2026-05-06"
+  updated_date: "2026-05-19"
   measurement_module: "industry.kpi_checks"
 
 # ============================================================================
