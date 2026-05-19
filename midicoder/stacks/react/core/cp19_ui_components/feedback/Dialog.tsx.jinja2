@@ -1,6 +1,15 @@
 /** Dialog Component - Non-modal dialog for confirmation and simple input. */
 
 import React, { ReactNode } from "react";
+{% if ui_framework == "material" %}
+import { Dialog as MuiDialog, DialogTitle, DialogContent, DialogActions, Button, DialogContentText } from '@mui/material';
+{% elif ui_framework == "bootstrap" %}
+import { Modal } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Modal as AntModal } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { ModalWrapper, ModalHeader, ModalBody, ModalFooter, Button } from '@carbon/react';
+{% endif %}
 
 export interface DialogProps {
   title: string;
@@ -36,8 +45,6 @@ export const Dialog: React.FC<DialogProps> = ({
   };
 
   {% if ui_framework == "material" %}
-  import { Dialog as MuiDialog, DialogTitle, DialogContent, DialogActions, Button, DialogContentText } from '@mui/material';
-
   return (
     <MuiDialog
       open={isOpen}
@@ -103,8 +110,6 @@ export const Dialog: React.FC<DialogProps> = ({
     </div>
   );
   {% elif ui_framework == "bootstrap" %}
-  import { Modal } from 'react-bootstrap';
-
   return (
     <Modal
       show={isOpen}
@@ -132,8 +137,6 @@ export const Dialog: React.FC<DialogProps> = ({
     </Modal>
   );
   {% elif ui_framework == "antd" %}
-  import { Modal as AntModal } from 'antd';
-
   return (
     <AntModal
       title={title}
@@ -149,8 +152,6 @@ export const Dialog: React.FC<DialogProps> = ({
     </AntModal>
   );
   {% elif ui_framework == "carbon" %}
-  import { ModalWrapper, ModalHeader, ModalBody, ModalFooter, Button } from '@carbon/react';
-
   return (
     <ModalWrapper
       open={isOpen}
