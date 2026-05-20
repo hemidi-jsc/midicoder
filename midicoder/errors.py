@@ -635,6 +635,20 @@ class ErrorCode(str, Enum):
     CP23_DUPLICATE_TEST_ID = "MDC-CP23-010"
 
     # =========================================================================
+    # CP24: Code Quality & Security Scanner Generator Errors
+    # =========================================================================
+    CP24_QUALITY_GATE_FAILED = "MDC-CP24-001"
+    CP24_SECURITY_SCAN_FAILED = "MDC-CP24-002"
+    CP24_PROFILE_INVALID = "MDC-CP24-003"
+    CP24_SCAN_CONFIG_INVALID = "MDC-CP24-004"
+    CP24_TEMPLATE_NOT_FOUND = "MDC-CP24-005"
+    CP24_RENDER_FAILED = "MDC-CP24-006"
+    CP24_DSL_PARSE_ERROR = "MDC-CP24-007"
+    CP24_EMPTY_PROFILE_NAME = "MDC-CP24-008"
+    CP24_INVALID_STACK = "MDC-CP24-009"
+    CP24_REPORT_WRITE_FAILED = "MDC-CP24-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

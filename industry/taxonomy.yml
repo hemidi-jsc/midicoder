@@ -469,8 +469,8 @@ core_packs:
       - security_scan
       - quality_gate
     category: quality
-    status: planned
-    version: 1.0.0
+    status: stable
+    version: 1.1.0
   - id: CP25
     name: Performance Testing Generator
     internal_id: cp25_performance_testing

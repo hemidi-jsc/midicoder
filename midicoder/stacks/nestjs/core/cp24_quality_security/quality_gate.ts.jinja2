@@ -1,0 +1,180 @@
+/**
+ * Quality Gate Runner — Script kiểm tra chất lượng code
+ *
+ * Chạy ESLint và npm audit để phát hiện lỗi code quality
+ * và lỗ hổng bảo mật trong project.
+ *
+ * Mã trả về:
+ *   0 — Tất cả kiểm tra đều đạt
+ *   1 — Có kiểm tra không đạt (block pipeline)
+ *
+ * Sử dụng:
+ *   npx ts-node scripts/quality-gate.ts
+ *
+ * Lưu ý: Script này hoàn toàn độc lập, không phụ thuộc vào thư viện midicoder.
+ */
+
+import * as childProcess from "child_process";
+import * as path from "path";
+
+/**
+ * Kết quả của một bước kiểm tra quality gate
+ */
+interface GateResult {
+  /** Tên bước kiểm tra */
+  name: string;
+  /** Có đạt không */
+  passed: boolean;
+  /** Thông báo chi tiết */
+  message: string;
+  /** Mã trả về từ quá trình con */
+  exitCode: number;
+}
+
+/**
+ * Danh sách các bước kiểm tra quality gate
+ */
+const GATES: Array<{ name: string; command: string; args: string[] }> = [
+  {
+    name: "ESLint",
+    command: "npx",
+    args: ["eslint", "src/", "--ext", ".ts", "--format", "compact"],
+  },
+  {
+    name: "NPM Audit",
+    command: "npm",
+    args: ["audit", "--audit-level", "high"],
+  },
+];
+
+/**
+ * Chạy một lệnh shell và thu thập kết quả
+ *
+ * @param command — Lệnh cần thực thi
+ * @param args — Tham số của lệnh
+ * @returns Promise chứa stdout, stderr, và exit code
+ */
+function runCommand(
+  command: string,
+  args: string[]
+): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
+  return new Promise((resolve) => {
+    const child = childProcess.spawn(command, args, {
+      cwd: path.resolve(__dirname, ".."),
+      stdio: ["inherit", "pipe", "pipe"],
+      shell: process.platform === "win32",
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout?.on("data", (data: Buffer) => {
+      stdout += data.toString();
+      process.stdout.write(data);
+    });
+
+    child.stderr?.on("data", (data: Buffer) => {
+      stderr += data.toString();
+      process.stderr.write(data);
+    });
+
+    child.on("close", (code) => {
+      resolve({ stdout, stderr, exitCode: code });
+    });
+
+    child.on("error", (err: Error) => {
+      resolve({
+        stdout: "",
+        stderr: `Lỗi khi chạy lệnh: ${err.message}`,
+        exitCode: 1,
+      });
+    });
+  });
+}
+
+/**
+ * In kết quả của một bước kiểm tra
+ *
+ * @param result — Kết quả bước kiểm tra
+ */
+function printResult(result: GateResult): void {
+  const status = result.passed ? "DATH" : "KHONG_DAT";
+  const icon = result.passed ? "[OK]" : "[THAT]";
+  console.log(`  ${icon} ${result.name}: ${status} — ${result.message}`);
+}
+
+/**
+ * Hàm chính — chạy tất cả các bước quality gate
+ */
+async function main(): Promise<void> {
+  console.log("========================================");
+  console.log("  Midicoder CE — Quality Gate");
+  console.log("  Đang chạy các kiểm tra chất lượng...");
+  console.log("========================================\n");
+
+  const results: GateResult[] = [];
+  let overallPassed = true;
+
+  for (const gate of GATES) {
+    console.log(`  Đang chạy: ${gate.name}...`);
+
+    try {
+      const output = await runCommand(gate.command, gate.args);
+      const passed = output.exitCode === 0;
+      const message = passed
+        ? "Không tìm thấy vấn đề"
+        : `Thất bại với mã ${output.exitCode}`;
+
+      results.push({
+        name: gate.name,
+        passed,
+        message,
+        exitCode: output.exitCode ?? 1,
+      });
+
+      if (!passed) {
+        overallPassed = false;
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Lỗi không xác định";
+      results.push({
+        name: gate.name,
+        passed: false,
+        message: errorMessage,
+        exitCode: 1,
+      });
+      overallPassed = false;
+    }
+
+    console.log("");
+  }
+
+  // In tổng kết
+  console.log("========================================");
+  console.log("  Tổng kết Quality Gate");
+  console.log("========================================");
+
+  for (const result of results) {
+    printResult(result);
+  }
+
+  console.log("");
+  const totalPassed = results.filter((r) => r.passed).length;
+  const totalFailed = results.filter((r) => !r.passed).length;
+  console.log(`  Tổng: ${results.length} | Đạt: ${totalPassed} | Không đạt: ${totalFailed}`);
+  console.log("");
+
+  if (overallPassed) {
+    console.log("  Kết quả: TOAN BO KIEM TRA DA DAT");
+    process.exit(0);
+  } else {
+    console.log("  Kết quả: CO KIEM TRA KHONG DAT — Pipeline bị block!");
+    process.exit(1);
+  }
+}
+
+// Chạy script
+main().catch((error) => {
+  console.error("  Lỗi nghiêm trọng:", error);
+  process.exit(1);
+});

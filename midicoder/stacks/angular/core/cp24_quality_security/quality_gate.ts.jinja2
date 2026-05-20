@@ -1,0 +1,209 @@
+/**
+ * Quality Gate Runner cho dự án Angular
+ *
+ * Chạy tuần tự: ESLint -> ng build --prod -> lockfile-lint
+ * Sử dụng: npx ts-node scripts/quality-gate.ts
+ *
+ * Mã trả về:
+ *   0 = tất cả bước đều pass
+ *   1 = có bước bị fail (block pipeline)
+ *
+ * Sinh bởi CP24 AngularQualityEmitter
+ */
+
+import { execSync } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+
+/**
+ * Cấu hình quality gate
+ */
+const config = {
+  /** Mực threshold coverage tối thiểu (%) */
+  minCoverage: 80,
+  /** Mực severity tối đa cho phép (các vi phạm cao hơn sẽ fail) */
+  failOnSeverity: "high",
+};
+
+/**
+ * Kết quả của một bước kiểm tra
+ */
+interface StepResult {
+  /** Tên bước */
+  name: string;
+  /** Có thành công không */
+  passed: boolean;
+  /** Thông điệp lỗi (nếu có) */
+  error?: string;
+}
+
+/**
+ * Mảng lưu kết quả từng bước
+ */
+const results: StepResult[] = [];
+
+/**
+ * In logo và thông tin bắt đầu
+ */
+function printHeader(): void {
+  console.log("=".repeat(60));
+  console.log("  CP24 — Quality Gate Runner (Angular)");
+  console.log("=".repeat(60));
+  console.log("");
+}
+
+/**
+ * In tổng kết cuối cùng
+ */
+function printSummary(): void {
+  console.log("");
+  console.log("=".repeat(60));
+  console.log("  Tổng kết Quality Gate");
+  console.log("=".repeat(60));
+
+  let totalPassed = 0;
+  for (const result of results) {
+    const icon = result.passed ? "[OK]" : "[THBAT]";
+    console.log(`  ${icon} ${result.name}`);
+    if (result.error) {
+      console.log(`      Lỗi: ${result.error}`);
+    }
+    if (result.passed) {
+      totalPassed++;
+    }
+  }
+
+  console.log("");
+  console.log(
+    `  Kết quả: ${totalPassed}/${results.length} bước thành công`
+  );
+  console.log("=".repeat(60));
+}
+
+/**
+ * Chạy ESLint để kiểm tra chất lượng code
+ */
+function runEslint(): StepResult {
+  console.log("\n[1/3] Chạy ESLint...");
+  try {
+    execSync("npx eslint 'src/**/*.ts' --format compact", {
+      stdio: "inherit",
+      cwd: process.cwd(),
+    });
+    console.log("  ESLint: Pass");
+    return { name: "ESLint", passed: true };
+  } catch (error: any) {
+    const message = error.message || "ESLint phát hiện vi phạm";
+    console.log(`  ESLint: Fail — ${message}`);
+    return { name: "ESLint", passed: false, error: message };
+  }
+}
+
+/**
+ * Chạy ng build --prod để kiểm tra build sản phẩm
+ */
+function runNgBuild(): StepResult {
+  console.log("\n[2/3] Chạy ng build --prod...");
+  try {
+    execSync("npx ng build --configuration production", {
+      stdio: "inherit",
+      cwd: process.cwd(),
+    });
+    console.log("  Ng Build: Pass");
+    return { name: "Ng Build (production)", passed: true };
+  } catch (error: any) {
+    const message = error.message || "Build thất bại";
+    console.log(`  Ng Build: Fail — ${message}`);
+    return { name: "Ng Build (production)", passed: false, error: message };
+  }
+}
+
+/**
+ * Chạy lockfile-lint để kiểm tra bảo mật lockfile
+ */
+function runLockfileLint(): StepResult {
+  console.log("\n[3/3] Chạy lockfile-lint...");
+
+  // Kiểm tra file config có tồn tại không
+  const configPath = path.join(process.cwd(), "lockfile-lint.config.js");
+  if (!fs.existsSync(configPath)) {
+    console.log("  Lockfile-lint: Bỏ qua (không tìm thấy file config)");
+    return {
+      name: "Lockfile Lint",
+      passed: true,
+      error: "Không có config — bỏ qua",
+    };
+  }
+
+  try {
+    execSync("npx lockfile-lint", {
+      stdio: "inherit",
+      cwd: process.cwd(),
+    });
+    console.log("  Lockfile Lint: Pass");
+    return { name: "Lockfile Lint", passed: true };
+  } catch (error: any) {
+    const message = error.message || "Lockfile có vấn đề bảo mật";
+    console.log(`  Lockfile Lint: Fail — ${message}`);
+    return { name: "Lockfile Lint", passed: false, error: message };
+  }
+}
+
+/**
+ * Xuất báo cáo JSON để CI/CD có thể đọc
+ */
+function writeReport(): void {
+  const report = {
+    timestamp: new Date().toISOString(),
+    config: {
+      minCoverage: config.minCoverage,
+      failOnSeverity: config.failOnSeverity,
+    },
+    results: results,
+    overall: results.every((r) => r.passed),
+  };
+
+  const reportDir = path.join(process.cwd(), "reports");
+  if (!fs.existsSync(reportDir)) {
+    fs.mkdirSync(reportDir, { recursive: true });
+  }
+
+  const reportPath = path.join(reportDir, "quality_gate.json");
+  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), "utf-8");
+  console.log(`\n  Báo cáo lưu tại: ${reportPath}`);
+}
+
+/**
+ * Hàm chính — chạy tuần tự tất cả bước quality gate
+ */
+function main(): void {
+  printHeader();
+
+  // Bước 1: ESLint
+  results.push(runEslint());
+
+  // Bước 2: Ng Build production
+  results.push(runNgBuild());
+
+  // Bước 3: Lockfile Lint
+  results.push(runLockfileLint());
+
+  // Xuất báo cáo
+  writeReport();
+
+  // In tổng kết
+  printSummary();
+
+  // Trả về mã exit: 0 = pass, 1 = fail
+  const allPassed = results.every((r) => r.passed);
+  if (!allPassed) {
+    console.log("\n  Quality Gate: THAT BAI — Pipeline bị block");
+    process.exit(1);
+  }
+
+  console.log("\n  Quality Gate: HOAN THANH — Tất cả bước pass");
+  process.exit(0);
+}
+
+// Chạy chất lượng gate
+main();

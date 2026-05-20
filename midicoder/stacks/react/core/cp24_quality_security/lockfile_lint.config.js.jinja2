@@ -1,0 +1,32 @@
+{#
+    Template: lockfile-lint.config.js cho React (CP24 - Code Quality & Security Scanner)
+
+    Mô tả:
+    Sinh cấu hình lockfile-lint để kiểm tra tính toàn vẹn của package-lock.json.
+    Đảm bảo dependencies chỉ từ nguồn tin cậy và không có protocol không an toàn.
+
+    Tất cả comments trong tiếng Việt.
+#}
+/**
+ * Lockfile Lint Configuration — CP24
+ *
+ * Cấu hình cho lockfile-lint: kiểm tra tính toàn vẹn của package-lock.json.
+ *
+ * Quy tắc:
+ * - allowedHosts: Chỉ cho phép package từ registry 'npm' chính thức
+ * - allowedSchemes: Cho phép cả https và http (http dùng cho git URL)
+ * - allowedPackages: null = không whitelist cụ thể, mọi package đều được kiểm tra
+ * - validateHttps: true = bắt buộc HTTPS cho các kết nối có thể
+ *
+ * Sử dụng:
+ *   npx lockfile-lint -c lockfile-lint.config.js
+ */
+module.exports = [
+  {
+    path: 'package-lock.json',
+    allowedHosts: ['npm'],
+    allowedSchemes: ['https:', 'http:'],
+    allowedPackages: null,
+    validateHttps: true,
+  },
+];

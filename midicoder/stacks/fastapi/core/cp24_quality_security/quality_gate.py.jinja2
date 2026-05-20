@@ -1,0 +1,167 @@
+# =============================================================================
+# Code Quality & Security Scanner Generator (CP24)
+# =============================================================================
+# Quality Gate Runner — kiểm tra chất lượng code trước khi deploy
+# Tự động sinh bởi Midicoder CE — không chỉnh sửa thủ công
+# =============================================================================
+
+#!/usr/bin/env python3
+"""Quality Gate Runner — kiểm tra chất lượng code trước khi deploy."""
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+
+def run_quality_gate() -> int:
+    """Chạy quality gate và trả về exit code.
+
+    Thực hiện lần lượt:
+    1. Ruff check — kiểm tra linting và formatting
+    2. Bandit scan — quét lỗ hổng bảo mật
+    3. Safety check — kiểm tra phụ thuộc có bảo mật
+
+    Returns:
+        0 nếu pass tất cả kiểm tra, 1 nếu có vi phạm
+    """
+    violations = []
+    report_path = Path("reports/quality_gate.json")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # ── Bước 1: Chạy ruff check ──────────────────────────────────────────
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "ruff", "check", "."],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            # Ruff trả về 1 khi có vi phạm, stdout chứa danh sách
+            output = result.stdout.strip() or result.stderr.strip()
+            if output:
+                violations.append({
+                    "tool": "ruff",
+                    "severity": "high",
+                    "message": output,
+                    "exit_code": result.returncode,
+                })
+    except FileNotFoundError:
+        violations.append({
+            "tool": "ruff",
+            "severity": "low",
+            "message": "Ruff không được cài đặt — bỏ qua",
+            "exit_code": 0,
+        })
+    except subprocess.TimeoutExpired:
+        violations.append({
+            "tool": "ruff",
+            "severity": "high",
+            "message": "Ruff check quá thời gian chờ (120s)",
+            "exit_code": 1,
+        })
+
+    # ── Bước 2: Chạy bandit scan ─────────────────────────────────────────
+    try:
+        result = subprocess.run(
+            ["bandit", "-r", ".", "-f", "json", "-o", "/dev/null"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0 and result.returncode != 1:
+            # returncode 0 = không có vấn đề, 1 = có cảnh báo, >1 = lỗi
+            output = result.stderr.strip()
+            if output:
+                violations.append({
+                    "tool": "bandit",
+                    "severity": "high",
+                    "message": output,
+                    "exit_code": result.returncode,
+                })
+        elif result.returncode == 1:
+            violations.append({
+                "tool": "bandit",
+                "severity": "medium",
+                "message": "Bandit phát hiện các cảnh báo bảo mật — xem log chi tiết",
+                "exit_code": 1,
+            })
+    except FileNotFoundError:
+        violations.append({
+            "tool": "bandit",
+            "severity": "low",
+            "message": "Bandit không được cài đặt — bỏ qua",
+            "exit_code": 0,
+        })
+    except subprocess.TimeoutExpired:
+        violations.append({
+            "tool": "bandit",
+            "severity": "high",
+            "message": "Bandit scan quá thời gian chờ (120s)",
+            "exit_code": 1,
+        })
+
+    # ── Bước 3: Chạy safety check ────────────────────────────────────────
+    try:
+        result = subprocess.run(
+            ["safety", "check", "--json-output"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            try:
+                safety_report = json.loads(result.stdout)
+                vuln_count = safety_report.get("total_vulnerabilities", 0)
+                violations.append({
+                    "tool": "safety",
+                    "severity": "high",
+                    "message": f"Safety phát hiện {vuln_count} lỗ hổng bảo mật trong phụ thuộc",
+                    "exit_code": result.returncode,
+                    "details": safety_report.get("vulnerabilities", []),
+                })
+            except json.JSONDecodeError:
+                output = result.stdout.strip() or result.stderr.strip()
+                violations.append({
+                    "tool": "safety",
+                    "severity": "high",
+                    "message": output or "Safety check thất bại",
+                    "exit_code": result.returncode,
+                })
+    except FileNotFoundError:
+        violations.append({
+            "tool": "safety",
+            "severity": "low",
+            "message": "Safety không được cài đặt — bỏ qua",
+            "exit_code": 0,
+        })
+    except subprocess.TimeoutExpired:
+        violations.append({
+            "tool": "safety",
+            "severity": "high",
+            "message": "Safety check quá thời gian chờ (120s)",
+            "exit_code": 1,
+        })
+
+    # ── Ghi báo cáo JSON ─────────────────────────────────────────────────
+    report = {
+        "passed": len(violations) == 0,
+        "total_violations": len(violations),
+        "violations": violations,
+    }
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+    # ── In kết quả ───────────────────────────────────────────────────────
+    if violations:
+        print(f"FAILED: {len(violations)} vi phạm phát hiện — xem {report_path}")
+        for v in violations:
+            print(f"  [{v['severity'].upper()}] {v['tool']}: {v['message'][:100]}")
+        return 1
+    else:
+        print(f"PASSED: Không có vi phạm — báo cáo tại {report_path}")
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(run_quality_gate())

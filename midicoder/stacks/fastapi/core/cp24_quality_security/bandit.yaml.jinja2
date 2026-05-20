@@ -1,0 +1,18 @@
+# =============================================================================
+# Code Quality & Security Scanner Generator (CP24)
+# =============================================================================
+# Bandit security scan configuration cho dự án FastAPI
+# Tự động sinh bởi Midicoder CE — không chỉnh sửa thủ công
+# =============================================================================
+
+exclude_dirs:
+  - tests
+  - venv
+  - .venv
+  - node_modules
+targets:
+  - .
+skips:
+  - B101  # assert_used — chấp nhận trong test
+  - B104  # hardcoded-bind-all-interfaces — OK trong môi trường dev
+aggregate: 'bandit.blint.bag.Bag'

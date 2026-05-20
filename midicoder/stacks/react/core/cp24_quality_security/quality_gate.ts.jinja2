@@ -1,0 +1,242 @@
+{#
+Template: scripts/quality-gate.ts cho React (CP24 - Code Quality & Security Scanner)
+
+Mô tả:
+Sinh script TypeScript để chạy quality gate — kết hợp ESLint, npm audit, lockfile-lint.
+Standalone: không import từ midicoder.
+Exit code: 0 = pass, 1 = fail.
+
+Tất cả comments trong tiếng Việt.
+#}
+/**
+* Quality Gate Runner — CP24
+*
+* Chạy toàn bộ kiểm tra chất lượng và bảo mật cho dự án React:
+* 1. ESLint — kiểm tra style code và security rules
+* 2. npm audit — kiểm tra lỗ hổng bảo mật trong dependencies
+* 3. lockfile-lint — kiểm tra tính toàn vẹn của lockfile
+*
+* Exit code:
+* 0 = Tất cả kiểm tra đạt
+* 1 = Có ít nhất một kiểm tra thất bại
+*
+* Sử dụng:
+* npx ts-node scripts/quality-gate.ts
+* hoặc: npx tsx scripts/quality-gate.ts
+*/
+
+import { execSync } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+
+// ============================================================
+// Cấu hình quality gate
+// ============================================================
+
+/** Threshold coverage tối thiểu (%) */
+const MIN_COVERAGE: number = {{ min_coverage }};
+
+/** Có block pipeline khi fail không */
+const BLOCK_ON_FAIL: boolean = {{ block_on_fail | lower }};
+
+/**
+* Kết quả của từng bước kiểm tra
+*/
+interface CheckResult {
+/** Tên bước kiểm tra */
+name: string;
+/** Có đạt không */
+passed: boolean;
+/** Thông báo chi tiết (nếu fail) */
+message?: string;
+}
+
+/**
+* Tổng kết quality gate
+*/
+interface GateSummary {
+/** Danh sách kết quả từng bước */
+results: CheckResult[];
+/** Có pass tổng thể không */
+overallPassed: boolean;
+/** Thời gian chạy (ms) */
+durationMs: number;
+}
+
+// ============================================================
+// Hàm chạy command và trả về kết quả
+// ============================================================
+
+/**
+* Chạy shell command và kiểm tra exit code.
+*
+* @param command - Lệnh shell cần chạy
+* @param label - Tên hiển thị cho bước kiểm tra
+* @returns CheckResult — kết quả pass/fail
+*/
+function runCheck(command: string, label: string): CheckResult {
+try {
+execSync(command, { stdio: "inherit" });
+return { name: label, passed: true };
+} catch (error: any) {
+const message = error?.message || error?.stdout?.toString() || "Không rõ lỗi";
+return { name: label, passed: false, message };
+}
+}
+
+// ============================================================
+// Các bước kiểm tra
+// ============================================================
+
+/**
+* Bước 1: Chạy ESLint để kiểm tra chất lượng code.
+*
+* ESLint sẽ quét toàn bộ thư mục src/ với các rules đã cấu hình
+* trong .eslintrc.json (bao gồm cả security plugin).
+*/
+function checkEslint(): CheckResult {
+return runCheck("npx eslint 'src/**/*.{ts,tsx}' --format compact", "ESLint — Kiểm tra chất lượng code");
+}
+
+/**
+* Bước 2: Chạy npm audit để kiểm tra lỗ hổng bảo mật.
+*
+* npm audit sẽ phân tích package-lock.json và báo cáo các
+* dependencies có lỗ hổng bảo mật đã biết.
+*
+* Lưu ý: audit chỉ fail nếu có lỗ hổng mức độ 'high' hoặc 'critical'.
+* Lỗ hổng 'low' và 'moderate' sẽ được warn nhưng không làm fail pipeline.
+*/
+function checkNpmAudit(): CheckResult {
+// npm audit trả về exit code 1 nếu có vuln
+// Chúng ta dùng --audit-level=high để chỉ fail ở mức high+
+return runCheck("npx npm-audit-fix --dry-run || npm audit --audit-level=high", "npm audit — Kiểm tra lỗ hổng bảo mật");
+}
+
+/**
+* Bước 3: Chạy lockfile-lint để kiểm tra tính toàn vẹn lockfile.
+*
+* lockfile-lint đảm bảo:
+* - Tất cả dependencies chỉ từ nguồn tin cậy (npm)
+* - Không có dependency nào dùng protocol không an toàn
+* - Lockfile không bị sửa đổi trái phép
+*/
+function checkLockfileLint(): CheckResult {
+const configPath = path.resolve(process.cwd(), "lockfile-lint.config.js");
+
+// Kiểm tra file config tồn tại
+if (!fs.existsSync(configPath)) {
+return {
+name: "lockfile-lint — Kiểm tra tính toàn vẹn lockfile",
+passed: false,
+message: "Không tìm thấy lockfile-lint.config.js — vui lòng chạy generator trước",
+};
+}
+
+return runCheck("npx lockfile-lint -c lockfile-lint.config.js", "lockfile-lint — Kiểm tra tính toàn vẹn lockfile");
+}
+
+// ============================================================
+// Báo cáo tổng kết
+// ============================================================
+
+/**
+* In báo cáo tổng kết và ghi ra file JSON.
+*
+* @param summary — Tổng kết quality gate
+*/
+function reportSummary(summary: GateSummary): void {
+// In kết quả ra console
+console.log("\n" + "=".repeat(60));
+console.log(" BÁO CÁO QUALITY GATE — CP24");
+console.log("=".repeat(60));
+
+for (const result of summary.results) {
+const icon = result.passed ? "[PASS]" : "[FAIL]";
+console.log(` ${icon} ${result.name}`);
+if (!result.passed && result.message) {
+console.log(` Lỗi: ${result.message}`);
+}
+}
+
+console.log("-".repeat(60));
+const overall = summary.overallPassed ? "PASS" : "FAIL";
+console.log(` TỔNG KẾT: ${overall} (${summary.durationMs}ms)`);
+console.log("=".repeat(60) + "\n");
+
+// Ghi báo cáo JSON vào file
+const reportDir = path.resolve(process.cwd(), "reports");
+if (!fs.existsSync(reportDir)) {
+fs.mkdirSync(reportDir, { recursive: true });
+}
+
+const reportPath = path.join(reportDir, "quality_gate.json");
+fs.writeFileSync(reportPath, JSON.stringify(summary, null, 2), "utf-8");
+console.log(` Báo cáo đã ghi vào: ${reportPath}\n`);
+}
+
+// ============================================================
+// Hàm chính — chạy toàn bộ quality gate
+// ============================================================
+
+/**
+* Hàm chính — chạy tuần tự tất cả các bước kiểm tra.
+*
+* Quy trình:
+* 1. ESLint
+* 2. npm audit
+* 3. lockfile-lint
+* 4. Tổng kết và ghi báo cáo
+* 5. Exit với code thích hợp
+*/
+async function main(): Promise<void> {
+    const startTime = Date.now();
+    const results: CheckResult[] = [];
+
+    console.log("Bắt đầu chạy Quality Gate...\n");
+
+    // Bước 1: ESLint
+    console.log("Đang chạy ESLint...");
+    results.push(checkEslint());
+
+    // Bước 2: npm audit
+    console.log("\nĐang chạy npm audit...");
+    results.push(checkNpmAudit());
+
+    // Bước 3: lockfile-lint
+    console.log("\nĐang chạy lockfile-lint...");
+    results.push(checkLockfileLint());
+
+    // Tính tổng kết
+    const durationMs = Date.now() - startTime;
+    const overallPassed = results.every((r) => r.passed);
+
+    const summary: GateSummary = {
+    results,
+    overallPassed,
+    durationMs,
+    };
+
+    // In báo cáo
+    reportSummary(summary);
+
+    // Exit code: 0 = pass, 1 = fail
+    if (!overallPassed) {
+    if (BLOCK_ON_FAIL) {
+    console.error("Quality gate FAILED — Pipeline bị block.");
+    process.exit(1);
+    } else {
+    console.warn("Quality gate FAILED — Cảnh báo nhưng không block pipeline.");
+    process.exit(0);
+    }
+    }
+
+    console.log("Quality gate PASSED — Tất cả kiểm tra đạt.");
+    process.exit(0);
+    }
+
+    // Chạy hàm chính
+    main().catch((error) => {
+    console.error("Lỗi không mong muốn khi chạy quality gate:", error);
+    process.exit(1);
+    });

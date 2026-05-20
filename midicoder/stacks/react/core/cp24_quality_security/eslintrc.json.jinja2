@@ -1,0 +1,55 @@
+{#
+    Template: .eslintrc.json cho React (CP24 - Code Quality & Security Scanner)
+
+    Mô tả:
+    Sinh cấu hình ESLint cho dự án React với TypeScript.
+    Bao gồm các plugin: react, react-hooks, @typescript-eslint, security, prettier.
+
+    Tất cả comments trong tiếng Việt.
+#}
+{
+  "env": {
+    "browser": true,
+    "es2021": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:react/recommended",
+    "plugin:react-hooks/recommended",
+    "plugin:security/recommended-legacy",
+    "prettier"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaFeatures": {
+      "jsx": true
+    },
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "plugins": [
+    "react",
+    "react-hooks",
+    "@typescript-eslint",
+    "security"
+  ],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "react/prop-types": "off",
+    "security/detect-non-literal-fs-filename": "warn",
+    "security/detect-eval-with-expression": "error"
+    {% for rule_id, severity in rule_overrides.items() %}
+    , "{{ rule_id }}": "{{ severity }}"
+    {% endfor %}
+  },
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  },
+  "ignorePatterns": [
+    "dist/",
+    "build/",
+    "node_modules/"
+  ]
+}

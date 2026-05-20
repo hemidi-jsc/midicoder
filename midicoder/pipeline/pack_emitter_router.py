@@ -268,6 +268,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "AngularRealtimeEmitter",
         "cp22_realtime",
     ),
+    # CP24 – Quality & Security (FastAPI)
+    "cp24.quality.fastapi": (
+        "midicoder.emitters.core.cp24_quality_security.fastapi",
+        "FastAPIQualityEmitter",
+        "cp24_quality",
+    ),
+    # CP24 – Quality & Security (NestJS)
+    "cp24.quality.nestjs": (
+        "midicoder.emitters.core.cp24_quality_security.nestjs",
+        "NestJSQualityEmitter",
+        "cp24_quality",
+    ),
+    # CP24 – Quality & Security (Angular)
+    "cp24.quality.angular": (
+        "midicoder.emitters.core.cp24_quality_security.angular",
+        "AngularQualityEmitter",
+        "cp24_quality",
+    ),
+    # CP24 – Quality & Security (React)
+    "cp24.quality.react": (
+        "midicoder.emitters.core.cp24_quality_security.react",
+        "ReactQualityEmitter",
+        "cp24_quality",
+    ),
 }
 
 
@@ -399,6 +423,13 @@ def _parse_realtime_dict(raw: dict[str, Any]) -> Any:
     return []
 
 
+def _parse_quality_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw quality config dict from DSL/MIR into CP24 QualityCollection."""
+    from midicoder.emitters.core.cp24_quality_security.parser import QualityProfileParser
+    parser = QualityProfileParser()
+    return parser.parse_from_metadata(raw)
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
@@ -410,6 +441,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp18_frontend": _parse_frontend_dict,
     "cp19_ui_component": _parse_ui_component_dict,
     "cp22_realtime": _parse_realtime_dict,
+    "cp24_quality": _parse_quality_dict,
 }
 
 

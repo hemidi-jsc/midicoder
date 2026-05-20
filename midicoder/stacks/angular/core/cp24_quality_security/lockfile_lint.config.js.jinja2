@@ -1,0 +1,25 @@
+/**
+ * Cấu hình lockfile-lint cho dự án Angular
+ *
+ * Kiểm tra package-lock.json để đảm bảo:
+ * - Tất cả packages từ nguồn tin cậy (npm)
+ * - Sử dụng scheme an toàn (https ưu tiên)
+ * - Kiểm tra HTTPS để ngăn MITM attack
+ *
+ * Sinh bởi CP24 AngularQualityEmitter
+ */
+
+module.exports = [
+  {
+    /** Đường dẫn file lockfile cần kiểm tra */
+    path: 'package-lock.json',
+    /** Các host được phép (chỉ cho phép npm registry chính thức) */
+    allowedHosts: ['npm'],
+    /** Các scheme được phép (https ưu tiên, http cho trường hợp cần thiết) */
+    allowedSchemes: ['https:', 'http:'],
+    /** Danh sách package được phép (null = không giới hạn) */
+    allowedPackages: null,
+    /** Bật kiểm tra HTTPS — đảm bảo package được tải qua kết nối mã hóa */
+    validateHttps: true,
+  },
+];

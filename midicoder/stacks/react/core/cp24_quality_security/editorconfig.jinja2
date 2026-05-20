@@ -1,0 +1,31 @@
+{#
+Template: .editorconfig cho React (CP24 - Code Quality & Security Scanner)
+
+Mo ta:
+Sinh file .editorconfig de dong nhat style code giua cac editor.
+Ap dung cho toan du an React voi TypeScript.
+
+Tat ca comments trong tieng Viet.
+#}
+# EditorConfig — CP24
+# Đồng nhất style code giữa các text editor và IDE.
+# Tìm hiểu thêm: https://EditorConfig.org
+
+root = true
+
+# Quy tắc chung cho mọi file
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 2
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Quy tắc riêng cho TypeScript / TSX
+[*.{ts,tsx}]
+indent_size = 2
+
+# Quy tắc riêng cho file JSON
+[*.json]
+indent_size = 2
