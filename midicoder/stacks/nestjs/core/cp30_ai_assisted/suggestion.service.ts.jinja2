@@ -1,0 +1,52 @@
+/**
+ * Suggestion Service — quản lý AI code suggestions.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { Injectable } from '@nestjs/common';
+import {
+  SuggestionContext,
+  SuggestionResult,
+  SuggestionType,
+} from './models';
+
+@Injectable()
+export class SuggestionService {
+  private minConfidence = 0.5;
+
+  /** Đặt confidence threshold tối thiểu. */
+  setMinConfidence(value: number): void {
+    this.minConfidence = value;
+  }
+
+  /**
+   * Lấy suggestions cho bối cảnh (placeholder — user implement LLM provider).
+   *
+   * @param context Bối cảnh suggestion
+   * @param type Loại suggestion
+   * @returns Danh sách suggestions
+   */
+  async suggest(
+    context: SuggestionContext,
+    type: SuggestionType = SuggestionType.COMPLETION,
+  ): Promise<SuggestionResult[]> {
+    // TODO: User implement — gọi LLM provider
+    return [];
+  }
+
+  /** Lọc suggestions theo type. */
+  filterByType(
+    results: SuggestionResult[],
+    type: SuggestionType,
+  ): SuggestionResult[] {
+    return results.filter((r) => r.suggestionType === type);
+  }
+
+  /** Lọc suggestions theo confidence. */
+  filterByMinConfidence(
+    results: SuggestionResult[],
+    minConfidence: number,
+  ): SuggestionResult[] {
+    return results.filter((r) => r.confidence >= minConfidence);
+  }
+}

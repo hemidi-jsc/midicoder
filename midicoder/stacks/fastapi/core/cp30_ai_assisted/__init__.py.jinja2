@@ -1,0 +1,45 @@
+"""
+{{ '# '*12 }}"""
+# coding: utf-8
+"""
+Mô-đun AI Assistant cho {{ project_name }}.
+
+Cung cấp:
+- AI code review engine với configurable policies
+- AI code suggestion engine
+- Prompt template management system
+
+Tự động sinh bởi Midicoder CE — CP30 AI-Assisted Development Generator.
+"""
+
+from app.ai_assistant.models import (  # noqa: F401
+    ReviewPolicy,
+    ReviewResult,
+    ReviewSeverity,
+    ReviewCategory,
+    SuggestionType,
+    PromptCategory,
+    PromptTemplate,
+)
+from app.ai_assistant.registry import (  # noqa: F401
+    DEFAULT_PROMPT_TEMPLATES,
+    DEFAULT_REVIEW_POLICIES,
+)
+from app.ai_assistant.prompt_templates import (  # noqa: F401
+    TemplateRegistry,
+    TemplateRenderer,
+)
+
+__all__ = [
+    "DEFAULT_PROMPT_TEMPLATES",
+    "DEFAULT_REVIEW_POLICIES",
+    "PromptCategory",
+    "PromptTemplate",
+    "ReviewCategory",
+    "ReviewPolicy",
+    "ReviewResult",
+    "ReviewSeverity",
+    "SuggestionType",
+    "TemplateRegistry",
+    "TemplateRenderer",
+]

@@ -1,0 +1,20 @@
+/**
+ * AI Assistant main module (React) — export tất cả APIs.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+export { AISuggestionPanel } from './AISuggestionPanel';
+export { runReview, getPolicies } from './review';
+export { getSuggestion, filterByType, filterByMinConfidence } from './suggestion';
+export { getTemplate, getTemplatesByCategory, listAllTemplates, renderTemplate } from './templates';
+export {
+  ReviewSeverity,
+  ReviewCategory,
+  SuggestionType,
+  PromptCategory,
+  ReviewPolicy,
+  ReviewResult,
+  SuggestionContext,
+  SuggestionResult,
+  PromptTemplate,
+} from './types';

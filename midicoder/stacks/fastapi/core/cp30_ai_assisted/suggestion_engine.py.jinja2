@@ -1,0 +1,115 @@
+# coding: utf-8
+"""
+Mô-đun AI Suggestion Engine — quản lý code suggestions.
+
+Tự động sinh bởi Midicoder CE — CP30.
+"""
+
+from __future__ import annotations
+
+import logging
+from abc import ABC, abstractmethod
+from typing import Any
+
+from .models import SuggestionContext, SuggestionResult, SuggestionType
+
+logger = logging.getLogger(__name__)
+
+
+class SuggestionProvider(ABC):
+    """
+    Abstract base class cho AI suggestion provider.
+
+    User implement lớp con để kết nối với LLM provider cụ thể.
+    """
+
+    @abstractmethod
+    async def get_suggestion(
+        self,
+        context: SuggestionContext,
+        suggestion_type: SuggestionType,
+    ) -> SuggestionResult | None:
+        """
+        Lấy suggestion từ AI.
+
+        Args:
+            context: Bối cảnh suggestion
+            suggestion_type: Loại suggestion
+
+        Returns:
+            SuggestionResult hoặc None nếu không có suggestion
+        """
+        ...
+
+
+class SuggestionEngine:
+    """
+    AI Suggestion Engine — quản lý và filter code suggestions.
+
+    Attributes:
+        provider: SuggestionProvider instance (user cung cấp)
+        min_confidence: Threshold tối thiểu cho confidence
+    """
+
+    def __init__(
+        self,
+        provider: SuggestionProvider | None = None,
+        min_confidence: float = 0.5,
+    ) -> None:
+        """
+        Khởi tạo Suggestion Engine.
+
+        Args:
+            provider: SuggestionProvider instance (optional)
+            min_confidence: Threshold confidence tối thiểu
+        """
+        self.provider: SuggestionProvider | None = provider
+        self.min_confidence = min_confidence
+
+    def set_provider(self, provider: SuggestionProvider) -> None:
+        """Đặt SuggestionProvider instance."""
+        self.provider = provider
+
+    async def suggest(
+        self,
+        context: SuggestionContext,
+        suggestion_type: SuggestionType = SuggestionType.COMPLETION,
+    ) -> list[SuggestionResult]:
+        """
+        Lấy suggestions cho bối cảnh đã cho.
+
+        Args:
+            context: Bối cảnh suggestion
+            suggestion_type: Loại suggestion
+
+        Returns:
+            Danh sách suggestions vượt qua confidence threshold
+        """
+        if not self.provider:
+            logger.warning("SuggestionProvider chưa được đặt — bỏ qua suggestion")
+            return []
+
+        try:
+            result = await self.provider.get_suggestion(context, suggestion_type)
+            if result and result.confidence >= self.min_confidence:
+                return [result]
+            return []
+        except Exception as e:
+            logger.error("Lỗi khi lấy suggestion: %s", e)
+            return []
+
+    def filter_by_type(
+        self,
+        results: list[SuggestionResult],
+        suggestion_type: SuggestionType,
+    ) -> list[SuggestionResult]:
+        """Lọc suggestions theo type."""
+        return [r for r in results if r.suggestion_type == suggestion_type]
+
+    def filter_by_min_confidence(
+        self,
+        results: list[SuggestionResult],
+        min_confidence: float,
+    ) -> list[SuggestionResult]:
+        """Lọc suggestions theo confidence threshold."""
+        return [r for r in results if r.confidence >= min_confidence]

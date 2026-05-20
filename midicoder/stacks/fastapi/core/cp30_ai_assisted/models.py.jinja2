@@ -1,0 +1,155 @@
+# coding: utf-8
+"""
+Mô-đun models cho AI Assistant.
+
+Định nghĩa các dataclass và enum cho:
+- AI code review (policy, result, severity, category)
+- AI suggestion (type)
+- Prompt template (category, template)
+
+Tự động sinh bởi Midicoder CE — CP30.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+
+class ReviewSeverity(str, Enum):
+    """Mức độ nghiêm trọng của finding."""
+    ERROR = "error"
+    WARNING = "warning"
+    INFO = "info"
+
+
+class ReviewCategory(str, Enum):
+    """Loại review policy."""
+    SECURITY = "security"
+    PERFORMANCE = "performance"
+    STYLE = "style"
+    CORRECTNESS = "correctness"
+
+
+class SuggestionType(str, Enum):
+    """Loại suggestion."""
+    COMPLETION = "completion"
+    REFACTOR = "refactor"
+    FIX = "fix"
+    EXPLAIN = "explain"
+
+
+class PromptCategory(str, Enum):
+    """Loại prompt template."""
+    CODE_REVIEW = "code_review"
+    CODE_SUGGESTION = "code_suggestion"
+    CODE_GENERATION = "code_generation"
+    DOCUMENTATION = "documentation"
+    TESTING = "testing"
+    CUSTOM = "custom"
+
+
+@dataclass
+class ReviewPolicy:
+    """
+    Policy cho AI code review.
+
+    Attributes:
+        id: Định danh duy nhất
+        name: Tên mô tả
+        description: Mô tả chi tiết
+        severity: Mức độ nghiêm trọng
+        category: Loại policy
+        enabled: Có kích hoạt không
+        prompt_template_ref: Tham chiếu prompt template
+    """
+    id: str
+    name: str = ""
+    description: str = ""
+    severity: ReviewSeverity = ReviewSeverity.INFO
+    category: ReviewCategory = ReviewCategory.STYLE
+    enabled: bool = True
+    prompt_template_ref: str | None = None
+
+
+@dataclass
+class ReviewResult:
+    """
+    Kết quả AI code review.
+
+    Attributes:
+        finding_id: Định danh finding
+        policy_id: ID policy tạo ra finding
+        severity: Mức độ nghiêm trọng
+        message: Mô tả vấn đề
+        line_range: Khoảng dòng [start, end]
+        suggestion: Gợi ý khắc phục
+    """
+    finding_id: str
+    policy_id: str
+    severity: ReviewSeverity
+    message: str
+    line_range: list[int] = field(default_factory=list)
+    suggestion: str = ""
+
+
+@dataclass
+class SuggestionContext:
+    """
+    Bối cảnh cho AI suggestion.
+
+    Attributes:
+        file_path: Đường dẫn file
+        language: Ngôn ngữ lập trình
+        code_snippet: Đoạn code
+        cursor_position: Vị trí con trỏ
+        intent: Ý định developer
+    """
+    file_path: str = ""
+    language: str = "python"
+    code_snippet: str = ""
+    cursor_position: int | None = None
+    intent: str = ""
+
+
+@dataclass
+class SuggestionResult:
+    """
+    Kết quả suggestion từ AI.
+
+    Attributes:
+        id: Định danh
+        suggestion_type: Loại suggestion
+        content: Nội dung
+        confidence: Mức tin cậy (0.0-1.0)
+        explanation: Giải thích
+    """
+    id: str
+    suggestion_type: SuggestionType = SuggestionType.COMPLETION
+    content: str = ""
+    confidence: float = 0.0
+    explanation: str = ""
+
+
+@dataclass
+class PromptTemplate:
+    """
+    Prompt template với variables.
+
+    Attributes:
+        id: Định danh
+        name: Tên mô tả
+        category: Loại template
+        content: Nội dung với {{variable}} placeholders
+        variables: Danh sách variables
+        version: Version (semver)
+        metadata: Metadata bổ sung
+    """
+    id: str
+    name: str = ""
+    category: PromptCategory = PromptCategory.CUSTOM
+    content: str = ""
+    variables: dict[str, str] = field(default_factory=dict)
+    version: str = "1.0.0"
+    metadata: dict[str, Any] = field(default_factory=dict)

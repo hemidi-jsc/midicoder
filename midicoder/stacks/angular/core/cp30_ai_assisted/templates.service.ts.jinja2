@@ -1,0 +1,48 @@
+/**
+ * Templates Service (Angular) — quản lý prompt templates.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { PromptCategory, PromptTemplate } from './models';
+
+@Injectable({ providedIn: 'root' })
+export class TemplatesService {
+  private baseUrl = '/api/ai-assistant/templates';
+  private cachedTemplates: Map<string, PromptTemplate> = new Map();
+
+  constructor(private http: HttpClient) {}
+
+  /** Lấy template theo ID (cached). */
+  async get(templateId: string): Promise<PromptTemplate | undefined> {
+    if (this.cachedTemplates.has(templateId)) {
+      return this.cachedTemplates.get(templateId);
+    }
+    const tmpl = await this.http.get<PromptTemplate>(`${this.baseUrl}/${templateId}`).toPromise();
+    if (tmpl) {
+      this.cachedTemplates.set(templateId, tmpl);
+    }
+    return tmpl;
+  }
+
+  /** Lấy danh sách templates theo category. */
+  getByCategory(category: PromptCategory): Observable<PromptTemplate[]> {
+    return this.http.get<PromptTemplate[]>(`${this.baseUrl}?category=${category}`);
+  }
+
+  /** Lấy tất cả templates. */
+  listAll(): Observable<PromptTemplate[]> {
+    return this.http.get<PromptTemplate[]>(this.baseUrl);
+  }
+
+  /** Render template với variable substitution (client-side). */
+  render(template: PromptTemplate, variables: Record<string, string>): string {
+    let result = template.content;
+    for (const [key, value] of Object.entries(variables)) {
+      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+    }
+    return result;
+  }
+}

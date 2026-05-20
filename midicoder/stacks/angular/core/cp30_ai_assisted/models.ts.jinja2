@@ -1,0 +1,78 @@
+/**
+ * Model interfaces cho AI Assistant (Angular).
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+export enum ReviewSeverity {
+  ERROR = 'error',
+  WARNING = 'warning',
+  INFO = 'info',
+}
+
+export enum ReviewCategory {
+  SECURITY = 'security',
+  PERFORMANCE = 'performance',
+  STYLE = 'style',
+  CORRECTNESS = 'correctness',
+}
+
+export enum SuggestionType {
+  COMPLETION = 'completion',
+  REFACTOR = 'refactor',
+  FIX = 'fix',
+  EXPLAIN = 'explain',
+}
+
+export enum PromptCategory {
+  CODE_REVIEW = 'code_review',
+  CODE_SUGGESTION = 'code_suggestion',
+  CODE_GENERATION = 'code_generation',
+  DOCUMENTATION = 'documentation',
+  TESTING = 'testing',
+  CUSTOM = 'custom',
+}
+
+export interface ReviewPolicy {
+  id: string;
+  name: string;
+  description: string;
+  severity: ReviewSeverity;
+  category: ReviewCategory;
+  enabled: boolean;
+  promptTemplateRef?: string | null;
+}
+
+export interface ReviewResult {
+  findingId: string;
+  policyId: string;
+  severity: ReviewSeverity;
+  message: string;
+  lineRange: [number, number];
+  suggestion: string;
+}
+
+export interface SuggestionContext {
+  filePath: string;
+  language: string;
+  codeSnippet: string;
+  cursorPosition?: number | null;
+  intent?: string;
+}
+
+export interface SuggestionResult {
+  id: string;
+  suggestionType: SuggestionType;
+  content: string;
+  confidence: number;
+  explanation: string;
+}
+
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  category: PromptCategory;
+  content: string;
+  variables: Record<string, string>;
+  version: string;
+  metadata: Record<string, unknown>;
+}

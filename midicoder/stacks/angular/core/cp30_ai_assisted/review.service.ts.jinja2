@@ -1,0 +1,29 @@
+/**
+ * Review Service (Angular) — gọi API backend để chạy code review.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { ReviewResult, ReviewSeverity } from './models';
+
+@Injectable({ providedIn: 'root' })
+export class ReviewService {
+  private baseUrl = '/api/ai-assistant/review';
+
+  constructor(private http: HttpClient) {}
+
+  /** Gửi code lên backend để review. */
+  review(code: string, language: string = 'typescript'): Observable<ReviewResult[]> {
+    return this.http.post<ReviewResult[]>(`${this.baseUrl}/run`, {
+      code,
+      language,
+    });
+  }
+
+  /** Lấy danh sách review policies từ backend. */
+  getPolicies(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/policies`);
+  }
+}

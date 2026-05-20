@@ -1,0 +1,128 @@
+# coding: utf-8
+"""
+Mô-đun Prompt Template Management — CRUD và render prompt templates.
+
+Tự động sinh bởi Midicoder CE — CP30.
+"""
+
+from __future__ import annotations
+
+import re
+import logging
+from typing import Any
+
+from .models import PromptCategory, PromptTemplate
+
+logger = logging.getLogger(__name__)
+
+
+class TemplateRegistry:
+    """
+    Registry cho prompt templates — CRUD và lookup.
+
+    Attributes:
+        templates: Danh sách templates đã đăng ký
+    """
+
+    def __init__(self, templates: list[PromptTemplate] | None = None) -> None:
+        """
+        Khởi tạo Template Registry.
+
+        Args:
+            templates: Danh sách templates ban đầu
+        """
+        self.templates: list[PromptTemplate] = templates or []
+        self._index: dict[str, PromptTemplate] = {}
+        for t in self.templates:
+            self._index[t.id] = t
+
+    def add(self, template: PromptTemplate) -> None:
+        """Thêm template vào registry."""
+        self.templates.append(template)
+        self._index[template.id] = template
+
+    def remove(self, template_id: str) -> bool:
+        """
+        Xóa template theo ID.
+
+        Returns:
+            True nếu xóa thành công
+        """
+        if template_id in self._index:
+            tmpl = self._index.pop(template_id)
+            self.templates.remove(tmpl)
+            return True
+        return False
+
+    def get(self, template_id: str) -> PromptTemplate | None:
+        """Lấy template theo ID."""
+        return self._index.get(template_id)
+
+    def get_by_category(self, category: PromptCategory) -> list[PromptTemplate]:
+        """Lấy danh sách templates theo category."""
+        return [t for t in self.templates if t.category == category]
+
+    def list_all(self) -> list[PromptTemplate]:
+        """Lấy danh sách tất cả templates."""
+        return list(self.templates)
+
+
+class TemplateRenderer:
+    """
+    Render prompt templates với variable substitution.
+
+    Dùng Jinja2-style {{variable}} syntax.
+    """
+
+    @staticmethod
+    def render(template: PromptTemplate, variables: dict[str, Any]) -> str:
+        """
+        Render template với variable substitution.
+
+        Args:
+            template: Prompt template cần render
+            variables: Dict giá trị cho variables
+
+        Returns:
+            String đã render xong
+
+        Raises:
+            ValueError: Nếu variable bắt buộc thiếu
+        """
+        result = template.content
+
+        for key, value in variables.items():
+            placeholder = "{{" + key + "}}"
+            result = result.replace(placeholder, str(value))
+
+        # Cảnh báo nếu còn placeholder chưa được thay thế
+        remaining = re.findall(r"\{\{(\w+)\}\}", result)
+        if remaining:
+            logger.warning(
+                "Template %s còn variables chưa thay thế: %s",
+                template.id,
+                remaining,
+            )
+
+        return result
+
+    @staticmethod
+    def render_safe(template: PromptTemplate, variables: dict[str, Any]) -> str:
+        """
+        Render template — thay thế variables có giá trị, giữ nguyên những cái thiếu.
+
+        Args:
+            template: Prompt template cần render
+            variables: Dict giá trị cho variables
+
+        Returns:
+            String đã render (variables thiếu được thay bằng rỗng)
+        """
+        result = template.content
+        for key, value in variables.items():
+            placeholder = "{{" + key + "}}"
+            result = result.replace(placeholder, str(value))
+
+        # Thay placeholder còn lại bằng string rỗng
+        result = re.sub(r"\{\{\w+\}\}", "", result)
+        return result

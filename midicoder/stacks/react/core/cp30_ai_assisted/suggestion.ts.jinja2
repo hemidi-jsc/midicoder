@@ -1,0 +1,39 @@
+/**
+ * AI Suggestion module (React) — gọi API backend để lấy suggestions.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { SuggestionContext, SuggestionResult, SuggestionType } from './types';
+
+const BASE_URL = '/api/ai-assistant/suggestion';
+
+/** Lấy suggestion từ backend. */
+export async function getSuggestion(
+  context: SuggestionContext,
+): Promise<SuggestionResult[]> {
+  const response = await fetch(`${BASE_URL}/get`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(context),
+  });
+  if (!response.ok) {
+    throw new Error(`Suggestion failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+/** Lọc suggestions theo type (client-side). */
+export function filterByType(
+  results: SuggestionResult[],
+  type: SuggestionType,
+): SuggestionResult[] {
+  return results.filter((r) => r.suggestionType === type);
+}
+
+/** Lọc suggestions theo confidence (client-side). */
+export function filterByMinConfidence(
+  results: SuggestionResult[],
+  minConfidence: number,
+): SuggestionResult[] {
+  return results.filter((r) => r.confidence >= minConfidence);
+}

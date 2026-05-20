@@ -1,0 +1,79 @@
+/**
+ * Review Service — thực thi AI code review theo policies.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { Injectable } from '@nestjs/common';
+import {
+  ReviewPolicy,
+  ReviewResult,
+  ReviewSeverity,
+} from './models';
+
+/** Default review policies. */
+const DEFAULT_POLICIES: ReviewPolicy[] = [
+  {
+    id: 'policy_hardcoded_secret',
+    name: 'Hardcoded Secret Detection',
+    description: 'Phát hiện bí mật được hardcode',
+    severity: ReviewSeverity.ERROR,
+    category: 'security' as any,
+    enabled: true,
+    promptTemplateRef: 'tmpl_security_review',
+  },
+  {
+    id: 'policy_sql_injection',
+    name: 'SQL Injection Check',
+    description: 'Phát hiện SQL injection',
+    severity: ReviewSeverity.ERROR,
+    category: 'security' as any,
+    enabled: true,
+    promptTemplateRef: 'tmpl_security_review',
+  },
+  {
+    id: 'policy_style_enforcement',
+    name: 'Style Enforcement',
+    description: 'Kiểm tra code style',
+    severity: ReviewSeverity.INFO,
+    category: 'style' as any,
+    enabled: true,
+    promptTemplateRef: 'tmpl_style_review',
+  },
+];
+
+@Injectable()
+export class ReviewService {
+  private policies: ReviewPolicy[] = [...DEFAULT_POLICIES];
+
+  /** Lấy danh sách policies đang enabled. */
+  getEnabledPolicies(): ReviewPolicy[] {
+    return this.policies.filter((p) => p.enabled);
+  }
+
+  /** Thêm review policy mới. */
+  addPolicy(policy: ReviewPolicy): void {
+    this.policies.push(policy);
+  }
+
+  /** Xóa review policy theo ID. */
+  removePolicy(policyId: string): boolean {
+    const idx = this.policies.findIndex((p) => p.id === policyId);
+    if (idx !== -1) {
+      this.policies.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Chạy code review (placeholder — user implement LLM provider).
+   *
+   * @param code Đoạn mã cần review
+   * @param language Ngôn ngữ lập trình
+   * @returns Danh sách findings
+   */
+  async review(code: string, language: string = 'typescript'): Promise<ReviewResult[]> {
+    // TODO: User implement — gọi LLM provider với prompt template
+    return [];
+  }
+}

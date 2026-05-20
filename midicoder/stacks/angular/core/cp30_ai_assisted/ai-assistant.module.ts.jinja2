@@ -1,0 +1,19 @@
+/**
+ * Angular Module cho AI Assistant.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { NgModule } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ReviewService } from './review.service';
+import { SuggestionService } from './suggestion.service';
+import { TemplatesService } from './templates.service';
+import { AiSuggestionPanelComponent } from './ai-suggestion-panel.component';
+
+@NgModule({
+  declarations: [AiSuggestionPanelComponent],
+  imports: [CommonModule],
+  providers: [ReviewService, SuggestionService, TemplatesService],
+  exports: [AiSuggestionPanelComponent],
+})
+export class AiAssistantModule {}

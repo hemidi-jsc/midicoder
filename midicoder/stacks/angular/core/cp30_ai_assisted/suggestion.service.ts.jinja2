@@ -1,0 +1,37 @@
+/**
+ * Suggestion Service (Angular) — gọi API backend để lấy suggestions.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { SuggestionContext, SuggestionResult, SuggestionType } from './models';
+
+@Injectable({ providedIn: 'root' })
+export class SuggestionService {
+  private baseUrl = '/api/ai-assistant/suggestion';
+
+  constructor(private http: HttpClient) {}
+
+  /** Lấy suggestion từ backend. */
+  suggest(context: SuggestionContext): Observable<SuggestionResult[]> {
+    return this.http.post<SuggestionResult[]>(`${this.baseUrl}/get`, context);
+  }
+
+  /** Lọc suggestions theo type (client-side). */
+  filterByType(
+    results: SuggestionResult[],
+    type: SuggestionType,
+  ): SuggestionResult[] {
+    return results.filter((r) => r.suggestionType === type);
+  }
+
+  /** Lọc suggestions theo confidence (client-side). */
+  filterByMinConfidence(
+    results: SuggestionResult[],
+    minConfidence: number,
+  ): SuggestionResult[] {
+    return results.filter((r) => r.confidence >= minConfidence);
+  }
+}

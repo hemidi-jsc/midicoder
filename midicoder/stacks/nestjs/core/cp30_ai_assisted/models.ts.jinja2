@@ -1,0 +1,87 @@
+/**
+ * Model interfaces cho AI Assistant.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+/** Mức độ nghiêm trọng của finding. */
+export enum ReviewSeverity {
+  ERROR = 'error',
+  WARNING = 'warning',
+  INFO = 'info',
+}
+
+/** Loại review policy. */
+export enum ReviewCategory {
+  SECURITY = 'security',
+  PERFORMANCE = 'performance',
+  STYLE = 'style',
+  CORRECTNESS = 'correctness',
+}
+
+/** Loại suggestion. */
+export enum SuggestionType {
+  COMPLETION = 'completion',
+  REFACTOR = 'refactor',
+  FIX = 'fix',
+  EXPLAIN = 'explain',
+}
+
+/** Loại prompt template. */
+export enum PromptCategory {
+  CODE_REVIEW = 'code_review',
+  CODE_SUGGESTION = 'code_suggestion',
+  CODE_GENERATION = 'code_generation',
+  DOCUMENTATION = 'documentation',
+  TESTING = 'testing',
+  CUSTOM = 'custom',
+}
+
+/** Policy cho AI code review. */
+export interface ReviewPolicy {
+  id: string;
+  name: string;
+  description: string;
+  severity: ReviewSeverity;
+  category: ReviewCategory;
+  enabled: boolean;
+  promptTemplateRef?: string | null;
+}
+
+/** Kết quả AI code review. */
+export interface ReviewResult {
+  findingId: string;
+  policyId: string;
+  severity: ReviewSeverity;
+  message: string;
+  lineRange: [number, number];
+  suggestion: string;
+}
+
+/** Bối cảnh cho AI suggestion. */
+export interface SuggestionContext {
+  filePath: string;
+  language: string;
+  codeSnippet: string;
+  cursorPosition?: number | null;
+  intent?: string;
+}
+
+/** Kết quả suggestion từ AI. */
+export interface SuggestionResult {
+  id: string;
+  suggestionType: SuggestionType;
+  content: string;
+  confidence: number;
+  explanation: string;
+}
+
+/** Prompt template với variables. */
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  category: PromptCategory;
+  content: string;
+  variables: Record<string, string>;
+  version: string;
+  metadata: Record<string, unknown>;
+}

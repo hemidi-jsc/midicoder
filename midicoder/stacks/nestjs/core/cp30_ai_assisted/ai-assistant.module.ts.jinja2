@@ -1,0 +1,15 @@
+/**
+ * NestJS Module cho AI Assistant.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { Module } from '@nestjs/common';
+import { ReviewService } from './review.service';
+import { SuggestionService } from './suggestion.service';
+import { TemplatesService } from './templates.service';
+
+@Module({
+  providers: [ReviewService, SuggestionService, TemplatesService],
+  exports: [ReviewService, SuggestionService, TemplatesService],
+})
+export class AiAssistantModule {}

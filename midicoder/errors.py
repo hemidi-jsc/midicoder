@@ -736,6 +736,24 @@ class ErrorCode(str, Enum):
     CP29_DUPLICATE_LOCALE = "MDC-CP29-010"
 
     # =========================================================================
+    # CP30: AI-Assisted Development Generator Errors
+    # =========================================================================
+    CP30_EMPTY_REVIEW_POLICY_ID = "MDC-CP30-001"
+    CP30_INVALID_SEVERITY = "MDC-CP30-002"
+    CP30_INVALID_CATEGORY = "MDC-CP30-003"
+    CP30_EMPTY_REVIEW_RESULT_ID = "MDC-CP30-004"
+    CP30_DUPLICATE_REVIEW_POLICY_ID = "MDC-CP30-005"
+    CP30_EMPTY_SUGGESTION_RESULT_ID = "MDC-CP30-006"
+    CP30_INVALID_SUGGESTION_TYPE = "MDC-CP30-007"
+    CP30_EMPTY_TEMPLATE_ID = "MDC-CP30-008"
+    CP30_INVALID_PROMPT_CATEGORY = "MDC-CP30-009"
+    CP30_DUPLICATE_TEMPLATE_ID = "MDC-CP30-010"
+    CP30_EMPTY_CONFIG_ID = "MDC-CP30-011"
+    CP30_TEMPLATE_RENDER_FAILED = "MDC-CP30-012"
+    CP30_DSL_PARSE_ERROR = "MDC-CP30-013"
+    CP30_TEMPLATE_NOT_FOUND = "MDC-CP30-014"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

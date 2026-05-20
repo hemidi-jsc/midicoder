@@ -1,0 +1,33 @@
+/**
+ * AI Review module (React) — gọi API backend để chạy code review.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { ReviewResult } from './types';
+
+const BASE_URL = '/api/ai-assistant/review';
+
+/** Gửi code lên backend để review. */
+export async function runReview(
+  code: string,
+  language: string = 'typescript',
+): Promise<ReviewResult[]> {
+  const response = await fetch(`${BASE_URL}/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, language }),
+  });
+  if (!response.ok) {
+    throw new Error(`Review failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+/** Lấy danh sách review policies từ backend. */
+export async function getPolicies(): Promise<unknown[]> {
+  const response = await fetch(`${BASE_URL}/policies`);
+  if (!response.ok) {
+    throw new Error(`Get policies failed: ${response.status}`);
+  }
+  return response.json();
+}

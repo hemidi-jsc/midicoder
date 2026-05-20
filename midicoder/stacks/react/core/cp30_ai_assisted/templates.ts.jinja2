@@ -1,0 +1,45 @@
+/**
+ * Prompt Templates module (React) — quản lý prompt templates.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { PromptCategory, PromptTemplate } from './types';
+
+const BASE_URL = '/api/ai-assistant/templates';
+
+/** Lấy template theo ID. */
+export async function getTemplate(
+  templateId: string,
+): Promise<PromptTemplate | null> {
+  const response = await fetch(`${BASE_URL}/${templateId}`);
+  if (!response.ok) return null;
+  return response.json();
+}
+
+/** Lấy danh sách templates theo category. */
+export async function getTemplatesByCategory(
+  category: PromptCategory,
+): Promise<PromptTemplate[]> {
+  const response = await fetch(`${BASE_URL}?category=${category}`);
+  if (!response.ok) return [];
+  return response.json();
+}
+
+/** Lấy tất cả templates. */
+export async function listAllTemplates(): Promise<PromptTemplate[]> {
+  const response = await fetch(BASE_URL);
+  if (!response.ok) return [];
+  return response.json();
+}
+
+/** Render template với variable substitution (client-side). */
+export function renderTemplate(
+  template: PromptTemplate,
+  variables: Record<string, string>,
+): string {
+  let result = template.content;
+  for (const [key, value] of Object.entries(variables)) {
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+  }
+  return result;
+}

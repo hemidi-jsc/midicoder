@@ -1,0 +1,113 @@
+# coding: utf-8
+"""
+Mô-đun registry cho AI Assistant — default policies và templates.
+
+Tự động sinh bởi Midicoder CE — CP30.
+"""
+
+from __future__ import annotations
+
+from .models import (
+    PromptCategory,
+    PromptTemplate,
+    ReviewCategory,
+    ReviewPolicy,
+    ReviewSeverity,
+)
+
+
+# Default review policies
+
+DEFAULT_REVIEW_POLICIES: list[ReviewPolicy] = [
+    ReviewPolicy(
+        id="policy_hardcoded_secret",
+        name="Hardcoded Secret Detection",
+        description="Phát hiện bí mật được hardcode trong mã nguồn",
+        severity=ReviewSeverity.ERROR,
+        category=ReviewCategory.SECURITY,
+        enabled=True,
+        prompt_template_ref="tmpl_security_review",
+    ),
+    ReviewPolicy(
+        id="policy_sql_injection",
+        name="SQL Injection Check",
+        description="Phát hiện tiềm năng injection trong truy vấn SQL",
+        severity=ReviewSeverity.ERROR,
+        category=ReviewCategory.SECURITY,
+        enabled=True,
+        prompt_template_ref="tmpl_security_review",
+    ),
+    ReviewPolicy(
+        id="policy_performance_anti_pattern",
+        name="Performance Anti-Pattern",
+        description="Phát hiện anti-pattern hiệu suất",
+        severity=ReviewSeverity.WARNING,
+        category=ReviewCategory.PERFORMANCE,
+        enabled=True,
+        prompt_template_ref="tmpl_performance_review",
+    ),
+    ReviewPolicy(
+        id="policy_style_enforcement",
+        name="Style Enforcement",
+        description="Kiểm tra tuân thủ code style",
+        severity=ReviewSeverity.INFO,
+        category=ReviewCategory.STYLE,
+        enabled=True,
+        prompt_template_ref="tmpl_style_review",
+    ),
+    ReviewPolicy(
+        id="policy_type_safety",
+        name="Type Safety Check",
+        description="Kiểm tra type annotation và type safety",
+        severity=ReviewSeverity.WARNING,
+        category=ReviewCategory.CORRECTNESS,
+        enabled=True,
+        prompt_template_ref="tmpl_correctness_review",
+    ),
+]
+
+
+# Default prompt templates
+
+DEFAULT_PROMPT_TEMPLATES: list[PromptTemplate] = [
+    PromptTemplate(
+        id="tmpl_security_review",
+        name="Security Code Review",
+        category=PromptCategory.CODE_REVIEW,
+        content=(
+            "Bạn là chuyên gia bảo mật. Phân tích đoạn mã sau và phát hiện "
+            "các lỗ hổng bảo mật.\n\nĐoạn mã:\n```\n{{code}}\n```"
+        ),
+        variables={"code": "Đoạn mã cần phân tích"},
+    ),
+    PromptTemplate(
+        id="tmpl_performance_review",
+        name="Performance Code Review",
+        category=PromptCategory.CODE_REVIEW,
+        content=(
+            "Bạn là chuyên gia hiệu suất. Phân tích đoạn mã sau và phát hiện "
+            "anti-pattern.\n\nĐoạn mã:\n```\n{{code}}\n```"
+        ),
+        variables={"code": "Đoạn mã cần phân tích"},
+    ),
+    PromptTemplate(
+        id="tmpl_code_completion",
+        name="Code Completion",
+        category=PromptCategory.CODE_SUGGESTION,
+        content=(
+            "Gợi ý code completion cho đoạn mã sau.\n\n"
+            "Đoạn mã:\n```\n{{code}}\n```\nNgôn ngữ: {{language}}"
+        ),
+        variables={"code": "Đoạn mã", "language": "Ngôn ngữ lập trình"},
+    ),
+    PromptTemplate(
+        id="tmpl_test_generation",
+        name="Test Generation",
+        category=PromptCategory.TESTING,
+        content=(
+            "Tạo unit test cho đoạn mã sau.\n\n"
+            "Đoạn mã:\n```\n{{code}}\n```\nFramework: {{test_framework}}"
+        ),
+        variables={"code": "Đoạn mã", "test_framework": "Framework test"},
+    ),
+]

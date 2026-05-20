@@ -1,0 +1,123 @@
+/**
+ * AI Suggestion Panel Component — hiển thị inline suggestions trong editor.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
+import { SuggestionResult, SuggestionType } from './models';
+import { SuggestionService } from './suggestion.service';
+
+@Component({
+  selector: 'app-ai-suggestion-panel',
+  template: `
+    <div *ngIf="suggestions.length > 0" class="ai-suggestion-panel">
+      <h3 class="panel-title">AI Suggestions</h3>
+      <div
+        *ngFor="let s of suggestions"
+        class="suggestion-item"
+        [class]="getSuggestionClass(s.suggestionType)"
+        (click)="onSelect.emit(s)"
+      >
+        <span class="suggestion-type">{{ s.suggestionType }}</span>
+        <span class="suggestion-content">{{ s.content }}</span>
+        <span class="suggestion-confidence">{{ (s.confidence * 100) | number:'1.0-0' }}%</span>
+      </div>
+      <div class="suggestion-explanation" *ngIf="selected">
+        {{ selected.explanation }}
+      </div>
+    </div>
+  `,
+  styles: [`
+    .ai-suggestion-panel {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 8px;
+      margin: 4px 0;
+      background: #fafafa;
+    }
+    .panel-title {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      color: #333;
+    }
+    .suggestion-item {
+      display: flex;
+      align-items: center;
+      padding: 4px 8px;
+      cursor: pointer;
+      border-radius: 2px;
+      margin: 2px 0;
+    }
+    .suggestion-item:hover {
+      background: #e8e8e8;
+    }
+    .suggestion-type {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: #e0e7ff;
+      color: #3730a3;
+      margin-right: 8px;
+    }
+    .suggestion-content {
+      flex: 1;
+      font-size: 13px;
+    }
+    .suggestion-confidence {
+      font-size: 11px;
+      color: #666;
+    }
+    .suggestion-explanation {
+      margin-top: 8px;
+      padding: 8px;
+      font-size: 12px;
+      color: #555;
+      background: #f0f0f0;
+      border-radius: 3px;
+    }
+  `],
+})
+export class AiSuggestionPanelComponent implements OnInit {
+  @Input() codeSnippet = '';
+  @Input() language = 'typescript';
+  @Input() filterType: SuggestionType | null = null;
+  @Output() onSelect = new EventEmitter<SuggestionResult>();
+
+  suggestions: SuggestionResult[] = [];
+  selected: SuggestionResult | null = null;
+
+  constructor(private suggestionService: SuggestionService) {}
+
+  ngOnInit(): void {
+    this.refreshSuggestions();
+  }
+
+  /** Làm mới suggestions từ backend. */
+  refreshSuggestions(): void {
+    if (!this.codeSnippet) return;
+
+    this.suggestionService.suggest({
+      filePath: '',
+      language: this.language,
+      codeSnippet: this.codeSnippet,
+    }).subscribe({
+      next: (results) => {
+        this.suggestions = results;
+        if (this.filterType) {
+          this.suggestions = this.suggestionService.filterByType(
+            this.suggestions,
+            this.filterType,
+          );
+        }
+      },
+      error: () => {
+        this.suggestions = [];
+      },
+    });
+  }
+
+  /** Lấy CSS class theo suggestion type. */
+  getSuggestionClass(type: SuggestionType): string {
+    return `type-${type}`;
+  }
+}

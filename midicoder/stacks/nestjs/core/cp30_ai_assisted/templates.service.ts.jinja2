@@ -1,0 +1,95 @@
+/**
+ * Templates Service — CRUD và render prompt templates.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import { Injectable } from '@nestjs/common';
+import { PromptCategory, PromptTemplate } from './models';
+
+/** Default prompt templates. */
+const DEFAULT_TEMPLATES: PromptTemplate[] = [
+  {
+    id: 'tmpl_security_review',
+    name: 'Security Code Review',
+    category: PromptCategory.CODE_REVIEW,
+    content:
+      'Bạn là chuyên gia bảo mật. Phân tích đoạn mã sau và phát hiện lỗ hổng.\n\n' +
+      'Đoạn mã:\n```\n{{code}}\n```',
+    variables: { code: 'Đoạn mã cần phân tích' },
+    version: '1.0.0',
+    metadata: {},
+  },
+  {
+    id: 'tmpl_code_completion',
+    name: 'Code Completion',
+    category: PromptCategory.CODE_SUGGESTION,
+    content:
+      'Gợi ý code completion.\n\nĐoạn mã:\n```\n{{code}}\n```\nNgôn ngữ: {{language}}',
+    variables: { code: 'Đoạn mã', language: 'Ngôn ngữ' },
+    version: '1.0.0',
+    metadata: {},
+  },
+  {
+    id: 'tmpl_test_generation',
+    name: 'Test Generation',
+    category: PromptCategory.TESTING,
+    content:
+      'Tạo unit test cho đoạn mã sau.\n\nĐoạn mã:\n```\n{{code}}\n```\nFramework: {{test_framework}}',
+    variables: { code: 'Đoạn mã', test_framework: 'Framework test' },
+    version: '1.0.0',
+    metadata: {},
+  },
+];
+
+@Injectable()
+export class TemplatesService {
+  private templates: Map<string, PromptTemplate> = new Map();
+
+  constructor() {
+    for (const t of DEFAULT_TEMPLATES) {
+      this.templates.set(t.id, t);
+    }
+  }
+
+  /** Lấy template theo ID. */
+  get(templateId: string): PromptTemplate | undefined {
+    return this.templates.get(templateId);
+  }
+
+  /** Lấy danh sách templates theo category. */
+  getByCategory(category: PromptCategory): PromptTemplate[] {
+    return Array.from(this.templates.values()).filter(
+      (t) => t.category === category,
+    );
+  }
+
+  /** Thêm template mới. */
+  add(template: PromptTemplate): void {
+    this.templates.set(template.id, template);
+  }
+
+  /** Xóa template theo ID. */
+  remove(templateId: string): boolean {
+    return this.templates.delete(templateId);
+  }
+
+  /** Lấy tất cả templates. */
+  listAll(): PromptTemplate[] {
+    return Array.from(this.templates.values());
+  }
+
+  /**
+   * Render template với variable substitution.
+   *
+   * @param template Prompt template
+   * @param variables Dict giá trị
+   * @returns String đã render
+   */
+  render(template: PromptTemplate, variables: Record<string, string>): string {
+    let result = template.content;
+    for (const [key, value] of Object.entries(variables)) {
+      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+    }
+    return result;
+  }
+}

@@ -1,0 +1,87 @@
+/**
+ * AI Suggestion Panel Component (React) — hiển thị inline suggestions.
+ * Tự động sinh bởi Midicoder CE — CP30.
+ */
+
+import React, { useEffect, useState } from 'react';
+import { SuggestionResult, SuggestionType } from './types';
+import { getSuggestion } from './suggestion';
+
+interface AISuggestionPanelProps {
+  codeSnippet: string;
+  language?: string;
+  onSelect?: (suggestion: SuggestionResult) => void;
+}
+
+/** Component hiển thị suggestions từ AI. */
+export function AISuggestionPanel({
+  codeSnippet,
+  language = 'typescript',
+  onSelect,
+}: AISuggestionPanelProps) {
+  const [suggestions, setSuggestions] = useState<SuggestionResult[]>([]);
+  const [selected, setSelected] = useState<SuggestionResult | null>(null);
+
+  useEffect(() => {
+    if (!codeSnippet) return;
+
+    getSuggestion({
+      filePath: '',
+      language,
+      codeSnippet,
+    })
+      .then(setSuggestions)
+      .catch(() => setSuggestions([]));
+  }, [codeSnippet, language]);
+
+  if (suggestions.length === 0) return null;
+
+  return (
+    <div className="ai-suggestion-panel">
+      <h3 className="panel-title">AI Suggestions</h3>
+      {suggestions.map((s) => (
+        <div
+          key={s.id}
+          className={`suggestion-item type-${s.suggestionType} ${selected?.id === s.id ? 'selected' : ''}`}
+          onClick={() => {
+            setSelected(s);
+            onSelect?.(s);
+          }}
+        >
+          <span className="suggestion-type">{s.suggestionType}</span>
+          <span className="suggestion-content">{s.content}</span>
+          <span className="suggestion-confidence">{Math.round(s.confidence * 100)}%</span>
+        </div>
+      ))}
+      {selected && (
+        <div className="suggestion-explanation">{selected.explanation}</div>
+      )}
+      <style>{`
+        .ai-suggestion-panel {
+          border: 1px solid #e0e0e0;
+          border-radius: 4px;
+          padding: 8px;
+          margin: 4px 0;
+          background: #fafafa;
+        }
+        .panel-title { margin: 0 0 8px 0; font-size: 14px; color: #333; }
+        .suggestion-item {
+          display: flex; align-items: center; padding: 4px 8px;
+          cursor: pointer; border-radius: 2px; margin: 2px 0;
+        }
+        .suggestion-item:hover { background: #e8e8e8; }
+        .suggestion-item.selected { background: #d0d0d0; }
+        .suggestion-type {
+          font-size: 11px; padding: 2px 6px; border-radius: 3px;
+          background: #e0e7ff; color: #3730a3; margin-right: 8px;
+        }
+        .suggestion-content { flex: 1; font-size: 13px; }
+        .suggestion-confidence { font-size: 11px; color: #666; }
+        .suggestion-explanation {
+          margin-top: 8px; padding: 8px; font-size: 12px;
+          color: #555; background: #f0f0f0; border-radius: 3px;
+        }
+      `}</style>
+    </div>
+  );
+}

@@ -1,0 +1,131 @@
+# coding: utf-8
+"""
+Mô-đun AI Review Engine — thực thi code review theo các policy đã định nghĩa.
+
+Tự động sinh bởi Midicoder CE — CP30.
+"""
+
+from __future__ import annotations
+
+import logging
+from abc import ABC, abstractmethod
+from typing import Any
+
+from .models import ReviewPolicy, ReviewResult, ReviewSeverity
+
+logger = logging.getLogger(__name__)
+
+
+class ReviewRunner(ABC):
+    """
+    Abstract base class cho AI code review runner.
+
+    User implement lớp con để kết nối với LLM provider cụ thể.
+    """
+
+    @abstractmethod
+    async def run_review(
+        self,
+        code: str,
+        policy: ReviewPolicy,
+        context: dict[str, Any] | None = None,
+    ) -> list[ReviewResult]:
+        """
+        Chạy code review theo policy.
+
+        Args:
+            code: Đoạn mã cần review
+            policy: Policy để áp dụng
+            context: Bối cảnh bổ sung (optional)
+
+        Returns:
+            Danh sách findings từ lần review
+        """
+        ...
+
+
+class ReviewEngine:
+    """
+    AI Review Engine — quản lý và thực thi các review policies.
+
+    Attributes:
+        policies: Danh sách policies đã đăng ký
+        runner: ReviewRunner instance (user cung cấp)
+    """
+
+    def __init__(
+        self,
+        policies: list[ReviewPolicy] | None = None,
+        runner: ReviewRunner | None = None,
+    ) -> None:
+        """
+        Khởi tạo Review Engine.
+
+        Args:
+            policies: Danh sách review policies
+            runner: ReviewRunner instance (optional — user cung cấp sau)
+        """
+        self.policies: list[ReviewPolicy] = policies or []
+        self.runner: ReviewRunner | None = runner
+
+    def set_runner(self, runner: ReviewRunner) -> None:
+        """Đặt ReviewRunner instance."""
+        self.runner = runner
+
+    def add_policy(self, policy: ReviewPolicy) -> None:
+        """Thêm review policy vào engine."""
+        self.policies.append(policy)
+
+    def remove_policy(self, policy_id: str) -> bool:
+        """
+        Xóa review policy theo ID.
+
+        Returns:
+            True nếu xóa thành công, False nếu không tìm thấy
+        """
+        for i, policy in enumerate(self.policies):
+            if policy.id == policy_id:
+                self.policies.pop(i)
+                return True
+        return False
+
+    def get_enabled_policies(self) -> list[ReviewPolicy]:
+        """Lấy danh sách policies đang enabled."""
+        return [p for p in self.policies if p.enabled]
+
+    async def review(self, code: str, language: str = "python") -> list[ReviewResult]:
+        """
+        Chạy code review với tất cả policies enabled.
+
+        Args:
+            code: Đoạn mã cần review
+            language: Ngôn ngữ lập trình
+
+        Returns:
+            Danh sách tất cả findings
+        """
+        if not self.runner:
+            logger.warning("ReviewRunner chưa được đặt — bỏ qua review")
+            return []
+
+        results: list[ReviewResult] = []
+        for policy in self.get_enabled_policies():
+            try:
+                findings = await self.runner.run_review(
+                    code, policy, context={"language": language}
+                )
+                results.extend(findings)
+            except Exception as e:
+                logger.error("Lỗi khi chạy policy %s: %s", policy.id, e)
+
+        return sorted(results, key=lambda r: self._severity_order(r.severity))
+
+    @staticmethod
+    def _severity_order(severity: ReviewSeverity) -> int:
+        """Trả về thứ tự severity (càng nhỏ càng nghiêm trọng)."""
+        order = {
+            ReviewSeverity.ERROR: 0,
+            ReviewSeverity.WARNING: 1,
+            ReviewSeverity.INFO: 2,
+        }
+        return order.get(severity, 3)
