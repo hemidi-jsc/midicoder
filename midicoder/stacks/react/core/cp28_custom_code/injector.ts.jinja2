@@ -1,0 +1,122 @@
+// Author: Midicoder Team
+// Version: 1.0.0
+
+/**
+ * CustomCodeInjector — Lớp инжектор mã tùy chỉnh
+ *
+ * Trách nhiệm:
+ *  - Đóng gói mã tùy chỉnh vào môi trường sandbox (try-catch)
+ *  - Inject mã vào các vị trí được chỉ định trong source code gốc
+ *
+ * @module cp28_custom_code/injector
+ */
+
+/**
+ * Vị trí inject — xác định nơi chèn mã vào block code gốc
+ */
+export type InjectPosition = 'prepend' | 'append' | 'replace';
+
+/**
+ * Kết quả inject — chứa nội dung sau khi inject và thông tin metadata
+ */
+export interface InjectResult {
+  /** Nội dung code sau khi đã inject */
+  content: string;
+  /** Vị trí inject đã sử dụng */
+  position: InjectPosition;
+  /** Số ký tự của đoạn mã inject */
+  injectedLength: number;
+  /** Có thành công không */
+  success: boolean;
+  /** Thông báo lỗi (nếu có) */
+  error?: string;
+}
+
+/**
+ * CustomCodeInjector — Lớp đóng gói và inject mã tùy chỉnh
+ *
+ * Cung cấp phương thức inject() để chèn mã vào source code
+ * và _wrapSandbox() để bao bọc mã trong try-catch an toàn.
+ */
+export class CustomCodeInjector {
+  /**
+   * Inject nội dung tùy chỉnh vào block code gốc
+   *
+   * @param content — Nội dung tùy chỉnh cần inject
+   * @param blockCode — Source code gốc
+   * @param position — Vị trí inject ('prepend', 'append', 'replace')
+   * @returns InjectResult — Kết quả sau khi inject
+   */
+  public inject(
+    content: string,
+    blockCode: string,
+    position: InjectPosition = 'append'
+  ): InjectResult {
+    try {
+      // Đóng gói mã inject vào sandbox
+      const wrapped = this._wrapSandbox(content);
+
+      let result: string;
+      switch (position) {
+        case 'prepend':
+          // Chèn ở đầu block code
+          result = wrapped + '\n' + blockCode;
+          break;
+        case 'append':
+          // Chèn ở cuối block code
+          result = blockCode + '\n' + wrapped;
+          break;
+        case 'replace':
+          // Thay thế toàn bộ block code
+          result = wrapped;
+          break;
+        default:
+          console.error(
+            `[CustomCodeInjector] Vị trí inject không hợp lệ: "${position}", sử dụng 'append'`
+          );
+          result = blockCode + '\n' + wrapped;
+      }
+
+      return {
+        content: result,
+        position,
+        injectedLength: wrapped.length,
+        success: true,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[CustomCodeInjector] Lỗi inject: ${errorMessage}`);
+
+      return {
+        content: blockCode,
+        position,
+        injectedLength: 0,
+        success: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Đóng gói mã vào sandbox — bao bọc trong try-catch để ngăn lỗi lan truyền
+   *
+   * @param code — Mã cần đóng gói
+   * @returns Mã đã được wrap trong try-catch
+   */
+  public _wrapSandbox(code: string): string {
+    const sandboxWrapper = `
+(function() {
+  'use strict';
+  try {
+    ${code}
+  } catch (error) {
+    console.error('[CustomCodeInjector] Lỗi runtime trong mã tùy chỉnh:', error);
+  }
+})();
+`;
+    return sandboxWrapper;
+  }
+}
+
+// Xuất singleton instance mặc định
+export default new CustomCodeInjector();

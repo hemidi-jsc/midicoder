@@ -1,0 +1,132 @@
+// Author: Midicoder Team
+// Version: 1.0.0
+
+/**
+ * CustomCodeRegistry — Lớp quản lý tập trung tất cả tài nguyên custom code
+ *
+ * Đóng gói việc truy xuất CodeBlock, Hook, và PatchRule
+ * từ các module con. Không dùng decorator — plain class.
+ *
+ * @module cp28_custom_code/registry
+ */
+
+import type { CodeBlock } from './blocks';
+import { CODE_BLOCKS } from './blocks';
+
+import type { Hook } from './hooks';
+import { HOOK_REGISTRY } from './hooks';
+
+import type { PatchRule } from './patches';
+import { PATCH_RULES } from './patches';
+
+/**
+ * Thống kê registry — số lượng tài nguyên theo loại
+ */
+export interface RegistryStats {
+  /** Số lượng code blocks */
+  blocksCount: number;
+  /** Số lượng hooks (tổng semua event) */
+  hooksCount: number;
+  /** Số lượng patch rules */
+  patchesCount: number;
+  /** Số patch rules đang enabled */
+  enabledPatchesCount: number;
+  /** Danh sách các sự kiện có hook */
+  registeredEvents: string[];
+}
+
+/**
+ * CustomCodeRegistry — Điểm truy cập tập trung cho custom code
+ *
+ * Cung cấp các phương thức để:
+ *  - Khởi tạo registry
+ *  - Tìm kiếm block, hook, patch theo id
+ *  - Lấy danh sách tất cả tài nguyên
+ *  - Thống kê tổng quan
+ */
+export class CustomCodeRegistry {
+  /** Flag đánh dấu đã khởi tạo */
+  private initialized: boolean = false;
+
+  /**
+   * Khởi tạo registry — xác nhận các danh sách đã sẵn sàng
+   */
+  public initialize(): void {
+    this.initialized = true;
+  }
+
+  /**
+   * Lấy CodeBlock theo ID
+   *
+   * @param id — ID của block
+   * @returns CodeBlock hoặc undefined nếu không tìm thấy
+   */
+  public getBlock(id: string): CodeBlock | undefined {
+    return CODE_BLOCKS.find((block) => block.id === id);
+  }
+
+  /**
+   * Lấy tất cả hooks cho một sự kiện
+   *
+   * @param event — Tên sự kiện
+   * @returns Danh sách Hook (rỗng nếu không có)
+   */
+  public getHooksForEvent(event: string): Hook[] {
+    return HOOK_REGISTRY[event] || [];
+  }
+
+  /**
+   * Lấy PatchRule theo ID
+   *
+   * @param id — ID của rule
+   * @returns PatchRule hoặc undefined nếu không tìm thấy
+   */
+  public getPatchRule(id: string): PatchRule | undefined {
+    return PATCH_RULES.find((rule) => rule.id === id);
+  }
+
+  /**
+   * Lấy tất cả code blocks
+   *
+   * @returns Bản sao của mảng CODE_BLOCKS
+   */
+  public getAllBlocks(): CodeBlock[] {
+    return [...CODE_BLOCKS];
+  }
+
+  /**
+   * Lấy tất cả patch rules đang enabled
+   *
+   * @returns Danh sách PatchRule có enabled = true
+   */
+  public getAllEnabledPatches(): PatchRule[] {
+    return PATCH_RULES.filter((rule) => rule.enabled);
+  }
+
+  /**
+   * Lấy thống kê tổng quan của registry
+   *
+   * @returns RegistryStats — Số lượng tài nguyên theo loại
+   */
+  public getStats(): RegistryStats {
+    const hooksCount = Object.values(HOOK_REGISTRY).reduce(
+      (total, hooks) => total + hooks.length,
+      0
+    );
+
+    return {
+      blocksCount: CODE_BLOCKS.length,
+      hooksCount,
+      patchesCount: PATCH_RULES.length,
+      enabledPatchesCount: PATCH_RULES.filter((r) => r.enabled).length,
+      registeredEvents: Object.keys(HOOK_REGISTRY).filter(
+        (key) => HOOK_REGISTRY[key].length > 0
+      ),
+    };
+  }
+}
+
+// Xuất singleton instance
+export const registry = new CustomCodeRegistry();
+
+export default registry;

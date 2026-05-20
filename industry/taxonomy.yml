@@ -523,7 +523,7 @@ core_packs:
     name: Custom Code Injection Generator
     internal_id: cp28_custom_code
     phase: P4
-    description: Custom code blocks, hooks, patch rules
+    description: "Compile-time code injection: custom blocks, lifecycle hooks, regex patch rules"
     definitions_count: 3
     obligations_count: 1
     depends_on:

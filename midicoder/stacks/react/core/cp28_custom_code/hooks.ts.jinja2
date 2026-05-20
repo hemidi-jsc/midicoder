@@ -1,0 +1,139 @@
+// Author: Midicoder Team
+// Version: 1.0.0
+
+/**
+ * Hook Registry — Hệ thống đăng ký và kích hoạt hooks tùy chỉnh
+ *
+ * Cho phép đăng ký các handler theo sự kiện, với điều kiện kích hoạt
+ * và logic xử lý linh hoạt.
+ *
+ * @module cp28_custom_code/hooks
+ */
+
+/**
+ * HookContext — Ngữ cảnh truyền vào khi trigger hook
+ */
+export interface HookContext {
+  /** Tên sự kiện */
+  event: string;
+  /** Dữ liệu đi kèm sự kiện */
+  payload?: unknown;
+  /** Timestamp kích hoạt */
+  timestamp?: number;
+  /** Các trường tùy chỉnh */
+  [key: string]: unknown;
+}
+
+/**
+ * HookCondition — Điều kiện để hook được kích hoạt
+ *
+ * Có thể là boolean (luôn true/false) hoặc hàm đánh giá động.
+ */
+export type HookCondition = boolean | ((context: HookContext) => boolean);
+
+/**
+ * HookHandler — Hàm xử lý khi hook được trigger
+ */
+export type HookHandler = (context: HookContext) => void | Promise<void>;
+
+/**
+ * Hook — Một hook tùy chỉnh
+ *
+ * Gồm id, sự kiện lắng nghe, hành động thực thi, điều kiện kích hoạt,
+ * và hàm handler xử lý.
+ */
+export interface Hook {
+  /** ID duy nhất của hook */
+  id: string;
+  /** Sự kiện lắng nghe (VD: 'beforeBuild', 'afterInject', 'onError', 'onComplete') */
+  event: string;
+  /** Hành động mô tả (VD: 'log', 'transform', 'validate') */
+  action: string;
+  /** Điều kiện kích hoạt — boolean hoặc hàm đánh giá */
+  condition: HookCondition;
+  /** Hàm xử lý khi hook được trigger */
+  handler: HookHandler;
+}
+
+/**
+ * HOOK_REGISTRY — Bảng đăng ký hooks theo sự kiện
+ *
+ * Record<mã sự kiện, danh sách Hook>
+ * Bốn sự kiện mặc định: beforeBuild, afterInject, onError, onComplete
+ */
+export const HOOK_REGISTRY: Record<string, Hook[]> = {
+  beforeBuild: [],
+  afterInject: [],
+  onError: [],
+  onComplete: [],
+};
+
+/**
+ * Đăng ký hook mới vào registry
+ *
+ * @param hook — Hook cần đăng ký
+ */
+export function registerHook(hook: Hook): void {
+  if (!HOOK_REGISTRY[hook.event]) {
+    HOOK_REGISTRY[hook.event] = [];
+  }
+  HOOK_REGISTRY[hook.event].push(hook);
+}
+
+/**
+ * Kích hoạt tất cả hooks cho một sự kiện
+ *
+ * @param event — Tên sự kiện
+ * @param context — Ngữ cảnh truyền vào handler
+ */
+export async function triggerHooks(
+  event: string,
+  context?: Partial<HookContext>
+): Promise<void> {
+  const hooks = HOOK_REGISTRY[event];
+  if (!hooks || hooks.length === 0) {
+    return;
+  }
+
+  const enrichedContext: HookContext = {
+    event,
+    timestamp: Date.now(),
+    ...context,
+  };
+
+  for (const hook of hooks) {
+    const shouldRun = _evaluateCondition(hook.condition, enrichedContext);
+    if (!shouldRun) {
+      continue;
+    }
+
+    try {
+      await hook.handler(enrichedContext);
+    } catch (error) {
+      console.error(
+        `[HookRegistry] Lỗi trong hook "${hook.id}" (event: ${event}):`,
+        error
+      );
+    }
+  }
+}
+
+/**
+ * Đánh giá điều kiện kích hoạt hook
+ *
+ * @param condition — Điều kiện cần đánh giá
+ * @param context — Ngữ cảnh đánh giá
+ * @returns True nếu hook nên được kích hoạt
+ */
+function _evaluateCondition(
+  condition: HookCondition,
+  context: HookContext
+): boolean {
+  if (typeof condition === 'boolean') {
+    return condition;
+  }
+  if (typeof condition === 'function') {
+    return condition(context);
+  }
+  return false;
+}

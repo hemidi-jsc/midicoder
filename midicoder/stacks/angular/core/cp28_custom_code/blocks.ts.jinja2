@@ -1,0 +1,41 @@
+// Author: Midicoder Team
+// Version: 1.0.0
+
+{% if stack_config.doc_header %}{{ stack_config.doc_header }}{% endif %}
+/**
+ * CodeBlock — Giao diện và danh sách các khối code tùy chỉnh.
+ *
+ * Mỗi khối code định nghĩa một đoạn mã có thể tiêm vào một file
+ * hoặc module cụ thể theo vị trí đã cấu hình.
+ *
+ * @see {{ stack_config.project_name }}/docs/custom-code-injection.md
+ */
+
+export interface CodeBlock {
+  /** Định danh duy nhất của khối code */
+  id: string;
+  /** Đường dẫn file hoặc module mục tiêu (có thể dùng glob) */
+  target: string;
+  /** Nội dung code cần tiêm */
+  code: string;
+  /** Vị trí tiêm: 'top', 'bottom', 'replace' */
+  position: 'top' | 'bottom' | 'replace';
+  /** Metadata bổ sung: tác giả, phiên bản, mô tả... */
+  metadata?: Record<string, any>;
+}
+
+/**
+ * Danh sách các khối code tùy chỉnh.
+ *
+ * Thêm khối mới vào mảng này để kích hoạt tiêm mã.
+ */
+export const CODE_BLOCKS: CodeBlock[] = [
+  // Ví dụ:
+  // {
+  //   id: 'analytics-init',
+  //   target: '**/app.module.ts',
+  //   code: `// Analytics bootstrap code`,
+  //   position: 'top',
+  //   metadata: { author: 'team-a', version: '1.0.0' }
+  // },
+];

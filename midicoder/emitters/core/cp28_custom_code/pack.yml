@@ -1,0 +1,171 @@
+pack:
+  id: "CP28"
+  name: "Custom Code Injection Generator"
+  internal_id: "cp28_custom_code"
+  version: "1.0.0"
+  status: "experimental"
+  category: "extensibility"
+  depends_on: ["CP01"]
+  definitions_count: 3
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-CP28"
+    range: "MDC-CP28-001 to MDC-CP28-012"
+  capabilities_provided:
+    - custom_code_inject
+    - hook_define
+    - patch_apply
+  capabilities:
+    - id: "custom_code_inject"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "hook_define"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "patch_apply"
+      emitter: "fastapi, nestjs, angular, react"
+  definitions:
+    - name: "CustomCodeBlock"
+      description: "Block code tùy chỉnh để inject vào generated files"
+    - name: "Hook"
+      description: "Compile-time hook để modify behavior tại lifecycle event"
+    - name: "PatchRule"
+      description: "Regex-based patch rule để transform generated code"
+  obligations:
+    - name: "CodeInjectionSafety"
+      description: "Injected code phải được validate syntax và wrap trong try-except"
+  file_contributions:
+    infrastructure:
+      # FastAPI
+      - path: "app/custom_code/__init__.py"
+        file_type: "custom_code_init"
+        template: "cp28_custom_code/__init__.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/custom_code/inject.py"
+        file_type: "custom_code_inject"
+        template: "cp28_custom_code/inject.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["custom_code_blocks"]
+      - path: "app/custom_code/blocks.py"
+        file_type: "custom_code_blocks"
+        template: "cp28_custom_code/blocks.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["custom_code_blocks"]
+      - path: "app/custom_code/hooks.py"
+        file_type: "custom_code_hooks"
+        template: "cp28_custom_code/hooks.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["hooks"]
+      - path: "app/custom_code/patches.py"
+        file_type: "custom_code_patches"
+        template: "cp28_custom_code/patches.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["patch_rules"]
+      - path: "app/custom_code/registry.py"
+        file_type: "custom_code_registry"
+        template: "cp28_custom_code/registry.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # NestJS
+      - path: "src/custom-code/injector.ts"
+        file_type: "custom_code_inject"
+        template: "cp28_custom_code/injector.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["custom_code_blocks"]
+      - path: "src/custom-code/blocks.ts"
+        file_type: "custom_code_blocks"
+        template: "cp28_custom_code/blocks.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["custom_code_blocks"]
+      - path: "src/custom-code/hooks.ts"
+        file_type: "custom_code_hooks"
+        template: "cp28_custom_code/hooks.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["hooks"]
+      - path: "src/custom-code/patches.ts"
+        file_type: "custom_code_patches"
+        template: "cp28_custom_code/patches.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["patch_rules"]
+      - path: "src/custom-code/registry.ts"
+        file_type: "custom_code_registry"
+        template: "cp28_custom_code/registry.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      # Angular
+      - path: "src/app/core/custom-code/injector.ts"
+        file_type: "custom_code_inject"
+        template: "cp28_custom_code/injector.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["custom_code_blocks"]
+      - path: "src/app/core/custom-code/blocks.ts"
+        file_type: "custom_code_blocks"
+        template: "cp28_custom_code/blocks.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["custom_code_blocks"]
+      - path: "src/app/core/custom-code/hooks.ts"
+        file_type: "custom_code_hooks"
+        template: "cp28_custom_code/hooks.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["hooks"]
+      - path: "src/app/core/custom-code/patches.ts"
+        file_type: "custom_code_patches"
+        template: "cp28_custom_code/patches.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["patch_rules"]
+      - path: "src/app/core/custom-code/registry.ts"
+        file_type: "custom_code_registry"
+        template: "cp28_custom_code/registry.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # React
+      - path: "src/custom-code/injector.ts"
+        file_type: "custom_code_inject"
+        template: "cp28_custom_code/injector.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["custom_code_blocks"]
+      - path: "src/custom-code/blocks.ts"
+        file_type: "custom_code_blocks"
+        template: "cp28_custom_code/blocks.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["custom_code_blocks"]
+      - path: "src/custom-code/hooks.ts"
+        file_type: "custom_code_hooks"
+        template: "cp28_custom_code/hooks.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["hooks"]
+      - path: "src/custom-code/patches.ts"
+        file_type: "custom_code_patches"
+        template: "cp28_custom_code/patches.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["patch_rules"]
+      - path: "src/custom-code/registry.ts"
+        file_type: "custom_code_registry"
+        template: "cp28_custom_code/registry.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+  recipes:
+    - auto_generate_custom_code_from_mir
+    - generate_default_blocks
+    - generate_default_hooks
+    - generate_default_patch_rules

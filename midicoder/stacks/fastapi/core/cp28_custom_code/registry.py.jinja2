@@ -1,0 +1,102 @@
+# coding: utf-8
+"""
+Custom Code Registry — Quản lý tất cả code blocks, hooks, và patch rules.
+
+Cung cấp API để discover, register, và query custom code components.
+
+Author: Midicoder Team
+Version: 1.0.0
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from app.custom_code.blocks import CODE_BLOCKS, CodeBlock
+from app.custom_code.hooks import HOOK_REGISTRY, Hook
+from app.custom_code.patches import PATCH_RULES, PatchRule
+
+logger = logging.getLogger(__name__)
+
+
+class CustomCodeRegistry:
+    """
+    Registry trung tâm cho tất cả custom code components.
+
+    Quản lý:
+    - CodeBlocks: Custom code để inject
+    - Hooks: Compile-time lifecycle hooks
+    - PatchRules: Regex-based code transforms
+    """
+
+    def __init__(self) -> None:
+        """Khởi tạo registry."""
+        self._blocks: dict[str, CodeBlock] = {}
+        self._hooks: dict[str, list[Hook]] = {}
+        self._patches: dict[str, PatchRule] = {}
+        self._initialized = False
+
+    def initialize(self) -> None:
+        """Initialize registry từ global lists."""
+        if self._initialized:
+            return
+
+        # Register code blocks
+        for block in CODE_BLOCKS:
+            self._blocks[block.id] = block
+
+        # Register hooks
+        for event, hooks in HOOK_REGISTRY.items():
+            self._hooks[event] = hooks
+
+        # Register patch rules
+        for rule in PATCH_RULES:
+            self._patches[rule.id] = rule
+
+        self._initialized = True
+        logger.info(
+            "CustomCodeRegistry initialized: %d blocks, %d hook events, %d patches",
+            len(self._blocks),
+            len(self._hooks),
+            len(self._patches),
+        )
+
+    def get_block(self, block_id: str) -> CodeBlock | None:
+        """Lấy code block theo ID."""
+        self.initialize()
+        return self._blocks.get(block_id)
+
+    def get_hooks_for_event(self, event: str) -> list[Hook]:
+        """Lấy hooks cho một event."""
+        self.initialize()
+        return self._hooks.get(event, [])
+
+    def get_patch_rule(self, rule_id: str) -> PatchRule | None:
+        """Lấy patch rule theo ID."""
+        self.initialize()
+        return self._patches.get(rule_id)
+
+    def get_all_blocks(self) -> list[CodeBlock]:
+        """Lấy tất cả code blocks."""
+        self.initialize()
+        return list(self._blocks.values())
+
+    def get_all_enabled_patches(self) -> list[PatchRule]:
+        """Lấy tất cả patch rules đang enabled."""
+        self.initialize()
+        return [r for r in self._patches.values() if r.enabled]
+
+    def get_stats(self) -> dict[str, Any]:
+        """Lấy statistics của registry."""
+        self.initialize()
+        return {
+            "blocks_count": len(self._blocks),
+            "hook_events_count": len(self._hooks),
+            "patches_count": len(self._patches),
+            "enabled_patches": sum(1 for r in self._patches.values() if r.enabled),
+        }
+
+
+# Singleton instance
+registry = CustomCodeRegistry()

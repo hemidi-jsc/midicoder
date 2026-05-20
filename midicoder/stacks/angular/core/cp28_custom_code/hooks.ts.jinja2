@@ -1,0 +1,88 @@
+// Author: Midicoder Team
+// Version: 1.0.0
+
+{% if stack_config.doc_header %}{{ stack_config.doc_header }}{% endif %}
+/**
+ * Hook — Giao diện, registry, và trình kích hoạt sự kiện.
+ *
+ * Cho phép đăng ký các hàm xử lý được kích hoạt theo sự kiện
+ * kèm điều kiện thực thi tùy chọn.
+ *
+ * @see {{ stack_config.project_name }}/docs/custom-code-injection.md
+ */
+
+/**
+ * Một hook là một hàm xử lý gắn liền với sự kiện và điều kiện.
+ */
+export interface Hook {
+  /** Định danh duy nhất của hook */
+  id: string;
+  /** Tên sự kiện để kích hoạt hook này */
+  event: string;
+  /** Hành động mô tả: 'log', 'modify', 'notify', ... */
+  action: string;
+  /** Điều kiện thực thi (biểu thức hoặc null nếu luôn chạy) */
+  condition: string | null;
+  /** Hàm xử lý được gọi khi hook kích hoạt */
+  handler: Function;
+}
+
+/**
+ * Registry lưu trữ các hook theo tên sự kiện.
+ */
+export const HOOK_REGISTRY: Record<string, Hook[]> = {};
+
+/**
+ * Đăng ký một hook mới vào registry.
+ *
+ * @param hook — Hook cần đăng ký
+ */
+export function registerHook(hook: Hook): void {
+  if (!HOOK_REGISTRY[hook.event]) {
+    HOOK_REGISTRY[hook.event] = [];
+  }
+  HOOK_REGISTRY[hook.event].push(hook);
+  console.debug(`[Hooks] Đã đăng ký hook "${hook.id}" cho sự kiện "${hook.event}"`);
+}
+
+/**
+ * Kích hoạt tất cả hooks cho một sự kiện cụ thể.
+ *
+ * @param event — Tên sự kiện
+ * @param context — Ngữ cảnh tùy chọn để đánh giá điều kiện
+ */
+export function triggerHooks(event: string, context?: any): void {
+  const hooks = HOOK_REGISTRY[event];
+  if (!hooks || hooks.length === 0) {
+    return;
+  }
+
+  for (const hook of hooks) {
+    if (hook.condition && !_evaluateCondition(hook.condition, context)) {
+      continue;
+    }
+    try {
+      hook.handler(context);
+    } catch (e: any) {
+      console.error(`[Hooks] Lỗi trong hook "${hook.id}":`, e.message);
+    }
+  }
+}
+
+/**
+ * Đánh giá điều kiện dưới dạng chuỗi thành boolean.
+ *
+ * @param condition — Biểu thức điều kiện (eval)
+ * @param context — Ngữ cảnh cho eval
+ * @returns Kết quả boolean
+ */
+function _evaluateCondition(condition: string, context?: any): boolean {
+  try {
+    // eslint-disable-next-line no-eval
+    const fn = new Function('context', `return ${condition}`);
+    return !!fn(context);
+  } catch {
+    console.warn(`[Hooks] Không thể đánh giá điều kiện: ${condition}`);
+    return false;
+  }
+}

@@ -706,6 +706,22 @@ class ErrorCode(str, Enum):
     CP27_INVALID_LIFECYCLE_EVENT = "MDC-CP27-018"
 
     # =========================================================================
+    # CP28: Custom Code Injection Generator Errors
+    # =========================================================================
+    CP28_EMPTY_BLOCK_ID = "MDC-CP28-001"
+    CP28_SYNTAX_ERROR = "MDC-CP28-002"
+    CP28_IMPORT_CONFLICT = "MDC-CP28-003"
+    CP28_INVALID_POSITION = "MDC-CP28-004"
+    CP28_INVALID_HOOK_EVENT = "MDC-CP28-005"
+    CP28_INVALID_PATCH_PATTERN = "MDC-CP28-006"
+    CP28_PATCH_APPLY_FAILED = "MDC-CP28-007"
+    CP28_DSL_PARSE_ERROR = "MDC-CP28-008"
+    CP28_EMPTY_HOOK_ID = "MDC-CP28-009"
+    CP28_EMPTY_PATCH_ID = "MDC-CP28-010"
+    CP28_INVALID_STACK = "MDC-CP28-011"
+    CP28_CODE_INJECT_FAILED = "MDC-CP28-012"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1115,6 +1131,20 @@ class MidicoderErrorManager:
         ErrorCode.CP53_DUPLICATE_DP_ID: "Domain pack ID trung lap.",
         ErrorCode.CP53_INVALID_BINDING_ID: "Binding ID khong hop le.",
         ErrorCode.CP53_INVOKER_CONFIG_EMPTY: "RuntimeInvoker cau hinh rong.",
+
+        # CP28: Custom Code Injection Generator Error Templates
+        ErrorCode.CP28_EMPTY_BLOCK_ID: "Custom code block ID không được để trống.",
+        ErrorCode.CP28_SYNTAX_ERROR: "Custom code block không pass syntax check.",
+        ErrorCode.CP28_IMPORT_CONFLICT: "Injected code có import conflict với generated code.",
+        ErrorCode.CP28_INVALID_POSITION: "Position không hợp lệ. Chọn trong before, after, replace.",
+        ErrorCode.CP28_INVALID_HOOK_EVENT: "Hook event không hợp lệ. Chọn trong on_before_emit, on_after_emit, on_template_render, on_file_write.",
+        ErrorCode.CP28_INVALID_PATCH_PATTERN: "Regex pattern trong patch rule không hợp lệ.",
+        ErrorCode.CP28_PATCH_APPLY_FAILED: "Apply patch rule thất bại.",
+        ErrorCode.CP28_DSL_PARSE_ERROR: "Parse DSL custom_code_nodes thất bại.",
+        ErrorCode.CP28_EMPTY_HOOK_ID: "Hook ID không được để trống.",
+        ErrorCode.CP28_EMPTY_PATCH_ID: "Patch rule ID không được để trống.",
+        ErrorCode.CP28_INVALID_STACK: "Stack filter không hợp lệ. Chọn trong fastapi, nestjs, angular, react.",
+        ErrorCode.CP28_CODE_INJECT_FAILED: "Inject code thất bại.",
     }
 
     _SUGGESTIONS: dict[ErrorCode, list[str]] = {
@@ -1393,6 +1423,57 @@ class MidicoderErrorManager:
             "Kiểm tra YAML syntax (sử dụng YAML validator online)",
             "Đảm bảo indentation đúng (2 spaces, không dùng tabs)",
             "Kiểm tra quotes cho strings có special characters",
+        ],
+
+        # CP28: Custom Code Injection Generator Suggestions
+        ErrorCode.CP28_EMPTY_BLOCK_ID: [
+            "Cung cấp block ID khác trống (ví dụ: 'inject_payment_validator')",
+            "Sử dụng snake_case cho block ID",
+        ],
+        ErrorCode.CP28_SYNTAX_ERROR: [
+            "Kiểm tra syntax của injected code block",
+            "Dùng Python AST checker cho Python code",
+            "Dùng TypeScript compiler check cho TypeScript code",
+        ],
+        ErrorCode.CP28_IMPORT_CONFLICT: [
+            "Đổi tên import alias để tránh conflict",
+            "Xóa import không cần thiết từ injected code",
+        ],
+        ErrorCode.CP28_INVALID_POSITION: [
+            "Kiểm tra position nằm trong catalog: before, after, replace",
+            "Xem documentation cho supported injection positions",
+        ],
+        ErrorCode.CP28_INVALID_HOOK_EVENT: [
+            "Kiểm tra event nằm trong catalog: on_before_emit, on_after_emit, on_template_render, on_file_write",
+            "Xem documentation cho supported hook events",
+        ],
+        ErrorCode.CP28_INVALID_PATCH_PATTERN: [
+            "Kiểm tra regex pattern syntax",
+            "Dùng regex tester online để validate pattern",
+        ],
+        ErrorCode.CP28_PATCH_APPLY_FAILED: [
+            "Kiểm tra target pattern có match với generated code không",
+            "Xem logs cho error chi tiết",
+        ],
+        ErrorCode.CP28_DSL_PARSE_ERROR: [
+            "Kiểm tra YAML syntax trong DSL custom_code_blocks",
+            "Đảm bảo indentation đúng (2 spaces)",
+        ],
+        ErrorCode.CP28_EMPTY_HOOK_ID: [
+            "Cung cấp hook ID khác trống (ví dụ: 'add_logging_hook')",
+            "Sử dụng snake_case cho hook ID",
+        ],
+        ErrorCode.CP28_EMPTY_PATCH_ID: [
+            "Cung cấp patch rule ID khác trống (ví dụ: 'rename_tenant_methods')",
+            "Sử dụng snake_case cho patch ID",
+        ],
+        ErrorCode.CP28_INVALID_STACK: [
+            "Kiểm tra stack nằm trong catalog: fastapi, nestjs, angular, react",
+            "Xem documentation cho supported stacks",
+        ],
+        ErrorCode.CP28_CODE_INJECT_FAILED: [
+            "Kiểm tra target path pattern hợp lệ",
+            "Xem logs cho error chi tiết",
         ],
     }
 

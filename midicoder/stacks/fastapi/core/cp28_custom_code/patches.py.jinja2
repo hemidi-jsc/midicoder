@@ -1,0 +1,70 @@
+# coding: utf-8
+"""
+Patch Rules Engine — Regex-based code transformation.
+
+Apply patch rules sau khi template render nhưng trước khi write file.
+Mỗi rule có: target_pattern (regex), replacement, và enabled flag.
+
+Author: Midicoder Team
+Version: 1.0.0
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PatchRule:
+    """Một patch rule để transform generated code."""
+    id: str
+    target_pattern: str
+    replacement: str
+    enabled: bool = True
+    metadata: dict[str, Any] | None = None
+
+
+# Danh sách patch rules mặc định
+PATCH_RULES: list[PatchRule] = []
+
+
+class PatchEngine:
+    """Engine apply patch rules lên generated code content."""
+
+    def apply(self, content: str, rules: list[PatchRule] | None = None) -> str:
+        """
+        Apply tất cả enabled patch rules lên content.
+
+        Rules được apply theo thứ tự trong list.
+
+        Args:
+            content: Nội dung code cần patch
+            rules: Danh sách rules (default: PATCH_RULES global)
+
+        Returns:
+            Nội dung sau khi apply patches
+        """
+        if rules is None:
+            rules = PATCH_RULES
+
+        result = content
+        for rule in rules:
+            if not rule.enabled:
+                continue
+            try:
+                result = re.sub(rule.target_pattern, rule.replacement, result)
+                logger.debug("Applied patch rule: %s", rule.id)
+            except re.error as e:
+                logger.error("Patch rule '%s' failed: %s", rule.id, e)
+                continue
+
+        return result
+
+
+# Singleton instance
+patch_engine = PatchEngine()

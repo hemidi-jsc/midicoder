@@ -434,6 +434,26 @@ class FileContributionsLoader:
         """
         files: list[dict[str, Any]] = []
         meta = mir_metadata or {}
+
+        # CP28: auto-populate context from recipes (custom_code_blocks, hooks, patch_rules)
+        # vì các keys này không có sẵn trong MIR metadata
+        if contributions.pack_internal_id == "cp28_custom_code":
+            try:
+                from midicoder.emitters.core.cp28_custom_code.recipes import (
+                    auto_generate_custom_code_from_mir,
+                )
+                collection = auto_generate_custom_code_from_mir(meta)
+                if collection:
+                    coll_dict = collection.to_dict()
+                    meta["custom_code_blocks"] = coll_dict["blocks"]
+                    meta["hooks"] = coll_dict["hooks"]
+                    meta["patch_rules"] = coll_dict["patch_rules"]
+            except Exception:
+                # Nếu recipes fail, fallback: context rỗng — template vẫn render được
+                meta.setdefault("custom_code_blocks", [])
+                meta.setdefault("hooks", [])
+                meta.setdefault("patch_rules", [])
+
         for entry in contributions.infrastructure:
             ctx = {}
             for key in entry.context_keys:

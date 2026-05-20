@@ -1,0 +1,61 @@
+// Author: Midicoder Team
+// Version: 1.0.0
+
+/**
+ * Code Blocks — Định nghĩa kiểu và danh sách các block mã tùy chỉnh
+ *
+ * Mỗi CodeBlock đại diện cho một đoạn mã inject độc lập,
+ * có thể được gắn vào mục tiêu cụ thể trong source code.
+ *
+ * @module cp28_custom_code/blocks
+ */
+
+import type { InjectPosition } from './injector';
+
+/**
+ * Metadata — Thông tin bổ sung cho block mã
+ */
+export interface CodeBlockMetadata {
+  /** Tác giả của block mã */
+  author?: string;
+  /** Phiên bản của block */
+  version?: string;
+  /** Mô tả ngắn */
+  description?: string;
+  /** Nhãn phân loại */
+  tags?: string[];
+  /** Thời gian tạo (ISO 8601) */
+  createdAt?: string;
+  /** Thời gian cập nhật cuối (ISO 8601) */
+  updatedAt?: string;
+}
+
+/**
+ * CodeBlock — Khối mã tùy chỉnh
+ *
+ * Định nghĩa một đoạn mã có thể inject vào source code React.
+ * Mỗi block có id duy nhất, mục tiêu target, và vị trí inject.
+ */
+export interface CodeBlock {
+  /** ID duy nhất của block */
+  id: string;
+  /**
+   * Mục tiêu — đường dẫn file hoặc pattern để xác định vị trí inject
+   * Ví dụ: 'src/App.tsx', 'src/components/**/*.tsx'
+   */
+  target: string;
+  /** Nội dung mã tùy chỉnh */
+  code: string;
+  /** Vị trí inject: đầu, cuối, hoặc thay thế */
+  position: InjectPosition;
+  /** Metadata bổ sung */
+  metadata?: CodeBlockMetadata;
+}
+
+/**
+ * CODE_BLOCKS — Danh sách các block mã tùy chỉnh
+ *
+ * Mảng này chứa tất cả các CodeBlock đã đăng ký.
+ * Ban đầu rỗng — các block sẽ được thêm qua registry.
+ */
+export const CODE_BLOCKS: CodeBlock[] = [];

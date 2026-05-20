@@ -1,0 +1,145 @@
+// Author: Midicoder Team
+// Version: 1.0.0
+
+/**
+ * Patch Engine — Hệ thống áp dụng các quy tắc sửa đổi mã nguồn
+ *
+ * Cho phép định nghĩa các PatchRule với pattern match và replacement,
+ * sau đó áp dụng tuần tự hoặc chọn lọc lên nội dung source code.
+ *
+ * @module cp28_custom_code/patches
+ */
+
+/**
+ * Metadata bổ sung cho PatchRule
+ */
+export interface PatchRuleMetadata {
+  /** Mô tả quy tắc */
+  description?: string;
+  /** Mức độ ưu tiên (số nhỏ = ưu tiên cao) */
+  priority?: number;
+  /** Tác giả */
+  author?: string;
+  /** Nhãn phân loại */
+  tags?: string[];
+}
+
+/**
+ * PatchRule — Quy tắc sửa đổi mã nguồn
+ *
+ * Định nghĩa một pattern cần tìm và chuỗi/giá trị thay thế.
+ * Pattern có thể là string hoặc RegExp.
+ */
+export interface PatchRule {
+  /** ID duy nhất của quy tắc */
+  id: string;
+  /**
+   * Pattern tìm kiếm — chuỗi hoặc biểu thức chính quy
+   * Nếu là string, sẽ tìm kiếm exact match.
+   * Nếu là RegExp, sẽ match theo regex.
+   */
+  targetPattern: string | RegExp;
+  /** Giá trị thay thế — chuỗi hoặc hàm trả về chuỗi */
+  replacement: string | ((match: string) => string);
+  /** Quy tắc có được kích hoạt không */
+  enabled: boolean;
+  /** Metadata bổ sung */
+  metadata?: PatchRuleMetadata;
+}
+
+/**
+ * Kết quả apply — chứa nội dung sau khi áp dụng patches
+ */
+export interface ApplyResult {
+  /** Nội dung sau khi apply */
+  content: string;
+  /** Số lượng rules đã áp dụng */
+  rulesApplied: number;
+  /** Danh sách rule IDs đã áp dụng thành công */
+  appliedRuleIds: string[];
+  /** Danh sách lỗi (nếu có) */
+  errors: string[];
+}
+
+/**
+ * PatchEngine — Lớp áp dụng các quy tắc patch lên source code
+ */
+export class PatchEngine {
+  /**
+   * Áp dụng các quy tắc patch lên nội dung
+   *
+   * @param content — Nội dung source code gốc
+   * @param rules — Danh sách quy tắc cần áp dụng (mặc định dùng PATCH_RULES)
+   * @returns ApplyResult — Kết quả sau khi apply
+   */
+  public apply(
+    content: string,
+    rules: PatchRule[] = PATCH_RULES
+  ): ApplyResult {
+    const appliedRuleIds: string[] = [];
+    const errors: string[] = [];
+    let result = content;
+
+    // Lọc chỉ rules được enabled
+    const enabledRules = rules.filter((r) => r.enabled);
+
+    for (const rule of enabledRules) {
+      try {
+        result = this._applySingleRule(result, rule);
+        appliedRuleIds.push(rule.id);
+      } catch (error) {
+        const errorMsg =
+          error instanceof Error ? error.message : String(error);
+        errors.push(`[PatchEngine] Lỗi áp dụng rule "${rule.id}": ${errorMsg}`);
+        console.error(
+          `[PatchEngine] Lỗi áp dụng rule "${rule.id}":`,
+          error
+        );
+      }
+    }
+
+    return {
+      content: result,
+      rulesApplied: appliedRuleIds.length,
+      appliedRuleIds,
+      errors,
+    };
+  }
+
+  /**
+   * Áp dụng một quy tắc đơn lẻ
+   *
+   * @param content — Nội dung hiện tại
+   * @param rule — Quy tắc cần áp dụng
+   * @returns Nội dung sau khi áp dụng rule
+   */
+  private _applySingleRule(content: string, rule: PatchRule): string {
+    const { targetPattern, replacement } = rule;
+
+    if (targetPattern instanceof RegExp) {
+      // Pattern là RegExp
+      if (typeof replacement === 'function') {
+        return content.replace(targetPattern, (match) => replacement(match));
+      }
+      return content.replace(targetPattern, replacement);
+    } else {
+      // Pattern là chuỗi
+      if (typeof replacement === 'function') {
+        return content.replace(targetPattern, () => replacement(targetPattern));
+      }
+      return content.split(targetPattern).join(replacement);
+    }
+  }
+}
+
+/**
+ * PATCH_RULES — Danh sách các quy tắc patch mặc định
+ *
+ * Ban đầu rỗng — các rules sẽ được thêm qua registry.
+ */
+export const PATCH_RULES: PatchRule[] = [];
+
+// Xuất singleton instance
+export const patchEngine = new PatchEngine();
+
+export default patchEngine;

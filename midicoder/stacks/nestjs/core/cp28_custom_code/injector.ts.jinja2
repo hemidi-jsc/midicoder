@@ -1,0 +1,97 @@
+// Author: Midicoder Team
+// Version: 1.0.0
+
+/**
+ * Custom Code Injector.
+ *
+ * Inject custom code blocks vào generated files tại compile-time.
+ * Code được validate syntax và wrap trong try-catch để tránh crash.
+ *
+ * @module CustomCodeInjector
+ */
+
+import { Injectable, LoggerService } from "@nestjs/common";
+
+/**
+ * Logger interface phù hợp với NestJS ConsoleLogger.
+ */
+interface Logger {
+  error(message: string, ...args: any[]): void;
+  debug(message: string, ...args: any[]): void;
+}
+
+@Injectable()
+export class CustomCodeInjector {
+  /**
+   * Engine inject custom code blocks vào generated files.
+   *
+   * Hỗ trợ 3 vị trí:
+   * - before:  inject code trước nội dung gốc
+   * - after:   inject code sau nội dung gốc
+   * - replace: thay thế toàn bộ nội dung gốc
+   *
+   * Tất cả injected code được wrap trong try-catch sandbox
+   * để đảm bảo không crash runtime.
+   */
+
+  private readonly logger: Logger = new (class implements Logger {
+    error(msg: string, ...args: any[]): void {
+      console.error(`[CustomCodeInjector] ${msg}`, ...args);
+    }
+    debug(msg: string, ...args: any[]): void {
+      console.debug(`[CustomCodeInjector] ${msg}`, ...args);
+    }
+  })();
+
+  /**
+   * Inject code block vào content tại vị trí được chỉ định.
+   *
+   * @param content   - Nội dung gốc
+   * @param blockCode - Code block sẽ inject
+   * @param position  - Vị trí inject (before, after, replace)
+   * @returns Nội dung đã inject
+   */
+  public inject(content: string, blockCode: string, position: string = "after"): string {
+    // Validate syntax cơ bản — kiểm tra cú pháp TypeScript/JavaScript
+    try {
+      this._validateSyntax(blockCode);
+    } catch (error) {
+      this.logger.error("Syntax error trong custom code block: %s", error);
+      throw error;
+    }
+
+    if (position === "replace") {
+      return this._wrapSandbox(blockCode);
+    } else if (position === "before") {
+      return `${this._wrapSandbox(blockCode)}\n\n${content}`;
+    } else {
+      // default: after
+      return `${content}\n\n${this._wrapSandbox(blockCode)}`;
+    }
+  }
+
+  /**
+   * Validate syntax của code block.
+   * Sử dụng Function constructor để kiểm tra cú pháp hợp lệ.
+   *
+   * @param code - Code cần validate
+   */
+  private _validateSyntax(code: string): void {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    new Function(code);
+  }
+
+  /**
+   * Wrap code trong try-catch sandbox để tránh crash runtime.
+   *
+   * @param code - Code cần wrap
+   * @returns Code đã wrap trong try-catch
+   */
+  public _wrapSandbox(code: string): string {
+    const indented = code.split("\n").map((line) => `    ${line}`).join("\n");
+    return `try {\n${indented}\n} catch (_e) {\n    console.error('Custom code injection error:', _e);\n}`;
+  }
+}
+
+// Singleton instance
+export const injector = new CustomCodeInjector();
