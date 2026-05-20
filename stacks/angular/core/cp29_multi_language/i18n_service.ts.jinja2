@@ -1,0 +1,38 @@
+/**
+ * Angular i18n Service — tạo tự động bởi CP29.
+ *
+ * Không sửa thủ công.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import { TranslateService } from '@ngx-translate/core';
+
+const supportedLocales: string[] = [
+{% for loc in language_profile.locales %}
+  '{{ loc }}',
+{% endfor %}
+];
+
+@Injectable({
+  providedIn: 'root',
+})
+export class I18nService {
+  private translate = inject(TranslateService);
+
+  constructor() {
+    this.translate.setDefaultLanguage('{{ language_profile.default_locale }}');
+    this.translate.use('{{ language_profile.default_locale }}');
+  }
+
+  translate(key: string, params?: Record<string, any>): string {
+    return this.translate.instant(key, params || {});
+  }
+
+  setLocale(locale: string): void {
+    this.translate.use(locale);
+  }
+
+  getSupportedLocales(): string[] {
+    return [...supportedLocales];
+  }
+}

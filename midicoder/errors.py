@@ -722,6 +722,20 @@ class ErrorCode(str, Enum):
     CP28_CODE_INJECT_FAILED = "MDC-CP28-012"
 
     # =========================================================================
+    # CP29: Multi-Language Support Generator Errors
+    # =========================================================================
+    CP29_INVALID_LOCALE = "MDC-CP29-001"
+    CP29_MISSING_TRANSLATION = "MDC-CP29-002"
+    CP29_BUNDLE_LOAD_FAILED = "MDC-CP29-003"
+    CP29_KEY_CONFLICT = "MDC-CP29-004"
+    CP29_TEMPLATE_NOT_FOUND = "MDC-CP29-005"
+    CP29_EMPTY_KEY = "MDC-CP29-006"
+    CP29_INVALID_KEY_FORMAT = "MDC-CP29-007"
+    CP29_DSL_PARSE_ERROR = "MDC-CP29-008"
+    CP29_EMPTY_PROFILE_ID = "MDC-CP29-009"
+    CP29_DUPLICATE_LOCALE = "MDC-CP29-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

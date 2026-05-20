@@ -1,0 +1,157 @@
+pack:
+  id: "CP29"
+  name: "Multi-Language Support Generator"
+  internal_id: "cp29_multi_language"
+  version: "1.1.0"
+  status: "stable"
+  category: "internationalization"
+  depends_on:
+    - "CP01"
+  definitions_count: 3
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP29"
+    range: "MDC-CP29-001 to MDC-CP29-010"
+
+  capabilities_provided:
+    - language_profile
+    - i18n_bundle
+    - keyset_manage
+
+  capabilities:
+    - id: "language_profile"
+      emitter: "fastapi,nestjs,angular,react"
+    - id: "i18n_bundle"
+      emitter: "fastapi,nestjs,angular,react"
+    - id: "keyset_manage"
+      emitter: "fastapi,nestjs,angular,react"
+
+  definitions:
+    - name: "I18nKey"
+      description: "A dotted-namespace i18n key extracted from DSL metadata"
+    - name: "LanguageProfile"
+      description: "Locale configuration (locales, default, fallback chain)"
+    - name: "I18nBundle"
+      description: "Collection of i18n keys with translations for a specific locale"
+
+  obligations:
+    - name: "fallback_chain"
+      description: "Every language profile must have a fallback chain ending with default locale"
+    - name: "key_uniqueness"
+      description: "All i18n keys in a keyset must be unique (no duplicates)"
+
+  file_contributions:
+    infrastructure:
+      # FastAPI — babel/gettext
+      - path: "app/i18n.py"
+        file_type: "i18n_loader"
+        template: "cp29_multi_language/i18n.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["language_profile", "i18n_keyset"]
+
+      - path: "app/config/i18n.py"
+        file_type: "i18n_config"
+        template: "cp29_multi_language/config_i18n.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["language_profile"]
+
+      - path: "app/i18n/locales/en/LC_MESSAGES/messages.po"
+        file_type: "i18n_locale"
+        template: "cp29_multi_language/locales/en/LC_MESSAGES/messages.po.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["i18n_keyset"]
+
+      - path: "app/i18n/locales/vi/LC_MESSAGES/messages.po"
+        file_type: "i18n_locale"
+        template: "cp29_multi_language/locales/vi/LC_MESSAGES/messages.po.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["i18n_keyset"]
+
+      # NestJS — @nestjs/i18n
+      - path: "src/i18n/i18n.module.ts"
+        file_type: "i18n_module"
+        template: "cp29_multi_language/i18n_module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["language_profile"]
+
+      - path: "src/i18n/i18n.service.ts"
+        file_type: "i18n_service"
+        template: "cp29_multi_language/i18n_service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["language_profile"]
+
+      - path: "src/i18n/locales/en/common.json"
+        file_type: "i18n_locale"
+        template: "cp29_multi_language/locales/en/common.json.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["i18n_keyset"]
+
+      - path: "src/i18n/locales/vi/common.json"
+        file_type: "i18n_locale"
+        template: "cp29_multi_language/locales/vi/common.json.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["i18n_keyset"]
+
+      # Angular — @angular/localize
+      - path: "src/i18n.service.ts"
+        file_type: "i18n_service"
+        template: "cp29_multi_language/i18n_service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["language_profile"]
+
+      - path: "src/locale/messages.en.xlf"
+        file_type: "i18n_locale"
+        template: "cp29_multi_language/locale/messages.en.xlf.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["i18n_keyset"]
+
+      - path: "src/locale/messages.vi.xlf"
+        file_type: "i18n_locale"
+        template: "cp29_multi_language/locale/messages.vi.xlf.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["i18n_keyset"]
+
+      # React — react-i18next
+      - path: "src/i18n.ts"
+        file_type: "i18n_init"
+        template: "cp29_multi_language/i18n.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["language_profile"]
+
+      - path: "src/hooks/useTranslation.ts"
+        file_type: "i18n_hook"
+        template: "cp29_multi_language/use_translation.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["language_profile"]
+
+      - path: "src/locales/en/translation.json"
+        file_type: "i18n_locale"
+        template: "cp29_multi_language/locales/en/translation.json.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["i18n_keyset"]
+
+      - path: "src/locales/vi/translation.json"
+        file_type: "i18n_locale"
+        template: "cp29_multi_language/locales/vi/translation.json.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["i18n_keyset"]
+
+  recipes:
+    - auto_generate_i18n_from_mir
+    - generate_language_profile
+    - generate_i18n_bundles

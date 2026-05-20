@@ -544,63 +544,13 @@ core_packs:
     obligations_count: 2
     depends_on:
       - CP01
-      - CP02
-      - CP03
-      - CP04
-      - CP05
-      - CP06
-      - CP07
-      - CP08
-      - CP09
-      - CP10
-      - CP11
-      - CP12
-      - CP13
-      - CP14
-      - CP15
-      - CP16
-      - CP17
-      - CP18
-      - CP19
-      - CP20
-      - CP21
-      - CP22
-      - CP23
-      - CP24
-      - CP25
-      - CP26
-      - CP27
-      - CP28
-      - CP31
-      - CP32
-      - CP33
-      - CP34
-      - CP35
-      - CP36
-      - CP37
-      - CP38
-      - CP39
-      - CP40
-      - CP41
-      - CP42
-      - CP43
-      - CP44
-      - CP45
-      - CP46
-      - CP47
-      - CP48
-      - CP49
-      - CP50
-      - CP51
-      - CP52
-      - CP53
     capabilities_provided:
       - language_profile
       - i18n_bundle
       - keyset_manage
     category: internationalization
-    status: planned
-    version: 1.0.0
+    status: stable
+    version: 1.1.0
   - id: CP30
     name: AI-Assisted Development Generator
     internal_id: cp30_ai_assisted

@@ -63,6 +63,7 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP26": "cp26_documentation",
     "CP27": "cp27_plugin_system",
     "CP28": "cp28_custom_code",
+    "CP29": "cp29_multi_language",
     "CP51": "cp51_blueprint",
     "CP52": "cp52_invariant",
     "CP53": "cp53_domain_bridge",

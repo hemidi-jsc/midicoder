@@ -108,13 +108,11 @@ class TestCPDependencyMap:
         """Kiểm tra CP07 không có dependencies."""
         assert cp_dependency_map.get("CP07", []) == [], "CP07 không có dependencies"
 
-    def test_cp29_has_many_dependencies(self, cp_dependency_map: dict[str, list[str]]) -> None:
-        """Kiểm tra CP29 có nhiều dependencies (giám sát tuân thủ)."""
+    def test_cp29_depends_only_on_cp01(self, cp_dependency_map: dict[str, list[str]]) -> None:
+        """Kiểm tra CP29 chỉ phụ thuộc CP01 (Multi-Language Support Generator)."""
         deps = cp_dependency_map.get("CP29", [])
-        assert len(deps) >= 40, f"CP29 (Compliance) nên có >= 40 deps, tìm thấy {len(deps)}"
-        # Validate một số deps quan trọng
-        essential = {"CP01", "CP02", "CP03", "CP04", "CP05", "CP07", "CP08"}
-        assert essential.issubset(set(deps)), f"CP29 thiếu deps quan trọng: {essential - set(deps)}"
+        assert len(deps) == 1, f"CP29 nên có 1 dep, tìm thấy {len(deps)}"
+        assert deps == ["CP01"], f"CP29 phải chỉ phụ thuộc CP01, tìm thấy {deps}"
 
     def test_cp_count_matches(self, cp_dependency_map: dict[str, list[str]], taxonomy: dict[str, Any]) -> None:
         """Kiểm tra số lượng CP trong map khớp với taxonomy."""
@@ -194,16 +192,15 @@ class TestTransitiveDependencyResolution:
                 f"P0 pack resolve ra {resolved_cp} ({cp_phase_map.get(resolved_cp)}) — không hợp lệ"
             )
 
-    def test_resolve_cp29_includes_essential(
+    def test_resolve_cp29_transitive(
         self, cp_dependency_map: dict[str, list[str]]
     ) -> None:
         """
-        Resolve transitive dependencies cho CP29 — bao gồm CP01-CP05 tối thiểu.
+        Resolve transitive dependencies cho CP29 — chỉ CP01 + CP29.
         """
         cp_list = self._resolve_transitive("CP29", cp_dependency_map)
-        essential = {"CP01", "CP02", "CP03", "CP04", "CP05", "CP07", "CP08", "CP29"}
-        assert essential.issubset(set(cp_list)), (
-            f"CP29 transitive deps thiếu essential: {essential - set(cp_list)}"
+        assert set(cp_list) == {"CP01", "CP29"}, (
+            f"CP29 transitive deps phải là [CP01, CP29], tìm thấy {cp_list}"
         )
 
     def _resolve_transitive(
