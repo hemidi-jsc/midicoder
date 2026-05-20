@@ -583,8 +583,8 @@ core_packs:
       - recurring_job
       - calendar_schedule
     category: runtime
-    status: planned
-    version: 1.0.0
+    status: stable
+    version: 1.1.0
   - id: CP32
     name: State Machine Engine
     internal_id: cp32_state_machine

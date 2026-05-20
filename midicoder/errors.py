@@ -754,6 +754,18 @@ class ErrorCode(str, Enum):
     CP30_TEMPLATE_NOT_FOUND = "MDC-CP30-014"
 
     # =========================================================================
+    # CP31: Scheduler & Cron Engine Errors
+    # =========================================================================
+    CP31_INVALID_CRON_EXPR = "MDC-CP31-001"
+    CP31_INVALID_RECURRENCE = "MDC-CP31-002"
+    CP31_TIMEZONE_NOT_FOUND = "MDC-CP31-003"
+    CP31_CALENDAR_NOT_FOUND = "MDC-CP31-004"
+    CP31_SCHEDULE_CONFLICT = "MDC-CP31-005"
+    CP31_NEXT_RUN_CALC_FAILED = "MDC-CP31-006"
+    CP31_BUSINESS_DAY_ERROR = "MDC-CP31-007"
+    CP31_DSL_PARSE_ERROR = "MDC-CP31-008"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

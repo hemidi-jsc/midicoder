@@ -1,0 +1,143 @@
+"""
+Calendar Engine — sinh tự động bởi Midicoder CP31.
+
+Module này cung cấp BusinessDayCalculator và CalendarEngine
+để xử lý holiday, business day, và calendar exceptions.
+
+CP31: Scheduler & Cron Engine
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+from typing import Optional
+
+
+class BusinessDayCalculator:
+    """Tính toán ngày làm việc.
+
+    Business day = weekday (Mon-Fri) trừ holidays.
+    """
+
+    @staticmethod
+    def is_business_day(d: date, holidays: Optional[set] = None) -> bool:
+        """Kiểm tra xem một ngày có phải business day không.
+
+        Args:
+            d: Ngày cần kiểm tra.
+            holidays: Tập ngày holiday (nếu có).
+
+        Returns:
+            True nếu là business day.
+        """
+        if d.weekday() >= 5:  # Sat=5, Sun=6
+            return False
+        if holidays and d in holidays:
+            return False
+        return True
+
+    @staticmethod
+    def next_business_day(d: date, holidays: Optional[set] = None) -> date:
+        """Tìm business day tiếp theo.
+
+        Args:
+            d: Ngày bắt đầu.
+            holidays: Tập ngày holiday.
+
+        Returns:
+            Business day tiếp theo.
+        """
+        candidate = d + timedelta(days=1)
+        for _ in range(366 * 2):
+            if BusinessDayCalculator.is_business_day(candidate, holidays):
+                return candidate
+            candidate += timedelta(days=1)
+        raise ValueError("Không tìm được business day")
+
+    @staticmethod
+    def prev_business_day(d: date, holidays: Optional[set] = None) -> date:
+        """Tìm business day trước đó.
+
+        Args:
+            d: Ngày bắt đầu.
+            holidays: Tập ngày holiday.
+
+        Returns:
+            Business day trước đó.
+        """
+        candidate = d - timedelta(days=1)
+        for _ in range(366 * 2):
+            if BusinessDayCalculator.is_business_day(candidate, holidays):
+                return candidate
+            candidate -= timedelta(days=1)
+        raise ValueError("Không tìm được business day trước đó")
+
+
+class CalendarEngine:
+    """Engine để apply calendar exceptions lên schedule.
+
+    Sử dụng holiday set để skip/adjust scheduled times.
+    """
+
+    def __init__(self, holidays: Optional[set] = None) -> None:
+        """Initialise CalendarEngine.
+
+        Args:
+            holidays: Tập ngày holiday.
+        """
+        self.holidays = holidays or set()
+
+    def should_skip(self, d: date) -> bool:
+        """Kiểm tra xem một ngày có nên skip không.
+
+        Args:
+            d: Ngày cần kiểm tra.
+
+        Returns:
+            True nếu là holiday.
+        """
+        return d in self.holidays
+
+    def adjust_date(self, d: date) -> date:
+        """Điều chỉnh ngày sang business day nếu là holiday.
+
+        Args:
+            d: Ngày cần điều chỉnh.
+
+        Returns:
+            Ngày đã điều chỉnh.
+        """
+        if d not in self.holidays:
+            return d
+        return BusinessDayCalculator.next_business_day(d, self.holidays)
+
+    def skip_holidays(self, scheduled_time: datetime) -> datetime:
+        """Skip holidays cho scheduled time.
+
+        Args:
+            scheduled_time: Thời gian đã schedule.
+
+        Returns:
+            Thời gian đã điều chỉnh.
+        """
+        adjusted = self.adjust_date(scheduled_time.date())
+        return adjusted.replace(
+            hour=scheduled_time.hour,
+            minute=scheduled_time.minute,
+            second=scheduled_time.second,
+            microsecond=scheduled_time.microsecond,
+        )
+
+
+{% if calendar_sets %}
+# Holiday sets từ CalendarSet
+HOLIDAY_SETS = {
+{% for cs in calendar_sets %}
+    "{{ cs.get("calendar_set_id", "unknown") }}": {
+{% for exc in cs.get("exceptions", []) %}
+        date({{ exc.get("date", "").replace("-", ", ") }}),
+{% endfor %}
+    },
+{% endfor %}
+}
+{% endif %}
