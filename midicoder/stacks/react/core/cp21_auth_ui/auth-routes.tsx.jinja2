@@ -1,0 +1,73 @@
+/** Auth Routes - CP21.
+ *
+ * Route configuration cho auth pages.
+ *
+ * Pages: [{', '.join(pages)}]
+ * Role Guard: [{include_role_guard}]
+ * Permission Guard: [{include_permission_guard}]
+ */
+
+import React from "react";
+import { createBrowserRouter, RouteObject } from "react-router-dom";
+import { Login } from "./login";
+{% if 'register' in pages %}
+import { Register } from "./register";
+{% endif %}
+{% if 'forgot_password' in pages %}
+import { ForgotPassword } from "./forgot-password";
+{% endif %}
+{% if 'reset_password' in pages %}
+import { ResetPassword } from "./reset-password";
+{% endif %}
+{% if 'mfa_verify' in pages %}
+import { MfaVerify } from "./mfa-verify";
+{% endif %}
+{% if 'oauth_callback' in pages %}
+import { OAuthCallback } from "./oauth-callback";
+{% endif %}
+{% if include_role_guard %}
+import { RoleRoute } from "./RoleRoute";
+{% endif %}
+{% if include_permission_guard %}
+import { PermissionRoute } from "./PermissionRoute";
+{% endif %}
+
+/** Auth route objects. */
+export const authRoutes: RouteObject[] = [
+  {
+    path: "/login",
+    element: <Login />,
+  },
+{% if 'register' in pages %}
+  {
+    path: "/register",
+    element: <Register />,
+  },
+{% endif %}
+{% if 'forgot_password' in pages %}
+  {
+    path: "/forgot-password",
+    element: <ForgotPassword />,
+  },
+{% endif %}
+{% if 'reset_password' in pages %}
+  {
+    path: "/reset-password",
+    element: <ResetPassword />,
+  },
+{% endif %}
+{% if 'mfa_verify' in pages %}
+  {
+    path: "/mfa",
+    element: <MfaVerify />,
+  },
+{% endif %}
+{% if 'oauth_callback' in pages %}
+  {
+    path: "/oauth/callback",
+    element: <OAuthCallback />,
+  },
+{% endif %}
+];
+
+export default authRoutes;

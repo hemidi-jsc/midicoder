@@ -1,0 +1,63 @@
+/** MFA Verify Component - CP21.
+ *
+ * Trang xác thực hai yếu tố (TOTP/WebAuthn).
+ *
+ * UI Framework: [{ui_framework}]
+ */
+
+import { Component, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { RouterModule } from "@angular/router";
+import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from "@angular/forms";
+{% if ui_framework == 'material' %}
+import { MatFormFieldModule } from "@angular/material/form-field";
+import { MatInputModule } from "@angular/material/input";
+import { MatButtonModule } from "@angular/material/button";
+import { MatCardModule } from "@angular/material/card";
+{% endif %}
+import { AuthService } from "../core/auth/auth.service";
+
+@Component({
+  selector: "app-mfa-verify",
+  standalone: true,
+  imports: [
+    CommonModule, ReactiveFormsModule, RouterModule,
+{% if ui_framework == 'material' %}
+    MatFormFieldModule, MatInputModule, MatButtonModule, MatCardModule,
+{% endif %}
+  ],
+  templateUrl: './mfa-verify.component.html',
+})
+export class MfaVerifyComponent implements OnInit {
+  mfaForm!: FormGroup;
+  loading = false;
+  error: string | null = null;
+  mfaType: "totp" | "sms" | "email" = "totp";
+
+  constructor(
+    private readonly fb: FormBuilder,
+    private readonly authService: AuthService,
+  ) {}
+
+  ngOnInit(): void {
+    this.mfaForm = this.fb.group({
+      code: ['', [Validators.required, Validators.minLength(6), Validators.maxLength(6)]],
+    });
+  }
+
+  /** Submit mã xác thực MFA. */
+  onSubmit(): void {
+    if (this.mfaForm.invalid) return;
+    this.loading = true;
+    this.error = null;
+    const code = this.mfaForm.value.code;
+    // Gọi API verify MFA
+  }
+
+  /** Yêu cầu gửi lại mã xác thực. */
+  resendCode(): void {
+    // Gọi API resend code
+  }
+
+  get code() { return this.mfaForm.get('code')!; }
+}

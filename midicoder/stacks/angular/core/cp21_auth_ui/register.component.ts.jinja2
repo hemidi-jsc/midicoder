@@ -1,0 +1,83 @@
+/** Register Component - CP21.
+ *
+ * Trang đăng ký tài khoản mới với form validation.
+ *
+ * UI Framework: [{ui_framework}]
+ */
+
+import { Component, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { RouterModule } from "@angular/router";
+import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from "@angular/forms";
+{% if ui_framework == 'material' %}
+import { MatFormFieldModule } from "@angular/material/form-field";
+import { MatInputModule } from "@angular/material/input";
+import { MatButtonModule } from "@angular/material/button";
+import { MatCardModule } from "@angular/material/card";
+{% elif ui_framework == 'bootstrap' %}
+import { NgBootstrapModule } from "ng-bootstrap";
+{% elif ui_framework == 'antd' %}
+import { NzFormModule } from "ng-zorro-antd/form";
+import { NzInputModule } from "ng-zorro-antd/input";
+import { NzButtonModule } from "ng-zorro-antd/button";
+{% elif ui_framework == 'carbon' %}
+import { CarbonComponentsAngularModule } from "@carbon/angular";
+{% endif %}
+import { AuthService } from "../core/auth/auth.service";
+
+@Component({
+  selector: "app-register",
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    RouterModule,
+{% if ui_framework == 'material' %}
+    MatFormFieldModule, MatInputModule, MatButtonModule, MatCardModule,
+{% elif ui_framework == 'bootstrap' %}
+    NgBootstrapModule,
+{% elif ui_framework == 'antd' %}
+    NzFormModule, NzInputModule, NzButtonModule,
+{% elif ui_framework == 'carbon' %}
+    CarbonComponentsAngularModule,
+{% endif %}
+  ],
+  templateUrl: './register.component.html',
+})
+export class RegisterComponent implements OnInit {
+  registerForm!: FormGroup;
+  loading = false;
+  error: string | null = null;
+  success = false;
+
+  constructor(
+    private readonly fb: FormBuilder,
+    private readonly authService: AuthService,
+  ) {}
+
+  ngOnInit(): void {
+    this.registerForm = this.fb.group({
+      email: ['', [Validators.required, Validators.email]],
+      password: ['', [Validators.required, Validators.minLength(8)]],
+      confirmPassword: ['', [Validators.required]],
+      fullName: ['', [Validators.required]],
+    });
+  }
+
+  /** Submit form đăng ký. */
+  onSubmit(): void {
+    if (this.registerForm.invalid) return;
+    if (this.registerForm.value.password !== this.registerForm.value.confirmPassword) {
+      this.error = "Mật khẩu xác nhận không khớp.";
+      return;
+    }
+    this.loading = true;
+    this.error = null;
+    // Gọi API đăng ký
+  }
+
+  get email() { return this.registerForm.get('email')!; }
+  get password() { return this.registerForm.get('password')!; }
+  get confirmPassword() { return this.registerForm.get('confirmPassword')!; }
+  get fullName() { return this.registerForm.get('fullName')!; }
+}

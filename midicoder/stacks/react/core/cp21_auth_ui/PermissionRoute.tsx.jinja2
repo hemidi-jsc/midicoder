@@ -1,0 +1,57 @@
+/** PermissionRoute - CP21.
+*
+* Component wrapper kiểm tra permissions cụ thể của user.
+* Granular hơn RoleRoute — kiểm tra resource + action.
+*
+* Usage:
+* <Route path="orders/edit" element={ * <PermissionRoute requiredPermissions={["orders:write"]}>
+    *
+    <OrderEdit />
+    * </PermissionRoute>
+    * } />
+    */
+
+    import React from "react";
+    import { Navigate, useLocation } from "react-router-dom";
+    import { useAuthContext } from "../auth/AuthContext";
+
+    /** PermissionRoute Props */
+    export interface PermissionRouteProps {
+    children: React.ReactNode;
+    requiredPermissions: string[];
+    }
+
+    /** PermissionRoute Component — bảo vệ route theo permissions. */
+    export const PermissionRoute: React.FC<PermissionRouteProps> = ({
+        children,
+        requiredPermissions,
+        }) => {
+        const { user, isLoading } = useAuthContext();
+        const location = useLocation();
+
+        if (isLoading) {
+        return <div>Loading...</div>;
+        }
+
+        if (!user) {
+        return
+        <Navigate to="/login" state={{ from: location }} replace />;
+        }
+
+        // Không có permission requirement — cho phép
+        if (requiredPermissions.length === 0) {
+        return <>{children}</>;
+        }
+
+        const userPermissions = user.permissions || [];
+        const hasPermission = requiredPermissions.some((p) => userPermissions.includes(p));
+
+        if (!hasPermission) {
+        return
+        <Navigate to="/unauthorized" replace />;
+        }
+
+        return <>{children}</>;
+        };
+
+        export default PermissionRoute;

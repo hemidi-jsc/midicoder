@@ -1,0 +1,54 @@
+/** Auth Routes - CP21.
+ *
+ * Route configuration cho auth pages.
+ *
+ * Pages: [{', '.join(pages)}]
+ * Role Guard: [{include_role_guard}]
+ * Permission Guard: [{include_permission_guard}]
+ */
+
+import { Routes } from "@angular/router";
+{% if include_role_guard %}
+import { RoleGuard } from "./role.guard";
+{% endif %}
+{% if include_permission_guard %}
+import { PermissionGuard } from "./permission.guard";
+{% endif %}
+
+/** Auth routes config. */
+export const authRoutes: Routes = [
+  {
+    path: "login",
+    loadComponent: () => import("./login.component").then(m => m.LoginComponent),
+  },
+{% if 'register' in pages %}
+  {
+    path: "register",
+    loadComponent: () => import("./register.component").then(m => m.RegisterComponent),
+  },
+{% endif %}
+{% if 'forgot_password' in pages %}
+  {
+    path: "forgot-password",
+    loadComponent: () => import("./forgot-password.component").then(m => m.ForgotPasswordComponent),
+  },
+{% endif %}
+{% if 'reset_password' in pages %}
+  {
+    path: "reset-password",
+    loadComponent: () => import("./reset-password.component").then(m => m.ResetPasswordComponent),
+  },
+{% endif %}
+{% if 'mfa_verify' in pages %}
+  {
+    path: "mfa",
+    loadComponent: () => import("./mfa-verify.component").then(m => m.MfaVerifyComponent),
+  },
+{% endif %}
+{% if 'oauth_callback' in pages %}
+  {
+    path: "oauth/callback",
+    loadComponent: () => import("./oauth-callback.component").then(m => m.OAuthCallbackComponent),
+  },
+{% endif %}
+];

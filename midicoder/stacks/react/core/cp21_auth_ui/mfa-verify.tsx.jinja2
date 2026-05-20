@@ -1,0 +1,108 @@
+/** MFA Verify Page - CP21.
+*
+* Trang xác thực hai yếu tố (TOTP/SMS/Email).
+*
+* UI Framework: [{ui_framework}]
+*/
+
+import React, { useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+{% if ui_framework == 'antd' %}
+import { Form, Input, Button, Card, Typography, Alert, Space } from "antd";
+{% endif %}
+import { useAuthContext } from "../auth/AuthContext";
+
+export interface MfaVerifyPageProps {}
+
+export const MfaVerify: React.FC<MfaVerifyPageProps> = () => {
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const { login } = useAuthContext();
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+        const mfaType = searchParams.get("type") || "totp";
+
+        const handleSubmit = async (values: { code: string }) => {
+        setLoading(true);
+        setError(null);
+        try {
+        // TODO: gọi API verify MFA
+        navigate("/dashboard");
+        } catch (err: any) {
+        setError(err.message || "Mã xác thực không đúng.");
+        } finally {
+        setLoading(false);
+        }
+        };
+
+        const resendCode = async () => {
+        // TODO: gọi API resend code
+        };
+
+        {% if ui_framework == 'antd' %}
+        const [form] = Form.useForm();
+        const fullFormStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+        background: "#f0f2f5" };
+        const cardStyle = { width: 400 };
+        const alertStyle = { marginBottom: 16 };
+        const inputStyle = { textAlign: "center", fontSize: 24, letterSpacing: 8 };
+        const centerStyle = { width: "100%", justifyContent: "center" };
+        const codeRule = { required: true, len: 6, message: "Mã phải có 6 chữ số" };
+
+        return (
+        <div style={fullFormStyle}>
+            <Card style={cardStyle} title={<Typography.Title level={3}>Xác thực hai yếu tố</Typography.Title>}>
+                {error &&
+                <Alert message={error} type="error" style={alertStyle} />}
+                <Typography.Paragraph>
+                    Nhập mã xác thực 6 chữ số từ ứng dụng {mfaType.toUpperCase()} của bạn.
+                </Typography.Paragraph>
+                <Form form={form} onFinish={handleSubmit}>
+                    <Form.Item name="code" rules={[codeRule]}>
+                        <Input size="large" placeholder="000000" maxLength={6} style={inputStyle} />
+                    </Form.Item>
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit" size="large" block loading={loading}>
+                            Xác thực
+                        </Button>
+                    </Form.Item>
+                </Form>
+                <Space style={centerStyle}>
+                    <a onClick={resendCode}>Gửi lại mã</a>
+                </Space>
+            </Card>
+        </div>
+        );
+        {% else %}
+        const pageStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
+        const cardStyle = { maxWidth: 400, width: "100%", padding: 24, border: "1px solid #ddd", borderRadius: 8 };
+        const errStyle = { color: "red", marginBottom: 12 };
+        const codeStyle = { width: "100%", padding: 8, marginBottom: 12, textAlign: "center", fontSize: 24,
+        letterSpacing: 8 };
+        const btnStyle = { width: "100%", padding: 12 };
+        const linkStyle = { marginTop: 12, textAlign: "center" };
+
+        const emptyValues = { code: "" };
+
+        return (
+        <div style={pageStyle}>
+            <div style={cardStyle}>
+                <h2>Xác thực hai yếu tố</h2>
+                <p>Nhập mã xác thực 6 chữ số từ ứng dụng {mfaType.toUpperCase()} của bạn.</p>
+                {error && <div style={errStyle}>{error}</div>}
+                <form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
+                    <input type="text" placeholder="000000" maxLength={6} required style={codeStyle} />
+                    <button type="submit" disabled={loading} style={btnStyle}>
+                        {loading ? "Đang xác thực..." : "Xác thực"}
+                    </button>
+                </form>
+                <div style={linkStyle}>
+                    <a href="#" onClick={(e)=> { e.preventDefault(); resendCode(); }}>Gửi lại mã</a>
+                </div>
+            </div>
+        </div>
+        );
+        {% endif %}
+        };
+
+        export default MfaVerify;

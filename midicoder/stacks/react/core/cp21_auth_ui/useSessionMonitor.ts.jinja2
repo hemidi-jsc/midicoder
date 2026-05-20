@@ -1,0 +1,116 @@
+/** useSessionMonitor Hook - CP21.
+ *
+ * Custom hook monitor token expiry và trigger session timeout modal.
+ *
+ * Config:
+ * - Timeout: {{ timeout_ms }}ms trước khi token expire
+ * - Check interval: {{ interval_ms }}ms
+ * - Redirect: {redirect_path}
+ * - Renew endpoint: {renew_endpoint}
+ */
+
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+
+/** Config session monitor */
+const SESSION_CONFIG = {
+  /** Timeout (ms) trước khi token expire để show modal */
+  timeoutMs: {{ timeout_ms }},
+  /** Interval (ms) để check token expiry */
+  intervalMs: {{ interval_ms }},
+  /** Path redirect khi timeout */
+  redirectPath: "{redirect_path}",
+  /** API endpoint để renew token (optional) */
+  renewEndpoint: "{renew_endpoint}" || null,
+};
+
+/** Session monitor result */
+export interface SessionMonitorResult {
+  /** Có đang show timeout modal không */
+  showModal: boolean;
+  /** Số giây countdown */
+  countdown: number;
+  /** Action: user chọn stay logged in */
+  stayLoggedIn: () => Promise<void>;
+  /** Action: user chọn logout */
+  logout: () => void;
+}
+
+/**
+ * useSessionMonitor — monitor token expiry.
+ *
+ * Usage trong App component:
+ *   const { showModal, countdown, stayLoggedIn, logout } = useSessionMonitor();
+ *   <SessionTimeoutModal visible={showModal} countdown={countdown} onStayLoggedIn={stayLoggedIn} onLogout={logout} />
+ */
+export function useSessionMonitor(): SessionMonitorResult {
+  const navigate = useNavigate();
+  const [showModal, setShowModal] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+
+  /** Check token expiry. */
+  const checkTokenExpiry = useCallback((): boolean => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return false;
+
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      const expiry = payload.exp * 1000;
+      const remaining = expiry - Date.now();
+
+      if (remaining <= SESSION_CONFIG.timeoutMs && remaining > 0) {
+        const seconds = Math.floor(remaining / 1000);
+        setCountdown(seconds);
+        setShowModal(true);
+        return true;
+      } else if (remaining <= 0) {
+        navigate(SESSION_CONFIG.redirectPath);
+        return false;
+      }
+    } catch {
+      // Token parse error — ignore
+    }
+
+    return false;
+  }, [navigate]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!showModal) {
+        checkTokenExpiry();
+      }
+    }, SESSION_CONFIG.intervalMs);
+
+    // Check immediately on mount
+    checkTokenExpiry();
+
+    return () => clearInterval(interval);
+  }, [checkTokenExpiry, showModal]);
+
+  /** User chọn stay logged in — renew token. */
+  const stayLoggedIn = useCallback(async () => {
+    setShowModal(false);
+
+    if (SESSION_CONFIG.renewEndpoint) {
+      try {
+        // TODO: gọi API renew endpoint
+        // await fetch(SESSION_CONFIG.renewEndpoint, { method: "POST" });
+      } catch {
+        navigate(SESSION_CONFIG.redirectPath);
+      }
+    }
+  }, [navigate]);
+
+  /** User chọn logout. */
+  const logout = useCallback(() => {
+    setShowModal(false);
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("user");
+    navigate(SESSION_CONFIG.redirectPath);
+  }, [navigate]);
+
+  return { showModal, countdown, stayLoggedIn, logout };
+}
+
+export default useSessionMonitor;

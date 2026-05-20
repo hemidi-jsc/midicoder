@@ -1,0 +1,78 @@
+/** Session Timeout Modal Component - CP21.
+*
+* Modal cảnh báo khi session sắp hết hạn.
+* Hiển thị countdown và cho phép user gia hạn session.
+*
+* UI Framework: [{ui_framework}]
+*/
+
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { RouterModule } from "@angular/router";
+{% if ui_framework == 'material' %}
+import { MatDialogModule } from "@angular/material/dialog";
+import { MatButtonModule } from "@angular/material/button";
+{% elif ui_framework == 'bootstrap' %}
+import { NgBootstrapModule } from "ng-bootstrap";
+{% elif ui_framework == 'antd' %}
+import { NzModalModule } from "ng-zorro-antd/modal";
+{% elif ui_framework == 'carbon' %}
+import { CarbonComponentsAngularModule } from "@carbon/angular";
+{% endif %}
+import { Subscription } from "rxjs";
+
+@Component({
+selector: "app-session-timeout-modal",
+standalone: true,
+imports: [
+CommonModule,
+{% if ui_framework == 'material' %}
+MatDialogModule, MatButtonModule,
+{% elif ui_framework == 'bootstrap' %}
+NgBootstrapModule,
+{% elif ui_framework == 'antd' %}
+NzModalModule,
+{% elif ui_framework == 'carbon' %}
+CarbonComponentsAngularModule,
+{% endif %}
+],
+template: `
+<div class="session-timeout-modal">
+    <h2>Session sắp hết hạn</h2>
+    <p>Session của bạn sẽ hết hạn trong <strong>{{ countdown }}</strong> giây.</p>
+    <p>Không hành động sẽ bị đăng xuất tự động.</p>
+    <div class="actions">
+        <button (click)="stayLoggedIn.emit()">Đang làm việc, tiếp tục</button>
+        <button (click)="logout.emit()">Đăng xuất ngay</button>
+    </div>
+</div>
+`,
+})
+export class SessionTimeoutModalComponent implements OnInit, OnDestroy {
+/** Số giây countdown (tính từ timeout_ms / 1000). */
+@Input() initialCountdown = Math.floor({[{ timeout_ms }]} / 1000);
+/** Path redirect khi timeout. */
+@Input() redirectPath = "{[{ redirect_path }]}";
+
+/** Emit khi user chọn stay logged in. */
+@Output() stayLoggedIn = new EventEmitter<void>();
+    /** Emit khi user chọn logout. */
+    @Output() logout = new EventEmitter<void>();
+
+        countdown: number = this.initialCountdown;
+        private timerSub?: Subscription;
+
+        ngOnInit(): void {
+        this.startCountdown();
+        }
+
+        ngOnDestroy(): void {
+        this.stopCountdown();
+        }
+
+        /** Bắt đầu countdown. */
+        private startCountdown(): void {
+        this.timerSub = setInterval(() => {
+        this.countdown--;
+        if (this.countdown <= 0) { this.stopCountdown(); this.logout.emit(); } }, 1000); } /** Dừng countdown. */
+            private stopCountdown(): void { if (this.timerSub) { this.timerSub.unsubscribe(); } } }

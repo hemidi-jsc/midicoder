@@ -1,0 +1,175 @@
+/** Login Page - CP21.
+*
+* Trang đăng nhập với form email/password,
+* liên kết quên mật khẩu và đăng ký.
+*
+* UI Framework: [{ui_framework}]
+*/
+
+import React, { useState } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+{% if ui_framework == 'material' %}
+import { Container, Paper, TextField, Button, Typography, Box, Divider, Alert } from "@mui/material";
+{% elif ui_framework == 'bootstrap' %}
+import { Container, Card, Form, Button, Alert, Row, Col } from "react-bootstrap";
+{% elif ui_framework == 'antd' %}
+import { Form, Input, Button, Card, Typography, Alert, Divider } from "antd";
+{% elif ui_framework == 'carbon' %}
+import { Form, FormGroup, TextInput, Button, InlineNotification, Grid, Column } from "@carbon/react";
+{% endif %}
+import { useAuthContext } from "../auth/AuthContext";
+
+const { Title, Text } = Typography;
+
+/** Login Page Props */
+export interface LoginPageProps {
+redirectPath?: string;
+}
+
+/** Login Page Component. */
+export const Login: React.FC<LoginPageProps> = ({
+    redirectPath = "/dashboard",
+    }) => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const { login } = useAuthContext();
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+        // Lấy return URL từ query param
+        const from = (location.state as any)?.from?.pathname || redirectPath;
+
+        /** Handle form submit. */
+        const handleSubmit = async (values: { email: string; password: string }) => {
+        setLoading(true);
+        setError(null);
+        try {
+        await login(values.email, values.password);
+        navigate(from, { replace: true });
+        } catch (err: any) {
+        setError(err.message || "Đăng nhập thất bại. Vui lòng thử lại.");
+        } finally {
+        setLoading(false);
+        }
+        };
+
+        {% if ui_framework == 'antd' %}
+        const [form] = Form.useForm();
+        const emailRule = { required: true, type: "email" };
+        const passRule = { required: true, min: 8 };
+
+        return (
+        <div style={{ minHeight: "100vh" , display: "flex" , alignItems: "center" , justifyContent: "center" ,
+            background: "#f0f2f5" }}>
+            <Card style={{ width: 400 }} title={<Title level={3}>Đăng nhập</Title>}>
+                {error &&
+                <Alert message={error} type="error" style={{ marginBottom: 16 }} />}
+                <Form form={form} onFinish={handleSubmit}>
+                    <Form.Item name="email" rules={[emailRule]}>
+                        <Input size="large" placeholder="Email" prefix="📧" />
+                    </Form.Item>
+                    <Form.Item name="password" rules={[passRule]}>
+                        <Input.Password size="large" placeholder="Mật khẩu" prefix="🔒" />
+                    </Form.Item>
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit" size="large" block loading={loading}>
+                            Đăng nhập
+                        </Button>
+                    </Form.Item>
+                </Form>
+                <Divider>
+                    <Text type="secondary">hoặc</Text>
+                </Divider>
+                <div style={{ display: "flex" , justifyContent: "space-between" }}>
+                    <Link to="/forgot-password">Quên mật khẩu?</Link>
+                    <Link to="/register">Đăng ký</Link>
+                </div>
+            </Card>
+        </div>
+        );
+        {% elif ui_framework == 'material' %}
+        const loginStyle = { mt: 8 };
+        const paperStyle = { p: 4 };
+        const btnStyle = { mt: 2, mb: 1 };
+        const dividerStyle = { my: 2 };
+        const boxStyle = { display: "flex", justifyContent: "space-between" };
+        const emptyValues = { email: "", password: "" };
+
+        return (
+        <Container maxWidth="sm" sx={loginStyle}>
+            <Paper elevation={3} sx={paperStyle}>
+                <Typography variant="h4" align="center" gutterBottom>Đăng nhập</Typography>
+                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                <Box component="form" onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
+                    <TextField fullWidth label="Email" type="email" margin="normal" required />
+                    <TextField fullWidth label="Mật khẩu" type="password" margin="normal" required />
+                    <Button fullWidth variant="contained" type="submit" sx={btnStyle} disabled={loading}>
+                        {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+                    </Button>
+                </Box>
+                <Divider sx={dividerStyle}>
+                    <Typography variant="body2">hoặc</Typography>
+                </Divider>
+                <Box sx={boxStyle}>
+                    <Link to="/forgot-password">Quên mật khẩu?</Link>
+                    <Link to="/register">Đăng ký</Link>
+                </Box>
+            </Paper>
+        </Container>
+        );
+        {% elif ui_framework == 'tailwind' %}
+        const emptyValues = { email: "", password: "" };
+
+        return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
+                <h2 className="text-3xl font-bold text-center">Đăng nhập</h2>
+                {error && <div className="bg-red-100 text-red-700 p-3 rounded">{error}</div>}
+                <form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }} className="space-y-4">
+                    <input type="email" placeholder="Email" required className="w-full p-3 border rounded" />
+                    <input type="password" placeholder="Mật khẩu" required className="w-full p-3 border rounded" />
+                    <button type="submit" disabled={loading}
+                        className="w-full p-3 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+                    </button>
+                </form>
+                <div className="flex justify-between">
+                    <Link to="/forgot-password" className="text-blue-600">Quên mật khẩu?</Link>
+                    <Link to="/register" className="text-blue-600">Đăng ký</Link>
+                </div>
+            </div>
+        </div>
+        );
+        {% else %}
+        const pageStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
+        const cardStyle = { maxWidth: 400, width: "100%", padding: 24, border: "1px solid #ddd", borderRadius: 8 };
+        const titleStyle = { textAlign: "center" };
+        const errStyle = { color: "red", marginBottom: 12 };
+        const inputStyle = { width: "100%", padding: 8, marginBottom: 12 };
+        const btnStyle = { width: "100%", padding: 12 };
+        const linkStyle = { marginTop: 12, display: "flex", justifyContent: "space-between" };
+        const emptyValues = { email: "", password: "" };
+
+        return (
+        <div style={pageStyle}>
+            <div style={cardStyle}>
+                <h2 style={titleStyle}>Đăng nhập</h2>
+                {error && <div style={errStyle}>{error}</div>}
+                <form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
+                    <input type="email" placeholder="Email" required style={inputStyle} />
+                    <input type="password" placeholder="Mật khẩu" required style={inputStyle} />
+                    <button type="submit" disabled={loading} style={btnStyle}>
+                        {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+                    </button>
+                </form>
+                <div style={linkStyle}>
+                    <Link to="/forgot-password">Quên mật khẩu?</Link>
+                    <Link to="/register">Đăng ký</Link>
+                </div>
+            </div>
+        </div>
+        );
+        {% endif %}
+        };
+
+        export default Login;

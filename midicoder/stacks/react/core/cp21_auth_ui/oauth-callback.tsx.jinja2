@@ -1,0 +1,109 @@
+/** OAuth Callback Page - CP21.
+*
+* Xử lý callback từ OAuth/OIDC provider.
+*
+* UI Framework: [{ui_framework}]
+*/
+
+import React, { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+{% if ui_framework == 'antd' %}
+import { Result, Typography, Spin, Alert } from "antd";
+{% endif %}
+import { useAuthContext } from "../auth/AuthContext";
+
+export interface OAuthCallbackPageProps {
+redirectPath?: string;
+}
+
+export const OAuthCallback: React.FC<OAuthCallbackPageProps> = ({
+    redirectPath = "/dashboard",
+    }) => {
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const { login } = useAuthContext();
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+        useEffect(() => {
+        const handleCallback = async () => {
+        const code = searchParams.get("code");
+        const state = searchParams.get("state");
+        const oauthError = searchParams.get("error");
+
+        if (oauthError) {
+        setError(`OAuth error: ${oauthError}`);
+        setLoading(false);
+        return;
+        }
+
+        if (!code) {
+        setError("Thiếu authorization code trong callback.");
+        setLoading(false);
+        return;
+        }
+
+        try {
+        // TODO: gọi API oauth callback với code
+        navigate(redirectPath, { replace: true });
+        } catch (err: any) {
+        setError(err.message || "OAuth callback thất bại.");
+        } finally {
+        setLoading(false);
+        }
+        };
+
+        handleCallback();
+        }, [searchParams, navigate, redirectPath]);
+
+        {% if ui_framework == 'antd' %}
+        const centerStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
+
+        if (loading) {
+        return (
+        <div style={centerStyle}>
+            <Spin size="large" tip="Đang xác thực OAuth..." />
+        </div>
+        );
+        }
+
+        if (error) {
+        return (
+        <div style={centerStyle}>
+            <Result status="error" title="OAuth Xác thực thất bại" subTitle={error} extra={<a onClick={()=>
+                navigate("/login")}>Quay lại đăng nhập</a>}
+                />
+        </div>
+        );
+        }
+
+        return null;
+        {% else %}
+        const centerStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
+        const errStyle = { color: "red" };
+
+        if (loading) {
+        return (
+        <div style={centerStyle}>
+            <div>Đang xác thực OAuth...</div>
+        </div>
+        );
+        }
+
+        if (error) {
+        return (
+        <div style={centerStyle}>
+            <div>
+                <h2>OAuth Xác thực thất bại</h2>
+                <p style={errStyle}>{error}</p>
+                <a href="/login">Quay lại đăng nhập</a>
+            </div>
+        </div>
+        );
+        }
+
+        return null;
+        {% endif %}
+        };
+
+        export default OAuthCallback;

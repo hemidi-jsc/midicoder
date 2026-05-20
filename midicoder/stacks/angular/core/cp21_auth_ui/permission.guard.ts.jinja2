@@ -1,0 +1,59 @@
+/** Permission Guard - CP21.
+ *
+ * Guard này kiểm tra permissions cụ thể của user.
+ * Granular hơn RoleGuard — kiểm tra resource + action.
+ *
+ * Usage trong route:
+ *   { path: "orders/edit", canActivate: [PermissionGuard], data: { requiredPermissions: ["orders:write"] } }
+ */
+
+import { Injectable } from "@angular/core";
+import {
+  CanActivate,
+  ActivatedRouteSnapshot,
+  RouterStateSnapshot,
+  Router,
+} from "@angular/router";
+import { AuthService } from "../core/auth/auth.service";
+
+@Injectable({
+  providedIn: "root",
+})
+export class PermissionGuard implements CanActivate {
+  constructor(
+    private readonly authService: AuthService,
+    private readonly router: Router,
+  ) {}
+
+  /**
+   * Kiểm tra user có permission yêu cầu.
+   *
+   * Expected data: { requiredPermissions: string[] }
+   * Format permission: "resource:action" (vd: "orders:write", "users:delete")
+   */
+  canActivate(
+    route: ActivatedRouteSnapshot,
+    state: RouterStateSnapshot,
+  ): boolean {
+    const user = this.authService.getCurrentUser();
+    if (!user) {
+      this.router.navigate(["/login"], { queryParams: { returnUrl: state.url } });
+      return false;
+    }
+
+    const requiredPermissions: string[] = route.data["requiredPermissions"] || [];
+    if (requiredPermissions.length === 0) {
+      return true;
+    }
+
+    const userPermissions: string[] = user.permissions || [];
+    const hasPermission = requiredPermissions.some((p) => userPermissions.includes(p));
+
+    if (!hasPermission) {
+      this.router.navigate(["/unauthorized"]);
+      return false;
+    }
+
+    return true;
+  }
+}

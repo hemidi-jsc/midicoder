@@ -1,0 +1,54 @@
+/** RoleRoute - CP21.
+*
+* Component wrapper kiểm tra roles của user.
+* Nếu user không có role yêu cầu, redirect đến /unauthorized.
+*
+* Usage:
+* <Route path="admin" element={ * <RoleRoute requiredRoles={["admin"]}>
+    *
+    <AdminDashboard />
+    * </RoleRoute>
+    * } />
+    */
+
+    import React from "react";
+    import { Navigate, useLocation } from "react-router-dom";
+    import { useAuthContext } from "../auth/AuthContext";
+
+    /** RoleRoute Props */
+    export interface RoleRouteProps {
+    children: React.ReactNode;
+    requiredRoles: string[];
+    }
+
+    /** RoleRoute Component — bảo vệ route theo roles. */
+    export const RoleRoute: React.FC<RoleRouteProps> = ({ children, requiredRoles }) => {
+        const { user, isLoading } = useAuthContext();
+        const location = useLocation();
+
+        if (isLoading) {
+        return <div>Loading...</div>;
+        }
+
+        if (!user) {
+        return
+        <Navigate to="/login" state={{ from: location }} replace />;
+        }
+
+        // Không có role requirement — cho phép
+        if (requiredRoles.length === 0) {
+        return <>{children}</>;
+        }
+
+        const userRoles = user.roles || [];
+        const hasRole = requiredRoles.some((role) => userRoles.includes(role));
+
+        if (!hasRole) {
+        return
+        <Navigate to="/unauthorized" replace />;
+        }
+
+        return <>{children}</>;
+        };
+
+        export default RoleRoute;

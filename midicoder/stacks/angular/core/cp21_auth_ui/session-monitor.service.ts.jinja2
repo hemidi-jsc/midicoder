@@ -1,0 +1,121 @@
+/** Session Monitor Service - CP21.
+*
+* Service monitor token expiry và trigger session timeout modal.
+* Auto-renew token nếu có renew endpoint.
+*
+* Config:
+* - Timeout: {[{ timeout_ms }]}ms trước khi token expire
+* - Check interval: {[{ interval_ms }]}ms
+* - Redirect: {[{ redirect_path }]}
+* - Renew endpoint: {[{ renew_endpoint }]}
+*/
+
+import { Injectable, NgZone } from "@angular/core";
+import { Router } from "@angular/router";
+import { BehaviorSubject, Observable, interval } from "rxjs";
+import { takeUntil, switchMap } from "rxjs/operators";
+
+@Injectable({
+providedIn: "root",
+})
+export class SessionMonitorService {
+/** Timeout (ms) trước khi token expire để show modal. */
+private readonly timeoutMs = {[{ timeout_ms }]};
+/** Interval (ms) để check token expiry. */
+private readonly intervalMs = {[{ interval_ms }]};
+/** Path redirect khi timeout. */
+private readonly redirectPath = "{[{ redirect_path }]}";
+/** API endpoint để renew token (optional). */
+private readonly renewEndpoint = "{[{ renew_endpoint }]}" || null;
+
+/** State: có đang show timeout modal không. */
+private showModalSubject = new BehaviorSubject<boolean>(false);
+    /** Observable để subscribe show/hide modal. */
+    showModal$: Observable<boolean> = this.showModalSubject.asObservable();
+
+        private timerActive = false;
+
+        constructor(
+        private readonly router: Router,
+        private readonly ngZone: NgZone,
+        ) {}
+
+        /**
+        * Bắt đầu monitor token expiry.
+        *
+        * Nên gọi trong AppComponent.ngOnInit().
+        */
+        start(): void {
+        if (this.timerActive) return;
+        this.timerActive = true;
+
+        interval(this.intervalMs).pipe(
+        switchMap(() => this.checkTokenExpiry()),
+        ).subscribe((shouldShow) => {
+        if (shouldShow) {
+        this.ngZone.run(() => this.showModalSubject.next(true));
+        }
+        });
+        }
+
+        /**
+        * Dừng monitor.
+        *
+        * Gọi khi logout hoặc token renew thành công.
+        */
+        stop(): void {
+        this.timerActive = false;
+        this.showModalSubject.next(false);
+        }
+
+        /**
+        * Ẩn modal và renew token.
+        */
+        async stayLoggedIn(): Promise<void> {
+            this.showModalSubject.next(false);
+
+            if (this.renewEndpoint) {
+            try {
+            // TODO: Call renew endpoint
+            // await this.http.post(this.renewEndpoint, {}).toPromise();
+            } catch {
+            // Renew fail — redirect to login
+            this.router.navigate([this.redirectPath]);
+            }
+            }
+            }
+
+            /**
+            * Redirect đến login page.
+            */
+            logout(): void {
+            this.stop();
+            this.ngZone.run(() => this.router.navigate([this.redirectPath]));
+            }
+
+            /**
+            * Check token expiry — trả về true nếu cần show modal.
+            */
+            private checkTokenExpiry(): Observable<boolean> {
+                const token = localStorage.getItem("access_token");
+                if (!token) {
+                return new Observable((observer) => observer.next(true));
+                }
+
+                try {
+                const payload = JSON.parse(atob(token.split(".")[1]));
+                const expiry = payload.exp * 1000;
+                const remaining = expiry - Date.now();
+
+                if (remaining <= this.timeoutMs && remaining> 0) {
+                    return new Observable((observer) => observer.next(true));
+                    } else if (remaining <= 0) { this.router.navigate([this.redirectPath]); return new
+                        Observable((observer)=> observer.next(false));
+                        }
+                        } catch {
+                        // Token parse error — ignore
+                        }
+
+                        return new Observable((observer) => observer.next(false));
+                        }
+                        }

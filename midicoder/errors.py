@@ -601,6 +601,15 @@ class ErrorCode(str, Enum):
     CP20_ENDPOINT_DUPLICATE = "MDC-CP20-005"
 
     # =========================================================================
+    # CP21: Authentication UI Generator Errors
+    # =========================================================================
+    CP21_INVALID_UI_FRAMEWORK = "MDC-CP21-001"
+    CP21_TEMPLATE_NOT_FOUND = "MDC-CP21-002"
+    CP21_RENDER_FAILED = "MDC-CP21-003"
+    CP21_MISSING_PAGE_CONFIG = "MDC-CP21-004"
+    CP21_INVALID_SESSION_TIMEOUT = "MDC-CP21-005"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

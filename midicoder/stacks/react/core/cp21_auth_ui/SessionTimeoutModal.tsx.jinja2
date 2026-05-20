@@ -1,0 +1,109 @@
+/** SessionTimeoutModal - CP21.
+*
+* Modal cảnh báo khi session sắp hết hạn.
+* Hiển thị countdown và cho phép user gia hạn session.
+*
+* UI Framework: [{ui_framework}]
+*/
+
+import React, { useState, useEffect } from "react";
+{% if ui_framework == 'antd' %}
+import { Modal, Button, Typography, Space } from "antd";
+{% elif ui_framework == 'material' %}
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from "@mui/material";
+{% endif %}
+
+/** SessionTimeoutModal Props */
+export interface SessionTimeoutModalProps {
+visible: boolean;
+countdown: number;
+onStayLoggedIn: () => void;
+onLogout: () => void;
+}
+
+/** SessionTimeoutModal Component. */
+export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
+    visible,
+    countdown,
+    onStayLoggedIn,
+    onLogout,
+    }) => {
+    {% if ui_framework == 'antd' %}
+    return (
+    <Modal title={<Typography.Text strong>Session sắp hết hạn</Typography.Text>}
+        open={visible}
+        footer={null}
+        closable={false}
+        maskClosable={false}
+        >
+        <Typography.Paragraph>
+            Session của bạn sẽ hết hạn trong <strong>{countdown}</strong> giây.
+        </Typography.Paragraph>
+        <Typography.Paragraph type="secondary">
+            Không hành động sẽ bị đăng xuất tự động.
+        </Typography.Paragraph>
+        <Space>
+            <Button type="primary" onClick={onStayLoggedIn}>
+                Đang làm việc, tiếp tục
+            </Button>
+            <Button onClick={onLogout}>Đăng xuất ngay</Button>
+        </Space>
+    </Modal>
+    );
+    {% elif ui_framework == 'material' %}
+    return (
+    <Dialog open={visible} onClose={()=> {}} maxWidth="xs" fullWidth>
+        <DialogTitle>Session sắp hết hạn</DialogTitle>
+        <DialogContent>
+            <Typography>
+                Session của bạn sẽ hết hạn trong <strong>{countdown}</strong> giây.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+                Không hành động sẽ bị đăng xuất tự động.
+            </Typography>
+        </DialogContent>
+        <DialogActions>
+            <Button onClick={onLogout}>Đăng xuất ngay</Button>
+            <Button onClick={onStayLoggedIn} variant="contained" color="primary">
+                Đang làm việc, tiếp tục
+            </Button>
+        </DialogActions>
+    </Dialog>
+    );
+    {% else %}
+    const overlayStyle = {
+    position: "fixed" as const,
+    top: 0, left: 0, right: 0, bottom: 0,
+    background: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 9999,
+    };
+    const boxStyle = { background: "white", padding: 24, borderRadius: 8, maxWidth: 400, width: "100%" };
+    const actionStyle = { marginTop: 16, display: "flex", gap: 8 };
+    const primaryBtn = { padding: "8px 16px", background: "#1890ff", color: "white", border: "none", borderRadius: 4,
+    cursor: "pointer" };
+    const secondaryBtn = { padding: "8px 16px", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer" };
+
+    return visible ? (
+    <div style={overlayStyle}>
+        <div style={boxStyle}>
+            <h3>Session sắp hết hạn</h3>
+            <p>Session của bạn sẽ hết hạn trong <strong>{countdown}</strong> giây.</p>
+            <p style={{ color: "#666" }}>Không hành động sẽ bị đăng xuất tự động.</p>
+            <div style={actionStyle}>
+                <button style={primaryBtn} onClick={onStayLoggedIn}>
+                    Đang làm việc, tiếp tục
+                </button>
+                <button style={secondaryBtn} onClick={onLogout}>
+                    Đăng xuất ngay
+                </button>
+            </div>
+        </div>
+    </div>
+    ) : null;
+    {% endif %}
+    };
+
+    export default SessionTimeoutModal;

@@ -1,0 +1,81 @@
+/** OAuth Callback Component - CP21.
+ *
+ * Xử lý callback từ OAuth/OIDC provider.
+ * Extract token từ URL và hoàn tất đăng nhập.
+ *
+ * UI Framework: [{ui_framework}]
+ */
+
+import { Component, OnInit, OnDestroy } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { RouterModule } from "@angular/router";
+import { ActivatedRoute, Router } from "@angular/router";
+import { Subscription } from "rxjs";
+{% if ui_framework == 'material' %}
+import { MatProgressBarModule } from "@angular/material/progress-bar";
+import { MatCardModule } from "@angular/material/card";
+{% endif %}
+import { AuthService } from "../core/auth/auth.service";
+
+@Component({
+  selector: "app-oauth-callback",
+  standalone: true,
+  imports: [
+    CommonModule, RouterModule,
+{% if ui_framework == 'material' %}
+    MatProgressBarModule, MatCardModule,
+{% endif %}
+  ],
+  templateUrl: './oauth-callback.component.html',
+})
+export class OAuthCallbackComponent implements OnInit, OnDestroy {
+  loading = true;
+  error: string | null = null;
+  private subs = new Subscription();
+
+  constructor(
+    private readonly route: ActivatedRoute,
+    private readonly router: Router,
+    private readonly authService: AuthService,
+  ) {}
+
+  ngOnInit(): void {
+    this.handleCallback();
+  }
+
+  ngOnDestroy(): void {
+    this.subs.unsubscribe();
+  }
+
+  /** Xử lý OAuth callback — extract code/token và gọi backend. */
+  private handleCallback(): void {
+    const code = this.route.snapshot.queryParamMap.get('code');
+    const state = this.route.snapshot.queryParamMap.get('state');
+    const error = this.route.snapshot.queryParamMap.get('error');
+
+    if (error) {
+      this.error = `OAuth error: ${error}`;
+      this.loading = false;
+      return;
+    }
+
+    if (!code) {
+      this.error = "Thiếu authorization code trong callback.";
+      this.loading = false;
+      return;
+    }
+
+    // Gửi code về backend để đổi lấy access token
+    this.subs.add(
+      this.authService.oauthCallback(code, state).subscribe({
+        next: () => {
+          this.router.navigate([{redirect_on_success}]);
+        },
+        error: (err) => {
+          this.error = err.message || "OAuth callback thất bại.";
+          this.loading = false;
+        },
+      })
+    );
+  }
+}

@@ -1,0 +1,58 @@
+/** Role Guard - CP21.
+ *
+ * Guard này kiểm tra roles của user trước khi truy cập route.
+ * Nếu user không có role yêu cầu, redirect đến /unauthorized.
+ *
+ * Usage trong route:
+ *   { path: "admin", canActivate: [RoleGuard], data: { requiredRoles: ["admin"] } }
+ */
+
+import { Injectable } from "@angular/core";
+import {
+  CanActivate,
+  ActivatedRouteSnapshot,
+  RouterStateSnapshot,
+  Router,
+} from "@angular/router";
+import { AuthService } from "../core/auth/auth.service";
+
+@Injectable({
+  providedIn: "root",
+})
+export class RoleGuard implements CanActivate {
+  constructor(
+    private readonly authService: AuthService,
+    private readonly router: Router,
+  ) {}
+
+  /**
+   * Kiểm tra user có role yêu cầu.
+   *
+   * Expected data: { requiredRoles: string[] }
+   */
+  canActivate(
+    route: ActivatedRouteSnapshot,
+    state: RouterStateSnapshot,
+  ): boolean {
+    const user = this.authService.getCurrentUser();
+    if (!user) {
+      this.router.navigate(["/login"], { queryParams: { returnUrl: state.url } });
+      return false;
+    }
+
+    const requiredRoles: string[] = route.data["requiredRoles"] || [];
+    if (requiredRoles.length === 0) {
+      return true; // Không có role requirement — cho phép
+    }
+
+    const userRoles: string[] = user.roles || [];
+    const hasRole = requiredRoles.some((role) => userRoles.includes(role));
+
+    if (!hasRole) {
+      this.router.navigate(["/unauthorized"]);
+      return false;
+    }
+
+    return true;
+  }
+}

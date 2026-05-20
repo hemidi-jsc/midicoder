@@ -420,18 +420,23 @@ core_packs:
     name: Authentication UI Generator
     internal_id: cp21_auth_ui
     phase: P2
-    description: Auth UI shells, route guards, session handling
-    definitions_count: 3
-    obligations_count: 0
+    description: Auth UI pages, role/permission route guards, session timeout monitoring
+    definitions_count: 1
+    obligations_count: 2
     depends_on:
       - CP03
       - CP18
     capabilities_provided:
-      - auth_ui_shell
-      - route_guard
-      - session_handle
+      - login_page
+      - register_page
+      - password_reset
+      - mfa_verify
+      - oauth_callback
+      - role_guard
+      - permission_guard
+      - session_monitor
     category: frontend
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP22
     name: Real-time UI Generator
