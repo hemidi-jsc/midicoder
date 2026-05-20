@@ -1,0 +1,75 @@
+/**
+ * PresenceIndicatorComponent — hiển thị trạng thái presence realtime
+ *
+ * Sinh bởi CP22 AngularRealtimeEmitter
+ * UI Framework: {[{ ui_framework }]}
+ * Widget Type: {[{ widget_type }]}
+ */
+
+import { Component, Input, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { PresenceService } from './presence.service';
+
+@Component({
+  selector: 'midicoder-presence-indicator',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div class="presence-indicator" style="display: inline-flex; align-items: center; gap: 8px;">
+      <div
+        [style.width.px]="size"
+        [style.height.px]="size"
+        [style.backgroundColor]="color"
+        class="status-dot"
+        style="border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: white;"
+        [title]="label"
+      >
+        {{ userId?.charAt(0)?.toUpperCase() }}
+      </div>
+      <span *ngIf="showLabel" style="padding: 2px 8px; border-radius: 12px; background-color: {{ color }}; color: white; font-size: 12px;">
+        {{ label }}
+      </span>
+    </div>
+  `,
+})
+export class PresenceIndicatorComponent implements OnInit {
+  @Input() userId?: string;
+  @Input() showLabel = true;
+  @Input() size: 'sm' | 'md' | 'lg' = 'md';
+{% if has_tenant_scope %}  @Input() tenantId?: string;
+{% endif %}
+
+  status = 'offline';
+  label = 'Offline';
+  color = '#9e9e9e';
+
+  private sizeMap: Record<string, number> = { sm: 24, md: 32, lg: 40 };
+
+  constructor(private presenceService: PresenceService) {}
+
+  ngOnInit() {
+    this.presenceService.users$.subscribe((users) => {
+      if (this.userId) {
+        const user = users.get(this.userId);
+        this.status = user?.status || 'offline';
+        this.updateStatus();
+      }
+    });
+  }
+
+  private updateStatus() {
+    const colors: Record<string, string> = {
+      online: '#4caf50',
+      typing: '#2196f3',
+      away: '#ff9800',
+      offline: '#9e9e9e',
+    };
+    this.color = colors[this.status] || colors.offline;
+    this.label = {
+      online: 'Online',
+      typing: 'Đang soạn...',
+      away: 'Away',
+      offline: 'Offline',
+    }[this.status] || 'Offline';
+  }
+}

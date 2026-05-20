@@ -610,6 +610,17 @@ class ErrorCode(str, Enum):
     CP21_INVALID_SESSION_TIMEOUT = "MDC-CP21-005"
 
     # =========================================================================
+    # CP22: Real-time UI Generator Errors
+    # =========================================================================
+    CP22_CHANNEL_NOT_FOUND = "MDC-CP22-001"
+    CP22_INVALID_TRANSPORT = "MDC-CP22-002"
+    CP22_TEMPLATE_NOT_FOUND = "MDC-CP22-003"
+    CP22_RENDER_FAILED = "MDC-CP22-004"
+    CP22_TENANT_ISOLATION_VIOLATION = "MDC-CP22-005"
+    CP22_INVALID_WIDGET_TYPE = "MDC-CP22-006"
+    CP22_EVENT_PARSE_FAILED = "MDC-CP22-007"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

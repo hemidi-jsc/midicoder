@@ -1,0 +1,97 @@
+/**
+* useChannelSubscription hook — subscribe realtime channels
+*
+* Sinh bởi CP22 RealtimeComponentEmitter
+* UI Framework: {[{ ui_framework }]}
+*/
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+// Kiểu channel ID tự động sinh từ CP05 events
+export type ChannelId =
+{% for ch in channels %} | '{[{ ch.channel_id }]}'
+{% endfor %} | string;
+
+interface MessagePayload {
+channel: string;
+data: unknown;
+timestamp: string;
+{% if has_tenant_channels %} tenant_id: string;
+{% endif %}
+}
+
+/**
+* Hook để subscribe vào realtime channel (WebSocket với SSE fallback)
+*/
+export function useChannelSubscription(
+channelId: ChannelId,
+options?: {
+url?: string;
+{% if has_tenant_channels %} tenantId?: string;
+{% endif %} autoReconnect?: boolean;
+maxRetries?: number;
+onMessage?: (payload: MessagePayload) => void;
+}
+) {
+const {
+url = '/ws',
+{% if has_tenant_channels %} tenantId,
+{% endif %} autoReconnect = true,
+maxRetries = 5,
+onMessage,
+} = options || {};
+
+const [isConnected, setIsConnected] = useState(false);
+const [messages, setMessages] = useState<MessagePayload[]>([]);
+    const wsRef = useRef<WebSocket | null>(null);
+        const retryCountRef = useRef(0);
+
+        useEffect(() => {
+        const params = new URLSearchParams();
+        {% if has_tenant_channels %} if (tenantId) params.set('tenant_id', tenantId);
+        {% endif %} const query = params.toString();
+        const wsUrl = `${url}/${channelId}${query ? `?${query}` : ''}`;
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+        setIsConnected(true);
+        retryCountRef.current = 0;
+        };
+
+        ws.onmessage = (event) => {
+        const payload: MessagePayload = JSON.parse(event.data);
+        setMessages((prev) => [...prev, payload]);
+        onMessage?.(payload);
+        };
+
+        ws.onclose = () => {
+        setIsConnected(false);
+        if (autoReconnect && retryCountRef.current < maxRetries) { retryCountRef.current++; setTimeout(()=> ws.onopen(),
+            1000 * retryCountRef.current);
+            }
+            };
+
+            wsRef.current = ws;
+            return () => ws.close();
+            }, [channelId{% if has_tenant_channels %}, tenantId{% endif %}, url]);
+
+            const subscribe = useCallback(
+            (topic: string) => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'subscribe', topic }));
+            }
+            },
+            [],
+            );
+
+            const unsubscribe = useCallback(
+            (topic: string) => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'unsubscribe', topic }));
+            }
+            },
+            [],
+            );
+
+            return { channelId, isConnected, messages, subscribe, unsubscribe };
+            }

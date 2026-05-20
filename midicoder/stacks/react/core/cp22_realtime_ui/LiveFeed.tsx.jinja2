@@ -1,0 +1,105 @@
+/**
+* LiveFeed component — hiển thị realtime event feed (activity stream)
+*
+* Sinh bởi CP22 RealtimeComponentEmitter
+* UI Framework: {[{ ui_framework }]}
+* Widget Type: {[{ widget_type }]}
+*/
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useChannelSubscription } from './useChannelSubscription';
+
+interface FeedItem {
+id: string;
+channel: string;
+data: unknown;
+timestamp: string;
+}
+
+interface LiveFeedProps {
+channel?: string;
+maxItems?: number;
+autoScroll?: boolean;
+className?: string;
+{% if has_tenant_scope %} tenantId?: string;
+{% endif %} renderItem?: (item: FeedItem) => React.ReactNode;
+}
+
+export const LiveFeed: React.FC<LiveFeedProps> = ({
+    channel = 'default',
+    maxItems = {[{ max_items or 50 }]},
+    autoScroll = true,
+    className = '',
+    {% if has_tenant_scope %} tenantId,
+    {% endif %} renderItem,
+    }) => {
+    const [items, setItems] = useState<FeedItem[]>([]);
+        const scrollRef = useRef<HTMLDivElement>(null);
+            const { isConnected } = useChannelSubscription(channel, {
+            {% if has_tenant_scope %} tenantId,
+            {% endif %} onMessage: (payload) => {
+            const newItem: FeedItem = {
+            id: payload.data && typeof payload.data === 'object' && 'id' in payload.data
+            ? String((payload.data as any).id)
+            : `evt-${Date.now()}`,
+            channel: payload.channel,
+            data: payload.data,
+            timestamp: payload.timestamp || new Date().toISOString(),
+            };
+            setItems((prev) => [...prev, newItem].slice(-maxItems));
+            },
+            });
+
+            useEffect(() => {
+            if (autoScroll && scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+            }
+            }, [items.length, autoScroll]);
+
+            const clearFeed = useCallback(() => setItems([]), []);
+
+            return (
+            <div className={`midicoder-live-feed ${className}`} style={{ position: 'relative' }}>
+                <div className="header" style={{ display: 'flex' , justifyContent: 'space-between' , marginBottom: 8 }}>
+                    <span>
+                        Live Feed
+                        <span style={{ marginLeft: 8, width: 8, height: 8, borderRadius: '50%' , backgroundColor:
+                            isConnected ? '#4caf50' : '#f44336' , display: 'inline-block' , }} title={isConnected
+                            ? 'Connected' : 'Disconnected' } />
+                    </span>
+                    <span className="count">{items.length} items</span>
+                    <button onClick={clearFeed} className="clear-btn" style={{ cursor: 'pointer' }}>
+                        Clear
+                    </button>
+                </div>
+                <div ref={scrollRef} className="feed-body" style={{ maxHeight: 400, overflowY: 'auto' ,
+                    border: '1px solid #e0e0e0' , borderRadius: 4, padding: 8, }}>
+                    {items.length === 0 && (
+                    <div className="empty" style={{ textAlign: 'center' , color: '#999' , padding: 20 }}>
+                        Chờ event...
+                    </div>
+                    )}
+                    {items.map((item) => (
+                    <div key={item.id} className="feed-item" style={{ padding: '4px 0' ,
+                        borderBottom: '1px solid #f0f0f0' }}>
+                        {renderItem ? renderItem(item) : (
+                        <div>
+                            <span className="channel" style={{ fontWeight: 'bold' , fontSize: 12 }}>
+                                [{item.channel}]
+                            </span>{' '}
+                            <span className="data" style={{ fontSize: 13 }}>
+                                {typeof item.data === 'string' ? item.data : JSON.stringify(item.data)}
+                            </span>
+                            <span className="time" style={{ fontSize: 10, color: '#999' , marginLeft: 8 }}>
+                                {new Date(item.timestamp).toLocaleTimeString()}
+                            </span>
+                        </div>
+                        )}
+                    </div>
+                    ))}
+                </div>
+            </div>
+            );
+            };
+
+            export default LiveFeed;

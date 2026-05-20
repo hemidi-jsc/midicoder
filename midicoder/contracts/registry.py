@@ -55,6 +55,8 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP18": "cp18_frontend_framework",
     "CP19": "cp19_ui_components",
     "CP20": "cp20_api_client",
+    "CP21": "cp21_auth_ui",
+    "CP22": "cp22_realtime_ui",
     "CP51": "cp51_blueprint",
     "CP52": "cp52_invariant",
     "CP53": "cp53_domain_bridge",

@@ -1,0 +1,91 @@
+﻿/**
+* LiveFeedComponent — hiển thị realtime event feed (activity stream)
+*
+* Sinh bởi CP22 AngularRealtimeEmitter
+* UI Framework: {[{ ui_framework }]}
+* Widget Type: {[{ widget_type }]}
+*/
+
+import { Component, Input, OnInit, AfterViewChecked, ViewChild, ElementRef } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ChannelSubscriptionService, MessagePayload } from './channel-subscription.service';
+
+export interface FeedItem {
+id: string;
+channel: string;
+data: unknown;
+timestamp: string;
+}
+
+@Component({
+selector: 'midicoder-live-feed',
+standalone: true,
+imports: [CommonModule],
+template: `
+<div class="midicoder-live-feed">
+    <div class="header" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <span>
+            Live Feed
+            <span [style.backgroundColor]="isConnected ? '#4caf50' : '#f44336'"
+                style="margin-left: 8px; width: 8px; height: 8px; border-radius: 50%; display: inline-block;"
+                [title]="isConnected ? 'Connected' : 'Disconnected'"></span>
+        </span>
+        <span>{{ items.length }} items</span>
+        <button (click)="clearFeed()">Clear</button>
+    </div>
+    <div #scrollRef
+        style="max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; padding: 8px;">
+        <div *ngIf="items.length === 0" style="text-align: center; color: #999; padding: 20px;">
+            Chờ event...
+        </div>
+        <div *ngFor="let item of items" style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;">
+            <span style="font-weight: bold; font-size: 12px;">[{{ item.channel }}]</span>&nbsp;
+            <span style="font-size: 13px;">{{ item.data | json }}</span>
+            <span style="font-size: 10px; color: #999; margin-left: 8px;">
+                {{ item.timestamp | date:'HH:mm:ss' }}
+            </span>
+        </div>
+    </div>
+</div>
+`,
+})
+export class LiveFeedComponent implements OnInit, AfterViewChecked {
+@ViewChild('scrollRef') scrollRef?: ElementRef;
+
+@Input() channel = 'default';
+@Input() maxItems = {[{ max_items or 50 }]};
+@Input() autoScroll = {[{ auto_scroll | default(true) | lower }]};
+{% if has_tenant_scope %} @Input() tenantId?: string;
+{% endif %}
+
+items: FeedItem[] = [];
+isConnected = false;
+
+constructor(private channelService: ChannelSubscriptionService) {}
+
+ngOnInit() {
+this.channelService.subscribe(this.channel{% if has_tenant_scope %}, { tenantId: this.tenantId }{% endif
+%}).subscribe((msg) => {
+this.isConnected = true;
+const data = msg.data as Record<string, unknown>;
+    const item: FeedItem = {
+    id: (data && 'id' in data ? String(data.id) : `evt-${Date.now()}`) as string,
+    channel: msg.channel,
+    data: msg.data,
+    timestamp: msg.timestamp || new Date().toISOString(),
+    };
+    this.items = [...this.items, item].slice(-this.maxItems);
+    });
+    }
+
+    ngAfterViewChecked() {
+    if (this.autoScroll && this.scrollRef) {
+    const el = this.scrollRef.nativeElement as HTMLElement;
+    el.scrollTop = el.scrollHeight;
+    }
+    }
+
+    clearFeed() {
+    this.items = [];
+    }
+    }

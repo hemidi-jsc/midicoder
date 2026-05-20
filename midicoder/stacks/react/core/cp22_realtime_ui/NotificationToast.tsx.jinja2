@@ -1,0 +1,154 @@
+/**
+* NotificationToast component — hiển thị realtime toast notifications
+*
+* Sinh bởi CP22 RealtimeComponentEmitter
+* UI Framework: {[{ ui_framework }]}
+* Widget Type: {[{ widget_type }]}
+*/
+
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useChannelSubscription } from './useChannelSubscription';
+
+export type NotificationType = 'info' | 'success' | 'warning' | 'error';
+
+interface NotificationData {
+id: string;
+message: string;
+type?: NotificationType;
+duration?: number;
+actionLabel?: string;
+actionCallback?: () => void;
+timestamp: string;
+}
+
+interface NotificationToastProps {
+channel?: string;
+maxVisible?: number;
+defaultDuration?: number;
+position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+className?: string;
+tenantId?: string;
+onDismiss?: (id: string) => void;
+}
+
+const typeStyles: Record<NotificationType, { bg: string; border: string }> = {
+    info: { bg: '#e3f2fd', border: '#2196f3' },
+    success: { bg: '#e8f5e9', border: '#4caf50' },
+    warning: { bg: '#fff3e0', border: '#ff9800' },
+    error: { bg: '#ffebee', border: '#f44336' },
+    };
+
+    /**
+    * Hiển thị realtime toast notifications queue
+    *
+    * @param props - Props của component
+    * @returns - JSX element
+    */
+    export const NotificationToast: React.FC<NotificationToastProps> = ({
+        channel = 'notification.toast',
+        maxVisible = 5,
+        defaultDuration = 5000,
+        position = 'top-right',
+        className = '',
+        tenantId,
+        onDismiss,
+        }) => {
+        const [notifications, setNotifications] = useState<NotificationData[]>([]);
+            const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+                const { isConnected } = useChannelSubscription(channel, {
+                tenantId,
+                onMessage: (payload) => {
+                const data = payload.data as Partial<NotificationData>;
+                    if (data && data.message) {
+                    const notif: NotificationData = {
+                    id: data.id || `notif-${Date.now()}-${Math.random()}`,
+                    message: data.message,
+                    type: data.type || 'info',
+                    duration: data.duration ?? defaultDuration,
+                    timestamp: data.timestamp || new Date().toISOString(),
+                    };
+                    setNotifications((prev) => [notif, ...prev].slice(0, maxVisible * 2));
+                    if (notif.duration > 0) {
+                    timersRef.current.set(notif.id, setTimeout(() => {
+                    dismiss(notif.id);
+                    }, notif.duration));
+                    }
+                    }
+                    },
+                    });
+
+                    const dismiss = useCallback(
+                    (id: string) => {
+                    setNotifications((prev) => prev.filter((n) => n.id !== id));
+                    const timer = timersRef.current.get(id);
+                    if (timer) {
+                    clearTimeout(timer);
+                    timersRef.current.delete(id);
+                    }
+                    onDismiss?.(id);
+                    },
+                    [onDismiss],
+                    );
+
+                    const clearAll = useCallback(() => {
+                    notifications.forEach((n) => dismiss(n.id));
+                    timersRef.current.clear();
+                    }, [notifications, dismiss]);
+
+                    // Cleanup timers on unmount
+                    useEffect(() => {
+                    return () => timersRef.current.forEach((t) => clearTimeout(t));
+                    }, []);
+
+                    const positionStyle: Record<string, React.CSSProperties> = {
+                        'top-right': { top: 16, right: 16 },
+                        'top-left': { top: 16, left: 16 },
+                        'bottom-right': { bottom: 16, right: 16 },
+                        'bottom-left': { bottom: 16, left: 16 },
+                        };
+
+                        return (
+                        <div className={`midicoder-notification-toast ${className}`} style={{ position: 'fixed' ,
+                            ...positionStyle[position], zIndex: 9999, display: 'flex' , flexDirection: 'column' , gap:
+                            8, maxWidth: 360, }}>
+                            {notifications.slice(0, maxVisible).map((notif) => {
+                            const style = typeStyles[notif.type || 'info'];
+                            return (
+                            <div key={notif.id} className="toast-item" style={{ backgroundColor: style.bg, borderLeft:
+                                `4px solid ${style.border}`, padding: '12px 16px' , borderRadius: 4,
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.15)' , cursor: 'pointer' , }} onClick={()=>
+                                dismiss(notif.id)}
+                                >
+                                <div className="toast-message" style={{ fontSize: 14, fontWeight: 500 }}>
+                                    {notif.message}
+                                </div>
+                                <div className="toast-time" style={{ fontSize: 10, color: '#999' , marginTop: 4 }}>
+                                    {new Date(notif.timestamp).toLocaleTimeString()}
+                                </div>
+                                {notif.actionLabel && (
+                                <button className="toast-action" style={{ marginTop: 8, padding: '4px 12px' ,
+                                    backgroundColor: style.border, color: 'white' , border: 'none' , borderRadius: 4,
+                                    cursor: 'pointer' , }} onClick={(e)=> {
+                                    e.stopPropagation();
+                                    notif.actionCallback?.();
+                                    dismiss(notif.id);
+                                    }}
+                                    >
+                                    {notif.actionLabel}
+                                </button>
+                                )}
+                            </div>
+                            );
+                            })}
+                            {notifications.length > 0 && (
+                            <button className="clear-all" style={{ alignSelf: 'flex-end' , background: 'none' ,
+                                border: 'none' , color: '#666' , cursor: 'pointer' , fontSize: 12, }}
+                                onClick={clearAll}>
+                                Clear all ({notifications.length})
+                            </button>
+                            )}
+                        </div>
+                        );
+                        };
+
+                        export default NotificationToast;

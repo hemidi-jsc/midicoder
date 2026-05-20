@@ -123,6 +123,24 @@ class PerUIComponentFile:
 
 
 @dataclass
+class PerWidgetFile:
+    """A file emitted once per widget type (CP22 realtime).
+
+    Iterates over ``component_types`` (widget types like presence,
+    live_feed, live_counter, live_cursor, notification_toast) so that
+    each widget type gets its own file (hook/service/component).
+    """
+
+    path_pattern: str  # e.g. "{widget_pascal}.tsx" or "{widget_kebab}.component.ts"
+    file_type: str = "widget"
+    template: str = ""
+    stacks: list[str] = field(default_factory=list)
+    pack_emitter: str | None = None
+    component_types: list[str] = field(default_factory=list)
+    context_keys: list[str] = field(default_factory=list)
+
+
+@dataclass
 class FileContributions:
     """All file contributions declared by a single pack."""
 
@@ -133,10 +151,18 @@ class FileContributions:
     per_command: list[PerCommandFile] = field(default_factory=list)
     per_query: list[PerQueryFile] = field(default_factory=list)
     per_ui_component: list[PerUIComponentFile] = field(default_factory=list)
+    per_widget: list[PerWidgetFile] = field(default_factory=list)
 
     @property
     def is_empty(self) -> bool:
-        return not (self.infrastructure or self.per_entity or self.per_command or self.per_query or self.per_ui_component)
+        return not (
+            self.infrastructure
+            or self.per_entity
+            or self.per_command
+            or self.per_query
+            or self.per_ui_component
+            or self.per_widget
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +213,12 @@ def _snake_to_camel(name: str) -> str:
     """``order_item`` → ``orderItem``."""
     parts = name.split("_")
     return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
+def _snake_to_pascal(name: str) -> str:
+    """``live_feed`` → ``LiveFeed``, ``order_item`` → ``OrderItem``."""
+    parts = name.split("_")
+    return "".join(p.capitalize() for p in parts)
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +290,7 @@ class FileContributionsLoader:
         per_command = [_parse_per_command(f) for f in raw.get("per_command", [])]
         per_query = [_parse_per_query(f) for f in raw.get("per_query", [])]
         per_ui_component = [_parse_per_ui_component(f) for f in raw.get("per_ui_component", [])]
+        per_widget = [_parse_per_widget(f) for f in raw.get("per_widget", [])]
 
         # Filter by stack if requested
         if stack:
@@ -266,6 +299,7 @@ class FileContributionsLoader:
             per_command = [e for e in per_command if stack in e.stacks]
             per_query = [e for e in per_query if stack in e.stacks]
             per_ui_component = [e for e in per_ui_component if stack in e.stacks]
+            per_widget = [e for e in per_widget if stack in e.stacks]
 
         return FileContributions(
             pack_id=pack_id,
@@ -275,6 +309,7 @@ class FileContributionsLoader:
             per_command=per_command,
             per_query=per_query,
             per_ui_component=per_ui_component,
+            per_widget=per_widget,
         )
 
     def load_all(
@@ -346,6 +381,7 @@ class FileContributionsLoader:
             per_command = [_parse_per_command(f) for f in raw.get("per_command", [])]
             per_query = [_parse_per_query(f) for f in raw.get("per_query", [])]
             per_ui_component = [_parse_per_ui_component(f) for f in raw.get("per_ui_component", [])]
+            per_widget = [_parse_per_widget(f) for f in raw.get("per_widget", [])]
 
             if stack:
                 infra = [e for e in infra if stack in e.stacks]
@@ -353,6 +389,7 @@ class FileContributionsLoader:
                 per_command = [e for e in per_command if stack in e.stacks]
                 per_query = [e for e in per_query if stack in e.stacks]
                 per_ui_component = [e for e in per_ui_component if stack in e.stacks]
+                per_widget = [e for e in per_widget if stack in e.stacks]
 
             fc = FileContributions(
                 pack_id=pack_id,
@@ -362,6 +399,7 @@ class FileContributionsLoader:
                 per_command=per_command,
                 per_query=per_query,
                 per_ui_component=per_ui_component,
+                per_widget=per_widget,
             )
             if not fc.is_empty:
                 contributions.append(fc)
@@ -586,6 +624,68 @@ class FileContributionsLoader:
                 })
         return files
 
+    @staticmethod
+    def expand_per_widget(
+        contributions: FileContributions,
+        channels: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Expand ``per_widget`` entries into concrete file plans.
+
+        Iterates over ``component_types`` (widget types) so that each
+        widget type gets one file spec. Unlike per_ui_component which
+        iterates entities × component_types, per_widget iterates only
+        component_types (widgets are global, not per-entity).
+
+        Args:
+            contributions: Loaded ``FileContributions`` for a pack.
+            channels: Optional channel specs from CP22 parser output.
+
+        Returns:
+            List of file plan dicts.
+        """
+        files: list[dict[str, Any]] = []
+        for entry in contributions.per_widget:
+            comp_types = entry.component_types or []
+            for comp_type in comp_types:
+                # Resolve widget path pattern
+                # Support {widget_pascal}, {widget_kebab}, {widget_snake}
+                widget_pascal = _snake_to_pascal(comp_type)
+                widget_kebab = comp_type.replace("_", "-")
+                widget_snake = comp_type
+
+                path = entry.path_pattern
+                path = path.replace("{widget_pascal}", widget_pascal)
+                path = path.replace("{widget_kebab}", widget_kebab)
+                path = path.replace("{widget_snake}", widget_snake)
+
+                ctx: dict[str, Any] = {
+                    "widget_type": comp_type,
+                    "widget_pascal": widget_pascal,
+                    "widget_kebab": widget_kebab,
+                }
+                if channels:
+                    ctx["channels"] = channels
+                    ctx["channel_topics"] = [ch.get("event_topic", ch.get("channel_id", "")) for ch in channels]
+
+                # Inject additional context keys
+                for key in entry.context_keys:
+                    if key in ctx:
+                        ctx[key] = ctx[key]
+
+                metadata: dict[str, Any] = {}
+                if entry.pack_emitter:
+                    metadata["pack_emitter"] = entry.pack_emitter
+                    metadata["stack"] = entry.stacks[0] if entry.stacks else "react"
+
+                files.append({
+                    "path": path,
+                    "type": entry.file_type,
+                    "template": entry.template,
+                    "context": ctx,
+                    "metadata": metadata,
+                })
+        return files
+
     # ------------------------------------------------------------------
 
     def resolve_all_infrastructure(
@@ -679,6 +779,31 @@ class FileContributionsLoader:
                     result.append(f)
         return result
 
+    def resolve_all_per_widget(
+        self,
+        stack: str,
+        channels: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Load per-widget files from ALL packs for the given stack.
+
+        Iterates over component_types (widget types) per pack declaration.
+
+        Args:
+            stack: Target stack (e.g. ``"react"``, ``"angular"``).
+            channels: Optional channel specs from CP22.
+
+        Returns:
+            Deduplicated list of file plan dicts.
+        """
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
+        for fc in self.load_all(stack=stack):
+            for f in self.expand_per_widget(fc, channels):
+                if f["path"] not in seen:
+                    seen.add(f["path"])
+                    result.append(f)
+        return result
+
 
 # ---------------------------------------------------------------------------
 # Internal parsers
@@ -697,8 +822,8 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 def _parse_infrastructure(raw: dict[str, Any]) -> InfrastructureFile:
     return InfrastructureFile(
         path=raw["path"],
-        file_type=raw["file_type"],
-        template=raw["template"],
+        file_type=raw.get("file_type", "infrastructure"),
+        template=raw.get("template", ""),
         stacks=raw.get("stacks", ["fastapi"]),
         pack_emitter=raw.get("pack_emitter"),
         context_keys=raw.get("context_keys", []),
@@ -750,6 +875,18 @@ def _parse_per_ui_component(raw: dict[str, Any]) -> PerUIComponentFile:
     )
 
 
+def _parse_per_widget(raw: dict[str, Any]) -> PerWidgetFile:
+    return PerWidgetFile(
+        path_pattern=raw["path_pattern"],
+        file_type=raw.get("file_type", "widget"),
+        template=raw.get("template", ""),
+        stacks=raw.get("stacks", []),
+        pack_emitter=raw.get("pack_emitter"),
+        component_types=raw.get("component_types", []),
+        context_keys=raw.get("context_keys", []),
+    )
+
+
 __all__ = [
     "FileContributionsLoader",
     "FileContributions",
@@ -758,7 +895,9 @@ __all__ = [
     "PerCommandFile",
     "PerQueryFile",
     "PerUIComponentFile",
+    "PerWidgetFile",
     "_expand_path_pattern",
+    "_snake_to_pascal",
     "BACKEND_STACKS",
     "FRONTEND_STACKS",
     "INFRA_STACK",

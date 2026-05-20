@@ -1,0 +1,72 @@
+/**
+* PresenceIndicator component — hiển thị trạng thái presence
+*
+* Sinh bởi CP22 RealtimeComponentEmitter
+* UI Framework: {[{ ui_framework }]}
+* Widget Type: {[{ widget_type }]}
+*/
+
+import React, { useMemo } from 'react';
+import { usePresence } from './usePresence';
+
+interface PresenceIndicatorProps {
+userId?: string;
+showLabel?: boolean;
+size?: 'sm' | 'md' | 'lg';
+className?: string;
+{% if has_tenant_scope %} tenantId?: string;
+{% endif %}
+}
+
+const statusColors: Record<string, string> = {
+    online: '#4caf50',
+    typing: '#2196f3',
+    away: '#ff9800',
+    offline: '#9e9e9e',
+    };
+
+    export const PresenceIndicator: React.FC<PresenceIndicatorProps> = ({
+        userId,
+        showLabel = true,
+        size = 'md',
+        className = '',
+        {% if has_tenant_scope %} tenantId,
+        {% endif %}
+        }) => {
+        const { users, onlineCount } = usePresence({{% if has_tenant_scope %} tenantId{% endif %}});
+
+        const userPresence = userId ? users.get(userId) : null;
+        const status = userPresence?.status || 'offline';
+        const color = statusColors[status] || statusColors.offline;
+
+        const label = useMemo(() => {
+        switch (status) {
+        case 'online': return 'Online';
+        case 'typing': return 'Đang soạn...';
+        case 'away': return 'Away';
+        default: return 'Offline';
+        }
+        }, [status]);
+
+        const sizeMap = { sm: 24, md: 32, lg: 40 };
+        const diameter = sizeMap[size] || sizeMap.md;
+
+        return (
+        <div className={`midicoder-presence ${className}`} style={{ display: 'inline-flex' , alignItems: 'center' , gap:
+            8 }}>
+            <div className="status-dot" style={{ width: diameter, height: diameter, borderRadius: '50%' ,
+                backgroundColor: color, border: '2px solid white' , display: 'flex' , alignItems: 'center' ,
+                justifyContent: 'center' , color: 'white' , fontSize: `${diameter * 0.5}px`, }} title={label}>
+                {userId?.charAt(0)?.toUpperCase()}
+            </div>
+            {showLabel && (
+            <span className="label" style={{ padding: '2px 8px' , borderRadius: 12, backgroundColor: color,
+                color: 'white' , fontSize: 12, }}>
+                {label}
+            </span>
+            )}
+        </div>
+        );
+        };
+
+        export default PresenceIndicator;

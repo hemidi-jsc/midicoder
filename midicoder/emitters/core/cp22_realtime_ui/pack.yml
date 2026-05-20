@@ -1,0 +1,121 @@
+pack:
+  id: "CP22"
+  name: "Real-time UI Generator"
+  internal_id: "cp22_realtime_ui"
+  version: "1.0.0"
+  status: "stable"
+  category: "frontend"
+  phase: "P2"
+
+  depends_on:
+    - "CP05"
+    - "CP18"
+
+  definitions_count: 4
+  obligations_count: 1
+
+  definitions:
+    - name: "ChannelSpec"
+      description: "Mapping giữa CP05 event topic và WebSocket/SSE channel"
+    - name: "PresenceState"
+      description: "Trạng thái presence realtime của user"
+    - name: "LiveFeedEntry"
+      description: "Entry trong activity feed realtime"
+    - name: "WidgetConfig"
+      description: "Cấu hình cho realtime widget"
+
+  obligations:
+    - name: "TenantIsolation"
+      description: "Tất cả realtime channels phải scope theo tenant_id"
+
+  capabilities_provided:
+    - "realtime_channel"
+    - "widget_render"
+    - "presence_indicator"
+
+  capabilities:
+    - id: "realtime_channel"
+      emitter: "react,angular"
+    - id: "widget_render"
+      emitter: "react,angular"
+    - id: "presence_indicator"
+      emitter: "react,angular"
+
+  file_contributions:
+    infrastructure:
+      - path: "useChannelSubscription.ts"
+        file_type: "hook"
+        template: "cp22_realtime_ui/useChannelSubscription.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "usePresence.ts"
+        file_type: "hook"
+        template: "cp22_realtime_ui/usePresence.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "useRealtimeRefresh.ts"
+        file_type: "hook"
+        template: "cp22_realtime_ui/useRealtimeRefresh.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "channel-subscription.service.ts"
+        file_type: "service"
+        template: "cp22_realtime_ui/channel-subscription.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "presence.service.ts"
+        file_type: "service"
+        template: "cp22_realtime_ui/presence.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "realtime-refresh-mixin.ts"
+        file_type: "mixin"
+        template: "cp22_realtime_ui/realtime-refresh.mixin.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+
+    per_widget:
+      - path_pattern: "{widget_pascal}.tsx"
+        stacks: ["react"]
+        component_types:
+          [
+            "presence",
+            "live_feed",
+            "live_counter",
+            "live_cursor",
+            "notification_toast",
+          ]
+        context_keys: ["widget_config", "channels"]
+        pack_emitter: "cp22.react"
+      - path_pattern: "{widget_kebab}.component.ts"
+        stacks: ["angular"]
+        component_types:
+          [
+            "presence",
+            "live_feed",
+            "live_counter",
+            "live_cursor",
+            "notification_toast",
+          ]
+        context_keys: ["widget_config", "channels"]
+        pack_emitter: "cp22.angular"
+
+  frontend_integration:
+    angular:
+      - "ChannelSubscriptionService"
+      - "PresenceService"
+      - "RealtimeRefreshMixin"
+      - "PresenceIndicatorComponent"
+      - "LiveFeedComponent"
+      - "LiveCounterComponent"
+      - "LiveCursorComponent"
+      - "NotificationToastComponent"
+    react:
+      - "useChannelSubscription"
+      - "usePresence"
+      - "useRealtimeRefresh"
+      - "PresenceIndicator"
+      - "LiveFeed"
+      - "LiveCounter"
+      - "LiveCursor"
+      - "NotificationToast"

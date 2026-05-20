@@ -1,0 +1,90 @@
+/**
+* LiveCounter component — hiển thị số realtime với animated transitions
+*
+* Sinh bởi CP22 RealtimeComponentEmitter
+* UI Framework: {[{ ui_framework }]}
+* Widget Type: {[{ widget_type }]}
+*/
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useChannelSubscription } from './useChannelSubscription';
+
+interface LiveCounterProps {
+channel?: string;
+initialValue?: number;
+format?: 'number' | 'currency' | 'percentage';
+locale?: string;
+thresholdColors?: Record<string, string>;
+    className?: string;
+    {% if has_tenant_scope %} tenantId?: string;
+    {% endif %} onValueChange?: (value: number) => void;
+    }
+
+    export const LiveCounter: React.FC<LiveCounterProps> = ({
+        channel = 'default',
+        initialValue = 0,
+        format = 'number',
+        locale = 'vi-VN',
+        thresholdColors,
+        className = '',
+        {% if has_tenant_scope %} tenantId,
+        {% endif %} onValueChange,
+        }) => {
+        const [value, setValue] = useState<number>(initialValue);
+            const [prevValue, setPrevValue] = useState<number>(initialValue);
+                const { isConnected } = useChannelSubscription(channel, {
+                {% if has_tenant_scope %} tenantId,
+                {% endif %} onMessage: (payload) => {
+                const data = payload.data as Record<string, unknown>;
+                    const num = typeof data === 'number' ? data : (data && 'value' in data ? Number(data.value) :
+                    undefined);
+                    if (num !== undefined) {
+                    setPrevValue(value);
+                    setValue(num);
+                    onValueChange?.(num);
+                    }
+                    },
+                    });
+
+                    const color = useMemo(() => {
+                    if (!thresholdColors) return '#1976d2';
+                    const thresholds = Object.entries(thresholdColors)
+                    .map(([k, v]) => ({ key: k, color: v }))
+                    .sort((a, b) => a.key.localeCompare(b.key));
+                    for (const t of thresholds) {
+                    if (value >= parseFloat(t.key) || isNaN(parseFloat(t.key))) {
+                    return t.color;
+                    }
+                    }
+                    return thresholds[0]?.color || '#1976d2';
+                    }, [value, thresholdColors]);
+
+                    const formattedValue = useMemo(() => {
+                    try {
+                    if (format === 'currency') {
+                    return new Intl.NumberFormat(locale, { style: 'currency', currency: 'VND' }).format(value);
+                    }
+                    if (format === 'percentage') {
+                    return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(value /
+                    100);
+                    }
+                    return new Intl.NumberFormat(locale).format(value);
+                    } catch {
+                    return String(value);
+                    }
+                    }, [value, format, locale]);
+
+                    const trend = value > prevValue ? '↑' : value < prevValue ? '↓' : '—' ; return ( <div
+                        className={`midicoder-live-counter ${className}`} style={{ textAlign: 'center' , padding: 16 }}>
+                        <div className="value" style={{ fontSize: 48, fontWeight: 'bold' , color,
+                            transition: 'color 0.3s ease' , }}>
+                            {formattedValue}
+                        </div>
+                        <div className="trend" style={{ fontSize: 14, color: '#666' }}>
+                            {trend} {isConnected ? 'live' : 'offline'}
+                        </div>
+                        </div>
+                        );
+                        };
+
+                        export default LiveCounter;

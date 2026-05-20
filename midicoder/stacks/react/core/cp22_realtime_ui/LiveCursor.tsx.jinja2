@@ -1,0 +1,126 @@
+/**
+* LiveCursor component — hiển thị con trỏ multi-user collaborative editing
+*
+* Sinh bởi CP22 RealtimeComponentEmitter
+* UI Framework: {[{ ui_framework }]}
+* Widget Type: {[{ widget_type }]}
+*/
+
+import React, { useState, useCallback, useMemo, createContext, useContext } from 'react';
+import { useChannelSubscription } from './useChannelSubscription';
+
+interface CursorData {
+userId: string;
+x: number;
+y: number;
+color?: string;
+label?: string;
+timestamp: string;
+}
+
+interface LiveCursorContextType {
+cursors: Map<string, CursorData>;
+    addCursor: (cursor: CursorData) => void;
+    removeCursor: (userId: string) => void;
+    }
+
+    const LiveCursorContext = createContext<LiveCursorContextType>({
+        cursors: new Map(),
+        addCursor: () => {},
+        removeCursor: () => {},
+        });
+
+        export const LiveCursorProvider: React.FC<{ channel?: string; tenantId?: string; children: React.ReactNode; }> =
+            ({ channel = 'cursor.sync', tenantId, children }) => {
+            const [cursors, setCursors] = useState<Map<string, CursorData>>(new Map());
+                const { isConnected } = useChannelSubscription(channel, {
+                tenantId,
+                {% if has_tenant_scope %} tenantId,
+                {% endif %} onMessage: (payload) => {
+                const data = payload.data as CursorData;
+                if (data && data.userId) {
+                setCursors((prev) => {
+                const next = new Map(prev);
+                next.set(data.userId, {
+                userId: data.userId,
+                x: data.x || 0,
+                y: data.y || 0,
+                color: data.color || '#1976d2',
+                label: data.label || data.userId,
+                timestamp: data.timestamp || new Date().toISOString(),
+                });
+                return next;
+                });
+                }
+                },
+                });
+
+                const addCursor = useCallback((cursor: CursorData) => {
+                setCursors((prev) => {
+                const next = new Map(prev);
+                next.set(cursor.userId, cursor);
+                return next;
+                });
+                }, []);
+
+                const removeCursor = useCallback((userId: string) => {
+                setCursors((prev) => {
+                const next = new Map(prev);
+                next.delete(userId);
+                return next;
+                });
+                }, []);
+
+                const contextValue = useMemo(
+                () => ({ cursors, addCursor, removeCursor }),
+                [cursors, addCursor, removeCursor],
+                );
+
+                return (
+                <LiveCursorContext.Provider value={contextValue}>
+                    {children}
+                </LiveCursorContext.Provider>
+                );
+                };
+
+                export const useLiveCursor = () => useContext(LiveCursorContext);
+
+                interface LiveCursorProps {
+                showLabels?: boolean;
+                className?: string;
+                }
+
+                /**
+                * Hiển thị con trỏ của multiple users trong collaborative editing
+                *
+                * @param props - Props của component
+                * @returns - JSX element
+                */
+                export const LiveCursor: React.FC<LiveCursorProps> = ({
+                    showLabels = true,
+                    className = '',
+                    }) => {
+                    const { cursors } = useLiveCursor();
+
+                    return (
+                    <div className={`midicoder-live-cursor ${className}`} style={{ position: 'relative' , width: '100%'
+                        , height: '100%' }}>
+                        {Array.from(cursors.values()).map((cursor) => (
+                        <div key={cursor.userId} className="cursor-pointer" style={{ position: 'absolute' , left:
+                            cursor.x, top: cursor.y, width: 2, height: 20, backgroundColor: cursor.color || '#1976d2' ,
+                            transition: 'left 0.1s ease, top 0.1s ease' , pointerEvents: 'none' , zIndex: 1000, }}
+                            title={`${cursor.label}: (${Math.round(cursor.x)}, ${Math.round(cursor.y)})`}>
+                            {showLabels && (
+                            <div className="cursor-label" style={{ position: 'absolute' , top: -20, left: 0,
+                                padding: '2px 6px' , backgroundColor: cursor.color || '#1976d2' , color: 'white' ,
+                                fontSize: 10, borderRadius: 2, whiteSpace: 'nowrap' , pointerEvents: 'none' , }}>
+                                {cursor.label}
+                            </div>
+                            )}
+                        </div>
+                        ))}
+                    </div>
+                    );
+                    };
+
+                    export default LiveCursor;

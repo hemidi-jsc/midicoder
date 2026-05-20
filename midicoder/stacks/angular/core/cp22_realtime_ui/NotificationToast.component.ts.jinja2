@@ -1,0 +1,128 @@
+/**
+ * NotificationToastComponent — hiển thị realtime toast notifications
+ *
+ * Sinh bởi CP22 AngularRealtimeEmitter
+ * UI Framework: {[{ ui_framework }]}
+ * Widget Type: {[{ widget_type }]}
+ */
+
+import { Component, Input, OnInit, OnDestroy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ChannelSubscriptionService } from './channel-subscription.service';
+
+export type NotificationType = 'info' | 'success' | 'warning' | 'error';
+
+export interface NotificationData {
+  id: string;
+  message: string;
+  type: NotificationType;
+  duration: number;
+  actionLabel?: string;
+  timestamp: string;
+}
+
+@Component({
+  selector: 'midicoder-notification-toast',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div
+      [ngStyle]="positionStyle"
+      style="z-index: 9999; display: flex; flex-direction: column; gap: 8px; max-width: 360px;"
+    >
+      <ng-container *ngFor="let notif of notifications.slice(0, maxVisible)">
+        <div
+          [style.backgroundColor]="typeStyles[notif.type].bg"
+          [style.borderLeft]="'4px solid ' + typeStyles[notif.type].border"
+          (click)="dismiss(notif.id)"
+          style="padding: 12px 16px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); cursor: pointer;"
+        >
+          <div style="font-size: 14px; font-weight: 500;">{{ notif.message }}</div>
+          <div style="font-size: 10px; color: #999; margin-top: 4px;">
+            {{ notif.timestamp | date:'HH:mm:ss' }}
+          </div>
+          <button
+            *ngIf="notif.actionLabel"
+            (click)="$event.stopPropagation(); dismiss(notif.id)"
+            [style.backgroundColor]="typeStyles[notif.type].border"
+            style="margin-top: 8px; padding: 4px 12px; color: white; border: none; border-radius: 4px; cursor: pointer;"
+          >
+            {{ notif.actionLabel }}
+          </button>
+        </div>
+      </ng-container>
+      <button
+        *ngIf="notifications.length > 0"
+        (click)="clearAll()"
+        style="align-self: flex-end; background: none; border: none; color: #666; cursor: pointer; font-size: 12px;"
+      >
+        Clear all ({{ notifications.length }})
+      </button>
+    </div>
+  `,
+})
+export class NotificationToastComponent implements OnInit, OnDestroy {
+  @Input() channel = 'notification.toast';
+  @Input() maxVisible = 5;
+  @Input() defaultDuration = 5000;
+  @Input() position: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' = 'top-right';
+{% if has_tenant_scope %}  @Input() tenantId?: string;
+{% endif %}
+
+  notifications: NotificationData[] = [];
+  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  typeStyles: Record<NotificationType, { bg: string; border: string }> = {
+    info: { bg: '#e3f2fd', border: '#2196f3' },
+    success: { bg: '#e8f5e9', border: '#4caf50' },
+    warning: { bg: '#fff3e0', border: '#ff9800' },
+    error: { bg: '#ffebee', border: '#f44336' },
+  };
+
+  positionStyle: Record<string, Record<string, string | number>> = {
+    'top-right': { position: 'fixed', top: 16, right: 16 },
+    'top-left': { position: 'fixed', top: 16, left: 16 },
+    'bottom-right': { position: 'fixed', bottom: 16, right: 16 },
+    'bottom-left': { position: 'fixed', bottom: 16, left: 16 },
+  };
+
+  constructor(private channelService: ChannelSubscriptionService) {}
+
+  ngOnInit() {
+    this.channelService.subscribe(this.channel{% if has_tenant_scope %}, { tenantId: this.tenantId }{% endif %}).subscribe((msg) => {
+      const data = msg.data as Partial<NotificationData>;
+      if (data && data.message) {
+        const notif: NotificationData = {
+          id: data.id || `notif-${Date.now()}-${Math.random()}`,
+          message: data.message,
+          type: data.type || 'info',
+          duration: data.duration ?? this.defaultDuration,
+          timestamp: data.timestamp || new Date().toISOString(),
+        };
+        this.notifications = [notif, ...this.notifications].slice(0, this.maxVisible * 2);
+        if (notif.duration > 0) {
+          this.timers.set(notif.id, setTimeout(() => this.dismiss(notif.id), notif.duration));
+        }
+      }
+    });
+  }
+
+  dismiss(id: string) {
+    this.notifications = this.notifications.filter((n) => n.id !== id);
+    const timer = this.timers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(id);
+    }
+  }
+
+  clearAll() {
+    this.notifications.forEach((n) => this.dismiss(n.id));
+    this.timers.clear();
+  }
+
+  ngOnDestroy() {
+    this.timers.forEach((t) => clearTimeout(t));
+    this.timers.clear();
+  }
+}

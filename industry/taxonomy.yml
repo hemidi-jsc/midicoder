@@ -442,8 +442,8 @@ core_packs:
     name: Real-time UI Generator
     internal_id: cp22_realtime_ui
     phase: P2
-    description: Realtime channels, widgets, presence indicators
-    definitions_count: 3
+    description: "Channel orchestration (CP05→UI), realtime widgets (Presence, LiveFeed, LiveCounter, LiveCursor, NotificationToast), mixin for CP19"
+    definitions_count: 4
     obligations_count: 1
     depends_on:
       - CP05
@@ -453,7 +453,7 @@ core_packs:
       - widget_render
       - presence_indicator
     category: frontend
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP24
     name: Code Quality & Security Scanner Generator

@@ -256,6 +256,18 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "NestJSUIEmitter",
         "cp19_ui_component",
     ),
+    # CP22 – Real-time UI (React)
+    "cp22.react": (
+        "midicoder.emitters.core.cp22_realtime_ui.react",
+        "RealtimeComponentEmitter",
+        "cp22_realtime",
+    ),
+    # CP22 – Real-time UI (Angular)
+    "cp22.angular": (
+        "midicoder.emitters.core.cp22_realtime_ui.angular",
+        "AngularRealtimeEmitter",
+        "cp22_realtime",
+    ),
 }
 
 
@@ -374,6 +386,19 @@ def _parse_ui_component_dict(raw: dict[str, Any]) -> Any:
     return []
 
 
+def _parse_realtime_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw realtime events dict from CP05/MIR into CP22 ChannelSpec list."""
+    from midicoder.emitters.core.cp22_realtime_ui.parser import RealtimeParser
+    parser = RealtimeParser()
+    # raw can be list of event dicts, or a dict with 'events' key
+    if isinstance(raw, list):
+        return parser.parse(raw)
+    elif isinstance(raw, dict):
+        events = raw.get("events", raw.get("channels", []))
+        return parser.parse(events) if events else []
+    return []
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
@@ -384,6 +409,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp06_gateway": _parse_gateway_dict,
     "cp18_frontend": _parse_frontend_dict,
     "cp19_ui_component": _parse_ui_component_dict,
+    "cp22_realtime": _parse_realtime_dict,
 }
 
 
@@ -437,7 +463,7 @@ class PackEmitterRouter:
         emitter_cls = getattr(mod, class_name)
 
         # CP19 emitters accept (ui_framework=...) not (stack_dir=...)
-        if pack_emitter.startswith("cp19."):
+        if pack_emitter.startswith("cp19.") or pack_emitter.startswith("cp22."):
             emitter = emitter_cls()
         else:
             emitter = emitter_cls(stack_dir=stack_dir)

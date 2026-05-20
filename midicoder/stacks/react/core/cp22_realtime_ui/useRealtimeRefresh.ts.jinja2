@@ -1,0 +1,55 @@
+/**
+* useRealtimeRefresh hook — realtime mixin cho CP19 components
+*
+* Sinh bởi CP22 RealtimeComponentEmitter
+* UI Framework: {[{ ui_framework }]}
+*/
+
+import { useCallback, useRef } from 'react';
+
+// Danh sách event topics tự động sinh từ CP05
+const AUTO_REFRESH_TOPICS = [
+{% for topic in channel_topics %} '{[{ topic }]}'{% if not loop.last %},{% endif %}
+{% endfor %}];
+
+interface RefreshConfig {
+debounceMs?: number;
+throttleMs?: number;
+topics?: string[];
+}
+
+/**
+* Hook mixin để enable realtime refresh cho component
+*/
+export function useRealtimeRefresh(config?: RefreshConfig) {
+const {
+debounceMs = 300,
+throttleMs = 1000,
+topics = AUTO_REFRESH_TOPICS,
+} = config || {};
+
+const lastTriggerRef = useRef(0);
+const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const subscribeToRefresh = useCallback(
+    (refreshFn: () => Promise<void>) => {
+        const handler = (event: { channel: string; topic?: string }) => {
+        const topic = event.topic || event.channel;
+        if (!topics.includes(topic)) return;
+
+        const now = Date.now();
+        if (now - lastTriggerRef.current < throttleMs) return; lastTriggerRef.current=now; if (timeoutRef.current)
+            clearTimeout(timeoutRef.current); timeoutRef.current=setTimeout(()=> {
+            refreshFn().catch(console.error);
+            }, debounceMs);
+            };
+
+            return () => {
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            };
+            },
+            [debounceMs, throttleMs, topics],
+            );
+
+            return { subscribeToRefresh };
+            }

@@ -1,0 +1,80 @@
+/**
+* usePresence hook — quản lý trạng thái presence realtime
+*
+* Sinh bởi CP22 RealtimeComponentEmitter
+* UI Framework: {[{ ui_framework }]}
+*/
+
+import { useState, useCallback, useMemo } from 'react';
+import { useChannelSubscription } from './useChannelSubscription';
+
+export type PresenceStatus = 'online' | 'offline' | 'typing' | 'away';
+
+interface UserPresence {
+user_id: string;
+status: PresenceStatus;
+last_seen?: string;
+{% if has_tenant_presence %} tenant_id?: string;
+{% endif %}
+}
+
+interface PresenceState {
+users: Map<string, UserPresence>;
+    onlineCount: number;
+    isOnline: (userId: string) => boolean;
+    isTyping: (userId: string) => boolean;
+    isConnected: boolean;
+    }
+
+    /**
+    * Hook để theo dõi presence của users realtime
+    */
+    export function usePresence(options?: {
+    channel?: string;
+    {% if has_tenant_presence %} tenantId?: string;
+    {% endif %} onUpdate?: (presence: UserPresence) => void;
+    }): PresenceState {
+    const {
+    channel = 'user.presence.changed',
+    {% if has_tenant_presence %} tenantId,
+    {% endif %} onUpdate,
+    } = options || {};
+
+    const [users, setUsers] = useState<Map<string, UserPresence>>(new Map());
+        const { isConnected } = useChannelSubscription(channel, {
+        {% if has_tenant_presence %} tenantId,
+        {% endif %} onMessage: (payload) => {
+        const data = payload.data as UserPresence | { users?: UserPresence[] };
+        if ('users' in data && Array.isArray(data.users)) {
+        const map = new Map<string, UserPresence>();
+            data.users.forEach((u) => map.set(u.user_id, u));
+            setUsers(map);
+            } else if (data && 'user_id' in data) {
+            setUsers((prev) => {
+            const next = new Map(prev);
+            next.set((data as UserPresence).user_id, data as UserPresence);
+            return next;
+            });
+            }
+            onUpdate?.(payload.data as UserPresence);
+            },
+            });
+
+            const onlineCount = useMemo(() => {
+            let count = 0;
+            users.forEach((u) => { if (u.status === 'online') count++; });
+            return count;
+            }, [users]);
+
+            const isOnline = useCallback(
+            (userId: string) => users.get(userId)?.status === 'online',
+            [users],
+            );
+
+            const isTyping = useCallback(
+            (userId: string) => users.get(userId)?.status === 'typing',
+            [users],
+            );
+
+            return { users, onlineCount, isOnline, isTyping, isConnected };
+            }
