@@ -1,0 +1,23 @@
+/*
+ * Unit tests cho {{ entity.get('id', 'Entity') }} service.
+ * Tự động sinh bởi CP23 — Testing Framework Generator.
+ */
+import { TestBed } from '@angular/core/testing';
+import { {{ entity.get('id', 'Entity') if entity else 'Entity' }}Service } from './{{ entity.get('id', 'Entity').lower() if entity else 'entity' }}-service';
+
+describe('{{ entity.get('id', 'Entity') if entity else 'Entity' }}Service', () => {
+  let service: {{ entity.get('id', 'Entity') if entity else 'Entity' }}Service;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({});
+    service = TestBed.inject({{ entity.get('id', 'Entity') if entity else 'Entity' }}Service);
+  });
+
+  it('nên được tạo', () => {
+    expect(service).toBeTruthy();
+  });
+
+  it('nên lấy danh sách', () => {
+    expect(service).toBeTruthy();
+  });
+});

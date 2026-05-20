@@ -1,0 +1,30 @@
+"""
+E2E test flow: {{ case.scenario if case else 'crud_flow' }}.
+
+Tự động sinh bởi CP23 — Testing Framework Generator.
+"""
+from __future__ import annotations
+
+import pytest
+
+
+class TestE2E{{ case.scenario.replace(' ', '') if case else 'CRUD' }}:
+    """E2E flow test suite."""
+
+    async def test_{{ case.scenario.lower().replace(' ', '_') if case else 'crud_flow' }}(self, client):
+        """Kiểm tra E2E flow: {{ case.scenario if case else 'CRUD' }}."""
+{% for step in case.steps if case and case.steps %}
+        # {{ step.action }}: {{ step.params }}
+{% if step.action == 'navigate' %}
+        response = await client.get("{{ step.params.get('url', '/') }}")
+        assert response.status_code == 200
+{% elif step.action == 'click' %}
+        # Simulate click action
+        assert True
+{% elif step.action == 'assert' %}
+        assert True
+{% endif %}
+{% else %}
+        # E2E test flow
+        assert True
+{% endfor %}

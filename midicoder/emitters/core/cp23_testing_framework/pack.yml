@@ -1,0 +1,125 @@
+pack:
+  id: "CP23"
+  name: "Testing Framework Generator"
+  internal_id: "cp23_testing_framework"
+  version: "1.0.0"
+  status: "stable"
+  category: "quality"
+  depends_on: ["CP01"]
+  definitions_count: 3
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP23"
+    range: "MDC-CP23-001 to MDC-CP23-010"
+  capabilities_provided:
+    - test_unit
+    - test_integration
+    - test_e2e
+    - coverage_report
+  capabilities:
+    - id: "test_unit"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "test_integration"
+      emitter: "fastapi, nestjs"
+    - id: "test_e2e"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "coverage_report"
+      emitter: "fastapi, nestjs, angular, react"
+  definitions:
+    - name: "TestSuite"
+      description: "Collection của test cases với framework và test type"
+    - name: "TestCase"
+      description: "Test case đơn lẻ với assertions, steps, và target"
+    - name: "TestPolicy"
+      description: "Policy cho coverage threshold, retry, parallel execution"
+  obligations:
+    - name: "TestDeterminism"
+      description: "Tất cả tests phải deterministic — same input, same output"
+    - name: "CoverageThreshold"
+      description: "Coverage phải đạt tối thiểu threshold (default 80%)"
+  file_contributions:
+    infrastructure:
+      # FastAPI
+      - path: "tests/conftest.py"
+        file_type: "conftest"
+        template: "cp23_testing_framework/conftest.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["entities"]
+      - path: "pytest.ini"
+        file_type: "pytest_config"
+        template: "cp23_testing_framework/pytest.ini.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: ".coveragerc"
+        file_type: "coverage_config"
+        template: "cp23_testing_framework/coverage_config.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # NestJS
+      - path: "jest.config.ts"
+        file_type: "jest_config"
+        template: "cp23_testing_framework/jest.config.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      # Angular
+      - path: "karma.conf.js"
+        file_type: "karma_config"
+        template: "cp23_testing_framework/karma.conf.js.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # React
+      - path: "jest.config.js"
+        file_type: "jest_config"
+        template: "cp23_testing_framework/jest.config.js.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+    per_entity:
+      # FastAPI — unit
+      - path_pattern: "tests/unit/test_{entity_snake}.py"
+        file_type: "unit_test"
+        template: "cp23_testing_framework/unit_test_entity.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # FastAPI — integration
+      - path_pattern: "tests/integration/test_{entity_snake}_api.py"
+        file_type: "integration_test"
+        template: "cp23_testing_framework/integration_test_api.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # NestJS — unit
+      - path_pattern: "src/entities/{entity_snake}.entity.spec.ts"
+        file_type: "unit_test"
+        template: "cp23_testing_framework/entity.spec.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      # NestJS — integration
+      - path_pattern: "src/integration/{entity_snake}.integration.spec.ts"
+        file_type: "integration_test"
+        template: "cp23_testing_framework/integration.spec.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      # Angular — unit
+      - path_pattern: "src/app/components/{entity_snake}-component.spec.ts"
+        file_type: "unit_test"
+        template: "cp23_testing_framework/component.spec.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      # React — unit
+      - path_pattern: "src/__tests__/{entity_snake}.test.tsx"
+        file_type: "unit_test"
+        template: "cp23_testing_framework/component.test.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+  recipes:
+    - auto_generate_tests_from_mir
+    - generate_entity_unit_tests
+    - generate_command_unit_tests
+    - generate_query_unit_tests
+    - generate_api_integration_tests
+    - generate_e2e_flow_tests

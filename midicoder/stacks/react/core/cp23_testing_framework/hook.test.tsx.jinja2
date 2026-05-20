@@ -1,0 +1,13 @@
+/**
+ * Unit tests cho use{{ entity.get('id', 'Entity') }} hook.
+ * Tự động sinh bởi CP23 — Testing Framework Generator.
+ */
+import { renderHook } from '@testing-library/react';
+import { use{{ entity.get('id', 'Entity') if entity else 'Entity' }} } from '../hooks/use{{ entity.get('id', 'Entity') if entity else 'Entity' }}';
+
+describe('use{{ entity.get('id', 'Entity') if entity else 'Entity' }}', () => {
+  it('nên trả về data', () => {
+    const { result } = renderHook(() => use{{ entity.get('id', 'Entity') if entity else 'Entity' }}());
+    expect(result.current).toBeDefined();
+  });
+});

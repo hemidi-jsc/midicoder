@@ -1,0 +1,44 @@
+"""
+Pytest fixtures cho toàn bộ test suite.
+
+Tự động sinh bởi CP23 — Testing Framework Generator.
+"""
+from __future__ import annotations
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+
+{% for entity in entities %}
+@pytest.fixture
+def {{ entity.get('id', 'Entity').lower() }}_data():
+    """Dữ liệu mẫu cho {{ entity.get('id', 'Entity') }}."""
+    return {
+{% for field in entity.get('fields', []) %}
+        "{{ field.get('name', 'field') }}": "{{ field.get('name', 'field') }}_test_value",
+{% endfor %}
+    }
+
+
+{% endfor %}
+@pytest.fixture
+async def db_session():
+    """SQLite in-memory session cho test."""
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with async_session() as session:
+        yield session
+
+
+@pytest.fixture
+async def client(db_session):
+    """Async test client cho FastAPI app."""
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac

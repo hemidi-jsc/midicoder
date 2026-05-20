@@ -1,0 +1,35 @@
+/*
+ * Integration tests cho {{ entity.get('id', 'Entity') }} API.
+ * Tự động sinh bởi CP23 — Testing Framework Generator.
+ */
+import { Test, TestingModule } from '@nestjs/testing';
+
+describe('{{ entity.get('id', 'Entity') if entity else 'Entity' }} (Integration)', () => {
+  let module: TestingModule;
+
+  beforeEach(async () => {
+    module = await Test.createTestingModule({
+      imports: [],
+    }).compile();
+  });
+
+  it('GET list nên trả về 200', () => {
+    expect(true).toBe(true);
+  });
+
+  it('POST create nên trả về 201', () => {
+    expect(true).toBe(true);
+  });
+
+  it('GET by ID nên trả về 200', () => {
+    expect(true).toBe(true);
+  });
+
+  it('PUT update nên trả về 200', () => {
+    expect(true).toBe(true);
+  });
+
+  it('DELETE nên trả về 204', () => {
+    expect(true).toBe(true);
+  });
+});

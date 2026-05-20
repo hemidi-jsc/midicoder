@@ -1,0 +1,27 @@
+/*
+ * Jest configuration cho React.
+ * Tự động sinh bởi CP23 — Testing Framework Generator.
+ */
+module.exports = {
+  testEnvironment: 'jsdom',
+  setupFilesAfterSetup: ['<rootDir>/src/__tests__/setup.ts'],
+  moduleNameMapper: {
+    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+  },
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts',
+    '!src/index.tsx',
+  ],
+{% if collection && collection.global_policy %}
+  coverageThreshold: {
+    global: {
+      branches: {{ collection.global_policy.coverage_branch }},
+      functions: {{ collection.global_policy.coverage_threshold }},
+      lines: {{ collection.global_policy.coverage_threshold }},
+      statements: {{ collection.global_policy.coverage_threshold }},
+    },
+  },
+{% endif %}
+  testTimeout: {{ (collection && collection.global_policy && collection.global_policy.timeout_seconds) || 30 }} * 1000,
+};

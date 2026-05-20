@@ -1,0 +1,40 @@
+"""
+Integration tests cho {{ entity.get('id', 'Entity') }} API endpoints.
+
+Tự động sinh bởi CP23 — Testing Framework Generator.
+"""
+from __future__ import annotations
+
+import pytest
+
+
+class Test{{ entity.get('id', 'Entity') if entity else 'Entity' }}API:
+    """Integration test suite cho {{ entity.get('id', 'Entity') }} API."""
+
+    async def test_get_list(self, client):
+        """Kiểm tra GET list entities trả về 200."""
+        response = await client.get("/{{ entity.get('id', 'Entity').lower() if entity else 'entity' }}s")
+        assert response.status_code == 200
+
+    async def test_create(self, client, {{ entity.get('id', 'Entity').lower() if entity else 'entity' }}_data):
+        """Kiểm tra POST create entity trả về 201."""
+        response = await client.post(
+            "/{{ entity.get('id', 'Entity').lower() if entity else 'entity' }}s",
+            json={{ entity.get('id', 'Entity').lower() if entity else 'entity' }}_data,
+        )
+        assert response.status_code == 201
+
+    async def test_get_by_id(self, client):
+        """Kiểm tra GET entity by ID trả về 200."""
+        response = await client.get("/{{ entity.get('id', 'Entity').lower() if entity else 'entity' }}s/test-id")
+        assert response.status_code == 200
+
+    async def test_update(self, client):
+        """Kiểm tra PUT update entity trả về 200."""
+        response = await client.put("/{{ entity.get('id', 'Entity').lower() if entity else 'entity' }}s/test-id", json={})
+        assert response.status_code == 200
+
+    async def test_delete(self, client):
+        """Kiểm tra DELETE entity trả về 204."""
+        response = await client.delete("/{{ entity.get('id', 'Entity').lower() if entity else 'entity' }}s/test-id")
+        assert response.status_code == 204

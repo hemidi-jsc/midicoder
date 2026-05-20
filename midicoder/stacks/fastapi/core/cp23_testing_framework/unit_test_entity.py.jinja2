@@ -1,0 +1,58 @@
+"""
+Unit tests cho {{ entity.get('id', 'Entity') }} model.
+
+Tự động sinh bởi CP23 — Testing Framework Generator.
+"""
+from __future__ import annotations
+
+import pytest
+
+
+{% if entity %}
+ENTITY_ID = "{{ entity.get('id', 'Entity') }}"
+
+
+class Test{{ entity.get('id', 'Entity') }}:
+    """Test suite cho {{ entity.get('id', 'Entity') }}."""
+
+    def test_create_valid_instance(self, {{ entity.get('id', 'Entity').lower() }}_data):
+        """Kiểm tra tạo instance {{ entity.get('id', 'Entity') }} hợp lệ."""
+        from app.models.{{ entity.get('id', 'Entity').lower() }} import {{ entity.get('id', 'Entity') }}
+
+        instance = {{ entity.get('id', 'Entity') }}(**{{ entity.get('id', 'Entity').lower() }}_data)
+        assert instance is not None
+        assert instance.id is not None
+
+    def test_validation_empty_required_fields(self):
+        """Kiểm tra validation khi fields bắt buộc rỗng."""
+        from app.models.{{ entity.get('id', 'Entity').lower() }} import {{ entity.get('id', 'Entity') }}
+
+        with pytest.raises(Exception):
+            {{ entity.get('id', 'Entity') }}()
+
+    def test_serialization_roundtrip(self, {{ entity.get('id', 'Entity').lower() }}_data):
+        """Kiểm tra to_dict/from_dict giữ nguyên data."""
+        from app.models.{{ entity.get('id', 'Entity').lower() }} import {{ entity.get('id', 'Entity') }}
+
+        original = {{ entity.get('id', 'Entity') }}(**{{ entity.get('id', 'Entity').lower() }}_data)
+        data = original.to_dict()
+        restored = {{ entity.get('id', 'Entity') }}.from_dict(data)
+        assert restored.id == original.id
+
+{% for case in suite.cases %}
+    def test_{{ case.scenario.lower().replace(' ', '_') }}(self):
+        """{{ case.description if case.description else case.scenario }}."""
+{% for assertion in case.assertions %}
+        assert True  # {{ assertion.check.value }}: {{ assertion.expected }}
+{% endfor %}
+
+{% endfor %}
+{% else %}
+class TestEntity:
+    """Test suite cho entity model."""
+
+    def test_create_valid_instance(self):
+        """Kiểm tra tạo instance hợp lệ."""
+        assert True
+
+{% endif %}

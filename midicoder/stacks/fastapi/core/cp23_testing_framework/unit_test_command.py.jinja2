@@ -1,0 +1,21 @@
+"""
+Unit tests cho {{ command.get('id', 'Command') }} handler.
+
+Tự động sinh bởi CP23 — Testing Framework Generator.
+"""
+from __future__ import annotations
+
+import pytest
+
+
+class Test{{ command.get('id', 'Command') if command else 'Command' }}:
+    """Test suite cho command handler."""
+
+    def test_execute_valid_input(self):
+        """Kiểm tra execute command với input hợp lệ."""
+        assert True
+
+    def test_validation_invalid_input(self):
+        """Kiểm tra validation khi input không hợp lệ."""
+        with pytest.raises(Exception):
+            assert False

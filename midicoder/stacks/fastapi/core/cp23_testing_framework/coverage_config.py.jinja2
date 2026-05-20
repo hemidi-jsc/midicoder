@@ -1,0 +1,18 @@
+[run]
+source = app
+branch = True
+omit =
+    tests/*
+    migrations/*
+    */__init__.py
+
+[report]
+{% if collection and collection.global_policy %}
+fail_under = {{ collection.global_policy.coverage_threshold }}
+{% else %}
+fail_under = 80
+{% endif %}
+show_missing = True
+
+[html]
+directory = htmlcov

@@ -1,0 +1,12 @@
+/*
+ * E2E tests cho Angular app.
+ * Tự động sinh bởi CP23 — Testing Framework Generator.
+ */
+import { browser, element, by } from 'protractor';
+
+describe('E2E App', () => {
+  it('nên hiển thị trang chủ', async () => {
+    await browser.get('/');
+    expect(await element(by.css('body')).isPresent()).toBe(true);
+  });
+});

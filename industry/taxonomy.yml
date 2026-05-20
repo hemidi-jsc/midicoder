@@ -315,8 +315,8 @@ core_packs:
     name: Testing Framework Generator
     internal_id: cp23_testing_framework
     phase: P1
-    description: Test suites, test cases, test policies
-    definitions_count: 3
+    description: Test suites, test cases, test policies (pytest/Jest/Karma)
+    definitions_count: 9
     obligations_count: 2
     depends_on:
       - CP01
@@ -326,7 +326,7 @@ core_packs:
       - test_e2e
       - coverage_report
     category: quality
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP16
     name: API & System Monitoring Generator

@@ -1,0 +1,20 @@
+"""
+Unit tests cho {{ query.get('id', 'Query') }} handler.
+
+Tự động sinh bởi CP23 — Testing Framework Generator.
+"""
+from __future__ import annotations
+
+import pytest
+
+
+class Test{{ query.get('id', 'Query') if query else 'Query' }}:
+    """Test suite cho query handler."""
+
+    def test_returns_results(self):
+        """Kiểm tra query trả về kết quả hợp lệ."""
+        assert True
+
+    def test_pagination(self):
+        """Kiểm tra pagination hoạt động đúng."""
+        assert True

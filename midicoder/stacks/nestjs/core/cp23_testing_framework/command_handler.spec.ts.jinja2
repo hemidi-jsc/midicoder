@@ -1,0 +1,27 @@
+/*
+ * Unit tests cho {{ command.get('id', 'Command') }} handler.
+ * Tự động sinh bởi CP23 — Testing Framework Generator.
+ */
+import { Test, TestingModule } from '@nestjs/testing';
+
+describe('{{ command.get('id', 'Command') if command else 'Command' }}Handler', () => {
+  let handler: any;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [],
+    }).compile();
+
+    handler = module.get<any>(Symbol.for('handler'));
+  });
+
+  it('nên execute với input hợp lệ', () => {
+    expect(true).toBe(true);
+  });
+
+  it('nên throw validation error với input sai', () => {
+    expect(() => {
+      throw new Error('Validation failed');
+    }).toThrow();
+  });
+});

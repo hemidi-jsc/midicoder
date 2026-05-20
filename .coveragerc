@@ -5,6 +5,8 @@ omit =
     midicoder.egg-info/*
     midicoder/tests/*
     midicoder/__main__.py
+    midicoder/emitters/*/tests/*
+    midicoder/emitters/core/*/tests/*
 
 [report]
 fail_under = 99

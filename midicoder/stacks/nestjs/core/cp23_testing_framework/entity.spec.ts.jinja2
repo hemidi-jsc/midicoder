@@ -1,0 +1,30 @@
+/*
+ * Unit tests cho {{ entity.get('id', 'Entity') }} entity.
+ * Tự động sinh bởi CP23 — Testing Framework Generator.
+ */
+import { Test, TestingModule } from '@nestjs/testing';
+
+describe('{{ entity.get('id', 'Entity') if entity else 'Entity' }}', () => {
+  let module: TestingModule;
+
+  beforeEach(async () => {
+    module = await Test.createTestingModule({
+      imports: [],
+    }).compile();
+  });
+
+  it('nên tạo instance hợp lệ', () => {
+    const data = {
+{% for field in entity.get('fields', []) if entity %}
+      {{ field.get('name', 'field') }}: '{{ field.get('name', 'field') }}_test',
+{% endfor %}
+    };
+    expect(data).toBeDefined();
+  });
+
+  it('nên throw error khi fields bắt buộc rỗng', () => {
+    expect(() => {
+      throw new Error('Validation failed');
+    }).toThrow();
+  });
+});

@@ -621,6 +621,20 @@ class ErrorCode(str, Enum):
     CP22_EVENT_PARSE_FAILED = "MDC-CP22-007"
 
     # =========================================================================
+    # CP23: Testing Framework Generator Errors
+    # =========================================================================
+    CP23_EMPTY_TEST_ID = "MDC-CP23-001"
+    CP23_INVALID_TEST_TYPE = "MDC-CP23-002"
+    CP23_MISSING_TEST_TARGET = "MDC-CP23-003"
+    CP23_INVALID_ASSERTION = "MDC-CP23-004"
+    CP23_TEMPLATE_NOT_FOUND = "MDC-CP23-005"
+    CP23_RENDER_FAILED = "MDC-CP23-006"
+    CP23_INVALID_COVERAGE_THRESHOLD = "MDC-CP23-007"
+    CP23_INVALID_FRAMEWORK = "MDC-CP23-008"
+    CP23_DSL_PARSE_ERROR = "MDC-CP23-009"
+    CP23_DUPLICATE_TEST_ID = "MDC-CP23-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

@@ -1,0 +1,26 @@
+/*
+ * Jest configuration cho NestJS.
+ * Tự động sinh bởi CP23 — Testing Framework Generator.
+ */
+export default {
+  moduleFileExtensions: ['js', 'json', 'ts'],
+  rootDir: '.',
+  testEnvironment: 'node',
+  testRegex: '.spec.ts$',
+  transform: {
+    '^.+\\.(t|j)s$': 'ts-jest',
+  },
+  collectCoverageFrom: ['src/**/*.(t|j)s'],
+  coverageDirectory: './coverage',
+{% if collection && collection.global_policy %}
+  coverageThreshold: {
+    global: {
+      branches: {{ collection.global_policy.coverage_branch }},
+      functions: {{ collection.global_policy.coverage_threshold }},
+      lines: {{ collection.global_policy.coverage_threshold }},
+      statements: {{ collection.global_policy.coverage_threshold }},
+    },
+  },
+{% endif %}
+  testTimeout: {{ (collection && collection.global_policy && collection.global_policy.timeout_seconds) || 30 }} * 1000,
+};

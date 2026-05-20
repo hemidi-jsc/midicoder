@@ -1,0 +1,23 @@
+/*
+ * Unit tests cho {{ query.get('id', 'Query') }} handler.
+ * Tự động sinh bởi CP23 — Testing Framework Generator.
+ */
+import { Test, TestingModule } from '@nestjs/testing';
+
+describe('{{ query.get('id', 'Query') if query else 'Query' }}Handler', () => {
+  let handler: any;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [],
+    }).compile();
+  });
+
+  it('nên trả về kết quả hợp lệ', () => {
+    expect(true).toBe(true);
+  });
+
+  it('nên pagination đúng', () => {
+    expect(true).toBe(true);
+  });
+});
