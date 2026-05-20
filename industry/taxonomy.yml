@@ -475,8 +475,8 @@ core_packs:
     name: Performance Testing Generator
     internal_id: cp25_performance_testing
     phase: P3
-    description: Performance suites, scenarios, baselines
-    definitions_count: 3
+    description: "Performance suites, load/stress/spike/endurance scenarios, baselines, comparison reports"
+    definitions_count: 5
     obligations_count: 2
     depends_on:
       - CP23
@@ -485,7 +485,7 @@ core_packs:
       - load_scenario
       - baseline_compare
     category: quality
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP26
     name: Documentation Generator

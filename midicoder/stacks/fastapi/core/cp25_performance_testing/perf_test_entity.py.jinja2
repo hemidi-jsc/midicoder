@@ -1,0 +1,94 @@
+"""
+Perf test cho {{ scenario.target }} — Auto-generated bởi Midicoder CE (CP25).
+
+KHÔNG chỉnh sửa thủ công — chạy `midicoder code gen` để regenerate.
+"""
+
+import pytest
+import time
+import requests
+from statistics import mean, median
+
+
+# ============================================================================
+# Config
+# ============================================================================
+
+BASE_URL = "http://localhost:8000"
+ENDPOINT = "/api/{{ scenario.target | lower }}"
+CONCURRENT_USERS = {{ scenario.concurrent_users }}
+DURATION_SECONDS = {{ scenario.duration }}
+
+
+# ============================================================================
+# Tests
+# ============================================================================
+
+class Test{{ scenario.target | replace('_', ' ') | title | replace(' ', '') }}Performance:
+    """Performance tests cho {{ scenario.target }}."""
+
+    @pytest.fixture(scope="class")
+    def response_times(self):
+        """Chạy load test và thu thập response times."""
+        times = []
+        errors = 0
+        start = time.time()
+
+        while time.time() - start < DURATION_SECONDS:
+            try:
+                resp = requests.get(f"{BASE_URL}{ENDPOINT}", timeout=10)
+                times.append(resp.elapsed.total_seconds() * 1000)  # ms
+                if resp.status_code >= 400:
+                    errors += 1
+            except requests.RequestException:
+                errors += 1
+            time.sleep(0.1)
+
+        return {
+            "times": times,
+            "errors": errors,
+            "total": len(times) + errors,
+        }
+
+    def test_response_time_p50(self, response_times):
+        """Kiểm tra response time p50."""
+        times = response_times["times"]
+        if not times:
+            pytest.skip("Không có response data")
+
+        p50 = median(times)
+        {% if scenario.thresholds and scenario.thresholds.max_response_time_p95 %}
+        threshold = {{ scenario.thresholds.max_response_time_p95 / 2 }}  # p50 = p95 / 2
+        assert p50 < threshold, f"Response time p50={p50:.0f}ms vượt ngưỡng {threshold:.0f}ms"
+        {% endif %}
+
+    def test_response_time_p95(self, response_times):
+        """Kiểm tra response time p95."""
+        times = sorted(response_times["times"])
+        if not times:
+            pytest.skip("Không có response data")
+
+        idx = int(len(times) * 0.95)
+        p95 = times[min(idx, len(times) - 1)]
+        {% if scenario.thresholds and scenario.thresholds.max_response_time_p95 %}
+        threshold = {{ scenario.thresholds.max_response_time_p95 }}
+        assert p95 < threshold, f"Response time p95={p95:.0f}ms vượt ngưỡng {threshold:.0f}ms"
+        {% endif %}
+
+    def test_error_rate(self, response_times):
+        """Kiểm tra error rate."""
+        error_rate = response_times["errors"] / response_times["total"] if response_times["total"] > 0 else 0
+        {% if scenario.thresholds and scenario.thresholds.max_error_rate %}
+        threshold = {{ scenario.thresholds.max_error_rate }}
+        assert error_rate < threshold, f"Error rate={error_rate:.2%} vượt ngưỡng {threshold:.2%}"
+        {% else %}
+        assert error_rate < 0.05, f"Error rate={error_rate:.2%} vượt ngưỡng mặc định 5%"
+        {% endif %}
+
+    def test_throughput(self, response_times):
+        """Kiểm tra throughput."""
+        rps = response_times["total"] / DURATION_SECONDS
+        {% if scenario.thresholds and scenario.thresholds.min_throughput %}
+        threshold = {{ scenario.thresholds.min_throughput }}
+        assert rps > threshold, f"Throughput={rps:.1f}rps thấp hơn ngưỡng {threshold:.1f}rps"
+        {% endif %}

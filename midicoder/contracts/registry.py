@@ -59,6 +59,8 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP22": "cp22_realtime_ui",
     "CP23": "cp23_testing_framework",
     "CP24": "cp24_quality_security",
+    "CP25": "cp25_performance_testing",
+    "CP26": "cp26_documentation",
     "CP51": "cp51_blueprint",
     "CP52": "cp52_invariant",
     "CP53": "cp53_domain_bridge",

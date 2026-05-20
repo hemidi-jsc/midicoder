@@ -1,0 +1,32 @@
+// Lighthouse CI config — Auto-generated bởi Midicoder CE (CP25)
+// KHÔNG chỉnh sửa thủ công
+
+module.exports = {
+  ci: {
+    collect: {
+      startServerCommand: "npm run serve",
+      startServerReadyPattern: "webpack compiled successfully",
+      url: [
+        "http://localhost:4200/",
+{% for scenario in collection.get_all_scenarios() %}
+        "http://localhost:4200/{{ scenario.target | lower }}",
+{% endfor %}
+      ],
+      numberOfRuns: 3,
+    },
+    assert: {
+      assertions: {
+        "first-contentful-paint": ["warn", "<=1.0"],
+        "speed-index": ["warn", "<=1.5"],
+        "largest-contentful-paint": ["warn", "<=2.5"],
+        "total-blocking-time": ["warn", "<=200"],
+        "cumulative-layout-shift": ["warn", "<=0.1"],
+        "interactive": ["warn", "<=5.0"],
+      },
+    },
+    upload: {
+      target: "filesystem",
+      outputPath: "./reports/lighthouse",
+    },
+  },
+};

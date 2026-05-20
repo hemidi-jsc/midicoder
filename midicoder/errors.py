@@ -649,6 +649,41 @@ class ErrorCode(str, Enum):
     CP24_REPORT_WRITE_FAILED = "MDC-CP24-010"
 
     # =========================================================================
+    # CP25: Performance Testing Generator Errors
+    # =========================================================================
+    CP25_EMPTY_SCENARIO_ID = "MDC-CP25-001"
+    CP25_MISSING_SCENARIO_TARGET = "MDC-CP25-002"
+    CP25_INVALID_SCENARIO_TYPE = "MDC-CP25-003"
+    CP25_INVALID_CONCURRENCY = "MDC-CP25-004"
+    CP25_INVALID_DURATION = "MDC-CP25-005"
+    CP25_THRESHOLD_INVALID = "MDC-CP25-006"
+    CP25_DSL_PARSE_ERROR = "MDC-CP25-007"
+    CP25_TEMPLATE_NOT_FOUND = "MDC-CP25-008"
+    CP25_RENDER_FAILED = "MDC-CP25-009"
+    CP25_INVALID_STACK = "MDC-CP25-010"
+    CP25_EMPTY_SUITE_NAME = "MDC-CP25-011"
+    CP25_DUPLICATE_SCENARIO_ID = "MDC-CP25-012"
+    CP25_BASELINE_SAVE_FAILED = "MDC-CP25-013"
+    CP25_BASELINE_NOT_FOUND = "MDC-CP25-014"
+    CP25_INVALID_METRIC_VALUE = "MDC-CP25-015"
+
+    # =========================================================================
+    # CP26: Documentation Generator Errors
+    # =========================================================================
+    CP26_EMPTY_PORTAL_NAME = "MDC-CP26-001"
+    CP26_MISSING_SECTION_TITLE = "MDC-CP26-002"
+    CP26_INVALID_PORTAL_TYPE = "MDC-CP26-003"
+    CP26_INVALID_API_VERSION = "MDC-CP26-004"
+    CP26_DSL_PARSE_ERROR = "MDC-CP26-005"
+    CP26_TEMPLATE_NOT_FOUND = "MDC-CP26-006"
+    CP26_RENDER_FAILED = "MDC-CP26-007"
+    CP26_INVALID_STACK = "MDC-CP26-008"
+    CP26_DUPLICATE_SECTION_ID = "MDC-CP26-009"
+    CP26_EMPTY_SECTION_PATH = "MDC-CP26-010"
+    CP26_INVALID_NAV_ENTRY = "MDC-CP26-011"
+    CP26_SECTION_SOURCE_INVALID = "MDC-CP26-012"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

@@ -1,0 +1,48 @@
+/**
+ * Web Vitals tests với Playwright — Auto-generated bởi Midicoder CE (CP25).
+ * KHÔNG chỉnh sửa thủ công.
+ */
+
+import { test, expect } from "@playwright/test";
+
+const BASE_URL = "http://localhost:5000";
+
+test.describe("Web Vitals Performance", () => {
+  test("should meet Core Web Vitals thresholds", async ({ page }) => {
+    await page.goto(BASE_URL);
+
+    // LCP — Largest Contentful Paint
+    const lcp = await page.evaluate(() => {
+      return new Promise((resolve) => {
+        const entry = performance.getEntriesByType("largest-contentful-paint")[0];
+        resolve(entry ? entry.startTime : 0);
+      });
+    });
+
+    // CLS — Cumulative Layout Shift
+    const cls = await page.evaluate(() => {
+      let score = 0;
+      performance.getEntriesByType("layout-shift").forEach((entry) => {
+        if (!entry.hadRecentInput) score += entry.value;
+      });
+      return score;
+    });
+
+    // Assert thresholds
+    expect(lcp).toBeLessThan(2500);  // LCP < 2.5s
+    expect(cls).toBeLessThan(0.1);   // CLS < 0.1
+  });
+{% for scenario in collection.get_all_scenarios() %}
+
+  test("should meet performance thresholds for {{ scenario.target | lower }}", async ({ page }) => {
+    await page.goto(`${BASE_URL}/{{ scenario.target | lower }}`);
+
+    const lcp = await page.evaluate(() => {
+      const entry = performance.getEntriesByType("largest-contentful-paint")[0];
+      return entry ? entry.startTime : 0;
+    });
+
+    expect(lcp).toBeLessThan(2500);
+  });
+{% endfor %}
+});

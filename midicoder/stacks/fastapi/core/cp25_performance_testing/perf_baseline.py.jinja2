@@ -1,0 +1,125 @@
+"""
+Baseline runner cho performance tests — Auto-generated bởi Midicoder CE (CP25).
+
+Lưu baseline kết quả vào SQLite artifacts database.
+KHÔNG chỉnh sửa thủ công — chạy `midicoder code gen` để regenerate.
+"""
+
+import json
+import time
+from datetime import datetime
+from pathlib import Path
+
+
+# ============================================================================
+# Config
+# ============================================================================
+
+DATABASE_PATH = Path(".midicoder/data/artifacts.db")
+
+
+def save_baseline(scenario_id: str, metrics: dict) -> str:
+    """
+    Lưu baseline kết quả vào SQLite.
+
+    Args:
+        scenario_id: ID của scenario
+        metrics: Dict chứa metrics (response_time_p50, p95, p99, throughput, error_rate)
+
+    Returns:
+        Baseline ID
+    """
+    import sqlite3
+
+    baseline_id = f"baseline_{scenario_id}_{int(time.time())}"
+    timestamp = datetime.utcnow().isoformat()
+
+    conn = sqlite3.connect(str(DATABASE_PATH))
+    try:
+        conn.execute("""
+            INSERT OR REPLACE INTO artifacts
+            (artifact_id, type, name, content, metadata, created_at)
+            VALUES (?, 'perf_baseline', ?, ?, ?, ?)
+        """, (
+            baseline_id,
+            scenario_id,
+            json.dumps(metrics),
+            json.dumps({"scenario_id": scenario_id, "timestamp": timestamp}),
+            timestamp,
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return baseline_id
+
+
+def load_latest_baseline(scenario_id: str) -> dict | None:
+    """
+    Load baseline mới nhất cho 1 scenario.
+
+    Args:
+        scenario_id: ID của scenario
+
+    Returns:
+        Baseline metrics dict hoặc None nếu không có
+    """
+    import sqlite3
+
+    if not DATABASE_PATH.exists():
+        return None
+
+    conn = sqlite3.connect(str(DATABASE_PATH))
+    try:
+        row = conn.execute("""
+            SELECT content FROM artifacts
+            WHERE type = 'perf_baseline' AND name = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (scenario_id,)).fetchone()
+
+        if row:
+            return json.loads(row[0])
+        return None
+    finally:
+        conn.close()
+
+
+def compare_baselines(current: dict, baseline: dict) -> dict:
+    """
+    So sánh current metrics với baseline.
+
+    Args:
+        current: Current metrics dict
+        baseline: Baseline metrics dict
+
+    Returns:
+        Diff dict với percentage change
+    """
+    diff = {}
+    for key in ["response_time_p50", "response_time_p95", "response_time_p99"]:
+        if key in current and key in baseline and baseline[key] > 0:
+            change = ((current[key] - baseline[key]) / baseline[key]) * 100
+            diff[f"{key}_change_pct"] = round(change, 2)
+
+    if "throughput_rps" in current and "throughput_rps" in baseline and baseline["throughput_rps"] > 0:
+        change = ((current["throughput_rps"] - baseline["throughput_rps"]) / baseline["throughput_rps"]) * 100
+        diff["throughput_rps_change_pct"] = round(change, 2)
+
+    if "error_rate" in current and "error_rate" in baseline:
+        diff["error_rate_change"] = round(current["error_rate"] - baseline["error_rate"], 4)
+
+    return diff
+
+
+if __name__ == "__main__":
+    # Ví dụ: lưu baseline manual
+    test_metrics = {
+        "response_time_p50": 50.0,
+        "response_time_p95": 200.0,
+        "response_time_p99": 500.0,
+        "throughput_rps": 100.0,
+        "error_rate": 0.001,
+    }
+    bid = save_baseline("perf_createorder", test_metrics)
+    print(f"Baseline lưu xong: {bid}")

@@ -1,0 +1,22 @@
+# Artillery config — Auto-generated bởi Midicoder CE (CP25)
+# KHÔNG chỉnh sửa thủ công
+
+config:
+  target: "http://localhost:3000"
+  phases:
+{% for scenario in scenarios %}
+    - duration: {{ scenario.duration }}
+      arrivalRate: {{ scenario.spawn_rate }}
+      name: "{{ scenario.id }}"
+{% endfor %}
+  processor: "./tests/perf/processor.js"
+
+scenarios:
+{% for scenario in scenarios %}
+  - name: "{{ scenario.id }}"
+    flow:
+      - get:
+          url: "/api/{{ scenario.target | lower }}"
+          jq:
+            - "status == 200"
+{% endfor %}

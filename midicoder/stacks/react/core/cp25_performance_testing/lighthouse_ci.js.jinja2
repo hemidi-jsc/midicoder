@@ -1,0 +1,16 @@
+// Lighthouse CI runner — Auto-generated bởi Midicoder CE (CP25)
+// KHÔNG chỉnh sửa thủ công
+
+const { default: lighthouseCi } = require("@lhci/cli");
+
+async function run() {
+  await lighthouseCi(["collect:run"]);
+  await lighthouseCi(["assert:run"]);
+  await lighthouseCi(["upload:filesystem"]);
+  await lighthouseCi(["autorun"]);
+}
+
+run().catch((error) => {
+  console.error("Lighthouse CI failed:", error);
+  process.exit(1);
+});

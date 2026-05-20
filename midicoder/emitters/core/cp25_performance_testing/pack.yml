@@ -1,0 +1,121 @@
+pack:
+  id: "CP25"
+  name: "Performance Testing Generator"
+  internal_id: "cp25_performance_testing"
+  version: "1.0.0"
+  status: "stable"
+  category: "quality"
+  depends_on: ["CP23"]
+  definitions_count: 3
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP25"
+    range: "MDC-CP25-001 to MDC-CP25-015"
+  capabilities_provided:
+    - perf_test_run
+    - load_scenario
+    - baseline_compare
+  capabilities:
+    - id: "perf_test_run"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "load_scenario"
+      emitter: "fastapi, nestjs"
+    - id: "baseline_compare"
+      emitter: "fastapi, nestjs, angular, react"
+  definitions:
+    - name: "PerfScenario"
+      description: "Performance scenario với target, concurrency, duration, thresholds"
+    - name: "PerfBaseline"
+      description: "Kết quả baseline (response_time p50/p95/p99, throughput, error_rate)"
+    - name: "PerfReport"
+      description: "Report output từ performance test run, so sánh vs baseline"
+  obligations:
+    - name: "PerfDeterminism"
+      description: "Performance scenarios phải deterministic — same config, same output structure"
+    - name: "BaselineStorage"
+      description: "Baseline kết quả phải lưu vào SQLite artifacts"
+  file_contributions:
+    infrastructure:
+      # FastAPI — Locust
+      - path: "locustfile.py"
+        file_type: "locust_config"
+        template: "cp25_performance_testing/locustfile.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["entities", "commands", "queries"]
+      - path: "locust.conf"
+        file_type: "locust_conf"
+        template: "cp25_performance_testing/locust.conf.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "tests/perf/baseline.py"
+        file_type: "baseline_runner"
+        template: "cp25_performance_testing/perf_baseline.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # NestJS — Artillery
+      - path: "artillery.yml"
+        file_type: "artillery_config"
+        template: "cp25_performance_testing/artillery.yml.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["commands", "queries"]
+      - path: "tests/perf/baseline.spec.ts"
+        file_type: "baseline_runner"
+        template: "cp25_performance_testing/perf_baseline.spec.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      # Angular — Lighthouse CI + Playwright
+      - path: "lighthouserc.js"
+        file_type: "lighthouse_config"
+        template: "cp25_performance_testing/lighthouserc.js.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "tests/perf/web-vitals.spec.ts"
+        file_type: "web_vitals_test"
+        template: "cp25_performance_testing/web_vitals.spec.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "tests/perf/lighthouse-ci.js"
+        file_type: "lighthouse_runner"
+        template: "cp25_performance_testing/lighthouse_ci.js.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # React — Lighthouse CI + Playwright
+      - path: "lighthouserc.js"
+        file_type: "lighthouse_config"
+        template: "cp25_performance_testing/lighthouserc.js.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/__tests__/perf/web-vitals.test.tsx"
+        file_type: "web_vitals_test"
+        template: "cp25_performance_testing/web_vitals.test.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "tests/perf/lighthouse-ci.js"
+        file_type: "lighthouse_runner"
+        template: "cp25_performance_testing/lighthouse_ci.js.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+    per_entity:
+      # FastAPI — per entity perf test
+      - path_pattern: "tests/perf/test_{entity_snake}.py"
+        file_type: "perf_test"
+        template: "cp25_performance_testing/perf_test_entity.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+  recipes:
+    - auto_generate_perf_scenarios_from_mir
+    - generate_load_scenarios
+    - generate_web_vitals_tests
+    - save_baseline
+    - compare_baseline

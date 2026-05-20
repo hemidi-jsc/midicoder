@@ -1,0 +1,52 @@
+/**
+ * Baseline runner cho performance tests — Auto-generated bởi Midicoder CE (CP25).
+ * KHÔNG chỉnh sửa thủ công.
+ */
+
+import { exec } from "child_process";
+import { promisify } from "util";
+import * as fs from "fs";
+import * as path from "path";
+
+const execAsync = promisify(exec);
+
+const DATABASE_PATH = path.join(process.cwd(), ".midicoder/data/artifacts.db");
+
+interface Metrics {
+  response_time_p50: number;
+  response_time_p95: number;
+  response_time_p99: number;
+  throughput_rps: number;
+  error_rate: number;
+}
+
+/**
+ * Chạy Artillery và lưu baseline.
+ */
+async function runBaseline(scenarioId: string): Promise<void> {
+  try {
+    const { stdout } = await execAsync("npx artillery run artillery.yml --output ./reports/artillery.json");
+    console.log(stdout);
+
+    const report = JSON.parse(fs.readFileSync("./reports/artillery.json", "utf-8"));
+    const metrics: Metrics = {
+      response_time_p50: report.aggregate?.responseTime?.median || 0,
+      response_time_p95: report.aggregate?.responseTime?.p95 || 0,
+      response_time_p99: report.aggregate?.responseTime?.p99 || 0,
+      throughput_rps: report.aggregate?.requests || 0,
+      error_rate: report.aggregate?.errors || 0,
+    };
+
+    console.log(`Baseline metrics cho ${scenarioId}:`, JSON.stringify(metrics, null, 2));
+  } catch (error) {
+    console.error("Lỗi khi chạy baseline:", error);
+    process.exit(1);
+  }
+}
+
+// Chạy baseline cho tất cả scenarios
+if (require.main === module) {
+  runBaseline("all");
+}
+
+export { runBaseline, Metrics };
