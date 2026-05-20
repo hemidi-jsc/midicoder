@@ -1,0 +1,19 @@
+# {{ collection.portals[0].title if collection.portals else "Tài liệu Dự án" }}
+
+{% if collection.portals and collection.portals[0].description %}
+{{ collection.portals[0].description }}
+{% endif %}
+
+## Mục lục
+
+{% for section in collection.get_all_sections() %}
+- [{{ section.title }}]({{ section.path }})
+{% endfor %}
+
+## Hướng dẫn sử dụng
+
+Chạy documentation server:
+
+```bash
+npm run docs
+```

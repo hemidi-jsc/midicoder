@@ -1,0 +1,23 @@
+# Navigation
+
+## Các section trong documentation
+
+{% for section in collection.get_all_sections() %}
+### {{ section.title }}
+
+- **Path:** `{{ section.path }}`
+- **Source:** {{ section.content_source }}
+{% if section.content %}
+- **Content:**
+{{ section.content }}
+{% endif %}
+
+{% endfor %}
+
+## API Endpoints
+
+{% if collection.api_configs or (collection.portals and collection.portals[0].api_config) %}
+Tham khảo [OpenAPI Specification](api/openapi.json) để xem danh sách đầy đủ API endpoints.
+{% else %}
+Chưa có API config.
+{% endif %}

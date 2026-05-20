@@ -1,0 +1,31 @@
+# MkDocs config — Auto-generated bởi Midicoder CE (CP26)
+# KHÔNG chỉnh sửa thủ công
+
+site_name: {{ collection.portals[0].title if collection.portals else "Documentation" }}
+site_description: {{ collection.portals[0].description if collection.portals and collection.portals[0].description else "" }}
+theme:
+  name: {{ collection.portals[0].theme if collection.portals and collection.portals[0].theme else "readthedocs" }}
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - search.highlight
+
+nav:
+  - Home: index.md
+{% for section in collection.get_all_sections() %}
+  - {{ section.title }}: {{ section.path }}
+{% endfor %}
+{% if collection.api_configs or (collection.portals and collection.portals[0].api_config) %}
+  - API: api/openapi.json
+{% endif %}
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true

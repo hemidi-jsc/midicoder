@@ -501,7 +501,7 @@ core_packs:
       - api_doc_gen
       - doc_section_render
     category: documentation
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP27
     name: Plugin System Generator

@@ -1,0 +1,19 @@
+// Sidebar config — Auto-generated bởi Midicoder CE (CP26)
+// KHÔNG chỉnh sửa thủ công
+
+module.exports = {
+  docs: [
+    {
+      type: 'doc',
+      id: 'index',
+      label: 'Home',
+    },
+{% for section in collection.get_all_sections() %}
+    {
+      type: 'doc',
+      id: '{{ section.id }}',
+      label: '{{ section.title }}',
+    },
+{% endfor %}
+  ],
+};

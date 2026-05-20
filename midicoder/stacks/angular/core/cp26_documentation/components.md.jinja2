@@ -1,0 +1,21 @@
+# Component Reference
+
+## Danh sách components
+
+{% for section in collection.get_all_sections() %}
+### {{ section.title }}
+
+- **Path:** `{{ section.path }}`
+{% endfor %}
+
+## Chạy Storybook
+
+```bash
+npm run storybook
+```
+
+## Chạy TypeDoc
+
+```bash
+npx typedoc
+```

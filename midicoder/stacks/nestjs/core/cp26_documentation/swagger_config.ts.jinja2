@@ -1,0 +1,18 @@
+// Swagger config — Auto-generated bởi Midicoder CE (CP26)
+// KHÔNG chỉnh sửa thủ công
+
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+
+export function setupSwagger(app: any) {
+  const config = new DocumentBuilder()
+    .setTitle('{{ collection.portals[0].api_config.title if collection.portals and collection.portals[0].api_config else "NestJS API" }}')
+    .setDescription('{{ collection.portals[0].api_config.description if collection.portals and collection.portals[0].api_config else "Tài liệu API NestJS" }}')
+    .setVersion('{{ collection.portals[0].api_config.version if collection.portals and collection.portals[0].api_config else "1.0.0" }}')
+    .addBearerAuth()
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
+}
+
+export default setupSwagger;

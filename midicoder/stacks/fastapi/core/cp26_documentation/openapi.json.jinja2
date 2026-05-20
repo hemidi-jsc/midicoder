@@ -1,0 +1,75 @@
+{
+  "openapi": "{{ api_config.openapi_version if api_config else '3.1.0' }}",
+  "info": {
+    "title": "{{ api_config.title if api_config else 'API Documentation' }}",
+    "version": "{{ api_config.version if api_config else '1.0.0' }}",
+    "description": "{{ api_config.description if api_config and api_config.description else 'Tài liệu API tự động sinh bởi Midicoder CE' }}"
+  },
+  "servers": [
+{% for server in (api_config.servers if api_config else [{"url": "http://localhost:8000", "description": "Local dev"}]) %}
+    {
+      "url": "{{ server.url }}",
+      "description": "{{ server.description }}"
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+  ],
+  "paths": {
+{% for entity in entities %}
+    "/api/{{ entity.id | lower }}": {
+      "get": {
+        "summary": "Danh sách {{ entity.id }}",
+        "operationId": "list{{ entity.id }}",
+        "responses": {
+          "200": {"description": "Danh sách {{ entity.id }}"}
+        }
+      },
+      "post": {
+        "summary": "Tạo {{ entity.id }} mới",
+        "operationId": "create{{ entity.id }}",
+        "responses": {
+          "201": {"description": "{{ entity.id }} đã tạo"}
+        }
+      }
+    },
+    "/api/{{ entity.id | lower }}/{id}": {
+      "get": {
+        "summary": "Chi tiết {{ entity.id }}",
+        "operationId": "get{{ entity.id }}",
+        "responses": {
+          "200": {"description": "Chi tiết {{ entity.id }}"}
+        }
+      },
+      "put": {
+        "summary": "Cập nhật {{ entity.id }}",
+        "operationId": "update{{ entity.id }}",
+        "responses": {
+          "200": {"description": "{{ entity.id }} đã cập nhật"}
+        }
+      },
+      "delete": {
+        "summary": "Xóa {{ entity.id }}",
+        "operationId": "delete{{ entity.id }}",
+        "responses": {
+          "204": {"description": "{{ entity.id }} đã xóa"}
+        }
+      }
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+  },
+  "components": {
+    "schemas": {
+{% for entity in entities %}
+      "{{ entity.id }}": {
+        "type": "object",
+        "properties": {
+{% if entity.fields %}
+{% for f in entity.fields %}
+          "{{ f.name if isinstance(f, dict) else f.id }}": {"type": "{{ f.type if isinstance(f, dict) else 'string' }}"}{% if not loop.last %},{% endif %}
+{% endfor %}
+{% endif %}
+        }
+      }{% if not loop.last %},{% endif %}
+{% endfor %}
+    }
+  }
+}

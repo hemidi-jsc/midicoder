@@ -1,0 +1,31 @@
+// Docusaurus config — Auto-generated bởi Midicoder CE (CP26)
+// KHÔNG chỉnh sửa thủ công
+
+const config = {
+  title: '{{ collection.portals[0].title if collection.portals else "Documentation" }}',
+  tagline: '{{ collection.portals[0].description if collection.portals and collection.portals[0].description else "" }}',
+  url: 'http://localhost:3000',
+  baseUrl: '/',
+  onBrokenLinks: 'throw',
+  onBrokenMarkdownLinks: 'warn',
+  favicon: 'img/favicon.ico',
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en'],
+  },
+  presets: [
+    [
+      'classic',
+      ({
+        docs: {
+          sidebarPath: require.resolve('./sidebar'),
+        },
+        theme: {
+          customCss: require.resolve('./src/css/custom.css'),
+        },
+      }),
+    ],
+  ],
+};
+
+module.exports = config;
