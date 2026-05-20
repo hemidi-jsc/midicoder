@@ -1,0 +1,220 @@
+/** Example Plugin — CP27 Plugin System Generator.
+
+Sample Angular plugin implement IPlugin interface.
+Demo cách implement lifecycle hooks, configure, và health check.
+
+{% if plugin_name %}
+* Example Plugin: {{ plugin_name }}
+{% endif %}
+*/
+
+import { Injectable } from '@angular/core';
+import { Observable, of } from 'rxjs';
+import {
+    IPlugin,
+    PluginContext,
+    PluginInfo,
+    PluginStatus,
+    PluginHealthResult,
+} from './plugin-contracts';
+import { PluginSlot } from './plugin-slots';
+
+/**
+ * ExamplePlugin — sample plugin demo.
+ *
+ * Plugin này hook vào các lifecycle events:
+ * - before_http_request: log request metadata
+ * - after_http_response: log response time
+ * - http_error: capture và report errors
+ */
+@Injectable()
+export class ExamplePlugin implements IPlugin {
+    public info: PluginInfo;
+    private enabled = false;
+    private customConfig: Record<string, any> = {};
+
+    constructor() {
+        this.info = {
+            id: 'example-plugin',
+            name: 'Example Plugin',
+            version: '1.0.0',
+            description: 'Sample plugin demo cho CP27 Plugin System',
+            author: 'Midicoder CE',
+            status: PluginStatus.REGISTERED,
+            slots: [
+                PluginSlot.BEFORE_HTTP_REQUEST,
+                PluginSlot.AFTER_HTTP_RESPONSE,
+                PluginSlot.HTTP_ERROR,
+            ],
+            config: {},
+            registeredAt: new Date().toISOString(),
+        };
+    }
+
+    /**
+     * Initialize plugin.
+     */
+    async initialize(context: PluginContext): Promise<void> {
+        console.log(`[ExamplePlugin] Initializing...`);
+        this.info.status = PluginStatus.INITIALIZING;
+
+        // Load config từ context nếu có
+        if (context.data?.config) {
+            this.customConfig = { ...this.customConfig, ...context.data.config };
+        }
+
+        this.info.status = PluginStatus.ACTIVE;
+        this.enabled = true;
+        console.log(`[ExamplePlugin] Initialized successfully`);
+    }
+
+    /**
+     * Activate plugin.
+     */
+    async activate(): Promise<void> {
+        console.log(`[ExamplePlugin] Activating...`);
+        this.enabled = true;
+        this.info.status = PluginStatus.ACTIVE;
+        this.info.activatedAt = new Date().toISOString();
+    }
+
+    /**
+     * Deactivate plugin.
+     */
+    async deactivate(): Promise<void> {
+        console.log(`[ExamplePlugin] Deactivating...`);
+        this.enabled = false;
+        this.info.status = PluginStatus.DISABLED;
+    }
+
+    /**
+     * Destroy plugin — release resources.
+     */
+    async destroy(): Promise<void> {
+        console.log(`[ExamplePlugin] Destroying...`);
+        this.enabled = false;
+        this.customConfig = {};
+        this.info.status = PluginStatus.UNREGISTERED;
+    }
+
+    /**
+     * Handle hook khi slot được kích hoạt.
+     */
+    async onHook(context: PluginContext): Promise<any> {
+        if (!this.enabled) {
+            return context.data;
+        }
+
+        switch (context.slot) {
+            case PluginSlot.BEFORE_HTTP_REQUEST:
+                return this.handleBeforeRequest(context);
+
+            case PluginSlot.AFTER_HTTP_RESPONSE:
+                return this.handleAfterResponse(context);
+
+            case PluginSlot.HTTP_ERROR:
+                return this.handleHttpError(context);
+
+            default:
+                console.log(`[ExamplePlugin] Unknown slot: ${context.slot}`);
+                return context.data;
+        }
+    }
+
+    /**
+     * Handle before_http_request hook.
+     */
+    private handleBeforeRequest(context: PluginContext): any {
+        const request = context.request;
+        if (request) {
+            console.log(
+                `[ExamplePlugin] BEFORE_REQUEST: ${request.method} ${request.url}`,
+            );
+
+            // Demo: inject custom header nếu config cho phép
+            if (this.customConfig?.injectHeader) {
+                context.modifyData({
+                    ...context.data,
+                    headers: {
+                        ...context.request.headers,
+                        'X-Example-Plugin': 'true',
+                    },
+                });
+            }
+        }
+
+        return context.data;
+    }
+
+    /**
+     * Handle after_http_response hook.
+     */
+    private handleAfterResponse(context: PluginContext): any {
+        const response = context.response;
+        if (response) {
+            console.log(
+                `[ExamplePlugin] AFTER_RESPONSE: ${response.status} ${response.statusText}`,
+            );
+
+            // Demo: log slow responses
+            if (this.customConfig?.logSlowResponses && response.status >= 200) {
+                console.log(`[ExamplePlugin] Response logged for monitoring`);
+            }
+        }
+
+        return context.data;
+    }
+
+    /**
+     * Handle http_error hook.
+     */
+    private handleHttpError(context: PluginContext): any {
+        const response = context.response;
+        if (response) {
+            console.error(
+                `[ExamplePlugin] HTTP_ERROR: ${response.status} ${response.statusText}`,
+            );
+
+            // Demo: cancel retry cho certain status codes
+            if (
+                this.customConfig?.cancelOnStatus &&
+                response.status === this.customConfig.cancelOnStatus
+            ) {
+                if (context.cancel) {
+                    console.warn(`[ExamplePlugin] Cancelling request due to status ${response.status}`);
+                    context.cancel();
+                }
+            }
+        }
+
+        return context.data;
+    }
+
+    /**
+     * Update configuration runtime.
+     */
+    async configure(config: Record<string, any>): Promise<void> {
+        console.log(`[ExamplePlugin] Updating config:`, config);
+        this.customConfig = { ...this.customConfig, ...config };
+        this.info.config = { ...this.info.config, ...config };
+    }
+
+    /**
+     * Health check.
+     */
+    healthCheck(): Observable<PluginHealthResult> {
+        const result: PluginHealthResult = {
+            healthy: this.enabled && this.info.status === PluginStatus.ACTIVE,
+            message: this.enabled
+                ? 'Plugin is running normally'
+                : 'Plugin is not active',
+            checkedAt: new Date().toISOString(),
+            metrics: {
+                configKeys: Object.keys(this.customConfig).length,
+                status: this.info.status,
+            },
+        };
+
+        return of(result);
+    }
+}

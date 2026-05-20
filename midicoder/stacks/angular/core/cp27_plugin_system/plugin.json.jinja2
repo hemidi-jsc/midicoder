@@ -1,0 +1,82 @@
+{#
+Jinja2 template cho Plugin Manifest JSON (CP27).
+
+Tự động sinh plugin.json manifest file cho plugin.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$comment": "Plugin manifest — tự động sinh bởi CP27",
+
+    "id": "example_plugin",
+    "name": "Example Plugin",
+    "version": "1.0.0",
+    "description": "Sample plugin để demo PluginBase Protocol implementation",
+    "author": "Midicoder Team",
+
+    "entry_point": "plugin.ExamplePlugin",
+    "origin": "midicoder://official",
+
+    "slots": [
+        "on_init",
+        "on_configure",
+        "on_ready",
+        "on_request",
+        "on_shutdown"
+{% for cmd in commands %}
+        , "before_{{ cmd.get('id', 'action').lower() }}"
+        , "after_{{ cmd.get('id', 'action').lower() }}"
+{% endfor %}
+    ],
+
+    "min_platform_version": "1.0.0",
+    "max_platform_version": "2.0.0",
+
+    "dependencies": [],
+
+    "config_schema": {
+        "type": "object",
+        "properties": {
+            "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Plugin có enabled không"
+            },
+            "log_level": {
+                "type": "string",
+                "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
+                "default": "INFO",
+                "description": "Log level của plugin"
+            },
+            "max_request_count": {
+                "type": "integer",
+                "default": 10000,
+                "description": "Số request tối đa trước khi reset counter"
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    },
+
+    "permissions": [],
+
+    "metadata": {
+        "generated_by": "midicoder-ce",
+        "cp_version": "CP27",
+        "stack": "fastapi"
+    },
+
+    "signature": null,
+    "$signature_comment": "SHA-256 hash của plugin source code — để null trong dev mode"
+}

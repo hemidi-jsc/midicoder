@@ -1,0 +1,190 @@
+/**
+ * Plugin API Client - CP27: Plugin System
+ *
+ * Fetch-based HTTP client for the plugin management REST API.
+ * Communicates with the backend to list, enable, disable, and configure plugins.
+ *
+ * API Endpoints (conventional routes):
+ *   GET    /api/plugins          — list all plugins
+ *   GET    /api/plugins/:id      — get single plugin info
+ *   POST   /api/plugins/:id/enable   — enable a plugin
+ *   POST   /api/plugins/:id/disable  — disable a plugin
+ *   PUT    /api/plugins/:id/config   — update plugin configuration
+ *   GET    /api/plugins/:id/status   — get plugin runtime status
+ */
+
+import type { PluginInfo, PluginStatus } from './plugin-contracts';
+
+/**
+ * Configuration for the plugin API client.
+ */
+export interface PluginApiConfig {
+  /** Base URL for the plugin API (e.g. '/api/plugins'). */
+  baseUrl: string;
+  /** Optional auth token factory. */
+  getToken?: () => string | null;
+}
+
+const DEFAULT_CONFIG: Required<PluginApiConfig> = {
+  baseUrl: '/api/plugins',
+  getToken: () => localStorage.getItem('access_token'),
+};
+
+// ─── API Response types ──────────────────────────────────────
+
+/** Paginated list of plugins. */
+export interface PluginListResponse {
+  plugins: PluginInfo[];
+  total: number;
+}
+
+/** Single plugin detail response. */
+export interface PluginDetailResponse {
+  plugin: PluginInfo;
+}
+
+/** Plugin status response. */
+export interface PluginStatusResponse {
+  id: string;
+  status: PluginStatus;
+  lastHeartbeat?: string;
+}
+
+/** Plugin configuration update response. */
+export interface PluginConfigResponse {
+  id: string;
+  config: Record<string, unknown>;
+  updatedAt: string;
+}
+
+// ─── Error handling ──────────────────────────────────────────
+
+/**
+ * Error thrown when a plugin API request fails.
+ */
+export class PluginApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public endpoint: string,
+  ) {
+    super(message);
+    this.name = 'PluginApiError';
+  }
+}
+
+// ─── Internal fetch helper ───────────────────────────────────
+
+async function apiFetch(
+  url: string,
+  options: RequestInit = {},
+  config: Required<PluginApiConfig>,
+): Promise<Response> {
+  const token = config.getToken();
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers as Record<string, string>),
+  };
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new PluginApiError(
+      body || `HTTP ${response.status}`,
+      response.status,
+      url,
+    );
+  }
+
+  return response;
+}
+
+// ─── Public API functions ────────────────────────────────────
+
+/**
+ * Fetch all plugins (paginated).
+ */
+export async function listPlugins(
+  config: Partial<PluginApiConfig> = {},
+): Promise<PluginListResponse> {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const response = await apiFetch(cfg.baseUrl, {}, cfg);
+  return response.json() as Promise<PluginListResponse>;
+}
+
+/**
+ * Fetch a single plugin's details by ID.
+ */
+export async function getPlugin(
+  id: string,
+  config: Partial<PluginApiConfig> = {},
+): Promise<PluginInfo> {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const response = await apiFetch(`${cfg.baseUrl}/${encodeURIComponent(id)}`, {}, cfg);
+  const data = (await response.json()) as PluginDetailResponse;
+  return data.plugin;
+}
+
+/**
+ * Enable a plugin by ID.
+ */
+export async function enablePlugin(
+  id: string,
+  config: Partial<PluginApiConfig> = {},
+): Promise<PluginInfo> {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const response = await apiFetch(`${cfg.baseUrl}/${encodeURIComponent(id)}/enable`, {
+    method: 'POST',
+  }, cfg);
+  const data = (await response.json()) as PluginDetailResponse;
+  return data.plugin;
+}
+
+/**
+ * Disable a plugin by ID.
+ */
+export async function disablePlugin(
+  id: string,
+  config: Partial<PluginApiConfig> = {},
+): Promise<PluginInfo> {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const response = await apiFetch(`${cfg.baseUrl}/${encodeURIComponent(id)}/disable`, {
+    method: 'POST',
+  }, cfg);
+  const data = (await response.json()) as PluginDetailResponse;
+  return data.plugin;
+}
+
+/**
+ * Update a plugin's configuration.
+ */
+export async function configurePlugin(
+  id: string,
+  pluginConfig: Record<string, unknown>,
+  config: Partial<PluginApiConfig> = {},
+): Promise<PluginConfigResponse> {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const response = await apiFetch(`${cfg.baseUrl}/${encodeURIComponent(id)}/config`, {
+    method: 'PUT',
+    body: JSON.stringify(pluginConfig),
+  }, cfg);
+  return response.json() as Promise<PluginConfigResponse>;
+}
+
+/**
+ * Get the current runtime status of a plugin.
+ */
+export async function getStatus(
+  id: string,
+  config: Partial<PluginApiConfig> = {},
+): Promise<PluginStatusResponse> {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const response = await apiFetch(`${cfg.baseUrl}/${encodeURIComponent(id)}/status`, {}, cfg);
+  return response.json() as Promise<PluginStatusResponse>;
+}

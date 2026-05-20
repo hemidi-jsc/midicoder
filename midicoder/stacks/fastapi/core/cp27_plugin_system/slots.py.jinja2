@@ -1,0 +1,254 @@
+{#
+Jinja2 template cho PluginSlot enum + registry (CP27).
+
+Tự động sinh slot IDs cho lifecycle events và before/after hooks
+cho mỗi command trong ngữ cảnh.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Plugin Slot Definitions & Registry — tự động sinh bởi CP27.
+
+Module này định nghĩa:
+- PluginSlot enum: Các slot cố định cho lifecycle (on_init, on_configure,
+  on_ready, on_request, on_shutdown) + before/after hooks cho mỗi command.
+- PluginSlotRegistry: Singleton registry để quản lý slot mappings.
+
+CP27: Plugin System Generator
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any, Optional
+
+
+# ============================================================================
+# PluginSlot Enum
+# ============================================================================
+
+
+class PluginSlot(str, Enum):
+    """
+    Enum các plugin slots — điểm gắn kết plugin vào lifecycle.
+
+    Slots cố định:
+        ON_INIT:        Khi hệ thống khởi tạo
+        ON_CONFIGURE:   Khi cấu hình được apply
+        ON_READY:       Khi hệ thống sẵn sàng nhận request
+        ON_REQUEST:     Mỗi request ASGI
+        ON_SHUTDOWN:    Khi hệ thống dừng
+
+    Slots tự động sinh (before/after cho từng command):
+        BEFORE_*:  Trước khi execute command
+        AFTER_*:   Sau khi execute command
+    """
+
+    # ========================================================================
+    # Lifecycle slots cố định
+    # ========================================================================
+    ON_INIT = "on_init"
+    ON_CONFIGURE = "on_configure"
+    ON_READY = "on_ready"
+    ON_REQUEST = "on_request"
+    ON_SHUTDOWN = "on_shutdown"
+
+    # ========================================================================
+    # Before/After hooks — tự động sinh từ commands
+    # ========================================================================
+{% for cmd in commands %}
+    BEFORE_{{ cmd.get('id', 'Action').upper() }} = "before_{{ cmd.get('id', 'action').lower() }}"
+    AFTER_{{ cmd.get('id', 'Action').upper() }} = "after_{{ cmd.get('id', 'action').lower() }}"
+{% endfor %}
+
+    @property
+    def is_lifecycle(self) -> bool:
+        """Kiểm tra slot có phải lifecycle event không."""
+        return self in {
+            PluginSlot.ON_INIT,
+            PluginSlot.ON_CONFIGURE,
+            PluginSlot.ON_READY,
+            PluginSlot.ON_REQUEST,
+            PluginSlot.ON_SHUTDOWN,
+        }
+
+    @property
+    def is_hook(self) -> bool:
+        """Kiểm tra slot có phải before/after hook không."""
+        return self.value.startswith("before_") or self.value.startswith("after_")
+
+    @property
+    def is_tenant_aware(self) -> bool:
+        """Kiểm tra slot có cần tenant context không."""
+        # on_request và tất cả before/after hooks đều cần tenant context
+        if self.is_hook:
+            return True
+        return self == PluginSlot.ON_REQUEST
+
+
+# ============================================================================
+# Slot Metadata
+# ============================================================================
+
+{% for cmd in commands %}
+# Slot metadata cho {{ cmd.get('id', 'action').lower() }} hooks
+# Auto-generated from command: {{ cmd.id }}
+{% endfor %}
+
+SLOT_METADATA: dict[str, dict[str, Any]] = {
+{% for slot in ["on_init", "on_configure", "on_ready", "on_request", "on_shutdown"] %}
+    "{{ slot }}": {
+        "name": "{{ slot }}",
+        "is_tenant_aware": {% if slot == "on_request" %}True{% else %}False{% endif %},
+        "priority_range": (0, 100),
+        "description": "Lifecycle slot: {{ slot }}",
+    },
+{% endfor %}
+{% for cmd in commands %}
+    "before_{{ cmd.get('id', 'action').lower() }}": {
+        "name": "before_{{ cmd.get('id', 'action').lower() }}",
+        "is_tenant_aware": True,
+        "priority_range": (0, 100),
+        "description": "Before hook for {{ cmd.id }}",
+        "command_id": "{{ cmd.id }}",
+        "hook_type": "before",
+    },
+    "after_{{ cmd.get('id', 'action').lower() }}": {
+        "name": "after_{{ cmd.get('id', 'action').lower() }}",
+        "is_tenant_aware": True,
+        "priority_range": (0, 100),
+        "description": "After hook for {{ cmd.id }}",
+        "command_id": "{{ cmd.id }}",
+        "hook_type": "after",
+    },
+{% endfor %}
+}
+
+
+# ============================================================================
+# PluginSlotRegistry — Singleton
+# ============================================================================
+
+
+class PluginSlotRegistry:
+    """
+    Singleton registry để quản lý mappings giữa slot ID và metadata.
+
+    Usage:
+        registry = PluginSlotRegistry.get()
+        metadata = registry.get_slot_metadata("on_request")
+        all_slots = registry.get_all_slots()
+        hooks = registry.get_hooks_for_command("create_user")
+    """
+
+    _instance: Optional["PluginSlotRegistry"] = None
+
+    def __init__(self) -> None:
+        """Initialize registry với slot metadata."""
+        self._slots: dict[str, dict[str, Any]] = dict(SLOT_METADATA)
+
+    @classmethod
+    def get(cls) -> "PluginSlotRegistry":
+        """Get hoặc tạo singleton instance."""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def get_slot_metadata(self, slot_id: str) -> Optional[dict[str, Any]]:
+        """
+        Lấy metadata của slot theo ID.
+
+        Args:
+            slot_id: Slot ID (ví dụ: "on_request", "before_create_user")
+
+        Returns:
+            Metadata dict hoặc None nếu không tìm thấy
+        """
+        return self._slots.get(slot_id)
+
+    def get_all_slots(self) -> list[dict[str, Any]]:
+        """Lấy danh sách tất cả slots với metadata."""
+        return list(self._slots.values())
+
+    def get_hooks_for_command(self, command_id: str) -> list[dict[str, Any]]:
+        """
+        Lấy danh sách hooks cho một command cụ thể.
+
+        Args:
+            command_id: Command ID (ví dụ: "CreateUser")
+
+        Returns:
+            Danh sách hook metadata (before + after)
+        """
+        hooks: list[dict[str, Any]] = []
+        cmd_lower = command_id.lower()
+
+        before_key = f"before_{cmd_lower}"
+        after_key = f"after_{cmd_lower}"
+
+        if before_key in self._slots:
+            hooks.append(self._slots[before_key])
+        if after_key in self._slots:
+            hooks.append(self._slots[after_key])
+
+        return hooks
+
+    def get_lifecycle_slots(self) -> list[dict[str, Any]]:
+        """Lấy danh sách lifecycle slots cố định."""
+        lifecycle_ids = {
+            "on_init",
+            "on_configure",
+            "on_ready",
+            "on_request",
+            "on_shutdown",
+        }
+        return [
+            meta for sid, meta in self._slots.items()
+            if sid in lifecycle_ids
+        ]
+
+    def get_hook_slots(self) -> list[dict[str, Any]]:
+        """Lấy danh sách tất cả before/after hook slots."""
+        return [
+            meta for sid, meta in self._slots.items()
+            if sid.startswith("before_") or sid.startswith("after_")
+        ]
+
+    def register_custom_slot(
+        self,
+        slot_id: str,
+        name: str,
+        is_tenant_aware: bool = False,
+        priority_range: tuple[int, int] = (0, 100),
+        description: str = "",
+    ) -> None:
+        """
+        Đăng ký custom slot mới.
+
+        Args:
+            slot_id: Slot ID duy nhất
+            name: Tên slot
+            is_tenant_aware: Có cần tenant context không
+            priority_range: Khoảng priority (min, max)
+            description: Mô tả slot
+        """
+        self._slots[slot_id] = {
+            "name": name,
+            "is_tenant_aware": is_tenant_aware,
+            "priority_range": priority_range,
+            "description": description,
+        }
+
+    def has_slot(self, slot_id: str) -> bool:
+        """Kiểm tra slot ID có tồn tại không."""
+        return slot_id in self._slots

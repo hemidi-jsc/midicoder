@@ -1,0 +1,304 @@
+/**
+ * Plugin Loader - CP27: Plugin System
+ *
+ * Handles dynamic loading of frontend plugins via ES Module dynamic import().
+ *
+ * Responsibilities:
+ * - Discover and load plugin modules from registered paths
+ * - Resolve PluginFactory exports and instantiate IPlugin instances
+ * - Track loading state and propagate errors to the registry
+ * - Provide registerPlugin / unregisterPlugin for runtime management
+ *
+ * This is a plain class (not a React component). It is typically
+ * instantiated once at app bootstrap and used by PluginRegistry.
+ */
+
+import type { IPlugin, PluginFactory, PluginInfo, PluginStatus } from './plugin-contracts';
+
+/**
+ * Entry point for a plugin module.
+ * Dynamic imports must export a default `PluginFactory` or named `createPlugin`.
+ */
+interface PluginModule {
+  default?: PluginFactory;
+  createPlugin?: PluginFactory;
+}
+
+/**
+ * Configuration for the PluginLoader.
+ */
+export interface PluginLoaderConfig {
+  /** Base URL prefix for plugin bundles (e.g. '/plugins'). */
+  baseUrl?: string;
+  /** Allow unsigned plugins in development mode. */
+  allowUnsignedInDev?: boolean;
+  /** Maximum time (ms) to wait for a single plugin to load. */
+  loadTimeout?: number;
+}
+
+const DEFAULT_CONFIG: Required<PluginLoaderConfig> = {
+  baseUrl: '/plugins',
+  allowUnsignedInDev: true,
+  loadTimeout: 10_000,
+};
+
+/**
+ * Callback signature for plugin load status updates.
+ */
+export type PluginStatusCallback = (info: PluginInfo) => void;
+
+// ─── PluginLoader ────────────────────────────────────────────
+
+/**
+ * Core class that dynamically loads plugin modules and manages their lifecycle.
+ *
+ * Usage:
+ *   const loader = new PluginLoader({ baseUrl: '/static/plugins' });
+ *   loader.onStatusChange = (info) => registry.update(info);
+ *
+ *   // Load all known plugins
+ *   await loader.loadPlugins(['analytics', 'dark-mode']);
+ *
+ *   // Load a single plugin
+ *   await loader.registerPlugin('analytics');
+ *
+ *   // Unload a plugin
+ *   await loader.unregisterPlugin('analytics');
+ */
+export class PluginLoader {
+  private config: Required<PluginLoaderConfig>;
+  private loadedPlugins = new Map<string, IPlugin>();
+
+  /** Called whenever a plugin's status changes. */
+  onStatusChange?: PluginStatusCallback;
+
+  constructor(config: PluginLoaderConfig = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  // ── Public API ────────────────────────────────────────────
+
+  /**
+   * Load multiple plugins by their IDs.
+   *
+   * Loads are executed sequentially to ensure dependency order.
+   * Failed loads do not abort the batch; errors are emitted via onStatusChange.
+   *
+   * @param pluginIds - Array of plugin identifiers to load.
+   * @returns Array of PluginInfo for each attempted load.
+   */
+  async loadPlugins(pluginIds: string[]): Promise<PluginInfo[]> {
+    const results: PluginInfo[] = [];
+
+    for (const id of pluginIds) {
+      try {
+        const info = await this.registerPlugin(id);
+        results.push(info);
+      } catch (error) {
+        const errorInfo: PluginInfo = {
+          id,
+          name: id,
+          version: '0.0.0',
+          status: PluginStatus.ERROR,
+          slots: [],
+          config: {},
+          error: error instanceof Error ? error.message : String(error),
+        };
+        this.emitStatus(errorInfo);
+        results.push(errorInfo);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Load and register a single plugin by ID.
+   *
+   * Resolves the plugin bundle via dynamic import(), extracts the
+   * PluginFactory, instantiates the IPlugin, and stores it.
+   *
+   * @param pluginId - Unique plugin identifier (matches file name: `{pluginId}.plugin.ts`).
+   * @returns PluginInfo with ENABLED status on success.
+   * @throws Error if the module cannot be loaded or factory is missing.
+   */
+  async registerPlugin(pluginId: string): Promise<PluginInfo> {
+    // Prevent double-load
+    if (this.loadedPlugins.has(pluginId)) {
+      const existing = this.loadedPlugins.get(pluginId)!;
+      return this.toPluginInfo(existing, PluginStatus.ENABLED);
+    }
+
+    // Mark as loading
+    const loadingInfo: PluginInfo = this.toPluginInfo(
+      { id: pluginId, name: pluginId, version: '0.0.0', slots: [] } as IPlugin,
+      PluginStatus.LOADING,
+    );
+    this.emitStatus(loadingInfo);
+
+    try {
+      // Dynamic import with timeout
+      const module = await this.importWithTimeout(pluginId);
+      const factory = this.extractFactory(module, pluginId);
+      const plugin = await factory();
+
+      this.loadedPlugins.set(pluginId, plugin);
+
+      const info: PluginInfo = this.toPluginInfo(plugin, PluginStatus.ENABLED);
+      this.emitStatus(info);
+
+      return info;
+    } catch (error) {
+      this.loadedPlugins.delete(pluginId);
+
+      const errorInfo: PluginInfo = {
+        id: pluginId,
+        name: pluginId,
+        version: '0.0.0',
+        status: PluginStatus.ERROR,
+        slots: [],
+        config: {},
+        error: error instanceof Error ? error.message : String(error),
+      };
+      this.emitStatus(errorInfo);
+      throw error;
+    }
+  }
+
+  /**
+   * Unregister (unload) a plugin by ID.
+   *
+   * Calls the plugin's onShutdown hook if available, then removes it
+   * from the internal registry.
+   *
+   * @param pluginId - Unique plugin identifier to unload.
+   * @returns true if the plugin was found and unregistered, false otherwise.
+   */
+  async unregisterPlugin(pluginId: string): Promise<boolean> {
+    const plugin = this.loadedPlugins.get(pluginId);
+    if (!plugin) {
+      return false;
+    }
+
+    // Call shutdown hook
+    if (plugin.onShutdown) {
+      try {
+        await plugin.onShutdown(this.createEmptyContext());
+      } catch (error) {
+        console.warn(`[PluginLoader] ${pluginId} onShutdown failed:`, error);
+      }
+    }
+
+    this.loadedPlugins.delete(pluginId);
+
+    const info: PluginInfo = {
+      id: pluginId,
+      name: plugin.name,
+      version: plugin.version,
+      status: PluginStatus.DISABLED,
+      slots: [],
+      config: {},
+    };
+    this.emitStatus(info);
+
+    return true;
+  }
+
+  /**
+   * Get all currently loaded plugins.
+   */
+  getLoadedPlugins(): IPlugin[] {
+    return Array.from(this.loadedPlugins.values());
+  }
+
+  /**
+   * Check if a plugin is currently loaded.
+   */
+  isLoaded(pluginId: string): boolean {
+    return this.loadedPlugins.has(pluginId);
+  }
+
+  /**
+   * Get a loaded plugin instance by ID.
+   */
+  getPlugin(pluginId: string): IPlugin | undefined {
+    return this.loadedPlugins.get(pluginId);
+  }
+
+  // ── Internal helpers ──────────────────────────────────────
+
+  /**
+   * Dynamic import with timeout.
+   */
+  private async importWithTimeout(pluginId: string): Promise<PluginModule> {
+    const modulePath = `${this.config.baseUrl}/${pluginId}.plugin`;
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Plugin load timeout (${this.config.loadTimeout}ms): ${pluginId}`)),
+        this.config.loadTimeout,
+      );
+
+      import(/* @vite-ignore */ modulePath)
+        .then(module => {
+          clearTimeout(timer);
+          resolve(module as PluginModule);
+        })
+        .catch(error => {
+          clearTimeout(timer);
+          reject(error);
+        });
+    });
+  }
+
+  /**
+   * Extract a PluginFactory from a loaded ES module.
+   */
+  private extractFactory(module: PluginModule, pluginId: string): PluginFactory {
+    if (module.default) {
+      return module.default as PluginFactory;
+    }
+    if (module.createPlugin) {
+      return module.createPlugin;
+    }
+    throw new Error(
+      `Plugin "${pluginId}" must export a default PluginFactory or named "createPlugin" function`,
+    );
+  }
+
+  /**
+   * Convert an IPlugin instance to PluginInfo.
+   */
+  private toPluginInfo(plugin: IPlugin, status: PluginStatus): PluginInfo {
+    return {
+      id: plugin.id,
+      name: plugin.name,
+      version: plugin.version,
+      status,
+      slots: plugin.slots,
+      config: {},
+      loadedAt: status === PluginStatus.ENABLED ? new Date().toISOString() : undefined,
+    };
+  }
+
+  /**
+   * Emit a status change event.
+   */
+  private emitStatus(info: PluginInfo): void {
+    if (this.onStatusChange) {
+      this.onStatusChange(info);
+    }
+  }
+
+  /**
+   * Create an empty PluginContext for shutdown / bootstrap calls.
+   */
+  private createEmptyContext() {
+    return {
+      tenantId: '',
+      userId: '',
+      requestId: '',
+      appConfig: {},
+    };
+  }
+}

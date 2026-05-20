@@ -4513,6 +4513,13 @@ class NodeKind(Enum):
     CONSUL_CONNECT = "consul.connect"  # Consul Connect sidecar proxy
     CONSUL_HEALTH_CHECK = "consul.healthcheck"  # Consul Health check
 
+    # =========================================================================
+    # CP27: Plugin System Generator (3 loại)
+    # =========================================================================
+    PLUGIN_SLOT = "plugin.slot"
+    PLUGIN_CONTRACT = "plugin.contract"
+    PLUGIN_POLICY = "plugin.policy"
+
 
 
 
@@ -5432,6 +5439,39 @@ class NodeBuilder(Protocol):
             ProjectionNode đã build
         """
         ...
+
+
+# ============================================================================
+# CP27: Plugin System Params
+# ============================================================================
+
+@dataclass
+class PluginSlotParams:
+    """Thông số cho plugin slot — điểm móc nối lifecycle."""
+    id: str = ""
+    name: str = ""
+    events: list[str] = field(default_factory=list)
+    priority_range: tuple[int, int] = (0, 100)
+    is_tenant_aware: bool = True
+
+
+@dataclass
+class PluginContractParams:
+    """Thông số cho plugin contract — interface plugin phải implement."""
+    id: str = ""
+    slots: list[str] = field(default_factory=list)
+    config_schema: dict = field(default_factory=dict)
+    dependencies: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PluginPolicyParams:
+    """Thông số cho plugin policy — chính sách bảo mật và versioning."""
+    id: str = ""
+    policy_type: str = ""  # "security" | "versioning"
+    rule: str = ""
+    enforced: bool = True
+    config: dict = field(default_factory=dict)
 
 
 # ============================================================================

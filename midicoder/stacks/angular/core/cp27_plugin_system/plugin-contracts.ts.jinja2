@@ -1,0 +1,178 @@
+/** Plugin Contracts — CP27 Plugin System Generator.
+
+Định nghĩa TypeScript interfaces và enum cho plugin system:
+IPlugin, PluginContext, PluginStatus, PluginInfo.
+
+{% if plugin_name %}
+* Plugin Contracts: {{ plugin_name }}
+{% endif %}
+*/
+
+import { Observable } from 'rxjs';
+import { PluginSlot } from './plugin-slots';
+
+/**
+ * PluginStatus — trạng thái lifecycle của plugin.
+ */
+export enum PluginStatus {
+    /** Plugin đã được register nhưng chưa khởi tạo */
+    REGISTERED = 'registered',
+    /** Plugin đang được khởi tạo */
+    INITIALIZING = 'initializing',
+    /** Plugin đã sẵn sàng và đang hoạt động */
+    ACTIVE = 'active',
+    /** Plugin bị lỗi trong quá trình khởi tạo hoặc chạy */
+    ERROR = 'error',
+    /** Plugin bị disable bởi admin */
+    DISABLED = 'disabled',
+    /** Plugin đã được hủy bỏ */
+    UNREGISTERED = 'unregistered',
+}
+
+/**
+ * PluginInfo — thông tin metadata của một plugin.
+ */
+export interface PluginInfo {
+    /** Unique identifier của plugin */
+    id: string;
+    /** Display name */
+    name: string;
+    /** Phiên bản semantic versioning */
+    version: string;
+    /** Mô tả ngắn về plugin */
+    description: string;
+    /** Tác giả hoặc tổ chức */
+    author?: string;
+    /** Trạng thái hiện tại */
+    status: PluginStatus;
+    /** Các slot mà plugin hook vào */
+    slots: (PluginSlot | string)[];
+    /** Dependencies (plugin IDs) */
+    dependencies?: string[];
+    /** Configuration object */
+    config?: Record<string, any>;
+    /** Thời điểm plugin được register (ISO 8601) */
+    registeredAt?: string;
+    /** Thời điểm plugin được active (ISO 8601) */
+    activatedAt?: string;
+}
+
+/**
+ * PluginContext — ngữ cảnh được truyền vào plugin hook handler.
+ */
+export interface PluginContext {
+    /** Plugin ID */
+    pluginId: string;
+    /** Slot đang được kích hoạt */
+    slot: PluginSlot | string;
+    /** Data gốc từ lifecycle event */
+    data: any;
+    /** HTTP request context (nếu có) */
+    request?: PluginRequestContext;
+    /** HTTP response context (nếu có) */
+    response?: PluginResponseContext;
+    /** User info (nếu đã authenticate) */
+    user?: PluginUserInfo;
+    /** Custom metadata từ host */
+    metadata?: Record<string, any>;
+    /** Callback để cancel execution (chỉ với blocking hooks) */
+    cancel?: () => void;
+    /** Callback để modify data trước khi tiếp tục */
+    modifyData?: (newData: any) => void;
+}
+
+/**
+ * PluginRequestContext — context cho HTTP request.
+ */
+export interface PluginRequestContext {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body?: any;
+    params?: Record<string, string>;
+}
+
+/**
+ * PluginResponseContext — context cho HTTP response.
+ */
+export interface PluginResponseContext {
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    body?: any;
+    ok: boolean;
+}
+
+/**
+ * PluginUserInfo — thông tin user đang đăng nhập.
+ */
+export interface PluginUserInfo {
+    id: string;
+    username: string;
+    email?: string;
+    roles?: string[];
+    permissions?: string[];
+}
+
+/**
+ * IPlugin — interface chính mà mọi plugin phải implement.
+ */
+export interface IPlugin {
+    /**
+     * Plugin info metadata.
+     */
+    info: PluginInfo;
+
+    /**
+     * Khởi tạo plugin. Được gọi khi plugin được load.
+     * @param context Plugin context với config
+     */
+    initialize(context: PluginContext): Promise<void>;
+
+    /**
+     * Kích hoạt plugin. Được gọi khi plugin được enable.
+     */
+    activate(): Promise<void>;
+
+    /**
+     * Vô hiệu hóa plugin. Được gọi khi plugin bị disable.
+     */
+    deactivate(): Promise<void>;
+
+    /**
+     * Destroy plugin — release tất cả resources.
+     */
+    destroy(): Promise<void>;
+
+    /**
+     * Xử lý hook khi slot được kích hoạt.
+     * @param context Plugin context với data từ lifecycle event
+     * @returns Optional modified data hoặc void
+     */
+    onHook(context: PluginContext): Promise<any>;
+
+    /**
+     * Update configuration runtime.
+     * @param config New config object (merge với current)
+     */
+    configure(config: Record<string, any>): Promise<void>;
+
+    /**
+     * Health check — trả về trạng thái hiện tại của plugin.
+     */
+    healthCheck(): Observable<PluginHealthResult>;
+}
+
+/**
+ * PluginHealthResult — kết quả health check.
+ */
+export interface PluginHealthResult {
+    /** Plugin có đang hoạt động bình thường */
+    healthy: boolean;
+    /** Message chi tiết */
+    message?: string;
+    /** Timestamp (ISO 8601) */
+    checkedAt: string;
+    /** Metrics tùy chỉnh */
+    metrics?: Record<string, any>;
+}

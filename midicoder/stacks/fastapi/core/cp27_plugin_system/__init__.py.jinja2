@@ -1,0 +1,44 @@
+{#
+Jinja2 template cho Plugin System __init__.py (CP27).
+
+Tự động sinh package init file cho plugin system module.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""Plugin system — tự động sinh bởi CP27."""
+
+from .slots import PluginSlot, PluginSlotRegistry
+from .contracts import PluginBase, PluginContext, PluginStatus
+from .policies import PluginPolicyEngine, PolicyValidator
+from .loader import PluginLoader
+from .registry import PluginRegistry
+from .manager import PluginManager
+
+__all__ = [
+    # Slots
+    "PluginSlot",
+    "PluginSlotRegistry",
+    # Contracts
+    "PluginBase",
+    "PluginContext",
+    "PluginStatus",
+    # Policies
+    "PluginPolicyEngine",
+    "PolicyValidator",
+    # Loader
+    "PluginLoader",
+    # Registry
+    "PluginRegistry",
+    # Manager
+    "PluginManager",
+]

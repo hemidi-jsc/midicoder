@@ -1,0 +1,377 @@
+{#
+Jinja2 template cho PluginLoader (CP27).
+
+Tự động sinh PluginLoader class với discover, validate, load, unload.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Plugin Loader — tự động sinh bởi CP27.
+
+Module này cung cấp:
+- PluginLoader: Discover, validate, load, và unload plugins từ filesystem.
+
+Loader sử dụng glob để tìm plugin.json manifests và import modules động.
+
+CP27: Plugin System Generator
+"""
+
+from __future__ import annotations
+
+import importlib
+import importlib.util
+import json
+import logging
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Optional
+
+from .contracts import PluginBase, PluginContext
+from .policies import PluginPolicyEngine, PolicyValidator
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Plugin Metadata
+# ============================================================================
+
+
+@dataclass
+class PluginMetadata:
+    """
+    Metadata của plugin sau khi discover từ manifest.
+
+    Attributes:
+        manifest_path: Đường dẫn đến plugin.json
+        plugin_dir: Thư mục chứa plugin
+        manifest: Nội dung manifest (dict)
+        module_name: Module name sẽ dùng để import
+    """
+    manifest_path: Path
+    plugin_dir: Path
+    manifest: dict[str, Any]
+    module_name: str = ""
+
+
+# ============================================================================
+# PluginLoader
+# ============================================================================
+
+
+class PluginLoader:
+    """
+    Loader để discover, validate, load, và unload plugins.
+
+    Workflow:
+        1. discover_plugins(path) — Tìm plugin.json files trong path
+        2. validate_plugin(manifest) — Kiểm tra manifest against policies
+        3. load_plugin(manifest)     — Import module và tạo plugin instance
+        4. unload_plugin(plugin_id)  — Remove plugin khỏi memory
+
+    Usage:
+        loader = PluginLoader(policy_engine=engine)
+        plugins = loader.discover_plugins("/path/to/plugins")
+        for meta in plugins:
+            if loader.validate_plugin(meta.manifest):
+                plugin = loader.load_plugin(meta)
+    """
+
+    def __init__(
+        self,
+        policy_engine: Optional[PluginPolicyEngine] = None,
+        validator: Optional[PolicyValidator] = None,
+    ) -> None:
+        """
+        Initialize PluginLoader.
+
+        Args:
+            policy_engine: PolicyEngine cho validation (tự tạo nếu None)
+            validator: PolicyValidator instance (tự tạo nếu None)
+        """
+        self._policy_engine = policy_engine or PluginPolicyEngine()
+        self._validator = validator or PolicyValidator(self._policy_engine)
+        self._loaded_plugins: dict[str, Any] = {}
+
+    def discover_plugins(self, path: str | Path) -> list[PluginMetadata]:
+        """
+        Tìm tất cả plugin directories có plugin.json trong path.
+
+        Sử dụng glob để tìm các file plugin.json trong các subdirectories
+        của path được chỉ định.
+
+        Args:
+            path: Thư mục chứa plugins
+
+        Returns:
+            Danh sách PluginMetadata cho mỗi plugin被发现
+        """
+        path = Path(path)
+        plugins: list[PluginMetadata] = []
+
+        if not path.exists():
+            logger.warning("Plugin path không tồn tại: %s", path)
+            return plugins
+
+        # Tìm tất cả plugin.json files
+        for manifest_path in path.glob("*/plugin.json"):
+            try:
+                manifest = self._read_manifest(manifest_path)
+                plugin_dir = manifest_path.parent
+                module_name = plugin_dir.name
+
+                metadata = PluginMetadata(
+                    manifest_path=manifest_path,
+                    plugin_dir=plugin_dir,
+                    manifest=manifest,
+                    module_name=module_name,
+                )
+                plugins.append(metadata)
+                logger.info("Discover plugin: %s tại %s", manifest.get("id"), plugin_dir)
+            except Exception as e:
+                logger.error(
+                    "Không thể đọc manifest tại %s: %s",
+                    manifest_path,
+                    e,
+                )
+
+        return plugins
+
+    def validate_plugin(
+        self,
+        manifest: dict[str, Any],
+        code: Optional[str] = None,
+    ) -> bool:
+        """
+        Kiểm tra plugin manifest against policies.
+
+        Validate:
+        - Manifest có đủ required fields (id, name, version)
+        - Version trong range cho phép
+        - Origin trong whitelist
+        - Signature hợp lệ (nếu có code)
+
+        Args:
+            manifest: Plugin manifest dict
+            code: Source code (optional, cho signature check)
+
+        Returns:
+            True nếu tất cả policies đều pass
+        """
+        # Kiểm tra required fields
+        required_fields = ["id", "name", "version"]
+        for f in required_fields:
+            if f not in manifest or not manifest[f]:
+                logger.error(
+                    "Manifest thiếu required field: %s (plugin: %s)",
+                    f,
+                    manifest.get("id", "unknown"),
+                )
+                return False
+
+        # Validate against policies
+        results = self._validator.validate_manifest(manifest, code)
+
+        all_passed = all(r.passed for r in results)
+        if not all_passed:
+            failed = [r for r in results if not r.passed]
+            for r in failed:
+                logger.warning(
+                    "Plugin %s policy failed [%s]: %s",
+                    manifest["id"],
+                    r.policy_id,
+                    r.reason,
+                )
+        else:
+            logger.info("Plugin %s通过了所有政策检查", manifest["id"])
+
+        return all_passed
+
+    def load_plugin(self, metadata: PluginMetadata) -> Optional[Any]:
+        """
+        Load plugin từ metadata — import module và tạo instance.
+
+        Process:
+        1. Import module từ plugin directory
+        2. Tìm class implement PluginBase Protocol
+        3. Tạo instance và lưu vào registry
+
+        Args:
+            metadata: PluginMetadata từ discover_plugins
+
+        Returns:
+            Plugin instance hoặc None nếu load thất bại
+        """
+        plugin_id = metadata.manifest.get("id", "unknown")
+
+        # Kiểm tra đã load chưa
+        if plugin_id in self._loaded_plugins:
+            logger.warning("Plugin %s đã được load", plugin_id)
+            return self._loaded_plugins[plugin_id]
+
+        try:
+            # Import module động
+            module = self._import_module(metadata)
+
+            # Tìm plugin class trong module
+            plugin_instance = self._find_plugin_class(module)
+
+            if plugin_instance is None:
+                logger.error("Không tìm thấy plugin class trong module %s", metadata.module_name)
+                return None
+
+            # Lưu vào loaded plugins
+            self._loaded_plugins[plugin_id] = plugin_instance
+
+            logger.info(
+                "Loaded plugin: %s v%s (%s)",
+                plugin_id,
+                metadata.manifest.get("version"),
+                metadata.plugin_dir,
+            )
+
+            return plugin_instance
+
+        except Exception as e:
+            logger.error(
+                "Không thể load plugin %s: %s",
+                plugin_id,
+                e,
+                exc_info=True,
+            )
+            return None
+
+    def unload_plugin(self, plugin_id: str) -> bool:
+        """
+        Unload plugin khỏi memory.
+
+        Args:
+            plugin_id: Plugin ID
+
+        Returns:
+            True nếu unload thành công
+        """
+        if plugin_id in self._loaded_plugins:
+            plugin = self._loaded_plugins.pop(plugin_id)
+            logger.info("Unloaded plugin: %s", plugin_id)
+            return True
+
+        logger.warning("Plugin %s không được load, không thể unload", plugin_id)
+        return False
+
+    def get_loaded_plugin(self, plugin_id: str) -> Optional[Any]:
+        """
+        Lấy plugin instance đã load.
+
+        Args:
+            plugin_id: Plugin ID
+
+        Returns:
+            Plugin instance hoặc None
+        """
+        return self._loaded_plugins.get(plugin_id)
+
+    def get_all_loaded_plugins(self) -> dict[str, Any]:
+        """Lấy danh sách tất cả plugins đã load."""
+        return dict(self._loaded_plugins)
+
+    # -------------------------------------------------------------------------
+    # Internal Methods
+    # -------------------------------------------------------------------------
+
+    def _read_manifest(self, manifest_path: Path) -> dict[str, Any]:
+        """Đọc và parse plugin.json manifest."""
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def _import_module(self, metadata: PluginMetadata) -> Any:
+        """
+        Import module động từ plugin directory.
+
+        Args:
+            metadata: PluginMetadata
+
+        Returns:
+            Imported module
+        """
+        plugin_dir = str(metadata.plugin_dir)
+        module_name = metadata.module_name
+
+        # Thêm plugin directory vào sys.path nếu chưa có
+        if plugin_dir not in sys.path:
+            sys.path.insert(0, plugin_dir)
+
+        try:
+            # Thử import module chính
+            spec = importlib.util.spec_from_file_location(
+                module_name,
+                metadata.plugin_dir / "plugin.py",
+            )
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+                return module
+
+            # Nếu không có plugin.py, thử import __init__.py
+            init_path = metadata.plugin_dir / "__init__.py"
+            if init_path.exists():
+                spec = importlib.util.spec_from_file_location(
+                    module_name,
+                    init_path,
+                )
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module
+                    spec.loader.exec_module(module)
+                    return module
+
+            raise ImportError(f"Không tìm thấy plugin.py hoặc __init__.py trong {plugin_dir}")
+
+        finally:
+            # Cleanup sys.path
+            if plugin_dir in sys.path:
+                sys.path.remove(plugin_dir)
+
+    def _find_plugin_class(self, module: Any) -> Optional[Any]:
+        """
+        Tìm class implement PluginBase trong module.
+
+        Duyệt qua tất cả attributes của module và tìm class
+        mà implement PluginBase Protocol.
+
+        Args:
+            module: Imported module
+
+        Returns:
+            Plugin instance hoặc None
+        """
+        for attr_name in dir(module):
+            attr = getattr(module, attr_name)
+            # Kiểm tra là class và implement PluginBase
+            if (
+                isinstance(attr, type)
+                and attr_name != "PluginBase"
+                and hasattr(attr, "__annotations__")
+            ):
+                # Tạo instance
+                try:
+                    instance = attr()
+                    # Kiểm tra có các required properties không
+                    if hasattr(instance, "id") and hasattr(instance, "name") and hasattr(instance, "version"):
+                        return instance
+                except Exception:
+                    continue
+
+        return None

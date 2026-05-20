@@ -1,0 +1,589 @@
+{#
+Jinja2 template cho Plugin API router (CP27).
+
+Tự động sinh FastAPI router với endpoints quản lý plugins.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Plugin API Router — tự động sinh bởi CP27.
+
+Module này cung cấp FastAPI router với endpoints:
+    GET     /plugins              — Danh sách tất cả plugins
+    GET     /plugins/{id}         — Thông tin plugin cụ thể
+    POST    /plugins/{id}/enable  — Enable plugin
+    POST    /plugins/{id}/disable — Disable plugin
+    POST    /plugins/{id}/configure — Cấu hình plugin
+    GET     /plugins/{id}/status  — Trạng thái plugin
+    GET     /plugins/slots        — Danh sách tất cả slots
+    GET     /plugins/slots/{slot}/hooks — Plugins hook vào slot
+
+CP27: Plugin System Generator
+"""
+
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from pydantic import BaseModel, Field
+
+from .contracts import PluginContext, PluginStatus
+from .manager import PluginManager, PluginStatusInfo
+from .registry import PluginRegistry
+from .slots import PluginSlotRegistry
+
+# ============================================================================
+# Pydantic Models — Request/Response
+# ============================================================================
+
+
+class PluginInfo(BaseModel):
+    """
+    Response model cho plugin information.
+
+    Attributes:
+        id: Plugin ID
+        name: Plugin name
+        version: Plugin version
+        status: Plugin status string
+        slots: Danh sách slot IDs
+        config: Runtime config
+        error: Error message (nếu có)
+    """
+    id: str = Field(..., description="Plugin ID duy nhất")
+    name: str = Field(..., description="Tên plugin")
+    version: str = Field(..., description="Version semver")
+    status: str = Field(..., description="Trạng thái: disabled/loading/enabled/error")
+    slots: list[str] = Field(default_factory=list, description="Danh sách slot IDs")
+    config: dict[str, Any] = Field(default_factory=dict, description="Runtime config")
+    error: Optional[str] = Field(None, description="Error message nếu có")
+
+
+class PluginListResponse(BaseModel):
+    """Response model cho danh sách plugins."""
+    total: int = Field(..., description="Tổng số plugins")
+    enabled: int = Field(..., description="Số plugins đang enabled")
+    plugins: list[PluginInfo] = Field(default_factory=list, description="Danh sách plugins")
+
+
+class PluginConfigureRequest(BaseModel):
+    """Request model để cấu hình plugin."""
+    config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Config dict để apply cho plugin",
+    )
+
+
+class SlotInfo(BaseModel):
+    """Response model cho slot information."""
+    id: str = Field(..., description="Slot ID")
+    name: str = Field(..., description="Slot name")
+    is_tenant_aware: bool = Field(..., description="Có cần tenant context không")
+    priority_range: list[int] = Field(..., description="Priority range [min, max]")
+    description: str = Field(..., description="Mô tả slot")
+    plugin_count: int = Field(default=0, description="Số plugins hook vào slot này")
+
+
+class SlotListResponse(BaseModel):
+    """Response model cho danh sách slots."""
+    total: int = Field(..., description="Tổng số slots")
+    lifecycle_slots: int = Field(..., description="Số lifecycle slots")
+    hook_slots: int = Field(..., description="Số before/after hook slots")
+    slots: list[SlotInfo] = Field(default_factory=list, description="Danh sách slots")
+
+
+class PluginHookInfo(BaseModel):
+    """Thông tin plugin hook vào slot."""
+    plugin_id: str = Field(..., description="Plugin ID")
+    plugin_name: str = Field(..., description="Plugin name")
+    plugin_version: str = Field(..., description="Plugin version")
+    is_enabled: bool = Field(..., description="Plugin có enabled không")
+
+
+class SlotHooksResponse(BaseModel):
+    """Response model cho plugins hook vào slot."""
+    slot_id: str = Field(..., description="Slot ID")
+    slot_name: str = Field(..., description="Slot name")
+    hooks: list[PluginHookInfo] = Field(default_factory=list, description="Danh sách plugins")
+
+
+# ============================================================================
+# Router
+# ============================================================================
+
+router = APIRouter(
+    prefix="/plugins",
+    tags=["plugins"],
+)
+
+# Dependencies
+
+
+def get_plugin_manager() -> PluginManager:
+    """Dependency — lấy PluginManager instance."""
+    return PluginManager()
+
+
+def get_plugin_registry() -> PluginRegistry:
+    """Dependency — lấy PluginRegistry instance."""
+    return PluginRegistry.get()
+
+
+def get_slot_registry() -> PluginSlotRegistry:
+    """Dependency — lấy PluginSlotRegistry instance."""
+    return PluginSlotRegistry.get()
+
+
+# -------------------------------------------------------------------------
+# GET /plugins — Danh sách tất cả plugins
+# -------------------------------------------------------------------------
+
+
+@router.get("", response_model=PluginListResponse, status_code=status.HTTP_200_OK)
+async def list_plugins(
+    manager: PluginManager = PluginManager(),
+):
+    """
+    Lấy danh sách tất cả plugins với trạng thái.
+
+    Returns:
+        PluginListResponse
+    """
+    plugins_info = manager.list_plugins()
+
+    enabled_count = sum(
+        1 for p in plugins_info if p.status == PluginStatus.ENABLED
+    )
+
+    plugin_list = [
+        PluginInfo(
+            id=p.id,
+            name=p.name,
+            version=p.version,
+            status=p.status.value,
+            slots=p.slots,
+            config=p.config,
+            error=p.error,
+        )
+        for p in plugins_info
+    ]
+
+    return PluginListResponse(
+        total=len(plugins_info),
+        enabled=enabled_count,
+        plugins=plugin_list,
+    )
+
+
+# -------------------------------------------------------------------------
+# GET /plugins/{id} — Thông tin plugin cụ thể
+# -------------------------------------------------------------------------
+
+
+@router.get(
+    "/{plugin_id}",
+    response_model=PluginInfo,
+    status_code=status.HTTP_200_OK,
+)
+async def get_plugin(
+    plugin_id: str = Path(..., description="Plugin ID"),
+    manager: PluginManager = PluginManager(),
+):
+    """
+    Lấy thông tin chi tiết của plugin.
+
+    Args:
+        plugin_id: Plugin ID
+
+    Returns:
+        PluginInfo
+
+    Raises:
+        HTTPException 404: Plugin không tồn tại
+    """
+    status_info = manager.get_status(plugin_id)
+
+    if status_info is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Plugin '{plugin_id}' không tìm thấy",
+        )
+
+    return PluginInfo(
+        id=status_info.id,
+        name=status_info.name,
+        version=status_info.version,
+        status=status_info.status.value,
+        slots=status_info.slots,
+        config=status_info.config,
+        error=status_info.error,
+    )
+
+
+# -------------------------------------------------------------------------
+# POST /plugins/{id}/enable — Enable plugin
+# -------------------------------------------------------------------------
+
+
+@router.post(
+    "/{plugin_id}/enable",
+    response_model=PluginInfo,
+    status_code=status.HTTP_200_OK,
+)
+async def enable_plugin(
+    plugin_id: str = Path(..., description="Plugin ID"),
+    request: Request = None,
+    manager: PluginManager = PluginManager(),
+):
+    """
+    Enable plugin — chạy lifecycle: init → configure → ready.
+
+    Args:
+        plugin_id: Plugin ID
+        request: HTTP request (để extract tenant/user context)
+
+    Returns:
+        PluginInfo với status đã cập nhật
+
+    Raises:
+        HTTPException 404: Plugin không tồn tại
+        HTTPException 400: Enable thất bại
+    """
+    # Xây dựng PluginContext từ request
+    ctx = _build_context_from_request(request)
+
+    success = manager.enable_plugin(plugin_id, ctx=ctx)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Không thể enable plugin '{plugin_id}'",
+        )
+
+    status_info = manager.get_status(plugin_id)
+    if status_info is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Plugin '{plugin_id}' không tìm thấy",
+        )
+
+    return PluginInfo(
+        id=status_info.id,
+        name=status_info.name,
+        version=status_info.version,
+        status=status_info.status.value,
+        slots=status_info.slots,
+        config=status_info.config,
+        error=status_info.error,
+    )
+
+
+# -------------------------------------------------------------------------
+# POST /plugins/{id}/disable — Disable plugin
+# -------------------------------------------------------------------------
+
+
+@router.post(
+    "/{plugin_id}/disable",
+    response_model=PluginInfo,
+    status_code=status.HTTP_200_OK,
+)
+async def disable_plugin(
+    plugin_id: str = Path(..., description="Plugin ID"),
+    request: Request = None,
+    manager: PluginManager = PluginManager(),
+):
+    """
+    Disable plugin — chạy on_shutdown.
+
+    Args:
+        plugin_id: Plugin ID
+        request: HTTP request
+
+    Returns:
+        PluginInfo với status đã cập nhật
+
+    Raises:
+        HTTPException 404: Plugin không tồn tại
+        HTTPException 400: Disable thất bại
+    """
+    ctx = _build_context_from_request(request)
+
+    success = manager.disable_plugin(plugin_id, ctx=ctx)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Không thể disable plugin '{plugin_id}'",
+        )
+
+    status_info = manager.get_status(plugin_id)
+    if status_info is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Plugin '{plugin_id}' không tìm thấy",
+        )
+
+    return PluginInfo(
+        id=status_info.id,
+        name=status_info.name,
+        version=status_info.version,
+        status=status_info.status.value,
+        slots=status_info.slots,
+        config=status_info.config,
+        error=status_info.error,
+    )
+
+
+# -------------------------------------------------------------------------
+# POST /plugins/{id}/configure — Cấu hình plugin
+# -------------------------------------------------------------------------
+
+
+@router.post(
+    "/{plugin_id}/configure",
+    response_model=PluginInfo,
+    status_code=status.HTTP_200_OK,
+)
+async def configure_plugin(
+    plugin_id: str = Path(..., description="Plugin ID"),
+    body: PluginConfigureRequest = PluginConfigureRequest(config={}),
+    manager: PluginManager = PluginManager(),
+):
+    """
+    Apply config mới cho plugin.
+
+    Args:
+        plugin_id: Plugin ID
+        body: Config dict
+
+    Returns:
+        PluginInfo với config đã cập nhật
+
+    Raises:
+        HTTPException 404: Plugin không tồn tại
+        HTTPException 400: Configure thất bại
+    """
+    success = manager.configure_plugin(
+        plugin_id,
+        config=body.config,
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Không thể configure plugin '{plugin_id}'",
+        )
+
+    status_info = manager.get_status(plugin_id)
+    if status_info is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Plugin '{plugin_id}' không tìm thấy",
+        )
+
+    return PluginInfo(
+        id=status_info.id,
+        name=status_info.name,
+        version=status_info.version,
+        status=status_info.status.value,
+        slots=status_info.slots,
+        config=status_info.config,
+        error=status_info.error,
+    )
+
+
+# -------------------------------------------------------------------------
+# GET /plugins/{id}/status — Trạng thái plugin
+# -------------------------------------------------------------------------
+
+
+@router.get(
+    "/{plugin_id}/status",
+    response_model=PluginInfo,
+    status_code=status.HTTP_200_OK,
+)
+async def get_plugin_status(
+    plugin_id: str = Path(..., description="Plugin ID"),
+    manager: PluginManager = PluginManager(),
+):
+    """
+    Lấy trạng thái hiện tại của plugin.
+
+    Args:
+        plugin_id: Plugin ID
+
+    Returns:
+        PluginInfo
+
+    Raises:
+        HTTPException 404: Plugin không tồn tại
+    """
+    status_info = manager.get_status(plugin_id)
+
+    if status_info is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Plugin '{plugin_id}' không tìm thấy",
+        )
+
+    return PluginInfo(
+        id=status_info.id,
+        name=status_info.name,
+        version=status_info.version,
+        status=status_info.status.value,
+        slots=status_info.slots,
+        config=status_info.config,
+        error=status_info.error,
+    )
+
+
+# -------------------------------------------------------------------------
+# GET /plugins/slots — Danh sách tất cả slots
+# -------------------------------------------------------------------------
+
+
+@router.get(
+    "/slots",
+    response_model=SlotListResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def list_slots(
+    slot_registry: PluginSlotRegistry = Depends(get_slot_registry),
+    plugin_registry: PluginRegistry = Depends(get_plugin_registry),
+):
+    """
+    Lấy danh sách tất cả plugin slots.
+
+    Returns:
+        SlotListResponse
+    """
+    all_slots = slot_registry.get_all_slots()
+    lifecycle_slots = slot_registry.get_lifecycle_slots()
+    hook_slots = slot_registry.get_hook_slots()
+
+    slot_list: list[SlotInfo] = []
+    for slot_meta in all_slots:
+        # Đếm số plugins hook vào slot này
+        slot_id = slot_meta.get("name", slot_meta.get("id", ""))
+        hooked_plugins = plugin_registry.get_by_slot(slot_id)
+        plugin_count = len(hooked_plugins)
+
+        slot_list.append(SlotInfo(
+            id=slot_meta.get("id", slot_id),
+            name=slot_id,
+            is_tenant_aware=slot_meta.get("is_tenant_aware", False),
+            priority_range=slot_meta.get("priority_range", [0, 100]),
+            description=slot_meta.get("description", ""),
+            plugin_count=plugin_count,
+        ))
+
+    return SlotListResponse(
+        total=len(all_slots),
+        lifecycle_slots=len(lifecycle_slots),
+        hook_slots=len(hook_slots),
+        slots=slot_list,
+    )
+
+
+# -------------------------------------------------------------------------
+# GET /plugins/slots/{slot}/hooks — Plugins hook vào slot
+# -------------------------------------------------------------------------
+
+
+@router.get(
+    "/slots/{slot_id}/hooks",
+    response_model=SlotHooksResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_slot_hooks(
+    slot_id: str = Path(..., description="Slot ID"),
+    slot_registry: PluginSlotRegistry = Depends(get_slot_registry),
+    plugin_registry: PluginRegistry = Depends(get_plugin_registry),
+):
+    """
+    Lấy danh sách plugins hook vào slot cụ thể.
+
+    Args:
+        slot_id: Slot ID (ví dụ: "on_request", "before_create_user")
+
+    Returns:
+        SlotHooksResponse
+
+    Raises:
+        HTTPException 404: Slot không tồn tại
+    """
+    slot_meta = slot_registry.get_slot_metadata(slot_id)
+    if slot_meta is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Slot '{slot_id}' không tìm thấy",
+        )
+
+    # Lấy plugins hook vào slot
+    hooked_plugins = plugin_registry.get_by_slot(slot_id)
+
+    hooks: list[PluginHookInfo] = []
+    for plugin in hooked_plugins:
+        entry = plugin_registry.get_entry(plugin.id)
+        is_enabled = entry.status == PluginStatus.ENABLED if entry else False
+
+        hooks.append(PluginHookInfo(
+            plugin_id=plugin.id,
+            plugin_name=plugin.name,
+            plugin_version=plugin.version,
+            is_enabled=is_enabled,
+        ))
+
+    return SlotHooksResponse(
+        slot_id=slot_id,
+        slot_name=slot_meta.get("name", slot_id),
+        hooks=hooks,
+    )
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+def _build_context_from_request(request: Optional[Request]) -> PluginContext:
+    """
+    Build PluginContext từ FastAPI Request.
+
+    Extract tenant_id, user_id, request_id từ request state/headers.
+
+    Args:
+        request: FastAPI Request object
+
+    Returns:
+        PluginContext instance
+    """
+    tenant_id = ""
+    user_id = ""
+    request_id = ""
+
+    if request:
+        # KPI-029: Extract tenant_id từ request state
+        tenant_id = getattr(request.state, "tenant_id", "")
+        # Extract user_id từ request state
+        user_id = getattr(request.state, "user_id", "")
+        # Extract request_id từ header
+        request_id = request.headers.get("X-Request-Id", "")
+
+    return PluginContext(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        request_id=request_id,
+    )

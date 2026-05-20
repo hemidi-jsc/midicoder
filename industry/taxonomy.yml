@@ -517,7 +517,7 @@ core_packs:
       - plugin_contract
       - plugin_policy
     category: extensibility
-    status: experimental
+    status: stable
     version: 1.0.0
   - id: CP28
     name: Custom Code Injection Generator

@@ -1,0 +1,91 @@
+/** Plugin Slots — CP27 Plugin System Generator.
+
+Định nghĩa các slot lifecycle events và command hooks
+mà plugin có thể hook vào.
+
+{% if plugin_name %}
+* Plugin Slots: {{ plugin_name }}
+{% endif %}
+*/
+
+/**
+ * PluginSlot enum — các điểm lifecycle trong ứng dụng
+ * mà plugin có thể gắn hook.
+ */
+export enum PluginSlot {
+    /** Trước khi gửi HTTP request */
+    BEFORE_HTTP_REQUEST = 'before_http_request',
+    /** Sau khi nhận HTTP response */
+    AFTER_HTTP_RESPONSE = 'after_http_response',
+    /** HTTP request lỗi */
+    HTTP_ERROR = 'http_error',
+    /** Trước khi authenticate user */
+    BEFORE_AUTHENTICATE = 'before_authenticate',
+    /** Sau khi authenticate user */
+    AFTER_AUTHENTICATE = 'after_authenticate',
+    /** Auth error */
+    AUTH_ERROR = 'auth_error',
+    /** Trước khi navigate */
+    BEFORE_NAVIGATE = 'before_navigate',
+    /** Sau khi navigate */
+    AFTER_NAVIGATE = 'after_navigate',
+    /** Trước khi dispatch action (state management) */
+    BEFORE_ACTION = 'before_action',
+    /** Sau khi dispatch action */
+    AFTER_ACTION = 'after_action',
+    /** Trước khi render component */
+    BEFORE_RENDER = 'before_render',
+    /** Sau khi render component */
+    AFTER_RENDER = 'after_render',
+    /** Error occurred */
+    ON_ERROR = 'on_error',
+    /** Custom slot */
+    CUSTOM = 'custom',
+}
+
+/**
+ * PluginHook — một hook cụ thể gắn vào slot.
+ */
+export interface PluginHook {
+    /** Plugin ID sở hữu hook này */
+    pluginId: string;
+    /** Slot mà hook gắn vào */
+    slot: PluginSlot | string;
+    /** Priority (càng lớn càng chạy trước) */
+    priority?: number;
+    /** Handler function name */
+    handler: string;
+    /** Có nên chặn execution nếu hook return false */
+    blocking?: boolean;
+}
+
+/**
+ * CommandHook — before/after hooks cho command pattern.
+ */
+{% if command_hooks %}
+export interface CommandHooks {
+{% for hook in command_hooks %}
+    /** {{ hook.description }} */
+    {{ hook.name }}: {
+        command: string;
+        slot: PluginSlot;
+        blocking: boolean;
+    };
+{% endfor %}
+}
+{% else %}
+export interface CommandHooks {
+    /** Trước khi execute command */
+    before_command: {
+        command: string;
+        slot: PluginSlot;
+        blocking: boolean;
+    };
+    /** Sau khi execute command */
+    after_command: {
+        command: string;
+        slot: PluginSlot;
+        blocking: boolean;
+    };
+}
+{% endif %}

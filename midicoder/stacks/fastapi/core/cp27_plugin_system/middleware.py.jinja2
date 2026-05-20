@@ -1,0 +1,207 @@
+{#
+Jinja2 template cho Plugin ASGI Middleware (CP27).
+
+Tự động sinh ASGI middleware để invoke plugin hooks trên mỗi request.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Plugin ASGI Middleware — tự động sinh bởi CP27.
+
+Module này cung cấp:
+- PluginMiddleware: ASGI middlewareinvoke on_request hook cho enabled plugins.
+
+Middleware xử lý lỗi theo từng plugin — một plugin crash không ảnh hưởng
+đến các plugin khác hoặc request chính.
+
+CP27: Plugin System Generator
+KPI-029: Tenant Isolation — tenant context propagation vào PluginContext
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any, Callable
+
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+
+from .contracts import PluginContext
+from .manager import PluginManager
+from .registry import PluginRegistry
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# PluginMiddleware
+# ============================================================================
+
+
+class PluginMiddleware(BaseHTTPMiddleware):
+    """
+    ASGI middleware để invoke plugin hooks trên mỗi request.
+
+    Middleware này:
+    1. Build PluginContext từ request (tenant_id, user_id, request_id)
+    2. Invoke on_request hook cho tất cả enabled plugins hook vào "on_request"
+    3. Catch và log errors per-plugin — một plugin crash không ảnh hưởng others
+
+    Error Handling:
+        - Mỗi plugin được invoke trong try/except riêng
+        - Lỗi được log với plugin ID và error message
+        - Request chính vẫn tiếp tục xử lý
+
+    Usage:
+        app.add_middleware(PluginMiddleware)
+
+    Configuration:
+        manager:         PluginManager instance (tự lấy singleton nếu None)
+        enable_logging:  Có log timing metrics không (default: True)
+        log_level:       Log level cho plugin errors (default: logging.ERROR)
+    """
+
+    def __init__(
+        self,
+        app: Any,
+        manager: PluginManager | None = None,
+        enable_logging: bool = True,
+        log_level: int = logging.ERROR,
+    ) -> None:
+        """
+        Initialize PluginMiddleware.
+
+        Args:
+            app: ASGI application
+            manager: PluginManager instance (tự lấy singleton nếu None)
+            enable_logging: Có log timing metrics không
+            log_level: Log level cho plugin errors
+        """
+        super().__init__(app)
+        self._manager = manager or PluginManager()
+        self._enable_logging = enable_logging
+        self._log_level = log_level
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        """
+        Process request với plugin hooks.
+
+        Flow:
+        1. Build PluginContext từ request
+        2. Invoke on_request hooks (pre-request)
+        3. Call next middleware/handler
+        4. Return response
+
+        Plugin errors không làm fail request — chỉ được log.
+
+        Args:
+            request: ASGI Request
+            call_next: Next middleware/handler
+
+        Returns:
+            Response object
+        """
+        # Build context từ request
+        ctx = self._build_context(request)
+
+        # Invoke on_request hooks cho enabled plugins
+        if self._enable_logging:
+            start_time = time.monotonic()
+
+        self._invoke_request_hooks(ctx, request.scope)
+
+        if self._enable_logging:
+            hook_duration = (time.monotonic() - start_time) * 1000
+            logger.debug("Plugin hooks duration: %.2fms", hook_duration)
+
+        # Process request
+        response = await call_next(request)
+
+        return response
+
+    def _build_context(self, request: Request) -> PluginContext:
+        """
+        Build PluginContext từ FastAPI Request.
+
+        Extract:
+        - tenant_id: Từ request.state (KPI-029: Tenant Isolation)
+        - user_id: Từ request.state
+        - request_id: Từ X-Request-Id header
+        - app_config: Từ app state
+
+        Args:
+            request: FastAPI Request
+
+        Returns:
+            PluginContext instance
+        """
+        # KPI-029: Tenant ID từ request state
+        tenant_id = getattr(request.state, "tenant_id", "")
+
+        # User ID từ request state
+        user_id = getattr(request.state, "user_id", "")
+
+        # Request ID từ header cho distributed tracing
+        request_id = request.headers.get("X-Request-Id", "")
+
+        # App config từ app state (nếu có)
+        app_config: dict[str, Any] = {}
+        if hasattr(request.app, "config"):
+            app_config = getattr(request.app, "config", {})
+
+        return PluginContext(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            request_id=request_id,
+            app_config=app_config,
+        )
+
+    def _invoke_request_hooks(
+        self,
+        ctx: PluginContext,
+        request_scope: dict[str, Any],
+    ) -> None:
+        """
+        Invoke on_request hook cho tất cả enabled plugins.
+
+        Mỗi plugin được invoke trong try/except riêng — lỗi của một plugin
+        không ảnh hưởng đến các plugin khác.
+
+        Args:
+            ctx: PluginContext hiện tại
+            request_scope: ASGI scope dict
+        """
+        # Lấy danh sách enabled plugins hook vào on_request
+        registry = PluginRegistry.get()
+        enabled_plugins = registry.get_enabled_by_slot("on_request")
+
+        if not enabled_plugins:
+            return
+
+        for plugin in enabled_plugins:
+            try:
+                plugin.on_request(ctx, request_scope)
+            except Exception as e:
+                # Log error per-plugin — không làm fail request
+                logger.log(
+                    self._log_level,
+                    "Plugin '%s' on_request error: %s",
+                    plugin.id,
+                    e,
+                    exc_info=True,
+                )

@@ -1,0 +1,410 @@
+{#
+Jinja2 template cho PluginRegistry singleton (CP27).
+
+Tự động sinh PluginRegistry class thread-safe với threading.Lock.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Plugin Registry — tự động sinh bởi CP27.
+
+Module này cung cấp:
+- PluginRegistry: Singleton thread-safe để quản lý plugins đã đăng ký.
+
+Registry dùng threading.Lock để đảm bảo thread safety khi nhiều worker
+cùng truy cập vào plugin list.
+
+CP27: Plugin System Generator
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+from typing import Any, Optional, TypeVar
+
+from .contracts import PluginBase, PluginStatus
+
+logger = logging.getLogger(__name__)
+
+# TypeVar cho plugin generic
+P = TypeVar("P", bound=PluginBase)
+
+
+# ============================================================================
+# PluginEntry — wrapper lưu trạng thái plugin
+# ============================================================================
+
+
+class PluginEntry:
+    """
+    Wrapper lưu trạng thái và metadata của một plugin trong registry.
+
+    Attributes:
+        plugin: Plugin instance
+        status: Trạng thái hiện tại (PluginStatus)
+        config: Runtime config dict
+        error: Lỗi message nếu có
+    """
+
+    __slots__ = ("plugin", "status", "config", "error")
+
+    def __init__(
+        self,
+        plugin: PluginBase,
+        status: PluginStatus = PluginStatus.DISABLED,
+    ) -> None:
+        """Initialize PluginEntry."""
+        self.plugin = plugin
+        self.status = status
+        self.config: dict[str, Any] = {}
+        self.error: Optional[str] = None
+
+
+# ============================================================================
+# PluginRegistry — Singleton
+# ============================================================================
+
+
+class PluginRegistry:
+    """
+    Singleton registry thread-safe để quản lý plugins.
+
+    Cung cấp các operations:
+        register(plugin):      Đăng ký plugin mới
+        unregister(plugin_id): Xóa plugin khỏi registry
+        get(plugin_id):        Lấy plugin instance
+        get_all():             Lấy tất cả plugins
+        get_by_slot(slot_id):  Lấy plugins hook vào slot cụ thể
+        is_enabled(plugin_id): Kiểm tra plugin có enabled không
+
+    Thread Safety:
+        Tất cả read/write operations được bảo vệ bởi threading.Lock.
+
+    Usage:
+        registry = PluginRegistry.get()
+        registry.register(my_plugin)
+        plugins = registry.get_by_slot("on_request")
+    """
+
+    _instance: Optional["PluginRegistry"] = None
+    _instance_lock = threading.Lock()
+
+    def __init__(self) -> None:
+        """Initialize registry — internal, use get() để lấy instance."""
+        self._lock = threading.Lock()
+        self._plugins: dict[str, PluginEntry] = {}
+
+    @classmethod
+    def get(cls) -> "PluginRegistry":
+        """
+        Lấy singleton instance — thread-safe.
+
+        Returns:
+            PluginRegistry instance duy nhất
+        """
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset singleton — dùng trong testing."""
+        with cls._instance_lock:
+            cls._instance = None
+
+    # -------------------------------------------------------------------------
+    # Core Operations
+    # -------------------------------------------------------------------------
+
+    def register(self, plugin: PluginBase) -> bool:
+        """
+        Đăng ký plugin vào registry.
+
+        Args:
+            plugin: Plugin instance implement PluginBase
+
+        Returns:
+            True nếu đăng ký thành công, False nếu ID đã tồn tại
+        """
+        with self._lock:
+            if plugin.id in self._plugins:
+                logger.warning(
+                    "Plugin %s đã tồn tại trong registry — skip register",
+                    plugin.id,
+                )
+                return False
+
+            entry = PluginEntry(
+                plugin=plugin,
+                status=PluginStatus.LOADING,
+            )
+            self._plugins[plugin.id] = entry
+
+            logger.info(
+                "Registered plugin: %s v%s (slots: %s)",
+                plugin.id,
+                plugin.version,
+                plugin.slots,
+            )
+            return True
+
+    def unregister(self, plugin_id: str) -> bool:
+        """
+        Xóa plugin khỏi registry.
+
+        Args:
+            plugin_id: Plugin ID
+
+        Returns:
+            True nếu xóa thành công, False nếu không tìm thấy
+        """
+        with self._lock:
+            if plugin_id not in self._plugins:
+                logger.warning("Plugin %s không tồn tại trong registry", plugin_id)
+                return False
+
+            del self._plugins[plugin_id]
+            logger.info("Unregistered plugin: %s", plugin_id)
+            return True
+
+    def get(self, plugin_id: str) -> Optional[PluginBase]:
+        """
+        Lấy plugin instance theo ID.
+
+        Args:
+            plugin_id: Plugin ID
+
+        Returns:
+            Plugin instance hoặc None
+        """
+        with self._lock:
+            entry = self._plugins.get(plugin_id)
+            return entry.plugin if entry else None
+
+    def get_entry(self, plugin_id: str) -> Optional[PluginEntry]:
+        """
+        Lấy PluginEntry (bao gồm status và config) theo ID.
+
+        Args:
+            plugin_id: Plugin ID
+
+        Returns:
+            PluginEntry hoặc None
+        """
+        with self._lock:
+            return self._plugins.get(plugin_id)
+
+    def get_all(self) -> list[PluginBase]:
+        """
+        Lấy danh sách tất cả plugins đã đăng ký.
+
+        Returns:
+            Danh sách plugin instances
+        """
+        with self._lock:
+            return [entry.plugin for entry in self._plugins.values()]
+
+    def get_all_entries(self) -> list[PluginEntry]:
+        """
+        Lấy danh sách tất cả PluginEntry.
+
+        Returns:
+            Danh sách PluginEntry instances
+        """
+        with self._lock:
+            return list(self._plugins.values())
+
+    def get_by_slot(self, slot_id: str) -> list[PluginBase]:
+        """
+        Lấy danh sách plugins hook vào slot cụ thể.
+
+        Args:
+            slot_id: Slot ID (ví dụ: "on_request", "before_create_user")
+
+        Returns:
+            Danh sách plugins có slot_id trong danh sách slots
+        """
+        with self._lock:
+            result: list[PluginBase] = []
+            for entry in self._plugins.values():
+                if slot_id in entry.plugin.slots:
+                    result.append(entry.plugin)
+            return result
+
+    def get_enabled_plugins(self) -> list[PluginBase]:
+        """
+        Lấy danh sách plugins đang enabled.
+
+        Returns:
+            Danh sách enabled plugins
+        """
+        with self._lock:
+            return [
+                entry.plugin
+                for entry in self._plugins.values()
+                if entry.status == PluginStatus.ENABLED
+            ]
+
+    def get_enabled_by_slot(self, slot_id: str) -> list[PluginBase]:
+        """
+        Lấy danh sách enabled plugins hook vào slot cụ thể.
+
+        Args:
+            slot_id: Slot ID
+
+        Returns:
+            Danh sách enabled plugins có slot_id trong danh sách slots
+        """
+        with self._lock:
+            result: list[PluginBase] = []
+            for entry in self._plugins.values():
+                if (
+                    entry.status == PluginStatus.ENABLED
+                    and slot_id in entry.plugin.slots
+                ):
+                    result.append(entry.plugin)
+            return result
+
+    # -------------------------------------------------------------------------
+    # Status Operations
+    # -------------------------------------------------------------------------
+
+    def is_enabled(self, plugin_id: str) -> bool:
+        """
+        Kiểm tra plugin có đang enabled không.
+
+        Args:
+            plugin_id: Plugin ID
+
+        Returns:
+            True nếu plugin đang enabled
+        """
+        with self._lock:
+            entry = self._plugins.get(plugin_id)
+            if entry is None:
+                return False
+            return entry.status == PluginStatus.ENABLED
+
+    def get_status(self, plugin_id: str) -> Optional[PluginStatus]:
+        """
+        Lấy trạng thái của plugin.
+
+        Args:
+            plugin_id: Plugin ID
+
+        Returns:
+            PluginStatus hoặc None
+        """
+        with self._lock:
+            entry = self._plugins.get(plugin_id)
+            return entry.status if entry else None
+
+    def set_status(self, plugin_id: str, status: PluginStatus) -> bool:
+        """
+        Đặt trạng thái mới cho plugin.
+
+        Args:
+            plugin_id: Plugin ID
+            status: PluginStatus mới
+
+        Returns:
+            True nếu đặt thành công
+        """
+        with self._lock:
+            entry = self._plugins.get(plugin_id)
+            if entry is None:
+                return False
+            old_status = entry.status
+            entry.status = status
+            logger.info(
+                "Plugin %s: status %s -> %s",
+                plugin_id,
+                old_status.value,
+                status.value,
+            )
+            return True
+
+    def set_error(self, plugin_id: str, error: str) -> None:
+        """
+        Đặt error message cho plugin.
+
+        Args:
+            plugin_id: Plugin ID
+            error: Error message
+        """
+        with self._lock:
+            entry = self._plugins.get(plugin_id)
+            if entry:
+                entry.error = error
+                entry.status = PluginStatus.ERROR
+
+    # -------------------------------------------------------------------------
+    # Config Operations
+    # -------------------------------------------------------------------------
+
+    def get_config(self, plugin_id: str) -> dict[str, Any]:
+        """
+        Lấy runtime config của plugin.
+
+        Args:
+            plugin_id: Plugin ID
+
+        Returns:
+            Config dict
+        """
+        with self._lock:
+            entry = self._plugins.get(plugin_id)
+            return dict(entry.config) if entry else {}
+
+    def set_config(self, plugin_id: str, config: dict[str, Any]) -> bool:
+        """
+        Đặt runtime config mới cho plugin.
+
+        Args:
+            plugin_id: Plugin ID
+            config: Config dict
+
+        Returns:
+            True nếu đặt thành công
+        """
+        with self._lock:
+            entry = self._plugins.get(plugin_id)
+            if entry is None:
+                return False
+            entry.config = dict(config)
+            return True
+
+    # -------------------------------------------------------------------------
+    # Query Operations
+    # -------------------------------------------------------------------------
+
+    def has_plugin(self, plugin_id: str) -> bool:
+        """Kiểm tra plugin ID có trong registry không."""
+        with self._lock:
+            return plugin_id in self._plugins
+
+    def count(self) -> int:
+        """Đếm số plugins đã đăng ký."""
+        with self._lock:
+            return len(self._plugins)
+
+    def count_enabled(self) -> int:
+        """Đếm số plugins đang enabled."""
+        with self._lock:
+            return sum(
+                1 for entry in self._plugins.values()
+                if entry.status == PluginStatus.ENABLED
+            )

@@ -1,0 +1,262 @@
+/**
+ * Plugin Registry - CP27: Plugin System
+ *
+ * In-memory registry that tracks all known plugins and their status.
+ * Provides React Context + Provider so components can access plugin state
+ * and react to plugin enable/disable events.
+ *
+ * Architecture:
+ *   PluginLoader  ──(onStatusChange)──>  PluginRegistry  ──(React Context)──>  Components
+ *
+ * Usage:
+ *   // app.tsx
+ *   <PluginProvider>
+ *     <App />
+ *   </PluginProvider>
+ *
+ *   // component.tsx
+ *   const { plugins, isEnabled, getPlugin } = usePluginRegistry();
+ */
+
+import React, {
+  createContext,
+  useContext,
+  useMemo,
+  useCallback,
+  useState,
+  useEffect,
+  type ReactNode,
+  type PropsWithChildren,
+} from 'react';
+
+import type { IPlugin, PluginInfo, PluginStatus } from './plugin-contracts';
+import type { PluginSlot } from './plugin-slots';
+import { PluginLoader, type PluginStatusCallback } from './plugin-loader';
+
+// ─── PluginRegistry (plain class) ────────────────────────────
+
+/**
+ * In-memory registry that holds the canonical list of plugins
+ * and provides fast lookups by ID and slot.
+ *
+ * Not a React component — use PluginProvider to expose state to the tree.
+ */
+export class PluginRegistry {
+  private plugins = new Map<string, PluginInfo>();
+  private slotIndex = new Map<PluginSlot, string[]>();
+  private listeners: Set<(plugins: PluginInfo[]) => void> = new Set();
+
+  /** Subscribe to registry changes. Returns unsubscribe function. */
+  onChange(listener: (plugins: PluginInfo[]) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Register (or update) a plugin's info.
+   */
+  register(info: PluginInfo): void {
+    this.plugins.set(info.id, info);
+    this.rebuildSlotIndex();
+    this.notify();
+  }
+
+  /**
+   * Get plugin info by ID.
+   */
+  get(id: string): PluginInfo | undefined {
+    return this.plugins.get(id);
+  }
+
+  /**
+   * Get all plugin infos as an array.
+   */
+  getAll(): PluginInfo[] {
+    return Array.from(this.plugins.values());
+  }
+
+  /**
+   * Get all plugin IDs registered for a specific slot.
+   */
+  getBySlot(slot: PluginSlot): PluginInfo[] {
+    const ids = this.slotIndex.get(slot) ?? [];
+    return ids
+      .map(id => this.plugins.get(id))
+      .filter((info): info is PluginInfo => info !== undefined);
+  }
+
+  /**
+   * Check if a plugin is currently enabled.
+   */
+  isEnabled(id: string): boolean {
+    return this.plugins.get(id)?.status === PluginStatus.ENABLED;
+  }
+
+  /**
+   * Remove a plugin from the registry.
+   */
+  unregister(id: string): void {
+    this.plugins.delete(id);
+    this.rebuildSlotIndex();
+    this.notify();
+  }
+
+  private rebuildSlotIndex(): void {
+    this.slotIndex.clear();
+    for (const info of this.plugins.values()) {
+      for (const slot of info.slots) {
+        const ids = this.slotIndex.get(slot) ?? [];
+        if (!ids.includes(info.id)) {
+          ids.push(info.id);
+        }
+        this.slotIndex.set(slot, ids);
+      }
+    }
+  }
+
+  private notify(): void {
+    const snapshot = this.getAll();
+    for (const listener of this.listeners) {
+      listener(snapshot);
+    }
+  }
+}
+
+// ─── React Context + Provider ────────────────────────────────
+
+/** Value exposed through React Context. */
+export interface PluginContextValue {
+  /** All registered plugin infos. */
+  plugins: PluginInfo[];
+  /** Get plugin info by ID. */
+  getPlugin: (id: string) => PluginInfo | undefined;
+  /** Get plugins for a specific slot. */
+  getBySlot: (slot: PluginSlot) => PluginInfo[];
+  /** Check if a plugin is enabled. */
+  isEnabled: (id: string) => boolean;
+  /** Load a list of plugins by ID. */
+  loadPlugins: (ids: string[]) => Promise<PluginInfo[]>;
+  /** Load a single plugin. */
+  registerPlugin: (id: string) => Promise<PluginInfo>;
+  /** Unload a plugin. */
+  unregisterPlugin: (id: string) => Promise<boolean>;
+}
+
+const defaultContext: PluginContextValue = {
+  plugins: [],
+  getPlugin: () => undefined,
+  getBySlot: () => [],
+  isEnabled: () => false,
+  loadPlugins: async () => [],
+  registerPlugin: async () => {
+    throw new Error('PluginProvider not mounted');
+  },
+  unregisterPlugin: async () => false,
+};
+
+/**
+ * React Context for plugin system access.
+ */
+export const PluginContext = createContext<PluginContextValue>(defaultContext);
+
+/**
+ * Provider component that wires PluginLoader + PluginRegistry together.
+ *
+ * @example
+ * ```tsx
+ * <PluginProvider pluginIds={['analytics', 'dark-mode']}>
+ *   <App />
+ * </PluginProvider>
+ * ```
+ */
+export function PluginProvider({
+  children,
+  pluginIds = [],
+  loaderConfig,
+}: PropsWithChildren<{
+  /** Plugin IDs to auto-load on mount. */
+  pluginIds?: string[];
+  /** Optional loader configuration. */
+  loaderConfig?: ConstructorParameters<typeof PluginLoader>[0];
+}>) {
+  const [registry] = useState(() => new PluginRegistry());
+  const [loader] = useState(() => new PluginLoader(loaderConfig));
+  const [plugins, setPlugins] = useState<PluginInfo[]>([]);
+
+  // Wire loader status changes into the registry
+  useEffect(() => {
+    const statusCallback: PluginStatusCallback = (info) => {
+      registry.register(info);
+    };
+    loader.onStatusChange = statusCallback;
+    return () => {
+      loader.onStatusChange = undefined;
+    };
+  }, [loader, registry]);
+
+  // Wire registry changes into React state
+  useEffect(() => {
+    return registry.onChange(setPlugins);
+  }, [registry]);
+
+  // Auto-load declared plugins on mount
+  useEffect(() => {
+    if (pluginIds.length > 0) {
+      loader.loadPlugins(pluginIds).catch((error) => {
+        console.error('[PluginProvider] Failed to load initial plugins:', error);
+      });
+    }
+  }, [loader, pluginIds]);
+
+  const value: PluginContextValue = useMemo(
+    () => ({
+      plugins,
+      getPlugin: useCallback((id: string) => registry.get(id), [registry]),
+      getBySlot: useCallback(
+        (slot: PluginSlot) => registry.getBySlot(slot),
+        [registry],
+      ),
+      isEnabled: useCallback((id: string) => registry.isEnabled(id), [registry]),
+      loadPlugins: useCallback(
+        (ids: string[]) => loader.loadPlugins(ids),
+        [loader],
+      ),
+      registerPlugin: useCallback(
+        (id: string) => loader.registerPlugin(id),
+        [loader],
+      ),
+      unregisterPlugin: useCallback(
+        (id: string) => loader.unregisterPlugin(id),
+        [loader],
+      ),
+    }),
+    [plugins, registry, loader],
+  );
+
+  return <PluginContext.Provider value={value}>{children}</PluginContext.Provider>;
+}
+
+// ─── Hook ────────────────────────────────────────────────────
+
+/**
+ * Access the plugin registry from any component.
+ *
+ * @example
+ * ```tsx
+ * function MyComponent() {
+ *   const { plugins, isEnabled, loadPlugins } = usePluginRegistry();
+ *
+ *   if (isEnabled('analytics')) {
+ *     return <AnalyticsDashboard />;
+ *   }
+ *   return <button onClick={() => loadPlugins(['analytics'])}>Enable</button>;
+ * }
+ * ```
+ */
+export function usePluginRegistry(): PluginContextValue {
+  const context = useContext(PluginContext);
+  if (!context) {
+    throw new Error('usePluginRegistry must be used within PluginProvider');
+  }
+  return context;
+}

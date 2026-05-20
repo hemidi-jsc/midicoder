@@ -1,0 +1,489 @@
+{#
+Jinja2 template cho Plugin policies — PluginPolicy engine + PolicyValidator (CP27).
+
+Tự động sinh policy engine với signature verification, version gate, origin whitelist.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Plugin Policies — tự động sinh bởi CP27.
+
+Module này cung cấp:
+- PluginPolicyEngine: Engine thực thi các policies (signature, version, origin)
+- PolicyValidator: Kiểm tra plugin manifest against policies
+
+Policies mặc định:
+    signature_verification: Xác thực chữ ký hash-based (SHA-256) của plugin
+    version_gate:          Kiểm tra phiên bản semver của plugin
+    origin_whitelist:      Whitelist các nguồn plugin được phép
+
+CP27: Plugin System Generator
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import re
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Policy Result
+# ============================================================================
+
+
+@dataclass
+class PolicyCheckResult:
+    """
+    Kết quả kiểm tra policy.
+
+    Attributes:
+        passed: Policy có được thông qua không
+        policy_id: ID của policy được kiểm tra
+        reason: Lý do pass/fail
+        details: Chi tiết bổ sung (optional)
+    """
+    passed: bool
+    policy_id: str
+    reason: str
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+# ============================================================================
+# Policy Configuration
+# ============================================================================
+
+
+@dataclass
+class SignaturePolicyConfig:
+    """
+    Cấu hình cho signature verification policy.
+
+    Attributes:
+        algorithm: Hash algorithm (default: sha256)
+        require_signature: Có bắt buộc chữ ký không
+        allow_unsigned_dev: Cho phép plugin không chữ ký trong dev mode
+    """
+    algorithm: str = "sha256"
+    require_signature: bool = True
+    allow_unsigned_dev: bool = True
+
+
+@dataclass
+class VersionPolicyConfig:
+    """
+    Cấu hình cho version gate policy.
+
+    Attributes:
+        min_version: Phiên bản tối thiểu (semver string)
+        max_version: Phiên bản tối đa (semver string)
+        compatible_ranges: Danh sách range tương thích
+    """
+    min_version: str = "0.1.0"
+    max_version: str = "2.0.0"
+    compatible_ranges: list[str] = field(default_factory=lambda: [">=1.0.0 <2.0.0"])
+
+
+@dataclass
+class OriginPolicyConfig:
+    """
+    Cấu hình cho origin whitelist policy.
+
+    Attributes:
+        allowed_origins: Danh sách origins được phép
+        allow_local_dev: Cho phép plugin local trong dev mode
+        reject_unknown: Loại bỏ plugin có origin không xác định
+    """
+    allowed_origins: list[str] = field(
+        default_factory=lambda: ["midicoder://official", "midicoder://verified"]
+    )
+    allow_local_dev: bool = True
+    reject_unknown: bool = True
+
+
+# ============================================================================
+# PluginPolicyEngine
+# ============================================================================
+
+
+class PluginPolicyEngine:
+    """
+    Engine thực thi plugin policies.
+
+    Quản lý và thực thi 3 loại policies:
+    1. Signature verification: Kiểm tra chữ ký SHA-256 của plugin code
+    2. Version gate: Kiểm tra version semver của plugin có trong range cho phép
+    3. Origin whitelist: Kiểm tra origin của plugin có trong danh sách được phép
+
+    Usage:
+        engine = PluginPolicyEngine(dev_mode=True)
+        result = engine.check_signature(plugin_id, code, signature)
+        result = engine.check_version(plugin_id, version)
+        result = engine.check_origin(plugin_id, origin)
+    """
+
+    def __init__(
+        self,
+        dev_mode: bool = False,
+        signature_config: Optional[SignaturePolicyConfig] = None,
+        version_config: Optional[VersionPolicyConfig] = None,
+        origin_config: Optional[OriginPolicyConfig] = None,
+    ) -> None:
+        """
+        Initialize PluginPolicyEngine.
+
+        Args:
+            dev_mode: Chế độ dev (cho phép unsigned plugins, local origins)
+            signature_config: Cấu hình signature policy
+            version_config: Cấu hình version policy
+            origin_config: Cấu hình origin policy
+        """
+        self.dev_mode = dev_mode
+        self.signature_config = signature_config or SignaturePolicyConfig()
+        self.version_config = version_config or VersionPolicyConfig()
+        self.origin_config = origin_config or OriginPolicyConfig()
+
+    def check_signature(
+        self,
+        plugin_id: str,
+        code: str,
+        provided_signature: Optional[str],
+    ) -> PolicyCheckResult:
+        """
+        Kiểm tra chữ ký SHA-256 của plugin code.
+
+        Tính toán SHA-256 hash của plugin source code và so sánh với
+        chữ ký được cung cấp trong manifest.
+
+        Args:
+            plugin_id: Plugin ID
+            code: Source code của plugin
+            provided_signature: Chữ ký từ manifest
+
+        Returns:
+            PolicyCheckResult với passed=true nếu chữ ký hợp lệ
+        """
+        policy_id = "policy_signature_check"
+
+        # Dev mode: cho phép unsigned nếu config cho phép
+        if self.dev_mode and self.signature_config.allow_unsigned_dev:
+            if provided_signature is None:
+                logger.info(
+                    "Plugin %s: chữ ký không có — skip trong dev mode",
+                    plugin_id,
+                )
+                return PolicyCheckResult(
+                    passed=True,
+                    policy_id=policy_id,
+                    reason="Dev mode: unsigned plugin allowed",
+                    details={"dev_mode": True},
+                )
+
+        # Không có chữ ký được cung cấp
+        if provided_signature is None:
+            if self.signature_config.require_signature:
+                return PolicyCheckResult(
+                    passed=False,
+                    policy_id=policy_id,
+                    reason="Chữ ký bắt buộc nhưng không có",
+                    details={"require_signature": True},
+                )
+            return PolicyCheckResult(
+                passed=True,
+                policy_id=policy_id,
+                reason="Chữ ký không bắt buộc",
+            )
+
+        # Tính toán hash và so sánh
+        computed_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+        if computed_hash == provided_signature:
+            return PolicyCheckResult(
+                passed=True,
+                policy_id=policy_id,
+                reason="Chữ ký hợp lệ",
+                details={"algorithm": "sha256"},
+            )
+
+        return PolicyCheckResult(
+            passed=False,
+            policy_id=policy_id,
+            reason=f"Chữ ký không khớp: expected={provided_signature[:16]}... computed={computed_hash[:16]}...",
+            details={
+                "expected": provided_signature[:32],
+                "computed": computed_hash[:32],
+            },
+        )
+
+    def check_version(
+        self,
+        plugin_id: str,
+        version: str,
+    ) -> PolicyCheckResult:
+        """
+        Kiểm tra phiên bản semver của plugin có trong range cho phép.
+
+        Parse version string thành (major, minor, patch) và so sánh với
+        min_version và max_version được cấu hình.
+
+        Args:
+            plugin_id: Plugin ID
+            version: Version string (semver, ví dụ: "1.2.3")
+
+        Returns:
+            PolicyCheckResult với passed=true nếu version hợp lệ
+        """
+        policy_id = "policy_version_gate"
+
+        try:
+            plugin_tuple = self._parse_semver(version)
+            min_tuple = self._parse_semver(self.version_config.min_version)
+            max_tuple = self._parse_semver(self.version_config.max_version)
+        except ValueError as e:
+            return PolicyCheckResult(
+                passed=False,
+                policy_id=policy_id,
+                reason=f"Version format không hợp lệ: {e}",
+                details={"version": version},
+            )
+
+        if plugin_tuple < min_tuple:
+            return PolicyCheckResult(
+                passed=False,
+                policy_id=policy_id,
+                reason=f"Version {version} < min {self.version_config.min_version}",
+                details={
+                    "plugin_version": version,
+                    "min_version": self.version_config.min_version,
+                },
+            )
+
+        if plugin_tuple > max_tuple:
+            return PolicyCheckResult(
+                passed=False,
+                policy_id=policy_id,
+                reason=f"Version {version} > max {self.version_config.max_version}",
+                details={
+                    "plugin_version": version,
+                    "max_version": self.version_config.max_version,
+                },
+            )
+
+        return PolicyCheckResult(
+            passed=True,
+            policy_id=policy_id,
+            reason=f"Version {version} trong range [{self.version_config.min_version}, {self.version_config.max_version}]",
+            details={"version": version},
+        )
+
+    def check_origin(
+        self,
+        plugin_id: str,
+        origin: Optional[str],
+    ) -> PolicyCheckResult:
+        """
+        Kiểm tra origin của plugin có trong whitelist không.
+
+        Args:
+            plugin_id: Plugin ID
+            origin: Origin string từ manifest (ví dụ: "midicoder://official")
+
+        Returns:
+            PolicyCheckResult với passed=true nếu origin được phép
+        """
+        policy_id = "policy_origin_whitelist"
+
+        # Không có origin
+        if origin is None or not origin.strip():
+            if self.origin_config.reject_unknown:
+                return PolicyCheckResult(
+                    passed=False,
+                    policy_id=policy_id,
+                    reason="Origin không xác định và bị reject",
+                )
+            return PolicyCheckResult(
+                passed=True,
+                policy_id=policy_id,
+                reason="Origin không xác định nhưng không reject",
+            )
+
+        # Dev mode: cho phép local origins
+        if self.dev_mode and self.origin_config.allow_local_dev:
+            if origin.startswith("local://"):
+                return PolicyCheckResult(
+                    passed=True,
+                    policy_id=policy_id,
+                    reason="Dev mode: local origin allowed",
+                    details={"origin": origin, "dev_mode": True},
+                )
+
+        # Kiểm tra whitelist
+        if origin in self.origin_config.allowed_origins:
+            return PolicyCheckResult(
+                passed=True,
+                policy_id=policy_id,
+                reason=f"Origin '{origin}' trong whitelist",
+                details={"origin": origin},
+            )
+
+        return PolicyCheckResult(
+            passed=False,
+            policy_id=policy_id,
+            reason=f"Origin '{origin}' không trong whitelist",
+            details={
+                "origin": origin,
+                "allowed": self.origin_config.allowed_origins,
+            },
+        )
+
+    @staticmethod
+    def _parse_semver(version: str) -> tuple[int, int, int]:
+        """
+        Parse semver string thành tuple (major, minor, patch).
+
+        Args:
+            version: Semver string (ví dụ: "1.2.3")
+
+        Returns:
+            Tuple (major, minor, patch)
+
+        Raises:
+            ValueError: Nếu format không hợp lệ
+        """
+        match = re.match(r"^(\d+)\.(\d+)\.(\d+)$", version.strip())
+        if not match:
+            raise ValueError(f"Invalid semver: {version}")
+        return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+# ============================================================================
+# PolicyValidator
+# ============================================================================
+
+
+class PolicyValidator:
+    """
+    Kiểm tra toàn bộ plugin manifest against tất cả policies.
+
+    Usage:
+        validator = PolicyValidator(engine=engine)
+        results = validator.validate(manifest, code)
+        if results.all_passed:
+            print("Plugin通过了所有政策检查")
+    """
+
+    def __init__(
+        self,
+        engine: Optional[PluginPolicyEngine] = None,
+    ) -> None:
+        """
+        Initialize PolicyValidator.
+
+        Args:
+            engine: PluginPolicyEngine instance (tự tạo nếu None)
+        """
+        self.engine = engine or PluginPolicyEngine()
+
+    def validate(
+        self,
+        plugin_id: str,
+        version: str,
+        origin: Optional[str] = None,
+        code: Optional[str] = None,
+        signature: Optional[str] = None,
+    ) -> list[PolicyCheckResult]:
+        """
+        Kiểm tra plugin manifest against tất cả policies.
+
+        Thực hiện theo thứ tự:
+        1. Version gate (nhanh nhất, không cần code)
+        2. Origin whitelist (không cần code)
+        3. Signature verification (cần code và signature)
+
+        Args:
+            plugin_id: Plugin ID
+            version: Version string
+            origin: Origin string (optional)
+            code: Source code (optional, cần cho signature check)
+            signature: Signature string (optional)
+
+        Returns:
+            Danh sách PolicyCheckResult cho từng policy
+        """
+        results: list[PolicyCheckResult] = []
+
+        # 1. Version gate
+        version_result = self.engine.check_version(plugin_id, version)
+        results.append(version_result)
+        if not version_result.passed:
+            logger.warning(
+                "Plugin %s: version check failed — %s",
+                plugin_id,
+                version_result.reason,
+            )
+            return results  # Fail fast
+
+        # 2. Origin whitelist
+        origin_result = self.engine.check_origin(plugin_id, origin)
+        results.append(origin_result)
+        if not origin_result.passed:
+            logger.warning(
+                "Plugin %s: origin check failed — %s",
+                plugin_id,
+                origin_result.reason,
+            )
+            return results  # Fail fast
+
+        # 3. Signature verification (cần code)
+        if code is not None:
+            sig_result = self.engine.check_signature(plugin_id, code, signature)
+            results.append(sig_result)
+            if not sig_result.passed:
+                logger.warning(
+                    "Plugin %s: signature check failed — %s",
+                    plugin_id,
+                    sig_result.reason,
+                )
+
+        return results
+
+    def validate_manifest(
+        self,
+        manifest: dict[str, Any],
+        code: Optional[str] = None,
+    ) -> list[PolicyCheckResult]:
+        """
+        Kiểm tra plugin manifest dict against policies.
+
+        Args:
+            manifest: Plugin manifest dict với keys:
+                - id: Plugin ID
+                - version: Version string
+                - origin: Origin string (optional)
+                - signature: Signature string (optional)
+            code: Source code (optional)
+
+        Returns:
+            Danh sách PolicyCheckResult
+        """
+        return self.validate(
+            plugin_id=manifest.get("id", "unknown"),
+            version=manifest.get("version", "0.0.0"),
+            origin=manifest.get("origin"),
+            code=code,
+            signature=manifest.get("signature"),
+        )

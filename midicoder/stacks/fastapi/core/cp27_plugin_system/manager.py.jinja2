@@ -1,0 +1,461 @@
+{#
+Jinja2 template cho PluginManager service (CP27).
+
+Tự động sinh PluginManager với lifecycle: init → configure → ready.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Plugin Manager — tự động sinh bởi CP27.
+
+Module này cung cấp:
+- PluginManager: Service để quản lý lifecycle của plugins.
+
+Lifecycle:
+    init       → on_init(ctx)
+    configure  → on_configure(ctx, config)
+    ready      → on_ready(ctx)
+    request    → on_request(ctx, request) (mỗi request)
+    shutdown   → on_shutdown(ctx)
+
+CP27: Plugin System Generator
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+from typing import Any, Optional
+
+from .contracts import PluginBase, PluginContext, PluginStatus
+from .registry import PluginEntry, PluginRegistry
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# PluginStatusInfo — response model cho status query
+# ============================================================================
+
+
+class PluginStatusInfo:
+    """
+    Thông tin trạng thái của plugin — dùng cho API response.
+
+    Attributes:
+        id: Plugin ID
+        name: Plugin name
+        version: Plugin version
+        status: PluginStatus hiện tại
+        slots: Danh sách slots
+        config: Runtime config
+        error: Error message (nếu có)
+    """
+
+    __slots__ = ("id", "name", "version", "status", "slots", "config", "error")
+
+    def __init__(
+        self,
+        plugin_id: str,
+        name: str,
+        version: str,
+        status: PluginStatus,
+        slots: list[str],
+        config: dict[str, Any],
+        error: Optional[str] = None,
+    ) -> None:
+        """Initialize PluginStatusInfo."""
+        self.id = plugin_id
+        self.name = name
+        self.version = version
+        self.status = status
+        self.slots = slots
+        self.config = config
+        self.error = error
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển sang dict cho JSON response."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "version": self.version,
+            "status": self.status.value,
+            "slots": self.slots,
+            "config": self.config,
+            "error": self.error,
+        }
+
+
+# ============================================================================
+# PluginManager
+# ============================================================================
+
+
+class PluginManager:
+    """
+    Service để quản lý lifecycle của plugins.
+
+    Cung cấp các operations:
+        enable_plugin(id):           Enable plugin — chạy init → configure → ready
+        disable_plugin(id):          Disable plugin — chạy on_shutdown
+        configure_plugin(id, config):Apply config mới cho plugin
+        get_status(id):              Lấy trạng thái plugin
+        list_plugins():              Lấy danh sách tất cả plugins
+
+    Lifecycle Flow:
+        1. enable_plugin(id):
+           - Set status LOADING
+           - Call plugin.on_init(ctx)
+           - Call plugin.on_configure(ctx, config)
+           - Set status ENABLED
+           - Call plugin.on_ready(ctx)
+
+        2. disable_plugin(id):
+           - Call plugin.on_shutdown(ctx)
+           - Set status DISABLED
+
+        3. configure_plugin(id, config):
+           - Update config trong registry
+           - Call plugin.on_configure(ctx, config)
+
+    Usage:
+        manager = PluginManager()
+        ctx = PluginContext(tenant_id="t1", request_id="r1")
+        manager.enable_plugin("my_plugin", ctx=ctx)
+    """
+
+    def __init__(
+        self,
+        registry: Optional[PluginRegistry] = None,
+    ) -> None:
+        """
+        Initialize PluginManager.
+
+        Args:
+            registry: PluginRegistry instance (tự lấy singleton nếu None)
+        """
+        self._registry = registry or PluginRegistry.get()
+
+    def enable_plugin(
+        self,
+        plugin_id: str,
+        ctx: PluginContext,
+        config: Optional[dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Enable plugin — chạy lifecycle: init → configure → ready.
+
+        Flow:
+        1. Set status LOADING
+        2. Call plugin.on_init(ctx)
+        3. Call plugin.on_configure(ctx, config)
+        4. Set status ENABLED
+        5. Call plugin.on_ready(ctx)
+
+        Nếu bất kỳ bước nào throw exception, set status ERROR và log.
+
+        Args:
+            plugin_id: Plugin ID
+            ctx: PluginContext hiện tại
+            config: Config dict (optional)
+
+        Returns:
+            True nếu enable thành công
+        """
+        entry = self._registry.get_entry(plugin_id)
+        if entry is None:
+            logger.error("Plugin %s không tồn tại trong registry", plugin_id)
+            return False
+
+        plugin = entry.plugin
+        config = config or {}
+
+        # Đã enabled rồi
+        if entry.status == PluginStatus.ENABLED:
+            logger.info("Plugin %s đã enabled — skip", plugin_id)
+            return True
+
+        try:
+            # Bước 1: LOADING
+            self._registry.set_status(plugin_id, PluginStatus.LOADING)
+            logger.info("Plugin %s: starting init", plugin_id)
+
+            # Bước 2: on_init
+            try:
+                plugin.on_init(ctx)
+            except Exception as e:
+                logger.error("Plugin %s: on_init failed — %s", plugin_id, e)
+                self._registry.set_status(plugin_id, PluginStatus.ERROR)
+                self._registry.set_error(plugin_id, f"on_init failed: {e}")
+                return False
+
+            # Bước 3: on_configure
+            try:
+                plugin.on_configure(ctx, config)
+                self._registry.set_config(plugin_id, config)
+            except Exception as e:
+                logger.error("Plugin %s: on_configure failed — %s", plugin_id, e)
+                self._registry.set_status(plugin_id, PluginStatus.ERROR)
+                self._registry.set_error(plugin_id, f"on_configure failed: {e}")
+                return False
+
+            # Bước 4: ENABLED
+            self._registry.set_status(plugin_id, PluginStatus.ENABLED)
+
+            # Bước 5: on_ready
+            try:
+                plugin.on_ready(ctx)
+            except Exception as e:
+                logger.error("Plugin %s: on_ready failed — %s", plugin_id, e)
+                # Không set ERROR vì plugin đã enabled, chỉ log warning
+                self._registry.set_error(plugin_id, f"on_ready warning: {e}")
+
+            logger.info("Plugin %s enabled successfully", plugin_id)
+            return True
+
+        except Exception as e:
+            logger.error("Plugin %s: enable failed — %s", plugin_id, e, exc_info=True)
+            self._registry.set_status(plugin_id, PluginStatus.ERROR)
+            self._registry.set_error(plugin_id, f"enable failed: {e}")
+            return False
+
+    def disable_plugin(
+        self,
+        plugin_id: str,
+        ctx: PluginContext,
+    ) -> bool:
+        """
+        Disable plugin — chạy on_shutdown và set DISABLED.
+
+        Args:
+            plugin_id: Plugin ID
+            ctx: PluginContext hiện tại
+
+        Returns:
+            True nếu disable thành công
+        """
+        entry = self._registry.get_entry(plugin_id)
+        if entry is None:
+            logger.error("Plugin %s không tồn tại trong registry", plugin_id)
+            return False
+
+        plugin = entry.plugin
+
+        # Đã disabled rồi
+        if entry.status == PluginStatus.DISABLED:
+            logger.info("Plugin %s đã disabled — skip", plugin_id)
+            return True
+
+        try:
+            # Call on_shutdown
+            try:
+                plugin.on_shutdown(ctx)
+            except Exception as e:
+                logger.warning(
+                    "Plugin %s: on_shutdown error (ignored) — %s",
+                    plugin_id,
+                    e,
+                )
+
+            # Set DISABLED
+            self._registry.set_status(plugin_id, PluginStatus.DISABLED)
+            logger.info("Plugin %s disabled", plugin_id)
+            return True
+
+        except Exception as e:
+            logger.error("Plugin %s: disable failed — %s", plugin_id, e)
+            return False
+
+    def configure_plugin(
+        self,
+        plugin_id: str,
+        config: dict[str, Any],
+        ctx: Optional[PluginContext] = None,
+    ) -> bool:
+        """
+        Apply config mới cho plugin đang enabled.
+
+        Update config trong registry và gọi plugin.on_configure(ctx, config).
+
+        Args:
+            plugin_id: Plugin ID
+            config: Config dict mới
+            ctx: PluginContext (optional, dùng default nếu None)
+
+        Returns:
+            True nếu configure thành công
+        """
+        entry = self._registry.get_entry(plugin_id)
+        if entry is None:
+            logger.error("Plugin %s không tồn tại trong registry", plugin_id)
+            return False
+
+        plugin = entry.plugin
+
+        try:
+            # Update config trong registry
+            self._registry.set_config(plugin_id, config)
+
+            # Call on_configure nếu plugin đang enabled
+            if entry.status == PluginStatus.ENABLED:
+                ctx = ctx or PluginContext()
+                try:
+                    plugin.on_configure(ctx, config)
+                    logger.info("Plugin %s: config updated", plugin_id)
+                except Exception as e:
+                    logger.error(
+                        "Plugin %s: on_configure failed — %s",
+                        plugin_id,
+                        e,
+                    )
+                    return False
+
+            return True
+
+        except Exception as e:
+            logger.error("Plugin %s: configure failed — %s", plugin_id, e)
+            return False
+
+    def get_status(self, plugin_id: str) -> Optional[PluginStatusInfo]:
+        """
+        Lấy thông tin trạng thái của plugin.
+
+        Args:
+            plugin_id: Plugin ID
+
+        Returns:
+            PluginStatusInfo hoặc None
+        """
+        entry = self._registry.get_entry(plugin_id)
+        if entry is None:
+            return None
+
+        plugin = entry.plugin
+        return PluginStatusInfo(
+            plugin_id=plugin.id,
+            name=plugin.name,
+            version=plugin.version,
+            status=entry.status,
+            slots=plugin.slots,
+            config=dict(entry.config),
+            error=entry.error,
+        )
+
+    def list_plugins(self) -> list[PluginStatusInfo]:
+        """
+        Lấy thông tin trạng thái của tất cả plugins.
+
+        Returns:
+            Danh sách PluginStatusInfo
+        """
+        entries = self._registry.get_all_entries()
+        result: list[PluginStatusInfo] = []
+
+        for entry in entries:
+            plugin = entry.plugin
+            result.append(PluginStatusInfo(
+                plugin_id=plugin.id,
+                name=plugin.name,
+                version=plugin.version,
+                status=entry.status,
+                slots=plugin.slots,
+                config=dict(entry.config),
+                error=entry.error,
+            ))
+
+        return result
+
+    def invoke_request_hook(
+        self,
+        ctx: PluginContext,
+        request: Any,
+    ) -> None:
+        """
+        Invoke on_request hook cho tất cả enabled plugins hook vào on_request.
+
+        Mỗi plugin được invoke độc lập — lỗi của một plugin không ảnh hưởng
+        đến các plugin khác.
+
+        Args:
+            ctx: PluginContext hiện tại
+            request: ASGI request/scope object
+        """
+        enabled_plugins = self._registry.get_enabled_by_slot("on_request")
+
+        for plugin in enabled_plugins:
+            try:
+                plugin.on_request(ctx, request)
+            except Exception as e:
+                logger.error(
+                    "Plugin %s: on_request error — %s",
+                    plugin.id,
+                    e,
+                    exc_info=True,
+                )
+
+    def invoke_command_hook(
+        self,
+        hook_type: str,
+        command_id: str,
+        ctx: PluginContext,
+        payload: dict[str, Any],
+        result: Any = None,
+    ) -> Any:
+        """
+        Invoke before/after hook cho command.
+
+        Args:
+            hook_type: "before" hoặc "after"
+            command_id: Command ID
+            ctx: PluginContext hiện tại
+            payload: Command payload
+            result: Command result (chỉ dùng cho after hooks)
+
+        Returns:
+            Transformed payload (before) hoặc result (after)
+        """
+        slot_id = f"{hook_type}_{command_id.lower()}"
+        enabled_plugins = self._registry.get_enabled_by_slot(slot_id)
+
+        if hook_type == "before":
+            for plugin in enabled_plugins:
+                try:
+                    if hasattr(plugin, f"before_{command_id.lower()}"):
+                        method = getattr(plugin, f"before_{command_id.lower()}")
+                        transformed = method(ctx, payload)
+                        if transformed is not None:
+                            payload = transformed
+                except Exception as e:
+                    logger.error(
+                        "Plugin %s: before_%s error — %s",
+                        plugin.id,
+                        command_id.lower(),
+                        e,
+                    )
+            return payload
+        else:
+            for plugin in enabled_plugins:
+                try:
+                    if hasattr(plugin, f"after_{command_id.lower()}"):
+                        method = getattr(plugin, f"after_{command_id.lower()}")
+                        transformed = method(ctx, payload, result)
+                        if transformed is not None:
+                            result = transformed
+                except Exception as e:
+                    logger.error(
+                        "Plugin %s: after_%s error — %s",
+                        plugin.id,
+                        command_id.lower(),
+                        e,
+                    )
+            return result

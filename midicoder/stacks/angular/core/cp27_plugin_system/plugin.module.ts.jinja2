@@ -1,0 +1,70 @@
+/** Plugin System NgModule — CP27 Plugin System Generator.
+
+Module này cung cấp tất cả service và interceptor cần thiết
+cho plugin system: PluginLoader, PluginRegistry, PluginApiService,
+PluginInterceptor.
+
+{% if plugin_name %}
+* Plugin Module: {{ plugin_name }}
+{% endif %}
+*/
+
+import { NgModule, Optional, SkipSelf } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
+
+import { PluginLoader } from './plugin-loader';
+import { PluginRegistry } from './plugin-registry';
+import { PluginApiService } from './plugin-api.service';
+import { PluginInterceptor } from './plugin.interceptor';
+
+@NgModule({
+    imports: [
+        CommonModule,
+        HttpClientModule,
+    ],
+    declarations: [
+        {% if components %}
+        {% for component in components %}
+        {{ component }},
+        {% endfor %}
+        {% endif %}
+    ],
+    providers: [
+        PluginLoader,
+        PluginRegistry,
+        PluginApiService,
+        {
+            provide: HTTP_INTERCEPTORS,
+            useExisting: PluginInterceptor,
+            multi: true,
+        },
+        {% if extra_providers %}
+        {% for provider in extra_providers %}
+        {{ provider }},
+        {% endfor %}
+        {% endif %}
+    ],
+    exports: [
+        CommonModule,
+        {% if components %}
+        {% for component in components %}
+        {{ component }},
+        {% endfor %}
+        {% endif %}
+    ],
+})
+export class PluginModule {
+    constructor(
+        @Optional()
+        @SkipSelf()
+        parentModule?: PluginModule,
+    ) {
+        if (parentModule) {
+            throw new Error(
+                'PluginModule đã được import trong parent module. '
+                + 'Hãy import chỉ ở root module (AppModule hoặc core module).',
+            );
+        }
+    }
+}

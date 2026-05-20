@@ -186,6 +186,11 @@ from midicoder.dsl.projection import (
     FrontendAppParams,
     FrontendRouteParams,
     FrontendStoreParams,
+
+    # CP27: Plugin System
+    PluginSlotParams,
+    PluginContractParams,
+    PluginPolicyParams,
 )
 
 __all__ = [
@@ -357,4 +362,9 @@ __all__ = [
     "FrontendAppParams",
     "FrontendRouteParams",
     "FrontendStoreParams",
+
+    # CP27: Plugin System Params
+    "PluginSlotParams",
+    "PluginContractParams",
+    "PluginPolicyParams",
 ]

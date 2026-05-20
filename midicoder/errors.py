@@ -684,6 +684,28 @@ class ErrorCode(str, Enum):
     CP26_SECTION_SOURCE_INVALID = "MDC-CP26-012"
 
     # =========================================================================
+    # CP27: Plugin System Generator Errors
+    # =========================================================================
+    CP27_PLUGIN_NOT_FOUND = "MDC-CP27-001"
+    CP27_PLUGIN_LOAD_FAILED = "MDC-CP27-002"
+    CP27_PLUGIN_CONTRACT_VIOLATION = "MDC-CP27-003"
+    CP27_PLUGIN_POLICY_VIOLATION = "MDC-CP27-004"
+    CP27_PLUGIN_SLOT_NOT_FOUND = "MDC-CP27-005"
+    CP27_PLUGIN_VERSION_INCOMPATIBLE = "MDC-CP27-006"
+    CP27_PLUGIN_DEPENDENCY_UNSATISFIED = "MDC-CP27-007"
+    CP27_PLUGIN_SIGNATURE_INVALID = "MDC-CP27-008"
+    CP27_PLUGIN_LIFECYCLE_ERROR = "MDC-CP27-009"
+    CP27_PLUGIN_CONFIG_INVALID = "MDC-CP27-010"
+    CP27_EMPTY_SLOT_ID = "MDC-CP27-011"
+    CP27_DUPLICATE_SLOT_ID = "MDC-CP27-012"
+    CP27_INVALID_POLICY_TYPE = "MDC-CP27-013"
+    CP27_EMPTY_POLICY_ID = "MDC-CP27-014"
+    CP27_DSL_PARSE_ERROR = "MDC-CP27-015"
+    CP27_TEMPLATE_NOT_FOUND = "MDC-CP27-016"
+    CP27_RENDER_FAILED = "MDC-CP27-017"
+    CP27_INVALID_LIFECYCLE_EVENT = "MDC-CP27-018"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

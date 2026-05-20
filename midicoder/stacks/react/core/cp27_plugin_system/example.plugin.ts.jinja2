@@ -1,0 +1,180 @@
+/**
+ * Example Plugin - CP27: Plugin System
+ *
+ * Sample React plugin that demonstrates the IPlugin contract.
+ *
+ * This plugin:
+ * - Hooks into the ON_READY slot to log initialization
+ * - Hooks into the ON_REQUEST slot to track request timing
+ * - Implements beforeAction to validate payloads
+ * - Exports a default PluginFactory for dynamic import
+ *
+ * Usage:
+ *   // plugin-registry.tsx (auto-loaded)
+ *   <PluginProvider pluginIds={['example']}>
+ *
+ *   // or manual load
+ *   const { loadPlugins } = usePluginRegistry();
+ *   await loadPlugins(['example']);
+ */
+
+import type {
+  IPlugin,
+  PluginContext,
+  PluginConfigSchema,
+} from './plugin-contracts';
+import type { PluginSlot } from './plugin-slots';
+
+// ─── Plugin Manifest ─────────────────────────────────────────
+
+const PLUGIN_ID = 'example';
+const PLUGIN_NAME = 'Example Plugin';
+const PLUGIN_VERSION = '1.0.0';
+const PLUGIN_DESCRIPTION = 'Demonstration plugin that logs lifecycle events and tracks request timing';
+
+const CONFIG_SCHEMA: PluginConfigSchema = {
+  type: 'object',
+  properties: {
+    enabled: {
+      type: 'boolean',
+      description: 'Whether the plugin is active',
+      default: true,
+    },
+    logLevel: {
+      type: 'string',
+      description: 'Minimum log level (debug, info, warn, error)',
+      default: 'info',
+    },
+    trackTiming: {
+      type: 'boolean',
+      description: 'Whether to track request duration',
+      default: true,
+    },
+  },
+  required: [],
+};
+
+// ─── Plugin Implementation ───────────────────────────────────
+
+class ExamplePlugin implements IPlugin {
+  // ── Required manifest fields ──────────────────────────────
+  readonly id = PLUGIN_ID;
+  readonly name = PLUGIN_NAME;
+  readonly version = PLUGIN_VERSION;
+  readonly description = PLUGIN_DESCRIPTION;
+  readonly slots: PluginSlot[] = [PluginSlot.ON_READY, PluginSlot.ON_REQUEST];
+  readonly configSchema = CONFIG_SCHEMA;
+
+  // ── Optional runtime state ────────────────────────────────
+  private config = this.getDefaultConfig();
+
+  private getDefaultConfig(): Record<string, unknown> {
+    return {
+      enabled: true,
+      logLevel: 'info',
+      trackTiming: true,
+    };
+  }
+
+  // ── Lifecycle: onConfigure ────────────────────────────────
+
+  async onConfigure(_context: PluginContext, config: Record<string, unknown>): Promise<void> {
+    this.config = { ...this.getDefaultConfig(), ...config };
+    this.log('info', `Configured with: ${JSON.stringify(this.config)}`);
+  }
+
+  // ── Lifecycle: onReady ────────────────────────────────────
+
+  async onReady(context: PluginContext): Promise<void> {
+    this.log('info', `${PLUGIN_NAME} is ready`);
+    this.log('debug', `Tenant: ${context.tenantId}, User: ${context.userId}`);
+  }
+
+  // ── Lifecycle: onRequest ──────────────────────────────────
+
+  async onRequest(context: PluginContext): Promise<void> {
+    if (!this.config.enabled) {
+      return;
+    }
+
+    if (this.config.trackTiming) {
+      this.log('debug', `Request ${context.requestId} received`);
+    }
+  }
+
+  // ── Lifecycle: beforeAction ───────────────────────────────
+
+  async beforeAction(
+    _context: PluginContext,
+    action: string,
+    payload?: unknown,
+  ): Promise<boolean | void> {
+    this.log('info', `Before action: ${action}`, payload);
+
+    // Example: validate that payload exists for write actions
+    if (action.startsWith('create_') || action.startsWith('update_')) {
+      if (!payload) {
+        this.log('warn', `Action ${action} called without payload — aborting`);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // ── Lifecycle: afterAction ────────────────────────────────
+
+  async afterAction(
+    _context: PluginContext,
+    action: string,
+    _result?: unknown,
+    error?: Error,
+  ): Promise<void> {
+    if (error) {
+      this.log('error', `Action ${action} failed: ${error.message}`);
+    } else {
+      this.log('debug', `Action ${action} completed`);
+    }
+  }
+
+  // ── Lifecycle: onShutdown ─────────────────────────────────
+
+  async onShutdown(_context: PluginContext): Promise<void> {
+    this.log('info', `${PLUGIN_NAME} shutting down`);
+  }
+
+  // ── Internal logging ──────────────────────────────────────
+
+  private log(level: string, message: string, payload?: unknown): void {
+    const prefix = `[${PLUGIN_NAME}]`;
+    const logEntry = payload !== undefined ? [prefix, message, payload] : [prefix, message];
+
+    switch (level) {
+      case 'error':
+        console.error(...logEntry);
+        break;
+      case 'warn':
+        console.warn(...logEntry);
+        break;
+      case 'info':
+        console.info(...logEntry);
+        break;
+      case 'debug':
+        console.debug(...logEntry);
+        break;
+    }
+  }
+}
+
+// ─── PluginFactory export ────────────────────────────────────
+
+/**
+ * Default export is the PluginFactory — required by PluginLoader.
+ * The factory creates a new instance each time, ensuring clean state.
+ */
+export default function createPlugin(): IPlugin {
+  return new ExamplePlugin();
+}
+
+// Also export the class for testing / direct instantiation
+export { ExamplePlugin };

@@ -1,0 +1,251 @@
+/** Plugin Registry — CP27 Plugin System Generator.
+
+In-memory registry với reactive updates qua BehaviorSubject.
+Quản lý lifecycle của tất cả plugins đã được load.
+
+{% if plugin_name %}
+* Plugin Registry: {{ plugin_name }}
+{% endif %}
+*/
+
+import { Injectable, OnDestroy } from '@angular/core';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { IPlugin, PluginInfo, PluginStatus } from './plugin-contracts';
+import { PluginSlot } from './plugin-slots';
+
+/**
+ * RegistryChangeEvent — sự kiện thay đổi trong registry.
+ */
+export interface RegistryChangeEvent {
+    /** Loại thay đổi */
+    type: 'registered' | 'unregistered' | 'activated' | 'deactivated' | 'error';
+    /** Plugin ID */
+    pluginId: string;
+    /** Plugin instance (nếu có) */
+    plugin?: IPlugin;
+    /** Error message (nếu có) */
+    error?: string;
+}
+
+@Injectable({
+    providedIn: 'root',
+})
+export class PluginRegistry implements OnDestroy {
+    /** In-memory map: pluginId → IPlugin */
+    private readonly plugins = new Map<string, IPlugin>();
+
+    /** Reactive stream cho registry changes */
+    private readonly changeSubject = new BehaviorSubject<RegistryChangeEvent>({
+        type: 'registered',
+        pluginId: '__init__',
+    });
+
+    /** Reactive stream cho plugin list snapshot */
+    private readonly listSubject = new BehaviorSubject<IPlugin[]>([]);
+
+    /**
+     * Observable — listen cho registry changes.
+     */
+    readonly changes$ = this.changeSubject.asObservable();
+
+    /**
+     * Observable — listen cho list snapshot (update khi có change).
+     */
+    readonly plugins$ = this.listSubject.asObservable();
+
+    /**
+     * Register một plugin vào registry.
+     * @param plugin Plugin instance
+     */
+    register(plugin: IPlugin): void {
+        if (this.plugins.has(plugin.info.id)) {
+            console.warn(`[PluginRegistry] Plugin ${plugin.info.id} đã tồn tại, overwrite.`);
+        }
+
+        plugin.info.registeredAt = new Date().toISOString();
+        plugin.info.status = PluginStatus.REGISTERED;
+        this.plugins.set(plugin.info.id, plugin);
+
+        this.updateList();
+        this.changeSubject.next({
+            type: 'registered',
+            pluginId: plugin.info.id,
+            plugin,
+        });
+    }
+
+    /**
+     * Lấy plugin theo ID.
+     * @param id Plugin ID
+     * @returns Plugin instance hoặc undefined
+     */
+    get(id: string): IPlugin | undefined {
+        return this.plugins.get(id);
+    }
+
+    /**
+     * Lấy tất cả plugins.
+     * @returns Array của plugin instances
+     */
+    getAll(): IPlugin[] {
+        return Array.from(this.plugins.values());
+    }
+
+    /**
+     * Lấy tất cả plugins hook vào một slot cụ thể.
+     * @param slot PluginSlot enum hoặc custom slot string
+     * @returns Array của plugins có hook vào slot này
+     */
+    getBySlot(slot: PluginSlot | string): IPlugin[] {
+        return this.getAll().filter((plugin) => {
+            const pluginSlots = plugin.info.slots || [];
+            return pluginSlots.includes(slot);
+        });
+    }
+
+    /**
+     * Kiểm tra plugin có đang enabled/active không.
+     * @param id Plugin ID
+     * @returns true nếu plugin active
+     */
+    isEnabled(id: string): boolean {
+        const plugin = this.plugins.get(id);
+        return plugin?.info.status === PluginStatus.ACTIVE;
+    }
+
+    /**
+     * Unregister một plugin khỏi registry.
+     * @param id Plugin ID
+     */
+    unregister(id: string): void {
+        const plugin = this.plugins.get(id);
+
+        if (plugin) {
+            plugin.info.status = PluginStatus.UNREGISTERED;
+            this.plugins.delete(id);
+            this.updateList();
+
+            this.changeSubject.next({
+                type: 'unregistered',
+                pluginId: id,
+            });
+        }
+    }
+
+    /**
+     * Activate một plugin.
+     * @param id Plugin ID
+     */
+    async activate(id: string): Promise<void> {
+        const plugin = this.plugins.get(id);
+
+        if (!plugin) {
+            throw new Error(`[PluginRegistry] Plugin ${id} không tồn tại`);
+        }
+
+        if (plugin.info.status === PluginStatus.ACTIVE) {
+            return;
+        }
+
+        try {
+            plugin.info.status = PluginStatus.INITIALIZING;
+            await plugin.activate();
+            plugin.info.status = PluginStatus.ACTIVE;
+            plugin.info.activatedAt = new Date().toISOString();
+
+            this.updateList();
+            this.changeSubject.next({
+                type: 'activated',
+                pluginId: id,
+                plugin,
+            });
+        } catch (error) {
+            plugin.info.status = PluginStatus.ERROR;
+
+            this.changeSubject.next({
+                type: 'error',
+                pluginId: id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            throw error;
+        }
+    }
+
+    /**
+     * Deactivate một plugin.
+     * @param id Plugin ID
+     */
+    async deactivate(id: string): Promise<void> {
+        const plugin = this.plugins.get(id);
+
+        if (!plugin) {
+            throw new Error(`[PluginRegistry] Plugin ${id} không tồn tại`);
+        }
+
+        try {
+            await plugin.deactivate();
+            plugin.info.status = PluginStatus.DISABLED;
+
+            this.updateList();
+            this.changeSubject.next({
+                type: 'deactivated',
+                pluginId: id,
+            });
+        } catch (error) {
+            this.changeSubject.next({
+                type: 'error',
+                pluginId: id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            throw error;
+        }
+    }
+
+    /**
+     * Lấy plugin info snapshot (không expose instance).
+     * @param id Plugin ID
+     * @returns PluginInfo hoặc undefined
+     */
+    getInfo(id: string): PluginInfo | undefined {
+        return this.plugins.get(id)?.info;
+    }
+
+    /**
+     * Lấy tất cả plugin infos.
+     */
+    getAllInfos(): PluginInfo[] {
+        return this.getAll().map((p) => p.info);
+    }
+
+    /**
+     * Lấy tất cả unique slots đang được sử dụng.
+     */
+    getActiveSlots(): (PluginSlot | string)[] {
+        const slotSet = new Set<string>();
+        for (const plugin of this.getAll()) {
+            if (plugin.info.status === PluginStatus.ACTIVE && plugin.info.slots) {
+                for (const slot of plugin.info.slots) {
+                    slotSet.add(slot);
+                }
+            }
+        }
+        return Array.from(slotSet);
+    }
+
+    /**
+     * Cập nhật list subject sau mỗi thay đổi.
+     */
+    private updateList(): void {
+        this.listSubject.next(this.getAll());
+    }
+
+    /**
+     * Cleanup.
+     */
+    ngOnDestroy(): void {
+        this.changeSubject.complete();
+        this.listSubject.complete();
+    }
+}

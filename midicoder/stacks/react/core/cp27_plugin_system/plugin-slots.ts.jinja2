@@ -1,0 +1,97 @@
+/**
+ * Plugin Slots - CP27: Plugin System
+ *
+ * Defines all available plugin slots where plugins can hook into
+ * the application lifecycle. Includes lifecycle events and command hooks.
+ *
+ * Slots are discovery points: plugins declare which slots they implement,
+ * the runtime resolves and wires them together.
+ */
+
+/**
+ * Core lifecycle events that plugins can react to.
+ */
+export enum LifecycleEvent {
+  /** Called when the plugin system is first initialized. */
+  ON_INIT = 'on_init',
+  /** Called when a plugin receives its configuration. */
+  ON_CONFIGURE = 'on_configure',
+  /** Called when a plugin is fully loaded and ready. */
+  ON_READY = 'on_ready',
+  /** Called on every incoming request. */
+  ON_REQUEST = 'on_request',
+  /** Called when the application is shutting down. */
+  ON_SHUTDOWN = 'on_shutdown',
+  /** Called before a command action executes. */
+  BEFORE_ACTION = 'before_action',
+  /** Called after a command action completes. */
+  AFTER_ACTION = 'after_action',
+}
+
+/**
+ * Available plugin slots.
+ *
+ * Each slot represents a point in the application where plugins can attach.
+ * Slots carry an associated lifecycle event and a priority range
+ * that determines execution order.
+ */
+export enum PluginSlot {
+  // ── Lifecycle slots ──────────────────────────────────────
+  /** Plugin hooks into application initialization. */
+  ON_INIT = 'slot_on_init',
+  /** Plugin hooks into configuration phase. */
+  ON_CONFIGURE = 'slot_on_configure',
+  /** Plugin hooks into ready phase. */
+  ON_READY = 'slot_on_ready',
+  /** Plugin hooks into every incoming request (tenant-aware). */
+  ON_REQUEST = 'slot_on_request',
+  /** Plugin hooks into application shutdown. */
+  ON_SHUTDOWN = 'slot_on_shutdown',
+
+  // ── Command hook slots ───────────────────────────────────
+  // Generated slots follow the pattern: slot_before_{command_snake} / slot_after_{command_snake}
+  // Example: slot_before_create_user, slot_after_create_user
+}
+
+/**
+ * Map each slot to its primary lifecycle event.
+ */
+export const SLOT_EVENT_MAP: Record<PluginSlot, LifecycleEvent> = {
+  [PluginSlot.ON_INIT]: LifecycleEvent.ON_INIT,
+  [PluginSlot.ON_CONFIGURE]: LifecycleEvent.ON_CONFIGURE,
+  [PluginSlot.ON_READY]: LifecycleEvent.ON_READY,
+  [PluginSlot.ON_REQUEST]: LifecycleEvent.ON_REQUEST,
+  [PluginSlot.ON_SHUTDOWN]: LifecycleEvent.ON_SHUTDOWN,
+} as const;
+
+/**
+ * Default priority range for all slots.
+ * Plugins within a slot execute in ascending priority order.
+ */
+export const DEFAULT_PRIORITY_RANGE: [number, number] = [0, 100];
+
+/**
+ * Slots that require tenant context.
+ */
+export const TENANT_AWARE_SLOTS: PluginSlot[] = [
+  PluginSlot.ON_REQUEST,
+];
+
+/**
+ * Check if a slot ID is a command hook (before_/after_ prefix).
+ */
+export function isCommandHookSlot(slotId: string): boolean {
+  return slotId.startsWith('slot_before_') || slotId.startsWith('slot_after_');
+}
+
+/**
+ * Extract the command name from a command hook slot ID.
+ *
+ * @example
+ *   extractCommandFromSlot('slot_before_create_user') // -> 'create_user'
+ *   extractCommandFromSlot('slot_after_update_order') // -> 'update_order'
+ */
+export function extractCommandFromSlot(slotId: string): string | null {
+  const match = slotId.match(/^slot_(before|after)_(.+)$/);
+  return match ? match[2] : null;
+}

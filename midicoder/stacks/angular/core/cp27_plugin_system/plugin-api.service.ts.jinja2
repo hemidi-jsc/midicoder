@@ -1,0 +1,286 @@
+/** Plugin API Service — CP27 Plugin System Generator.
+
+Service gọi backend API để quản lý plugins: list, get, enable,
+disable, configure, và query slots/hooks.
+
+{% if plugin_name %}
+* Plugin API Service: {{ plugin_name }}
+{% endif %}
+*/
+
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams, HttpErrorResponse } from '@angular/common/http';
+import { Observable, throwError } from 'rxjs';
+import { map, catchError } from 'rxjs/operators';
+import { PluginInfo, PluginStatus } from './plugin-contracts';
+import { PluginSlot } from './plugin-slots';
+
+/**
+* Plugin API Response wrapper.
+*/
+export interface PluginApiResponse<T> {
+    data: T;
+    success: boolean;
+    message?: string;
+    }
+
+    /**
+    * Plugin configuration request.
+    */
+    export interface PluginConfigRequest {
+    /** Config key-value pairs để merge */
+    config: Record<string, any>;
+        }
+
+        /**
+        * Slot hook response.
+        */
+        export interface SlotHookInfo {
+        /** Slot name */
+        slot: PluginSlot | string;
+        /** Số plugin hook vào slot này */
+        pluginCount: number;
+        /** Plugin IDs hook vào slot */
+        pluginIds: string[];
+        /** Có slot này có blocking hooks */
+        hasBlocking: boolean;
+        }
+
+        @Injectable({
+        providedIn: 'root',
+        })
+        export class PluginApiService {
+        private baseUrl: string;
+
+        constructor(private http: HttpClient) {
+        this.baseUrl = '/api/plugins';
+        }
+
+        /**
+        * Set base URL cho plugin API endpoints.
+        */
+        setBaseUrl(url: string): void {
+        this.baseUrl = url;
+        }
+
+        /**
+        * List tất cả plugins từ backend.
+        * @param filters Optional filters (status, author)
+        */
+        listPlugins(filters?: {
+        status?: PluginStatus;
+        author?: string;
+        }): Observable<PluginInfo[]> {
+            let params = new HttpParams();
+            if (filters?.status) {
+            params = params.set('status', filters.status);
+            }
+            if (filters?.author) {
+            params = params.set('author', filters.author);
+            }
+
+            return this.http.get<PluginApiResponse<PluginInfo[]>>(
+                `${this.baseUrl}`,
+                { params },
+                ).pipe(
+                this.handleResponse<PluginInfo[]>(),
+                    );
+                    }
+
+                    /**
+                    * Lấy chi tiết một plugin theo ID.
+                    * @param id Plugin ID
+                    */
+                    getPlugin(id: string): Observable<PluginInfo> {
+                        return this.http.get<PluginApiResponse<PluginInfo>>(
+                            `${this.baseUrl}/${id}`,
+                            ).pipe(
+                            this.handleResponse<PluginInfo>(),
+                                );
+                                }
+
+                                /**
+                                * Enable một plugin.
+                                * @param id Plugin ID
+                                */
+                                enablePlugin(id: string): Observable<PluginInfo> {
+                                    return this.http.post<PluginApiResponse<PluginInfo>>(
+                                        `${this.baseUrl}/${id}/enable`,
+                                        {},
+                                        ).pipe(
+                                        this.handleResponse<PluginInfo>(),
+                                            );
+                                            }
+
+                                            /**
+                                            * Disable một plugin.
+                                            * @param id Plugin ID
+                                            */
+                                            disablePlugin(id: string): Observable<PluginInfo> {
+                                                return this.http.post<PluginApiResponse<PluginInfo>>(
+                                                    `${this.baseUrl}/${id}/disable`,
+                                                    {},
+                                                    ).pipe(
+                                                    this.handleResponse<PluginInfo>(),
+                                                        );
+                                                        }
+
+                                                        /**
+                                                        * Configure plugin runtime.
+                                                        * @param id Plugin ID
+                                                        * @param config Config object để merge
+                                                        */
+                                                        configurePlugin(id: string, config: Record<string, any>):
+                                                            Observable<PluginInfo> {
+                                                                return this.http.patch<PluginApiResponse<PluginInfo>>(
+                                                                    `${this.baseUrl}/${id}/config`,
+                                                                    { config },
+                                                                    ).pipe(
+                                                                    this.handleResponse<PluginInfo>(),
+                                                                        );
+                                                                        }
+
+                                                                        /**
+                                                                        * Lấy status của một plugin.
+                                                                        * @param id Plugin ID
+                                                                        */
+                                                                        getStatus(id: string): Observable<PluginStatus>
+                                                                            {
+                                                                            return this.http.get<PluginApiResponse<{
+                                                                                status: PluginStatus }>>(
+                                                                                `${this.baseUrl}/${id}/status`,
+                                                                                ).pipe(
+                                                                                this.handleResponse<{ status:
+                                                                                    PluginStatus }>(),
+                                                                                    map((response) => response.status),
+                                                                                    );
+                                                                                    }
+
+                                                                                    /**
+                                                                                    * Lấy danh sách tất cả slots.
+                                                                                    */
+                                                                                    getSlots(): Observable
+                                                                                    <SlotHookInfo[]> {
+                                                                                        return this.http.get
+                                                                                        <PluginApiResponse<SlotHookInfo[]>
+                                                                                            >(
+                                                                                            `${this.baseUrl}/slots`,
+                                                                                            ).pipe(
+                                                                                            this.handleResponse
+                                                                                            <SlotHookInfo[]>(),
+                                                                                                );
+                                                                                                }
+
+                                                                                                /**
+                                                                                                * Lấy hooks của một slot
+                                                                                                cụ thể.
+                                                                                                * @param slot Slot name
+                                                                                                */
+                                                                                                getSlotHooks(slot:
+                                                                                                PluginSlot | string):
+                                                                                                Observable<SlotHookInfo>
+                                                                                                    {
+                                                                                                    return this.http.get
+                                                                                                    <PluginApiResponse<SlotHookInfo>
+                                                                                                        >(
+                                                                                                        `${this.baseUrl}/slots/${slot}`,
+                                                                                                        ).pipe(
+                                                                                                        this.handleResponse
+                                                                                                        <SlotHookInfo>
+                                                                                                            (),
+                                                                                                            );
+                                                                                                            }
+
+                                                                                                            /**
+                                                                                                            * Health
+                                                                                                            check cho
+                                                                                                            một plugin.
+                                                                                                            * @param id
+                                                                                                            Plugin ID
+                                                                                                            */
+                                                                                                            healthCheck(id:
+                                                                                                            string):
+                                                                                                            Observable
+                                                                                                            <any> {
+                                                                                                                return
+                                                                                                                this.http.get
+                                                                                                                <PluginApiResponse<any>
+                                                                                                                    >(
+                                                                                                                    `${this.baseUrl}/${id}/health`,
+                                                                                                                    ).pipe(
+                                                                                                                    this.handleResponse
+                                                                                                                    <any>
+                                                                                                                        (),
+                                                                                                                        );
+                                                                                                                        }
+
+                                                                                                                        /**
+                                                                                                                        *
+                                                                                                                        Handle
+                                                                                                                        API
+                                                                                                                        response
+                                                                                                                        —
+                                                                                                                        extract
+                                                                                                                        data
+                                                                                                                        hoặc
+                                                                                                                        throw
+                                                                                                                        error.
+                                                                                                                        */
+                                                                                                                        private
+                                                                                                                        handleResponse
+                                                                                                                        <T>()
+                                                                                                                            {
+                                                                                                                            return
+                                                                                                                            (source:
+                                                                                                                            Observable
+                                                                                                                            <PluginApiResponse<T>
+                                                                                                                                >):
+                                                                                                                                Observable
+                                                                                                                                <T> =>
+                                                                                                                                    {
+                                                                                                                                    return
+                                                                                                                                    source.pipe(
+                                                                                                                                    map((response:
+                                                                                                                                    PluginApiResponse
+                                                                                                                                    <T>) =>
+                                                                                                                                        {
+                                                                                                                                        if
+                                                                                                                                        (response.success)
+                                                                                                                                        {
+                                                                                                                                        return
+                                                                                                                                        response.data;
+                                                                                                                                        }
+                                                                                                                                        else
+                                                                                                                                        {
+                                                                                                                                        throw
+                                                                                                                                        new
+                                                                                                                                        Error(response.message
+                                                                                                                                        ||
+                                                                                                                                        'API
+                                                                                                                                        call
+                                                                                                                                        failed');
+                                                                                                                                        }
+                                                                                                                                        }),
+                                                                                                                                        catchError((err:
+                                                                                                                                        HttpErrorResponse)
+                                                                                                                                        =>
+                                                                                                                                        {
+                                                                                                                                        const
+                                                                                                                                        message
+                                                                                                                                        =
+                                                                                                                                        err.error?.message
+                                                                                                                                        ||
+                                                                                                                                        err.statusText
+                                                                                                                                        ||
+                                                                                                                                        'Network
+                                                                                                                                        error';
+                                                                                                                                        return
+                                                                                                                                        throwError(()
+                                                                                                                                        =>
+                                                                                                                                        new
+                                                                                                                                        Error(message));
+                                                                                                                                        }),
+                                                                                                                                        );
+                                                                                                                                        };
+                                                                                                                                        }
+                                                                                                                                        }

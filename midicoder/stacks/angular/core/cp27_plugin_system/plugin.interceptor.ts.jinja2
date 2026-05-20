@@ -1,0 +1,271 @@
+/** Plugin Interceptor — CP27 Plugin System Generator.
+
+HttpInterceptor captures request/response lifecycle và invoke
+registered plugin hooks tại các before_http_request và
+after_http_response slots.
+
+{% if plugin_name %}
+* Plugin Interceptor: {{ plugin_name }}
+{% endif %}
+*/
+
+import { Injectable } from '@angular/core';
+import {
+    HttpEvent,
+    HttpHandler,
+    HttpInterceptor,
+    HttpRequest,
+    HttpResponse,
+    HttpErrorResponse,
+} from '@angular/common/http';
+import { Observable, EMPTY } from 'rxjs';
+import { tap, finalize } from 'rxjs/operators';
+import { PluginRegistry } from './plugin-registry';
+import { PluginContext, PluginRequestContext, PluginResponseContext } from './plugin-contracts';
+import { PluginSlot } from './plugin-slots';
+
+@Injectable({
+    providedIn: 'root',
+})
+export class PluginInterceptor implements HttpInterceptor {
+    constructor(private registry: PluginRegistry) {}
+
+    /**
+     * Intercept HTTP request/response lifecycle.
+     */
+    intercept(
+        request: HttpRequest<any>,
+        next: HttpHandler,
+    ): Observable<HttpEvent<any>> {
+        // Xây dựng request context cho plugin hooks
+        const requestContext: PluginRequestContext = {
+            url: request.urlWithParams,
+            method: request.method,
+            headers: this.extractHeaders(request.headers),
+            body: request.body,
+            params: this.extractParams(request.params),
+        };
+
+        // Tìm các plugins hook vào before_http_request slot
+        const beforePlugins = this.registry.getBySlot(PluginSlot.BEFORE_HTTP_REQUEST);
+
+        // Chạy blocking hooks — nếu bất kỳ hook nào cancel, không gửi request
+        let cancelled = false;
+        let modifiedRequest = request;
+
+        for (const plugin of beforePlugins) {
+            if (!this.registry.isEnabled(plugin.info.id)) {
+                continue;
+            }
+
+            const context: PluginContext = {
+                pluginId: plugin.info.id,
+                slot: PluginSlot.BEFORE_HTTP_REQUEST,
+                data: requestContext,
+                request: requestContext,
+                metadata: {
+                    timestamp: new Date().toISOString(),
+                    interceptor: 'PluginInterceptor',
+                },
+                cancel: () => {
+                    cancelled = true;
+                },
+                modifyData: (newData: any) => {
+                    // Allow plugin to modify request context
+                    if (newData && typeof newData === 'object') {
+                        Object.assign(requestContext, newData);
+                    }
+                },
+            };
+
+            try {
+                // Synchronous check — hook handler không nên block main thread
+                plugin.onHook(context).catch((error) => {
+                    console.error(
+                        `[PluginInterceptor] Lỗi hook BEFORE_HTTP_REQUEST từ ${plugin.info.id}:`,
+                        error,
+                    );
+                    // Invoke error slot
+                    this.invokeErrorSlot(plugin.info.id, error, requestContext);
+                });
+            } catch (error) {
+                console.error(
+                    `[PluginInterceptor] Exception hook BEFORE_HTTP_REQUEST từ ${plugin.info.id}:`,
+                    error,
+                );
+                this.invokeErrorSlot(plugin.info.id, error, requestContext);
+            }
+
+            if (cancelled) {
+                console.warn(
+                    `[PluginInterceptor] Request ${request.method} ${request.url} bị cancel bởi ${plugin.info.id}`,
+                );
+                return EMPTY;
+            }
+        }
+
+        // Gửi request qua next handler
+        return next.handle(modifiedRequest).pipe(
+            tap({
+                next: (event: HttpEvent<any>) => {
+                    if (event instanceof HttpResponse) {
+                        const responseContext: PluginResponseContext = {
+                            status: event.status,
+                            statusText: event.statusText,
+                            headers: this.extractHeaders(event.headers),
+                            body: event.body,
+                            ok: event.ok,
+                        };
+
+                        // Invoke after_http_response hooks
+                        this.invokeAfterHooks(responseContext, requestContext);
+                    }
+                },
+                error: (error: HttpErrorResponse) => {
+                    // Invoke http_error hooks
+                    const errorContext: PluginResponseContext = {
+                        status: error.status || 0,
+                        statusText: error.statusText || 'Unknown error',
+                        headers: this.extractHeaders(error.headers),
+                        body: error.error,
+                        ok: false,
+                    };
+
+                    this.invokeErrorHandler(errorContext, requestContext);
+                },
+            }),
+            finalize(() => {
+                // Cleanup nếu cần
+            }),
+        );
+    }
+
+    /**
+     * Invoke after_http_response hooks cho tất cả registered plugins.
+     */
+    private invokeAfterHooks(
+        responseContext: PluginResponseContext,
+        requestContext: PluginRequestContext,
+    ): void {
+        const afterPlugins = this.registry.getBySlot(PluginSlot.AFTER_HTTP_RESPONSE);
+
+        for (const plugin of afterPlugins) {
+            if (!this.registry.isEnabled(plugin.info.id)) {
+                continue;
+            }
+
+            const context: PluginContext = {
+                pluginId: plugin.info.id,
+                slot: PluginSlot.AFTER_HTTP_RESPONSE,
+                data: { request: requestContext, response: responseContext },
+                request: requestContext,
+                response: responseContext,
+                metadata: {
+                    timestamp: new Date().toISOString(),
+                    interceptor: 'PluginInterceptor',
+                },
+            };
+
+            plugin.onHook(context).catch((error) => {
+                console.error(
+                    `[PluginInterceptor] Lỗi hook AFTER_HTTP_RESPONSE từ ${plugin.info.id}:`,
+                    error,
+                );
+            });
+        }
+    }
+
+    /**
+     * Invoke http_error hooks cho tất cả registered plugins.
+     */
+    private invokeErrorHandler(
+        errorContext: PluginResponseContext,
+        requestContext: PluginRequestContext,
+    ): void {
+        const errorPlugins = this.registry.getBySlot(PluginSlot.HTTP_ERROR);
+
+        for (const plugin of errorPlugins) {
+            if (!this.registry.isEnabled(plugin.info.id)) {
+                continue;
+            }
+
+            const context: PluginContext = {
+                pluginId: plugin.info.id,
+                slot: PluginSlot.HTTP_ERROR,
+                data: { request: requestContext, response: errorContext },
+                request: requestContext,
+                response: errorContext,
+                metadata: {
+                    timestamp: new Date().toISOString(),
+                    interceptor: 'PluginInterceptor',
+                },
+            };
+
+            plugin.onHook(context).catch((error) => {
+                console.error(
+                    `[PluginInterceptor] Lỗi hook HTTP_ERROR từ ${plugin.info.id}:`,
+                    error,
+                );
+            });
+        }
+    }
+
+    /**
+     * Invoke error slot cho một plugin cụ thể.
+     */
+    private invokeErrorSlot(
+        pluginId: string,
+        error: any,
+        requestContext: PluginRequestContext,
+    ): void {
+        const plugin = this.registry.get(pluginId);
+        if (!plugin) {
+            return;
+        }
+
+        const context: PluginContext = {
+            pluginId,
+            slot: PluginSlot.ON_ERROR,
+            data: { error: error instanceof Error ? error.message : String(error) },
+            request: requestContext,
+            metadata: {
+                timestamp: new Date().toISOString(),
+                source: 'PluginInterceptor',
+            },
+        };
+
+        plugin.onHook(context).catch(() => {
+            // Ignore errors in error handler to prevent infinite loop
+        });
+    }
+
+    /**
+     * Extract headers thành plain object.
+     */
+    private extractHeaders(headers: any): Record<string, string> {
+        const result: Record<string, string> = {};
+
+        if (headers && typeof headers.keys === 'function') {
+            headers.keys().forEach((key: string) => {
+                result[key] = headers.get(key);
+            });
+        }
+
+        return result;
+    }
+
+    /**
+     * Extract params thành plain object.
+     */
+    private extractParams(params: any): Record<string, string> {
+        const result: Record<string, string> = {};
+
+        if (params && typeof params.keys === 'function') {
+            params.keys().forEach((key: string) => {
+                result[key] = params.get(key);
+            });
+        }
+
+        return result;
+    }
+}

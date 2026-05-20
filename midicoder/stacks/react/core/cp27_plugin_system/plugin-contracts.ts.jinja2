@@ -1,0 +1,175 @@
+/**
+ * Plugin Contracts - CP27: Plugin System
+ *
+ * Core TypeScript interfaces for the plugin system:
+ * - PluginStatus enum
+ * - PluginInfo interface (runtime metadata)
+ * - PluginContext interface (injected into plugin lifecycle methods)
+ * - IPlugin interface (the contract every plugin must implement)
+ *
+ * These contracts align with the backend PluginCollection model
+ * and are enforced at compile time.
+ */
+
+import type { LifecycleEvent, PluginSlot } from './plugin-slots';
+
+// ─── PluginStatus ────────────────────────────────────────────
+
+/**
+ * Current state of a plugin instance.
+ */
+export enum PluginStatus {
+  /** Plugin is registered but not activated. */
+  DISABLED = 'disabled',
+  /** Plugin is being loaded (dynamic import in progress). */
+  LOADING = 'loading',
+  /** Plugin is active and handling events. */
+  ENABLED = 'enabled',
+  /** Plugin encountered a fatal error. */
+  ERROR = 'error',
+}
+
+// ─── PluginInfo ──────────────────────────────────────────────
+
+/**
+ * Runtime metadata about a loaded plugin.
+ *
+ * Mirrors the backend PluginInfo dataclass.
+ */
+export interface PluginInfo {
+  /** Unique plugin identifier (matches manifest id). */
+  id: string;
+  /** Human-readable name. */
+  name: string;
+  /** Semver version string. */
+  version: string;
+  /** Current lifecycle status. */
+  status: PluginStatus;
+  /** Slot IDs this plugin is attached to. */
+  slots: PluginSlot[];
+  /** Runtime configuration key-value pairs. */
+  config: Record<string, unknown>;
+  /** ISO-8601 timestamp when the plugin was loaded. */
+  loadedAt?: string;
+  /** Error message if status is ERROR. */
+  error?: string;
+}
+
+// ─── PluginContext ───────────────────────────────────────────
+
+/**
+ * Context injected into every plugin lifecycle method.
+ *
+ * Provides tenant, user, and request information so plugins
+ * can make scoped decisions. Mirrors the backend PluginContext.
+ */
+export interface PluginContext {
+  /** Current tenant ID (multi-tenant support). */
+  tenantId: string;
+  /** Current authenticated user ID. */
+  userId: string;
+  /** Unique request ID for distributed tracing. */
+  requestId: string;
+  /** Global application configuration. */
+  appConfig: Record<string, unknown>;
+  /** Optional event bus for inter-plugin communication. */
+  eventBus?: EventBus;
+}
+
+/**
+ * Minimal event bus for publishing / subscribing between plugins.
+ */
+export interface EventBus {
+  publish(event: string, payload?: unknown): void;
+  subscribe(event: string, handler: (payload?: unknown) => void): () => void;
+}
+
+// ─── PluginConfigSchema ──────────────────────────────────────
+
+/**
+ * JSON-Schema-like definition for a plugin's configuration options.
+ */
+export interface PluginConfigSchema {
+  type: 'object';
+  properties?: Record<string, PluginConfigProperty>;
+  required?: string[];
+}
+
+/**
+ * Single configuration property definition.
+ */
+export interface PluginConfigProperty {
+  type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  description?: string;
+  default?: unknown;
+}
+
+// ─── IPlugin ─────────────────────────────────────────────────
+
+/**
+ * The contract every plugin must implement.
+ *
+ * Lifecycle methods are called by the PluginLoader in a defined order:
+ *   onInit → onConfigure → onReady → (onRequest / beforeAction / afterAction) → onShutdown
+ *
+ * Only the methods relevant to the plugin's registered slots need to be
+ * implemented; unimplemented methods are simply skipped.
+ */
+export interface IPlugin {
+  // ── Manifest (required) ───────────────────────────────────
+
+  /** Unique plugin ID — must match the manifest id. */
+  readonly id: string;
+  /** Human-readable display name. */
+  readonly name: string;
+  /** Semver version string (e.g. "1.0.0"). */
+  readonly version: string;
+  /** One-line description of what this plugin does. */
+  readonly description?: string;
+  /** Slot IDs this plugin intends to handle. */
+  readonly slots: PluginSlot[];
+  /** IDs of other plugins this plugin depends on. */
+  readonly dependencies?: string[];
+  /** Minimum midicoder platform version required. */
+  readonly minPlatformVersion?: string;
+  /** Configuration schema (JSON-Schema-like). */
+  readonly configSchema?: PluginConfigSchema;
+
+  // ── Lifecycle hooks (optional — implement only what you need) ─
+
+  /** Called once when the plugin system initializes. */
+  onInit?(context: PluginContext): Promise<void> | void;
+
+  /** Called with the plugin's runtime configuration. */
+  onConfigure?(context: PluginContext, config: Record<string, unknown>): Promise<void> | void;
+
+  /** Called after init + configure; plugin should be fully operational. */
+  onReady?(context: PluginContext): Promise<void> | void;
+
+  /** Called on every incoming request. */
+  onRequest?(context: PluginContext): Promise<void> | void;
+
+  /** Called during application shutdown for cleanup. */
+  onShutdown?(context: PluginContext): Promise<void> | void;
+
+  /** Called before a command action executes. Return false to abort. */
+  beforeAction?(
+    context: PluginContext,
+    action: string,
+    payload?: unknown,
+  ): Promise<boolean | void> | boolean | void;
+
+  /** Called after a command action completes (or fails). */
+  afterAction?(
+    context: PluginContext,
+    action: string,
+    result?: unknown,
+    error?: Error,
+  ): Promise<void> | void;
+}
+
+/**
+ * Factory function that produces a plugin instance.
+ * Used by the PluginLoader when resolving dynamic imports.
+ */
+export type PluginFactory = () => IPlugin | Promise<IPlugin>;

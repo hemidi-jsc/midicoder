@@ -1,0 +1,219 @@
+/** Plugin Loader — CP27 Plugin System Generator.
+
+Service chịu trách nhiệm load và khởi tạo plugins.
+Frontend plugin loading (không truy cập filesystem),
+dùng PluginApiService để fetch plugin metadata từ backend.
+
+{% if plugin_name %}
+* Plugin Loader: {{ plugin_name }}
+{% endif %}
+*/
+
+import { Injectable, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { IPlugin, PluginContext, PluginInfo, PluginStatus } from './plugin-contracts';
+import { PluginRegistry } from './plugin-registry';
+import { PluginApiService } from './plugin-api.service';
+
+export interface PluginLoadEvent {
+    /** Plugin ID */
+    pluginId: string;
+    /** Event type */
+    type: 'started' | 'success' | 'error';
+    /** Error message nếu load fail */
+    error?: string;
+    /** Plugin instance nếu load success */
+    plugin?: IPlugin;
+}
+
+@Injectable({
+    providedIn: 'root',
+})
+export class PluginLoader implements OnDestroy {
+    /** Emit khi có plugin được load/unload */
+    private readonly loadSubject = new Subject<PluginLoadEvent>();
+    readonly loadEvents$ = this.loadSubject.asObservable();
+
+    constructor(
+        private registry: PluginRegistry,
+        private apiService: PluginApiService,
+    ) {}
+
+    /**
+     * Load tất cả plugins đã được enable từ backend.
+     */
+    async loadPlugins(): Promise<void> {
+        try {
+            const plugins = await this.apiService.listPlugins().toPromise();
+
+            for (const pluginInfo of plugins) {
+                if (pluginInfo.status === PluginStatus.ACTIVE) {
+                    await this.loadSinglePlugin(pluginInfo);
+                }
+            }
+        } catch (error) {
+            console.error('[PluginLoader] Không thể load plugins từ backend:', error);
+        }
+    }
+
+    /**
+     * Load một plugin duy nhất.
+     */
+    async loadSinglePlugin(pluginInfo: PluginInfo): Promise<IPlugin | null> {
+        this.loadSubject.next({
+            pluginId: pluginInfo.id,
+            type: 'started',
+        });
+
+        try {
+            // Frontend không thể dynamically import plugin class
+            // nên plugin phải được register trước trong application bootstrap.
+            // Đây là bridge để sync state với backend.
+            const plugin = await this.createPluginInstance(pluginInfo);
+
+            if (plugin) {
+                // Initialize plugin
+                plugin.info.status = PluginStatus.INITIALIZING;
+                const context: PluginContext = {
+                    pluginId: plugin.info.id,
+                    slot: 'custom',
+                    data: null,
+                    metadata: { source: 'PluginLoader' },
+                };
+                await plugin.initialize(context);
+                plugin.info.status = PluginStatus.ACTIVE;
+                plugin.info.activatedAt = new Date().toISOString();
+
+                // Register vào registry
+                this.registry.register(plugin);
+
+                this.loadSubject.next({
+                    pluginId: plugin.info.id,
+                    type: 'success',
+                    plugin,
+                });
+
+                return plugin;
+            }
+
+            return null;
+        } catch (error) {
+            this.loadSubject.next({
+                pluginId: pluginInfo.id,
+                type: 'error',
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            console.error(`[PluginLoader] Lỗi load plugin ${pluginInfo.id}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Register một plugin instance trực tiếp (cho built-in plugins).
+     */
+    async registerPlugin(plugin: IPlugin): Promise<void> {
+        try {
+            const context: PluginContext = {
+                pluginId: plugin.info.id,
+                slot: 'custom',
+                data: null,
+                metadata: { source: 'PluginLoader.registerPlugin' },
+            };
+
+            plugin.info.status = PluginStatus.INITIALIZING;
+            await plugin.initialize(context);
+            plugin.info.status = PluginStatus.ACTIVE;
+            plugin.info.activatedAt = new Date().toISOString();
+
+            this.registry.register(plugin);
+
+            this.loadSubject.next({
+                pluginId: plugin.info.id,
+                type: 'success',
+                plugin,
+            });
+        } catch (error) {
+            this.loadSubject.next({
+                pluginId: plugin.info.id,
+                type: 'error',
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    /**
+     * Unregister một plugin.
+     */
+    async unregisterPlugin(pluginId: string): Promise<void> {
+        const plugin = this.registry.get(pluginId);
+
+        if (plugin) {
+            try {
+                await plugin.deactivate();
+                await plugin.destroy();
+            } catch (error) {
+                console.error(`[PluginLoader] Lỗi destroy plugin ${pluginId}:`, error);
+            }
+
+            this.registry.unregister(pluginId);
+
+            this.loadSubject.next({
+                pluginId,
+                type: 'success',
+            });
+        }
+    }
+
+    /**
+     * Tạo plugin instance từ plugin info.
+     * Trong frontend, plugin class phải được biết trước (compiled).
+     * Override method này để map plugin ID → actual class.
+     */
+    protected async createPluginInstance(_pluginInfo: PluginInfo): Promise<IPlugin | null> {
+        // Default: frontend không thể auto-create plugin từ metadata
+        // Override trong subclass để implement plugin factory pattern
+        return null;
+    }
+
+    /**
+     * Cleanup — destroy tất cả loaded plugins.
+     */
+    async ngOnDestroy(): Promise<void> {
+        const allPlugins = this.registry.getAll();
+        for (const plugin of allPlugins) {
+            await this.unregisterPlugin(plugin.info.id);
+        }
+        this.loadSubject.complete();
+    }
+
+    /**
+     * Sync plugin status từ backend.
+     */
+    async syncFromBackend(): Promise<void> {
+        try {
+            const backendPlugins = await this.apiService.listPlugins().toPromise();
+            const localPlugins = this.registry.getAll();
+
+            // Disable plugins không còn trong backend
+            for (const local of localPlugins) {
+                const backendInfo = backendPlugins.find((p) => p.id === local.info.id);
+                if (!backendInfo || backendInfo.status === PluginStatus.DISABLED) {
+                    await this.unregisterPlugin(local.info.id);
+                }
+            }
+
+            // Load plugins mới từ backend
+            for (const backendInfo of backendPlugins) {
+                if (backendInfo.status === PluginStatus.ACTIVE) {
+                    const exists = localPlugins.find((p) => p.info.id === backendInfo.id);
+                    if (!exists) {
+                        await this.loadSinglePlugin(backendInfo);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[PluginLoader] Sync từ backend thất bại:', error);
+        }
+    }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "example-logger",
+  "name": "Example Logger Plugin",
+  "version": "1.0.0",
+  "description": "A sample plugin that logs HTTP request/response lifecycle events.",
+  "author": "Midicoder Team",
+  "license": "MIT",
+  "slots": [
+    "on_request",
+    "on_response",
+    "on_error"
+  ],
+  "minMidicoderVersion": "1.0.0",
+  "entryPoint": "./example.plugin.ts",
+  "defaultConfig": {
+    "logLevel": "info",
+    "includeHeaders": false,
+    "maxLogLength": 1000
+  }
+}

@@ -1,0 +1,285 @@
+{#
+Jinja2 template cho Example Plugin (CP27).
+
+Tự động sinh sample plugin implementation để làm reference cho developer.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Example Plugin Implementation — tự động sinh bởi CP27.
+
+Sample plugin để demo cách implement PluginBase Protocol.
+
+Plugin này hook vào:
+- Lifecycle: on_init, on_configure, on_ready, on_shutdown
+- Request: on_request (logging/metrics)
+{% for cmd in commands %}
+- Command hooks: before_{{ cmd.get('id', 'action').lower() }}, after_{{ cmd.get('id', 'action').lower() }}
+{% endfor %}
+
+Usage:
+    class ExamplePlugin:
+        id: str = "example_plugin"
+        ...
+
+    # Đăng ký với registry
+    from plugin_system.registry import PluginRegistry
+    registry = PluginRegistry.get()
+    registry.register(ExamplePlugin())
+
+    # Enable với manager
+    from plugin_system.manager import PluginManager
+    manager = PluginManager()
+    manager.enable_plugin("example_plugin", ctx=PluginContext())
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Optional
+
+from .contracts import PluginBase, PluginContext
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# ExamplePlugin — Sample Implementation
+# ============================================================================
+
+
+class ExamplePlugin:
+    """
+    Sample plugin implementation — implement PluginBase Protocol.
+
+    Demo các lifecycle methods và command hooks.
+
+    Properties:
+        id:        Plugin ID duy nhất
+        name:      Tên plugin
+        version:   Version semver
+        slots:     Danh sách slot IDs mà plugin hook vào
+
+    Lifecycle:
+        on_init:        Khởi tạo internal state
+        on_configure:   Apply runtime config
+        on_ready:       Log ready status
+        on_request:     Request logging/metrics
+        on_shutdown:    Cleanup resources
+
+    Command Hooks:
+        before_*: Pre-execution hook for commands
+        after_*:  Post-execution hook for commands
+    """
+
+    # -------------------------------------------------------------------------
+    # Required Properties
+    # -------------------------------------------------------------------------
+    id: str = "example_plugin"
+    name: str = "Example Plugin"
+    version: str = "1.0.0"
+
+    # Slots mà plugin hook vào
+    slots: list[str] = [
+        "on_init",
+        "on_configure",
+        "on_ready",
+        "on_request",
+        "on_shutdown",
+{% for cmd in commands %}
+        "before_{{ cmd.get('id', 'action').lower() }}",
+        "after_{{ cmd.get('id', 'action').lower() }}",
+{% endfor %}
+    ]
+
+    # -------------------------------------------------------------------------
+    # Internal State
+    # -------------------------------------------------------------------------
+    _initialized: bool = False
+    _config: dict[str, Any] = {}
+    _request_count: int = 0
+
+    # -------------------------------------------------------------------------
+    # Lifecycle Methods
+    # -------------------------------------------------------------------------
+
+    def on_init(self, ctx: PluginContext) -> None:
+        """
+        Khởi tạo plugin — gọi một lần khi load.
+
+        Ví dụ: setup connections, initialize state, register listeners.
+
+        Args:
+            ctx: PluginContext với app_config
+        """
+        logger.info(
+            "[%s] Initializing — tenant=%s, request_id=%s",
+            self.id,
+            ctx.tenant_id,
+            ctx.request_id,
+        )
+        self._initialized = True
+        self._request_count = 0
+
+    def on_configure(
+        self,
+        ctx: PluginContext,
+        config: dict[str, Any],
+    ) -> None:
+        """
+        Apply cấu hình runtime — gọi khi config thay đổi.
+
+        Ví dụ: adjust behavior based on config, reconnect with new params.
+
+        Args:
+            ctx: PluginContext hiện tại
+            config: Dict cấu hình plugin
+        """
+        logger.info("[%s] Configuring with: %s", self.id, config)
+        self._config = dict(config)
+
+    def on_ready(self, ctx: PluginContext) -> None:
+        """
+        Plugin sẵn sàng hoạt động — gọi sau khi init và configure xong.
+
+        Ví dụ: start background tasks, log ready status.
+
+        Args:
+            ctx: PluginContext hiện tại
+        """
+        logger.info("[%s] Ready — version=%s, slots=%s", self.id, self.version, self.slots)
+
+    def on_request(self, ctx: PluginContext, request: Any) -> None:
+        """
+        Xử lý mỗi incoming request — gọi cho mỗi request ASGI.
+
+        Ví dụ: request logging, metrics collection, security checks.
+
+        Args:
+            ctx: PluginContext với tenant_id, user_id, request_id
+            request: ASGI scope dict
+        """
+        self._request_count += 1
+
+        logger.debug(
+            "[%s] Request #%d — tenant=%s, user=%s, path=%s, method=%s",
+            self.id,
+            self._request_count,
+            ctx.tenant_id,
+            ctx.user_id,
+            request.get("path", ""),
+            request.get("method", ""),
+        )
+
+    def on_shutdown(self, ctx: PluginContext) -> None:
+        """
+        Cleanup khi hệ thống dừng — gọi một lần khi shutdown.
+
+        Ví dụ: close connections, flush pending data, release resources.
+
+        Args:
+            ctx: PluginContext hiện tại
+        """
+        logger.info(
+            "[%s] Shutting down — total requests=%d",
+            self.id,
+            self._request_count,
+        )
+        self._initialized = False
+        self._request_count = 0
+
+    # -------------------------------------------------------------------------
+{% for cmd in commands %}
+    # Hooks for {{ cmd.id }}
+    # -------------------------------------------------------------------------
+
+    def before_{{ cmd.get('id', 'action').lower() }}(
+        self,
+        ctx: PluginContext,
+        payload: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        """
+        Hook trước khi execute {{ cmd.id }}.
+
+        Ví dụ: validate payload, log pre-execution metrics, abort execution.
+
+        Args:
+            ctx: PluginContext hiện tại
+            payload: Command payload
+
+        Returns:
+            Transformed payload hoặc None để abort
+        """
+        logger.info(
+            "[%s] before_{{ cmd.get('id', 'action').lower() }} — tenant=%s, payload_keys=%s",
+            self.id,
+            ctx.tenant_id,
+            list(payload.keys()),
+        )
+
+        # Example: inject metadata vào payload
+        payload["_plugin_metadata"] = {
+            "processed_by": self.id,
+            "tenant_id": ctx.tenant_id,
+            "user_id": ctx.user_id,
+        }
+
+        # Return payload để tiếp tục execute
+        return payload
+
+    def after_{{ cmd.get('id', 'action').lower() }}(
+        self,
+        ctx: PluginContext,
+        payload: dict[str, Any],
+        result: Any,
+    ) -> Optional[Any]:
+        """
+        Hook sau khi execute {{ cmd.id }}.
+
+        Ví dụ: transform response, log post-execution metrics, publish events.
+
+        Args:
+            ctx: PluginContext hiện tại
+            payload: Original command payload
+            result: Result từ command handler
+
+        Returns:
+            Transformed result hoặc None để giữ nguyên
+        """
+        logger.info(
+            "[%s] after_{{ cmd.get('id', 'action').lower() }} — tenant=%s",
+            self.id,
+            ctx.tenant_id,
+        )
+
+        # Example: publish event nếu có event_bus
+        if ctx.event_bus is not None:
+            try:
+                ctx.event_bus.publish(
+                    event=f"{{ cmd.get('id', 'action').lower() }}_completed",
+                    data={
+                        "tenant_id": ctx.tenant_id,
+                        "request_id": ctx.request_id,
+                    },
+                )
+            except Exception as e:
+                logger.warning(
+                    "[%s] Failed to publish event: %s",
+                    self.id,
+                    e,
+                )
+
+        # Return None để giữ nguyên result
+        return None
+
+{% endfor %}

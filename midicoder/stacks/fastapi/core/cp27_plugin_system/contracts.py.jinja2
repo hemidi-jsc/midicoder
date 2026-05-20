@@ -1,0 +1,271 @@
+{#
+Jinja2 template cho Plugin contracts — PluginBase Protocol, PluginContext, PluginStatus (CP27).
+
+Tự động sinh Protocol và dataclass definitions cho plugin system.
+
+Usage:
+    context = {
+        "entities": [...],
+        "commands": [...],
+        "policies": [...],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Plugin Contracts — tự động sinh bởi CP27.
+
+Module này định nghĩa:
+- PluginStatus: Enum trạng thái plugin (disabled, loading, enabled, error)
+- PluginContext: Dataclass chứa runtime context (tenant, user, request, config, event_bus)
+- PluginBase: Protocol (typing.Protocol) mà mọi plugin phải implement
+
+CP27: Plugin System Generator
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Optional, Protocol, runtime_checkable
+
+
+# ============================================================================
+# PluginStatus Enum
+# ============================================================================
+
+
+class PluginStatus(str, Enum):
+    """
+    Trạng thái của plugin trong lifecycle.
+
+    Các trạng thái:
+        DISABLED:  Plugin chưa được kích hoạt
+        LOADING:   Plugin đang được load vào hệ thống
+        ENABLED:   Plugin đang hoạt động
+        ERROR:     Plugin gặp lỗi và không thể hoạt động
+    """
+    DISABLED = "disabled"
+    LOADING = "loading"
+    ENABLED = "enabled"
+    ERROR = "error"
+
+
+# ============================================================================
+# PluginContext Dataclass
+# ============================================================================
+
+
+@dataclass
+class PluginContext:
+    """
+    Runtime context cho plugin execution.
+
+    Cung cấp thông tin cần thiết để plugin hoạt động trong ngữ cảnh request
+    hiện tại, bao gồm tenant, user, request tracing, app config, và event bus.
+
+    Attributes:
+        tenant_id: Tenant ID cho đa thuê bao (KPI-029)
+        user_id: User ID đang thực thi request
+        request_id: Request ID cho distributed tracing
+        app_config: Cấu hình ứng dụng (dict)
+        event_bus: Event bus instance cho publish/subscribe (optional)
+    """
+    tenant_id: str = ""
+    user_id: str = ""
+    request_id: str = ""
+    app_config: dict[str, Any] = field(default_factory=dict)
+    event_bus: Any = None
+
+
+# ============================================================================
+# PluginBase Protocol
+# ============================================================================
+
+
+@runtime_checkable
+class PluginBase(Protocol):
+    """
+    Protocol mà mọi plugin phải implement.
+
+    Đây là contract giữa plugin system và plugin implementation.
+    Plugin phải định nghĩa các properties và methods sau:
+
+    Properties:
+        id:        Plugin ID duy nhất (string)
+        name:      Tên mô tả plugin (string)
+        version:   Version semver của plugin (string)
+        slots:     Danh sách slot IDs mà plugin implement (list[str])
+
+    Lifecycle Methods:
+        on_init(ctx):        Gọi khi plugin được load vào hệ thống
+        on_configure(ctx, config): Gọi khi cấu hình plugin được apply
+        on_ready(ctx):       Gọi khi hệ thống sẵn sàng, plugin có thể hoạt động
+        on_request(ctx, request): Gọi mỗi request ASGI (nếu hook vào on_request slot)
+        on_shutdown(ctx):    Gọi khi hệ thống dừng, cleanup resources
+
+    Usage:
+        class MyPlugin:
+            id: str = "my_plugin"
+            name: str = "My Plugin"
+            version: str = "1.0.0"
+            slots: list[str] = ["on_request"]
+
+            def on_init(self, ctx: PluginContext) -> None:
+                ...
+
+            def on_configure(self, ctx: PluginContext, config: dict) -> None:
+                ...
+
+            def on_ready(self, ctx: PluginContext) -> None:
+                ...
+
+            def on_request(self, ctx: PluginContext, request: Any) -> None:
+                ...
+
+            def on_shutdown(self, ctx: PluginContext) -> None:
+                ...
+    """
+
+    # -------------------------------------------------------------------------
+    # Required Properties
+    # -------------------------------------------------------------------------
+    id: str
+    name: str
+    version: str
+    slots: list[str]
+
+    # -------------------------------------------------------------------------
+    # Lifecycle Methods
+    # -------------------------------------------------------------------------
+
+    def on_init(self, ctx: PluginContext) -> None:
+        """
+        Khởi tạo plugin — gọi một lần khi plugin được load.
+
+        Dùng để:
+        - Initialize internal state
+        - Setup connections (database, cache, external services)
+        - Register event listeners
+
+        Args:
+            ctx: PluginContext với app_config và tenant information
+        """
+        ...
+
+    def on_configure(self, ctx: PluginContext, config: dict[str, Any]) -> None:
+        """
+        Apply cấu hình cho plugin — gọi khi config được thay đổi.
+
+        Dùng để:
+        - Apply runtime configuration
+        - Adjust behavior based on config values
+        - Reconnect với new parameters
+
+        Args:
+            ctx: PluginContext hiện tại
+            config: Dict cấu hình plugin
+        """
+        ...
+
+    def on_ready(self, ctx: PluginContext) -> None:
+        """
+        Plugin sẵn sàng hoạt động — gọi sau khi init và configure hoàn tất.
+
+        Dùng để:
+        - Start background tasks
+        - Register với external services
+        - Log ready status
+
+        Args:
+            ctx: PluginContext hiện tại
+        """
+        ...
+
+    def on_request(self, ctx: PluginContext, request: Any) -> None:
+        """
+        Xử lý mỗi incoming request — gọi cho mỗi request ASGI.
+
+        Dùng để:
+        - Request logging/monitoring
+        - Metrics collection
+        - Request transformation/enrichment
+        - Security checks
+
+        Args:
+            ctx: PluginContext với tenant_id, user_id, request_id
+            request: ASGI Scope/Request object
+        """
+        ...
+
+    def on_shutdown(self, ctx: PluginContext) -> None:
+        """
+        Cleanup khi hệ thống dừng — gọi một lần khi shutdown.
+
+        Dùng để:
+        - Close connections
+        - Flush pending data
+        - Release resources
+        - Final logging
+
+        Args:
+            ctx: PluginContext hiện tại
+        """
+        ...
+
+    # -------------------------------------------------------------------------
+    # Command Hook Methods (optional — auto-generated từ commands)
+    # -------------------------------------------------------------------------
+{% for cmd in commands %}
+
+    def before_{{ cmd.get('id', 'action').lower() }}(
+        self,
+        ctx: PluginContext,
+        payload: dict[str, Any]
+    ) -> Optional[dict[str, Any]]:
+        """
+        Hook trước khi execute {{ cmd.id }}.
+
+        Gọi trước khi command handler của {{ cmd.id }} được execute.
+        Plugin có thể:
+        - Validate/transform payload trước khi execute
+        - Log pre-execution metrics
+        - Abort execution bằng cách return None
+
+        Args:
+            ctx: PluginContext hiện tại
+            payload: Command payload sẽ được execute
+
+        Returns:
+            Dict payload (có thể transform) hoặc None để abort
+        """
+        ...
+
+    def after_{{ cmd.get('id', 'action').lower() }}(
+        self,
+        ctx: PluginContext,
+        payload: dict[str, Any],
+        result: Any
+    ) -> Optional[Any]:
+        """
+        Hook sau khi execute {{ cmd.id }}.
+
+        Gọi sau khi command handler của {{ cmd.id }} hoàn tất.
+        Plugin có thể:
+        - Transform response
+        - Log post-execution metrics
+        - Publish events
+
+        Args:
+            ctx: PluginContext hiện tại
+            payload: Command payload ban đầu
+            result: Result từ command handler
+
+        Returns:
+            Transformed result hoặc None để giữ nguyên
+        """
+        ...
+{% endfor %}
