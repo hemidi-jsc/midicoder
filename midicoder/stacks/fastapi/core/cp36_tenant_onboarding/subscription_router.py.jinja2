@@ -1,0 +1,399 @@
+"""
+Subscription Router cho CP36: Tenant Onboarding.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp FastAPI router với endpoints:
+- POST /api/subscription/start-trial — Bắt đầu trial
+- POST /api/subscription/activate — Kích hoạt subscription
+- PUT /api/subscription/{id}/update — Cập nhật subscription
+- POST /api/subscription/{id}/cancel — Hủy subscription
+- GET /api/subscription/{tenant_id} — Lấy subscription của tenant
+
+KPI-029: Tenant Isolation (tích hợp với CP02 Multi-Tenant)
+Tích hợp với CP33 Financial (pricing, currency)
+"""
+
+from __future__ import annotations
+
+import logging
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from app.onboarding.schemas.subscription_schema import (
+    ActivateSubscriptionRequest,
+    CancelSubscriptionRequest,
+    SubscriptionResponse,
+    UpdateSubscriptionRequest,
+)
+from app.onboarding.services.subscription_service import (
+    InvalidSubscriptionStateError,
+    PlanValidationError,
+    SubscriptionError,
+    SubscriptionNotFoundError,
+    TenantSubscriptionService,
+)
+
+logger = logging.getLogger(__name__)
+
+# Tạo router
+router = APIRouter(
+    prefix="/api/subscription",
+    tags=["tenant-onboarding", "subscription"],
+    responses={
+        400: {"description": "Dữ liệu không hợp lệ"},
+        404: {"description": "Không tìm thấy"},
+        409: {"description": "Xung đột dữ liệu"},
+        500: {"description": "Lỗi server"},
+    },
+)
+
+
+def get_subscription_service() -> TenantSubscriptionService:
+    """Dependency injector cho TenantSubscriptionService.
+
+    Trong production, dùng FastAPI Depends để inject service
+    với database session từ dependency injection container.
+
+    Returns:
+        TenantSubscriptionService instance.
+
+    Raises:
+        HTTPException: Nếu không thể tạo service.
+    """
+    # TODO: Thay bằng dependency injection thực tế
+    try:
+        from sqlalchemy.orm import Session
+        from app.database import get_db  # noqa: F401
+
+        db: Session = next(get_db())  # type: ignore
+        return TenantSubscriptionService(db=db)
+    except Exception as e:
+        logger.error("Không thể tạo TenantSubscriptionService: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Không thể khởi tạo dịch vụ subscription: {e}",
+        )
+
+
+@router.post(
+    "/start-trial",
+    response_model=SubscriptionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Bắt đầu trial cho tenant",
+    description=(
+        "Bắt đầu thời gian dùng thử cho tenant đã được xác minh. "
+        "Tạo subscription với trạng thái TRIAL và tính thời gian hết hạn."
+    ),
+    responses={
+        201: {
+            "description": "Trial đã bắt đầu",
+        },
+        400: {
+            "description": "Registration chưa xác minh hoặc đã có trial",
+        },
+        404: {
+            "description": "Không tìm thấy registration",
+        },
+    },
+)
+async def start_trial(
+    registration_id: UUID,
+    trial_days: int | None = None,
+    service: TenantSubscriptionService = Depends(get_subscription_service),
+) -> SubscriptionResponse:
+    """Bắt đầu trial cho tenant.
+
+    Args:
+        registration_id: ID của bản ghi đăng ký đã xác minh.
+        trial_days: Số ngày trial (tùy chọn, mặc định theo config).
+        service: TenantSubscriptionService từ dependency injection.
+
+    Returns:
+        SubscriptionResponse của trial subscription.
+
+    Raises:
+        HTTPException 404: Nếu không tìm thấy registration.
+        HTTPException 400: Nếu registration chưa xác minh hoặc đã có trial.
+        HTTPException 500: Nếu có lỗi server.
+    """
+    try:
+        result = service.start_trial(
+            registration_id=registration_id,
+            trial_days=trial_days,
+        )
+        return result
+
+    except SubscriptionNotFoundError as e:
+        logger.warning("Không tìm thấy registration cho trial: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except InvalidSubscriptionStateError as e:
+        logger.warning("Trạng thái không hợp lệ cho trial: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except SubscriptionError as e:
+        logger.error("Lỗi bắt đầu trial: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi bắt đầu trial: {e}",
+        )
+
+
+@router.post(
+    "/activate",
+    response_model=SubscriptionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Kích hoạt subscription trả phí",
+    description=(
+        "Kích hoạt subscription trả phí cho tenant. "
+        "Chuyển từ trial sang paid, hoặc tạo mới subscription trả phí. "
+        "Tính giá theo plan và billing cycle."
+    ),
+    responses={
+        201: {
+            "description": "Subscription đã được kích hoạt",
+        },
+        400: {
+            "description": "Plan hoặc billing cycle không hợp lệ",
+        },
+        404: {
+            "description": "Không tìm thấy registration",
+        },
+    },
+)
+async def activate_subscription(
+    request: ActivateSubscriptionRequest,
+    registration_id: UUID,
+    service: TenantSubscriptionService = Depends(get_subscription_service),
+) -> SubscriptionResponse:
+    """Kích hoạt subscription trả phí.
+
+    Args:
+        request: Dữ liệu kích hoạt (plan, billing_cycle, payment_method_id, currency).
+        registration_id: ID của bản ghi đăng ký.
+        service: TenantSubscriptionService từ dependency injection.
+
+    Returns:
+        SubscriptionResponse của subscription đã kích hoạt.
+
+    Raises:
+        HTTPException 400: Nếu plan hoặc billing_cycle không hợp lệ.
+        HTTPException 404: Nếu không tìm thấy registration.
+        HTTPException 500: Nếu có lỗi server.
+    """
+    try:
+        result = service.activate_subscription(
+            registration_id=registration_id,
+            plan=request.plan.value,
+            billing_cycle=request.billing_cycle.value,
+            payment_method_id=request.payment_method_id,
+            currency=request.currency,
+        )
+        return result
+
+    except PlanValidationError as e:
+        logger.warning("Plan không hợp lệ: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except SubscriptionNotFoundError as e:
+        logger.warning("Không tìm thấy registration: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except InvalidSubscriptionStateError as e:
+        logger.warning("Trạng thái không hợp lệ: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except SubscriptionError as e:
+        logger.error("Lỗi kích hoạt subscription: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi kích hoạt subscription: {e}",
+        )
+
+
+@router.put(
+    "/{subscription_id}/update",
+    response_model=SubscriptionResponse,
+    summary="Cập nhật subscription",
+    description=(
+        "Cập nhật subscription: upgrade/downgrade plan, thay đổi billing cycle. "
+        "Tính lại giá và cập nhật end_date."
+    ),
+    responses={
+        200: {
+            "description": "Subscription đã được cập nhật",
+        },
+        400: {
+            "description": "Plan hoặc billing cycle không hợp lệ",
+        },
+        404: {
+            "description": "Không tìm thấy subscription",
+        },
+    },
+)
+async def update_subscription(
+    subscription_id: UUID,
+    request: UpdateSubscriptionRequest,
+    service: TenantSubscriptionService = Depends(get_subscription_service),
+) -> SubscriptionResponse:
+    """Cập nhật subscription.
+
+    Args:
+        subscription_id: ID của subscription.
+        request: Dữ liệu cập nhật (plan, billing_cycle).
+        service: TenantSubscriptionService từ dependency injection.
+
+    Returns:
+        SubscriptionResponse sau khi cập nhật.
+
+    Raises:
+        HTTPException 404: Nếu không tìm thấy subscription.
+        HTTPException 400: Nếu plan/billing_cycle không hợp lệ hoặc trạng thái không cho phép.
+        HTTPException 500: Nếu có lỗi server.
+    """
+    try:
+        result = service.update_subscription(
+            subscription_id=subscription_id,
+            plan=request.plan.value if request.plan else None,
+            billing_cycle=request.billing_cycle.value if request.billing_cycle else None,
+        )
+        return result
+
+    except SubscriptionNotFoundError as e:
+        logger.warning("Không tìm thấy subscription: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except PlanValidationError as e:
+        logger.warning("Plan không hợp lệ: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except InvalidSubscriptionStateError as e:
+        logger.warning("Trạng thái không hợp lệ: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except SubscriptionError as e:
+        logger.error("Lỗi cập nhật subscription: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi cập nhật subscription: {e}",
+        )
+
+
+@router.post(
+    "/{subscription_id}/cancel",
+    response_model=SubscriptionResponse,
+    summary="Hủy subscription",
+    description=(
+        "Hủy subscription với lý do. Có thể hủy ngay lập tức "
+        "hoặc hủy ở cuối kỳ thanh toán."
+    ),
+    responses={
+        200: {
+            "description": "Subscription đã được hủy",
+        },
+        400: {
+            "description": "Subscription đã bị hủy",
+        },
+        404: {
+            "description": "Không tìm thấy subscription",
+        },
+    },
+)
+async def cancel_subscription(
+    subscription_id: UUID,
+    request: CancelSubscriptionRequest,
+    service: TenantSubscriptionService = Depends(get_subscription_service),
+) -> SubscriptionResponse:
+    """Hủy subscription.
+
+    Args:
+        subscription_id: ID của subscription.
+        request: Dữ liệu hủy (reason, cancel_at_period_end).
+        service: TenantSubscriptionService từ dependency injection.
+
+    Returns:
+        SubscriptionResponse sau khi hủy.
+
+    Raises:
+        HTTPException 404: Nếu không tìm thấy subscription.
+        HTTPException 400: Nếu subscription đã bị hủy.
+        HTTPException 500: Nếu có lỗi server.
+    """
+    try:
+        result = service.cancel_subscription(
+            subscription_id=subscription_id,
+            reason=request.reason,
+            cancel_at_period_end=request.cancel_at_period_end,
+        )
+        return result
+
+    except SubscriptionNotFoundError as e:
+        logger.warning("Không tìm thấy subscription: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except InvalidSubscriptionStateError as e:
+        logger.warning("Trạng thái không hợp lệ: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except SubscriptionError as e:
+        logger.error("Lỗi hủy subscription: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi hủy subscription: {e}",
+        )
+
+
+@router.get(
+    "/{tenant_id}",
+    response_model=SubscriptionResponse | None,
+    summary="Lấy subscription của tenant",
+    description="Lấy thông tin subscription của tenant theo tenant_id.",
+    responses={
+        200: {
+            "description": "Thông tin subscription hoặc null nếu không có",
+        },
+    },
+)
+async def get_subscription_by_tenant(
+    tenant_id: UUID,
+    service: TenantSubscriptionService = Depends(get_subscription_service),
+) -> SubscriptionResponse | None:
+    """Lấy subscription của tenant.
+
+    Args:
+        tenant_id: ID của tenant.
+        service: TenantSubscriptionService từ dependency injection.
+
+    Returns:
+        SubscriptionResponse hoặc None nếu không có subscription.
+    """
+    try:
+        return service.get_subscription_by_tenant(tenant_id=tenant_id)
+    except SubscriptionError as e:
+        logger.error("Lỗi lấy subscription: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi lấy subscription: {e}",
+        )

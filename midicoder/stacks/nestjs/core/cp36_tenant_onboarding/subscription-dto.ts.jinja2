@@ -1,0 +1,100 @@
+/**
+ * Subscription DTOs — CP36: Tenant Onboarding & Subscription.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ *
+ * Định nghĩa các DTO cho subscription endpoints,
+ * sử dụng class-validator decorators để validate input.
+ */
+
+import {
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsUUID,
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+} from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+/** Enum các gói subscription. */
+export enum SubscriptionPlan {
+  FREE = "free",
+  STARTER = "starter",
+  PROFESSIONAL = "professional",
+  ENTERPRISE = "enterprise",
+}
+
+/** Enum chu kỳ thanh toán. */
+export enum BillingCycle {
+  MONTHLY = "monthly",
+  YEARLY = "yearly",
+}
+
+/**
+ * DTO cho kích hoạt subscription.
+ *
+ * Yêu cầu: registrationId, plan, billingCycle, paymentMethodId.
+ */
+export class ActivateSubscriptionDto {
+  @ApiProperty({ description: "ID của registration đã xác minh" })
+  @IsUUID("4", { message: "Registration ID không hợp lệ" })
+  @IsNotEmpty({ message: "Registration ID không được để trống" })
+  registrationId: string;
+
+  @ApiProperty({
+    description: "Gói subscription",
+    enum: SubscriptionPlan,
+  })
+  @IsEnum(SubscriptionPlan, { message: "Gói subscription không hợp lệ" })
+  plan: SubscriptionPlan;
+
+  @ApiProperty({
+    description: "Chu kỳ thanh toán",
+    enum: BillingCycle,
+  })
+  @IsEnum(BillingCycle, { message: "Chu kỳ thanh toán không hợp lệ" })
+  billingCycle: BillingCycle;
+
+  @ApiProperty({ description: "ID phương thức thanh toán" })
+  @IsString({ message: "Payment method ID phải là chuỗi ký tự" })
+  @IsNotEmpty({ message: "Payment method ID không được để trống" })
+  paymentMethodId: string;
+}
+
+/**
+ * DTO cho cập nhật subscription (upgrade/downgrade).
+ *
+ * Tất cả fields là optional.
+ */
+export class UpdateSubscriptionDto {
+  @ApiPropertyOptional({
+    description: "Gói subscription mới",
+    enum: SubscriptionPlan,
+  })
+  @IsOptional()
+  @IsEnum(SubscriptionPlan, { message: "Gói subscription không hợp lệ" })
+  plan?: SubscriptionPlan;
+
+  @ApiPropertyOptional({
+    description: "Chu kỳ thanh toán mới",
+    enum: BillingCycle,
+  })
+  @IsOptional()
+  @IsEnum(BillingCycle, { message: "Chu kỳ thanh toán không hợp lệ" })
+  billingCycle?: BillingCycle;
+}
+
+/**
+ * DTO cho hủy subscription.
+ *
+ * Yêu cầu: lý do hủy (reason).
+ */
+export class CancelSubscriptionDto {
+  @ApiProperty({ description: "Lý do hủy subscription" })
+  @IsString({ message: "Lý do phải là chuỗi ký tự" })
+  @IsNotEmpty({ message: "Lý do hủy không được để trống" })
+  reason: string;
+}

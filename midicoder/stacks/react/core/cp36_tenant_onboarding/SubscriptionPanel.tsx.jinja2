@@ -1,0 +1,825 @@
+{% raw %}/**
+* Bang quan ly subscription — SubscriptionPanel.
+*
+* Component nay hien thi va quan ly subscription cua tenant:
+* - Hien thi goi hien tai, chu ky thanh toan, ngay thanh toan tiep theo
+* - Nut Upgrade, Downgrade, Cancel subscription
+* - Modal xac nhan cho upgrade/downgrade flow
+* - Su dung useOnboarding hook de fetch/quan ly du lieu
+*
+* Tu dong sinh boi Midicoder — khong sua thu cong.
+*/
+
+import React, { useState, useCallback, useEffect } from 'react';
+
+// ===========================================================================
+// TypeScript Types
+// ===========================================================================
+
+/**
+* Thong tin subscription hien tai.
+*/
+interface Subscription {
+tenant_id: string;
+plan: string;
+billing_cycle: string;
+status: string;
+start_date: string;
+end_date: string;
+price: string;
+currency: string;
+payment_method_id?: string;
+metadata?: Record<string, unknown>;
+    }
+
+    /**
+    * Du lieu plan config dung de hien thi cac goi co the upgrade.
+    */
+    interface PlanConfig {
+    plan: string;
+    label: string;
+    monthly_price: string;
+    yearly_price: string;
+    features: string[];
+    max_users: number;
+    max_storage_gb: number;
+    }
+
+    /**
+    * Props cua SubscriptionPanel.
+    */
+    interface SubscriptionPanelProps {
+    /** ID cua tenant can hien thi subscription. */
+    tenantId: string;
+    /** API base URL (mac dinh: '/api'). */
+    apiBaseUrl?: string;
+    /** Callback khi subscription thay doi. */
+    onSubscriptionChange?: (subscription: Subscription) => void;
+    /** Callback khi co loi. */
+    onError?: (error: string) => void;
+    }
+
+    /**
+    * Trang thai cua panel.
+    */
+    type PanelStatus = 'loading' | 'success' | 'error';
+
+    /**
+    * Loai action dang duoc xac nhan trong modal.
+    */
+    type ModalAction = 'upgrade' | 'downgrade' | 'cancel' | null;
+
+    // ===========================================================================
+    // Du lieu plan tu backend (do Jinja2 render)
+    // ===========================================================================
+    {% endraw %}
+
+    const PLANS: PlanConfig[] = [
+    {% for plan in plans %}
+    {
+    plan: '{{ plan.plan }}',
+    label: '{{ plan.label }}',
+    monthly_price: '{{ plan.monthly_price }}',
+    yearly_price: '{{ plan.yearly_price }}',
+    features: [{{ plan.features | tojson }}],
+    max_users: {{ plan.max_users }},
+    max_storage_gb: {{ plan.max_storage_gb }},
+    },
+    {% endfor %}
+    ];
+
+    {% raw %}
+    /**
+    * Thu tu cua cac plan (dung de so sanh upgrade/downgrade).
+    */
+    const PLAN_ORDER: Record<string, number> = {
+        free: 0,
+        starter: 1,
+        professional: 2,
+        enterprise: 3,
+        };
+
+        // ===========================================================================
+        // ConfirmationModal Component
+        // ===========================================================================
+
+        /**
+        * Props cua modal xac nhan.
+        */
+        interface ConfirmationModalProps {
+        isOpen: boolean;
+        action: ModalAction;
+        currentPlan: string;
+        targetPlan?: string;
+        onConfirm: () => void;
+        onCancel: () => void;
+        }
+
+        /**
+        * Modal xac nhan hanh dong (upgrade/downgrade/cancel).
+        */
+        const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
+            isOpen,
+            action,
+            currentPlan,
+            targetPlan,
+            onConfirm,
+            onCancel,
+            }) => {
+            if (!isOpen) {
+            return null;
+            }
+
+            /* Xac dinh tieu de va noi dung modal theo loai action */
+            const getTitle = (): string => {
+            switch (action) {
+            case 'upgrade':
+            return `Xac nhan upgrade sang ${targetPlan}`;
+            case 'downgrade':
+            return `Xac nhan downgrade sang ${targetPlan}`;
+            case 'cancel':
+            return 'Xac nhan huy subscription';
+            default:
+            return 'Xac nhan';
+            }
+            };
+
+            const getMessage = (): string => {
+            switch (action) {
+            case 'upgrade':
+            return `Ban co chac muon upgrade tu ${currentPlan} len ${targetPlan}? Thay doi se co hieu luc ngay.`;
+            case 'downgrade':
+            return `Ban co chac muon downgrade tu ${currentPlan} xuong ${targetPlan}? Thay doi co hieu luc tu chu ky
+            thanh toan tiep theo.`;
+            case 'cancel':
+            return `Ban co chac muon huy subscription ${currentPlan}? Ban se mat quyen truy cap cac tinh nang tra phi.`;
+            default:
+            return '';
+            }
+            };
+
+            const getConfirmLabel = (): string => {
+            switch (action) {
+            case 'upgrade':
+            return 'Xac nhan Upgrade';
+            case 'downgrade':
+            return 'Xac nhan Downgrade';
+            case 'cancel':
+            return 'Xac nhan Huy';
+            default:
+            return 'Xac nhan';
+            }
+            };
+
+            return (
+            <div className="modal-overlay" data-testid="confirmation-modal" role="dialog" aria-modal="true"
+                aria-labelledby="modal-title" style={{ position: 'fixed' , top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.5)' , display: 'flex' , alignItems: 'center' ,
+                justifyContent: 'center' , zIndex: 1000, }} onClick={onCancel}>
+                <div className="modal-content" style={{ backgroundColor: '#ffffff' , borderRadius: '8px' ,
+                    padding: '24px' , maxWidth: '480px' , width: '90%' , }} onClick={(e)=> e.stopPropagation()}
+                    >
+                    <h2 id="modal-title" style={{ marginTop: 0 }}>
+                        {getTitle()}
+                    </h2>
+                    <p style={{ color: '#555' }}>{getMessage()}</p>
+
+                    <div style={{ display: 'flex' , gap: '12px' , justifyContent: 'flex-end' , marginTop: '24px' }}>
+                        <button onClick={onCancel} style={{ padding: '8px 16px' , backgroundColor: '#ffffff' ,
+                            color: '#666' , border: '1px solid #ccc' , borderRadius: '4px' , cursor: 'pointer' , }}>
+                            Huy
+                        </button>
+                        <button onClick={onConfirm} style={{ padding: '8px 16px' , backgroundColor: action==='cancel'
+                            ? '#f44336' : '#1976d2' , color: '#ffffff' , border: 'none' , borderRadius: '4px' ,
+                            cursor: 'pointer' , fontWeight: 'bold' , }}>
+                            {getConfirmLabel()}
+                        </button>
+                    </div>
+                </div>
+            </div>
+            );
+            };
+
+            // ===========================================================================
+            // PlanChangeModal Component (cho upgrade/downgrade)
+            // ===========================================================================
+
+            /**
+            * Props cua modal chon plan moi.
+            */
+            interface PlanChangeModalProps {
+            isOpen: boolean;
+            currentPlan: string;
+            onChangeType: 'upgrade' | 'downgrade';
+            onSelect: (plan: string) => void;
+            onClose: () => void;
+            }
+
+            /**
+            * Modal de chon plan moi khi upgrade/downgrade.
+            */
+            const PlanChangeModal: React.FC<PlanChangeModalProps> = ({
+                isOpen,
+                currentPlan,
+                onChangeType,
+                onSelect,
+                onClose,
+                }) => {
+                if (!isOpen) {
+                return null;
+                }
+
+                const currentPlanOrder: number = PLAN_ORDER[currentPlan] ?? 0;
+
+                /* Loc cac plan phu hop voi loai thay doi */
+                const availablePlans = PLANS.filter((plan) => {
+                const planOrder: number = PLAN_ORDER[plan.plan] ?? 0;
+                if (onChangeType === 'upgrade') {
+                return planOrder > currentPlanOrder;
+                }
+                return planOrder < currentPlanOrder; }); return ( <div className="modal-overlay"
+                    data-testid="plan-change-modal" role="dialog" aria-modal="true" aria-labelledby="plan-change-title"
+                    style={{ position: 'fixed' , top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)' , display: 'flex' , alignItems: 'center' ,
+                    justifyContent: 'center' , zIndex: 1000, }} onClick={onClose}>
+                    <div className="modal-content" style={{ backgroundColor: '#ffffff' , borderRadius: '8px' ,
+                        padding: '24px' , maxWidth: '600px' , width: '90%' , maxHeight: '80vh' , overflowY: 'auto' , }}
+                        onClick={(e)=> e.stopPropagation()}
+                        >
+                        <h2 id="plan-change-title" style={{ marginTop: 0 }}>
+                            {onChangeType === 'upgrade' ? 'Upgrade goi' : 'Downgrade goi'}
+                        </h2>
+
+                        {availablePlans.length === 0 ? (
+                        <p>
+                            {onChangeType === 'upgrade'
+                            ? 'Ban dang su dung goi cao nhat.'
+                            : 'Ban dang su dung goi thap nhat.'}
+                        </p>
+                        ) : (
+                        <div style={{ display: 'flex' , flexDirection: 'column' , gap: '12px' }}>
+                            {availablePlans.map((plan) => (
+                            <div key={plan.plan} data-testid={`plan-option-${plan.plan}`} onClick={()=>
+                                onSelect(plan.plan)}
+                                style={{
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '8px',
+                                padding: '16px',
+                                cursor: 'pointer',
+                                transition: 'border-color 0.2s',
+                                }}
+                                onMouseEnter={(e) => {
+                                (e.currentTarget as HTMLDivElement).style.borderColor = '#1976d2';
+                                }}
+                                onMouseLeave={(e) => {
+                                (e.currentTarget as HTMLDivElement).style.borderColor = '#e0e0e0';
+                                }}
+                                >
+                                <div style={{ display: 'flex' , justifyContent: 'space-between' , alignItems: 'center'
+                                    }}>
+                                    <h3 style={{ margin: 0 }}>{plan.label}</h3>
+                                    <span style={{ fontWeight: 'bold' , color: '#1976d2' }}>
+                                        ${plan.monthly_price}/thang
+                                    </span>
+                                </div>
+                                <ul style={{ margin: '8px 0' , paddingLeft: '20px' }}>
+                                    {plan.features.slice(0, 3).map((feature: string, i: number) => (
+                                    <li key={i} style={{ fontSize: '13px' , color: '#666' }}>
+                                        {feature}
+                                    </li>
+                                    ))}
+                                </ul>
+                                <div style={{ fontSize: '12px' , color: '#999' }}>
+                                    {plan.max_users} nguoi dung | {plan.max_storage_gb}GB
+                                </div>
+                            </div>
+                            ))}
+                        </div>
+                        )}
+
+                        <div style={{ display: 'flex' , justifyContent: 'flex-end' , marginTop: '16px' }}>
+                            <button onClick={onClose} style={{ padding: '8px 16px' , backgroundColor: '#ffffff' ,
+                                color: '#666' , border: '1px solid #ccc' , borderRadius: '4px' , cursor: 'pointer' , }}>
+                                Dong
+                            </button>
+                        </div>
+                    </div>
+                    </div>
+                    );
+                    };
+
+                    // ===========================================================================
+                    // SubscriptionPanel Component chinh
+                    // ===========================================================================
+
+                    /**
+                    * SubscriptionPanel — Bang quan ly subscription cua tenant.
+                    *
+                    * Fetch subscription data va hien thi cac thong tin:
+                    * - Goi hien tai, gia, chu ky thanh toan
+                    * - Ngay bat dau va ngay ket thuc
+                    * - Cac nut hanh dong: Upgrade, Downgrade, Cancel
+                    */
+                    const SubscriptionPanel: React.FC<SubscriptionPanelProps> = ({
+                        tenantId,
+                        apiBaseUrl = '/api',
+                        onSubscriptionChange,
+                        onError,
+                        }) => {
+                        // -- State --
+                        const [subscription, setSubscription] = useState<Subscription | null>(null);
+                            const [status, setStatus] = useState<PanelStatus>('loading');
+                                const [error, setError] = useState<string>('');
+
+                                    /* State cho modal */
+                                    const [modalAction, setModalAction] = useState<ModalAction>(null);
+                                        const [targetPlan, setTargetPlan] = useState<string>('');
+                                            const [showPlanChangeModal, setShowPlanChangeModal] = useState<boolean>
+                                                (false);
+                                                const [changeType, setChangeType] = useState<'upgrade' | 'downgrade'>
+                                                    ('upgrade');
+                                                    const [isProcessing, setIsProcessing] = useState<boolean>(false);
+
+                                                        // -- Fetch subscription data --
+
+                                                        /**
+                                                        * Lay thong tin subscription tu API.
+                                                        */
+                                                        const fetchSubscription = useCallback(async () => {
+                                                        setStatus('loading');
+                                                        setError('');
+
+                                                        try {
+                                                        const response = await
+                                                        fetch(`${apiBaseUrl}/onboarding/tenants/${tenantId}/subscription`,
+                                                        {
+                                                        method: 'GET',
+                                                        headers: {
+                                                        'Content-Type': 'application/json',
+                                                        },
+                                                        });
+
+                                                        if (!response.ok) {
+                                                        if (response.status === 404) {
+                                                        setError('Khong tim thay subscription cho tenant nay');
+                                                        setStatus('error');
+                                                        return;
+                                                        }
+                                                        const errorData = await response.json().catch(() => ({}));
+                                                        throw new Error(errorData.message || `Loi server:
+                                                        ${response.status}`);
+                                                        }
+
+                                                        const data: Subscription = await response.json();
+                                                        setSubscription(data);
+                                                        setStatus('success');
+                                                        onSubscriptionChange?.(data);
+                                                        } catch (err) {
+                                                        const message = err instanceof Error ? err.message : 'Khong the
+                                                        tai thong tin subscription';
+                                                        setError(message);
+                                                        setStatus('error');
+                                                        onError?.(message);
+                                                        }
+                                                        }, [tenantId, apiBaseUrl, onSubscriptionChange, onError]);
+
+                                                        /* Fetch khi component mount va khi tenantId thay doi */
+                                                        useEffect(() => {
+                                                        fetchSubscription();
+                                                        }, [fetchSubscription]);
+
+                                                        // -- Handlers cho hanh dong --
+
+                                                        /**
+                                                        * Mo modal chon plan de upgrade.
+                                                        */
+                                                        const handleOpenUpgrade = useCallback(() => {
+                                                        setChangeType('upgrade');
+                                                        setShowPlanChangeModal(true);
+                                                        }, []);
+
+                                                        /**
+                                                        * Mo modal chon plan de downgrade.
+                                                        */
+                                                        const handleOpenDowngrade = useCallback(() => {
+                                                        setChangeType('downgrade');
+                                                        setShowPlanChangeModal(true);
+                                                        }, []);
+
+                                                        /**
+                                                        * Chon plan tu modal — mo modal xac nhan.
+                                                        */
+                                                        const handleSelectPlanFromModal = useCallback((plan: string) =>
+                                                        {
+                                                        setShowPlanChangeModal(false);
+                                                        setTargetPlan(plan);
+                                                        setModalAction(changeType);
+                                                        }, [changeType]);
+
+                                                        /**
+                                                        * Dong modal xac nhan.
+                                                        */
+                                                        const handleCancelModal = useCallback(() => {
+                                                        setModalAction(null);
+                                                        setTargetPlan('');
+                                                        }, []);
+
+                                                        /**
+                                                        * Xac nhan thay doi plan (upgrade/downgrade).
+                                                        */
+                                                        const handleConfirmPlanChange = useCallback(async () => {
+                                                        if (!subscription || !modalAction || !targetPlan) {
+                                                        return;
+                                                        }
+
+                                                        setIsProcessing(true);
+
+                                                        try {
+                                                        const response = await
+                                                        fetch(`${apiBaseUrl}/onboarding/tenants/${tenantId}/subscription`,
+                                                        {
+                                                        method: 'PUT',
+                                                        headers: {
+                                                        'Content-Type': 'application/json',
+                                                        },
+                                                        body: JSON.stringify({
+                                                        plan: targetPlan,
+                                                        billing_cycle: subscription.billing_cycle,
+                                                        }),
+                                                        });
+
+                                                        if (!response.ok) {
+                                                        const errorData = await response.json().catch(() => ({}));
+                                                        throw new Error(errorData.message || `Loi khi thay doi plan:
+                                                        ${response.status}`);
+                                                        }
+
+                                                        const updatedSubscription: Subscription = await response.json();
+                                                        setSubscription(updatedSubscription);
+                                                        onSubscriptionChange?.(updatedSubscription);
+                                                        } catch (err) {
+                                                        const message = err instanceof Error ? err.message : 'Khong the
+                                                        thay doi plan';
+                                                        setError(message);
+                                                        onError?.(message);
+                                                        } finally {
+                                                        setIsProcessing(false);
+                                                        setModalAction(null);
+                                                        setTargetPlan('');
+                                                        }
+                                                        }, [subscription, modalAction, targetPlan, tenantId, apiBaseUrl,
+                                                        onSubscriptionChange, onError]);
+
+                                                        /**
+                                                        * Mo modal xac nhan huy subscription.
+                                                        */
+                                                        const handleOpenCancel = useCallback(() => {
+                                                        setModalAction('cancel');
+                                                        }, []);
+
+                                                        /**
+                                                        * Xac nhan huy subscription.
+                                                        */
+                                                        const handleConfirmCancel = useCallback(async () => {
+                                                        if (!subscription) {
+                                                        return;
+                                                        }
+
+                                                        setIsProcessing(true);
+
+                                                        try {
+                                                        const response = await
+                                                        fetch(`${apiBaseUrl}/onboarding/tenants/${tenantId}/subscription/cancel`,
+                                                        {
+                                                        method: 'POST',
+                                                        headers: {
+                                                        'Content-Type': 'application/json',
+                                                        },
+                                                        });
+
+                                                        if (!response.ok) {
+                                                        const errorData = await response.json().catch(() => ({}));
+                                                        throw new Error(errorData.message || `Loi khi huy subscription:
+                                                        ${response.status}`);
+                                                        }
+
+                                                        const updatedSubscription: Subscription = await response.json();
+                                                        setSubscription(updatedSubscription);
+                                                        onSubscriptionChange?.(updatedSubscription);
+                                                        } catch (err) {
+                                                        const message = err instanceof Error ? err.message : 'Khong the
+                                                        huy subscription';
+                                                        setError(message);
+                                                        onError?.(message);
+                                                        } finally {
+                                                        setIsProcessing(false);
+                                                        setModalAction(null);
+                                                        }
+                                                        }, [subscription, tenantId, apiBaseUrl, onSubscriptionChange,
+                                                        onError]);
+
+                                                        /**
+                                                        * Xu ly reload du lieu.
+                                                        */
+                                                        const handleReload = useCallback(() => {
+                                                        fetchSubscription();
+                                                        }, [fetchSubscription]);
+
+                                                        // -- Helper functions --
+
+                                                        /**
+                                                        * Dinh dang ngay hien thi.
+                                                        */
+                                                        const formatDate = (dateString: string): string => {
+                                                        if (!dateString) {
+                                                        return '-';
+                                                        }
+                                                        try {
+                                                        return new Date(dateString).toLocaleDateString('vi-VN', {
+                                                        day: '2-digit',
+                                                        month: '2-digit',
+                                                        year: 'numeric',
+                                                        });
+                                                        } catch {
+                                                        return dateString;
+                                                        }
+                                                        };
+
+                                                        /**
+                                                        * Dinh dang gia tien.
+                                                        */
+                                                        const formatPrice = (price: string, currency: string): string =>
+                                                        {
+                                                        const num = parseFloat(price);
+                                                        if (isNaN(num)) {
+                                                        return '0';
+                                                        }
+                                                        return new Intl.NumberFormat('vi-VN', {
+                                                        style: 'currency',
+                                                        currency: currency || 'USD',
+                                                        }).format(num);
+                                                        };
+
+                                                        /**
+                                                        * Lay label hien thi cua plan.
+                                                        */
+                                                        const getPlanLabel = (planKey: string): string => {
+                                                        const plan = PLANS.find((p) => p.plan === planKey);
+                                                        return plan ? plan.label : planKey;
+                                                        };
+
+                                                        /**
+                                                        * Lay mau sac badge theo status.
+                                                        */
+                                                        const getStatusBadgeStyle = (status: string):
+                                                        React.CSSProperties => {
+                                                        const base: React.CSSProperties = {
+                                                        display: 'inline-block',
+                                                        padding: '4px 12px',
+                                                        borderRadius: '12px',
+                                                        fontSize: '12px',
+                                                        fontWeight: 'bold',
+                                                        textTransform: 'uppercase',
+                                                        };
+
+                                                        switch (status) {
+                                                        case 'active':
+                                                        return { ...base, backgroundColor: '#e8f5e9', color: '#2e7d32'
+                                                        };
+                                                        case 'trial':
+                                                        return { ...base, backgroundColor: '#fff3e0', color: '#e65100'
+                                                        };
+                                                        case 'past_due':
+                                                        return { ...base, backgroundColor: '#fff9c4', color: '#f57f17'
+                                                        };
+                                                        case 'cancelled':
+                                                        return { ...base, backgroundColor: '#ffebee', color: '#c62828'
+                                                        };
+                                                        case 'expired':
+                                                        return { ...base, backgroundColor: '#f5f5f5', color: '#757575'
+                                                        };
+                                                        default:
+                                                        return { ...base, backgroundColor: '#f5f5f5', color: '#757575'
+                                                        };
+                                                        }
+                                                        };
+
+                                                        // -- Render --
+
+                                                        /* Trang thai loading */
+                                                        if (status === 'loading') {
+                                                        return (
+                                                        <div className="subscription-panel"
+                                                            data-testid="subscription-panel" style={{ padding: '24px'
+                                                            }}>
+                                                            <div style={{ textAlign: 'center' , padding: '48px' ,
+                                                                color: '#999' }}>
+                                                                <div style={{ fontSize: '24px' , marginBottom: '8px' }}>
+                                                                    Dang tai...</div>
+                                                                <p>Dang lay thong tin subscription</p>
+                                                            </div>
+                                                        </div>
+                                                        );
+                                                        }
+
+                                                        /* Trang thai loi */
+                                                        if (status === 'error') {
+                                                        return (
+                                                        <div className="subscription-panel"
+                                                            data-testid="subscription-panel" style={{ padding: '24px'
+                                                            }}>
+                                                            <div role="alert" style={{ backgroundColor: '#ffebee' ,
+                                                                color: '#c62828' , padding: '24px' , borderRadius: '8px'
+                                                                , textAlign: 'center' , }}>
+                                                                <h3>Loi khi tai subscription</h3>
+                                                                <p>{error}</p>
+                                                                <button onClick={handleReload} style={{
+                                                                    marginTop: '16px' , padding: '8px 16px' ,
+                                                                    backgroundColor: '#1976d2' , color: '#ffffff' ,
+                                                                    border: 'none' , borderRadius: '4px' ,
+                                                                    cursor: 'pointer' , }}>
+                                                                    Thu lai
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        );
+                                                        }
+
+                                                        /* Khong co subscription */
+                                                        if (!subscription) {
+                                                        return (
+                                                        <div className="subscription-panel"
+                                                            data-testid="subscription-panel" style={{ padding: '24px'
+                                                            }}>
+                                                            <div style={{ textAlign: 'center' , padding: '48px' }}>
+                                                                <h3>Chua co subscription</h3>
+                                                                <p>Tenant nay chua dang ky goi subscription nao.</p>
+                                                            </div>
+                                                        </div>
+                                                        );
+                                                        }
+
+                                                        /* Render chinh */
+                                                        const currentPlanOrder: number = PLAN_ORDER[subscription.plan]
+                                                        ?? 0;
+                                                        const canUpgrade: boolean = currentPlanOrder < 3; const
+                                                            canDowngrade: boolean=currentPlanOrder> 0;
+                                                            const canCancel: boolean = subscription.status === 'active'
+                                                            || subscription.status === 'trial';
+
+                                                            return (
+                                                            <div className="subscription-panel"
+                                                                data-testid="subscription-panel" style={{
+                                                                padding: '24px' }}>
+                                                                {/* Header */}
+                                                                <div style={{ marginBottom: '24px' }}>
+                                                                    <h2 style={{ margin: '0 0 8px 0' }}>Thong tin
+                                                                        Subscription</h2>
+                                                                    <p style={{ color: '#666' , margin: 0 }}>
+                                                                        Tenant ID: <code style={{ fontSize: '12px'
+                                                                            }}>{tenantId}</code>
+                                                                    </p>
+                                                                </div>
+
+                                                                {/* Plan info card */}
+                                                                <div style={{ border: '1px solid #e0e0e0' ,
+                                                                    borderRadius: '8px' , padding: '24px' ,
+                                                                    marginBottom: '24px' , }}>
+                                                                    <div style={{ display: 'flex' ,
+                                                                        justifyContent: 'space-between' ,
+                                                                        alignItems: 'flex-start' }}>
+                                                                        <div>
+                                                                            <h3 style={{ margin: '0 0 4px 0' }}>
+                                                                                Goi: {getPlanLabel(subscription.plan)}
+                                                                            </h3>
+                                                                            <span
+                                                                                style={getStatusBadgeStyle(subscription.status)}>
+                                                                                {subscription.status}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div style={{ textAlign: 'right' }}>
+                                                                            <div style={{ fontSize: '24px' ,
+                                                                                fontWeight: 'bold' }}>
+                                                                                {formatPrice(subscription.price,
+                                                                                subscription.currency)}
+                                                                            </div>
+                                                                            <div style={{ fontSize: '12px' ,
+                                                                                color: '#666' }}>
+                                                                                /{subscription.billing_cycle ===
+                                                                                'yearly' ? 'nam' : 'thang'}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Chi tiet thong tin */}
+                                                                    <div style={{ display: 'grid' ,
+                                                                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))'
+                                                                        , gap: '16px' , marginTop: '24px' ,
+                                                                        paddingTop: '16px' ,
+                                                                        borderTop: '1px solid #e0e0e0' , }}>
+                                                                        <div>
+                                                                            <div style={{ fontSize: '12px' ,
+                                                                                color: '#999' }}>Ngay bat dau</div>
+                                                                            <div>{formatDate(subscription.start_date)}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div style={{ fontSize: '12px' ,
+                                                                                color: '#999' }}>Ngay ket thuc</div>
+                                                                            <div>{formatDate(subscription.end_date)}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div style={{ fontSize: '12px' ,
+                                                                                color: '#999' }}>Chu ky thanh toan</div>
+                                                                            <div>
+                                                                                {subscription.billing_cycle === 'yearly'
+                                                                                ? 'Hang nam' : 'Hang thang'}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div style={{ fontSize: '12px' ,
+                                                                                color: '#999' }}>Phuong thuc thanh toan
+                                                                            </div>
+                                                                            <div>{subscription.payment_method_id ||
+                                                                                'Chua cau hinh'}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Nut hanh dong */}
+                                                                <div className="action-buttons" style={{ display: 'flex'
+                                                                    , gap: '12px' , flexWrap: 'wrap' }}
+                                                                    data-testid="subscription-actions">
+                                                                    {canUpgrade && subscription.status === 'active' && (
+                                                                    <button onClick={handleOpenUpgrade}
+                                                                        disabled={isProcessing} style={{
+                                                                        padding: '10px 20px' ,
+                                                                        backgroundColor: '#1976d2' , color: '#ffffff' ,
+                                                                        border: 'none' , borderRadius: '4px' , cursor:
+                                                                        isProcessing ? 'not-allowed' : 'pointer' ,
+                                                                        fontWeight: 'bold' , opacity: isProcessing ? 0.6
+                                                                        : 1, }} data-testid="upgrade-button">
+                                                                        Upgrade
+                                                                    </button>
+                                                                    )}
+
+                                                                    {canDowngrade && subscription.status === 'active' &&
+                                                                    (
+                                                                    <button onClick={handleOpenDowngrade}
+                                                                        disabled={isProcessing} style={{
+                                                                        padding: '10px 20px' ,
+                                                                        backgroundColor: '#ff9800' , color: '#ffffff' ,
+                                                                        border: 'none' , borderRadius: '4px' , cursor:
+                                                                        isProcessing ? 'not-allowed' : 'pointer' ,
+                                                                        fontWeight: 'bold' , opacity: isProcessing ? 0.6
+                                                                        : 1, }} data-testid="downgrade-button">
+                                                                        Downgrade
+                                                                    </button>
+                                                                    )}
+
+                                                                    {canCancel && (
+                                                                    <button onClick={handleOpenCancel}
+                                                                        disabled={isProcessing} style={{
+                                                                        padding: '10px 20px' ,
+                                                                        backgroundColor: '#ffffff' , color: '#f44336' ,
+                                                                        border: '1px solid #f44336' ,
+                                                                        borderRadius: '4px' , cursor: isProcessing
+                                                                        ? 'not-allowed' : 'pointer' , fontWeight: 'bold'
+                                                                        , opacity: isProcessing ? 0.6 : 1, }}
+                                                                        data-testid="cancel-button">
+                                                                        Huy Subscription
+                                                                    </button>
+                                                                    )}
+
+                                                                    {/* Hien thi thong bao dang xu ly */}
+                                                                    {isProcessing && (
+                                                                    <span style={{ display: 'flex' ,
+                                                                        alignItems: 'center' , color: '#666' }}>
+                                                                        Dang xu ly...
+                                                                    </span>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Modal xac nhan hanh dong */}
+                                                                <ConfirmationModal isOpen={modalAction !==null}
+                                                                    action={modalAction}
+                                                                    currentPlan={getPlanLabel(subscription.plan)}
+                                                                    targetPlan={targetPlan ? getPlanLabel(targetPlan) :
+                                                                    undefined} onConfirm={ modalAction==='cancel' ?
+                                                                    handleConfirmCancel : handleConfirmPlanChange }
+                                                                    onCancel={handleCancelModal} />
+
+                                                                {/* Modal chon plan moi */}
+                                                                <PlanChangeModal isOpen={showPlanChangeModal}
+                                                                    currentPlan={subscription.plan}
+                                                                    onChangeType={changeType}
+                                                                    onSelect={handleSelectPlanFromModal} onClose={()=>
+                                                                    setShowPlanChangeModal(false)}
+                                                                    />
+                                                            </div>
+                                                            );
+                                                            };
+
+                                                            export default SubscriptionPanel;
+                                                            {% endraw %}

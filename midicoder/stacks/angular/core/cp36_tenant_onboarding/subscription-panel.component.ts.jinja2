@@ -1,0 +1,522 @@
+/**
+ * Subscription Panel Component — bảng quản lý subscription.
+ *
+ * Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+ *
+ * Chức năng:
+ * - Hiển thị gói hiện tại, chu kỳ thanh toán, giá, ngày thanh toán tiếp theo
+ * - Nút upgrade và cancel subscription
+ * - Fetch dữ liệu subscription từ OnboardingService
+ * - Cleanup subscriptions trong ngOnDestroy
+ */
+
+import {
+  Component,
+  Input,
+  OnInit,
+  OnDestroy,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { Subject, Subscription, Observable } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
+{% raw %}
+/** Trạng thái subscription */
+export type SubscriptionStatus = 'trial' | 'active' | 'past_due' | 'cancelled' | 'expired';
+
+/** Chu kỳ thanh toán */
+export type BillingCycle = 'monthly' | 'yearly';
+
+/** Mô hình subscription từ API */
+export interface SubscriptionData {
+  tenant_id: string;
+  plan: string;
+  billing_cycle: BillingCycle;
+  status: SubscriptionStatus;
+  start_date: string;
+  end_date?: string;
+  price: string;
+  currency: string;
+  next_billing_date?: string;
+}
+
+/** Label hiển thị cho từng trạng thái subscription */
+const STATUS_LABELS: Record<SubscriptionStatus, string> = {
+  trial: 'Dùng Thử',
+  active: 'Đang Hoạt Động',
+  past_due: 'Quá Hạn Thanh Toán',
+  cancelled: 'Đã Hủy',
+  expired: 'Hết Hạn',
+};
+
+/** Label hiển thị cho chu kỳ thanh toán */
+const BILLING_CYCLE_LABELS: Record<BillingCycle, string> = {
+  monthly: 'Hàng Tháng',
+  yearly: 'Hàng Năm',
+};
+
+@Component({
+  selector: 'app-subscription-panel',
+  standalone: true,
+  imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="subscription-panel">
+      <header class="panel-header">
+        <h1>Quản Lý Subscription</h1>
+      </header>
+
+      <!-- Loading state -->
+      <div *ngIf="isLoading" class="loading-state">
+        <p>Đang tải thông tin subscription...</p>
+      </div>
+
+      <!-- Error state -->
+      <div *ngIf="errorMessage && !isLoading" class="alert alert-error">
+        <span class="alert-icon">&#9888;</span>
+        {{ errorMessage }}
+      </div>
+
+      <!-- Subscription details -->
+      <div *ngIf="subscription && !isLoading" class="subscription-details">
+        <!-- Current plan -->
+        <div class="detail-card">
+          <h2>Gói Hiện Tại</h2>
+          <div class="plan-info">
+            <span class="plan-name">{{ subscription.plan | uppercase }}</span>
+            <span class="status-badge" [class]="getStatusClass(subscription.status)">
+              {{ STATUS_LABELS[subscription.status] }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Billing info -->
+        <div class="detail-card">
+          <h2>Thông Tin Thanh Toán</h2>
+          <table class="billing-table">
+            <tbody>
+              <tr>
+                <th>Chu kỳ thanh toán:</th>
+                <td>{{ BILLING_CYCLE_LABELS[subscription.billing_cycle] }}</td>
+              </tr>
+              <tr>
+                <th>Giá:</th>
+                <td class="price">{{ formatPrice(subscription.price, subscription.currency) }}</td>
+              </tr>
+              <tr>
+                <th>Ngày bắt đầu:</th>
+                <td>{{ subscription.start_date | date:'dd/MM/yyyy' }}</td>
+              </tr>
+              <tr *ngIf="subscription.next_billing_date">
+                <th>Ngày thanh toán tiếp theo:</th>
+                <td>{{ subscription.next_billing_date | date:'dd/MM/yyyy' }}</td>
+              </tr>
+              <tr *ngIf="subscription.end_date">
+                <th>Ngày kết thúc:</th>
+                <td>{{ subscription.end_date | date:'dd/MM/yyyy' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="action-buttons">
+          <button
+            *ngIf="canUpgrade"
+            (click)="onUpgrade()"
+            [disabled]="isUpgrading"
+            class="btn btn-upgrade"
+          >
+            <span *ngIf="isUpgrading">Đang xử lý...</span>
+            <span *ngIf="!isUpgrading">Nâng Cấp Gói</span>
+          </button>
+          <button
+            *ngIf="canCancel"
+            (click)="onCancel()"
+            [disabled]="isCancelling"
+            class="btn btn-cancel"
+          >
+            <span *ngIf="isCancelling">Đang xử lý...</span>
+            <span *ngIf="!isCancelling">Hủy Subscription</span>
+          </button>
+        </div>
+
+        <!-- Confirmation dialog -->
+        <div *ngIf="showCancelConfirm" class="confirm-dialog">
+          <div class="dialog-overlay" (click)="closeCancelConfirm()"></div>
+          <div class="dialog-content">
+            <h3>Xác Nhận Hủy Subscription</h3>
+            <p>Bạn có chắc chắn muốn hủy subscription?</p>
+            <p class="warning">Gói của bạn sẽ hết hạn vào {{ subscription.end_date | date:'dd/MM/yyyy' }}</p>
+            <div class="dialog-actions">
+              <button (click)="confirmCancel()" class="btn btn-danger">Xác Nhận Hủy</button>
+              <button (click)="closeCancelConfirm()" class="btn btn-secondary">Hủy Bỏ</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- No subscription -->
+      <div *ngIf="!subscription && !isLoading && !errorMessage" class="empty-state">
+        <p>Chưa có subscription nào. Vui lòng đăng ký gói phù hợp.</p>
+      </div>
+    </div>
+  `,
+  styles: [`
+    .subscription-panel {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .panel-header {
+      margin-bottom: 24px;
+    }
+    .panel-header h1 {
+      font-size: 24px;
+      color: #1a1a1a;
+      margin: 0;
+    }
+    .loading-state {
+      text-align: center;
+      padding: 48px;
+      color: #888;
+    }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .alert-error {
+      background: #ffebee;
+      color: #c62828;
+      border: 1px solid #ef9a9a;
+    }
+    .alert-icon {
+      font-size: 18px;
+    }
+    .subscription-details {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .detail-card {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .detail-card h2 {
+      font-size: 16px;
+      color: #333;
+      margin: 0 0 16px 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eee;
+    }
+    .plan-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .plan-name {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1976d2;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .status-trial {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+    .status-active {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .status-past_due {
+      background: #fff3e0;
+      color: #e65100;
+    }
+    .status-cancelled {
+      background: #f5f5f5;
+      color: #757575;
+    }
+    .status-expired {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .billing-table {
+      width: 100%;
+    }
+    .billing-table th,
+    .billing-table td {
+      text-align: left;
+      padding: 8px 0;
+      border-bottom: 1px solid #f5f5f5;
+    }
+    .billing-table th {
+      color: #666;
+      font-weight: 500;
+      width: 50%;
+    }
+    .billing-table td {
+      color: #333;
+      font-weight: 600;
+    }
+    .price {
+      color: #1976d2 !important;
+      font-size: 16px;
+    }
+    .action-buttons {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .btn {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn-upgrade {
+      background: #1976d2;
+      color: white;
+    }
+    .btn-upgrade:hover:not(:disabled) {
+      background: #1565c0;
+    }
+    .btn-cancel {
+      background: #fff;
+      color: #c62828;
+      border: 1px solid #c62828;
+    }
+    .btn-cancel:hover:not(:disabled) {
+      background: #ffebee;
+    }
+    .btn-danger {
+      background: #c62828;
+      color: white;
+    }
+    .btn-secondary {
+      background: #f5f5f5;
+      color: #333;
+    }
+    .confirm-dialog {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .dialog-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+    }
+    .dialog-content {
+      position: relative;
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+    .dialog-content h3 {
+      margin: 0 0 12px 0;
+      color: #333;
+    }
+    .dialog-content p {
+      margin: 8px 0;
+      color: #555;
+    }
+    .warning {
+      color: #c62828 !important;
+      font-size: 13px;
+    }
+    .dialog-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+      justify-content: flex-end;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 48px;
+      color: #888;
+      background: #f5f5f5;
+      border-radius: 12px;
+    }
+  `],
+})
+export class SubscriptionPanelComponent implements OnInit, OnDestroy {
+  /** Tenant ID để fetch subscription data */
+  @Input() tenantId: string = '';
+
+  /** Dữ liệu subscription hiện tại */
+  subscription: SubscriptionData | null = null;
+
+  /** Trạng thái đang tải */
+  isLoading: boolean = false;
+
+  /** Thông báo lỗi */
+  errorMessage: string = '';
+
+  /** Đang xử lý upgrade */
+  isUpgrading: boolean = false;
+
+  /** Đang xử lý cancel */
+  isCancelling: boolean = false;
+
+  /** Hiển thị dialog xác nhận cancel */
+  showCancelConfirm: boolean = false;
+
+  /** Subject để cleanup subscriptions khi component bị phá hủy */
+  private destroy$ = new Subject<void>();
+
+  /** Subscription cho getSubscription */
+  private fetchSubscription: Subscription | null = null;
+
+  /** Có thể upgrade không (tùy thuộc vào trạng thái hiện tại) */
+  get canUpgrade(): boolean {
+    if (!this.subscription) return false;
+    return this.subscription.status === 'active' || this.subscription.status === 'trial';
+  }
+
+  /** Có thể cancel không (chỉ khi active hoặc past_due) */
+  get canCancel(): boolean {
+    if (!this.subscription) return false;
+    return this.subscription.status === 'active' || this.subscription.status === 'past_due';
+  }
+
+  constructor(private onboardingService: any) {}
+
+  ngOnInit(): void {
+    // Fetch subscription data khi component được khởi tạo
+    this.loadSubscription();
+  }
+
+  ngOnDestroy(): void {
+    // Cleanup: hủy subject và tất cả subscriptions để tránh memory leak
+    this.destroy$.next();
+    this.destroy$.complete();
+    if (this.fetchSubscription) {
+      this.fetchSubscription.unsubscribe();
+    }
+  }
+
+  /** Tải thông tin subscription từ API */
+  private loadSubscription(): void {
+    if (!this.tenantId) {
+      this.errorMessage = 'Thiếu tenant ID';
+      return;
+    }
+
+    this.isLoading = true;
+    this.errorMessage = '';
+
+    // Hủy subscription cũ nếu có
+    if (this.fetchSubscription) {
+      this.fetchSubscription.unsubscribe();
+    }
+
+    this.fetchSubscription = this.onboardingService
+      .getSubscription(this.tenantId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data: SubscriptionData) => {
+          this.isLoading = false;
+          this.subscription = data;
+        },
+        error: (error) => {
+          this.isLoading = false;
+          if (error.status === 404) {
+            this.errorMessage = 'Không tìm thấy subscription cho tenant này';
+          } else {
+            this.errorMessage = 'Không thể tải thông tin subscription';
+          }
+        },
+      });
+  }
+
+  /** Xử lý nút upgrade */
+  onUpgrade(): void {
+    // TODO: điều hướng đến trang chọn gói nâng cấp
+    this.isUpgrading = true;
+    // Hiện tại chỉ placeholder, có thể mở modal hoặc navigate
+    console.log('[SubscriptionPanel] Upgrade được yêu cầu cho tenant:', this.tenantId);
+    this.isUpgrading = false;
+  }
+
+  /** Xử lý nút cancel — mở dialog xác nhận */
+  onCancel(): void {
+    this.showCancelConfirm = true;
+  }
+
+  /** Đóng dialog xác nhận cancel */
+  closeCancelConfirm(): void {
+    this.showCancelConfirm = false;
+  }
+
+  /** Xác nhận cancel subscription */
+  confirmCancel(): void {
+    if (!this.subscription) return;
+
+    this.isCancelling = true;
+    this.showCancelConfirm = false;
+
+    this.onboardingService
+      .cancelSubscription(this.tenantId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.isCancelling = false;
+          // Reload subscription data sau khi cancel thành công
+          this.loadSubscription();
+        },
+        error: (error) => {
+          this.isCancelling = false;
+          this.errorMessage = 'Không thể hủy subscription, vui lòng thử lại';
+        },
+      });
+  }
+
+  /** Lấy CSS class cho status badge */
+  getStatusClass(status: SubscriptionStatus): string {
+    return `status-${status}`;
+  }
+
+  /** Format giá tiền với currency */
+  formatPrice(price: string, currency: string): string {
+    const numericPrice = parseFloat(price);
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(numericPrice);
+  }
+}
+{% endraw %}

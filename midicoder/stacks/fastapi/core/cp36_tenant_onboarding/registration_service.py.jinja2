@@ -1,0 +1,615 @@
+"""
+Registration Service cho CP36: Tenant Onboarding.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp TenantRegistrationService để quản lý:
+- Đăng ký tenant mới (register_tenant) — tạo tenant(CP02), tạo registration, gửi email xác minh(CP12)
+- Xác minh tenant (verify_tenant) — validate token, update status
+- Phê duyệt tenant (approve_tenant) — admin approval
+
+KPI-029: Tenant Isolation (tích hợp với CP02 Multi-Tenant)
+KPI-030: Notification Integration (tích hợp với CP12 Notification)
+"""
+
+from __future__ import annotations
+
+import hmac
+import hashlib
+import logging
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Dict, List, Optional
+from uuid import UUID, uuid4
+
+from sqlalchemy.orm import Session
+
+from app.onboarding.events.onboarding_events import (
+    TenantRegisteredEvent,
+    TenantVerifiedEvent,
+)
+from app.onboarding.models.registration_model import (
+    RegistrationStatus,
+    SubscriptionPlan,
+    TenantRegistration,
+)
+from app.onboarding.schemas.registration_schema import (
+    RegistrationResponse,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class RegistrationError(Exception):
+    """Lỗi chung của Registration Service."""
+    pass
+
+
+class RegistrationNotFoundError(RegistrationError):
+    """Lỗi không tìm thấy bản ghi đăng ký."""
+    pass
+
+
+class VerificationTokenError(RegistrationError):
+    """Lỗi token xác minh không hợp lệ hoặc hết hạn."""
+    pass
+
+
+class DuplicateRegistrationError(RegistrationError):
+    """Lỗi email đã được đăng ký."""
+    pass
+
+
+class AdminApprovalRequiredError(RegistrationError):
+    """Lỗi cần phê duyệt admin."""
+    pass
+
+
+class TenantRegistrationService:
+    """Dịch vụ quản lý tenant registration.
+
+    Xử lý luồng đăng ký tenant mới:
+    1. Tạo tenant (CP02) -> 2. Tạo registration record -> 3. Gửi email xác minh (CP12)
+    4. Xác minh token -> 5. Admin phê duyệt (nếu cần) -> 6. Kích hoạt tenant
+
+    Tích hợp:
+        - CP02 Multi-Tenant: Tạo tenant record
+        - CP12 Notification: Gửi email xác minh
+        - CP05 EventBus: Publish registration events
+    """
+
+    def __init__(
+        self,
+        db: Session,
+        tenant_creator: Optional[Callable[..., Dict[str, Any]]] = None,
+        notification_sender: Optional[Callable[..., None]] = None,
+        event_publisher: Optional[Callable[..., None]] = None,
+        secret_key: Optional[str] = None,
+        token_expiry_hours: int = {{ verification_token_expiry_hours | default(24) }},
+        require_admin_approval: bool = {{ "True" if require_admin_approval else "False" }},
+    ) -> None:
+        """Khởi tạo TenantRegistrationService.
+
+        Args:
+            db: SQLAlchemy session.
+            tenant_creator: Callable để tạo tenant mới (CP02).
+                Signature: (email, company_name, metadata) -> dict with 'id'.
+            notification_sender: Callable để gửi email (CP12).
+                Signature: (recipient_email, subject, template_name, context) -> None.
+            event_publisher: Callable để publish events (CP05).
+                Signature: (event_name, payload) -> None.
+            secret_key: Khóa bí mật để ký verification token.
+            token_expiry_hours: Thời gian hết hạn token (giờ).
+            require_admin_approval: Có yêu cầu admin approve không.
+        """
+        self.db = db
+        self.tenant_creator = tenant_creator
+        self.notification_sender = notification_sender
+        self.event_publisher = event_publisher
+        self.secret_key = secret_key or os.environ.get(
+            "ONBOARDING_SECRET_KEY", secrets.token_hex(32)
+        )
+        self.token_expiry_hours = token_expiry_hours
+        self.require_admin_approval = require_admin_approval
+
+    def register_tenant(
+        self,
+        email: str,
+        company_name: str,
+        plan: str = "free",
+        trial_days: int = {{ default_trial_days | default(14) }},
+    ) -> RegistrationResponse:
+        """Đăng ký tenant mới.
+
+        Luồng thực hiện:
+        1. Kiểm tra email đã được đăng ký chưa
+        2. Tạo tenant mới (CP02 Multi-Tenant)
+        3. Tạo registration record với verification token
+        4. Gửi email xác minh (CP12 Notification)
+        5. Publish TenantRegisteredEvent
+
+        Args:
+            email: Email đăng ký.
+            company_name: Tên công ty/tổ chức.
+            plan: Gói subscription yêu cầu.
+            trial_days: Số ngày dùng thử.
+
+        Returns:
+            RegistrationResponse chứa thông tin đăng ký.
+
+        Raises:
+            DuplicateRegistrationError: Nếu email đã được đăng ký.
+            RegistrationError: Nếu không thể tạo tenant hoặc gửi email.
+        """
+        # Bước 1: Kiểm tra email đã tồn tại chưa
+        existing = self.db.query(TenantRegistration).filter_by(email=email).first()
+        if existing:
+            if existing.status == RegistrationStatus.PENDING:
+                raise DuplicateRegistrationError(
+                    f"Email '{email}' đã được đăng ký và đang chờ xác minh. "
+                    "Vui lòng kiểm tra hộp thư đến để xác minh."
+                )
+            elif existing.status == RegistrationStatus.VERIFIED:
+                raise DuplicateRegistrationError(
+                    f"Email '{email}' đã được xác minh và đang sử dụng."
+                )
+            else:
+                raise DuplicateRegistrationError(
+                    f"Email '{email}' đã có bản ghi đăng ký với trạng thái "
+                    f"'{existing.status.value}'. Vui lòng liên hệ admin."
+                )
+
+        # Bước 2: Tạo tenant mới (CP02 Multi-Tenant)
+        tenant_id = uuid4()
+        if self.tenant_creator:
+            try:
+                tenant_result = self.tenant_creator(
+                    email=email,
+                    company_name=company_name,
+                    metadata={"plan": plan, "trial_days": trial_days},
+                )
+                tenant_id = UUID(str(tenant_result.get("id", tenant_id)))
+            except Exception as e:
+                logger.error("Không thể tạo tenant cho email %s: %s", email, e)
+                raise RegistrationError(
+                    f"Không thể tạo tenant: {e}"
+                )
+
+        # Bước 3: Tạo verification token (HMAC-signed)
+        verification_token = self._generate_verification_token(email)
+
+        # Bước 4: Tạo registration record
+        registration = TenantRegistration(
+            id=uuid4(),
+            email=email,
+            company_name=company_name,
+            plan=SubscriptionPlan(plan),
+            trial_days=trial_days,
+            status=RegistrationStatus.PENDING,
+            verification_token=verification_token,
+            tenant_id=tenant_id,
+        )
+
+        self.db.add(registration)
+        self.db.commit()
+        self.db.refresh(registration)
+
+        # Bước 5: Gửi email xác minh (CP12 Notification)
+        verification_sent = self._send_verification_email(
+            email=email,
+            company_name=company_name,
+            token=verification_token,
+        )
+
+        # Bước 6: Publish event
+        self._publish_event(
+            TenantRegisteredEvent(
+                registration_id=str(registration.id),
+                tenant_id=str(registration.tenant_id),
+                email=registration.email,
+                company_name=registration.company_name,
+                plan=registration.plan.value,
+                status=registration.status.value,
+            )
+        )
+
+        logger.info(
+            "Đăng ký tenant mới: email=%s, tenant_id=%s, plan=%s",
+            email, tenant_id, plan,
+        )
+
+        return RegistrationResponse(
+            id=registration.id,
+            email=registration.email,
+            company_name=registration.company_name,
+            plan=registration.plan,
+            status=registration.status,
+            tenant_id=registration.tenant_id,
+            verification_sent=verification_sent,
+            created_at=registration.created_at or datetime.now(timezone.utc),
+        )
+
+    def verify_tenant(self, token: str) -> RegistrationResponse:
+        """Xác minh tenant bằng token.
+
+        Luồng thực hiện:
+        1. Tìm registration theo token
+        2. Validate token chưa hết hạn
+        3. Cập nhật status thành VERIFIED
+        4. Nếu yêu cầu admin approval, chuyển sang pending approval
+        5. Publish TenantVerifiedEvent
+
+        Args:
+            token: Token xác minh nhận được qua email.
+
+        Returns:
+            RegistrationResponse sau khi xác minh.
+
+        Raises:
+            VerificationTokenError: Nếu token không hợp lệ hoặc hết hạn.
+            RegistrationNotFoundError: Nếu không tìm thấy registration.
+        """
+        # Bước 1: Tìm registration theo token
+        registration = self.db.query(TenantRegistration).filter_by(
+            verification_token=token
+        ).first()
+
+        if not registration:
+            raise VerificationTokenError(
+                "Token xác minh không hợp lệ hoặc đã bị hủy."
+            )
+
+        # Bước 2: Kiểm tra trạng thái hiện tại
+        if registration.status == RegistrationStatus.VERIFIED:
+            raise RegistrationError(
+                "Tenant này đã được xác minh trước đó. "
+                "Không cần xác minh lại."
+            )
+        if registration.status == RegistrationStatus.CANCELLED:
+            raise RegistrationError(
+                "Đăng ký này đã bị hủy. Vui lòng đăng ký lại."
+            )
+        if registration.status == RegistrationStatus.REJECTED:
+            raise RegistrationError(
+                "Đăng ký này đã bị từ chối. Vui lòng liên hệ admin."
+            )
+
+        # Bước 3: Validate token chưa hết hạn
+        if not self._validate_token(token, registration.email):
+            raise VerificationTokenError(
+                "Token xác minh đã hết hạn. Vui lòng đăng ký lại để nhận token mới."
+            )
+
+        # Bước 4: Cập nhật status
+        if self.require_admin_approval:
+            # Giữ status PENDING, chờ admin approve
+            registration.updated_at = datetime.now(timezone.utc)
+        else:
+            registration.status = RegistrationStatus.VERIFIED
+            registration.updated_at = datetime.now(timezone.utc)
+
+        self.db.commit()
+        self.db.refresh(registration)
+
+        # Bước 5: Publish event
+        self._publish_event(
+            TenantVerifiedEvent(
+                registration_id=str(registration.id),
+                tenant_id=str(registration.tenant_id),
+                email=registration.email,
+                approved=not self.require_admin_approval,
+            )
+        )
+
+        logger.info(
+            "Xác minh tenant thành công: registration_id=%s, "
+            "needs_admin_approval=%s",
+            registration.id, self.require_admin_approval,
+        )
+
+        return RegistrationResponse(
+            id=registration.id,
+            email=registration.email,
+            company_name=registration.company_name,
+            plan=registration.plan,
+            status=registration.status,
+            tenant_id=registration.tenant_id,
+            verification_sent=False,
+            created_at=registration.created_at or datetime.now(timezone.utc),
+        )
+
+    def approve_tenant(
+        self,
+        registration_id: UUID,
+        approved_by: UUID,
+        notes: Optional[str] = None,
+    ) -> RegistrationResponse:
+        """Admin phê duyệt tenant registration.
+
+        Chỉ được gọi khi require_admin_approval = True.
+        Sau khi phê duyệt, tenant được kích hoạt hoàn toàn.
+
+        Args:
+            registration_id: ID của bản ghi đăng ký.
+            approved_by: ID của admin phê duyệt.
+            notes: Ghi chú phê duyệt (tùy chọn).
+
+        Returns:
+            RegistrationResponse sau khi phê duyệt.
+
+        Raises:
+            RegistrationNotFoundError: Nếu không tìm thấy registration.
+            RegistrationError: Nếu registration đã được xử lý.
+        """
+        # Bước 1: Tìm registration
+        registration = self.db.query(TenantRegistration).filter_by(
+            id=registration_id
+        ).first()
+
+        if not registration:
+            raise RegistrationNotFoundError(
+                f"Không tìm thấy bản ghi đăng ký với ID '{registration_id}'. "
+                "Vui lòng kiểm tra lại ID."
+            )
+
+        # Bước 2: Kiểm tra trạng thái
+        if registration.status == RegistrationStatus.VERIFIED:
+            raise RegistrationError(
+                "Tenant này đã được phê duyệt trước đó. "
+                "Không thể phê duyệt lại."
+            )
+        if registration.status == RegistrationStatus.REJECTED:
+            raise RegistrationError(
+                "Đăng ký này đã bị từ chối. Vui lòng tạo lại đăng ký."
+            )
+        if registration.status == RegistrationStatus.CANCELLED:
+            raise RegistrationError(
+                "Đăng ký này đã bị hủy. Vui lòng đăng ký lại."
+            )
+
+        # Bước 3: Phê duyệt
+        registration.status = RegistrationStatus.VERIFIED
+        registration.updated_at = datetime.now(timezone.utc)
+
+        # Lưu notes vào verification_token field (hoặc metadata nếu có)
+        if notes:
+            # Trong production, nên có trường approved_notes riêng
+            logger.info(
+                "Admin %s phê duyệt registration %s: %s",
+                approved_by, registration_id, notes,
+            )
+
+        self.db.commit()
+        self.db.refresh(registration)
+
+        # Bước 4: Publish event
+        self._publish_event(
+            TenantVerifiedEvent(
+                registration_id=str(registration.id),
+                tenant_id=str(registration.tenant_id),
+                email=registration.email,
+                approved=True,
+            )
+        )
+
+        logger.info(
+            "Admin %s đã phê duyệt tenant: registration_id=%s, "
+            "email=%s, company=%s",
+            approved_by, registration_id,
+            registration.email, registration.company_name,
+        )
+
+        return RegistrationResponse(
+            id=registration.id,
+            email=registration.email,
+            company_name=registration.company_name,
+            plan=registration.plan,
+            status=registration.status,
+            tenant_id=registration.tenant_id,
+            verification_sent=False,
+            created_at=registration.created_at or datetime.now(timezone.utc),
+        )
+
+    def list_registrations(
+        self,
+        status: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """Lấy danh sách registrations (admin).
+
+        Args:
+            status: Lọc theo trạng thái (tùy chọn).
+            page: Số trang (bắt đầu từ 1).
+            page_size: Số lượng mỗi trang.
+
+        Returns:
+            Dictionary chứa danh sách và phân trang.
+        """
+        query = self.db.query(TenantRegistration)
+
+        if status:
+            try:
+                query = query.filter_by(status=RegistrationStatus(status))
+            except ValueError:
+                raise RegistrationError(
+                    f"Trạng thái '{status}' không hợp lệ. "
+                    f"Các trạng thái hợp lệ: "
+                    f"{[s.value for s in RegistrationStatus]}"
+                )
+
+        total = query.count()
+        registrations = (
+            query.order_by(TenantRegistration.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
+        items = []
+        for reg in registrations:
+            items.append(RegistrationResponse(
+                id=reg.id,
+                email=reg.email,
+                company_name=reg.company_name,
+                plan=reg.plan,
+                status=reg.status,
+                tenant_id=reg.tenant_id,
+                verification_sent=False,
+                created_at=reg.created_at or datetime.now(timezone.utc),
+            ))
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+
+    # =========================================================================
+    # Phương thức nội bộ
+    # =========================================================================
+
+    def _generate_verification_token(self, email: str) -> str:
+        """Tạo verification token HMAC-signed.
+
+        Args:
+            email: Email cần tạo token.
+
+        Returns:
+            Token HMAC-signed dạng hex string.
+        """
+        timestamp = datetime.now(timezone.utc).isoformat()
+        message = f"{email}:{timestamp}:{secrets.token_urlsafe(16)}"
+        signature = hmac.new(
+            self.secret_key.encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return f"{message}:{signature}"
+
+    def _validate_token(self, token: str, email: str) -> bool:
+        """Xác thực verification token.
+
+        Kiểm tra:
+        - Token có đúng định dạng không
+        - HMAC signature có hợp lệ không
+        - Token chưa hết hạn
+
+        Args:
+            token: Token cần xác thực.
+            email: Email để kiểm tra.
+
+        Returns:
+            True nếu token hợp lệ, False nếu không.
+        """
+        try:
+            parts = token.rsplit(":", 1)
+            if len(parts) != 2:
+                return False
+
+            message, provided_signature = parts
+
+            # Tính signature hợp lệ
+            expected_signature = hmac.new(
+                self.secret_key.encode("utf-8"),
+                message.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+
+            # So sánh signature (constant-time)
+            if not hmac.compare_digest(expected_signature, provided_signature):
+                return False
+
+            # Kiểm tra email và thời gian hết hạn
+            message_parts = message.split(":", 2)
+            if len(message_parts) < 2:
+                return False
+
+            token_email = message_parts[0]
+            if token_email != email:
+                return False
+
+            # Kiểm tra thời gian hết hạn
+            try:
+                timestamp = datetime.fromisoformat(message_parts[1])
+                expiry = timestamp + timedelta(hours=self.token_expiry_hours)
+                return datetime.now(timezone.utc) < expiry
+            except (ValueError, IndexError):
+                return False
+
+        except Exception as e:
+            logger.warning("Lỗi khi xác thực token: %s", e)
+            return False
+
+    def _send_verification_email(
+        self,
+        email: str,
+        company_name: str,
+        token: str,
+    ) -> bool:
+        """Gửi email xác minh đến tenant.
+
+        Tích hợp với CP12 Notification service.
+
+        Args:
+            email: Email nhận xác minh.
+            company_name: Tên công ty để cá nhân hóa email.
+            token: Token xác minh.
+
+        Returns:
+            True nếu gửi thành công, False nếu thất bại.
+        """
+        if not self.notification_sender:
+            logger.warning(
+                "Không có notification_sender, không thể gửi email xác minh "
+                "cho %s. Token: %s... (cần xử lý thủ công)",
+                email, token[:20],
+            )
+            return False
+
+        try:
+            verification_url = f"https://app.example.com/verify?token={token}"
+            self.notification_sender(
+                recipient_email=email,
+                subject=f"[{company_name}] Xác minh tài khoản tenant mới",
+                template_name="tenant_verification",
+                context={
+                    "company_name": company_name,
+                    "verification_url": verification_url,
+                    "expiry_hours": self.token_expiry_hours,
+                },
+            )
+            logger.info("Đã gửi email xác minh đến %s", email)
+            return True
+        except Exception as e:
+            logger.error(
+                "Không thể gửi email xác minh đến %s: %s", email, e
+            )
+            return False
+
+    def _publish_event(self, event: Any) -> None:
+        """Publish event qua CP05 EventBus.
+
+        Args:
+            event: Event object để publish.
+        """
+        if not self.event_publisher:
+            logger.debug(
+                "Không có event_publisher, bỏ qua event: %s",
+                type(event).__name__,
+            )
+            return
+
+        try:
+            payload = event.to_dict() if hasattr(event, "to_dict") else vars(event)
+            self.event_publisher(
+                event_name=event.__class__.__name__,
+                payload=payload,
+            )
+        except Exception as e:
+            logger.warning(
+                "Không thể publish event %s: %s",
+                type(event).__name__, e,
+            )

@@ -1,0 +1,219 @@
+/**
+ * RegistrationController — CP36: Tenant Onboarding & Subscription.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ *
+ * REST API endpoints cho tenant registration:
+ * - POST /onboarding/register: Đăng ký tenant mới
+ * - POST /onboarding/verify: Xác minh tenant qua token
+ * - POST /onboarding/approve: Admin approve tenant (RBAC)
+ * - GET /onboarding/registrations: Lấy danh sách registrations
+ */
+
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Query,
+  HttpStatus,
+} from "@nestjs/common";
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from "@nestjs/swagger";
+import { RegistrationStatus } from "./entities/registration.entity";
+import { RegistrationService } from "./services/registration.service";
+import {
+  RegisterTenantDto,
+  VerifyTenantDto,
+  ApproveTenantDto,
+} from "./dtos/registration-dto";
+
+/**
+ * Roles decorator — tích hợp với CP04 RBAC.
+ *
+ * Trong production, import từ @nestjs/passport hoặc guard tùy chỉnh.
+ */
+function Roles(...roles: string[]) {
+  return SetMetadata("roles", roles);
+}
+
+function SetMetadata(key: string, value: any) {
+  return Reflect.metadata(key, value);
+}
+
+/**
+ * RegistrationController — endpoints cho tenant registration.
+ *
+ * Path prefix: /onboarding
+ */
+@ApiTags("Onboarding — Tenant Registration")
+@Controller("onboarding")
+export class RegistrationController {
+  constructor(
+    private readonly registrationService: RegistrationService,
+  ) {}
+
+  /**
+   * POST /onboarding/register
+   *
+   * Đăng ký tenant mới.
+   *
+   * Body: RegisterTenantDto (email, companyName, plan, trialDays?)
+   * Response: Registration mới tạo với status=pending
+   *
+   * Flow:
+   * 1. Validate email, company_name
+   * 2. Tạo verification token (hmac-signed)
+   * 3. Lưu registration
+   * 4. Gửi email xác minh (CP12)
+   */
+  @Post("register")
+  @ApiOperation({ summary: "Đăng ký tenant mới" })
+  @ApiResponse({ status: 201, description: "Đăng ký thành công" })
+  @ApiResponse({ status: 409, description: "Email đã được đăng ký" })
+  async registerTenant(
+    @Body() dto: RegisterTenantDto,
+  ): Promise<any> {
+    const registration = await this.registrationService.registerTenant(dto);
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: "Đăng ký tenant thành công. Vui lòng kiểm tra email để xác minh",
+      data: {
+        id: registration.id,
+        email: registration.email,
+        companyName: registration.companyName,
+        plan: registration.plan,
+        status: registration.status,
+        createdAt: registration.createdAt,
+      },
+    };
+  }
+
+  /**
+   * POST /onboarding/verify
+   *
+   * Xác minh tenant qua token (click link trong email).
+   *
+   * Body: VerifyTenantDto (token)
+   * Response: Registration đã xác minh
+   *
+   * Flow:
+   * 1. Tìm registration theo token
+   * 2. Kiểm tra token còn hạn
+   * 3. Cập nhật status=verified
+   * 4. Tự động tạo tenant nếu không yêu cầu admin approve (CP02)
+   */
+  @Post("verify")
+  @ApiOperation({ summary: "Xác minh tenant qua token" })
+  @ApiResponse({ status: 200, description: "Xác minh thành công" })
+  @ApiResponse({ status: 404, description: "Token không hợp lệ hoặc đã hết hạn" })
+  async verifyTenant(
+    @Body() dto: VerifyTenantDto,
+  ): Promise<any> {
+    const registration = await this.registrationService.verifyTenant(dto);
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Xác minh tenant thành công",
+      data: {
+        id: registration.id,
+        email: registration.email,
+        status: registration.status,
+        tenantId: registration.tenantId,
+      },
+    };
+  }
+
+  /**
+   * POST /onboarding/approve
+   *
+   * Admin approve tenant registration (chỉ admin mới được gọi).
+   *
+   * Body: ApproveTenantDto (registrationId, approvedBy)
+   * Response: Registration đã được approve
+   *
+   * Flow:
+   * 1. Kiểm tra quyền admin (CP04 RBAC)
+   * 2. Tìm registration (status=verified)
+   * 3. Tạo tenant (CP02)
+   * 4. Cập nhật tenant_id
+   */
+  @Post("approve")
+  @Roles("admin")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Admin approve tenant (yêu cầu quyền admin)" })
+  @ApiResponse({ status: 200, description: "Approve thành công" })
+  @ApiResponse({ status: 403, description: "Không có quyền admin" })
+  @ApiResponse({ status: 404, description: "Không tìm thấy registration" })
+  async approveTenant(
+    @Body() dto: ApproveTenantDto,
+  ): Promise<any> {
+    const registration = await this.registrationService.approveTenant(dto);
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Tenant đã được approve",
+      data: {
+        id: registration.id,
+        email: registration.email,
+        companyName: registration.companyName,
+        tenantId: registration.tenantId,
+        approvedBy: dto.approvedBy,
+      },
+    };
+  }
+
+  /**
+   * GET /onboarding/registrations
+   *
+   * Lấy danh sách registrations (với pagination và filter).
+   *
+   * Query: status?, limit?, offset?
+   * Response: { data: Registration[], total: number }
+   */
+  @Get("registrations")
+  @Roles("admin")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Lấy danh sách registrations (admin)" })
+  @ApiQuery({ name: "status", required: false, enum: RegistrationStatus })
+  @ApiQuery({ name: "limit", required: false, type: Number, default: 50 })
+  @ApiQuery({ name: "offset", required: false, type: Number, default: 0 })
+  @ApiResponse({ status: 200, description: "Danh sách registrations" })
+  async listRegistrations(
+    @Query("status") status?: RegistrationStatus,
+    @Query("limit") limit?: number,
+    @Query("offset") offset?: number,
+  ): Promise<any> {
+    const result = await this.registrationService.listRegistrations(
+      status,
+      limit ? parseInt(limit as string, 10) : 50,
+      offset ? parseInt(offset as string, 10) : 0,
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      data: result.data,
+      total: result.total,
+    };
+  }
+
+  /**
+   * GET /onboarding/registrations/:id
+   *
+   * Lấy chi tiết một registration theo ID.
+   *
+   * Params: id (registration UUID)
+   * Response: Registration detail
+   */
+  @Get("registrations/:id")
+  @ApiOperation({ summary: "Lấy chi tiết registration theo ID" })
+  @ApiResponse({ status: 200, description: "Chi tiết registration" })
+  @ApiResponse({ status: 404, description: "Không tìm thấy registration" })
+  async getRegistration(
+    @Param("id") id: string,
+  ): Promise<any> {
+    const registration = await this.registrationService.getRegistration(id);
+    return {
+      statusCode: HttpStatus.OK,
+      data: registration,
+    };
+  }
+}

@@ -1,0 +1,38 @@
+/**
+ * OnboardingModule — CP36: Tenant Onboarding & Subscription.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ *
+ * NestJS Module cho tenant onboarding, bao gồm:
+ * - Entity: TenantRegistration, TenantSubscription
+ * - Services: RegistrationService, SubscriptionService
+ * - Controllers: RegistrationController, SubscriptionController
+ */
+
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+
+import { TenantRegistration } from "./entities/registration.entity";
+import { TenantSubscription } from "./entities/subscription.entity";
+import { RegistrationService } from "./services/registration.service";
+import { SubscriptionService } from "./services/subscription.service";
+import { RegistrationController } from "./controllers/registration.controller";
+import { SubscriptionController } from "./controllers/subscription.controller";
+
+/**
+ * OnboardingModule — module quản lý tenant onboarding & subscription.
+ *
+ * Tích hợp với:
+ * - CP02 Multi-Tenant: tạo tenant sau khi đăng ký thành công
+ * - CP12 Notification: gửi email xác minh cho tenant mới
+ * - CP04 RBAC: kiểm soát quyền admin cho approve endpoint
+ */
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([TenantRegistration, TenantSubscription]),
+  ],
+  providers: [RegistrationService, SubscriptionService],
+  controllers: [RegistrationController, SubscriptionController],
+  exports: [RegistrationService, SubscriptionService],
+})
+export class OnboardingModule {}

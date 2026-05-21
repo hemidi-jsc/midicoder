@@ -1,0 +1,192 @@
+"""
+Mô-đun Registration Schema cho CP36: Tenant Onboarding.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp Pydantic schemas cho:
+- RegisterTenantRequest: Dữ liệu đăng ký tenant mới
+- VerifyTenantRequest: Dữ liệu xác minh tenant
+- ApproveTenantRequest: Dữ liệu phê duyệt tenant (admin)
+- RegistrationResponse: Phản hồi đăng ký
+- ListRegistrationsResponse: Phản hồi danh sách đăng ký
+
+Dùng Pydantic v2 cho validation và serialization.
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import datetime
+from enum import Enum
+from typing import List, Optional
+from uuid import UUID
+
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+class SubscriptionPlan(str, Enum):
+    """Enum các bậc gói subscription."""
+    FREE = "free"
+    STARTER = "starter"
+    PROFESSIONAL = "professional"
+    ENTERPRISE = "enterprise"
+
+
+class RegistrationStatus(str, Enum):
+    """Trạng thái của tenant registration."""
+    PENDING = "pending"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class RegisterTenantRequest(BaseModel):
+    """Schema cho yêu cầu đăng ký tenant mới.
+
+    Thuộc tính:
+        email: Email đăng ký (phải hợp lệ, unique)
+        company_name: Tên công ty/tổ chức
+        plan: Gói subscription yêu cầu
+        trial_days: Số ngày dùng thử (0-90)
+    """
+    email: EmailStr = Field(
+        ...,
+        max_length=255,
+        description="Email đăng ký (phải unique)",
+        examples=["admin@company.com"],
+    )
+    company_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Tên công ty/tổ chức",
+        examples=["Công ty ABC"],
+    )
+    plan: SubscriptionPlan = Field(
+        default=SubscriptionPlan.FREE,
+        description="Gói subscription yêu cầu",
+    )
+    trial_days: int = Field(
+        default={{ default_trial_days | default(14) }},
+        ge=0,
+        le=90,
+        description="Số ngày dùng thử (0-90 ngày)",
+    )
+
+    @field_validator("company_name")
+    @classmethod
+    def validate_company_name(cls, v: str) -> str:
+        """Xác thực tên công ty không chứa ký tự đặc biệt nguy hiểm."""
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Tên công ty không được để trống")
+        if len(stripped) < 2:
+            raise ValueError("Tên công ty phải có ít nhất 2 ký tự")
+        return stripped
+
+
+class VerifyTenantRequest(BaseModel):
+    """Schema cho yêu cầu xác minh tenant.
+
+    Thuộc tính:
+        token: Token xác minh nhận được qua email
+    """
+    token: str = Field(
+        ...,
+        min_length=1,
+        max_length=512,
+        description="Token xác minh nhận được qua email",
+        examples=["abc123-def456-ghi789"],
+    )
+
+    @field_validator("token")
+    @classmethod
+    def validate_token(cls, v: str) -> str:
+        """Xác thực token không chứa ký tự trắng."""
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Token xác minh không được để trống")
+        return stripped
+
+
+class ApproveTenantRequest(BaseModel):
+    """Schema cho yêu cầu phê duyệt tenant (admin).
+
+    Yêu cầu quyền admin. Dùng khi require_admin_approval = True.
+
+    Thuộc tính:
+        approved_by: ID của admin phê duyệt
+        notes: Ghi chú phê duyệt (tùy chọn)
+    """
+    approved_by: UUID = Field(
+        ...,
+        description="ID của người dùng admin phê duyệt",
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Ghi chú phê duyệt (tùy chọn)",
+        examples=["Đã kiểm tra tài liệu công ty"],
+    )
+
+
+class RegistrationResponse(BaseModel):
+    """Schema cho phản hồi đăng ký.
+
+    Thuộc tính:
+        id: ID của bản ghi đăng ký
+        email: Email đăng ký
+        company_name: Tên công ty
+        plan: Gói subscription
+        status: Trạng thái đăng ký
+        tenant_id: ID tenant đã tạo
+        verification_sent: Có gửi email xác minh không
+        created_at: Thời điểm tạo
+    """
+    id: UUID = Field(..., description="ID của bản ghi đăng ký")
+    email: EmailStr = Field(..., description="Email đăng ký")
+    company_name: str = Field(..., description="Tên công ty")
+    plan: SubscriptionPlan = Field(..., description="Gói subscription")
+    status: RegistrationStatus = Field(..., description="Trạng thái đăng ký")
+    tenant_id: UUID = Field(..., description="ID tenant đã tạo (CP02)")
+    verification_sent: bool = Field(
+        ...,
+        description="Có gửi email xác minh không",
+    )
+    created_at: datetime = Field(..., description="Thời điểm tạo")
+
+    class Config:
+        """Cấu hình Pydantic."""
+        from_attributes = True
+
+
+class ListRegistrationsResponse(BaseModel):
+    """Schema cho phản hồi danh sách đăng ký (admin).
+
+    Thuộc tính:
+        items: Danh sách registration responses
+        total: Tổng số đăng ký
+        page: Trang hiện tại
+        page_size: Số lượng mỗi trang
+    """
+    items: List[RegistrationResponse] = Field(
+        default_factory=list,
+        description="Danh sách registration responses",
+    )
+    total: int = Field(
+        ...,
+        ge=0,
+        description="Tổng số đăng ký",
+    )
+    page: int = Field(
+        ...,
+        ge=1,
+        description="Trang hiện tại",
+    )
+    page_size: int = Field(
+        ...,
+        ge=1,
+        le=100,
+        description="Số lượng mỗi trang",
+    )

@@ -1,0 +1,198 @@
+pack:
+  id: "CP36"
+  name: "Tenant Onboarding & Subscription"
+  internal_id: "cp36_tenant_onboarding"
+  version: "1.1.0"
+  status: "stable"
+  category: "tenant-management"
+  depends_on:
+    - "CP02"
+    - "CP03"
+    - "CP12"
+    - "CP33"
+  definitions_count: 7
+  obligations_count: 2
+  recipes_count: 2
+  error_codes:
+    prefix: "MDC-CP36"
+    range: "MDC-CP36-001 to MDC-CP36-022"
+  capabilities_provided:
+    - tenant_register
+    - tenant_verify
+    - trial_manage
+    - subscription_manage
+  capabilities:
+    - id: "tenant_register"
+      emitter: "fastapi, nestjs, react, angular"
+    - id: "tenant_verify"
+      emitter: "fastapi, nestjs, react, angular"
+    - id: "trial_manage"
+      emitter: "fastapi, nestjs, react, angular"
+    - id: "subscription_manage"
+      emitter: "fastapi, nestjs, react, angular"
+  definitions:
+    - name: "SubscriptionPlan"
+      description: "Enum các bậc gói subscription (free, starter, professional, enterprise)"
+    - name: "RegistrationStatus"
+      description: "Enum trạng thái đăng ký (pending, verified, rejected, cancelled)"
+    - name: "SubscriptionStatus"
+      description: "Enum trạng thái subscription (trial, active, past_due, cancelled, expired)"
+    - name: "BillingCycle"
+      description: "Enum chu kỳ thanh toán (monthly, yearly)"
+    - name: "TenantRegistration"
+      description: "Entity đăng ký tenant mới"
+    - name: "TenantSubscription"
+      description: "Entity quản lý subscription"
+    - name: "OnboardingIR"
+      description: "Intermediate Representation cho CP36"
+  recipes:
+    - name: "self_service_saas_recipe"
+      description: "Self-service SaaS: email verify auto, trial 14 ngày, self-serve"
+    - name: "enterprise_b2b_recipe"
+      description: "Enterprise B2B: admin approve required, no trial, sales-led"
+  obligations:
+    - name: "RegistrationVerification"
+      description: "Mọi đăng ký tenant phải được xác minh trước khi cấp quyền truy cập"
+    - name: "TrialExpiration"
+      description: "Trial period phải có ngày hết hạn rõ ràng và không thể vô hạn"
+  file_contributions:
+    infrastructure:
+      # FastAPI infrastructure
+      - path: "app/onboarding/registration_model.py"
+        file_type: "model"
+        template: "cp36_tenant_onboarding/registration_model.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/onboarding/subscription_model.py"
+        file_type: "model"
+        template: "cp36_tenant_onboarding/subscription_model.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/onboarding/registration_schema.py"
+        file_type: "schema"
+        template: "cp36_tenant_onboarding/registration_schema.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/onboarding/subscription_schema.py"
+        file_type: "schema"
+        template: "cp36_tenant_onboarding/subscription_schema.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/onboarding/registration_service.py"
+        file_type: "service"
+        template: "cp36_tenant_onboarding/registration_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/onboarding/subscription_service.py"
+        file_type: "service"
+        template: "cp36_tenant_onboarding/subscription_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/onboarding/registration_router.py"
+        file_type: "router"
+        template: "cp36_tenant_onboarding/registration_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/onboarding/subscription_router.py"
+        file_type: "router"
+        template: "cp36_tenant_onboarding/subscription_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/onboarding/onboarding_events.py"
+        file_type: "events"
+        template: "cp36_tenant_onboarding/onboarding_events.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/onboarding/__init__.py"
+        file_type: "init"
+        template: "cp36_tenant_onboarding/__init__.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # NestJS infrastructure
+      - path: "src/onboarding/registration.entity.ts"
+        file_type: "entity"
+        template: "cp36_tenant_onboarding/registration.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/onboarding/subscription.entity.ts"
+        file_type: "entity"
+        template: "cp36_tenant_onboarding/subscription.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/onboarding/registration-dto.ts"
+        file_type: "dto"
+        template: "cp36_tenant_onboarding/registration-dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/onboarding/subscription-dto.ts"
+        file_type: "dto"
+        template: "cp36_tenant_onboarding/subscription-dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/onboarding/registration.service.ts"
+        file_type: "service"
+        template: "cp36_tenant_onboarding/registration.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/onboarding/subscription.service.ts"
+        file_type: "service"
+        template: "cp36_tenant_onboarding/subscription.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/onboarding/registration.controller.ts"
+        file_type: "controller"
+        template: "cp36_tenant_onboarding/registration.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/onboarding/subscription.controller.ts"
+        file_type: "controller"
+        template: "cp36_tenant_onboarding/subscription.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/onboarding/onboarding.module.ts"
+        file_type: "module"
+        template: "cp36_tenant_onboarding/onboarding.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      # React infrastructure
+      - path: "src/components/onboarding/RegistrationForm.tsx"
+        file_type: "component"
+        template: "cp36_tenant_onboarding/RegistrationForm.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/components/onboarding/SubscriptionPanel.tsx"
+        file_type: "component"
+        template: "cp36_tenant_onboarding/SubscriptionPanel.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/components/onboarding/TrialBanner.tsx"
+        file_type: "component"
+        template: "cp36_tenant_onboarding/TrialBanner.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/hooks/onboarding/useOnboarding.ts"
+        file_type: "hook"
+        template: "cp36_tenant_onboarding/useOnboarding.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      # Angular infrastructure
+      - path: "src/app/onboarding/registration-form/registration-form.component.ts"
+        file_type: "component"
+        template: "cp36_tenant_onboarding/registration-form.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/onboarding/subscription-panel/subscription-panel.component.ts"
+        file_type: "component"
+        template: "cp36_tenant_onboarding/subscription-panel.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/onboarding/trial-banner/trial-banner.component.ts"
+        file_type: "component"
+        template: "cp36_tenant_onboarding/trial-banner.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/onboarding/onboarding.service.ts"
+        file_type: "service"
+        template: "cp36_tenant_onboarding/onboarding.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null

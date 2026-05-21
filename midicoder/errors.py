@@ -831,6 +831,32 @@ class ErrorCode(str, Enum):
     CP35_PARSER_ERROR = "MDC-CP35-013"
 
     # =========================================================================
+    # CP36: Tenant Onboarding & Subscription Errors
+    # =========================================================================
+    CP36_EMPTY_EMAIL = "MDC-CP36-001"
+    CP36_INVALID_EMAIL = "MDC-CP36-002"
+    CP36_EMAIL_ALREADY_REGISTERED = "MDC-CP36-003"
+    CP36_INVALID_PLAN = "MDC-CP36-004"
+    CP36_EMPTY_COMPANY_NAME = "MDC-CP36-005"
+    CP36_VERIFICATION_TOKEN_EXPIRED = "MDC-CP36-006"
+    CP36_VERIFICATION_TOKEN_INVALID = "MDC-CP36-007"
+    CP36_REGISTRATION_NOT_FOUND = "MDC-CP36-008"
+    CP36_REGISTRATION_ALREADY_VERIFIED = "MDC-CP36-009"
+    CP36_REGISTRATION_ALREADY_REJECTED = "MDC-CP36-010"
+    CP36_TRIAL_ALREADY_STARTED = "MDC-CP36-011"
+    CP36_TRIAL_EXPIRED = "MDC-CP36-012"
+    CP36_INVALID_TRIAL_DAYS = "MDC-CP36-013"
+    CP36_SUBSCRIPTION_NOT_FOUND = "MDC-CP36-014"
+    CP36_SUBSCRIPTION_ALREADY_ACTIVE = "MDC-CP36-015"
+    CP36_SUBSCRIPTION_CANCELLED = "MDC-CP36-016"
+    CP36_INVALID_BILLING_CYCLE = "MDC-CP36-017"
+    CP36_PAYMENT_REQUIRED = "MDC-CP36-018"
+    CP36_SUBSCRIPTION_DSL_PARSE_ERROR = "MDC-CP36-019"
+    CP36_ADMIN_APPROVAL_REQUIRED = "MDC-CP36-020"
+    CP36_TEMPLATE_NOT_FOUND = "MDC-CP36-021"
+    CP36_RENDER_FAILED = "MDC-CP36-022"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

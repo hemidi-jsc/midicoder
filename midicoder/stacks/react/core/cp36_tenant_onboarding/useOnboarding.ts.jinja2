@@ -1,0 +1,609 @@
+{% raw %}/**
+* Custom React hook cho Tenant Onboarding — useOnboarding.
+*
+* Hook nay cung cap cac chuc nang:
+* - Dang ky tenant moi (registerTenant)
+* - Xac minh tenant (verifyTenant)
+* - Bat dau trial (startTrial)
+* - Kich hoat subscription (activateSubscription)
+* - Cap nhat subscription (updateSubscription)
+* - Huy subscription (cancelSubscription)
+*
+* Tu dong sinh boi Midicoder — khong sua thu cong.
+*/
+
+import { useState, useCallback, useEffect } from 'react';
+
+// ===========================================================================
+// TypeScript Types
+// ===========================================================================
+
+/**
+* Du lieu onboarding registration.
+*/
+interface Registration {
+email: string;
+company_name: string;
+plan: string;
+trial_days: number;
+status: string;
+verification_token: string;
+tenant_id: string;
+created_at?: string;
+updated_at?: string;
+}
+
+/**
+* Du lieu subscription cua tenant.
+*/
+interface Subscription {
+tenant_id: string;
+plan: string;
+billing_cycle: string;
+status: string;
+start_date?: string;
+end_date?: string;
+payment_method_id?: string;
+price: string;
+currency: string;
+metadata?: Record<string, unknown>;
+    }
+
+    /**
+    * Trạng thái tổng thể của onboarding.
+    */
+    interface OnboardingState {
+    registration: Registration | null;
+    subscription: Subscription | null;
+    loading: boolean;
+    error: string | null;
+    }
+
+    /**
+    * Cau hinh cua useOnboarding hook.
+    */
+    interface UseOnboardingOptions {
+    /** API base URL (mac dinh: '/api'). */
+    apiBaseUrl?: string;
+    /** ID tenant (neu da co, dung de lay subscription). */
+    tenantId?: string;
+    /** Token xac thuc (neu co). */
+    authToken?: string;
+    /** Callback khi co loi. */
+    onError?: (error: string) => void;
+    /** Callback khi registration thay doi. */
+    onRegistrationChange?: (registration: Registration) => void;
+    /** Callback khi subscription thay doi. */
+    onSubscriptionChange?: (subscription: Subscription) => void;
+    }
+
+    /**
+    * Ket qua tra ve cua useOnboarding.
+    */
+    interface UseOnboardingReturn {
+    /* Trạng thái */
+    state: OnboardingState;
+    /* Dang ky tenant moi */
+    registerTenant: (data: RegisterTenantInput) => Promise<Registration>;
+        /* Xac minh tenant qua token */
+        verifyTenant: (token: string) => Promise<Registration>;
+            /* Bat dau trial period */
+            startTrial: (tenantId: string, days?: number) => Promise<Subscription>;
+                /* Kich hoat subscription */
+                activateSubscription: (data: ActivateSubscriptionInput) => Promise<Subscription>;
+                    /* Cap nhat subscription (upgrade/downgrade) */
+                    updateSubscription: (tenantId: string, data: UpdateSubscriptionInput) => Promise<Subscription>;
+                        /* Huy subscription */
+                        cancelSubscription: (tenantId: string) => Promise<Subscription>;
+                            /* Lay thong tin subscription cua tenant */
+                            fetchSubscription: (tenantId: string) => Promise<Subscription | null>;
+                                /* Cap nhat lai toan bo state */
+                                refresh: () => Promise<void>;
+                                    }
+
+                                    /**
+                                    * Du lieu nhap cho dang ky tenant.
+                                    */
+                                    interface RegisterTenantInput {
+                                    email: string;
+                                    company_name: string;
+                                    plan: string;
+                                    trial_days?: number;
+                                    }
+
+                                    /**
+                                    * Du lieu nhap cho kich hoat subscription.
+                                    */
+                                    interface ActivateSubscriptionInput {
+                                    tenant_id: string;
+                                    plan: string;
+                                    billing_cycle: string;
+                                    payment_method_id?: string;
+                                    }
+
+                                    /**
+                                    * Du lieu nhap cho cap nhat subscription.
+                                    */
+                                    interface UpdateSubscriptionInput {
+                                    plan?: string;
+                                    billing_cycle?: string;
+                                    payment_method_id?: string;
+                                    }
+
+                                    // ===========================================================================
+                                    // Du lieu config tu backend (do Jinja2 render)
+                                    // ===========================================================================
+                                    {% endraw %}
+
+                                    const DEFAULT_TRIAL_DAYS: number = {{ default_trial_days }};
+                                    const AUTO_START_TRIAL: boolean = {{ auto_start_trial | lower }};
+
+                                    {% raw %}
+                                    // ===========================================================================
+                                    // useOnboarding Hook
+                                    // ===========================================================================
+
+                                    /**
+                                    * Custom hook cho Tenant Onboarding.
+                                    *
+                                    * @param options - Cau hinh cho hook.
+                                    * @returns Cac phuong thuc va state de quan ly onboarding.
+                                    */
+                                    function useOnboarding(options: UseOnboardingOptions = {}): UseOnboardingReturn {
+                                    const {
+                                    apiBaseUrl = '/api',
+                                    tenantId,
+                                    authToken,
+                                    onError,
+                                    onRegistrationChange,
+                                    onSubscriptionChange,
+                                    } = options;
+
+                                    // -- State --
+                                    const [state, setState] = useState<OnboardingState>({
+                                        registration: null,
+                                        subscription: null,
+                                        loading: false,
+                                        error: null,
+                                        });
+
+                                        // -- Helper: tao headers cho API request --
+                                        const buildHeaders = useCallback((): HeadersInit => {
+                                        const headers: HeadersInit = {
+                                        'Content-Type': 'application/json',
+                                        };
+                                        if (authToken) {
+                                        headers['Authorization'] = `Bearer ${authToken}`;
+                                        }
+                                        return headers;
+                                        }, [authToken]);
+
+                                        // -- Helper: xu ly API response --
+                                        const handleResponse = useCallback(
+                                        async (response: Response, errorMessage?: string): Promise<any> => {
+                                            if (!response.ok) {
+                                            let detail = errorMessage || `Loi server: ${response.status}`;
+                                            try {
+                                            const errorBody = await response.json();
+                                            detail = errorBody.message || errorBody.error || detail;
+                                            } catch {
+                                            /* Neu khong parse duoc JSON, dung message mac dinh */
+                                            }
+
+                                            /* Thong bao loi qua callback */
+                                            onError?.(detail);
+
+                                            throw new Error(detail);
+                                            }
+                                            const contentType = response.headers.get('content-type');
+                                            if (contentType && contentType.includes('application/json')) {
+                                            return response.json();
+                                            }
+                                            return null;
+                                            },
+                                            [onError]
+                                            );
+
+                                            // -- Helper: set loading state --
+                                            const setLoading = useCallback((loading: boolean, error: string | null =
+                                            null) => {
+                                            setState((prev) => ({
+                                            ...prev,
+                                            loading,
+                                            error,
+                                            }));
+                                            }, []);
+
+                                            // -- API Functions --
+
+                                            /**
+                                            * Dang ky tenant moi.
+                                            *
+                                            * Goi API POST /api/onboarding/register de tao registration moi.
+                                            *
+                                            * @param data - Du lieu dang ky (email, company_name, plan).
+                                            * @returns Registration da tao.
+                                            * @throws Error neu co loi tu server.
+                                            */
+                                            const registerTenant = useCallback(
+                                            async (data: RegisterTenantInput): Promise<Registration> => {
+                                                setLoading(true);
+
+                                                try {
+                                                const response = await fetch(`${apiBaseUrl}/onboarding/register`, {
+                                                method: 'POST',
+                                                headers: buildHeaders(),
+                                                body: JSON.stringify({
+                                                email: data.email.trim(),
+                                                company_name: data.company_name.trim(),
+                                                plan: data.plan,
+                                                trial_days: data.trial_days ?? DEFAULT_TRIAL_DAYS,
+                                                }),
+                                                });
+
+                                                const registration = await handleResponse(response, 'Khong the dang ky
+                                                tenant');
+
+                                                /* Cap nhat state registration */
+                                                setState((prev) => ({ ...prev, registration }));
+                                                onRegistrationChange?.(registration);
+
+                                                return registration;
+                                                } catch (error) {
+                                                const message = error instanceof Error ? error.message : 'Co loi xay ra
+                                                khi dang ky';
+                                                setLoading(false, message);
+                                                throw error;
+                                                } finally {
+                                                setLoading(false);
+                                                }
+                                                },
+                                                [apiBaseUrl, buildHeaders, handleResponse, setLoading,
+                                                onRegistrationChange]
+                                                );
+
+                                                /**
+                                                * Xac minh tenant qua verification token.
+                                                *
+                                                * Goi API POST /api/onboarding/verify voi token nhan duoc tu email.
+                                                *
+                                                * @param token - Verification token tu email.
+                                                * @returns Registration da duoc xac minh.
+                                                * @throws Error neu token khong hop le hoac het han.
+                                                */
+                                                const verifyTenant = useCallback(
+                                                async (token: string): Promise<Registration> => {
+                                                    setLoading(true);
+
+                                                    try {
+                                                    const response = await fetch(`${apiBaseUrl}/onboarding/verify`, {
+                                                    method: 'POST',
+                                                    headers: buildHeaders(),
+                                                    body: JSON.stringify({ verification_token: token }),
+                                                    });
+
+                                                    const registration = await handleResponse(
+                                                    response,
+                                                    'Khong the xac minh tenant. Kiem tra lai token.'
+                                                    );
+
+                                                    /* Cap nhat state registration */
+                                                    setState((prev) => ({ ...prev, registration }));
+                                                    onRegistrationChange?.(registration);
+
+                                                    /* Neu auto-start trial, goi startTrial ngay */
+                                                    if (AUTO_START_TRIAL && registration.tenant_id) {
+                                                    try {
+                                                    await startTrial(registration.tenant_id);
+                                                    } catch {
+                                                    /* Bat dau trial that bai — khong throw de de xac minh van thanh
+                                                    cong */
+                                                    }
+                                                    }
+
+                                                    return registration;
+                                                    } catch (error) {
+                                                    const message = error instanceof Error ? error.message : 'Khong the
+                                                    xac minh tenant';
+                                                    setLoading(false, message);
+                                                    throw error;
+                                                    } finally {
+                                                    setLoading(false);
+                                                    }
+                                                    },
+                                                    [apiBaseUrl, buildHeaders, handleResponse, setLoading,
+                                                    onRegistrationChange, startTrial]
+                                                    );
+
+                                                    /**
+                                                    * Bat dau trial period cho tenant.
+                                                    *
+                                                    * Goi API POST /api/onboarding/tenants/:id/trial.
+                                                    *
+                                                    * @param tenantId - ID cua tenant can bat dau trial.
+                                                    * @param days - So ngay trial (mac dinh: DEFAULT_TRIAL_DAYS).
+                                                    * @returns Subscription moi voi trang thai trial.
+                                                    * @throws Error neu tenant khong ton tai hoac da co subscription.
+                                                    */
+                                                    const startTrial = useCallback(
+                                                    async (tenantId: string, days: number = DEFAULT_TRIAL_DAYS): Promise
+                                                    <Subscription> => {
+                                                        setLoading(true);
+
+                                                        try {
+                                                        const response = await
+                                                        fetch(`${apiBaseUrl}/onboarding/tenants/${tenantId}/trial`, {
+                                                        method: 'POST',
+                                                        headers: buildHeaders(),
+                                                        body: JSON.stringify({ trial_days: days }),
+                                                        });
+
+                                                        const subscription = await handleResponse(response, 'Khong the
+                                                        bat dau trial');
+
+                                                        /* Cap nhat state subscription */
+                                                        setState((prev) => ({ ...prev, subscription }));
+                                                        onSubscriptionChange?.(subscription);
+
+                                                        return subscription;
+                                                        } catch (error) {
+                                                        const message = error instanceof Error ? error.message : 'Khong
+                                                        the bat dau trial';
+                                                        setLoading(false, message);
+                                                        throw error;
+                                                        } finally {
+                                                        setLoading(false);
+                                                        }
+                                                        },
+                                                        [apiBaseUrl, buildHeaders, handleResponse, setLoading,
+                                                        onSubscriptionChange]
+                                                        );
+
+                                                        /**
+                                                        * Kich hoat subscription cho tenant.
+                                                        *
+                                                        * Goi API POST /api/onboarding/tenants/:id/subscription de tao
+                                                        subscription moi.
+                                                        *
+                                                        * @param data - Du lieu kich hoat (tenant_id, plan,
+                                                        billing_cycle).
+                                                        * @returns Subscription da duoc kich hoat.
+                                                        * @throws Error neu co loi (subscription da ton tai, khong du
+                                                        phuong thuc thanh toan, ...).
+                                                        */
+                                                        const activateSubscription = useCallback(
+                                                        async (data: ActivateSubscriptionInput): Promise<Subscription>
+                                                            => {
+                                                            setLoading(true);
+
+                                                            try {
+                                                            const response = await fetch(
+                                                            `${apiBaseUrl}/onboarding/tenants/${data.tenant_id}/subscription`,
+                                                            {
+                                                            method: 'POST',
+                                                            headers: buildHeaders(),
+                                                            body: JSON.stringify({
+                                                            plan: data.plan,
+                                                            billing_cycle: data.billing_cycle,
+                                                            payment_method_id: data.payment_method_id,
+                                                            }),
+                                                            }
+                                                            );
+
+                                                            const subscription = await handleResponse(response, 'Khong
+                                                            the kich hoat subscription');
+
+                                                            /* Cap nhat state subscription */
+                                                            setState((prev) => ({ ...prev, subscription }));
+                                                            onSubscriptionChange?.(subscription);
+
+                                                            return subscription;
+                                                            } catch (error) {
+                                                            const message = error instanceof Error ? error.message :
+                                                            'Khong the kich hoat subscription';
+                                                            setLoading(false, message);
+                                                            throw error;
+                                                            } finally {
+                                                            setLoading(false);
+                                                            }
+                                                            },
+                                                            [apiBaseUrl, buildHeaders, handleResponse, setLoading,
+                                                            onSubscriptionChange]
+                                                            );
+
+                                                            /**
+                                                            * Cap nhat subscription (upgrade/downgrade/thay doi billing
+                                                            cycle).
+                                                            *
+                                                            * Goi API PUT /api/onboarding/tenants/:id/subscription.
+                                                            *
+                                                            * @param tenantId - ID cua tenant.
+                                                            * @param data - Du lieu cap nhat (plan, billing_cycle, ...).
+                                                            * @returns Subscription da duoc cap nhat.
+                                                            * @throws Error neu plan khong hop le hoac subscription bi
+                                                            huy.
+                                                            */
+                                                            const updateSubscription = useCallback(
+                                                            async (tenantId: string, data: UpdateSubscriptionInput):
+                                                            Promise<Subscription> => {
+                                                                setLoading(true);
+
+                                                                try {
+                                                                const response = await fetch(
+                                                                `${apiBaseUrl}/onboarding/tenants/${tenantId}/subscription`,
+                                                                {
+                                                                method: 'PUT',
+                                                                headers: buildHeaders(),
+                                                                body: JSON.stringify(data),
+                                                                }
+                                                                );
+
+                                                                const subscription = await handleResponse(response,
+                                                                'Khong the cap nhat subscription');
+
+                                                                /* Cap nhat state subscription */
+                                                                setState((prev) => ({ ...prev, subscription }));
+                                                                onSubscriptionChange?.(subscription);
+
+                                                                return subscription;
+                                                                } catch (error) {
+                                                                const message = error instanceof Error ? error.message :
+                                                                'Khong the cap nhat subscription';
+                                                                setLoading(false, message);
+                                                                throw error;
+                                                                } finally {
+                                                                setLoading(false);
+                                                                }
+                                                                },
+                                                                [apiBaseUrl, buildHeaders, handleResponse, setLoading,
+                                                                onSubscriptionChange]
+                                                                );
+
+                                                                /**
+                                                                * Huy subscription cua tenant.
+                                                                *
+                                                                * Goi API POST
+                                                                /api/onboarding/tenants/:id/subscription/cancel.
+                                                                *
+                                                                * @param tenantId - ID cua tenant can huy subscription.
+                                                                * @returns Subscription voi trang thai cancelled.
+                                                                * @throws Error neu subscription khong ton tai hoac da
+                                                                bi huy.
+                                                                */
+                                                                const cancelSubscription = useCallback(
+                                                                async (tenantId: string): Promise<Subscription> => {
+                                                                    setLoading(true);
+
+                                                                    try {
+                                                                    const response = await fetch(
+                                                                    `${apiBaseUrl}/onboarding/tenants/${tenantId}/subscription/cancel`,
+                                                                    {
+                                                                    method: 'POST',
+                                                                    headers: buildHeaders(),
+                                                                    }
+                                                                    );
+
+                                                                    const subscription = await handleResponse(response,
+                                                                    'Khong the huy subscription');
+
+                                                                    /* Cap nhat state subscription */
+                                                                    setState((prev) => ({ ...prev, subscription }));
+                                                                    onSubscriptionChange?.(subscription);
+
+                                                                    return subscription;
+                                                                    } catch (error) {
+                                                                    const message = error instanceof Error ?
+                                                                    error.message : 'Khong the huy subscription';
+                                                                    setLoading(false, message);
+                                                                    throw error;
+                                                                    } finally {
+                                                                    setLoading(false);
+                                                                    }
+                                                                    },
+                                                                    [apiBaseUrl, buildHeaders, handleResponse,
+                                                                    setLoading, onSubscriptionChange]
+                                                                    );
+
+                                                                    /**
+                                                                    * Lay thong tin subscription cua tenant.
+                                                                    *
+                                                                    * Goi API GET
+                                                                    /api/onboarding/tenants/:id/subscription.
+                                                                    *
+                                                                    * @param tenantId - ID cua tenant.
+                                                                    * @returns Subscription neu co, nguoc lai la null.
+                                                                    * @throws Error neu co loi ket noi (khong phai 404).
+                                                                    */
+                                                                    const fetchSubscription = useCallback(
+                                                                    async (tenantId: string): Promise<Subscription |
+                                                                        null> => {
+                                                                        setLoading(true);
+
+                                                                        try {
+                                                                        const response = await fetch(
+                                                                        `${apiBaseUrl}/onboarding/tenants/${tenantId}/subscription`,
+                                                                        {
+                                                                        method: 'GET',
+                                                                        headers: buildHeaders(),
+                                                                        }
+                                                                        );
+
+                                                                        /* 404 = khong co subscription, tra ve null */
+                                                                        if (response.status === 404) {
+                                                                        setState((prev) => ({ ...prev, subscription:
+                                                                        null }));
+                                                                        return null;
+                                                                        }
+
+                                                                        const subscription = await
+                                                                        handleResponse(response, 'Khong the lay
+                                                                        subscription');
+
+                                                                        /* Cap nhat state subscription */
+                                                                        setState((prev) => ({ ...prev, subscription }));
+                                                                        onSubscriptionChange?.(subscription);
+
+                                                                        return subscription;
+                                                                        } catch (error) {
+                                                                        const message = error instanceof Error ?
+                                                                        error.message : 'Khong the lay subscription';
+                                                                        setLoading(false, message);
+                                                                        throw error;
+                                                                        } finally {
+                                                                        setLoading(false);
+                                                                        }
+                                                                        },
+                                                                        [apiBaseUrl, buildHeaders, handleResponse,
+                                                                        setLoading, onSubscriptionChange]
+                                                                        );
+
+                                                                        /**
+                                                                        * Cap nhat lai toan bo state (neu co tenantId).
+                                                                        */
+                                                                        const refresh = useCallback(async (): Promise
+                                                                        <void> => {
+                                                                            if (tenantId) {
+                                                                            try {
+                                                                            await fetchSubscription(tenantId);
+                                                                            } catch {
+                                                                            /* refresh that bai — khong throw de khong
+                                                                            phan hoi manh */
+                                                                            }
+                                                                            }
+                                                                            }, [tenantId, fetchSubscription]);
+
+                                                                            /* Auto-fetch subscription khi mount neu co
+                                                                            tenantId */
+                                                                            useEffect(() => {
+                                                                            if (tenantId) {
+                                                                            refresh();
+                                                                            }
+                                                                            }, [tenantId, refresh]);
+
+                                                                            // -- Tra ve cac phuong thuc va state --
+                                                                            return {
+                                                                            state,
+                                                                            registerTenant,
+                                                                            verifyTenant,
+                                                                            startTrial,
+                                                                            activateSubscription,
+                                                                            updateSubscription,
+                                                                            cancelSubscription,
+                                                                            fetchSubscription,
+                                                                            refresh,
+                                                                            };
+                                                                            }
+
+                                                                            export default useOnboarding;
+
+                                                                            export type {
+                                                                            Registration,
+                                                                            Subscription,
+                                                                            OnboardingState,
+                                                                            UseOnboardingOptions,
+                                                                            UseOnboardingReturn,
+                                                                            RegisterTenantInput,
+                                                                            ActivateSubscriptionInput,
+                                                                            UpdateSubscriptionInput,
+                                                                            };
+                                                                            {% endraw %}

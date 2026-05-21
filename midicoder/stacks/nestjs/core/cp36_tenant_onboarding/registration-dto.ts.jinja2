@@ -1,0 +1,95 @@
+/**
+ * Registration DTOs — CP36: Tenant Onboarding & Subscription.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ *
+ * Định nghĩa các DTO cho registration endpoints,
+ * sử dụng class-validator decorators để validate input.
+ */
+
+import {
+  IsEmail,
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsInt,
+  Min,
+  Max,
+  IsOptional,
+  IsUUID,
+} from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+/** Enum các gói subscription. */
+export enum SubscriptionPlan {
+  FREE = "free",
+  STARTER = "starter",
+  PROFESSIONAL = "professional",
+  ENTERPRISE = "enterprise",
+}
+
+/**
+ * DTO cho đăng ký tenant mới.
+ *
+ * Yêu cầu: email (unique), company_name, plan.
+ */
+export class RegisterTenantDto {
+  @ApiProperty({ description: "Email đăng ký (unique, required)" })
+  @IsEmail({}, { message: "Email không hợp lệ" })
+  @IsNotEmpty({ message: "Email không được để trống" })
+  email: string;
+
+  @ApiProperty({ description: "Tên công ty/tổ chức (required)" })
+  @IsString({ message: "Tên công ty phải là chuỗi ký tự" })
+  @IsNotEmpty({ message: "Tên công ty không được để trống" })
+  companyName: string;
+
+  @ApiProperty({
+    description: "Gói subscription yêu cầu",
+    enum: SubscriptionPlan,
+    default: SubscriptionPlan.FREE,
+  })
+  @IsEnum(SubscriptionPlan, { message: "Gói subscription không hợp lệ" })
+  plan: SubscriptionPlan;
+
+  @ApiPropertyOptional({
+    description: "Số ngày dùng thử (mặc định 14, 0 = không trial)",
+    default: 14,
+    minimum: 0,
+    maximum: 365,
+  })
+  @IsOptional()
+  @IsInt({ message: "Số ngày trial phải là số nguyên" })
+  @Min(0, { message: "Số ngày trial không được âm" })
+  @Max(365, { message: "Số ngày trial không được vượt quá 365" })
+  trialDays?: number;
+}
+
+/**
+ * DTO cho xác minh tenant.
+ *
+ * Yêu cầu: token xác minh (hmac-signed).
+ */
+export class VerifyTenantDto {
+  @ApiProperty({ description: "Token xác minh email (hmac-signed)" })
+  @IsString({ message: "Token phải là chuỗi ký tự" })
+  @IsNotEmpty({ message: "Token không được để trống" })
+  token: string;
+}
+
+/**
+ * DTO cho admin approve tenant.
+ *
+ * Yêu cầu: registrationId, approvedBy (admin id).
+ */
+export class ApproveTenantDto {
+  @ApiProperty({ description: "ID của registration cần approve" })
+  @IsUUID("4", { message: "Registration ID không hợp lệ" })
+  @IsNotEmpty({ message: "Registration ID không được để trống" })
+  registrationId: string;
+
+  @ApiProperty({ description: "ID của admin thực hiện approve" })
+  @IsString({ message: "Approved by phải là chuỗi ký tự" })
+  @IsNotEmpty({ message: "Approved by không được để trống" })
+  approvedBy: string;
+}

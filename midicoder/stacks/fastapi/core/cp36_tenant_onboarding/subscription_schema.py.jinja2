@@ -1,0 +1,183 @@
+"""
+Mô-đun Subscription Schema cho CP36: Tenant Onboarding.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp Pydantic schemas cho:
+- ActivateSubscriptionRequest: Dữ liệu kích hoạt subscription
+- UpdateSubscriptionRequest: Dữ liệu cập nhật subscription
+- CancelSubscriptionRequest: Dữ liệu hủy subscription
+- SubscriptionResponse: Phản hồi subscription
+
+Dùng Pydantic v2 cho validation và serialization.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+from enum import Enum
+from typing import Any, Dict, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class SubscriptionPlan(str, Enum):
+    """Enum các bậc gói subscription."""
+    FREE = "free"
+    STARTER = "starter"
+    PROFESSIONAL = "professional"
+    ENTERPRISE = "enterprise"
+
+
+class SubscriptionStatus(str, Enum):
+    """Trạng thái của subscription."""
+    TRIAL = "trial"
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class BillingCycle(str, Enum):
+    """Chu kỳ thanh toán."""
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
+class ActivateSubscriptionRequest(BaseModel):
+    """Schema cho yêu cầu kích hoạt subscription.
+
+    Thuộc tính:
+        plan: Gói subscription muốn kích hoạt
+        billing_cycle: Chu kỳ thanh toán
+        payment_method_id: ID phương thức thanh toán
+        currency: Mã tiền tệ ISO 4217
+    """
+    plan: SubscriptionPlan = Field(
+        ...,
+        description="Gói subscription muốn kích hoạt",
+    )
+    billing_cycle: BillingCycle = Field(
+        ...,
+        description="Chu kỳ thanh toán (monthly/yearly)",
+    )
+    payment_method_id: UUID = Field(
+        ...,
+        description="ID phương thức thanh toán",
+    )
+    currency: str = Field(
+        default="USD",
+        min_length=3,
+        max_length=3,
+        description="Mã tiền tệ ISO 4217",
+        examples=["USD", "EUR", "VND"],
+    )
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, v: str) -> str:
+        """Xác thực mã tiền tệ phải là 3 ký tự chữ hoa."""
+        upper = v.upper()
+        if not upper.isalpha() or len(upper) != 3:
+            raise ValueError("Mã tiền tệ phải là 3 ký tự chữ cái (ISO 4217)")
+        return upper
+
+
+class UpdateSubscriptionRequest(BaseModel):
+    """Schema cho yêu cầu cập nhật subscription.
+
+    Cho phép upgrade/downgrade plan và thay đổi billing cycle.
+
+    Thuộc tính:
+        plan: Gói subscription mới (tùy chọn)
+        billing_cycle: Chu kỳ thanh toán mới (tùy chọn)
+        payment_method_id: Phương thức thanh toán mới (tùy chọn)
+    """
+    plan: Optional[SubscriptionPlan] = Field(
+        default=None,
+        description="Gói subscription mới (tùy chọn)",
+    )
+    billing_cycle: Optional[BillingCycle] = Field(
+        default=None,
+        description="Chu kỳ thanh toán mới (tùy chọn)",
+    )
+    payment_method_id: Optional[UUID] = Field(
+        default=None,
+        description="Phương thức thanh toán mới (tùy chọn)",
+    )
+
+
+class CancelSubscriptionRequest(BaseModel):
+    """Schema cho yêu cầu hủy subscription.
+
+    Thuộc tính:
+        reason: Lý do hủy subscription
+        cancel_at_period_end: Có hủy ở cuối kỳ thanh toán không
+    """
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Lý do hủy subscription",
+        examples=["Không còn nhu cầu sử dụng"],
+    )
+    cancel_at_period_end: bool = Field(
+        default=False,
+        description="True: hủy ở cuối kỳ, False: hủy ngay lập tức",
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, v: str) -> str:
+        """Xác thực lý do hủy không để trống."""
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Lý do hủy không được để trống")
+        return stripped
+
+
+class SubscriptionResponse(BaseModel):
+    """Schema cho phản hồi subscription.
+
+    Thuộc tính:
+        id: ID của subscription
+        tenant_id: ID tenant sở hữu
+        plan: Gói subscription
+        billing_cycle: Chu kỳ thanh toán
+        status: Trạng thái subscription
+        price: Giá subscription
+        currency: Mã tiền tệ
+        start_date: Ngày bắt đầu
+        end_date: Ngày kết thúc (nullable)
+        metadata: Custom metadata
+        created_at: Thời điểm tạo
+        updated_at: Thời điểm cập nhật cuối
+    """
+    id: UUID = Field(..., description="ID của subscription")
+    tenant_id: UUID = Field(..., description="ID tenant sở hữu")
+    plan: SubscriptionPlan = Field(..., description="Gói subscription")
+    billing_cycle: BillingCycle = Field(..., description="Chu kỳ thanh toán")
+    status: SubscriptionStatus = Field(..., description="Trạng thái subscription")
+    price: Decimal = Field(..., description="Giá subscription")
+    currency: str = Field(..., description="Mã tiền tệ ISO 4217")
+    payment_method_id: Optional[UUID] = Field(
+        default=None,
+        description="ID phương thức thanh toán (nullable cho free/trial)",
+    )
+    start_date: datetime = Field(..., description="Ngày bắt đầu")
+    end_date: Optional[datetime] = Field(
+        default=None,
+        description="Ngày kết thúc (nullable)",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Custom metadata",
+    )
+    created_at: datetime = Field(..., description="Thời điểm tạo")
+    updated_at: datetime = Field(..., description="Thời điểm cập nhật cuối")
+
+    class Config:
+        """Cấu hình Pydantic."""
+        from_attributes = True

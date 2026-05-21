@@ -1,0 +1,156 @@
+/**
+ * TenantSubscription Entity — CP36: Tenant Onboarding & Subscription.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ *
+ * Entity quản lý subscription của tenant. Theo dõi trạng thái,
+ * pricing, billing cycle. Liên kết với CP02 tenant.
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  Index,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from "typeorm";
+
+/** Enum các gói subscription. */
+export enum SubscriptionPlan {
+  FREE = "free",
+  STARTER = "starter",
+  PROFESSIONAL = "professional",
+  ENTERPRISE = "enterprise",
+}
+
+/** Enum trạng thái subscription. */
+export enum SubscriptionStatus {
+  TRIAL = "trial",
+  ACTIVE = "active",
+  PAST_DUE = "past_due",
+  CANCELLED = "cancelled",
+  EXPIRED = "expired",
+}
+
+/** Enum chu kỳ thanh toán. */
+export enum BillingCycle {
+  MONTHLY = "monthly",
+  YEARLY = "yearly",
+}
+
+/**
+ * TenantSubscription Entity — quản lý subscription của tenant.
+ *
+ * Mỗi bản ghi đại diện cho một subscription đang hoạt động
+ * hoặc đã hủy của tenant, bao gồm pricing, billing cycle, metadata.
+ */
+@Entity("tenant_subscriptions")
+@Index(["tenantId"])
+export class TenantSubscription {
+  /** Identifier chính (UUID). */
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
+
+  /** FK đến tenant (tích hợp CP02 Multi-Tenant). */
+  @Column()
+  tenantId: string;
+
+  /** Gói subscription hiện tại. */
+  @Column({
+    type: "enum",
+    enum: SubscriptionPlan,
+    default: SubscriptionPlan.FREE,
+  })
+  plan: SubscriptionPlan;
+
+  /** Chu kỳ thanh toán. */
+  @Column({
+    type: "enum",
+    enum: BillingCycle,
+    default: BillingCycle.MONTHLY,
+  })
+  billingCycle: BillingCycle;
+
+  /** Trạng thái subscription. */
+  @Column({
+    type: "enum",
+    enum: SubscriptionStatus,
+    default: SubscriptionStatus.ACTIVE,
+  })
+  status: SubscriptionStatus;
+
+  /** Ngày bắt đầu subscription. */
+  @Column()
+  startDate: Date;
+
+  /** Ngày kết thúc subscription. */
+  @Column({ nullable: true })
+  endDate: Date | null;
+
+  /** Reference đến payment method (tích hợp CP45 Payments). */
+  @Column({ nullable: true })
+  paymentMethodId: string | null;
+
+  /** Giá theo currency (type: decimal). */
+  @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+  price: string;
+
+  /** Mã tiền tệ ISO 4217. */
+  @Column({ length: 3, default: "USD" })
+  currency: string;
+
+  /** Custom metadata (type: json). */
+  @Column({ type: "json", nullable: true })
+  metadata: Record<string, any> | null;
+
+  /** Thời gian tạo bản ghi. */
+  @CreateDateColumn()
+  createdAt: Date;
+
+  /** Thời gian cập nhật cuối. */
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  /**
+   * Kiểm tra subscription đang hoạt động.
+   */
+  get isActive(): boolean {
+    return this.status === SubscriptionStatus.ACTIVE;
+  }
+
+  /**
+   * Kiểm tra subscription đang trong thời gian trial.
+   */
+  get isTrial(): boolean {
+    return this.status === SubscriptionStatus.TRIAL;
+  }
+
+  /**
+   * Kiểm tra subscription yêu cầu thanh toán.
+   */
+  get requiresPayment(): boolean {
+    return this.plan !== SubscriptionPlan.FREE;
+  }
+
+  /**
+   * Kiểm tra có thể upgrade sang plan mới.
+   *
+   * Plan order: free < starter < professional < enterprise
+   */
+  canUpgrade(newPlan: SubscriptionPlan): boolean {
+    if (!this.isActive) {
+      return false;
+    }
+    if (newPlan === this.plan) {
+      return false;
+    }
+    const planOrder: Record<SubscriptionPlan, number> = {
+      [SubscriptionPlan.FREE]: 0,
+      [SubscriptionPlan.STARTER]: 1,
+      [SubscriptionPlan.PROFESSIONAL]: 2,
+      [SubscriptionPlan.ENTERPRISE]: 3,
+    };
+    return (planOrder[newPlan] ?? 0) > (planOrder[this.plan] ?? 0);
+  }
+}

@@ -1,0 +1,72 @@
+"""
+Gói Onboarding — Tenant Registration & Subscription.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp các module:
+- Models: TenantRegistration, TenantSubscription (SQLAlchemy ORM)
+- Schemas: Pydantic schemas cho validation
+- Services: Business logic cho registration và subscription
+- Routers: FastAPI API endpoints
+- Events: Event classes cho event-driven architecture
+
+KPI-029: Tenant Isolation (tích hợp với CP02 Multi-Tenant)
+KPI-030: Notification Integration (tích hợp với CP12 Notification)
+"""
+
+from app.onboarding.events.onboarding_events import (
+    TenantRegisteredEvent,
+    TenantVerifiedEvent,
+    TrialStartedEvent,
+    SubscriptionActivatedEvent,
+    SubscriptionUpdatedEvent,
+    SubscriptionCancelledEvent,
+)
+from app.onboarding.models.registration_model import TenantRegistration
+from app.onboarding.models.subscription_model import TenantSubscription
+from app.onboarding.routers.registration_router import router as registration_router
+from app.onboarding.routers.subscription_router import router as subscription_router
+from app.onboarding.schemas.registration_schema import (
+    ApproveTenantRequest,
+    ListRegistrationsResponse,
+    RegisterTenantRequest,
+    RegistrationResponse,
+    VerifyTenantRequest,
+)
+from app.onboarding.schemas.subscription_schema import (
+    ActivateSubscriptionRequest,
+    CancelSubscriptionRequest,
+    SubscriptionResponse,
+    UpdateSubscriptionRequest,
+)
+from app.onboarding.services.registration_service import TenantRegistrationService
+from app.onboarding.services.subscription_service import TenantSubscriptionService
+
+__all__ = [
+    # Event classes
+    "TenantRegisteredEvent",
+    "TenantVerifiedEvent",
+    "TrialStartedEvent",
+    "SubscriptionActivatedEvent",
+    "SubscriptionUpdatedEvent",
+    "SubscriptionCancelledEvent",
+    # ORM Models
+    "TenantRegistration",
+    "TenantSubscription",
+    # Pydantic Schemas
+    "RegisterTenantRequest",
+    "VerifyTenantRequest",
+    "ApproveTenantRequest",
+    "RegistrationResponse",
+    "ListRegistrationsResponse",
+    "ActivateSubscriptionRequest",
+    "UpdateSubscriptionRequest",
+    "CancelSubscriptionRequest",
+    "SubscriptionResponse",
+    # Services
+    "TenantRegistrationService",
+    "TenantSubscriptionService",
+    # Routers
+    "registration_router",
+    "subscription_router",
+]

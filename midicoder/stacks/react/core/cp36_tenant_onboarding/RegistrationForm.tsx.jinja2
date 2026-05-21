@@ -1,0 +1,483 @@
+{% raw %}/**
+* Form dang ky tenant moi — RegistrationForm.
+*
+* Component nay cung cap form dang ky cho tenant moi voi:
+* - Nhap email, ten cong ty
+* - Chon goi subscription (hien thi PLANS goi)
+* - Xac thuc form (email regex, required fields)
+* - Goi API POST /api/onboarding/register
+* - Hien thi trang thai: loi, loading, thanh cong
+*
+* Tu dong sinh boi Midicoder — khong sua thu cong.
+*/
+
+import React, { useState, useCallback } from 'react';
+
+// ===========================================================================
+// TypeScript Types
+// ===========================================================================
+
+/**
+* Du lieu form dang ky.
+*/
+interface RegistrationFormData {
+email: string;
+companyName: string;
+selectedPlan: string;
+}
+
+/**
+* Thong bao loi cho tung truong.
+*/
+interface FormErrors {
+email?: string;
+companyName?: string;
+selectedPlan?: string;
+general?: string;
+}
+
+/**
+* Trang thai cua form.
+*/
+type FormStatus = 'idle' | 'loading' | 'success' | 'error';
+
+/**
+* Cau hinh plan tu server.
+*/
+interface PlanConfig {
+plan: string;
+label: string;
+monthly_price: string;
+yearly_price: string;
+features: string[];
+max_users: number;
+max_storage_gb: number;
+}
+
+/**
+* Response tu API dang ky.
+*/
+interface RegistrationResponse {
+tenant_id: string;
+email: string;
+company_name: string;
+plan: string;
+status: string;
+verification_token: string;
+message?: string;
+}
+
+// ===========================================================================
+// Du lieu plan tu backend (do Jinja2 render)
+// ===========================================================================
+{% endraw %}
+
+const PLANS: PlanConfig[] = [
+{% for plan in plans %}
+{
+plan: '{{ plan.plan }}',
+label: '{{ plan.label }}',
+monthly_price: '{{ plan.monthly_price }}',
+yearly_price: '{{ plan.yearly_price }}',
+features: [{{ plan.features | tojson }}],
+max_users: {{ plan.max_users }},
+max_storage_gb: {{ plan.max_storage_gb }},
+},
+{% endfor %}
+];
+
+const DEFAULT_TRIAL_DAYS: number = {{ default_trial_days }};
+const REQUIRE_ADMIN_APPROVAL: boolean = {{ require_admin_approval | lower }};
+
+{% raw %}
+// ===========================================================================
+// Helper: Regex xac thuc email
+// ===========================================================================
+
+const EMAIL_REGEX: RegExp = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+
+/**
+* Kiem tra email hop le.
+*/
+function isValidEmail(email: string): boolean {
+return EMAIL_REGEX.test(email.trim());
+}
+
+// ===========================================================================
+// PlanCard Component
+// ===========================================================================
+
+/**
+* Props cua PlanCard.
+*/
+interface PlanCardProps {
+plan: PlanConfig;
+isSelected: boolean;
+onSelect: (plan: string) => void;
+}
+
+/**
+* Card hien thi thong tin mot goi subscription.
+*/
+const PlanCard: React.FC<PlanCardProps> = ({ plan, isSelected, onSelect }) => {
+    const handleClick = useCallback(() => {
+    onSelect(plan.plan);
+    }, [onSelect, plan.plan]);
+
+    return (
+    <div className={`plan-card ${isSelected ? 'plan-card--selected' : '' }`} data-testid={`plan-card-${plan.plan}`}
+        onClick={handleClick} role="button" tabIndex={0} aria-pressed={isSelected} aria-label={`Chon goi ${plan.label}`}
+        onKeyDown={(e)=> {
+        if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleClick();
+        }
+        }}
+        style={{
+        border: isSelected ? '2px solid #1976d2' : '1px solid #e0e0e0',
+        borderRadius: '8px',
+        padding: '16px',
+        cursor: 'pointer',
+        transition: 'border-color 0.2s',
+        backgroundColor: isSelected ? '#e3f2fd' : '#ffffff',
+        }}
+        >
+        <h3 style={{ margin: '0 0 8px 0' }}>{plan.label}</h3>
+
+        {/* Hien thi gia */}
+        <div className="plan-pricing" style={{ marginBottom: '8px' }}>
+            {plan.monthly_price !== '0' ? (
+            <>
+                <span style={{ fontSize: '20px' , fontWeight: 'bold' }}>
+                    ${plan.monthly_price}/thang
+                </span>
+                {plan.yearly_price !== '0' && (
+                <span style={{ display: 'block' , fontSize: '12px' , color: '#666' }}>
+                    hoac ${plan.yearly_price}/nam
+                </span>
+                )}
+            </>
+            ) : (
+            <span style={{ fontSize: '20px' , fontWeight: 'bold' , color: '#4caf50' }}>
+                Mien phi
+            </span>
+            )}
+        </div>
+
+        {/* Hien thi trial info */}
+        {plan.plan !== 'free' && DEFAULT_TRIAL_DAYS > 0 && (
+        <div style={{ fontSize: '12px' , color: '#ff9800' , marginBottom: '8px' }}>
+            Dung thu {DEFAULT_TRIAL_DAYS} ngay mien phi
+        </div>
+        )}
+
+        {/* Danh sach tinh nang */}
+        <ul style={{ listStyle: 'none' , padding: 0, margin: '0 0 8px 0' }}>
+            {plan.features.map((feature: string, index: number) => (
+            <li key={index} style={{ fontSize: '13px' , padding: '2px 0' }}>
+                + {feature}
+            </li>
+            ))}
+        </ul>
+
+        {/* Gioi han */}
+        <div style={{ fontSize: '12px' , color: '#999' }}>
+            Toi da {plan.max_users} nguoi dung | {plan.max_storage_gb}GB luu tru
+        </div>
+    </div>
+    );
+    };
+
+    // ===========================================================================
+    // RegistrationForm Component chinh
+    // ===========================================================================
+
+    /**
+    * Props cua RegistrationForm.
+    */
+    interface RegistrationFormProps {
+    /** Callback khi dang ky thanh cong. */
+    onSuccess?: (data: RegistrationResponse) => void;
+    /** Callback khi co loi xay ra. */
+    onError?: (error: string) => void;
+    /** API base URL (mac dinh: '/api'). */
+    apiBaseUrl?: string;
+    }
+
+    /**
+    * RegistrationForm — Form dang ky tenant moi.
+    *
+    * Component chinh hien thi form voi:
+    * - Input email va ten cong ty
+    * - Plan selection grid
+    * - Form validation
+    * - Submit handler goi API
+    * - Error/success states
+    */
+    const RegistrationForm: React.FC<RegistrationFormProps> = ({
+        onSuccess,
+        onError,
+        apiBaseUrl = '/api',
+        }) => {
+        // -- State --
+        const [formData, setFormData] = useState<RegistrationFormData>({
+            email: '',
+            companyName: '',
+            selectedPlan: 'free',
+            });
+            const [errors, setErrors] = useState<FormErrors>({});
+                const [status, setStatus] = useState<FormStatus>('idle');
+                    const [serverMessage, setServerMessage] = useState<string>('');
+
+                        // -- Handlers --
+
+                        /**
+                        * Xu ly thay doi input.
+                        */
+                        const handleChange = useCallback(
+                        (field: keyof RegistrationFormData) => (
+                        e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+                            ) => {
+                            setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+                            // Xoa loi khi nguoi dung nhap lai
+                            setErrors((prev) => ({ ...prev, [field]: undefined, general: undefined }));
+                            },
+                            []
+                            );
+
+                            /**
+                            * Xu ly chon plan.
+                            */
+                            const handleSelectPlan = useCallback((plan: string) => {
+                            setFormData((prev) => ({ ...prev, selectedPlan: plan }));
+                            setErrors((prev) => ({ ...prev, selectedPlan: undefined }));
+                            }, []);
+
+                            /**
+                            * Xac thuc toan bo form.
+                            *
+                            * Returns: True neu form hop le.
+                            */
+                            const validateForm = useCallback((): boolean => {
+                            const newErrors: FormErrors = {};
+
+                            // Kiem tra email khong de trong
+                            if (!formData.email || !formData.email.trim()) {
+                            newErrors.email = 'Email khong duoc de trong';
+                            } else if (!isValidEmail(formData.email)) {
+                            newErrors.email = 'Email khong hop le (vi du: ten@congty.com)';
+                            }
+
+                            // Kiem tra ten cong ty khong de trong
+                            if (!formData.companyName || !formData.companyName.trim()) {
+                            newErrors.companyName = 'Ten cong ty khong duoc de trong';
+                            } else if (formData.companyName.trim().length < 2) {
+                                newErrors.companyName='Ten cong ty phai co it nhat 2 ky tu' ; } // Kiem tra da chon plan
+                                if (!formData.selectedPlan) {
+                                newErrors.selectedPlan='Vui long chon mot goi subscription' ; } setErrors(newErrors);
+                                return Object.keys(newErrors).length===0; }, [formData]); /** * Xu ly submit form — goi
+                                API dang ky. */ const handleSubmit=useCallback( async (e: React.FormEvent)=> {
+                                e.preventDefault();
+
+                                // Xac thuc form truoc
+                                if (!validateForm()) {
+                                return;
+                                }
+
+                                setStatus('loading');
+                                setErrors({});
+                                setServerMessage('');
+
+                                try {
+                                const response = await fetch(`${apiBaseUrl}/onboarding/register`, {
+                                method: 'POST',
+                                headers: {
+                                'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                email: formData.email.trim(),
+                                company_name: formData.companyName.trim(),
+                                plan: formData.selectedPlan,
+                                trial_days: DEFAULT_TRIAL_DAYS,
+                                }),
+                                });
+
+                                const data: RegistrationResponse = await response.json();
+
+                                if (!response.ok) {
+                                // Xu ly loi tu server
+                                const errorMessage = data.message || `Loi server: ${response.status}`;
+
+                                // Xu ly cac ma loi cu the
+                                if (response.status === 409) {
+                                setErrors({ email: 'Email nay da duoc dang ky truoc do' });
+                                } else if (response.status === 422) {
+                                setErrors({ general: errorMessage });
+                                } else {
+                                setErrors({ general: errorMessage });
+                                }
+
+                                setStatus('error');
+                                setServerMessage(errorMessage);
+                                onError?.(errorMessage);
+                                return;
+                                }
+
+                                // Dang ky thanh cong
+                                setStatus('success');
+                                setServerMessage(
+                                data.message || 'Dang ky thanh cong! Vui long kiem tra email de xac minh.'
+                                );
+
+                                // Reset form
+                                setFormData({ email: '', companyName: '', selectedPlan: 'free' });
+
+                                // Goi callback onSuccess
+                                onSuccess?.(data);
+                                } catch (error) {
+                                const message =
+                                error instanceof Error ? error.message : 'Khong the ket noi den may chu';
+                                setStatus('error');
+                                setServerMessage(message);
+                                setErrors({ general: message });
+                                onError?.(message);
+                                }
+                                },
+                                [formData, apiBaseUrl, validateForm, onSuccess, onError]
+                                );
+
+                                /**
+                                * Xu ly reset form.
+                                */
+                                const handleReset = useCallback(() => {
+                                setFormData({ email: '', companyName: '', selectedPlan: 'free' });
+                                setErrors({});
+                                setStatus('idle');
+                                setServerMessage('');
+                                }, []);
+
+                                // -- Render --
+
+                                return (
+                                <div className="registration-form" data-testid="registration-form" style={{
+                                    maxWidth: '800px' , margin: '0 auto' , padding: '24px' }}>
+                                    {/* Tieu de */}
+                                    <h1 style={{ textAlign: 'center' , marginBottom: '24px' }}>
+                                        Dang ky Tenant
+                                    </h1>
+                                    <p style={{ textAlign: 'center' , color: '#666' , marginBottom: '32px' }}>
+                                        Tao tai khoan moi de bat dau su dung he thong
+                                        {DEFAULT_TRIAL_DAYS > 0 && ` — dung thu ${DEFAULT_TRIAL_DAYS} ngay mien phi`}
+                                        {REQUIRE_ADMIN_APPROVAL && ' (yeu cau phe duyet tu quan tri vien)'}
+                                    </p>
+
+                                    {/* Form chinh */}
+                                    <form onSubmit={handleSubmit} noValidate>
+                                        {/* Input Email */}
+                                        <div style={{ marginBottom: '16px' }}>
+                                            <label htmlFor="reg-email" style={{ display: 'block' , marginBottom: '4px' ,
+                                                fontWeight: 'bold' }}>
+                                                Email <span style={{ color: 'red' }}>*</span>
+                                            </label>
+                                            <input id="reg-email" type="email" value={formData.email}
+                                                onChange={handleChange('email')} placeholder="ten@congty.com"
+                                                disabled={status==='loading' } aria-invalid={!!errors.email}
+                                                aria-describedby={errors.email ? 'email-error' : undefined} style={{
+                                                width: '100%' , padding: '10px' , border: errors.email
+                                                ? '1px solid #f44336' : '1px solid #ccc' , borderRadius: '4px' ,
+                                                fontSize: '14px' , boxSizing: 'border-box' , }} />
+                                            {errors.email && (
+                                            <div id="email-error" style={{ color: '#f44336' , fontSize: '12px' ,
+                                                marginTop: '4px' }}>
+                                                {errors.email}
+                                            </div>
+                                            )}
+                                        </div>
+
+                                        {/* Input Ten cong ty */}
+                                        <div style={{ marginBottom: '24px' }}>
+                                            <label htmlFor="reg-company" style={{ display: 'block' , marginBottom: '4px'
+                                                , fontWeight: 'bold' }}>
+                                                Ten cong ty <span style={{ color: 'red' }}>*</span>
+                                            </label>
+                                            <input id="reg-company" type="text" value={formData.companyName}
+                                                onChange={handleChange('companyName')}
+                                                placeholder="Ten cong ty / to chuc cua ban" disabled={status==='loading'
+                                                } aria-invalid={!!errors.companyName}
+                                                aria-describedby={errors.companyName ? 'company-error' : undefined}
+                                                style={{ width: '100%' , padding: '10px' , border: errors.companyName
+                                                ? '1px solid #f44336' : '1px solid #ccc' , borderRadius: '4px' ,
+                                                fontSize: '14px' , boxSizing: 'border-box' , }} />
+                                            {errors.companyName && (
+                                            <div id="company-error" style={{ color: '#f44336' , fontSize: '12px' ,
+                                                marginTop: '4px' }}>
+                                                {errors.companyName}
+                                            </div>
+                                            )}
+                                        </div>
+
+                                        {/* Chon goi subscription */}
+                                        <div style={{ marginBottom: '24px' }}>
+                                            <label style={{ display: 'block' , marginBottom: '8px' , fontWeight: 'bold'
+                                                }}>
+                                                Chon goi subscription <span style={{ color: 'red' }}>*</span>
+                                            </label>
+                                            <div className="plan-grid" style={{ display: 'grid' ,
+                                                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' ,
+                                                gap: '12px' , }}>
+                                                {PLANS.map((plan) => (
+                                                <PlanCard key={plan.plan} plan={plan}
+                                                    isSelected={formData.selectedPlan===plan.plan}
+                                                    onSelect={handleSelectPlan} />
+                                                ))}
+                                            </div>
+                                            {errors.selectedPlan && (
+                                            <div style={{ color: '#f44336' , fontSize: '12px' , marginTop: '4px' }}>
+                                                {errors.selectedPlan}
+                                            </div>
+                                            )}
+                                        </div>
+
+                                        {/* Loi chung tu server */}
+                                        {errors.general && (
+                                        <div role="alert" style={{ backgroundColor: '#ffebee' , color: '#c62828' ,
+                                            padding: '12px' , borderRadius: '4px' , marginBottom: '16px' , }}>
+                                            {errors.general}
+                                        </div>
+                                        )}
+
+                                        {/* Thong bao thanh cong */}
+                                        {status === 'success' && serverMessage && (
+                                        <div role="status" style={{ backgroundColor: '#e8f5e9' , color: '#2e7d32' ,
+                                            padding: '12px' , borderRadius: '4px' , marginBottom: '16px' , }}>
+                                            {serverMessage}
+                                        </div>
+                                        )}
+
+                                        {/* Nut submit va reset */}
+                                        <div style={{ display: 'flex' , gap: '12px' }}>
+                                            <button type="submit" disabled={status==='loading' || status==='success' }
+                                                style={{ flex: 1, padding: '12px 24px' , backgroundColor:
+                                                status==='success' ? '#4caf50' : '#1976d2' , color: '#ffffff' ,
+                                                border: 'none' , borderRadius: '4px' , fontSize: '16px' ,
+                                                fontWeight: 'bold' , cursor: status==='loading' ? 'not-allowed'
+                                                : 'pointer' , opacity: status==='loading' ? 0.7 : 1, }}>
+                                                {status === 'loading' ? 'Dang dang ky...' : status === 'success' ? 'Da
+                                                dang ky!' : 'Dang ky'}
+                                            </button>
+
+                                            {(status === 'error' || errors.general) && (
+                                            <button type="button" onClick={handleReset} style={{ padding: '12px 24px' ,
+                                                backgroundColor: '#ffffff' , color: '#666' , border: '1px solid #ccc' ,
+                                                borderRadius: '4px' , fontSize: '14px' , cursor: 'pointer' , }}>
+                                                Dat lai
+                                            </button>
+                                            )}
+                                        </div>
+                                    </form>
+                                </div>
+                                );
+                                };
+
+                                export default RegistrationForm;
+                                {% endraw %}

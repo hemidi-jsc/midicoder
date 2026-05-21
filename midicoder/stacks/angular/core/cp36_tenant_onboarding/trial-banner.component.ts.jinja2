@@ -1,0 +1,285 @@
+/**
+ * Trial Banner Component — banner thông báo thời gian dùng thử.
+ *
+ * Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+ *
+ * Chức năng:
+ * - Hiển thị countdown số ngày còn lại của trial
+ * - Progress bar thể hiện phần trăm thời gian đã trôi qua
+ * - Nút CTA "Upgrade Now" để nâng cấp
+ * - Tự động ẩn khi daysRemaining = 0
+ * - EventEmitter để bắn upgrade action lên parent component
+ */
+
+import {
+  Component,
+  Input,
+  OnInit,
+  OnDestroy,
+  Output,
+  EventEmitter,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { Subject, Subscription, interval } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
+{% raw %}
+@Component({
+  selector: 'app-trial-banner',
+  standalone: true,
+  imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div
+      *ngIf="isVisible"
+      class="trial-banner"
+      [class.expiring]="isExpiring"
+      [class.urgent]="isUrgent"
+    >
+      <!-- Banner content -->
+      <div class="banner-content">
+        <div class="banner-text">
+          <span class="banner-icon">&#128218;</span>
+          <div class="banner-message">
+            <strong>Bạn đang dùng thử gói {{ currentPlan | uppercase }}</strong>
+            <span class="days-remaining">
+              Còn lại <strong>{{ daysRemaining }} ngày</strong>
+            </span>
+          </div>
+        </div>
+
+        <!-- CTA Button -->
+        <button
+          (click)="onUpgradeClick()"
+          class="upgrade-btn"
+          [class.urgent]="isUrgent"
+        >
+          Nâng Cấp Ngay
+        </button>
+      </div>
+
+      <!-- Progress bar -->
+      <div class="progress-container">
+        <div
+          class="progress-bar"
+          [class.expiring]="isExpiring"
+          [class.urgent]="isUrgent"
+          [style.width.%]="progressPercent"
+        ></div>
+      </div>
+
+      <!-- Close button -->
+      <button
+        (click)="onDismiss()"
+        class="dismiss-btn"
+        aria-label="Đóng banner"
+      >
+        &times;
+      </button>
+    </div>
+  `,
+  styles: [`
+    .trial-banner {
+      background: linear-gradient(135deg, #1976d2, #1565c0);
+      color: white;
+      padding: 16px 20px 8px 20px;
+      border-radius: 12px;
+      position: relative;
+      box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+      transition: all 0.3s ease;
+    }
+    .trial-banner.expiring {
+      background: linear-gradient(135deg, #f57c00, #e65100);
+      box-shadow: 0 4px 12px rgba(245, 124, 0, 0.3);
+    }
+    .trial-banner.urgent {
+      background: linear-gradient(135deg, #c62828, #b71c1c);
+      box-shadow: 0 4px 12px rgba(198, 40, 40, 0.3);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 4px 12px rgba(198, 40, 40, 0.3); }
+      50% { box-shadow: 0 4px 20px rgba(198, 40, 40, 0.6); }
+    }
+    .banner-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .banner-text {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .banner-icon {
+      font-size: 24px;
+    }
+    .banner-message {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .banner-message strong {
+      font-size: 15px;
+    }
+    .days-remaining {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+    .upgrade-btn {
+      padding: 8px 24px;
+      background: white;
+      color: #1976d2;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .upgrade-btn:hover {
+      background: #f5f5f5;
+      transform: translateY(-1px);
+    }
+    .upgrade-btn.urgent {
+      color: #c62828;
+    }
+    .progress-container {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: white;
+      border-radius: 2px;
+      transition: width 1s linear;
+    }
+    .progress-bar.expiring {
+      background: #ffcc80;
+    }
+    .progress-bar.urgent {
+      background: #ffcdd2;
+    }
+    .dismiss-btn {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .dismiss-btn:hover {
+      color: white;
+    }
+  `],
+})
+export class TrialBannerComponent implements OnInit, OnDestroy {
+  /** Số ngày còn lại của trial (nhận từ parent component) */
+  @Input() daysRemaining: number = 0;
+
+  /** Tên gói hiện tại đang dùng thử (nhận từ parent component) */
+  @Input() currentPlan: string = 'free';
+
+  /** Tổng số ngày trial để tính progress bar (mặc định {{ default_trial_days }} ngày) */
+  @Input() totalTrialDays: number = {{ default_trial_days }};
+
+  /** EventEmitter bắn khi người dùng click upgrade */
+  @Output() upgrade = new EventEmitter<void>();
+
+  /** EventEmitter bắn khi người dùng dismiss banner */
+  @Output() dismissed = new EventEmitter<void>();
+
+  /** Subject để cleanup subscriptions khi component bị phá hủy */
+  private destroy$ = new Subject<void>();
+
+  /** Subscription cho interval timer để tự động kiểm tra trạng thái */
+  private timerSubscription: Subscription | null = null;
+
+  /** Banner có hiển thị không — tự động ẩn khi daysRemaining = 0 */
+  isVisible: boolean = true;
+
+  /** Đã dismiss chưa */
+  private isDismissed: boolean = false;
+
+  /** Constructor — không inject gì cả vì component này hoạt động standalone */
+  constructor() {}
+
+  ngOnInit(): void {
+    // Kiểm tra ngay khi init: nếu daysRemaining = 0 thì ẩn banner
+    this.checkVisibility();
+
+    // Thiết lập interval để tự động kiểm tra visibility mỗi phút
+    // Điều này giúp banner tự động ẩn khi trial hết hạn trong khi user vẫn đang xem trang
+    this.timerSubscription = interval(60000)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.checkVisibility();
+      });
+  }
+
+  ngOnDestroy(): void {
+    // Cleanup: hủy subject và interval subscription để tránh memory leak
+    this.destroy$.next();
+    this.destroy$.complete();
+    if (this.timerSubscription) {
+      this.timerSubscription.unsubscribe();
+    }
+  }
+
+  /**
+   * Kiểm tra visibility — ẩn banner khi daysRemaining = 0 hoặc đã bị dismiss
+   * Đây là auto-hide logic theo yêu cầu
+   */
+  private checkVisibility(): void {
+    this.isVisible = this.daysRemaining > 0 && !this.isDismissed;
+  }
+
+  /**
+   * Tính phần trăm progress bar còn lại
+   * Ví dụ: 7/14 ngày = 50%
+   */
+  get progressPercent(): number {
+    if (this.totalTrialDays <= 0) return 0;
+    const percent = (this.daysRemaining / this.totalTrialDays) * 100;
+    // Làm tròn đến 1 chữ số thập phân và clamp trong khoảng [0, 100]
+    return Math.max(0, Math.min(100, Math.round(percent * 10) / 10));
+  }
+
+  /**
+   * Kiểm tra xem trial có đang cận kề hết hạn không (<= 3 ngày)
+   * Dùng để đổi màu banner thành cam
+   */
+  get isExpiring(): boolean {
+    return this.daysRemaining > 0 && this.daysRemaining <= 3;
+  }
+
+  /**
+   * Kiểm tra xem trial có đang rất nguy cấp không (<= 1 ngày)
+   * Dùng để đổi màu banner thành đỏ và thêm animation pulse
+   */
+  get isUrgent(): boolean {
+    return this.daysRemaining <= 1 && this.daysRemaining > 0;
+  }
+
+  /** Xử lý click nút upgrade — bắn sự kiện lên parent */
+  onUpgradeClick(): void {
+    this.upgrade.emit();
+  }
+
+  /** Xử lý dismiss banner — ẩn banner và bắn sự kiện lên parent */
+  onDismiss(): void {
+    this.isDismissed = true;
+    this.isVisible = false;
+    this.dismissed.emit();
+  }
+}
+{% endraw %}

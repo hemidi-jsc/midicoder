@@ -1,0 +1,310 @@
+"""
+Registration Router cho CP36: Tenant Onboarding.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp FastAPI router với endpoints:
+- POST /api/onboarding/register — Đăng ký tenant mới
+- POST /api/onboarding/verify — Xác minh tenant bằng token
+- POST /api/onboarding/approve — Phê duyệt tenant (admin)
+- GET /api/onboarding/registrations — Lấy danh sách đăng ký (admin)
+
+KPI-029: Tenant Isolation (tích hợp với CP02 Multi-Tenant)
+KPI-030: Notification Integration (tích hợp với CP12 Notification)
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.onboarding.schemas.registration_schema import (
+    ApproveTenantRequest,
+    ListRegistrationsResponse,
+    RegisterTenantRequest,
+    RegistrationResponse,
+    VerifyTenantRequest,
+)
+from app.onboarding.services.registration_service import (
+    AdminApprovalRequiredError,
+    DuplicateRegistrationError,
+    RegistrationError,
+    RegistrationNotFoundError,
+    TenantRegistrationService,
+    VerificationTokenError,
+)
+
+logger = logging.getLogger(__name__)
+
+# Tạo router
+router = APIRouter(
+    prefix="/api/onboarding",
+    tags=["tenant-onboarding", "registration"],
+    responses={
+        400: {"description": "Dữ liệu không hợp lệ"},
+        404: {"description": "Không tìm thấy"},
+        409: {"description": "Xung đột dữ liệu"},
+        500: {"description": "Lỗi server"},
+    },
+)
+
+
+def get_registration_service() -> TenantRegistrationService:
+    """Dependency injector cho TenantRegistrationService.
+
+    Trong production, dùng FastAPI Depends để inject service
+    với database session từ dependency injection container.
+
+    Returns:
+        TenantRegistrationService instance.
+
+    Raises:
+        HTTPException: Nếu không thể tạo service.
+    """
+    # TODO: Thay bằng dependency injection thực tế
+    # Ví dụ: dùng get_db() từ app/database.py
+    try:
+        from sqlalchemy.orm import Session
+        from app.database import get_db  # noqa: F401
+
+        db: Session = next(get_db())  # type: ignore
+        return TenantRegistrationService(db=db)
+    except Exception as e:
+        logger.error("Không thể tạo TenantRegistrationService: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Không thể khởi tạo dịch vụ đăng ký: {e}",
+        )
+
+
+@router.post(
+    "/register",
+    response_model=RegistrationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Đăng ký tenant mới",
+    description=(
+        "Đăng ký tenant mới với email, tên công ty, và gói subscription. "
+        "Sau khi đăng ký, tenant sẽ nhận email xác minh qua CP12 Notification. "
+        "Tenant mới được tạo qua CP02 Multi-Tenant."
+    ),
+    responses={
+        201: {
+            "description": "Đăng ký thành công, email xác minh đã được gửi",
+        },
+        409: {
+            "description": "Email đã được đăng ký trước đó",
+        },
+    },
+)
+async def register_tenant(
+    request: RegisterTenantRequest,
+    service: TenantRegistrationService = Depends(get_registration_service),
+) -> RegistrationResponse:
+    """Đăng ký tenant mới.
+
+    Args:
+        request: Dữ liệu đăng ký (email, company_name, plan, trial_days).
+        service: TenantRegistrationService từ dependency injection.
+
+    Returns:
+        RegistrationResponse với thông tin đăng ký.
+
+    Raises:
+        HTTPException 409: Nếu email đã được đăng ký.
+        HTTPException 500: Nếu có lỗi server.
+    """
+    try:
+        result = service.register_tenant(
+            email=request.email,
+            company_name=request.company_name,
+            plan=request.plan.value,
+            trial_days=request.trial_days,
+        )
+        return result
+
+    except DuplicateRegistrationError as e:
+        logger.warning("Đăng ký trùng lặp: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
+    except RegistrationError as e:
+        logger.error("Lỗi đăng ký tenant: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi đăng ký tenant: {e}",
+        )
+
+
+@router.post(
+    "/verify",
+    response_model=RegistrationResponse,
+    summary="Xác minh tenant bằng token",
+    description=(
+        "Xác minh tenant bằng token nhận được qua email. "
+        "Nếu require_admin_approval = True, tenant sẽ chuyển sang "
+        "trạng thái pending approval. Nếu False, tenant được xác minh ngay."
+    ),
+    responses={
+        200: {
+            "description": "Xác minh thành công",
+        },
+        400: {
+            "description": "Token không hợp lệ hoặc hết hạn",
+        },
+    },
+)
+async def verify_tenant(
+    request: VerifyTenantRequest,
+    service: TenantRegistrationService = Depends(get_registration_service),
+) -> RegistrationResponse:
+    """Xác minh tenant bằng token.
+
+    Args:
+        request: Dữ liệu xác minh (token).
+        service: TenantRegistrationService từ dependency injection.
+
+    Returns:
+        RegistrationResponse sau khi xác minh.
+
+    Raises:
+        HTTPException 400: Nếu token không hợp lệ hoặc hết hạn.
+        HTTPException 500: Nếu có lỗi server.
+    """
+    try:
+        result = service.verify_tenant(token=request.token)
+        return result
+
+    except VerificationTokenError as e:
+        logger.warning("Lỗi xác minh token: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except RegistrationError as e:
+        logger.error("Lỗi xác minh tenant: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi xác minh tenant: {e}",
+        )
+
+
+@router.post(
+    "/approve",
+    response_model=RegistrationResponse,
+    summary="Phê duyệt tenant (admin)",
+    description=(
+        "Admin phê duyệt tenant registration. Chỉ dùng khi "
+        "require_admin_approval = True. Sau khi phê duyệt, "
+        "tenant được kích hoạt hoàn toàn."
+    ),
+    responses={
+        200: {
+            "description": "Phê duyệt thành công",
+        },
+        404: {
+            "description": "Không tìm thấy bản ghi đăng ký",
+        },
+        400: {
+            "description": "Đăng ký đã được xử lý",
+        },
+    },
+)
+async def approve_tenant(
+    registration_id: UUID,
+    request: ApproveTenantRequest,
+    service: TenantRegistrationService = Depends(get_registration_service),
+) -> RegistrationResponse:
+    """Admin phê duyệt tenant registration.
+
+    Args:
+        registration_id: ID của bản ghi đăng ký.
+        request: Dữ liệu phê duyệt (approved_by, notes).
+        service: TenantRegistrationService từ dependency injection.
+
+    Returns:
+        RegistrationResponse sau khi phê duyệt.
+
+    Raises:
+        HTTPException 404: Nếu không tìm thấy registration.
+        HTTPException 400: Nếu registration đã được xử lý.
+        HTTPException 500: Nếu có lỗi server.
+    """
+    try:
+        result = service.approve_tenant(
+            registration_id=registration_id,
+            approved_by=request.approved_by,
+            notes=request.notes,
+        )
+        return result
+
+    except RegistrationNotFoundError as e:
+        logger.warning("Không tìm thấy registration: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except RegistrationError as e:
+        logger.error("Lỗi phê duyệt tenant: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.get(
+    "/registrations",
+    response_model=ListRegistrationsResponse,
+    summary="Lấy danh sách đăng ký (admin)",
+    description=(
+        "Lấy danh sách tất cả tenant registrations với phân trang. "
+        "Hỗ trợ lọc theo trạng thái."
+    ),
+    responses={
+        200: {
+            "description": "Danh sách đăng ký",
+        },
+    },
+)
+async def list_registrations(
+    status_filter: Optional[str] = Query(
+        default=None,
+        alias="status",
+        description="Lọc theo trạng thái (pending/verified/rejected/cancelled)",
+    ),
+    page: int = Query(default=1, ge=1, description="Số trang"),
+    page_size: int = Query(default=20, ge=1, le=100, description="Số lượng mỗi trang"),
+    service: TenantRegistrationService = Depends(get_registration_service),
+) -> ListRegistrationsResponse:
+    """Lấy danh sách registrations (admin).
+
+    Args:
+        status_filter: Lọc theo trạng thái (tùy chọn).
+        page: Số trang.
+        page_size: Số lượng mỗi trang.
+        service: TenantRegistrationService từ dependency injection.
+
+    Returns:
+        ListRegistrationsResponse với phân trang.
+
+    Raises:
+        HTTPException 400: Nếu trạng thái không hợp lệ.
+        HTTPException 500: Nếu có lỗi server.
+    """
+    try:
+        result = service.list_registrations(
+            status=status_filter,
+            page=page,
+            page_size=page_size,
+        )
+        return ListRegistrationsResponse(**result)
+
+    except RegistrationError as e:
+        logger.error("Lỗi lấy danh sách đăng ký: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )

@@ -1,0 +1,439 @@
+{% raw %}/**
+* Banner thong bao thoi gian trial — TrialBanner.
+*
+* Component nay hien thi banner dem nguoc thoi gian trial:
+* - Hien thi so ngay con lai va countdown timer
+* - Progress bar dong theo ty le thoi gian con lai
+* - CTA: "Upgrade de tranh bi downgrade" hoac "Kich hoat subscription"
+* - Tu dong an khi trial het han
+* - Animation khi tien trinh thay doi
+*
+* Tu dong sinh boi Midicoder — khong sua thu cong.
+*/
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+
+// ===========================================================================
+// TypeScript Types
+// ===========================================================================
+
+/**
+* Props cua TrialBanner.
+*/
+interface TrialBannerProps {
+/** So ngay trial con lai. */
+daysRemaining: number;
+/** Goi subscription hien tai. */
+currentPlan: string;
+/** Tong so ngay trial ban dau. */
+totalTrialDays?: number;
+/** API base URL (mac dinh: '/api'). */
+apiBaseUrl?: string;
+/** Callback khi nguoi dung click "Upgrade". */
+onUpgrade?: () => void;
+/** Callback khi nguoi dung dismiss banner. */
+onDismiss?: () => void;
+/** Callback khi trial het han. */
+onTrialExpired?: () => void;
+/** Thoi gian (ngay) de auto-hide banner khi con it ngay (mac dinh: 0 = khong auto-hide). */
+autoHideDays?: number;
+}
+
+/**
+* Trang thai hien thi cua banner.
+*/
+type BannerVisibility = 'visible' | 'hiding' | 'hidden';
+
+/**
+* Du lieu countdown (ngay, gio, phut, giay).
+*/
+interface CountdownData {
+days: number;
+hours: number;
+minutes: number;
+seconds: number;
+}
+
+/**
+* Cau hinh plan tu server (dung de hien thi plan label).
+*/
+interface PlanConfig {
+plan: string;
+label: string;
+}
+
+// ===========================================================================
+// Du lieu plan tu backend (do Jinja2 render)
+// ===========================================================================
+{% endraw %}
+
+const PLANS: PlanConfig[] = [
+{% for plan in plans %}
+{
+plan: '{{ plan.plan }}',
+label: '{{ plan.label }}',
+},
+{% endfor %}
+];
+
+const DEFAULT_TOTAL_TRIAL_DAYS: number = {{ default_trial_days }};
+
+{% raw %}
+
+// ===========================================================================
+// Helper Functions
+// ===========================================================================
+
+/**
+* Tinh ty le phan tram thoi gian trial con lai.
+*/
+function getTrialProgressRatio(daysRemaining: number, totalDays: number): number {
+if (totalDays <= 0) { return 0; } return Math.max(0, Math.min(1, daysRemaining / totalDays)); } /** * Tinh mau progress
+    bar theo ty le con lai. */ function getProgressColor(ratio: number): string { if (ratio> 0.5) {
+    return '#4caf50'; /* Con nhieu: xanh la */
+    }
+    if (ratio > 0.25) {
+    return '#ff9800'; /* Con trung binh: cam */
+    }
+    return '#f44336'; /* Con it: do */
+    }
+
+    /**
+    * Tinh countdown tu so giay con lai.
+    */
+    function calculateCountdown(totalSeconds: number): CountdownData {
+    if (totalSeconds <= 0) { return { days: 0, hours: 0, minutes: 0, seconds: 0 }; } const days=Math.floor(totalSeconds
+        / 86400); const hours=Math.floor((totalSeconds % 86400) / 3600); const minutes=Math.floor((totalSeconds % 3600)
+        / 60); const seconds=totalSeconds % 60; return { days, hours, minutes, seconds }; } /** * Lay label hien thi cua
+        plan. */ function getPlanLabel(planKey: string): string { const plan=PLANS.find((p)=> p.plan === planKey);
+        return plan ? plan.label : planKey;
+        }
+
+        // ===========================================================================
+        // CountdownTimer Component
+        // ===========================================================================
+
+        /**
+        * Props cua CountdownTimer.
+        */
+        interface CountdownTimerProps {
+        countdown: CountdownData;
+        }
+
+        /**
+        * Hien thi countdown timer dang DD:HH:MM:SS.
+        */
+        const CountdownTimer: React.FC<CountdownTimerProps> = React.memo(({ countdown }) => {
+            const timeUnits = [
+            { label: 'ngay', value: countdown.days },
+            { label: 'gio', value: countdown.hours },
+            { label: 'phut', value: countdown.minutes },
+            { label: 'giay', value: countdown.seconds },
+            ];
+
+            return (
+            <div className="countdown-timer" data-testid="countdown-timer" style={{ display: 'flex' , gap: '8px' ,
+                alignItems: 'center' , }}>
+                {timeUnits.map((unit) => (
+                <div key={unit.label} style={{ textAlign: 'center' , minWidth: '50px' , }}>
+                    <div style={{ fontSize: '24px' , fontWeight: 'bold' , fontVariantNumeric: 'tabular-nums' ,
+                        lineHeight: '1' , }}>
+                        {String(unit.value).padStart(2, '0')}
+                    </div>
+                    <div style={{ fontSize: '10px' , color: '#999' , textTransform: 'uppercase' }}>
+                        {unit.label}
+                    </div>
+                </div>
+                ))}
+            </div>
+            );
+            });
+
+            // ===========================================================================
+            // ProgressBar Component
+            // ===========================================================================
+
+            /**
+            * Props cua ProgressBar.
+            */
+            interface ProgressBarProps {
+            ratio: number;
+            color: string;
+            }
+
+            /**
+            * Hien thi progress bar dong voi animation.
+            */
+            const ProgressBar: React.FC<ProgressBarProps> = React.memo(({ ratio, color }) => {
+                return (
+                <div className="progress-bar-container" data-testid="progress-bar" style={{ width: '100%' ,
+                    height: '6px' , backgroundColor: 'rgba(255, 255, 255, 0.3)' , borderRadius: '3px' ,
+                    overflow: 'hidden' , }}>
+                    <div className="progress-bar-fill" style={{ width: `${ratio * 100}%`, height: '100%' ,
+                        backgroundColor: color, borderRadius: '3px' ,
+                        transition: 'width 1s linear, background-color 0.5s ease' , }} />
+                </div>
+                );
+                });
+
+                // ===========================================================================
+                // TrialBanner Component chinh
+                // ===========================================================================
+
+                /**
+                * TrialBanner — Banner thong bao thoi gian trial.
+                *
+                * Hien thi banner voi:
+                * - Countdown timer dem nguoc
+                * - Progress bar dong
+                * - CTA nut upgrade
+                * - Tu dong an khi het han
+                */
+                const TrialBanner: React.FC<TrialBannerProps> = ({
+                    daysRemaining,
+                    currentPlan,
+                    totalTrialDays = DEFAULT_TOTAL_TRIAL_DAYS,
+                    apiBaseUrl = '/api',
+                    onUpgrade,
+                    onDismiss,
+                    onTrialExpired,
+                    autoHideDays = 0,
+                    }) => {
+                    // -- State --
+                    const [visibility, setVisibility] = useState<BannerVisibility>('visible');
+                        const [countdown, setCountdown] = useState<CountdownData>(
+                            calculateCountdown(daysRemaining * 86400)
+                            );
+                            const [isMounted, setIsMounted] = useState<boolean>(false);
+
+                                // -- Computed values --
+                                const progressRatio: number = useMemo(
+                                () => getTrialProgressRatio(daysRemaining, totalTrialDays),
+                                [daysRemaining, totalTrialDays]
+                                );
+
+                                const progressColor: string = useMemo(
+                                () => getProgressColor(progressRatio),
+                                [progressRatio]
+                                );
+
+                                const isExpired: boolean = daysRemaining <= 0; const isLow: boolean=daysRemaining> 0 &&
+                                    daysRemaining <= 3; // -- Effects -- /* Set mounted state de fix hydration mismatch
+                                        */ useEffect(()=> {
+                                        setIsMounted(true);
+                                        }, []);
+
+                                        /* Auto-hide khi con qua it ngay */
+                                        useEffect(() => {
+                                        if (autoHideDays > 0 && daysRemaining <= autoHideDays) {
+                                            setVisibility('hiding'); const timer=setTimeout(()=> {
+                                            setVisibility('hidden');
+                                            }, 500);
+                                            return () => clearTimeout(timer);
+                                            }
+                                            }, [daysRemaining, autoHideDays]);
+
+                                            /* Call onTrialExpired khi het han */
+                                            useEffect(() => {
+                                            if (isExpired && isMounted) {
+                                            onTrialExpired?.();
+                                            }
+                                            }, [isExpired, isMounted, onTrialExpired]);
+
+                                            /* Countdown timer — cap nhat moi giay */
+                                            useEffect(() => {
+                                            if (isExpired) {
+                                            return;
+                                            }
+
+                                            const interval = setInterval(() => {
+                                            setCountdown((prev) => {
+                                            const nextSeconds =
+                                            prev.days * 86400 + prev.hours * 3600 + prev.minutes * 60 + prev.seconds -
+                                            1;
+                                            if (nextSeconds <= 0) { clearInterval(interval); return { days: 0, hours: 0,
+                                                minutes: 0, seconds: 0 }; } return calculateCountdown(nextSeconds); });
+                                                }, 1000); return ()=> clearInterval(interval);
+                                                }, [isExpired]);
+
+                                                /* Re-sync countdown khi daysRemaining thay doi */
+                                                useEffect(() => {
+                                                setCountdown(calculateCountdown(daysRemaining * 86400));
+                                                }, [daysRemaining]);
+
+                                                // -- Handlers --
+
+                                                /**
+                                                * Xu ly dismiss banner.
+                                                */
+                                                const handleDismiss = useCallback(() => {
+                                                setVisibility('hiding');
+                                                const timer = setTimeout(() => {
+                                                setVisibility('hidden');
+                                                onDismiss?.();
+                                                }, 300);
+                                                return () => clearTimeout(timer);
+                                                }, [onDismiss]);
+
+                                                /**
+                                                * Xu ly click nut Upgrade.
+                                                */
+                                                const handleUpgradeClick = useCallback(() => {
+                                                if (onUpgrade) {
+                                                onUpgrade();
+                                                } else {
+                                                /* Mo tab/cua so moi den trang subscription */
+                                                window.open(`${apiBaseUrl}/onboarding/subscription`, '_blank');
+                                                }
+                                                }, [onUpgrade, apiBaseUrl]);
+
+                                                /**
+                                                * Xu ly re-show banner (neu da hide).
+                                                */
+                                                const handleShowAgain = useCallback(() => {
+                                                setVisibility('visible');
+                                                }, []);
+
+                                                // -- Xac dinh noi dung hien thi --
+
+                                                const getMessage = (): string => {
+                                                if (isExpired) {
+                                                return 'Thoi gian dung thu da het han.';
+                                                }
+                                                if (isLow) {
+                                                return `Con ${daysRemaining} ngay nua het thoi gian dung thu!`;
+                                                }
+                                                return `Ban dang trong thoi gian dung thu — con ${daysRemaining} ngay.`;
+                                                };
+
+                                                const getCTAText = (): string => {
+                                                if (isExpired) {
+                                                return 'Kich hoat Subscription';
+                                                }
+                                                return 'Upgrade de khong bi giam cap';
+                                                };
+
+                                                const getBannerBackground = (): string => {
+                                                if (isExpired) {
+                                                return '#c62828'; /* Het han: do */
+                                                }
+                                                if (isLow) {
+                                                return '#ef6c00'; /* Con it: cam do */
+                                                }
+                                                return '#1565c0'; /* Con nhieu: xanh duong */
+                                                };
+
+                                                // -- Render --
+
+                                                /* Neu da hidden, hien re-show button */
+                                                if (visibility === 'hidden') {
+                                                return (
+                                                <div style={{ textAlign: 'center' , padding: '8px' ,
+                                                    backgroundColor: '#f5f5f5' , fontSize: '12px' , }}>
+                                                    <button onClick={handleShowAgain} style={{ background: 'none' ,
+                                                        border: 'none' , color: '#1976d2' , cursor: 'pointer' ,
+                                                        fontSize: '12px' , textDecoration: 'underline' , }}>
+                                                        Xem thong bao trial
+                                                    </button>
+                                                </div>
+                                                );
+                                                }
+
+                                                return (
+                                                <div className="trial-banner" data-testid="trial-banner" role="banner"
+                                                    aria-label="Thong bao thoi gian trial" style={{ backgroundColor:
+                                                    getBannerBackground(), color: '#ffffff' , padding: '16px 24px' ,
+                                                    borderRadius: '8px' , marginBottom: '16px' , opacity:
+                                                    visibility==='hiding' ? 0 : 1, maxHeight: visibility==='hiding' ? 0
+                                                    : 'none' , overflow: 'hidden' ,
+                                                    transition: 'opacity 0.3s ease, max-height 0.3s ease, padding 0.3s ease'
+                                                    , }}>
+                                                    {/* Hang 1: Thong bao + Countdown */}
+                                                    <div style={{ display: 'flex' , justifyContent: 'space-between' ,
+                                                        alignItems: 'center' , flexWrap: 'wrap' , gap: '16px' , }}>
+                                                        {/* Thong bao */}
+                                                        <div style={{ flex: 1, minWidth: '200px' }}>
+                                                            <div style={{ display: 'flex' , alignItems: 'center' ,
+                                                                gap: '8px' , marginBottom: '4px' }}>
+                                                                {isLow && !isExpired && (
+                                                                <span style={{ fontSize: '18px' , fontWeight: 'bold'
+                                                                    }}>!</span>
+                                                                )}
+                                                                <strong style={{ fontSize: '16px' }}>
+                                                                    {getMessage()}
+                                                                </strong>
+                                                            </div>
+
+                                                            {/* Plan hien tai */}
+                                                            <div style={{ fontSize: '13px' , opacity: 0.9 }}>
+                                                                Goi hien tai: {getPlanLabel(currentPlan)}
+                                                                {totalTrialDays > 0 && (
+                                                                <span> | Dung thu {totalTrialDays} ngay</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Countdown */}
+                                                        {!isExpired && isMounted && (
+                                                        <CountdownTimer countdown={countdown} />
+                                                        )}
+                                                    </div>
+
+                                                    {/* Progress bar */}
+                                                    <div style={{ marginTop: '12px' }}>
+                                                        <ProgressBar ratio={progressRatio} color={progressColor} />
+                                                        <div style={{ fontSize: '11px' , opacity: 0.7, marginTop: '4px'
+                                                            , textAlign: 'right' }}>
+                                                            {Math.round(progressRatio * 100)}% thoi gian da su dung
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Hang 3: CTA + Dismiss */}
+                                                    <div style={{ display: 'flex' , justifyContent: 'space-between' ,
+                                                        alignItems: 'center' , marginTop: '12px' , paddingTop: '12px' ,
+                                                        borderTop: '1px solid rgba(255, 255, 255, 0.2)' , }}>
+                                                        {/* Nut CTA chinh */}
+                                                        <button onClick={handleUpgradeClick}
+                                                            data-testid="trial-upgrade-cta" style={{
+                                                            padding: '10px 24px' , backgroundColor: '#ffffff' , color:
+                                                            getBannerBackground(), border: 'none' , borderRadius: '4px'
+                                                            , fontSize: '14px' , fontWeight: 'bold' , cursor: 'pointer'
+                                                            , transition: 'transform 0.2s, box-shadow 0.2s' , }}
+                                                            onMouseEnter={(e)=> {
+                                                            (e.currentTarget as HTMLButtonElement).style.transform =
+                                                            'translateY(-1px)';
+                                                            (e.currentTarget as HTMLButtonElement).style.boxShadow = '0
+                                                            4px 8px rgba(0,0,0,0.2)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                            (e.currentTarget as HTMLButtonElement).style.transform =
+                                                            'translateY(0)';
+                                                            (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                                                            'none';
+                                                            }}
+                                                            >
+                                                            {getCTAText()}
+                                                        </button>
+
+                                                        {/* Nut dismiss */}
+                                                        <button onClick={handleDismiss} data-testid="trial-dismiss"
+                                                            aria-label="An thong bao" style={{ background: 'none' ,
+                                                            border: 'none' , color: '#ffffff' , fontSize: '18px' ,
+                                                            cursor: 'pointer' , opacity: 0.7, padding: '4px 8px' , }}
+                                                            onMouseEnter={(e)=> {
+                                                            (e.currentTarget as HTMLButtonElement).style.opacity = '1';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                            (e.currentTarget as HTMLButtonElement).style.opacity =
+                                                            '0.7';
+                                                            }}
+                                                            >
+                                                            x
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                );
+                                                };
+
+                                                export default TrialBanner;
+                                                {% endraw %}

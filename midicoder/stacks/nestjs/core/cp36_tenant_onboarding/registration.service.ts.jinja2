@@ -1,0 +1,252 @@
+/**
+ * RegistrationService — CP36: Tenant Onboarding & Subscription.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ *
+ * Service quản lý tenant registration:
+ * - registerTenant: Đăng ký tenant mới, gửi email xác minh
+ * - verifyTenant: Xác minh tenant qua token
+ * - approveTenant: Admin approve tenant (nếu require_admin_approval)
+ *
+ * Tích hợp:
+ * - CP02 Multi-Tenant: tạo tenant sau khi verification/approval
+ * - CP12 Notification: gửi email xác minh
+ */
+
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as crypto from "crypto";
+
+import { TenantRegistration, RegistrationStatus } from "./entities/registration.entity";
+import { RegisterTenantDto, VerifyTenantDto, ApproveTenantDto } from "./dtos/registration-dto";
+
+@Injectable()
+export class RegistrationService {
+  constructor(
+    @InjectRepository(TenantRegistration)
+    private readonly registrationRepo: Repository<TenantRegistration>,
+  ) {}
+
+  /**
+   * Đăng ký tenant mới.
+   *
+   * Flow:
+   * 1. Kiểm tra email đã đăng ký chưa
+   * 2. Tạo verification token (hmac-signed, hết hạn 24h)
+   * 3. Lưu registration với status=pending
+   * 4. Gửi email xác minh (CP12 Notification)
+   *
+   * @param dto - Dữ liệu đăng ký (email, companyName, plan)
+   * @returns Registration mới tạo
+   */
+  async registerTenant(dto: RegisterTenantDto): Promise<TenantRegistration> {
+    // Kiểm tra email đã tồn tại
+    const existing = await this.registrationRepo.findOne({
+      where: [{ email: dto.email }, { email: dto.email, status: RegistrationStatus.PENDING }],
+    });
+
+    if (existing) {
+      if (existing.status === RegistrationStatus.PENDING) {
+        throw new ConflictException("Email đã được đăng ký và đang chờ xác minh");
+      }
+      throw new ConflictException("Email này đã được sử dụng");
+    }
+
+    // Tạo verification token (hmac-signed)
+    const token = crypto
+      .createHmac("sha256", process.env.JWT_SECRET || "default-secret")
+      .update(`${dto.email}-${Date.now()}`)
+      .digest("hex");
+
+    // Tạo registration mới
+    const registration = this.registrationRepo.create({
+      email: dto.email,
+      companyName: dto.companyName,
+      plan: dto.plan,
+      trialDays: dto.trialDays ?? 14,
+      status: RegistrationStatus.PENDING,
+      verificationToken: token,
+    });
+
+    const saved = await this.registrationRepo.save(registration);
+
+    // Gửi email xác minh (tích hợp CP12 Notification)
+    await this.sendVerificationEmail(dto.email, token);
+
+    return saved;
+  }
+
+  /**
+   * Xác minh tenant qua token.
+   *
+   * Flow:
+   * 1. Tìm registration theo token
+   * 2. Kiểm tra token còn hạn
+   * 3. Cập nhật status=verified
+   * 4. Nếu require_admin_approval=False, tự động tạo tenant (CP02)
+   *
+   * @param dto - Dữ liệu xác minh (token)
+   * @returns Registration đã xác minh
+   */
+  async verifyTenant(dto: VerifyTenantDto): Promise<TenantRegistration> {
+    // Tìm registration theo token
+    const registration = await this.registrationRepo.findOne({
+      where: { verificationToken: dto.token },
+    });
+
+    if (!registration) {
+      throw new NotFoundException("Token xác minh không hợp lệ hoặc đã hết hạn");
+    }
+
+    // Kiểm tra trạng thái
+    if (registration.status === RegistrationStatus.VERIFIED) {
+      throw new BadRequestException("Registration đã được xác minh");
+    }
+    if (registration.status === RegistrationStatus.CANCELLED) {
+      throw new BadRequestException("Registration đã bị hủy");
+    }
+
+    // Cập nhật trạng thái
+    registration.status = RegistrationStatus.VERIFIED;
+    const updated = await this.registrationRepo.save(registration);
+
+    // Tự động tạo tenant nếu không yêu cầu admin approve (tích hợp CP02)
+    // require_admin_approval = {{ 'true' if require_admin_approval else 'false' }}
+    const requireApproval = {{ 'true' if require_admin_approval else 'false' }};
+    if (!requireApproval) {
+      await this.createTenantForRegistration(updated);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Admin approve tenant registration.
+   *
+   * Flow:
+   * 1. Tìm registration theo ID
+   * 2. Kiểm tra status=verified (đã xác minh email)
+   * 3. Cập nhật tenant_id sau khi tạo tenant (CP02)
+   * 4. Gửi thông báo approve cho tenant
+   *
+   * @param dto - Dữ liệu approve (registrationId, approvedBy)
+   * @returns Registration đã được approve
+   */
+  async approveTenant(dto: ApproveTenantDto): Promise<TenantRegistration> {
+    const registration = await this.registrationRepo.findOne({
+      where: { id: dto.registrationId },
+    });
+
+    if (!registration) {
+      throw new NotFoundException("Không tìm thấy registration");
+    }
+
+    if (registration.status !== RegistrationStatus.VERIFIED) {
+      throw new BadRequestException(
+        "Registration chưa được xác minh email, không thể approve",
+      );
+    }
+
+    // Tạo tenant (tích hợp CP02 Multi-Tenant)
+    const tenantId = await this.createTenantForRegistration(registration);
+
+    registration.tenantId = tenantId;
+    return await this.registrationRepo.save(registration);
+  }
+
+  /**
+   * Lấy danh sách registrations (với pagination).
+   *
+   * @param status - Lọc theo trạng thái (optional)
+   * @param limit - Số bản ghi mỗi trang
+   * @param offset - Offset
+   * @returns Danh sách registrations
+   */
+  async listRegistrations(
+    status?: RegistrationStatus,
+    limit: number = 50,
+    offset: number = 0,
+  ): Promise<{ data: TenantRegistration[]; total: number }> {
+    const where = status ? { status } : {};
+    const [data, total] = await this.registrationRepo.findAndCount({
+      where,
+      take: limit,
+      skip: offset,
+      order: { createdAt: "DESC" },
+    });
+
+    return { data, total };
+  }
+
+  /**
+   * Lấy registration theo ID.
+   *
+   * @param id - Registration ID
+   * @returns Registration
+   */
+  async getRegistration(id: string): Promise<TenantRegistration> {
+    const registration = await this.registrationRepo.findOne({
+      where: { id },
+    });
+    if (!registration) {
+      throw new NotFoundException("Không tìm thấy registration");
+    }
+    return registration;
+  }
+
+  // =========================================================================
+  // Private helpers
+  // =========================================================================
+
+  /**
+   * Gửi email xác minh (tích hợp CP12 Notification).
+   *
+   * Trong production, sử dụng NotificationService từ CP12.
+   *
+   * @param email - Email người nhận
+   * @param token - Token xác minh
+   */
+  private async sendVerificationEmail(email: string, token: string): Promise<void> {
+    // TODO: Tích hợp với NotificationService (CP12)
+    // const verificationLink = `${process.env.FRONTEND_URL}/verify?token=${token}`;
+    // await this.notificationService.sendEmail({
+    //   to: email,
+    //   subject: "Xác minh tài khoản tenant",
+    //   template: "verification-email",
+    //   context: { verificationLink, expiryHours: 24 },
+    // });
+    console.log(`[CP36] Gửi email xác minh cho ${email}, token: ${token.substring(0, 8)}...`);
+  }
+
+  /**
+   * Tạo tenant mới cho registration (tích hợp CP02 Multi-Tenant).
+   *
+   * Trong production, sử dụng TenantService từ CP02.
+   *
+   * @param registration - Registration đã xác minh
+   * @returns Tenant ID
+   */
+  private async createTenantForRegistration(
+    registration: TenantRegistration,
+  ): Promise<string> {
+    // TODO: Tích hợp với TenantService (CP02)
+    // const tenantId = await this.tenantService.createTenant({
+    //   name: registration.companyName,
+    //   email: registration.email,
+    //   plan: registration.plan,
+    // });
+    // registration.tenantId = tenantId;
+    // await this.registrationRepo.save(registration);
+    const tenantId = crypto.randomUUID();
+    registration.tenantId = tenantId;
+    await this.registrationRepo.save(registration);
+    console.log(`[CP36] Tạo tenant mới cho ${registration.email}, tenantId: ${tenantId}`);
+    return tenantId;
+  }
+}

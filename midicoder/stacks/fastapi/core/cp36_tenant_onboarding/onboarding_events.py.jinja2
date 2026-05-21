@@ -1,0 +1,286 @@
+"""
+Onboarding Events cho CP36: Tenant Onboarding.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp các event classes cho event-driven architecture:
+- TenantRegisteredEvent: Tenant mới được đăng ký
+- TenantVerifiedEvent: Tenant đã xác minh email
+- TrialStartedEvent: Trial subscription bắt đầu
+- SubscriptionActivatedEvent: Subscription trả phí được kích hoạt
+- SubscriptionUpdatedEvent: Subscription được cập nhật (upgrade/downgrade)
+- SubscriptionCancelledEvent: Subscription bị hủy
+
+Tích hợp với CP05 EventBus để publish/subscribe events.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+
+@dataclass
+class TenantRegisteredEvent:
+    """Event: Tenant mới được đăng ký.
+
+    Phát ra khi tenant hoàn tất quá trình đăng ký, trước khi xác minh email.
+    Tenant đã được tạo (CP02) nhưng đang chờ xác minh.
+
+    Thuộc tính:
+        registration_id: ID của bản ghi đăng ký
+        tenant_id: ID của tenant đã tạo (CP02)
+        email: Email đăng ký
+        company_name: Tên công ty
+        plan: Gói subscription yêu cầu
+        status: Trạng thái đăng ký hiện tại
+        timestamp: Thời điểm phát event
+        metadata: Metadata bổ sung
+    """
+    registration_id: str = ""
+    tenant_id: str = ""
+    email: str = ""
+    company_name: str = ""
+    plan: str = ""
+    status: str = "pending"
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển event sang dictionary để publish qua EventBus.
+
+        Returns:
+            Dictionary chứa toàn bộ thông tin event.
+        """
+        return {
+            "event_name": "tenant.registered",
+            "registration_id": self.registration_id,
+            "tenant_id": self.tenant_id,
+            "email": self.email,
+            "company_name": self.company_name,
+            "plan": self.plan,
+            "status": self.status,
+            "timestamp": self.timestamp,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class TenantVerifiedEvent:
+    """Event: Tenant đã xác minh email.
+
+    Phát ra khi tenant xác minh email thành công thông qua token.
+    Nếu require_admin_approval = True, event phát ra nhưng tenant
+    vẫn chờ admin phê duyệt (approved = False).
+
+    Thuộc tính:
+        registration_id: ID của bản ghi đăng ký
+        tenant_id: ID của tenant
+        email: Email đã xác minh
+        approved: Có được phê duyệt hoàn toàn không
+        timestamp: Thời điểm phát event
+        metadata: Metadata bổ sung
+    """
+    registration_id: str = ""
+    tenant_id: str = ""
+    email: str = ""
+    approved: bool = False
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển event sang dictionary để publish qua EventBus.
+
+        Returns:
+            Dictionary chứa toàn bộ thông tin event.
+        """
+        return {
+            "event_name": "tenant.verified",
+            "registration_id": self.registration_id,
+            "tenant_id": self.tenant_id,
+            "email": self.email,
+            "approved": self.approved,
+            "timestamp": self.timestamp,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class TrialStartedEvent:
+    """Event: Trial subscription bắt đầu.
+
+    Phát ra khi tenant bắt đầu thời gian dùng thử.
+    Subscription mới được tạo với trạng thái TRIAL.
+
+    Thuộc tính:
+        subscription_id: ID của subscription trial
+        tenant_id: ID của tenant
+        plan: Gói subscription trong trial
+        trial_days: Số ngày trial
+        end_date: Ngày kết thúc trial
+        timestamp: Thời điểm phát event
+        metadata: Metadata bổ sung
+    """
+    subscription_id: str = ""
+    tenant_id: str = ""
+    plan: str = ""
+    trial_days: int = 0
+    end_date: Optional[str] = None
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển event sang dictionary để publish qua EventBus.
+
+        Returns:
+            Dictionary chứa toàn bộ thông tin event.
+        """
+        return {
+            "event_name": "trial.started",
+            "subscription_id": self.subscription_id,
+            "tenant_id": self.tenant_id,
+            "plan": self.plan,
+            "trial_days": self.trial_days,
+            "end_date": self.end_date,
+            "timestamp": self.timestamp,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class SubscriptionActivatedEvent:
+    """Event: Subscription trả phí được kích hoạt.
+
+    Phát ra khi tenant chuyển từ trial sang subscription trả phí,
+    hoặc khi tạo mới subscription trả phí.
+
+    Thuộc tính:
+        subscription_id: ID của subscription
+        tenant_id: ID của tenant
+        plan: Gói subscription
+        billing_cycle: Chu kỳ thanh toán
+        price: Giá subscription
+        currency: Mã tiền tệ
+        timestamp: Thời điểm phát event
+        metadata: Metadata bổ sung
+    """
+    subscription_id: str = ""
+    tenant_id: str = ""
+    plan: str = ""
+    billing_cycle: str = ""
+    price: str = "0"
+    currency: str = "USD"
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển event sang dictionary để publish qua EventBus.
+
+        Returns:
+            Dictionary chứa toàn bộ thông tin event.
+        """
+        return {
+            "event_name": "subscription.activated",
+            "subscription_id": self.subscription_id,
+            "tenant_id": self.tenant_id,
+            "plan": self.plan,
+            "billing_cycle": self.billing_cycle,
+            "price": self.price,
+            "currency": self.currency,
+            "timestamp": self.timestamp,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class SubscriptionUpdatedEvent:
+    """Event: Subscription được cập nhật (upgrade/downgrade).
+
+    Phát ra khi tenant thay đổi plan hoặc billing cycle.
+    Chứa thông tin về plan cũ và plan mới.
+
+    Thuộc tính:
+        subscription_id: ID của subscription
+        tenant_id: ID của tenant
+        old_plan: Gói subscription cũ
+        new_plan: Gói subscription mới
+        old_cycle: Chu kỳ thanh toán cũ
+        new_cycle: Chu kỳ thanh toán mới
+        timestamp: Thời điểm phát event
+        metadata: Metadata bổ sung
+    """
+    subscription_id: str = ""
+    tenant_id: str = ""
+    old_plan: str = ""
+    new_plan: str = ""
+    old_cycle: str = ""
+    new_cycle: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển event sang dictionary để publish qua EventBus.
+
+        Returns:
+            Dictionary chứa toàn bộ thông tin event.
+        """
+        return {
+            "event_name": "subscription.updated",
+            "subscription_id": self.subscription_id,
+            "tenant_id": self.tenant_id,
+            "old_plan": self.old_plan,
+            "new_plan": self.new_plan,
+            "old_cycle": self.old_cycle,
+            "new_cycle": self.new_cycle,
+            "timestamp": self.timestamp,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class SubscriptionCancelledEvent:
+    """Event: Subscription bị hủy.
+
+    Phát ra khi tenant hủy subscription. Chứa lý do hủy
+    và thông tin về trạng thái trước/sau khi hủy.
+
+    Thuộc tính:
+        subscription_id: ID của subscription
+        tenant_id: ID của tenant
+        reason: Lý do hủy subscription
+        previous_status: Trạng thái trước khi hủy
+        new_status: Trạng thái sau khi hủy
+        cancel_at_period_end: Có hủy ở cuối kỳ không
+        cancelled_at: Thời điểm hủy
+        timestamp: Thời điểm phát event
+        metadata: Metadata bổ sung
+    """
+    subscription_id: str = ""
+    tenant_id: str = ""
+    reason: str = ""
+    previous_status: str = ""
+    new_status: str = "cancelled"
+    cancel_at_period_end: bool = False
+    cancelled_at: Optional[str] = None
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển event sang dictionary để publish qua EventBus.
+
+        Returns:
+            Dictionary chứa toàn bộ thông tin event.
+        """
+        return {
+            "event_name": "subscription.cancelled",
+            "subscription_id": self.subscription_id,
+            "tenant_id": self.tenant_id,
+            "reason": self.reason,
+            "previous_status": self.previous_status,
+            "new_status": self.new_status,
+            "cancel_at_period_end": self.cancel_at_period_end,
+            "cancelled_at": self.cancelled_at,
+            "timestamp": self.timestamp,
+            "metadata": self.metadata,
+        }

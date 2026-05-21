@@ -1,0 +1,185 @@
+"""
+Mô-đun Registration Model cho CP36: Tenant Onboarding.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp:
+- SQLAlchemy ORM model cho bảng tenant_registrations
+- RegistrationStatus enum cho trạng thái đăng ký
+- SubscriptionPlan enum cho các gói subscription
+
+KPI-029: Tenant Isolation — mỗi registration liên kết với tenant_id
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, Optional
+from uuid import UUID, uuid4
+
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import relationship
+
+
+class SubscriptionPlan(str, Enum):
+    """Enum các bậc gói subscription.
+
+    - FREE: Gói miễn phí, hạn chế tính năng
+    - STARTER: Gói cơ bản, phù hợp startup
+    - PROFESSIONAL: Gói chuyên nghiệp, đầy đủ tính năng
+    - ENTERPRISE: Gói doanh nghiệp, custom pricing
+    """
+    FREE = "free"
+    STARTER = "starter"
+    PROFESSIONAL = "professional"
+    ENTERPRISE = "enterprise"
+
+
+class RegistrationStatus(str, Enum):
+    """Trạng thái của tenant registration.
+
+    - PENDING: Đang chờ xác minh email
+    - VERIFIED: Đã xác minh email thành công
+    - REJECTED: Bị từ chối
+    - CANCELLED: Đã hủy đăng ký
+    """
+    PENDING = "pending"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class TenantRegistration:
+    """SQLAlchemy ORM model cho tenant registration.
+
+    Lưu trữ thông tin đăng ký của tenant mới, bao gồm email,
+    tên công ty, gói subscription yêu cầu, token xác minh,
+    và trạng thái đăng ký.
+
+    Thuộc tính:
+        id: UUID chính
+        email: Email đăng ký (unique)
+        company_name: Tên công ty/tổ chức
+        plan: Gói subscription yêu cầu
+        trial_days: Số ngày dùng thử
+        status: Trạng thái đăng ký
+        verification_token: Token HMAC-signed cho xác minh email
+        tenant_id: Foreign key đến bảng tenants (CP02)
+        created_at: Thời điểm tạo
+        updated_at: Thời điểm cập nhật cuối
+    """
+
+    __tablename__ = "tenant_registrations"
+    __table_args__ = (
+        Index("ix_registrations_email", "email"),
+        Index("ix_registrations_tenant_id", "tenant_id"),
+        Index("ix_registrations_verification_token", "verification_token"),
+        Index("ix_registrations_status", "status"),
+    )
+
+    id = Column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        doc="UUID chính của bản ghi đăng ký",
+    )
+    email = Column(
+        String(255),
+        unique=True,
+        nullable=False,
+        index=True,
+        doc="Email đăng ký (phải unique)",
+    )
+    company_name = Column(
+        String(255),
+        nullable=False,
+        doc="Tên công ty/tổ chức đăng ký",
+    )
+    plan = Column(
+        Enum(SubscriptionPlan, name="subscription_plan_enum", create_type=True),
+        nullable=False,
+        default=SubscriptionPlan.FREE,
+        doc="Gói subscription yêu cầu",
+    )
+    trial_days = Column(
+        Integer,
+        nullable=False,
+        default={{ default_trial_days | default(14) }},
+        doc="Số ngày dùng thử (0 = không có trial)",
+    )
+    status = Column(
+        Enum(RegistrationStatus, name="registration_status_enum", create_type=True),
+        nullable=False,
+        default=RegistrationStatus.PENDING,
+        doc="Trạng thái đăng ký hiện tại",
+    )
+    verification_token = Column(
+        String(512),
+        nullable=False,
+        index=True,
+        doc="Token HMAC-signed cho xác minh email, hết hạn 24h",
+    )
+    tenant_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        doc="Foreign key đến bảng tenants (CP02 Multi-Tenant)",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        doc="Thời điểm tạo đăng ký",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        doc="Thời điểm cập nhật cuối cùng",
+    )
+
+    # Mối quan hệ với subscription
+    subscription = relationship(
+        "TenantSubscription",
+        back_populates="registration",
+        uselist=False,
+        doc="Subscription liên kết với registration này",
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển TenantRegistration sang dictionary.
+
+        Returns:
+            Dictionary chứa thông tin đăng ký tenant.
+        """
+        return {
+            "id": str(self.id),
+            "email": self.email,
+            "company_name": self.company_name,
+            "plan": self.plan.value if isinstance(self.plan, SubscriptionPlan) else self.plan,
+            "trial_days": self.trial_days,
+            "status": self.status.value if isinstance(self.status, RegistrationStatus) else self.status,
+            "verification_token": self.verification_token,
+            "tenant_id": str(self.tenant_id),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        """Trả về string representation của TenantRegistration."""
+        return (
+            f"<TenantRegistration(id={self.id}, email={self.email}, "
+            f"company={self.company_name}, status={self.status})>"
+        )

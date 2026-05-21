@@ -1,0 +1,804 @@
+"""
+Subscription Service cho CP36: Tenant Onboarding.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp TenantSubscriptionService để quản lý:
+- Bắt đầu trial (start_trial) — tạo trial subscription
+- Kích hoạt subscription (activate_subscription) — chuyển từ trial sang paid
+- Cập nhật subscription (update_subscription) — upgrade/downgrade plan
+- Hủy subscription (cancel_subscription) — hủy với lý do
+
+KPI-029: Tenant Isolation (tích hợp với CP02 Multi-Tenant)
+Tích hợp với CP33 Financial (pricing, currency)
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Any, Callable, Dict, Optional
+from uuid import UUID, uuid4
+
+from sqlalchemy.orm import Session
+
+from app.onboarding.events.onboarding_events import (
+    SubscriptionActivatedEvent,
+    SubscriptionCancelledEvent,
+    SubscriptionUpdatedEvent,
+    TrialStartedEvent,
+)
+from app.onboarding.models.registration_model import (
+    RegistrationStatus,
+    SubscriptionPlan,
+    TenantRegistration,
+)
+from app.onboarding.models.subscription_model import (
+    BillingCycle,
+    SubscriptionStatus,
+    TenantSubscription,
+)
+from app.onboarding.schemas.subscription_schema import (
+    SubscriptionResponse,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class SubscriptionError(Exception):
+    """Lỗi chung của Subscription Service."""
+    pass
+
+
+class SubscriptionNotFoundError(SubscriptionError):
+    """Lỗi không tìm thấy subscription."""
+    pass
+
+
+class InvalidSubscriptionStateError(SubscriptionError):
+    """Lỗi trạng thái subscription không hợp lệ cho thao tác."""
+    pass
+
+
+class PlanValidationError(SubscriptionError):
+    """Lỗi xác thực plan không hợp lệ."""
+    pass
+
+
+# Bảng giá mặc định cho từng plan
+DEFAULT_PRICES: Dict[SubscriptionPlan, Dict[BillingCycle, Decimal]] = {
+    SubscriptionPlan.FREE: {
+        BillingCycle.MONTHLY: Decimal("0"),
+        BillingCycle.YEARLY: Decimal("0"),
+    },
+    SubscriptionPlan.STARTER: {
+        BillingCycle.MONTHLY: Decimal("29.00"),
+        BillingCycle.YEARLY: Decimal("290.00"),
+    },
+    SubscriptionPlan.PROFESSIONAL: {
+        BillingCycle.MONTHLY: Decimal("99.00"),
+        BillingCycle.YEARLY: Decimal("990.00"),
+    },
+    SubscriptionPlan.ENTERPRISE: {
+        BillingCycle.MONTHLY: Decimal("299.00"),
+        BillingCycle.YEARLY: Decimal("2990.00"),
+    },
+}
+
+
+class TenantSubscriptionService:
+    """Dịch vụ quản lý tenant subscription.
+
+    Xử lý luồng subscription:
+    1. Start trial (sau registration được xác minh)
+    2. Activate subscription (chuyển từ trial sang paid)
+    3. Update subscription (upgrade/downgrade)
+    4. Cancel subscription (hủy)
+
+    Tích hợp:
+        - CP02 Multi-Tenant: Tenant isolation qua tenant_id
+        - CP05 EventBus: Publish subscription events
+        - CP33 Financial: Pricing và currency
+    """
+
+    def __init__(
+        self,
+        db: Session,
+        event_publisher: Optional[Callable[..., None]] = None,
+        price_overrides: Optional[Dict[str, Dict[str, str]]] = None,
+        default_trial_days: int = {{ default_trial_days | default(14) }},
+    ) -> None:
+        """Khởi tạo TenantSubscriptionService.
+
+        Args:
+            db: SQLAlchemy session.
+            event_publisher: Callable để publish events (CP05).
+                Signature: (event_name, payload) -> None.
+            price_overrides: Override giá mặc định cho từng plan.
+                Format: {plan: {billing_cycle: price_string}}.
+            default_trial_days: Số ngày trial mặc định.
+        """
+        self.db = db
+        self.event_publisher = event_publisher
+        self.default_trial_days = default_trial_days
+
+        # Áp dụng price overrides
+        self.prices = dict(DEFAULT_PRICES)
+        if price_overrides:
+            for plan_str, cycles in price_overrides.items():
+                plan = SubscriptionPlan(plan_str)
+                for cycle_str, price_str in cycles.items():
+                    cycle = BillingCycle(cycle_str)
+                    if plan not in self.prices:
+                        self.prices[plan] = {}
+                    self.prices[plan][cycle] = Decimal(price_str)
+
+    def start_trial(
+        self,
+        registration_id: UUID,
+        trial_days: Optional[int] = None,
+    ) -> SubscriptionResponse:
+        """Bắt đầu trial cho tenant.
+
+        Tạo subscription với trạng thái TRIAL, tính thời gian hết hạn.
+        Chỉ cho phép với registration đã được xác minh.
+
+        Args:
+            registration_id: ID của bản ghi đăng ký đã xác minh.
+            trial_days: Số ngày trial (mặc định theo config).
+
+        Returns:
+            SubscriptionResponse của trial subscription.
+
+        Raises:
+            SubscriptionError: Nếu registration chưa xác minh hoặc đã có trial.
+        """
+        # Bước 1: Kiểm tra registration
+        registration = self.db.query(TenantRegistration).filter_by(
+            id=registration_id
+        ).first()
+
+        if not registration:
+            raise SubscriptionNotFoundError(
+                f"Không tìm thấy bản ghi đăng ký với ID '{registration_id}'. "
+                "Vui lòng đăng ký tenant trước khi bắt đầu trial."
+            )
+
+        if registration.status != RegistrationStatus.VERIFIED:
+            raise InvalidSubscriptionStateError(
+                f"Không thể bắt đầu trial: registration chưa được xác minh "
+                f"(trạng thái hiện tại: '{registration.status.value}'). "
+                "Vui lòng xác minh email trước."
+            )
+
+        # Bước 2: Kiểm tra đã có subscription chưa
+        existing = self.db.query(TenantSubscription).filter_by(
+            tenant_id=registration.tenant_id
+        ).first()
+
+        if existing:
+            if existing.status == SubscriptionStatus.TRIAL:
+                raise InvalidSubscriptionStateError(
+                    f"Tenant '{registration.tenant_id}' đang có trial "
+                    f"sử dụng (kết thúc: {existing.end_date}). "
+                    "Không thể tạo trial mới."
+                )
+            elif existing.status in (
+                SubscriptionStatus.ACTIVE,
+                SubscriptionStatus.PAST_DUE,
+            ):
+                raise InvalidSubscriptionStateError(
+                    f"Tenant '{registration.tenant_id}' đã có subscription "
+                    f"đang hoạt động (trạng thái: '{existing.status.value}'). "
+                    "Không cần bắt đầu trial."
+                )
+            else:
+                raise InvalidSubscriptionStateError(
+                    f"Tenant '{registration.tenant_id}' có subscription "
+                    f"với trạng thái '{existing.status.value}'. "
+                    "Vui lòng liên hệ admin để xử lý."
+                )
+
+        # Bước 3: Tạo trial subscription
+        days = trial_days if trial_days is not None else (
+            registration.trial_days if registration.trial_days > 0
+            else self.default_trial_days
+        )
+
+        now = datetime.now(timezone.utc)
+        subscription = TenantSubscription(
+            id=uuid4(),
+            tenant_id=registration.tenant_id,
+            plan=registration.plan,
+            billing_cycle=BillingCycle.MONTHLY,
+            status=SubscriptionStatus.TRIAL,
+            price=Decimal("0"),
+            currency="USD",
+            payment_method_id=None,
+            start_date=now,
+            end_date=now + timedelta(days=days),
+            metadata={
+                "trial_days": days,
+                "original_plan": registration.plan.value,
+                "source": "trial",
+            },
+        )
+
+        self.db.add(subscription)
+        self.db.commit()
+        self.db.refresh(subscription)
+
+        # Bước 4: Publish event
+        self._publish_event(
+            TrialStartedEvent(
+                subscription_id=str(subscription.id),
+                tenant_id=str(subscription.tenant_id),
+                plan=subscription.plan.value if hasattr(subscription.plan, "value") else subscription.plan,
+                trial_days=days,
+                end_date=subscription.end_date.isoformat() if subscription.end_date else None,
+            )
+        )
+
+        logger.info(
+            "Bắt đầu trial: tenant_id=%s, plan=%s, days=%d, "
+            "end_date=%s",
+            subscription.tenant_id, subscription.plan, days,
+            subscription.end_date,
+        )
+
+        return SubscriptionResponse(
+            id=subscription.id,
+            tenant_id=subscription.tenant_id,
+            plan=subscription.plan,
+            billing_cycle=subscription.billing_cycle,
+            status=subscription.status,
+            price=subscription.price,
+            currency=subscription.currency,
+            payment_method_id=subscription.payment_method_id,
+            start_date=subscription.start_date or now,
+            end_date=subscription.end_date,
+            metadata=subscription.metadata or {},
+            created_at=subscription.created_at or now,
+            updated_at=subscription.updated_at or now,
+        )
+
+    def activate_subscription(
+        self,
+        registration_id: UUID,
+        plan: str,
+        billing_cycle: str,
+        payment_method_id: UUID,
+        currency: str = "USD",
+    ) -> SubscriptionResponse:
+        """Kích hoạt subscription trả phí.
+
+        Chuyển từ trial sang paid, hoặc tạo mới subscription trả phí.
+        Tính giá theo plan và billing cycle.
+
+        Args:
+            registration_id: ID của bản ghi đăng ký.
+            plan: Gói subscription muốn kích hoạt.
+            billing_cycle: Chu kỳ thanh toán.
+            payment_method_id: ID phương thức thanh toán.
+            currency: Mã tiền tệ ISO 4217.
+
+        Returns:
+            SubscriptionResponse của subscription đã kích hoạt.
+
+        Raises:
+            PlanValidationError: Nếu plan hoặc billing_cycle không hợp lệ.
+            SubscriptionError: Nếu registration chưa xác minh.
+        """
+        # Bước 1: Validate plan và billing cycle
+        try:
+            plan_enum = SubscriptionPlan(plan)
+        except ValueError:
+            valid_plans = [p.value for p in SubscriptionPlan]
+            raise PlanValidationError(
+                f"Gói subscription '{plan}' không hợp lệ. "
+                f"Các gói hợp lệ: {valid_plans}"
+            )
+
+        try:
+            cycle_enum = BillingCycle(billing_cycle)
+        except ValueError:
+            valid_cycles = [c.value for c in BillingCycle]
+            raise PlanValidationError(
+                f"Chu kỳ thanh toán '{billing_cycle}' không hợp lệ. "
+                f"Các chu kỳ hợp lệ: {valid_cycles}"
+            )
+
+        # Bước 2: Kiểm tra registration
+        registration = self.db.query(TenantRegistration).filter_by(
+            id=registration_id
+        ).first()
+
+        if not registration:
+            raise SubscriptionNotFoundError(
+                f"Không tìm thấy bản ghi đăng ký với ID '{registration_id}'."
+            )
+
+        if registration.status != RegistrationStatus.VERIFIED:
+            raise InvalidSubscriptionStateError(
+                f"Không thể kích hoạt subscription: registration chưa xác minh "
+                f"(trạng thái: '{registration.status.value}')."
+            )
+
+        # Bước 3: Lấy giá
+        price = self._get_price(plan_enum, cycle_enum)
+
+        # Bước 4: Kiểm tra subscription hiện tại
+        existing = self.db.query(TenantSubscription).filter_by(
+            tenant_id=registration.tenant_id
+        ).first()
+
+        now = datetime.now(timezone.utc)
+
+        if existing and existing.status == SubscriptionStatus.ACTIVE:
+            raise InvalidSubscriptionStateError(
+                f"Tenant '{registration.tenant_id}' đã có subscription "
+                f"đang hoạt động. Vui lòng update subscription thay vì "
+                "kích hoạt mới."
+            )
+
+        if existing and existing.status == SubscriptionStatus.TRIAL:
+            # Chuyển trial sang active
+            existing.plan = plan_enum
+            existing.billing_cycle = cycle_enum
+            existing.status = SubscriptionStatus.ACTIVE
+            existing.price = price
+            existing.currency = currency
+            existing.payment_method_id = payment_method_id
+            existing.end_date = now + self._get_billing_period(cycle_enum)
+            existing.metadata = {
+                **(existing.metadata or {}),
+                "activated_from": "trial",
+                "activation_date": now.isoformat(),
+            }
+            existing.updated_at = now
+
+            self.db.commit()
+            self.db.refresh(existing)
+
+            result = existing
+
+        else:
+            # Tạo subscription mới
+            result = TenantSubscription(
+                id=uuid4(),
+                tenant_id=registration.tenant_id,
+                plan=plan_enum,
+                billing_cycle=cycle_enum,
+                status=SubscriptionStatus.ACTIVE,
+                price=price,
+                currency=currency,
+                payment_method_id=payment_method_id,
+                start_date=now,
+                end_date=now + self._get_billing_period(cycle_enum),
+                metadata={
+                    "source": "activation",
+                    "activation_date": now.isoformat(),
+                },
+            )
+            self.db.add(result)
+            self.db.commit()
+            self.db.refresh(result)
+
+        # Bước 5: Publish event
+        self._publish_event(
+            SubscriptionActivatedEvent(
+                subscription_id=str(result.id),
+                tenant_id=str(result.tenant_id),
+                plan=result.plan.value if hasattr(result.plan, "value") else result.plan,
+                billing_cycle=result.billing_cycle.value,
+                price=str(result.price),
+                currency=result.currency,
+            )
+        )
+
+        logger.info(
+            "Kích hoạt subscription: tenant_id=%s, plan=%s, "
+            "cycle=%s, price=%s%s",
+            result.tenant_id, plan, billing_cycle, price, currency,
+        )
+
+        return SubscriptionResponse(
+            id=result.id,
+            tenant_id=result.tenant_id,
+            plan=result.plan,
+            billing_cycle=result.billing_cycle,
+            status=result.status,
+            price=result.price,
+            currency=result.currency,
+            payment_method_id=result.payment_method_id,
+            start_date=result.start_date or now,
+            end_date=result.end_date,
+            metadata=result.metadata or {},
+            created_at=result.created_at or now,
+            updated_at=result.updated_at or now,
+        )
+
+    def update_subscription(
+        self,
+        subscription_id: UUID,
+        plan: Optional[str] = None,
+        billing_cycle: Optional[str] = None,
+    ) -> SubscriptionResponse:
+        """Cập nhật subscription (upgrade/downgrade).
+
+        Cho phép thay đổi plan và billing cycle.
+        Tính lại giá và cập nhật end_date.
+
+        Args:
+            subscription_id: ID của subscription.
+            plan: Gói subscription mới (tùy chọn).
+            billing_cycle: Chu kỳ thanh toán mới (tùy chọn).
+
+        Returns:
+            SubscriptionResponse sau khi cập nhật.
+
+        Raises:
+            SubscriptionNotFoundError: Nếu không tìm thấy subscription.
+            PlanValidationError: Nếu plan hoặc billing_cycle không hợp lệ.
+            SubscriptionError: Nếu subscription không ở trạng thái active.
+        """
+        # Bước 1: Tìm subscription
+        subscription = self.db.query(TenantSubscription).filter_by(
+            id=subscription_id
+        ).first()
+
+        if not subscription:
+            raise SubscriptionNotFoundError(
+                f"Không tìm thấy subscription với ID '{subscription_id}'. "
+                "Vui lòng kiểm tra lại ID."
+            )
+
+        # Bước 2: Kiểm tra trạng thái
+        if subscription.status == SubscriptionStatus.CANCELLED:
+            raise InvalidSubscriptionStateError(
+                f"Không thể cập nhật subscription đã hủy "
+                f"(ID: '{subscription_id}'). Vui lòng tạo subscription mới."
+            )
+        if subscription.status == SubscriptionStatus.EXPIRED:
+            raise InvalidSubscriptionStateError(
+                f"Subscription đã hết hạn "
+                f"(ID: '{subscription_id}'). Vui lòng tạo subscription mới."
+            )
+        if subscription.status == SubscriptionStatus.TRIAL:
+            raise InvalidSubscriptionStateError(
+                f"Không thể cập nhật trial subscription "
+                f"(ID: '{subscription_id}'). Vui lòng kích hoạt subscription trước."
+            )
+
+        # Bước 3: Validate inputs
+        new_plan = subscription.plan
+        if plan:
+            try:
+                new_plan = SubscriptionPlan(plan)
+            except ValueError:
+                valid_plans = [p.value for p in SubscriptionPlan]
+                raise PlanValidationError(
+                    f"Gói subscription '{plan}' không hợp lệ. "
+                    f"Các gói hợp lệ: {valid_plans}"
+                )
+
+        new_cycle = subscription.billing_cycle
+        if billing_cycle:
+            try:
+                new_cycle = BillingCycle(billing_cycle)
+            except ValueError:
+                valid_cycles = [c.value for c in BillingCycle]
+                raise PlanValidationError(
+                    f"Chu kỳ thanh toán '{billing_cycle}' không hợp lệ. "
+                    f"Các chu kỳ hợp lệ: {valid_cycles}"
+                )
+
+        # Bước 4: Kiểm tra có thay đổi gì không
+        if new_plan == subscription.plan and new_cycle == subscription.billing_cycle:
+            logger.warning(
+                "Không có thay đổi cho subscription %s: plan=%s, cycle=%s. "
+                "Bỏ qua cập nhật.",
+                subscription_id, new_plan, new_cycle,
+            )
+            # Trả về current state
+            now = datetime.now(timezone.utc)
+            return SubscriptionResponse(
+                id=subscription.id,
+                tenant_id=subscription.tenant_id,
+                plan=subscription.plan,
+                billing_cycle=subscription.billing_cycle,
+                status=subscription.status,
+                price=subscription.price,
+                currency=subscription.currency,
+                payment_method_id=subscription.payment_method_id,
+                start_date=subscription.start_date or now,
+                end_date=subscription.end_date,
+                metadata=subscription.metadata or {},
+                created_at=subscription.created_at or now,
+                updated_at=subscription.updated_at or now,
+            )
+
+        # Bước 5: Cập nhật
+        old_plan = subscription.plan
+        old_cycle = subscription.billing_cycle
+
+        subscription.plan = new_plan
+        subscription.billing_cycle = new_cycle
+        subscription.price = self._get_price(new_plan, new_cycle)
+        subscription.end_date = (
+            datetime.now(timezone.utc) + self._get_billing_period(new_cycle)
+        )
+        subscription.updated_at = datetime.now(timezone.utc)
+
+        # Cập nhật metadata
+        meta = subscription.metadata or {}
+        meta["plan_history"] = meta.get("plan_history", [])
+        meta["plan_history"].append({
+            "from_plan": (
+                old_plan.value if hasattr(old_plan, "value") else old_plan
+            ),
+            "from_cycle": old_cycle.value,
+            "to_plan": (
+                new_plan.value if hasattr(new_plan, "value") else new_plan
+            ),
+            "to_cycle": new_cycle.value,
+            "changed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        subscription.metadata = meta
+
+        self.db.commit()
+        self.db.refresh(subscription)
+
+        # Bước 6: Publish event
+        self._publish_event(
+            SubscriptionUpdatedEvent(
+                subscription_id=str(subscription.id),
+                tenant_id=str(subscription.tenant_id),
+                old_plan=(
+                    old_plan.value if hasattr(old_plan, "value") else old_plan
+                ),
+                new_plan=(
+                    new_plan.value if hasattr(new_plan, "value") else new_plan
+                ),
+                old_cycle=old_cycle.value,
+                new_cycle=new_cycle.value,
+            )
+        )
+
+        logger.info(
+            "Cập nhật subscription: id=%s, %s -> %s, %s -> %s",
+            subscription_id, old_plan, new_plan, old_cycle, new_cycle,
+        )
+
+        now = datetime.now(timezone.utc)
+        return SubscriptionResponse(
+            id=subscription.id,
+            tenant_id=subscription.tenant_id,
+            plan=subscription.plan,
+            billing_cycle=subscription.billing_cycle,
+            status=subscription.status,
+            price=subscription.price,
+            currency=subscription.currency,
+            payment_method_id=subscription.payment_method_id,
+            start_date=subscription.start_date or now,
+            end_date=subscription.end_date,
+            metadata=subscription.metadata or {},
+            created_at=subscription.created_at or now,
+            updated_at=subscription.updated_at or now,
+        )
+
+    def cancel_subscription(
+        self,
+        subscription_id: UUID,
+        reason: str,
+        cancel_at_period_end: bool = False,
+    ) -> SubscriptionResponse:
+        """Hủy subscription.
+
+        Args:
+            subscription_id: ID của subscription.
+            reason: Lý do hủy.
+            cancel_at_period_end: True để hủy ở cuối kỳ, False để hủy ngay.
+
+        Returns:
+            SubscriptionResponse sau khi hủy.
+
+        Raises:
+            SubscriptionNotFoundError: Nếu không tìm thấy subscription.
+            SubscriptionError: Nếu subscription đã bị hủy.
+        """
+        # Bước 1: Tìm subscription
+        subscription = self.db.query(TenantSubscription).filter_by(
+            id=subscription_id
+        ).first()
+
+        if not subscription:
+            raise SubscriptionNotFoundError(
+                f"Không tìm thấy subscription với ID '{subscription_id}'. "
+                "Vui lòng kiểm tra lại ID."
+            )
+
+        # Bước 2: Kiểm tra trạng thái
+        if subscription.status == SubscriptionStatus.CANCELLED:
+            raise InvalidSubscriptionStateError(
+                f"Subscription '{subscription_id}' đã bị hủy trước đó. "
+                "Không thể hủy lại."
+            )
+        if subscription.status == SubscriptionStatus.EXPIRED:
+            raise InvalidSubscriptionStateError(
+                f"Subscription '{subscription_id}' đã hết hạn. "
+                "Không cần hủy."
+            )
+
+        # Bước 3: Hủy subscription
+        now = datetime.now(timezone.utc)
+        old_status = subscription.status
+
+        if cancel_at_period_end:
+            # Giữ subscription hoạt động đến cuối kỳ
+            subscription.metadata = subscription.metadata or {}
+            subscription.metadata["cancellation"] = {
+                "reason": reason,
+                "cancelled_at": now.isoformat(),
+                "effective_at": (
+                    subscription.end_date.isoformat()
+                    if subscription.end_date
+                    else None
+                ),
+                "cancel_at_period_end": True,
+            }
+            # Không đổi status ngay, để end_date tự hết hạn
+            subscription.updated_at = now
+        else:
+            # Hủy ngay lập tức
+            subscription.status = SubscriptionStatus.CANCELLED
+            subscription.end_date = now
+            subscription.metadata = subscription.metadata or {}
+            subscription.metadata["cancellation"] = {
+                "reason": reason,
+                "cancelled_at": now.isoformat(),
+                "cancel_at_period_end": False,
+            }
+            subscription.updated_at = now
+
+        self.db.commit()
+        self.db.refresh(subscription)
+
+        # Bước 4: Publish event
+        self._publish_event(
+            SubscriptionCancelledEvent(
+                subscription_id=str(subscription.id),
+                tenant_id=str(subscription.tenant_id),
+                reason=reason,
+                previous_status=(
+                    old_status.value
+                    if hasattr(old_status, "value")
+                    else old_status
+                ),
+                new_status=(
+                    subscription.status.value
+                    if hasattr(subscription.status, "value")
+                    else subscription.status
+                ),
+                cancel_at_period_end=cancel_at_period_end,
+                cancelled_at=now.isoformat(),
+            )
+        )
+
+        logger.info(
+            "Hủy subscription: id=%s, tenant_id=%s, reason=%s, "
+            "immediate=%s",
+            subscription_id, subscription.tenant_id, reason,
+            not cancel_at_period_end,
+        )
+
+        return SubscriptionResponse(
+            id=subscription.id,
+            tenant_id=subscription.tenant_id,
+            plan=subscription.plan,
+            billing_cycle=subscription.billing_cycle,
+            status=subscription.status,
+            price=subscription.price,
+            currency=subscription.currency,
+            payment_method_id=subscription.payment_method_id,
+            start_date=subscription.start_date or now,
+            end_date=subscription.end_date,
+            metadata=subscription.metadata or {},
+            created_at=subscription.created_at or now,
+            updated_at=subscription.updated_at or now,
+        )
+
+    def get_subscription_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> Optional[SubscriptionResponse]:
+        """Lấy subscription của tenant.
+
+        Args:
+            tenant_id: ID của tenant.
+
+        Returns:
+            SubscriptionResponse hoặc None nếu không có subscription.
+        """
+        subscription = self.db.query(TenantSubscription).filter_by(
+            tenant_id=tenant_id
+        ).first()
+
+        if not subscription:
+            return None
+
+        now = datetime.now(timezone.utc)
+        return SubscriptionResponse(
+            id=subscription.id,
+            tenant_id=subscription.tenant_id,
+            plan=subscription.plan,
+            billing_cycle=subscription.billing_cycle,
+            status=subscription.status,
+            price=subscription.price,
+            currency=subscription.currency,
+            payment_method_id=subscription.payment_method_id,
+            start_date=subscription.start_date or now,
+            end_date=subscription.end_date,
+            metadata=subscription.metadata or {},
+            created_at=subscription.created_at or now,
+            updated_at=subscription.updated_at or now,
+        )
+
+    # =========================================================================
+    # Phương thức nội bộ
+    # =========================================================================
+
+    def _get_price(
+        self,
+        plan: SubscriptionPlan,
+        cycle: BillingCycle,
+    ) -> Decimal:
+        """Lấy giá của plan theo billing cycle.
+
+        Args:
+            plan: Gói subscription.
+            cycle: Chu kỳ thanh toán.
+
+        Returns:
+            Giá của plan.
+        """
+        return self.prices.get(plan, {}).get(cycle, Decimal("0"))
+
+    def _get_billing_period(self, cycle: BillingCycle) -> timedelta:
+        """Tính thời gian billing period.
+
+        Args:
+            cycle: Chu kỳ thanh toán.
+
+        Returns:
+            timedelta của billing period.
+        """
+        if cycle == BillingCycle.YEARLY:
+            return timedelta(days=365)
+        return timedelta(days=30)
+
+    def _publish_event(self, event: Any) -> None:
+        """Publish event qua CP05 EventBus.
+
+        Args:
+            event: Event object để publish.
+        """
+        if not self.event_publisher:
+            logger.debug(
+                "Không có event_publisher, bỏ qua event: %s",
+                type(event).__name__,
+            )
+            return
+
+        try:
+            payload = event.to_dict() if hasattr(event, "to_dict") else vars(event)
+            self.event_publisher(
+                event_name=event.__class__.__name__,
+                payload=payload,
+            )
+        except Exception as e:
+            logger.warning(
+                "Không thể publish event %s: %s",
+                type(event).__name__, e,
+            )

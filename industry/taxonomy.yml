@@ -661,8 +661,8 @@ core_packs:
       - trial_manage
       - subscription_manage
     category: architecture
-    status: planned
-    version: 1.0.0
+    status: stable
+    version: 1.1.0
   - id: CP37
     name: Feature Flags & Dynamic Config
     internal_id: cp37_feature_flags

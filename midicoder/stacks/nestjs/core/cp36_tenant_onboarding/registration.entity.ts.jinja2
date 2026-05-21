@@ -1,0 +1,117 @@
+/**
+ * TenantRegistration Entity — CP36: Tenant Onboarding & Subscription.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ *
+ * Entity đăng ký tenant mới. Lưu trữ thông tin đăng ký
+ * trước khi được xác minh và tạo tenant.
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  Index,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from "typeorm";
+
+/** Enum các gói subscription. */
+export enum SubscriptionPlan {
+  FREE = "free",
+  STARTER = "starter",
+  PROFESSIONAL = "professional",
+  ENTERPRISE = "enterprise",
+}
+
+/** Enum trạng thái đăng ký. */
+export enum RegistrationStatus {
+  PENDING = "pending",
+  VERIFIED = "verified",
+  REJECTED = "rejected",
+  CANCELLED = "cancelled",
+}
+
+/**
+ * TenantRegistration Entity — thông tin đăng ký tenant mới.
+ *
+ * Mỗi bản ghi đại diện cho một yêu cầu đăng ký tenant,
+ * bao gồm email, công ty, plan yêu cầu, và trạng thái xác minh.
+ */
+@Entity("tenant_registrations")
+@Index(["email"], { unique: true })
+@Index(["verificationToken"])
+export class TenantRegistration {
+  /** Identifier chính (UUID). */
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
+
+  /** Email đăng ký — unique, dùng để xác minh. */
+  @Column({ unique: true })
+  email: string;
+
+  /** Tên công ty/tổ chức của tenant. */
+  @Column()
+  companyName: string;
+
+  /** Gói subscription yêu cầu. */
+  @Column({
+    type: "enum",
+    enum: SubscriptionPlan,
+    default: SubscriptionPlan.FREE,
+  })
+  plan: SubscriptionPlan;
+
+  /** Số ngày dùng thử (mặc định {{ default_trial_days }}, 0 = không trial). */
+  @Column({ default: {{ default_trial_days }} })
+  trialDays: number;
+
+  /** Trạng thái đăng ký. */
+  @Column({
+    type: "enum",
+    enum: RegistrationStatus,
+    default: RegistrationStatus.PENDING,
+  })
+  status: RegistrationStatus;
+
+  /** Token xác minh email (hmac-signed, hết hạn {{ verification_token_expiry_hours }}h). */
+  @Column({ nullable: true })
+  verificationToken: string;
+
+  /** Reference đến tenant đã tạo (tích hợp CP02 Multi-Tenant). */
+  @Column({ nullable: true })
+  tenantId: string;
+
+  /** Thời gian tạo bản ghi. */
+  @CreateDateColumn()
+  createdAt: Date;
+
+  /** Thời gian cập nhật cuối. */
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  /**
+   * Kiểm tra registration đã được xác minh.
+   */
+  isVerified(): boolean {
+    return this.status === RegistrationStatus.VERIFIED;
+  }
+
+  /**
+   * Tính ngày hết hạn trial.
+   */
+  computeExpiryDate(): Date {
+    const base = this.createdAt || new Date();
+    return new Date(base.getTime() + this.trialDays * 24 * 60 * 60 * 1000);
+  }
+
+  /**
+   * Kiểm tra trial đã hết hạn.
+   */
+  isTrialExpired(): boolean {
+    if (this.trialDays === 0) {
+      return true;
+    }
+    return new Date() > this.computeExpiryDate();
+  }
+}

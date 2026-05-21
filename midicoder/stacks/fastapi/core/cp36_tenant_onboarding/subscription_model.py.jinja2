@@ -1,0 +1,214 @@
+"""
+Mô-đun Subscription Model cho CP36: Tenant Onboarding.
+
+Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+
+Cung cấp:
+- SQLAlchemy ORM model cho bảng tenant_subscriptions
+- SubscriptionStatus enum cho trạng thái subscription
+- BillingCycle enum cho chu kỳ thanh toán
+
+KPI-029: Tenant Isolation — mỗi subscription liên kết với tenant_id
+Tích hợp với CP33 Financial — hỗ trợ currency, pricing
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from decimal import Decimal
+from enum import Enum
+from typing import Any, Dict, Optional
+from uuid import UUID, uuid4
+
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, PG_UUID
+from sqlalchemy.orm import relationship
+
+
+class SubscriptionStatus(str, Enum):
+    """Trạng thái của subscription.
+
+    - TRIAL: Đang trong thời gian dùng thử
+    - ACTIVE: Đang hoạt động, đã thanh toán
+    - PAST_DUE: Quá hạn thanh toán
+    - CANCELLED: Đã hủy
+    - EXPIRED: Đã hết hạn
+    """
+    TRIAL = "trial"
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class BillingCycle(str, Enum):
+    """Chu kỳ thanh toán.
+
+    - MONTHLY: Thanh toán hàng tháng
+    - YEARLY: Thanh toán hàng năm (có giảm giá)
+    """
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
+class TenantSubscription:
+    """SQLAlchemy ORM model cho tenant subscription.
+
+    Theo dõi trạng thái subscription, pricing, billing cycle của tenant.
+    Liên kết với CP02 tenant và CP33 financial (currency).
+
+    Thuộc tính:
+        id: UUID chính
+        tenant_id: Foreign key đến bảng tenants (CP02)
+        plan: Gói subscription hiện tại
+        billing_cycle: Chu kỳ thanh toán
+        status: Trạng thái subscription
+        price: Giá theo currency (Decimal)
+        currency: Mã tiền tệ ISO 4217
+        payment_method_id: Reference đến payment method (nullable)
+        start_date: Ngày bắt đầu subscription
+        end_date: Ngày kết thúc subscription
+        metadata: Custom metadata (JSONB)
+        created_at: Thời điểm tạo
+        updated_at: Thời điểm cập nhật cuối
+    """
+
+    __tablename__ = "tenant_subscriptions"
+    __table_args__ = (
+        Index("ix_subscriptions_tenant_id", "tenant_id"),
+        Index("ix_subscriptions_status", "status"),
+        Index("ix_subscriptions_plan", "plan"),
+    )
+
+    id = Column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        doc="UUID chính của bản ghi subscription",
+    )
+    tenant_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        doc="Foreign key đến bảng tenants (CP02 Multi-Tenant)",
+    )
+    plan = Column(
+        Enum(
+            "SubscriptionPlan",
+            name="subscription_plan_enum",
+            create_type=False,
+        ),
+        nullable=False,
+        doc="Gói subscription hiện tại",
+    )
+    billing_cycle = Column(
+        Enum(BillingCycle, name="billing_cycle_enum", create_type=True),
+        nullable=False,
+        default=BillingCycle.MONTHLY,
+        doc="Chu kỳ thanh toán",
+    )
+    status = Column(
+        Enum(SubscriptionStatus, name="subscription_status_enum", create_type=True),
+        nullable=False,
+        default=SubscriptionStatus.TRIAL,
+        doc="Trạng thái subscription hiện tại",
+    )
+    price = Column(
+        Numeric(precision=12, scale=2),
+        nullable=False,
+        default=Decimal("0"),
+        doc="Giá subscription theo currency",
+    )
+    currency = Column(
+        String(3),
+        nullable=False,
+        default="USD",
+        doc="Mã tiền tệ ISO 4217",
+    )
+    payment_method_id = Column(
+        PG_UUID(as_uuid=True),
+        nullable=True,
+        doc="Reference đến payment method (nullable cho free/trial)",
+    )
+    start_date = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Ngày bắt đầu subscription",
+    )
+    end_date = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Ngày kết thúc subscription",
+    )
+    metadata = Column(
+        JSONB,
+        nullable=True,
+        default=dict,
+        doc="Custom metadata cho subscription",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        doc="Thời điểm tạo subscription",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        doc="Thời điểm cập nhật cuối cùng",
+    )
+
+    # Mối quan hệ
+    tenant = relationship(
+        "Tenant",
+        back_populates="subscription",
+        doc="Tenant sở hữu subscription này (CP02)",
+    )
+    registration = relationship(
+        "TenantRegistration",
+        back_populates="subscription",
+        uselist=False,
+        doc="Registration liên kết với subscription này",
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển TenantSubscription sang dictionary.
+
+        Returns:
+            Dictionary chứa thông tin subscription của tenant.
+        """
+        return {
+            "id": str(self.id),
+            "tenant_id": str(self.tenant_id),
+            "plan": self.plan.value if hasattr(self.plan, "value") else self.plan,
+            "billing_cycle": self.billing_cycle.value if isinstance(self.billing_cycle, BillingCycle) else self.billing_cycle,
+            "status": self.status.value if isinstance(self.status, SubscriptionStatus) else self.status,
+            "price": str(self.price),
+            "currency": self.currency,
+            "payment_method_id": str(self.payment_method_id) if self.payment_method_id else None,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
+            "metadata": self.metadata if self.metadata else {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        """Trả về string representation của TenantSubscription."""
+        return (
+            f"<TenantSubscription(id={self.id}, tenant={self.tenant_id}, "
+            f"plan={self.plan}, status={self.status})>"
+        )

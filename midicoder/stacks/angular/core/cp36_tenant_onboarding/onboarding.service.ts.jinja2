@@ -1,0 +1,213 @@
+/**
+ * Onboarding Service — service HTTP cho tenant onboarding & subscription.
+ *
+ * Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+ *
+ * Cung cấp các API calls cho:
+ * - Đăng ký tenant mới (registerTenant)
+ * - Xác minh tenant (verifyTenant)
+ * - Quản lý trial (startTrial)
+ * - Quản lý subscription (activate, update, cancel, get)
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable } from 'rxjs';
+{% raw %}
+/** Request body cho đăng ký tenant mới */
+export interface RegistrationRequest {
+  email: string;
+  company_name: string;
+  plan: string;
+  trial_days: number;
+}
+
+/** Response từ API đăng ký tenant */
+export interface RegistrationResponse {
+  tenant_id: string;
+  email: string;
+  company_name: string;
+  plan: string;
+  status: string;
+  verification_token?: string;
+  created_at: string;
+}
+
+/** Request body cho kích hoạt subscription */
+export interface SubscriptionRequest {
+  tenant_id: string;
+  plan: string;
+  billing_cycle: 'monthly' | 'yearly';
+  payment_method_id?: string;
+}
+
+/** Response từ API subscription */
+export interface SubscriptionResponse {
+  tenant_id: string;
+  plan: string;
+  billing_cycle: 'monthly' | 'yearly';
+  status: 'trial' | 'active' | 'past_due' | 'cancelled' | 'expired';
+  start_date: string;
+  end_date?: string;
+  price: string;
+  currency: string;
+  next_billing_date?: string;
+  payment_method_id?: string;
+}
+
+/** Request body cho xác minh tenant */
+export interface VerificationRequest {
+  email: string;
+  verification_token: string;
+}
+
+/** Response từ API xác minh tenant */
+export interface VerificationResponse {
+  tenant_id: string;
+  email: string;
+  status: string;
+  message: string;
+}
+
+/** Request body cho cập nhật subscription */
+export interface UpdateSubscriptionRequest {
+  plan: string;
+  billing_cycle?: 'monthly' | 'yearly';
+  payment_method_id?: string;
+}
+
+/**
+ * Onboarding Service — @Injectable service cho toàn bộ onboarding API.
+ *
+ * Service này quản lý tất cả HTTP calls liên quan đến tenant registration,
+ * verification, trial, và subscription lifecycle.
+ *
+ * Sử dụng HttpClient để thực hiện các HTTP request.
+ * Tất cả methods đều trả về Observable để hỗ trợ reactive programming.
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class OnboardingService {
+  /** URL base cho onboarding API */
+  private readonly apiBase = '/api/onboarding';
+
+  constructor(private http: HttpClient) {}
+
+  /**
+   * Đăng ký tenant mới.
+   *
+   * Gửi yêu cầu đăng ký với email, tên công ty, và plan.
+   * Server sẽ tạo tenant và gửi email xác minh.
+   *
+   * @param request - Thông tin đăng ký (email, company_name, plan, trial_days)
+   * @returns Observable<RegistrationResponse> — phản hồi đăng ký với tenant ID
+   */
+  register(request: RegistrationRequest): Observable<RegistrationResponse> {
+    return this.http.post<RegistrationResponse>(
+      `${this.apiBase}/register`,
+      request
+    );
+  }
+
+  /**
+   * Xác minh tenant bằng verification token.
+   *
+   * Sau khi đăng ký, tenant cần xác minh email bằng token
+   * được gửi qua email. Method này gửi token để server xác thực.
+   *
+   * @param request - Thông tin xác minh (email, verification_token)
+   * @returns Observable<VerificationResponse> — phản hồi xác minh
+   */
+  verifyTenant(request: VerificationRequest): Observable<VerificationResponse> {
+    return this.http.post<VerificationResponse>(
+      `${this.apiBase}/verify`,
+      request
+    );
+  }
+
+  /**
+   * Bắt đầu trial cho tenant.
+   *
+   * Tự động hoặc thủ công bắt đầu thời gian dùng thử.
+   * Trial sẽ được tạo với số ngày mặc định hoặc tùy chỉnh.
+   *
+   * @param tenantId - ID của tenant cần bắt đầu trial
+   * @param trialDays - Số ngày trial (mặc định {{ default_trial_days }})
+   * @returns Observable<SubscriptionResponse> — subscription trong trạng thái trial
+   */
+  startTrial(tenantId: string, trialDays: number = {{ default_trial_days }}): Observable<SubscriptionResponse> {
+    return this.http.post<SubscriptionResponse>(
+      `${this.apiBase}/tenants/${tenantId}/trial/start`,
+      { trial_days: trialDays }
+    );
+  }
+
+  /**
+   * Kích hoạt subscription cho tenant.
+   *
+   * Chuyển tenant từ trial (hoặc free) sang paid subscription.
+   * Cần cung cấp payment method ID cho các gói có phí.
+   *
+   * @param request - Thông tin subscription (tenant_id, plan, billing_cycle, payment_method_id)
+   * @returns Observable<SubscriptionResponse> — subscription đã được kích hoạt
+   */
+  activateSubscription(request: SubscriptionRequest): Observable<SubscriptionResponse> {
+    return this.http.post<SubscriptionResponse>(
+      `${this.apiBase}/subscription/activate`,
+      request
+    );
+  }
+
+  /**
+   * Cập nhật subscription hiện tại của tenant.
+   *
+   * Dùng để nâng cấp (upgrade) hoặc hạ cấp (downgrade) plan,
+   * thay đổi billing cycle, hoặc cập nhật payment method.
+   *
+   * @param tenantId - ID của tenant cần cập nhật subscription
+   * @param request - Thông tin cập nhật (plan, billing_cycle, payment_method_id)
+   * @returns Observable<SubscriptionResponse> — subscription đã được cập nhật
+   */
+  updateSubscription(
+    tenantId: string,
+    request: UpdateSubscriptionRequest
+  ): Observable<SubscriptionResponse> {
+    return this.http.put<SubscriptionResponse>(
+      `${this.apiBase}/tenants/${tenantId}/subscription`,
+      request
+    );
+  }
+
+  /**
+   * Hủy subscription của tenant.
+   *
+   * Gửi yêu cầu hủy subscription. Subscription sẽ chuyển sang
+   * trạng thái cancelled và vẫn hoạt động đến hết chu kỳ hiện tại.
+   *
+   * @param tenantId - ID của tenant cần hủy subscription
+   * @returns Observable<SubscriptionResponse> — subscription đã bị hủy
+   */
+  cancelSubscription(tenantId: string): Observable<SubscriptionResponse> {
+    return this.http.post<SubscriptionResponse>(
+      `${this.apiBase}/tenants/${tenantId}/subscription/cancel`,
+      {}
+    );
+  }
+
+  /**
+   * Lấy thông tin subscription của tenant.
+   *
+   * Fetch chi tiết subscription hiện tại của tenant bao gồm
+   * plan, billing cycle, status, giá, và ngày thanh toán tiếp theo.
+   *
+   * @param tenantId - ID của tenant cần lấy subscription
+   * @returns Observable<SubscriptionResponse> — thông tin subscription
+   */
+  getSubscription(tenantId: string): Observable<SubscriptionResponse> {
+    return this.http.get<SubscriptionResponse>(
+      `${this.apiBase}/tenants/${tenantId}/subscription`
+    );
+  }
+}
+{% endraw %}

@@ -1,0 +1,251 @@
+/**
+ * SubscriptionController — CP36: Tenant Onboarding & Subscription.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ *
+ * REST API endpoints cho subscription management:
+ * - POST /subscription/start-trial: Bắt đầu trial period
+ * - POST /subscription/activate: Kích hoạt subscription chính thức
+ * - PUT /subscription/:id: Cập nhật subscription (upgrade/downgrade)
+ * - POST /subscription/:id/cancel: Hủy subscription
+ * - GET /subscription/:tenantId: Lấy subscription của tenant
+ */
+
+import {
+  Controller,
+  Post,
+  Put,
+  Get,
+  Body,
+  Param,
+  Query,
+  HttpStatus,
+} from "@nestjs/common";
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from "@nestjs/swagger";
+import { SubscriptionService } from "./services/subscription.service";
+import {
+  ActivateSubscriptionDto,
+  UpdateSubscriptionDto,
+  CancelSubscriptionDto,
+} from "./dtos/subscription-dto";
+
+/**
+ * SubscriptionController — endpoints cho subscription management.
+ *
+ * Path prefix: /subscription
+ *
+ * Tất cả endpoints yêu cầu authentication (JWT) và tenant isolation (CP02).
+ */
+@ApiTags("Onboarding — Subscription Management")
+@ApiBearerAuth()
+@Controller("subscription")
+export class SubscriptionController {
+  constructor(
+    private readonly subscriptionService: SubscriptionService,
+  ) {}
+
+  /**
+   * POST /subscription/start-trial
+   *
+   * Bắt đầu trial period cho tenant đã đăng ký.
+   *
+   * Body: { registrationId, trialDays? }
+   * Response: Subscription trial mới
+   *
+   * Flow:
+   * 1. Tìm registration đã xác minh
+   * 2. Kiểm tra chưa có subscription/trial
+   * 3. Tạo subscription với status=trial
+   */
+  @Post("start-trial")
+  @ApiOperation({ summary: "Bắt đầu trial period cho tenant" })
+  @ApiResponse({ status: 201, description: "Trial bắt đầu thành công" })
+  @ApiResponse({ status: 404, description: "Không tìm thấy registration" })
+  @ApiResponse({ status: 409, description: "Đã có subscription/trial đang hoạt động" })
+  async startTrial(
+    @Query("registrationId") registrationId: string,
+    @Query("trialDays") trialDays?: number,
+  ): Promise<any> {
+    const subscription = await this.subscriptionService.startTrial(
+      registrationId,
+      trialDays ? parseInt(trialDays as string, 10) : 14,
+    );
+
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: "Trial period bắt đầu thành công",
+      data: {
+        id: subscription.id,
+        tenantId: subscription.tenantId,
+        plan: subscription.plan,
+        status: subscription.status,
+        startDate: subscription.startDate,
+        endDate: subscription.endDate,
+      },
+    };
+  }
+
+  /**
+   * POST /subscription/activate
+   *
+   * Kích hoạt subscription chính thức (sau trial hoặc đăng ký mới).
+   *
+   * Body: ActivateSubscriptionDto (registrationId, plan, billingCycle, paymentMethodId)
+   * Response: Subscription mới
+   *
+   * Flow:
+   * 1. Tìm registration đã xác minh
+   * 2. Tính giá dựa trên plan + billing cycle
+   * 3. Hủy trial cũ nếu đang có
+   * 4. Tạo subscription với status=active
+   */
+  @Post("activate")
+  @ApiOperation({ summary: "Kích hoạt subscription chính thức" })
+  @ApiResponse({ status: 201, description: "Subscription kích hoạt thành công" })
+  @ApiResponse({ status: 400, description: "Registration chưa được xác minh" })
+  @ApiResponse({ status: 404, description: "Không tìm thấy registration" })
+  async activateSubscription(
+    @Body() dto: ActivateSubscriptionDto,
+  ): Promise<any> {
+    const subscription = await this.subscriptionService.activateSubscription(dto);
+
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: "Subscription được kích hoạt thành công",
+      data: {
+        id: subscription.id,
+        tenantId: subscription.tenantId,
+        plan: subscription.plan,
+        billingCycle: subscription.billingCycle,
+        status: subscription.status,
+        price: subscription.price,
+        currency: subscription.currency,
+        startDate: subscription.startDate,
+        endDate: subscription.endDate,
+      },
+    };
+  }
+
+  /**
+   * PUT /subscription/:id
+   *
+   * Cập nhật subscription (upgrade/downgrade plan, đổi billing cycle).
+   *
+   * Params: id (subscription UUID)
+   * Body: UpdateSubscriptionDto (plan?, billingCycle?)
+   * Response: Subscription đã cập nhật
+   *
+   * Flow:
+   * 1. Tìm subscription theo ID (tenant isolation)
+   * 2. Kiểm tra subscription đang active
+   * 3. Cập nhật plan/billing cycle
+   * 4. Tính lại giá
+   */
+  @Put(":id")
+  @ApiOperation({ summary: "Cập nhật subscription (upgrade/downgrade)" })
+  @ApiParam({ name: "id", description: "Subscription ID" })
+  @ApiResponse({ status: 200, description: "Cập nhật thành công" })
+  @ApiResponse({ status: 400, description: "Subscription không hoạt động" })
+  @ApiResponse({ status: 404, description: "Không tìm thấy subscription" })
+  async updateSubscription(
+    @Param("id") id: string,
+    @Body() dto: UpdateSubscriptionDto,
+  ): Promise<any> {
+    const subscription = await this.subscriptionService.updateSubscription(id, dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Subscription được cập nhật thành công",
+      data: {
+        id: subscription.id,
+        tenantId: subscription.tenantId,
+        plan: subscription.plan,
+        billingCycle: subscription.billingCycle,
+        price: subscription.price,
+        currency: subscription.currency,
+        endDate: subscription.endDate,
+      },
+    };
+  }
+
+  /**
+   * POST /subscription/:id/cancel
+   *
+   * Hủy subscription.
+   *
+   * Params: id (subscription UUID)
+   * Body: CancelSubscriptionDto (reason)
+   * Response: Subscription đã hủy
+   *
+   * Flow:
+   * 1. Tìm subscription theo ID (tenant isolation)
+   * 2. Cập nhật status=cancelled
+   * 3. Lưu lý do hủy vào metadata
+   */
+  @Post(":id/cancel")
+  @ApiOperation({ summary: "Hủy subscription" })
+  @ApiParam({ name: "id", description: "Subscription ID" })
+  @ApiResponse({ status: 200, description: "Hủy subscription thành công" })
+  @ApiResponse({ status: 400, description: "Subscription đã bị hủy" })
+  @ApiResponse({ status: 404, description: "Không tìm thấy subscription" })
+  async cancelSubscription(
+    @Param("id") id: string,
+    @Body() dto: CancelSubscriptionDto,
+  ): Promise<any> {
+    const subscription = await this.subscriptionService.cancelSubscription(id, dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Subscription đã được hủy",
+      data: {
+        id: subscription.id,
+        tenantId: subscription.tenantId,
+        status: subscription.status,
+        endDate: subscription.endDate,
+        cancellationReason: dto.reason,
+      },
+    };
+  }
+
+  /**
+   * GET /subscription/:tenantId
+   *
+   * Lấy subscription của tenant (tenant isolation — CP02).
+   *
+   * Params: tenantId (tenant UUID)
+   * Response: Subscription hoặc null
+   */
+  @Get(":tenantId")
+  @ApiOperation({ summary: "Lấy subscription của tenant" })
+  @ApiParam({ name: "tenantId", description: "Tenant ID" })
+  @ApiResponse({ status: 200, description: "Thông tin subscription" })
+  async getSubscriptionByTenant(
+    @Param("tenantId") tenantId: string,
+  ): Promise<any> {
+    const subscription = await this.subscriptionService.getSubscriptionByTenant(tenantId);
+
+    if (!subscription) {
+      return {
+        statusCode: HttpStatus.OK,
+        message: "Tenant chưa có subscription",
+        data: null,
+      };
+    }
+
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        id: subscription.id,
+        tenantId: subscription.tenantId,
+        plan: subscription.plan,
+        billingCycle: subscription.billingCycle,
+        status: subscription.status,
+        price: subscription.price,
+        currency: subscription.currency,
+        startDate: subscription.startDate,
+        endDate: subscription.endDate,
+        metadata: subscription.metadata,
+      },
+    };
+  }
+}

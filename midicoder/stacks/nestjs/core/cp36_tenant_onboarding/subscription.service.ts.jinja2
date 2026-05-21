@@ -1,0 +1,355 @@
+/**
+* SubscriptionService — CP36: Tenant Onboarding & Subscription.
+*
+* Tự động tạo bởi Midicoder CE.
+*
+* Service quản lý tenant subscription:
+* - startTrial: Bắt đầu trial period cho tenant
+* - activateSubscription: Kích hoạt subscription chính thức
+* - updateSubscription: Cập nhật plan/billing cycle
+* - cancelSubscription: Hủy subscription
+*/
+
+import {
+Injectable,
+BadRequestException,
+NotFoundException,
+ConflictException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as crypto from "crypto";
+
+import {
+TenantSubscription,
+SubscriptionPlan,
+SubscriptionStatus,
+BillingCycle,
+} from "./entities/subscription.entity";
+import { TenantRegistration, RegistrationStatus } from "./entities/registration.entity";
+import {
+ActivateSubscriptionDto,
+UpdateSubscriptionDto,
+CancelSubscriptionDto,
+} from "./dtos/subscription-dto";
+
+/** Cấu hình giá mặc định cho từng plan. */
+const DEFAULT_PLAN_PRICES: Record<SubscriptionPlan, Record<BillingCycle, number>> = {
+    [SubscriptionPlan.FREE]: {
+    [BillingCycle.MONTHLY]: 0,
+    [BillingCycle.YEARLY]: 0,
+    },
+    [SubscriptionPlan.STARTER]: {
+    [BillingCycle.MONTHLY]: 29,
+    [BillingCycle.YEARLY]: 290,
+    },
+    [SubscriptionPlan.PROFESSIONAL]: {
+    [BillingCycle.MONTHLY]: 99,
+    [BillingCycle.YEARLY]: 990,
+    },
+    [SubscriptionPlan.ENTERPRISE]: {
+    [BillingCycle.MONTHLY]: 299,
+    [BillingCycle.YEARLY]: 2990,
+    },
+    };
+
+    @Injectable()
+    export class SubscriptionService {
+    constructor(
+    @InjectRepository(TenantSubscription)
+    private readonly subscriptionRepo: Repository<TenantSubscription>,
+        @InjectRepository(TenantRegistration)
+        private readonly registrationRepo: Repository<TenantRegistration>,
+            ) {}
+
+            /**
+            * Bắt đầu trial period cho tenant.
+            *
+            * Flow:
+            * 1. Tìm registration đã xác minh
+            * 2. Kiểm tra chưa có subscription/trial
+            * 3. Tạo subscription với status=trial
+            * 4. Tính end_date dựa trên trial_days
+            *
+            * @param registrationId - ID của registration
+            * @param trialDays - Số ngày trial
+            * @returns Subscription trial mới
+            */
+            async startTrial(
+            registrationId: string,
+            trialDays: number = 14,
+            ): Promise<TenantSubscription> {
+                // Tìm registration
+                const registration = await this.registrationRepo.findOne({
+                where: { id: registrationId },
+                });
+
+                if (!registration) {
+                throw new NotFoundException("Không tìm thấy registration");
+                }
+
+                // Kiểm tra đã có subscription chưa
+                const existing = await this.subscriptionRepo.findOne({
+                where: { tenantId: registration.tenantId || registration.email },
+                });
+
+                if (existing) {
+                throw new ConflictException("Tenant đã có subscription hoặc trial đang hoạt động");
+                }
+
+                // Tính ngày hết hạn trial
+                const startDate = new Date();
+                const endDate = new Date(startDate.getTime() + trialDays * 24 * 60 * 60 * 1000);
+
+                // Tạo trial subscription
+                const subscription = this.subscriptionRepo.create({
+                tenantId: registration.tenantId || registration.email,
+                plan: registration.plan,
+                billingCycle: BillingCycle.MONTHLY,
+                status: SubscriptionStatus.TRIAL,
+                startDate,
+                endDate,
+                price: "0",
+                currency: "USD",
+                metadata: {
+                trialDays,
+                source: "auto_trial",
+                registrationId,
+                },
+                });
+
+                return await this.subscriptionRepo.save(subscription);
+                }
+
+                /**
+                * Kích hoạt subscription chính thức.
+                *
+                * Flow:
+                * 1. Tìm registration đã xác minh
+                * 2. Kiểm tra tenant_id đã tồn tại (CP02)
+                * 3. Tính giá dựa trên plan + billing cycle
+                * 4. Tạo subscription với status=active
+                * 5. Hủy trial nếu đang có
+                *
+                * @param dto - Dữ liệu kích hoạt (registrationId, plan, billingCycle, paymentMethodId)
+                * @returns Subscription mới
+                */
+                async activateSubscription(dto: ActivateSubscriptionDto): Promise<TenantSubscription> {
+                    // Tìm registration
+                    const registration = await this.registrationRepo.findOne({
+                    where: { id: dto.registrationId },
+                    });
+
+                    if (!registration) {
+                    throw new NotFoundException("Không tìm thấy registration");
+                    }
+
+                    if (!registration.isVerified()) {
+                    throw new BadRequestException("Registration chưa được xác minh");
+                    }
+
+                    // Tenant isolation: dùng tenantId từ registration (tích hợp CP02)
+                    const tenantId = registration.tenantId;
+                    if (!tenantId) {
+                    throw new BadRequestException(
+                    "Registration chưa có tenant ID, vui lòng hoàn tất đăng ký trước",
+                    );
+                    }
+
+                    // Tính giá từ plan config
+                    const price = DEFAULT_PLAN_PRICES[dto.plan]?.[dto.billingCycle] ?? 0;
+
+                    // Hủy trial cũ nếu đang có
+                    const existingTrial = await this.subscriptionRepo.findOne({
+                    where: { tenantId, status: SubscriptionStatus.TRIAL },
+                    });
+
+                    if (existingTrial) {
+                    existingTrial.status = SubscriptionStatus.EXPIRED;
+                    existingTrial.endDate = new Date();
+                    await this.subscriptionRepo.save(existingTrial);
+                    }
+
+                    // Tạo subscription mới
+                    const now = new Date();
+                    const endDate = this.computeEndDate(now, dto.billingCycle);
+
+                    const subscription = this.subscriptionRepo.create({
+                    tenantId,
+                    plan: dto.plan,
+                    billingCycle: dto.billingCycle,
+                    status: SubscriptionStatus.ACTIVE,
+                    startDate: now,
+                    endDate,
+                    paymentMethodId: dto.paymentMethodId,
+                    price: price.toString(),
+                    currency: "USD",
+                    metadata: {
+                    activatedFrom: "trial",
+                    registrationId: dto.registrationId,
+                    },
+                    });
+
+                    return await this.subscriptionRepo.save(subscription);
+                    }
+
+                    /**
+                    * Cập nhật subscription (upgrade/downgrade plan, đổi billing cycle).
+                    *
+                    * Flow:
+                    * 1. Tìm subscription theo ID
+                    * 2. Kiểm tra subscription đang active
+                    * 3. Cập nhật plan/billing cycle
+                    * 4. Tính lại giá, reset end_date
+                    *
+                    * @param id - Subscription ID
+                    * @param dto - Dữ liệu cập nhật (plan?, billingCycle?)
+                    * @returns Subscription đã cập nhật
+                    */
+                    async updateSubscription(
+                    id: string,
+                    dto: UpdateSubscriptionDto,
+                    ): Promise<TenantSubscription> {
+                        const subscription = await this.subscriptionRepo.findOne({
+                        where: { id },
+                        });
+
+                        if (!subscription) {
+                        throw new NotFoundException("Không tìm thấy subscription");
+                        }
+
+                        if (!subscription.isActive) {
+                        throw new BadRequestException("Chỉ có thể cập nhật subscription đang hoạt động");
+                        }
+
+                        // Cập nhật plan
+                        if (dto.plan) {
+                        subscription.plan = dto.plan;
+                        }
+
+                        // Cập nhật billing cycle
+                        if (dto.billingCycle) {
+                        subscription.billingCycle = dto.billingCycle;
+                        }
+
+                        // Tính lại giá
+                        const price = DEFAULT_PLAN_PRICES[subscription.plan]?.[subscription.billingCycle] ?? 0;
+                        subscription.price = price.toString();
+
+                        // Reset end_date
+                        subscription.endDate = this.computeEndDate(new Date(), subscription.billingCycle);
+
+                        // Lưu metadata về lịch sử thay đổi
+                        const currentMetadata = subscription.metadata || {};
+                        subscription.metadata = {
+                        ...currentMetadata,
+                        lastUpdated: new Date().toISOString(),
+                        previousPlan: currentMetadata?.currentPlan,
+                        currentPlan: subscription.plan,
+                        };
+
+                        return await this.subscriptionRepo.save(subscription);
+                        }
+
+                        /**
+                        * Hủy subscription.
+                        *
+                        * Flow:
+                        * 1. Tìm subscription theo ID
+                        * 2. Kiểm tra chưa bị hủy
+                        * 3. Cập nhật status=cancelled
+                        * 4. Lưu lý do hủy vào metadata
+                        *
+                        * @param id - Subscription ID
+                        * @param dto - Dữ liệu hủy (reason)
+                        * @returns Subscription đã hủy
+                        */
+                        async cancelSubscription(
+                        id: string,
+                        dto: CancelSubscriptionDto,
+                        ): Promise<TenantSubscription> {
+                            const subscription = await this.subscriptionRepo.findOne({
+                            where: { id },
+                            });
+
+                            if (!subscription) {
+                            throw new NotFoundException("Không tìm thấy subscription");
+                            }
+
+                            if (subscription.status === SubscriptionStatus.CANCELLED) {
+                            throw new BadRequestException("Subscription đã bị hủy");
+                            }
+
+                            subscription.status = SubscriptionStatus.CANCELLED;
+                            subscription.endDate = new Date();
+
+                            const currentMetadata = subscription.metadata || {};
+                            subscription.metadata = {
+                            ...currentMetadata,
+                            cancellationReason: dto.reason,
+                            cancelledAt: new Date().toISOString(),
+                            };
+
+                            return await this.subscriptionRepo.save(subscription);
+                            }
+
+                            /**
+                            * Lấy subscription theo tenant ID.
+                            *
+                            * Tenant isolation: chỉ trả về subscription của tenant được yêu cầu.
+                            *
+                            * @param tenantId - Tenant ID (tích hợp CP02)
+                            * @returns Subscription hoặc null
+                            */
+                            async getSubscriptionByTenant(tenantId: string): Promise<TenantSubscription | null> {
+                                return await this.subscriptionRepo.findOne({
+                                where: { tenantId },
+                                order: { createdAt: "DESC" },
+                                });
+                                }
+
+                                /**
+                                * Kiểm tra và cập nhật trạng thái subscriptions hết hạn.
+                                *
+                                * Nên chạy qua scheduler (CP31) để định kỳ kiểm tra.
+                                */
+                                async checkExpiredSubscriptions(): Promise<number> {
+                                    const now = new Date();
+                                    const expired = await this.subscriptionRepo.find({
+                                    where: [
+                                    { status: SubscriptionStatus.ACTIVE, endDate: now },
+                                    { status: SubscriptionStatus.TRIAL, endDate: now },
+                                    ],
+                                    });
+
+                                    let count = 0;
+                                    for (const sub of expired) {
+                                    sub.status = SubscriptionStatus.EXPIRED;
+                                    await this.subscriptionRepo.save(sub);
+                                    count++;
+                                    }
+
+                                    return count;
+                                    }
+
+                                    // =========================================================================
+                                    // Private helpers
+                                    // =========================================================================
+
+                                    /**
+                                    * Tính ngày kết thúc subscription dựa trên billing cycle.
+                                    *
+                                    * @param startDate - Ngày bắt đầu
+                                    * @param cycle - Chu kỳ thanh toán
+                                    * @returns Ngày kết thúc
+                                    */
+                                    private computeEndDate(startDate: Date, cycle: BillingCycle): Date {
+                                    const endDate = new Date(startDate);
+                                    if (cycle === BillingCycle.YEARLY) {
+                                    endDate.setFullYear(endDate.getFullYear() + 1);
+                                    } else {
+                                    endDate.setMonth(endDate.getMonth() + 1);
+                                    }
+                                    return endDate;
+                                    }
+                                    }
