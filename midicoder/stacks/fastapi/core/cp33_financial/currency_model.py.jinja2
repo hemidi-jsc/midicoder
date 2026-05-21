@@ -1,0 +1,191 @@
+"""
+Mô-đun Currency model cho CP33: Financial Engine.
+
+Tự động sinh bởi Midicoder — không sửa thủ công.
+
+Cung cấp:
+- SQLAlchemy ORM model cho bảng currencies
+- RoundingMode enum theo ISO 4217
+- CurrencyConfig dict cho lookup nhanh
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP, ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_FLOOR, ROUND_CEILING
+from enum import Enum
+from typing import Any, ClassVar, Dict, List, Optional
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+
+class RoundingMode(str, Enum):
+    """Chế độ làm tròn theo ISO 4217 / IEEE 754."""
+
+    HALF_UP = "half_up"
+    HALF_EVEN = "half_even"
+    HALF_DOWN = "half_down"
+    FLOOR = "floor"
+    CEILING = "ceiling"
+
+
+# Mapping enum → decimal module constant
+ROUNDING_MAP: ClassVar[Dict[str, Any]] = {
+    "half_up": ROUND_HALF_UP,
+    "half_even": ROUND_HALF_EVEN,
+    "half_down": ROUND_HALF_DOWN,
+    "floor": ROUND_FLOOR,
+    "ceiling": ROUND_CEILING,
+}
+
+
+class Currency(Base):
+    """Mô-đun Currency — đại diện cho loại tiền tệ ISO 4217.
+
+    Trữ thông tin cơ bản: mã tiền tệ, tên, ký hiệu, số chữ số thập phân,
+    chế độ làm tròn, và trạng thái active/inactive.
+    """
+
+    __tablename__ = "currencies"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_currencies_code"),
+        Index("ix_currencies_is_active", "is_active"),
+    )
+
+    code = Column(String(3), primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    symbol = Column(String(10), nullable=False)
+    decimal_places = Column(Integer, default=2, nullable=False)
+    rounding_mode = Column(String(20), default="half_up", nullable=False)
+    minor_unit = Column(Integer, default=100, nullable=False)
+    numeric_code = Column(Integer, nullable=True)
+    country = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    def round_amount(self, amount: Decimal) -> Decimal:
+        """Làm tròn số tiền theo chế độ của tiền tệ.
+
+        Args:
+            amount: Số tiền cần làm tròn.
+
+        Returns:
+            Số tiền đã làm tròn theo decimal_places và rounding_mode.
+        """
+        rounding = ROUNDING_MAP.get(self.rounding_mode, ROUND_HALF_UP)
+        quantize_str = "0." + "0" * self.decimal_places
+        return amount.quantize(Decimal(quantize_str), rounding=rounding)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize Currency thành dictionary."""
+        return {
+            "code": self.code,
+            "name": self.name,
+            "symbol": self.symbol,
+            "decimal_places": self.decimal_places,
+            "rounding_mode": self.rounding_mode,
+            "minor_unit": self.minor_unit,
+            "numeric_code": self.numeric_code,
+            "country": self.country,
+            "is_active": self.is_active,
+        }
+
+
+# --- Currency Configuration ---
+# Danh sách tiền tệ khởi tạo từ ngữ cảnh DSL.
+CURRENCY_SEEDS: List[Dict[str, Any]] = [
+{% for c in currencies %}
+    {
+        "code": "{{ c.code }}",
+        "name": "{{ c.name }}",
+        "symbol": "{{ c.symbol | default('$') }}",
+        "decimal_places": {{ c.decimal_places | default(2) }},
+        "rounding_mode": "{{ c.rounding_mode | default('half_up') }}",
+        "minor_unit": {{ c.minor_unit | default(100) }},
+        "numeric_code": {{ c.numeric_code | default(None) }},
+        "country": "{{ c.country | default('') }}",
+        "is_active": {{ "true" if c.get("is_active", true) else "false" }},
+    },
+{% endfor %}
+]
+
+
+@dataclass
+class CurrencyConfig:
+    """CurrencyConfig — cấu hình tiền tệ cho tính toán nội bộ.
+
+    Cung cấp lookup nhanh theo code, hỗ trợ validate currency code
+    và lấy decimal_places / rounding_mode cho phép tính.
+    """
+
+    currencies: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    base_currency: str = field(default="{{ base_currency | default('USD') }}")
+
+    def get(self, code: str) -> Optional[Dict[str, Any]]:
+        """Lấy cấu hình currency theo code.
+
+        Args:
+            code: Mã tiền tệ ISO 4217.
+
+        Returns:
+            Dict cấu hình hoặc None nếu không tìm thấy.
+        """
+        return self.currencies.get(code)
+
+    def validate(self, code: str) -> bool:
+        """Kiểm tra currency code có hợp lệ không.
+
+        Args:
+            code: Mã tiền tệ.
+
+        Returns:
+            True nếu code tồn tại và active.
+        """
+        cfg = self.currencies.get(code)
+        if not cfg:
+            return False
+        return cfg.get("is_active", True)
+
+    def get_decimal_places(self, code: str) -> int:
+        """Lấy số chữ số thập phân cho currency.
+
+        Args:
+            code: Mã tiền tệ.
+
+        Returns:
+            Số chữ số thập phân, mặc định 2.
+        """
+        cfg = self.currencies.get(code)
+        return cfg["decimal_places"] if cfg else 2
+
+{% if currencies %}
+    @classmethod
+    def from_seeds(cls) -> "CurrencyConfig":
+        """Tạo CurrencyConfig từ danh sách seeds.
+
+        Returns:
+            CurrencyConfig đã được khởi tạo.
+        """
+        currency_map = {}
+        for seed in CURRENCY_SEEDS:
+            currency_map[seed["code"]] = seed
+        return cls(currencies=currency_map, base_currency="{{ base_currency | default('USD') }}")
+{% endif %}

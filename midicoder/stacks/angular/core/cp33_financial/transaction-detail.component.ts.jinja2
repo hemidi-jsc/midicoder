@@ -1,0 +1,429 @@
+/**
+ * Transaction Detail Component — chi tiết giao dịch kế toán.
+ *
+ * Tự động sinh bởi Midicoder CE — CP33: Financial Engine.
+ *
+ * Hiển thị:
+ * - Thông tin tổng quan của transaction
+ * - Danh sách entries (debit/credit) với account mapping
+ * - Nút xác minh chuỗi ledger
+ */
+
+import {
+  Component,
+  Input,
+  OnInit,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { map, catchError, switchMap } from 'rxjs/operators';
+import { of } from 'rxjs';
+
+/** Entry đã xử lý. */
+export interface ProcessedEntry {
+  id: string;
+  transactionId: string;
+  sequence: number;
+  accountCode: string;
+  debit: number;
+  credit: number;
+  description: string;
+  createdAt: string;
+}
+
+/** Transaction đầy đủ. */
+export interface TransactionDetail {
+  id: string;
+  description: string;
+  reference?: string;
+  tenantId?: string;
+  totalDebit: number;
+  totalCredit: number;
+  entryCount: number;
+  status: string;
+  createdAt: string;
+  metadata?: Record<string, any>;
+  entries: ProcessedEntry[];
+}
+
+/** Kết quả xác minh. */
+export interface VerificationResult {
+  valid: boolean;
+  transactionId?: string;
+  totalDebit?: number;
+  totalCredit?: number;
+  entryCount?: number;
+  errors: string[];
+}
+
+/** Account mapping. */
+const ACCOUNT_NAMES: Record<string, string> = {
+{% for a in accounts %}
+  '{{ a.account_code }}': '{{ a.name }}',
+{% endfor %}
+};
+
+@Component({
+  selector: 'app-transaction-detail',
+  standalone: true,
+  imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="transaction-detail">
+      <header class="detail-header">
+        <button class="back-btn" (click)="onBack()">← Quay lại</button>
+        <h1>Chi Tiết Giao Dịch</h1>
+      </header>
+
+      <!-- Loading -->
+      <div *ngIf="loading" class="loading">
+        <p>Đang tải chi tiết giao dịch...</p>
+      </div>
+
+      <!-- Not Found -->
+      <div *ngIf="!loading && !transaction" class="not-found">
+        <p>Không tìm thấy giao dịch với ID: {{ transactionId }}</p>
+      </div>
+
+      <!-- Content -->
+      <ng-container *ngIf="!loading && transaction">
+        <!-- Info tổng quan -->
+        <section class="overview-section">
+          <h2>Thông Tin Tổng Quan</h2>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Transaction ID</span>
+              <span class="value mono">{{ transaction.id }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Mô tả</span>
+              <span class="value">{{ transaction.description || '(không mô tả)' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Tham chiếu</span>
+              <span class="value">{{ transaction.reference || '-' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Tenant</span>
+              <span class="value">{{ transaction.tenantId || '-' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Tổng Debit</span>
+              <span class="value debit">{{ formatCurrency(transaction.totalDebit) }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Tổng Credit</span>
+              <span class="value credit">{{ formatCurrency(transaction.totalCredit) }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Số Entries</span>
+              <span class="value">{{ transaction.entryCount }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Trạng thái</span>
+              <span
+                class="status-badge"
+                [class]="getStatusClass(transaction.status)"
+              >
+                {{ transaction.status }}
+              </span>
+            </div>
+            <div class="info-item">
+              <span class="label">Ngày tạo</span>
+              <span class="value">{{ transaction.createdAt | date:'medium' }}</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Verification -->
+        <section class="verification-section">
+          <h2>Xác Minh Chuỗi Ledger</h2>
+          <button class="verify-btn" (click)="verifyChain()">Xác minh</button>
+
+          <div *ngIf="verification" class="verification-result">
+            <div [class]="verification.valid ? 'valid' : 'invalid'">
+              <strong>{{ verification.valid ? 'Hợp lệ' : 'Không hợp lệ' }}</strong>
+              <ul *ngIf="verification.errors.length">
+                <li *ngFor="let err of verification.errors">{{ err }}</li>
+              </ul>
+              <div *ngIf="verification.valid">
+                <span>Debit: {{ formatCurrency(verification.totalDebit || 0) }}</span>
+                <span>Credit: {{ formatCurrency(verification.totalCredit || 0) }}</span>
+                <span>Entries: {{ verification.entryCount }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Entries table -->
+        <section class="entries-section">
+          <h2>Các Entries</h2>
+          <table class="entries-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Tài khoản</th>
+                <th>Debit</th>
+                <th>Credit</th>
+                <th>Mô tả</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let entry of transaction.entries">
+                <td>{{ entry.sequence }}</td>
+                <td>
+                  <span class="account-code">{{ entry.accountCode }}</span>
+                  <span class="account-name">{{ getAccountName(entry.accountCode) }}</span>
+                </td>
+                <td class="debit-cell">
+                  {{ entry.debit > 0 ? formatCurrency(entry.debit) : '-' }}
+                </td>
+                <td class="credit-cell">
+                  {{ entry.credit > 0 ? formatCurrency(entry.credit) : '-' }}
+                </td>
+                <td>{{ entry.description || '' }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="2"><strong>Tổng</strong></td>
+                <td class="debit-cell"><strong>{{ formatCurrency(transaction.totalDebit) }}</strong></td>
+                <td class="credit-cell"><strong>{{ formatCurrency(transaction.totalCredit) }}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </section>
+
+        <!-- Metadata -->
+        <section *ngIf="transaction.metadata && Object.keys(transaction.metadata).length" class="metadata-section">
+          <h2>Metadata</h2>
+          <pre class="metadata-json">{{ transaction.metadata | json }}</pre>
+        </section>
+      </ng-container>
+    </div>
+  `,
+  styles: [`
+    .transaction-detail {
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 960px;
+    }
+    .detail-header {
+      margin-bottom: 24px;
+    }
+    .back-btn {
+      background: none;
+      border: none;
+      color: #1976d2;
+      cursor: pointer;
+      font-size: 14px;
+      margin-bottom: 8px;
+      padding: 0;
+    }
+    .back-btn:hover { text-decoration: underline; }
+    .detail-header h1 {
+      margin: 0;
+      font-size: 24px;
+      color: #1a1a1a;
+    }
+    .loading, .not-found {
+      text-align: center;
+      padding: 48px 0;
+      color: #888;
+    }
+    .overview-section, .verification-section, .entries-section, .metadata-section {
+      margin-bottom: 32px;
+    }
+    h2 {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 12px;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .info-item {
+      display: flex;
+      flex-direction: column;
+      padding: 8px;
+      background: #f9f9f9;
+      border-radius: 4px;
+    }
+    .info-item .label {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 4px;
+    }
+    .info-item .value {
+      font-size: 14px;
+      color: #333;
+    }
+    .mono { font-family: monospace; }
+    .debit { color: #2e7d32; }
+    .credit { color: #c62828; }
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .status-posted { background: #e8f5e9; color: #2e7d32; }
+    .status-pending { background: #fff3e0; color: #e65100; }
+    .status-reversed { background: #ffebee; color: #c62828; }
+    .verify-btn {
+      padding: 8px 16px;
+      background: #1976d2;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .verify-btn:hover { background: #1565c0; }
+    .verification-result { margin-top: 12px; }
+    .verification-result .valid {
+      padding: 12px;
+      background: #e8f5e9;
+      border-radius: 4px;
+      color: #2e7d32;
+    }
+    .verification-result .invalid {
+      padding: 12px;
+      background: #ffebee;
+      border-radius: 4px;
+      color: #c62828;
+    }
+    .verification-result ul {
+      margin: 8px 0 0 0;
+      padding-left: 20px;
+    }
+    .entries-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .entries-table th, .entries-table td {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid #eee;
+    }
+    .entries-table th {
+      background: #f9f9f9;
+      font-weight: 600;
+      color: #555;
+    }
+    .account-code {
+      font-family: monospace;
+      font-weight: 600;
+    }
+    .account-name {
+      margin-left: 8px;
+      color: #888;
+      font-size: 12px;
+    }
+    .debit-cell { color: #2e7d32; }
+    .credit-cell { color: #c62828; }
+    .totals-row {
+      background: #f5f5f5;
+      font-weight: 600;
+    }
+    .metadata-json {
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      overflow-x: auto;
+    }
+  `],
+})
+export class TransactionDetailComponent implements OnInit {
+  @Input() transactionId = '';
+
+  loading = true;
+  transaction: TransactionDetail | null = null;
+  verification: VerificationResult | null = null;
+
+  private readonly apiBase = '/api/financial';
+
+  constructor(
+    private route: ActivatedRoute,
+    private http: HttpClient,
+  ) {}
+
+  ngOnInit(): void {
+    // Lấy transactionId từ route param hoặc @Input
+    this.route.paramMap.pipe(
+      map((params) => params.get('id') || this.transactionId),
+      switchMap((id) => {
+        if (!id) {
+          this.loading = false;
+          return of(null);
+        }
+        this.transactionId = id;
+        return this.loadTransaction(id);
+      }),
+    ).subscribe((tx) => {
+      this.transaction = tx;
+      this.loading = false;
+    });
+  }
+
+  /** Tải chi tiết transaction. */
+  private loadTransaction(id: string): Observable<TransactionDetail | null> {
+    return this.http
+      .get<TransactionDetail>(`${this.apiBase}/transactions/${id}`)
+      .pipe(
+        catchError((err) => {
+          console.error(`Không thể tải transaction ${id}:`, err);
+          return of(null);
+        }),
+      );
+  }
+
+  /** Xác minh chuỗi ledger. */
+  verifyChain(): void {
+    if (!this.transactionId) return;
+
+    this.http
+      .get<VerificationResult>(`${this.apiBase}/transactions/${this.transactionId}/verify`)
+      .subscribe({
+        next: (result) => {
+          this.verification = result;
+        },
+        error: (err) => {
+          console.error('Không thể xác minh:', err);
+          this.verification = { valid: false, errors: ['Lỗi kết nối với server'] };
+        },
+      });
+  }
+
+  /** Quay lại dashboard. */
+  onBack(): void {
+    window.location.hash = '#/ledger';
+  }
+
+  /** Format currency number. */
+  formatCurrency(value: number): string {
+    return value.toLocaleString('vi-VN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  /** Lấy tên account từ code. */
+  getAccountName(code: string): string {
+    return ACCOUNT_NAMES[code] || '';
+  }
+
+  /** Lấy CSS class cho status. */
+  getStatusClass(status: string): string {
+    return `status-${status.toLowerCase()}`;
+  }
+}

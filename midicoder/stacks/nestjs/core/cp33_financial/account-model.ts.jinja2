@@ -1,0 +1,197 @@
+/**
+ * Account Entity & Types — CP33: Financial Engine.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from "typeorm";
+
+/** Phân loại tài khoản kế toán. */
+export enum AccountType {
+  ASSET = "asset",
+  LIABILITY = "liability",
+  EQUITY = "equity",
+  REVENUE = "revenue",
+  EXPENSE = "expense",
+}
+
+/** Trạng thái tài khoản. */
+export enum AccountStatus {
+  ACTIVE = "active",
+  FROZEN = "frozen",
+  CLOSED = "closed",
+}
+
+/** Interface cấu hình tài khoản. */
+export interface AccountDto {
+  id?: number;
+  accountCode: string;
+  name: string;
+  description?: string;
+  accountType: AccountType;
+  currencyCode: string;
+  status: AccountStatus;
+  openingBalance: number;
+  currentBalance: number;
+  creditLimit?: number;
+  tenantId?: string;
+  ownerId?: string;
+}
+
+/** Account Entity — đại diện cho tài khoản tài chính. */
+@Entity("accounts")
+@Index(["tenantId", "status"])
+export class Account {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column({ length: 20, unique: true })
+  accountCode: string;
+
+  @Column({ length: 200 })
+  name: string;
+
+  @Column({ type: "text", nullable: true })
+  description?: string;
+
+  @Column({
+    type: "enum",
+    enum: AccountType,
+  })
+  accountType: AccountType;
+
+  @Column({ length: 3 })
+  currencyCode: string;
+
+  @Column({
+    type: "enum",
+    enum: AccountStatus,
+    default: AccountStatus.ACTIVE,
+  })
+  status: AccountStatus;
+
+  @Column({ default: 0 })
+  openingBalance: number;
+
+  @Column({ default: 0 })
+  currentBalance: number;
+
+  @Column({ nullable: true })
+  creditLimit?: number;
+
+  @Column({ length: 50, nullable: true })
+  tenantId?: string;
+
+  @Column({ length: 50, nullable: true })
+  ownerId?: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  @Column({ nullable: true })
+  closedAt?: Date;
+
+  /** Kiểm tra có thể debit không. */
+  canDebit(amount: number): boolean {
+    if (this.status !== AccountStatus.ACTIVE) return false;
+    return this.currentBalance >= amount;
+  }
+
+  /** Kiểm tra có thể credit không. */
+  canCredit(amount: number): boolean {
+    if (this.status !== AccountStatus.ACTIVE) return false;
+    if (this.creditLimit !== undefined) {
+      return this.currentBalance + amount <= this.creditLimit;
+    }
+    return true;
+  }
+
+  /** Serialize thành DTO. */
+  toDto(): AccountDto {
+    return {
+      id: this.id,
+      accountCode: this.accountCode,
+      name: this.name,
+      description: this.description,
+      accountType: this.accountType,
+      currencyCode: this.currencyCode,
+      status: this.status,
+      openingBalance: this.openingBalance,
+      currentBalance: this.currentBalance,
+      creditLimit: this.creditLimit,
+      tenantId: this.tenantId,
+      ownerId: this.ownerId,
+    };
+  }
+}
+
+/** Danh sách tài khoản seed từ DSL. */
+export const ACCOUNT_SEEDS: Omit<AccountDto, "id">[] = [
+{% for a in accounts %}
+  {
+    accountCode: "{{ a.account_code }}",
+    name: "{{ a.name }}",
+    description: "{{ a.description | default('') }}",
+    accountType: AccountType.{{ (a.account_type | default('ASSET')).toUpperCase() }},
+    currencyCode: "{{ a.currency_code | default(base_currency | default('USD')) }}",
+    status: AccountStatus.{{ (a.status | default('ACTIVE')).toUpperCase() }},
+    openingBalance: {{ a.opening_balance | default(0) }},
+    currentBalance: {{ a.opening_balance | default(0) }},
+    creditLimit: {{ a.credit_limit | default('undefined') }},
+    tenantId: "{{ a.tenant_id | default('') }}",
+    ownerId: "{{ a.owner_id | default('') }}",
+  },
+{% endfor %}
+];
+
+/** AccountRegistry — ánh xạ account_code → Account config. */
+export class AccountRegistry {
+  private readonly accountMap: Map<string, Omit<AccountDto, "id">>;
+
+  constructor(seeds: Omit<AccountDto, "id">[]) {
+    this.accountMap = new Map();
+    for (const seed of seeds) {
+      this.accountMap.set(seed.accountCode, seed);
+    }
+  }
+
+  /** Lấy tài khoản theo code. */
+  get(accountCode: string): Omit<AccountDto, "id"> | undefined {
+    return this.accountMap.get(accountCode);
+  }
+
+  /** Kiểm tra account code hợp lệ và active. */
+  validate(accountCode: string): boolean {
+    const acct = this.accountMap.get(accountCode);
+    return acct?.status === AccountStatus.ACTIVE;
+  }
+
+  /** Lọc tài khoản theo loại. */
+  filterByType(accountType: AccountType): Omit<AccountDto, "id">[] {
+    return Array.from(this.accountMap.values()).filter(
+      (a) => a.accountType === accountType,
+    );
+  }
+
+  /** Lọc tài khoản theo currency. */
+  filterByCurrency(currencyCode: string): Omit<AccountDto, "id">[] {
+    return Array.from(this.accountMap.values()).filter(
+      (a) => a.currencyCode === currencyCode,
+    );
+  }
+
+  /** Lấy tất cả tài khoản. */
+  listAll(): Omit<AccountDto, "id">[] {
+    return Array.from(this.accountMap.values());
+  }
+}

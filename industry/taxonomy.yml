@@ -620,7 +620,7 @@ core_packs:
       - double_entry_ledger
       - rounding_apply
     category: financial
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP34
     name: Report & Document Generator

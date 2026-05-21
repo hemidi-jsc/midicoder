@@ -1,0 +1,348 @@
+/**
+* Ledger Dashboard Component — bảng điều khiển sổ cái kế toán.
+*
+* Tự động sinh bởi Midicoder CE — CP33: Financial Engine.
+*
+* Hiển thị:
+* - Danh sách giao dịch gần nhất
+* - Balance của các tài khoản
+* - Lọc theo tenant / currency / account type
+*/
+
+import {
+Component,
+OnInit,
+ChangeDetectionStrategy,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { map, catchError } from 'rxjs/operators';
+import { of } from 'rxjs';
+
+/** Mô hình giao dịch. */
+export interface TransactionEntry {
+id: string;
+transactionId: string;
+sequence: number;
+accountCode: string;
+debit: number;
+credit: number;
+description: string;
+createdAt: string;
+}
+
+/** Mô hình giao dịch tổng. */
+export interface Transaction {
+id: string;
+description: string;
+reference?: string;
+tenantId?: string;
+totalDebit: number;
+totalCredit: number;
+entryCount: number;
+status: string;
+createdAt: string;
+}
+
+/** Mô hình balance tài khoản. */
+export interface AccountBalance {
+accountCode: string;
+balance: number;
+totalDebit: number;
+totalCredit: number;
+entryCount: number;
+asOf: string;
+}
+
+/** Dữ liệu seed cho accounts. */
+const ACCOUNT_CODES: string[] = [
+{% for a in accounts %}
+'{{ a.account_code }}',
+{% endfor %}
+];
+
+/** Dữ liệu seed cho currencies. */
+const CURRENCY_CODES: string[] = [
+{% for c in currencies %}
+'{{ c.code }}',
+{% endfor %}
+];
+
+@Component({
+selector: 'app-ledger-dashboard',
+standalone: true,
+imports: [CommonModule, FormsModule],
+changeDetection: ChangeDetectionStrategy.OnPush,
+template: `
+<div class="ledger-dashboard">
+    <header class="dashboard-header">
+        <h1>Sổ Cái Kế Toán</h1>
+        <p class="subtitle">CP33: Financial Engine</p>
+    </header>
+
+    <!-- Bộ lọc -->
+    <section class="filter-bar">
+        <label>Tenant:
+            <select [(ngModel)]="selectedTenant" (change)="onFilterChange()">
+                <option value="">Tất cả</option>
+                <option *ngFor="let t of tenants" [value]="t">{{ t }}</option>
+            </select>
+        </label>
+        <label>Currency:
+            <select [(ngModel)]="selectedCurrency" (change)="onFilterChange()">
+                <option value="">Tất cả</option>
+                <option *ngFor="let cur of currencies" [value]="cur">{{ cur }}</option>
+            </select>
+        </label>
+    </section>
+
+    <!-- Account Balances -->
+    <section class="balance-section">
+        <h2>Balance Tài Khoản</h2>
+        <div *ngIf="balances$ | async as balances; else loading">
+            <table class="balance-table">
+                <thead>
+                    <tr>
+                        <th>Tài khoản</th>
+                        <th>Balance</th>
+                        <th>Total Debit</th>
+                        <th>Total Credit</th>
+                        <th>Số entries</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let b of balances">
+                        <td>{{ b.accountCode }}</td>
+                        <td [class.positive]="b.balance > 0" [class.negative]="b.balance < 0">
+                            {{ formatCurrency(b.balance) }}
+                        </td>
+                        <td>{{ formatCurrency(b.totalDebit) }}</td>
+                        <td>{{ formatCurrency(b.totalCredit) }}</td>
+                        <td>{{ b.entryCount }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <ng-template #loading>
+            <p class="loading">Đang tải balance...</p>
+        </ng-template>
+    </section>
+
+    <!-- Giao dịch gần nhất -->
+    <section class="transactions-section">
+        <h2>Giao Dịch Gần Nhất</h2>
+        <div *ngIf="transactions$ | async as transactions; else loading">
+            <table class="transaction-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Mô tả</th>
+                        <th>Debit</th>
+                        <th>Credit</th>
+                        <th>Entries</th>
+                        <th>Trạng thái</th>
+                        <th>Ngày tạo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let t of transactions" (click)="onTransactionClick(t.id)" class="clickable">
+                        <td class="tx-id">{{ truncate(t.id) }}</td>
+                        <td>{{ t.description || '(không mô tả)' }}</td>
+                        <td>{{ formatCurrency(t.totalDebit) }}</td>
+                        <td>{{ formatCurrency(t.totalCredit) }}</td>
+                        <td>{{ t.entryCount }}</td>
+                        <td>
+                            <span class="status-badge" [class]="getStatusClass(t.status)">
+                                {{ t.status }}
+                            </span>
+                        </td>
+                        <td>{{ t.createdAt | date:'medium' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p *ngIf="!transactions.length" class="empty">Chưa có giao dịch nào.</p>
+        </div>
+        <ng-template #loading>
+            <p class="loading">Đang tải giao dịch...</p>
+        </ng-template>
+    </section>
+</div>
+`,
+styles: [`
+.ledger-dashboard {
+padding: 16px;
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.dashboard-header {
+margin-bottom: 24px;
+}
+.dashboard-header h1 {
+margin: 0;
+font-size: 24px;
+color: #1a1a1a;
+}
+.subtitle {
+margin: 4px 0 0 0;
+color: #666;
+font-size: 14px;
+}
+.filter-bar {
+display: flex;
+gap: 16px;
+margin-bottom: 24px;
+padding: 12px;
+background: #f5f5f5;
+border-radius: 4px;
+}
+.filter-bar label {
+display: flex;
+align-items: center;
+gap: 8px;
+font-size: 14px;
+}
+.filter-bar select {
+padding: 4px 8px;
+border: 1px solid #ccc;
+border-radius: 4px;
+}
+.balance-section, .transactions-section {
+margin-bottom: 32px;
+}
+h2 {
+font-size: 18px;
+color: #333;
+margin-bottom: 12px;
+}
+table {
+width: 100%;
+border-collapse: collapse;
+font-size: 14px;
+}
+th, td {
+text-align: left;
+padding: 8px 12px;
+border-bottom: 1px solid #eee;
+}
+th {
+background: #f9f9f9;
+font-weight: 600;
+color: #555;
+}
+.positive { color: #2e7d32; }
+.negative { color: #c62828; }
+.tx-id {
+font-family: monospace;
+font-size: 12px;
+color: #888;
+}
+.clickable { cursor: pointer; }
+.clickable:hover { background: #f5f5f5; }
+.status-badge {
+display: inline-block;
+padding: 2px 8px;
+border-radius: 12px;
+font-size: 12px;
+font-weight: 500;
+}
+.status-posted {
+background: #e8f5e9;
+color: #2e7d32;
+}
+.status-pending {
+background: #fff3e0;
+color: #e65100;
+}
+.status-reversed {
+background: #ffebee;
+color: #c62828;
+}
+.loading {
+color: #888;
+font-style: italic;
+}
+.empty {
+color: #888;
+text-align: center;
+padding: 24px;
+}
+`],
+})
+export class LedgerDashboardComponent implements OnInit {
+// Filter state
+selectedTenant = '';
+selectedCurrency = '';
+tenants: string[] = [];
+currencies: string[] = CURRENCY_CODES;
+
+// Data observables
+transactions$: Observable<Transaction[]> = of([]);
+    balances$: Observable<AccountBalance[]> = of([]);
+
+        // Base API URL
+        private readonly apiBase = '/api/financial';
+
+        constructor(private http: HttpClient) {}
+
+        ngOnInit(): void {
+        this.loadTransactions();
+        this.loadBalances();
+        }
+
+        /** Tải danh sách giao dịch. */
+        loadTransactions(): void {
+        const params: Record<string, string> = { limit: '50' };
+            if (this.selectedTenant) params.tenantId = this.selectedTenant;
+
+            this.transactions$ = this.http
+            .get<Transaction[]>(`${this.apiBase}/transactions`, { params })
+                .pipe(
+                catchError((err) => {
+                console.error('Không thể tải giao dịch:', err);
+                return of([]);
+                }),
+                );
+                }
+
+                /** Tải danh sách balance tài khoản. */
+                loadBalances(): void {
+                this.balances$ = this.http
+                .get<AccountBalance[]>(`${this.apiBase}/balances`)
+                    .pipe(
+                    catchError((err) => {
+                    console.error('Không thể tải balance:', err);
+                    return of([]);
+                    }),
+                    );
+                    }
+
+                    /** Xử lý khi thay đổi filter. */
+                    onFilterChange(): void {
+                    this.loadTransactions();
+                    }
+
+                    /** Xử lý click vào giao dịch. */
+                    onTransactionClick(transactionId: string): void {
+                    // Navigate đến chi tiết giao dịch
+                    window.location.hash = `#/ledger/transaction/${transactionId}`;
+                    }
+
+                    /** Format currency number. */
+                    formatCurrency(value: number): string {
+                    return value.toLocaleString('vi-VN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                    });
+                    }
+
+                    /** Truncate string. */
+                    truncate(str: string, length: number = 12): string {
+                    return str.length > length ? str.substring(0, length) + '...' : str;
+                    }
+
+                    /** Lấy CSS class cho status. */
+                    getStatusClass(status: string): string {
+                    return `status-${status.toLowerCase()}`;
+                    }
+                    }

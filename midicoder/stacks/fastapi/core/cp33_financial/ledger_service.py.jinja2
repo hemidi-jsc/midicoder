@@ -1,0 +1,338 @@
+"""
+Ledger Service — dịch vụ sổ cái kép (double-entry bookkeeping).
+
+Tự động sinh bởi Midicoder CE — CP33: Financial Engine.
+
+Module này cung cấp LedgerService để quản lý:
+- Tạo giao dịch (create_transaction) với các debit/credit entries
+- Xác minh chuỗi ledger (verify_chain) — đảm bảo debit = credit
+- Tính balance (get_balance) theo account
+- Tích hợp với CP05 EventBus và CP14 Audit
+
+KPI-029: Tenant Isolation
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
+
+logger = logging.getLogger(__name__)
+
+
+class LedgerError(Exception):
+    """Lỗi chung của Ledger Service."""
+
+    pass
+
+
+class ImbalanceError(LedgerError):
+    """Lỗi không cân bằng debit/credit."""
+
+    pass
+
+
+class ValidationError(LedgerError):
+    """Lỗi xác thực dữ liệu."""
+
+    pass
+
+
+class LedgerService:
+    """Dịch vụ sổ cái kép (double-entry ledger).
+
+    Nguyên tắc:
+    - Mỗi transaction gồm nhiều entries (debit/credit)
+    - Tổng debit phải bằng tổng credit
+    - Mỗi entry gắn với một account
+    - Hỗ trợ tenant isolation
+    """
+
+    def __init__(
+        self,
+        event_bus: Any = None,
+        audit_logger: Any = None,
+        currency_service: Any = None,
+        account_registry: Any = None,
+    ) -> None:
+        """Khởi tạo LedgerService.
+
+        Args:
+            event_bus: CP05 EventBus để publish events.
+            audit_logger: CP14 Audit logger.
+            currency_service: Dịch vụ Currency (CP33).
+            account_registry: AccountRegistry để validate accounts.
+        """
+        self.event_bus = event_bus
+        self.audit_logger = audit_logger
+        self.currency_service = currency_service
+        self.account_registry = account_registry
+
+        # In-memory storage (thay bằng DB trong production)
+        self._transactions: Dict[str, Dict[str, Any]] = {}
+        self._entries: Dict[str, List[Dict[str, Any]]] = {}
+        self._account_balances: Dict[str, Decimal] = {}
+
+    def create_transaction(
+        self,
+        entries: List[Dict[str, Any]],
+        description: str = "",
+        reference: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Tạo giao dịch mới với các debit/credit entries.
+
+        Args:
+            entries: Danh sách entries. Mỗi entry: {"account_code": str, "debit": Decimal, "credit": Decimal}.
+            description: Mô tả giao dịch.
+            reference: Mã tham chiếu ngoài.
+            tenant_id: Tenant ID cho isolation.
+            metadata: Metadata bổ sung.
+
+        Returns:
+            Transaction result dict.
+
+        Raises:
+            ImbalanceError: Nếu tổng debit != tổng credit.
+            ValidationError: Nếu entry không hợp lệ.
+        """
+        if not entries:
+            raise ValidationError("Giao dịch phải có ít nhất một entry")
+
+        # Validate entries
+        for entry in entries:
+            account_code = entry.get("account_code")
+            debit = Decimal(str(entry.get("debit", 0)))
+            credit = Decimal(str(entry.get("credit", 0)))
+
+            if not account_code:
+                raise ValidationError("Entry thiếu account_code")
+            if debit < 0 or credit < 0:
+                raise ValidationError("Debit và credit không được âm")
+            if debit == 0 and credit == 0:
+                raise ValidationError("Entry phải có debit hoặc credit > 0")
+
+            # Validate account exists
+            if self.account_registry and not self.account_registry.validate(account_code):
+                raise ValidationError(f"Tài khoản '{account_code}' không hợp lệ")
+
+        # Kiểm tra cân bằng
+        total_debit = sum(e.get("debit", Decimal("0")) for e in entries)
+        total_credit = sum(e.get("credit", Decimal("0")) for e in entries)
+        if total_debit != total_credit:
+            raise ImbalanceError(
+                f"Giao dịch không cân bằng: debit={total_debit}, credit={total_credit}"
+            )
+
+        # Tạo transaction
+        transaction_id = str(uuid4())
+        now = datetime.utcnow()
+
+        transaction = {
+            "id": transaction_id,
+            "description": description,
+            "reference": reference,
+            "tenant_id": tenant_id,
+            "total_debit": str(total_debit),
+            "total_credit": str(total_credit),
+            "entry_count": len(entries),
+            "status": "posted",
+            "created_at": now.isoformat(),
+            "metadata": metadata or {},
+        }
+
+        # Tạo entries với sequence
+        entry_list = []
+        for seq, entry in enumerate(entries, 1):
+            debit_val = Decimal(str(entry.get("debit", 0)))
+            credit_val = Decimal(str(entry.get("credit", 0)))
+            processed_entry = {
+                "id": str(uuid4()),
+                "transaction_id": transaction_id,
+                "sequence": seq,
+                "account_code": entry["account_code"],
+                "debit": str(debit_val),
+                "credit": str(credit_val),
+                "description": entry.get("description", ""),
+                "created_at": now.isoformat(),
+            }
+            entry_list.append(processed_entry)
+
+            # Cập nhật balance
+            acct = entry["account_code"]
+            current = self._account_balances.get(acct, Decimal("0"))
+            self._account_balances[acct] = current + debit_val - credit_val
+
+        self._transactions[transaction_id] = transaction
+        self._entries[transaction_id] = entry_list
+
+        # Publish event
+        self._publish_event("ledger.transaction_posted", {
+            "transaction_id": transaction_id,
+            "total_debit": str(total_debit),
+            "entry_count": len(entries),
+        })
+
+        # Audit log
+        self._audit("transaction_posted", {
+            "transaction_id": transaction_id,
+            "description": description,
+        })
+
+        return {
+            "transaction_id": transaction_id,
+            "status": "posted",
+            "entries": entry_list,
+        }
+
+    def verify_chain(self, transaction_id: str) -> Dict[str, Any]:
+        """Xác minh chuỗi ledger cho một transaction.
+
+        Kiểm tra:
+        - Transaction tồn tại
+        - Tổng debit = tổng credit
+        - Các accounts tham chiếu hợp lệ
+        - Entry sequence liên tiếp
+
+        Args:
+            transaction_id: ID của transaction.
+
+        Returns:
+            Verification result dict.
+        """
+        transaction = self._transactions.get(transaction_id)
+        if not transaction:
+            return {
+                "valid": False,
+                "errors": [f"Transaction '{transaction_id}' không tồn tại"],
+            }
+
+        errors: List[str] = []
+        entry_list = self._entries.get(transaction_id, [])
+
+        if not entry_list:
+            errors.append("Không có entries cho transaction")
+            return {"valid": False, "errors": errors}
+
+        # Kiểm tra cân bằng
+        total_debit = sum(Decimal(e["debit"]) for e in entry_list)
+        total_credit = sum(Decimal(e["credit"]) for e in entry_list)
+        if total_debit != total_credit:
+            errors.append(f"Không cân bằng: debit={total_debit}, credit={total_credit}")
+
+        # Kiểm tra sequence liên tiếp
+        sequences = [e["sequence"] for e in sorted(entry_list, key=lambda x: x["sequence"])]
+        expected = list(range(1, len(entry_list) + 1))
+        if sequences != expected:
+            errors.append(f"Entry sequence không liên tiếp: {sequences}")
+
+        # Kiểm tra accounts
+        for entry in entry_list:
+            if self.account_registry and not self.account_registry.validate(entry["account_code"]):
+                errors.append(f"Account '{entry['account_code']}' không hợp lệ")
+
+        return {
+            "valid": len(errors) == 0,
+            "transaction_id": transaction_id,
+            "total_debit": str(total_debit),
+            "total_credit": str(total_credit),
+            "entry_count": len(entry_list),
+            "errors": errors,
+        }
+
+    def get_balance(self, account_code: str) -> Dict[str, Any]:
+        """Lấy balance của một tài khoản.
+
+        Args:
+            account_code: Mã tài khoản.
+
+        Returns:
+            Balance result dict.
+        """
+        balance = self._account_balances.get(account_code, Decimal("0"))
+
+        # Tính total debit/credit từ tất cả entries
+        total_debit = Decimal("0")
+        total_credit = Decimal("0")
+        entry_count = 0
+
+        for txn_entries in self._entries.values():
+            for entry in txn_entries:
+                if entry["account_code"] == account_code:
+                    total_debit += Decimal(entry["debit"])
+                    total_credit += Decimal(entry["credit"])
+                    entry_count += 1
+
+        return {
+            "account_code": account_code,
+            "balance": str(balance),
+            "total_debit": str(total_debit),
+            "total_credit": str(total_credit),
+            "entry_count": entry_count,
+            "as_of": datetime.utcnow().isoformat(),
+        }
+
+    def get_transaction(self, transaction_id: str) -> Optional[Dict[str, Any]]:
+        """Lấy thông tin transaction.
+
+        Args:
+            transaction_id: ID của transaction.
+
+        Returns:
+            Transaction dict hoặc None.
+        """
+        return self._transactions.get(transaction_id)
+
+    def list_transactions(
+        self,
+        tenant_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Lấy danh sách transactions.
+
+        Args:
+            tenant_id: Lọc theo tenant.
+            limit: Số lượng tối đa.
+
+        Returns:
+            Danh sách transactions.
+        """
+        txns = list(self._transactions.values())
+        if tenant_id:
+            txns = [t for t in txns if t.get("tenant_id") == tenant_id]
+        return txns[:limit]
+
+    def _publish_event(self, event_name: str, payload: Dict[str, Any]) -> None:
+        """Publish event qua CP05 EventBus.
+
+        Args:
+            event_name: Tên event.
+            payload: Event payload.
+        """
+        if self.event_bus:
+            try:
+                self.event_bus.publish(event_name, payload)
+            except Exception as e:
+                logger.warning("Không thể publish event %s: %s", event_name, e)
+
+    def _audit(self, action: str, metadata: Dict[str, Any]) -> None:
+        """Ghi audit log qua CP14.
+
+        Args:
+            action: Action name.
+            metadata: Audit metadata.
+        """
+        if self.audit_logger:
+            try:
+                self.audit_logger.log(
+                    action=action,
+                    actor_type="ledger_service",
+                    entity="transaction",
+                    metadata=metadata,
+                )
+            except Exception as e:
+                logger.warning("Không thể ghi audit log %s: %s", action, e)

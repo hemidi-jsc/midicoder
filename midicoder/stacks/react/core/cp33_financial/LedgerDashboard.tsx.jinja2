@@ -1,0 +1,164 @@
+"""
+Mô-đun Ledger Dashboard cho CP33: Financial Engine.
+
+Tự động sinh bởi Midicoder — không sửa thủ công.
+"""
+
+import React, { useState, useEffect } from 'react';
+
+/**
+ * Interface cho tài khoản kế toán.
+ */
+interface Account {
+  code: string;
+  name: string;
+  account_type: string;
+  balance?: number;
+}
+
+/**
+ * Interface cho giao dịch tài chính.
+ */
+interface Transaction {
+  id: string;
+  transaction_type: string;
+  status: string;
+  tenant_id: string;
+  total_debit: string;
+  total_credit: string;
+  description: string;
+  created_at: string;
+  entries: LedgerEntry[];
+}
+
+/**
+ * Interface cho ledger entry.
+ */
+interface LedgerEntry {
+  id: string;
+  transaction_id: string;
+  entry_type: string;
+  account_code: string;
+  amount: string;
+  currency: string;
+  description: string;
+}
+
+/**
+ * LedgerDashboard — Bảng điều khiển ledger.
+ *
+ * Hiển thị:
+ * - Danh sách giao dịch (lọc theo ngày, loại)
+ * - Số dư tài khoản
+ * - Trạng thái hash chain
+ */
+const LedgerDashboard: React.FC = () => {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedTxn, setSelectedTxn] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState<string>('all');
+
+  // TODO: Kết nối API backend
+  useEffect(() => {
+    // fetch transactions và accounts từ API
+  }, []);
+
+  /**
+   * Lọc giao dịch theo loại.
+   */
+  const filteredTransactions = transactions.filter((t) => {
+    if (filterType === 'all') return true;
+    return t.transaction_type === filterType;
+  });
+
+  /**
+   * Định dạng số tiền hiển thị.
+   */
+  const formatAmount = (amount: string, currency: string = 'USD'): string => {
+    const num = parseFloat(amount);
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
+    }).format(num);
+  };
+
+  return (
+    <div className="ledger-dashboard" data-testid="ledger-dashboard">
+      <h1>Financial Ledger</h1>
+
+      {/* Bộ lọc */}
+      <div className="filters">
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          aria-label="Lọc theo loại giao dịch"
+        >
+          <option value="all">Tất cả</option>
+          <option value="single_entry">Single Entry</option>
+          <option value="double_entry">Double Entry</option>
+        </select>
+      </div>
+
+      {/* Danh sách giao dịch */}
+      <div className="transaction-list">
+        <h2>Giao dịch</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Loại</th>
+              <th>Trạng thái</th>
+              <th>Nợ</th>
+              <th>Có</th>
+              <th>Ngày</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredTransactions.map((txn) => (
+              <tr
+                key={txn.id}
+                onClick={() => setSelectedTxn(txn.id)}
+                style={{ cursor: 'pointer' }}
+                className={selectedTxn === txn.id ? 'selected' : ''}
+              >
+                <td>{txn.id.substring(0, 8)}</td>
+                <td>{txn.transaction_type}</td>
+                <td>{txn.status}</td>
+                <td>{formatAmount(txn.total_debit)}</td>
+                <td>{formatAmount(txn.total_credit)}</td>
+                <td>{new Date(txn.created_at).toLocaleDateString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Số dư tài khoản */}
+      <div className="account-balances">
+        <h2>Số dư tài khoản</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Mã</th>
+              <th>Tên</th>
+              <th>Loại</th>
+              <th>Số dư</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((acct) => (
+              <tr key={acct.code}>
+                <td>{acct.code}</td>
+                <td>{acct.name}</td>
+                <td>{acct.account_type}</td>
+                <td>{acct.balance ? formatAmount(String(acct.balance)) : '0.00'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+export default LedgerDashboard;

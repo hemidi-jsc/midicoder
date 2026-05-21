@@ -776,6 +776,25 @@ class ErrorCode(str, Enum):
     CP32_REGISTRY_NOT_FOUND = "MDC-CP32-006"
 
     # =========================================================================
+    # CP33: Financial Engine Errors
+    # =========================================================================
+    CP33_CURRENCY_INVALID = "MDC-CP33-001"
+    CP33_FX_RATE_NOT_FOUND = "MDC-CP33-002"
+    CP33_DOUBLE_ENTRY_IMBALANCE = "MDC-CP33-003"
+    CP33_ACCOUNT_NOT_FOUND = "MDC-CP33-004"
+    CP33_LEDGER_IMMUTABLE = "MDC-CP33-005"
+    CP33_HASH_CHAIN_FAILED = "MDC-CP33-006"
+    CP33_ROUNDING_RULE_NOT_FOUND = "MDC-CP33-007"
+    CP33_BASE_CURRENCY_NOT_SET = "MDC-CP33-008"
+    CP33_FX_SYNC_FAILED = "MDC-CP33-009"
+    CP33_INVALID_DECIMAL_PRECISION = "MDC-CP33-010"
+    CP33_TRANSACTION_NOT_FOUND = "MDC-CP33-011"
+    CP33_INVALID_ENTRY_TYPE = "MDC-CP33-012"
+    CP33_ACCOUNT_TYPE_INVALID = "MDC-CP33-013"
+    CP33_DSL_PARSE_ERROR = "MDC-CP33-014"
+    CP33_INVALID_CURRENCY_PAIR = "MDC-CP33-015"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

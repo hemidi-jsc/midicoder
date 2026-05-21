@@ -1,0 +1,215 @@
+"""
+Mô-đun Transaction Detail cho CP33: Financial Engine.
+
+Tự động sinh bởi Midicoder — không sửa thủ công.
+"""
+
+import React, { useState, useEffect } from 'react';
+
+/**
+ * Interface cho ledger entry.
+ */
+interface LedgerEntry {
+  id: string;
+  transaction_id: string;
+  entry_type: string;
+  account_code: string;
+  amount: string;
+  currency: string;
+  description: string;
+  previous_hash?: string;
+}
+
+/**
+ * Interface cho giao dịch tài chính.
+ */
+interface Transaction {
+  id: string;
+  transaction_type: string;
+  status: string;
+  tenant_id: string;
+  total_debit: string;
+  total_credit: string;
+  description: string;
+  created_at: string;
+  entries: LedgerEntry[];
+}
+
+/**
+ * Props cho component TransactionDetail.
+ */
+interface TransactionDetailProps {
+  transactionId: string;
+}
+
+/**
+ * TransactionDetail — Chi tiết giao dịch.
+ *
+ * Hiển thị:
+ * - Thông tin giao dịch (ID, loại, trạng thái)
+ * - Danh sách entries (nợ/có)
+ * - Trạng thái hash chain
+ * - Kiểm tra cân bằng double-entry
+ */
+const TransactionDetail: React.FC<TransactionDetailProps> = ({ transactionId }) => {
+  const [transaction, setTransaction] = useState<Transaction | null>(null);
+  const [chainVerified, setChainVerified] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // TODO: Kết nối API backend
+  useEffect(() => {
+    if (!transactionId) return;
+    setLoading(true);
+    // fetch transaction detail từ API
+    // fetch hash chain verification từ API
+    setLoading(false);
+  }, [transactionId]);
+
+  /**
+   * Định dạng số tiền hiển thị.
+   */
+  const formatAmount = (amount: string, currency: string = 'USD'): string => {
+    const num = parseFloat(amount);
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
+    }).format(num);
+  };
+
+  /**
+   * Kiểm tra giao dịch có cân bằng không (double-entry).
+   */
+  const isBalanced = (txn: Transaction): boolean => {
+    if (txn.transaction_type !== 'double_entry') return true;
+    return txn.total_debit === txn.total_credit;
+  };
+
+  if (loading) {
+    return <div className="loading">Đang tải chi tiết giao dịch...</div>;
+  }
+
+  if (!transaction) {
+    return <div className="not-found">Không tìm thấy giao dịch {transactionId}</div>;
+  }
+
+  return (
+    <div className="transaction-detail" data-testid="transaction-detail">
+      <h2>Chi tiết giao dịch</h2>
+
+      {/* Thông tin giao dịch */}
+      <div className="transaction-info">
+        <table>
+          <tbody>
+            <tr>
+              <th>ID Giao dịch</th>
+              <td>{transaction.id}</td>
+            </tr>
+            <tr>
+              <th>Loại</th>
+              <td>
+                <span className={`badge badge-${transaction.transaction_type}`}>
+                  {transaction.transaction_type}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <th>Trạng thái</th>
+              <td>
+                <span className={`badge badge-${transaction.status}`}>
+                  {transaction.status}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <th>Tổng Nợ</th>
+              <td className="debit">{formatAmount(transaction.total_debit)}</td>
+            </tr>
+            <tr>
+              <th>Tổng Có</th>
+              <td className="credit">{formatAmount(transaction.total_credit)}</td>
+            </tr>
+            <tr>
+              <th>Cân bằng</th>
+              <td>
+                {isBalanced(transaction) ? (
+                  <span className="balanced">✓ Cân bằng</span>
+                ) : (
+                  <span className="imbalanced">✗ Không cân bằng</span>
+                )}
+              </td>
+            </tr>
+            <tr>
+              <th>Mô tả</th>
+              <td>{transaction.description || '—'}</td>
+            </tr>
+            <tr>
+              <th>Ngày tạo</th>
+              <td>{new Date(transaction.created_at).toLocaleString('vi-VN')}</td>
+            </tr>
+            <tr>
+              <th>Tenant</th>
+              <td>{transaction.tenant_id || '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Trạng thái hash chain */}
+      <div className="hash-chain-status">
+        <h3>Hash Chain</h3>
+        {chainVerified === null ? (
+          <span className="pending">Đang xác minh...</span>
+        ) : chainVerified ? (
+          <span className="verified">✓ Hash chain hợp lệ</span>
+        ) : (
+          <span className="tampered">✗ Hash chain bị hỏng</span>
+        )}
+      </div>
+
+      {/* Danh sách entries */}
+      <div className="entries-list">
+        <h3>Các Entries ({transaction.entries.length})</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>ID Entry</th>
+              <th>Loại</th>
+              <th>Tài khoản</th>
+              <th>Số tiền</th>
+              <th>Tiền tệ</th>
+              <th>Mô tả</th>
+              <th>Hash trước</th>
+            </tr>
+          </thead>
+          <tbody>
+            {transaction.entries.map((entry) => (
+              <tr key={entry.id}>
+                <td className="entry-id">{entry.id}</td>
+                <td>
+                  <span className={`entry-type entry-${entry.entry_type}`}>
+                    {entry.entry_type === 'debit' ? 'Nợ' : 'Có'}
+                  </span>
+                </td>
+                <td>{entry.account_code}</td>
+                <td className={entry.entry_type}>
+                  {formatAmount(entry.amount, entry.currency)}
+                </td>
+                <td>{entry.currency}</td>
+                <td>{entry.description || '—'}</td>
+                <td className="hash">
+                  {entry.previous_hash ? (
+                    <code>{entry.previous_hash.substring(0, 8)}...</code>
+                  ) : (
+                    <span className="no-hash">Root</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+export default TransactionDetail;

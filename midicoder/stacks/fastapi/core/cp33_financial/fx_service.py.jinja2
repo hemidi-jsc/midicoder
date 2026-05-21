@@ -1,0 +1,368 @@
+"""
+FX Rate Service — dịch vụ tỷ giá ngoại hối.
+
+Tự động sinh bởi Midicoder CE — CP33: Financial Engine.
+
+Module này cung cấp FXRateService để quản lý:
+- Lấy tỷ giá (get_rate) cho currency pair
+- Đồng bộ tỷ giá (sync_rates) từ nguồn ngoài
+- Tính toán conversion giữa các currency
+- Cache tỷ giá với timestamp
+
+KPI-029: Tenant Isolation
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from typing import Any, Callable, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class FXError(Exception):
+    """Lỗi chung của FX Service."""
+
+    pass
+
+
+class RateNotFoundError(FXError):
+    """Không tìm thấy tỷ giá."""
+
+    pass
+
+
+class InvalidPairError(FXError):
+    """Currency pair không hợp lệ."""
+
+    pass
+
+
+class FXRateService:
+    """Dịch vụ tỷ giá ngoại hối.
+
+    Quản lý tỷ giá giữa các currency, hỗ trợ:
+    - Lookup trực tiếp và đảo ngược (USD/EUR → EUR/USD)
+    - Cross-rate tính toán (A/C = A/B * B/C)
+    - Cache với expiration
+    - Source priority
+    """
+
+    def __init__(
+        self,
+        base_currency: str = "{{ base_currency | default('USD') }}",
+        event_bus: Any = None,
+        audit_logger: Any = None,
+    ) -> None:
+        """Khởi tạo FXRateService.
+
+        Args:
+            base_currency: Currency cơ sở cho quote (mặc định USD).
+            event_bus: CP05 EventBus để publish events.
+            audit_logger: CP14 Audit logger.
+        """
+        self.base_currency = base_currency
+        self.event_bus = event_bus
+        self.audit_logger = audit_logger
+
+        # In-memory rate store: {(base, quote): {"rate": Decimal, "timestamp": datetime, "source": str}}
+        self._rates: Dict[tuple, Dict[str, Any]] = {}
+        self._rate_history: List[Dict[str, Any]] = []
+
+        # Khởi tạo rates từ DSL context
+{% if fx_rates %}
+        self._seed_rates()
+{% endif %}
+
+{% if fx_rates %}
+    def _seed_rates(self) -> None:
+        """Khởi tạo tỷ giá từ DSL context."""
+        now = datetime.utcnow()
+        fx_rates = {
+{% for pair in fx_rates %}
+            ("{{ pair.base }}", "{{ pair.quote }}"): {
+                "rate": Decimal("{{ pair.rate }}"),
+                "timestamp": now,
+                "source": "{{ pair.source | default('seed') }}",
+                "bid": Decimal("{{ pair.bid | default(pair.rate) }}"),
+                "ask": Decimal("{{ pair.ask | default(pair.rate) }}"),
+            },
+{% endfor %}
+        }
+        for key, value in fx_rates.items():
+            self._rates[key] = value
+{% endif %}
+
+    def get_rate(
+        self,
+        base: str,
+        quote: str,
+        timestamp: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """Lấy tỷ giá cho currency pair.
+
+        Logic:
+        1. Lookup trực tiếp (base, quote)
+        2. Nếu không có, đảo ngược (quote, base) → 1/rate
+        3. Nếu vẫn không có, tính cross-rate qua base_currency
+
+        Args:
+            base: Currency cơ sở.
+            quote: Currency quote.
+            timestamp: Timestamp để lookup (None = current).
+
+        Returns:
+            Rate result dict với rate, timestamp, source.
+
+        Raises:
+            RateNotFoundError: Nếu không tìm thấy route.
+            InvalidPairError: Nếu base == quote nhưng không có direct rate.
+        """
+        if base == quote:
+            return {
+                "base": base,
+                "quote": quote,
+                "rate": Decimal("1"),
+                "timestamp": datetime.utcnow(),
+                "source": "implicit",
+                "method": "same_currency",
+            }
+
+        # 1. Lookup trực tiếp
+        pair_key = (base, quote)
+        if pair_key in self._rates:
+            rate_info = self._rates[pair_key]
+            return {
+                "base": base,
+                "quote": quote,
+                "rate": rate_info["rate"],
+                "bid": rate_info.get("bid"),
+                "ask": rate_info.get("ask"),
+                "timestamp": rate_info["timestamp"],
+                "source": rate_info["source"],
+                "method": "direct",
+            }
+
+        # 2. Đảo ngược
+        reverse_key = (quote, base)
+        if reverse_key in self._rates:
+            reverse_rate = self._rates[reverse_key]["rate"]
+            if reverse_rate == 0:
+                raise InvalidPairError(f"Không thể đảo tỷ giá: {reverse_rate} = 0")
+            inverted = Decimal("1") / reverse_rate
+            inverted = inverted.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+
+            return {
+                "base": base,
+                "quote": quote,
+                "rate": inverted,
+                "timestamp": datetime.utcnow(),
+                "source": self._rates[reverse_key]["source"],
+                "method": "inverted",
+            }
+
+        # 3. Cross-rate qua base_currency
+        base_rate = self._try_lookup(base, self.base_currency)
+        quote_rate = self._try_lookup(quote, self.base_currency)
+
+        if base_rate is not None and quote_rate is not None and quote_rate != 0:
+            cross_rate = base_rate / quote_rate
+            cross_rate = cross_rate.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+
+            return {
+                "base": base,
+                "quote": quote,
+                "rate": cross_rate,
+                "timestamp": datetime.utcnow(),
+                "source": "cross_rate",
+                "method": f"via_{self.base_currency}",
+            }
+
+        raise RateNotFoundError(
+            f"Không tìm thấy tỷ giá cho {base}/{quote}"
+        )
+
+    def convert(
+        self,
+        amount: Decimal,
+        from_currency: str,
+        to_currency: str,
+    ) -> Dict[str, Any]:
+        """Chuyển đổi số tiền giữa hai currency.
+
+        Args:
+            amount: Số tiền cần chuyển đổi.
+            from_currency: Currency nguồn.
+            to_currency: Currency đích.
+
+        Returns:
+            Conversion result dict.
+
+        Raises:
+            RateNotFoundError: Nếu không tìm thấy tỷ giá.
+        """
+        if from_currency == to_currency:
+            return {
+                "from_amount": amount,
+                "from_currency": from_currency,
+                "to_amount": amount,
+                "to_currency": to_currency,
+                "rate": Decimal("1"),
+                "method": "same_currency",
+            }
+
+        rate_info = self.get_rate(from_currency, to_currency)
+        converted = amount * rate_info["rate"]
+        converted = converted.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        return {
+            "from_amount": amount,
+            "from_currency": from_currency,
+            "to_amount": converted,
+            "to_currency": to_currency,
+            "rate": rate_info["rate"],
+            "method": rate_info.get("method", "unknown"),
+            "timestamp": rate_info["timestamp"],
+        }
+
+    def sync_rates(
+        self,
+        new_rates: List[Dict[str, Any]],
+        source: str = "external",
+    ) -> Dict[str, Any]:
+        """Đồng bộ tỷ giá từ nguồn ngoài.
+
+        Args:
+            new_rates: Danh sách rate dicts. Mỗi dict: {"base": str, "quote": str, "rate": Decimal/float, "bid": ..., "ask": ...}.
+            source: Nguồn tỷ giá.
+
+        Returns:
+            Sync result dict.
+        """
+        updated = 0
+        added = 0
+        now = datetime.utcnow()
+
+        for rate_entry in new_rates:
+            base = rate_entry["base"]
+            quote = rate_entry["quote"]
+            rate = Decimal(str(rate_entry["rate"]))
+            key = (base, quote)
+
+            entry = {
+                "rate": rate,
+                "timestamp": now,
+                "source": source,
+                "bid": Decimal(str(rate_entry.get("bid", rate))),
+                "ask": Decimal(str(rate_entry.get("ask", rate))),
+            }
+
+            if key in self._rates:
+                old = self._rates[key]
+                self._rate_history.append({
+                    "base": base,
+                    "quote": quote,
+                    "old_rate": old["rate"],
+                    "new_rate": rate,
+                    "timestamp": now,
+                    "source": source,
+                })
+                updated += 1
+            else:
+                added += 1
+
+            self._rates[key] = entry
+
+        # Publish event
+        self._publish_event("fx.rates_synced", {
+            "source": source,
+            "updated": updated,
+            "added": added,
+            "total": len(self._rates),
+        })
+
+        return {
+            "status": "synced",
+            "source": source,
+            "updated": updated,
+            "added": added,
+            "total_rates": len(self._rates),
+            "timestamp": now.isoformat(),
+        }
+
+    def list_rates(self) -> List[Dict[str, Any]]:
+        """Lấy danh sách tất cả rates.
+
+        Returns:
+            Danh sách rate dicts.
+        """
+        result = []
+        for (base, quote), info in self._rates.items():
+            result.append({
+                "base": base,
+                "quote": quote,
+                "rate": info["rate"],
+                "bid": info.get("bid"),
+                "ask": info.get("ask"),
+                "timestamp": info["timestamp"].isoformat() if isinstance(info["timestamp"], datetime) else info["timestamp"],
+                "source": info["source"],
+            })
+        return result
+
+    def get_rate_history(
+        self,
+        base: str,
+        quote: str,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Lấy lịch sử tỷ giá cho một cặp currency.
+
+        Args:
+            base: Currency cơ sở.
+            quote: Currency quote.
+            limit: Số lượng tối đa.
+
+        Returns:
+            Danh sách rate history entries.
+        """
+        filtered = [
+            h for h in self._rate_history
+            if h["base"] == base and h["quote"] == quote
+        ]
+        return filtered[-limit:]
+
+    def _try_lookup(self, base: str, quote: str) -> Optional[Decimal]:
+        """Thử lookup rate, trả về None nếu không tìm thấy.
+
+        Args:
+            base: Currency cơ sở.
+            quote: Currency quote.
+
+        Returns:
+            Rate hoặc None.
+        """
+        key = (base, quote)
+        if key in self._rates:
+            return self._rates[key]["rate"]
+
+        reverse_key = (quote, base)
+        if reverse_key in self._rates:
+            rate = self._rates[reverse_key]["rate"]
+            if rate != 0:
+                return Decimal("1") / rate
+        return None
+
+    def _publish_event(self, event_name: str, payload: Dict[str, Any]) -> None:
+        """Publish event qua CP05 EventBus.
+
+        Args:
+            event_name: Tên event.
+            payload: Event payload.
+        """
+        if self.event_bus:
+            try:
+                self.event_bus.publish(event_name, payload)
+            except Exception as e:
+                logger.warning("Không thể publish event %s: %s", event_name, e)

@@ -1,0 +1,290 @@
+/**
+ * FX Rate Service — tỷ giá ngoại hối.
+ *
+ * Tự động tạo bởi Midicoder CE — CP33: Financial Engine.
+ *
+ * Cung cấp:
+ * - Lấy tỷ giá (getRate) cho currency pair
+ * - Đồng bộ tỷ giá (syncRates) từ nguồn ngoài
+ * - Tính toán conversion giữa các currency
+ */
+import { Injectable, BadRequestException } from "@nestjs/common";
+
+export interface FXRateDto {
+  base: string;
+  quote: string;
+  rate: number;
+  bid?: number;
+  ask?: number;
+  timestamp: string;
+  source: string;
+}
+
+export interface GetRateResult {
+  base: string;
+  quote: string;
+  rate: number;
+  bid?: number;
+  ask?: number;
+  timestamp: string;
+  source: string;
+  method: string;
+}
+
+export interface ConversionResult {
+  fromAmount: number;
+  fromCurrency: string;
+  toAmount: number;
+  toCurrency: string;
+  rate: number;
+  method: string;
+  timestamp: string;
+}
+
+export interface SyncRatesResult {
+  status: string;
+  source: string;
+  updated: number;
+  added: number;
+  totalRates: number;
+  timestamp: string;
+}
+
+@Injectable()
+export class FXRateService {
+  // In-memory rate store: Map<"base_quote", rateInfo>
+  private readonly rates = new Map<string, FXRateDto & { timestamp: Date }>();
+  private readonly rateHistory: FXRateDto[] = [];
+  public readonly baseCurrency: string;
+
+  constructor(baseCurrency?: string) {
+    this.baseCurrency = baseCurrency || "{{ base_currency | default('USD') }}";
+
+{% if fx_rates %}
+    // Khởi tạo rates từ DSL context
+    this.seedRates([
+{% for pair in fx_rates %}
+      {
+        base: "{{ pair.base }}",
+        quote: "{{ pair.quote }}",
+        rate: {{ pair.rate }},
+        bid: {{ pair.bid | default('pair.rate') }},
+        ask: {{ pair.ask | default('pair.rate') }},
+        timestamp: new Date().toISOString(),
+        source: "{{ pair.source | default('seed') }}",
+      },
+{% endfor %}
+    ]);
+{% endif %}
+  }
+
+  /**
+   * Lấy tỷ giá cho currency pair.
+   *
+   * Logic:
+   * 1. Lookup trực tiếp (base/quote)
+   * 2. Nếu không có, đảo ngược (quote/base) -> 1/rate
+   * 3. Nếu vẫn không có, tính cross-rate qua baseCurrency
+   */
+  getRate(base: string, quote: string): GetRateResult {
+    // Same currency
+    if (base === quote) {
+      return {
+        base,
+        quote,
+        rate: 1,
+        timestamp: new Date().toISOString(),
+        source: "implicit",
+        method: "same_currency",
+      };
+    }
+
+    // 1. Lookup trực tiếp
+    const directKey = `${base}_${quote}`;
+    const direct = this.rates.get(directKey);
+    if (direct) {
+      return {
+        base: direct.base,
+        quote: direct.quote,
+        rate: direct.rate,
+        bid: direct.bid,
+        ask: direct.ask,
+        timestamp: direct.timestamp.toISOString(),
+        source: direct.source,
+        method: "direct",
+      };
+    }
+
+    // 2. Đảo ngược
+    const reverseKey = `${quote}_${base}`;
+    const reverse = this.rates.get(reverseKey);
+    if (reverse && reverse.rate !== 0) {
+      const inverted = 1 / reverse.rate;
+      return {
+        base,
+        quote,
+        rate: Number(inverted.toFixed(6)),
+        timestamp: new Date().toISOString(),
+        source: reverse.source,
+        method: "inverted",
+      };
+    }
+
+    // 3. Cross-rate qua baseCurrency
+    const baseRate = this.tryLookup(base, this.baseCurrency);
+    const quoteRate = this.tryLookup(quote, this.baseCurrency);
+
+    if (baseRate !== null && quoteRate !== null && quoteRate !== 0) {
+      const crossRate = baseRate / quoteRate;
+      return {
+        base,
+        quote,
+        rate: Number(crossRate.toFixed(6)),
+        timestamp: new Date().toISOString(),
+        source: "cross_rate",
+        method: `via_${this.baseCurrency}`,
+      };
+    }
+
+    throw new BadRequestException(
+      `Không tìm thấy tỷ giá cho ${base}/${quote}`,
+    );
+  }
+
+  /**
+   * Chuyển đổi số tiền giữa hai currency.
+   */
+  convert(
+    amount: number,
+    fromCurrency: string,
+    toCurrency: string,
+  ): ConversionResult {
+    if (fromCurrency === toCurrency) {
+      return {
+        fromAmount: amount,
+        fromCurrency,
+        toAmount: amount,
+        toCurrency,
+        rate: 1,
+        method: "same_currency",
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    const rateInfo = this.getRate(fromCurrency, toCurrency);
+    const converted = Number((amount * rateInfo.rate).toFixed(2));
+
+    return {
+      fromAmount: amount,
+      fromCurrency,
+      toAmount: converted,
+      toCurrency,
+      rate: rateInfo.rate,
+      method: rateInfo.method,
+      timestamp: rateInfo.timestamp,
+    };
+  }
+
+  /**
+   * Đồng bộ tỷ giá từ nguồn ngoài.
+   */
+  syncRates(
+    newRates: { base: string; quote: string; rate: number; bid?: number; ask?: number }[],
+    source: string = "external",
+  ): SyncRatesResult {
+    let updated = 0;
+    let added = 0;
+    const now = new Date();
+
+    for (const entry of newRates) {
+      const key = `${entry.base}_${entry.quote}`;
+      const rateEntry: FXRateDto & { timestamp: Date } = {
+        base: entry.base,
+        quote: entry.quote,
+        rate: entry.rate,
+        bid: entry.bid ?? entry.rate,
+        ask: entry.ask ?? entry.rate,
+        timestamp: now,
+        source,
+      };
+
+      if (this.rates.has(key)) {
+        const old = this.rates.get(key)!;
+        this.rateHistory.push({
+          base: entry.base,
+          quote: entry.quote,
+          rate: old.rate,
+          bid: old.bid,
+          ask: old.ask,
+          timestamp: old.timestamp.toISOString(),
+          source: old.source,
+        });
+        updated++;
+      } else {
+        added++;
+      }
+
+      this.rates.set(key, rateEntry);
+    }
+
+    return {
+      status: "synced",
+      source,
+      updated,
+      added,
+      totalRates: this.rates.size,
+      timestamp: now.toISOString(),
+    };
+  }
+
+  /**
+   * Lấy danh sách tất cả rates.
+   */
+  listRates(): GetRateResult[] {
+    const result: GetRateResult[] = [];
+    for (const [, info] of this.rates) {
+      result.push({
+        base: info.base,
+        quote: info.quote,
+        rate: info.rate,
+        bid: info.bid,
+        ask: info.ask,
+        timestamp: info.timestamp.toISOString(),
+        source: info.source,
+        method: "direct",
+      });
+    }
+    return result;
+  }
+
+  /** Khởi tạo rates từ seed data. */
+  private seedRates(rates: Partial<FXRateDto & { timestamp: Date }>[]): void {
+    for (const entry of rates) {
+      if (!entry.base || !entry.quote || entry.rate === undefined) continue;
+      const key = `${entry.base}_${entry.quote}`;
+      const now = new Date();
+      this.rates.set(key, {
+        base: entry.base,
+        quote: entry.quote,
+        rate: entry.rate,
+        bid: entry.bid ?? entry.rate,
+        ask: entry.ask ?? entry.rate,
+        timestamp: entry.timestamp || now,
+        source: entry.source || "seed",
+      });
+    }
+  }
+
+  /** Thử lookup rate, trả về null nếu không tìm thấy. */
+  private tryLookup(base: string, quote: string): number | null {
+    const key = `${base}_${quote}`;
+    const direct = this.rates.get(key);
+    if (direct) return direct.rate;
+
+    const reverseKey = `${quote}_${base}`;
+    const reverse = this.rates.get(reverseKey);
+    if (reverse && reverse.rate !== 0) return 1 / reverse.rate;
+
+    return null;
+  }
+}

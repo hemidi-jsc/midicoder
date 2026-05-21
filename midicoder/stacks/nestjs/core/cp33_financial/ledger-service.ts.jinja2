@@ -1,0 +1,268 @@
+/**
+ * Ledger Service — double-entry bookkeeping.
+ *
+ * Tự động tạo bởi Midicoder CE — CP33: Financial Engine.
+ *
+ * Cung cấp:
+ * - Tạo giao dịch (createTransaction) với debit/credit entries
+ * - Xác minh chuỗi ledger (verifyChain)
+ * - Tính balance (getBalance) theo account
+ */
+import { Injectable, BadRequestException } from "@nestjs/common";
+
+export interface LedgerEntry {
+  accountCode: string;
+  debit: number;
+  credit: number;
+  description?: string;
+}
+
+export interface CreateTransactionDto {
+  entries: LedgerEntry[];
+  description?: string;
+  reference?: string;
+  tenantId?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface TransactionResult {
+  transactionId: string;
+  status: string;
+  entries: ProcessedEntry[];
+}
+
+export interface ProcessedEntry {
+  id: string;
+  transactionId: string;
+  sequence: number;
+  accountCode: string;
+  debit: number;
+  credit: number;
+  description: string;
+  createdAt: string;
+}
+
+export interface VerificationResult {
+  valid: boolean;
+  transactionId?: string;
+  totalDebit?: number;
+  totalCredit?: number;
+  entryCount?: number;
+  errors: string[];
+}
+
+export interface BalanceResult {
+  accountCode: string;
+  balance: number;
+  totalDebit: number;
+  totalCredit: number;
+  entryCount: number;
+  asOf: string;
+}
+
+@Injectable()
+export class LedgerService {
+  // In-memory storage
+  private readonly transactions = new Map<
+    string,
+    {
+      id: string;
+      description: string;
+      reference?: string;
+      tenantId?: string;
+      totalDebit: number;
+      totalCredit: number;
+      entryCount: number;
+      status: string;
+      createdAt: string;
+      metadata?: Record<string, any>;
+    }
+  >();
+
+  private readonly entries = new Map<string, ProcessedEntry[]>();
+  private readonly accountBalances = new Map<string, number>();
+
+  constructor(
+    private readonly accountRegistry: { validate: (code: string) => boolean },
+  ) {}
+
+  /**
+   * Tạo giao dịch mới với các debit/credit entries.
+   *
+   * Total debit phải bằng total credit.
+   */
+  createTransaction(dto: CreateTransactionDto): TransactionResult {
+    const { entries, description = "", reference, tenantId, metadata } = dto;
+
+    if (!entries || entries.length === 0) {
+      throw new BadRequestException("Giao dịch phải có ít nhất một entry");
+    }
+
+    // Validate entries
+    for (const entry of entries) {
+      if (!entry.accountCode) {
+        throw new BadRequestException("Entry thiếu accountCode");
+      }
+      if (entry.debit < 0 || entry.credit < 0) {
+        throw new BadRequestException("Debit và credit không được âm");
+      }
+      if (entry.debit === 0 && entry.credit === 0) {
+        throw new BadRequestException("Entry phải có debit hoặc credit > 0");
+      }
+      if (!this.accountRegistry.validate(entry.accountCode)) {
+        throw new BadRequestException(
+          `Tài khoản '${entry.accountCode}' không hợp lệ`,
+        );
+      }
+    }
+
+    // Kiểm tra cân bằng
+    const totalDebit = entries.reduce((sum, e) => sum + e.debit, 0);
+    const totalCredit = entries.reduce((sum, e) => sum + e.credit, 0);
+    if (totalDebit !== totalCredit) {
+      throw new BadRequestException(
+        `Giao dịch không cân bằng: debit=${totalDebit}, credit=${totalCredit}`,
+      );
+    }
+
+    // Tạo transaction
+    const transactionId = this.generateId();
+    const now = new Date().toISOString();
+
+    const transaction = {
+      id: transactionId,
+      description,
+      reference,
+      tenantId,
+      totalDebit,
+      totalCredit,
+      entryCount: entries.length,
+      status: "posted",
+      createdAt: now,
+      metadata: metadata || {},
+    };
+
+    // Xử lý entries
+    const processedEntries: ProcessedEntry[] = [];
+    for (let seq = 0; seq < entries.length; seq++) {
+      const entry = entries[seq];
+      const processed: ProcessedEntry = {
+        id: this.generateId(),
+        transactionId,
+        sequence: seq + 1,
+        accountCode: entry.accountCode,
+        debit: entry.debit,
+        credit: entry.credit,
+        description: entry.description || "",
+        createdAt: now,
+      };
+      processedEntries.push(processed);
+
+      // Cập nhật balance
+      const current = this.accountBalances.get(entry.accountCode) || 0;
+      this.accountBalances.set(
+        entry.accountCode,
+        current + entry.debit - entry.credit,
+      );
+    }
+
+    this.transactions.set(transactionId, transaction);
+    this.entries.set(transactionId, processedEntries);
+
+    return { transactionId, status: "posted", entries: processedEntries };
+  }
+
+  /**
+   * Xác minh chuỗi ledger cho một transaction.
+   */
+  verifyChain(transactionId: string): VerificationResult {
+    const transaction = this.transactions.get(transactionId);
+    if (!transaction) {
+      return {
+        valid: false,
+        errors: [`Transaction '${transactionId}' không tồn tại`],
+      };
+    }
+
+    const entryList = this.entries.get(transactionId) || [];
+    const errors: string[] = [];
+
+    if (entryList.length === 0) {
+      return { valid: false, errors: ["Không có entries cho transaction"] };
+    }
+
+    // Kiểm tra cân bằng
+    const totalDebit = entryList.reduce((sum, e) => sum + e.debit, 0);
+    const totalCredit = entryList.reduce((sum, e) => sum + e.credit, 0);
+    if (totalDebit !== totalCredit) {
+      errors.push(`Không cân bằng: debit=${totalDebit}, credit=${totalCredit}`);
+    }
+
+    // Kiểm tra sequence
+    const sorted = [...entryList].sort((a, b) => a.sequence - b.sequence);
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].sequence !== i + 1) {
+        errors.push("Entry sequence không liên tiếp");
+        break;
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      transactionId,
+      totalDebit,
+      totalCredit,
+      entryCount: entryList.length,
+      errors,
+    };
+  }
+
+  /**
+   * Lấy balance của một tài khoản.
+   */
+  getBalance(accountCode: string): BalanceResult {
+    const balance = this.accountBalances.get(accountCode) || 0;
+    let totalDebit = 0;
+    let totalCredit = 0;
+    let entryCount = 0;
+
+    for (const entryList of this.entries.values()) {
+      for (const entry of entryList) {
+        if (entry.accountCode === accountCode) {
+          totalDebit += entry.debit;
+          totalCredit += entry.credit;
+          entryCount++;
+        }
+      }
+    }
+
+    return {
+      accountCode,
+      balance,
+      totalDebit,
+      totalCredit,
+      entryCount,
+      asOf: new Date().toISOString(),
+    };
+  }
+
+  /** Lấy thông tin transaction. */
+  getTransaction(
+    transactionId: string,
+  ): typeof this.transactions extends Map<string, infer V> ? V | undefined : undefined {
+    return this.transactions.get(transactionId);
+  }
+
+  /** Lấy danh sách transactions. */
+  listTransactions(tenantId?: string, limit: number = 100): any[] {
+    const txns = Array.from(this.transactions.values());
+    if (tenantId) {
+      return txns.filter((t) => t.tenantId === tenantId).slice(0, limit);
+    }
+    return txns.slice(0, limit);
+  }
+
+  private generateId(): string {
+    return crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  }
+}

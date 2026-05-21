@@ -1,0 +1,145 @@
+/**
+ * Currency Entity & Types — CP33: Financial Engine.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ */
+
+import {
+  Entity,
+  PrimaryColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from "typeorm";
+
+/** Chế độ làm tròn theo ISO 4217. */
+export enum RoundingMode {
+  HALF_UP = "half_up",
+  HALF_EVEN = "half_even",
+  HALF_DOWN = "half_down",
+  FLOOR = "floor",
+  CEILING = "ceiling",
+}
+
+/** Interface cấu hình currency cho tính toán. */
+export interface CurrencyConfigDto {
+  code: string;
+  name: string;
+  symbol: string;
+  decimalPlaces: number;
+  roundingMode: RoundingMode;
+  minorUnit: number;
+  numericCode?: number;
+  country?: string;
+  isActive: boolean;
+}
+
+/** Currency Entity — đại diện cho loại tiền tệ ISO 4217. */
+@Entity("currencies")
+@Index(["isActive"])
+export class Currency {
+  @PrimaryColumn({ length: 3 })
+  code: string;
+
+  @Column({ length: 100 })
+  name: string;
+
+  @Column({ length: 10 })
+  symbol: string;
+
+  @Column({ default: 2 })
+  decimalPlaces: number;
+
+  @Column({
+    type: "enum",
+    enum: RoundingMode,
+    default: RoundingMode.HALF_UP,
+  })
+  roundingMode: RoundingMode;
+
+  @Column({ default: 100 })
+  minorUnit: number;
+
+  @Column({ nullable: true })
+  numericCode?: number;
+
+  @Column({ length: 100, nullable: true })
+  country?: string;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  /** Serialize thành DTO. */
+  toDto(): CurrencyConfigDto {
+    return {
+      code: this.code,
+      name: this.name,
+      symbol: this.symbol,
+      decimalPlaces: this.decimalPlaces,
+      roundingMode: this.roundingMode,
+      minorUnit: this.minorUnit,
+      numericCode: this.numericCode,
+      country: this.country,
+      isActive: this.isActive,
+    };
+  }
+}
+
+/** Danh sách tiền tệ seed từ DSL. */
+export const CURRENCY_SEEDS: CurrencyConfigDto[] = [
+{% for c in currencies %}
+  {
+    code: "{{ c.code }}",
+    name: "{{ c.name }}",
+    symbol: "{{ c.symbol | default('$') }}",
+    decimalPlaces: {{ c.decimal_places | default(2) }},
+    roundingMode: RoundingMode.{{ (c.rounding_mode | default('HALF_UP')).toUpperCase() }},
+    minorUnit: {{ c.minor_unit | default(100) }},
+    numericCode: {{ c.numeric_code | default('undefined') }},
+    country: "{{ c.country | default('') }}",
+    isActive: {{ c.is_active | default('true') | lower }},
+  },
+{% endfor %}
+];
+
+/** CurrencyConfig — lớp quản lý currency config. */
+export class CurrencyConfigService {
+  private readonly currencyMap: Map<string, CurrencyConfigDto>;
+  public readonly baseCurrency: string;
+
+  constructor(seeds: CurrencyConfigDto[], baseCurrency?: string) {
+    this.baseCurrency = baseCurrency || "{{ base_currency | default('USD') }}";
+    this.currencyMap = new Map();
+    for (const seed of seeds) {
+      this.currencyMap.set(seed.code, seed);
+    }
+  }
+
+  /** Lấy cấu hình currency theo code. */
+  get(code: string): CurrencyConfigDto | undefined {
+    return this.currencyMap.get(code);
+  }
+
+  /** Kiểm tra currency code có hợp lệ. */
+  validate(code: string): boolean {
+    const cfg = this.currencyMap.get(code);
+    return cfg?.isActive === true;
+  }
+
+  /** Lấy số chữ số thập phân cho currency. */
+  getDecimalPlaces(code: string): number {
+    return this.currencyMap.get(code)?.decimalPlaces ?? 2;
+  }
+
+  /** Lấy danh sách currencies active. */
+  listActive(): CurrencyConfigDto[] {
+    return Array.from(this.currencyMap.values()).filter((c) => c.isActive);
+  }
+}

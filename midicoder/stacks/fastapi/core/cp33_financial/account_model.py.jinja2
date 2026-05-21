@@ -1,0 +1,232 @@
+"""
+Mô-đun Account model cho CP33: Financial Engine.
+
+Tự động sinh bởi Midicoder — không sửa thủ công.
+
+Cung cấp:
+- SQLAlchemy ORM model cho bảng accounts
+- AccountType enum cho phân loại tài khoản
+- AccountSeed data từ DSL
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal
+from enum import Enum
+from typing import Any, ClassVar, Dict, List, Optional
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum as SAEnum,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
+
+Base = declarative_base()
+
+
+class AccountType(str, Enum):
+    """Phân loại tài khoản kế toán."""
+
+    ASSET = "asset"
+    LIABILITY = "liability"
+    EQUITY = "equity"
+    REVENUE = "revenue"
+    EXPENSE = "expense"
+
+
+class AccountStatus(str, Enum):
+    """Trạng thái tài khoản."""
+
+    ACTIVE = "active"
+    FROZEN = "frozen"
+    CLOSED = "closed"
+
+
+class Account(Base):
+    """Mô-đun Account — đại diện cho tài khoản tài chính.
+
+    Mỗi tài khoản gắn với một currency (ISO 4217) và có loại,
+    trạng thái, balance snapshot, cùng với multi-tenant support.
+    """
+
+    __tablename__ = "accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_code = Column(String(20), unique=True, nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    account_type = Column(SAEnum(AccountType), nullable=False)
+    currency_code = Column(String(3), nullable=False, index=True)
+    status = Column(SAEnum(AccountStatus), default=AccountStatus.ACTIVE, nullable=False)
+    opening_balance = Column(Float, default=0.0, nullable=False)
+    current_balance = Column(Float, default=0.0, nullable=False)
+    credit_limit = Column(Float, nullable=True)
+    tenant_id = Column(String(50), nullable=True, index=True)
+    owner_id = Column(String(50), nullable=True)
+    metadata_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    closed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_accounts_tenant_status", "tenant_id", "status"),
+    )
+
+    def can_debit(self, amount: Decimal) -> bool:
+        """Kiểm tra xem có thể ghi nợ một số tiền không.
+
+        Args:
+            amount: Số tiền cần debit.
+
+        Returns:
+            True nếu balance đủ và tài khoản không bị freeze/close.
+        """
+        if self.status != AccountStatus.ACTIVE:
+            return False
+        return Decimal(str(self.current_balance)) >= amount
+
+    def can_credit(self, amount: Decimal) -> bool:
+        """Kiểm tra xem có thể ghi có một số tiền không.
+
+        Args:
+            amount: Số tiền cần credit.
+
+        Returns:
+            True nếu tài khoản active và không vượt credit_limit.
+        """
+        if self.status != AccountStatus.ACTIVE:
+            return False
+        if self.credit_limit is not None:
+            new_balance = Decimal(str(self.current_balance)) + amount
+            return new_balance <= Decimal(str(self.credit_limit))
+        return True
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize Account thành dictionary."""
+        return {
+            "id": self.id,
+            "account_code": self.account_code,
+            "name": self.name,
+            "description": self.description,
+            "account_type": self.account_type.value if self.account_type else None,
+            "currency_code": self.currency_code,
+            "status": self.status.value if self.status else None,
+            "opening_balance": self.opening_balance,
+            "current_balance": self.current_balance,
+            "credit_limit": self.credit_limit,
+            "tenant_id": self.tenant_id,
+            "owner_id": self.owner_id,
+        }
+
+
+# --- Account Seeds ---
+# Dữ liệu khởi tạo tài khoản từ ngữ cảnh DSL.
+ACCOUNT_SEEDS: List[Dict[str, Any]] = [
+{% for a in accounts %}
+    {
+        "account_code": "{{ a.account_code }}",
+        "name": "{{ a.name }}",
+        "description": "{{ a.description | default('') }}",
+        "account_type": "{{ a.account_type | default('asset') }}",
+        "currency_code": "{{ a.currency_code | default(base_currency | default('USD')) }}",
+        "status": "{{ a.status | default('active') }}",
+        "opening_balance": {{ a.opening_balance | default(0) }},
+        "credit_limit": {{ a.credit_limit | default(None) }},
+        "tenant_id": "{{ a.tenant_id | default('') }}",
+        "owner_id": "{{ a.owner_id | default('') }}",
+    },
+{% endfor %}
+]
+
+
+@dataclass
+class AccountRegistry:
+    """AccountRegistry — registry ánh xạ account_code → Account config.
+
+    Cung cấp:
+    - Validate account code
+    - Lấy tài khoản theo code
+    - Lọc theo account_type / tenant
+    """
+
+    accounts: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+    def get(self, account_code: str) -> Optional[Dict[str, Any]]:
+        """Lấy tài khoản theo code.
+
+        Args:
+            account_code: Mã tài khoản.
+
+        Returns:
+            Dict cấu hình tài khoản hoặc None.
+        """
+        return self.accounts.get(account_code)
+
+    def validate(self, account_code: str) -> bool:
+        """Kiểm tra account code có hợp lệ và active.
+
+        Args:
+            account_code: Mã tài khoản.
+
+        Returns:
+            True nếu hợp lệ.
+        """
+        acct = self.accounts.get(account_code)
+        if not acct:
+            return False
+        return acct.get("status", "active") == "active"
+
+    def filter_by_type(self, account_type: str) -> List[Dict[str, Any]]:
+        """Lọc tài khoản theo loại.
+
+        Args:
+            account_type: Loại tài khoản (asset, liability, ...).
+
+        Returns:
+            Danh sách tài khoản khớp loại.
+        """
+        return [
+            a for a in self.accounts.values()
+            if a.get("account_type") == account_type
+        ]
+
+    def filter_by_currency(self, currency_code: str) -> List[Dict[str, Any]]:
+        """Lọc tài khoản theo currency.
+
+        Args:
+            currency_code: Mã tiền tệ ISO 4217.
+
+        Returns:
+            Danh sách tài khoản khớp currency.
+        """
+        return [
+            a for a in self.accounts.values()
+            if a.get("currency_code") == currency_code
+        ]
+
+{% if accounts %}
+    @classmethod
+    def from_seeds(cls) -> "AccountRegistry":
+        """Tạo AccountRegistry từ seeds.
+
+        Returns:
+            AccountRegistry đã khởi tạo.
+        """
+        account_map = {}
+        for seed in ACCOUNT_SEEDS:
+            account_map[seed["account_code"]] = seed
+        return cls(accounts=account_map)
+{% endif %}
