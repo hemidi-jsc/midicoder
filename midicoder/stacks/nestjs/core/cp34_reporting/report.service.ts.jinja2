@@ -1,0 +1,118 @@
+// Report Service — Service quản lý generate report và document.
+// CP34: Report & Document Generator (NestJS)
+
+import { Injectable } from "@nestjs/common";
+{% if collection %}
+// Tự động sinh từ {{ collection.reports | length }} report specs.
+{% endif %}
+import { PdfGeneratorService } from "./pdf-generator.service";
+import { ExcelGeneratorService } from "./excel-generator.service";
+import { CsvGeneratorService } from "./csv-generator.service";
+
+export enum ReportFormat {
+PDF = "pdf",
+XLSX = "xlsx",
+CSV = "csv",
+}
+
+export interface ReportSpec {
+id: string;
+name: string;
+entity: string;
+fields: string[];
+filter: Record<string, any>;
+    format: ReportFormat;
+    layout: string;
+    groupBy?: string;
+    aggregations?: string[];
+    description?: string;
+    }
+
+    export interface BatchJob {
+    id: string;
+    status: "pending" | "running" | "completed" | "failed" | "cancelled";
+    reportSpecIds: string[];
+    resultUrls?: string[];
+    error?: string;
+    retries: number;
+    maxRetries: number;
+    }
+
+    @Injectable()
+    export class ReportService {
+    private readonly REPORT_SPECS: Record<string, ReportSpec> = {};
+
+        constructor(
+        private readonly pdfGenerator: PdfGeneratorService,
+        private readonly excelGenerator: ExcelGeneratorService,
+        private readonly csvGenerator: CsvGeneratorService,
+        ) {}
+
+        /**
+        * Generate report và trả về file path hoặc storage URL.
+        *
+        * @param reportId ID của report spec
+        * @param fmt Định dạng output (optional override)
+        * @param filters Query filters (optional)
+        * @returns Storage URL của file đã generate
+        */
+        async generateReport(
+        reportId: string,
+        fmt?: ReportFormat,
+        filters?: Record<string, any>,
+            ): Promise<string> {
+                const spec = this.REPORT_SPECS[reportId];
+                if (!spec) {
+                throw new Error(`Report spec not found: ${reportId}`);
+                }
+
+                const outputFormat = fmt || spec.format;
+
+                // Query data từ entity
+                const data = await this.queryEntityData(spec, filters);
+
+                // Generate file theo format
+                switch (outputFormat) {
+                case ReportFormat.PDF:
+                return this.pdfGenerator.generate(spec, data);
+                case ReportFormat.XLSX:
+                return this.excelGenerator.generate(spec, data);
+                case ReportFormat.CSV:
+                return this.csvGenerator.generate(spec, data);
+                default:
+                throw new Error(`Invalid format: ${outputFormat}`);
+                }
+                }
+
+                /**
+                * Query data từ entity source.
+                */
+                private async queryEntityData(
+                spec: ReportSpec,
+                filters?: Record<string, any>,
+                    ): Promise<any[]> {
+                        // TODO: Integrate với repository pattern (CP08)
+                        const combinedFilters = { ...spec.filter, ...filters };
+                        return [];
+                        }
+
+                        /**
+                        * Tạo batch job để generate nhiều reports async.
+                        */
+                        createBatchJob(reportIds: string[]): BatchJob {
+                        return {
+                        id: crypto.randomUUID(),
+                        status: "pending",
+                        reportSpecIds: reportIds,
+                        retries: 0,
+                        maxRetries: 3,
+                        };
+                        }
+
+                        /**
+                        * Liệt kê tất cả reports có thể generate.
+                        */
+                        listReports(): ReportSpec[] {
+                        return Object.values(this.REPORT_SPECS);
+                        }
+                        }

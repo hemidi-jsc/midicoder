@@ -1,0 +1,122 @@
+// Report API Routes — Endpoints cho report generation.
+// CP34: Report & Document Generator
+
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.services.report_service import ReportService
+
+router = APIRouter(prefix="/api/reports", tags=["reports"])
+
+
+def get_report_service(db: Session = Depends(lambda: None)) -> ReportService:
+    """Dependency injector cho ReportService."""
+    return ReportService(db)
+
+
+# ─── Request/Response schemas ────────────────────────────────────────────────
+
+
+class ReportGenerateRequest(BaseModel):
+    """Request schema cho generate report."""
+    report_id: str = Field(..., description="ID của report spec")
+    format: Optional[str] = Field(None, description="Định dạng output (pdf/xlsx/csv)")
+    filters: Optional[dict] = Field(None, description="Query filters")
+
+
+class BatchCreateRequest(BaseModel):
+    """Request schema cho tạo batch job."""
+    report_ids: list[str] = Field(..., description="Danh sách report IDs")
+
+
+class ReportResponse(BaseModel):
+    """Response schema cho report."""
+    id: str
+    name: str
+    entity: str
+    format: str
+    layout: str
+    description: str = ""
+
+
+class GenerateResponse(BaseModel):
+    """Response schema cho generate report."""
+    status: str
+    file_url: str
+    report_id: str
+
+
+class BatchJobResponse(BaseModel):
+    """Response schema cho batch job."""
+    id: str
+    status: str
+    report_spec_ids: list[str]
+    result_urls: list[str] = []
+    error: str = ""
+
+
+# ─── Route handlers ──────────────────────────────────────────────────────────
+
+
+@router.get("", response_model=list[ReportResponse])
+def list_reports(service: ReportService = Depends(get_report_service)):
+    """Liệt kê tất cả reports có thể generate."""
+    return service.list_reports()
+
+
+@router.post("/{report_id}/generate", response_model=GenerateResponse)
+def generate_report(
+    report_id: str,
+    request: ReportGenerateRequest = ReportGenerateRequest(report_id=report_id),
+    service: ReportService = Depends(get_report_service),
+):
+    """Generate report và trả về download URL."""
+    from app.models.report_models import ReportFormat
+
+    fmt = ReportFormat(request.format) if request.format else None
+    file_url = service.generate_report(report_id, fmt, request.filters)
+
+    return GenerateResponse(
+        status="completed",
+        file_url=file_url,
+        report_id=report_id,
+    )
+
+
+@router.post("/batch", response_model=BatchJobResponse)
+def create_batch_job(
+    request: BatchCreateRequest,
+    service: ReportService = Depends(get_report_service),
+):
+    """Tạo batch job để generate nhiều reports async."""
+    job = service.create_batch_job(request.report_ids)
+
+    return BatchJobResponse(
+        id=job.id,
+        status=job.status.value,
+        report_spec_ids=job.report_spec_ids,
+        result_urls=job.result_urls,
+        error=job.error,
+    )
+
+
+@router.get("/batch/{job_id}", response_model=BatchJobResponse)
+def get_batch_job(
+    job_id: str,
+    service: ReportService = Depends(get_report_service),
+):
+    """Lấy thông tin batch job (poll status)."""
+    job = service.get_batch_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Batch job not found")
+
+    return BatchJobResponse(
+        id=job.id,
+        status=job.status.value,
+        report_spec_ids=job.report_spec_ids,
+        result_urls=job.result_urls,
+        error=job.error,
+    )

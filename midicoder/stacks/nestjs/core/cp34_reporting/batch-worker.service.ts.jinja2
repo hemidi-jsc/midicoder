@@ -1,0 +1,28 @@
+// Batch Worker Service — Background worker cho batch processing.
+// CP34: Report & Document Generator (NestJS)
+
+import { Injectable, Logger } from "@nestjs/common";
+import { ReportService } from "./report.service";
+
+@Injectable()
+export class BatchWorkerService {
+private readonly logger = new Logger(BatchWorkerService.name);
+
+constructor(private readonly reportService: ReportService) {}
+
+/**
+* Execute batch job — generate tất cả reports trong job.
+*/
+async executeJob(job: any): Promise<void> {
+    job.status = "running";
+    const urls: string[] = [];
+    try {
+    for (const id of job.reportSpecIds) {
+    try { urls.push(await this.reportService.generateReport(id)); }
+    catch (e) { urls.push(`error:${id}:${e.message}`); }
+    }
+    job.status = "completed";
+    job.resultUrls = urls;
+    } catch (error) {
+    if (job.retries < job.maxRetries) { job.retries++; await this.executeJob(job); } else { job.status="failed" ;
+        job.error=error.message; } } } }

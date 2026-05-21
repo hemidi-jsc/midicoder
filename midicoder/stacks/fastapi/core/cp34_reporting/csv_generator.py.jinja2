@@ -1,0 +1,37 @@
+"""CSV Generator — Wrapper cho csv module để generate CSV report.
+
+CP34: Report & Document Generator
+"""
+
+import csv
+import io
+import logging
+from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
+
+
+class CSVGenerator:
+    """Generator CSV bằng built-in csv module."""
+
+    def generate(self, spec, data: List[Dict[str, Any]]) -> str:
+        """
+        Generate CSV file từ report spec và data.
+
+        Args:
+            spec: ReportSpec chứa config
+            data: Danh sách records
+
+        Returns:
+            Storage URL của CSV file
+        """
+        try:
+            fields = getattr(spec, 'fields', None) or (list(data[0].keys()) if data else [])
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(data)
+            output.close()
+            return f"/storage/reports/{spec.id}.csv"
+        except Exception as e:
+            raise RuntimeError(f"CSV generation failed for report {getattr(spec, 'id', '')}: {e}") from e

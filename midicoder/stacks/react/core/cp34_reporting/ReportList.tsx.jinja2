@@ -1,0 +1,134 @@
+// Report List — Hiển thị danh sách reports có thể generate.
+// CP34: Report & Document Generator (React)
+{% if collection %}
+// Tự động sinh từ {{ collection.reports | length }} report specs.
+{% endif %}
+
+import React, { useState, useEffect } from "react";
+
+export interface ReportMeta {
+id: string;
+name: string;
+entity: string;
+format: string;
+layout: string;
+description: string;
+}
+
+interface GenerateResponse {
+file_url: string;
+status: string;
+}
+
+const ReportList: React.FC = () => {
+const [reports, setReports] = useState<ReportMeta[]>([]);
+    const [loading, setLoading] = useState<boolean>(true);
+        const [error, setError] = useState<string | null>(null);
+
+            useEffect(() => {
+            const fetchReports = async (): Promise<void> => {
+                try {
+                const res = await fetch("/api/reports");
+                const data: ReportMeta[] = await res.json();
+                setReports(data);
+                setLoading(false);
+                } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : String(err);
+                setError(message);
+                setLoading(false);
+                }
+                };
+                fetchReports();
+                }, []);
+
+                const handleGenerate = async (reportId: string): Promise<void> => {
+                    try {
+                    const res = await fetch(`/api/reports/${reportId}/generate`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({}),
+                    });
+                    const data: GenerateResponse = await res.json();
+                    window.open(data.file_url, "_blank");
+                    } catch (err: unknown) {
+                    console.error("Failed to generate report:", err);
+                    }
+                    };
+
+                    if (loading) return <div>Đang tải danh sách báo cáo...</div>;
+                    if (error) return <div className="error">Lỗi: {error}</div>;
+
+                    return (
+                    <div className="report-list">
+                        <h2>Danh sách Báo cáo</h2>
+                        <div className="report-grid">
+                            {reports.map((report: ReportMeta) => (
+                            <div key={report.id} className="report-card">
+                                <h3>{report.name}</h3>
+                                <p className="entity">{report.entity}</p>
+                                <span className="format-badge">{report.format}</span>
+                                <p className="description">{report.description}</p>
+                                <button onClick={()=> handleGenerate(report.id)}>Generate</button>
+                            </div>
+                            ))}
+                        </div>
+                        <style jsx>
+                            {
+                                ` .report-list {
+                                    padding: 20px;
+                                }
+
+                                .report-grid {
+                                    display: grid;
+                                    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                                    gap: 16px;
+                                }
+
+                                .report-card {
+                                    border: 1px solid #ddd;
+                                    border-radius: 8px;
+                                    padding: 16px;
+                                    transition: box-shadow 0.2s;
+                                }
+
+                                .report-card:hover {
+                                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+                                }
+
+                                .format-badge {
+                                    display: inline-block;
+                                    padding: 2px 8px;
+                                    border-radius: 4px;
+                                    background: #4CAF50;
+                                    color: white;
+                                    font-size: 12px;
+                                }
+
+                                .entity {
+                                    color: #666;
+                                    margin: 4px 0;
+                                }
+
+                                .description {
+                                    color: #888;
+                                    font-size: 14px;
+                                }
+
+                                button {
+                                    margin-top: 8px;
+                                    padding: 8px 16px;
+                                    background: #4CAF50;
+                                    color: white;
+                                    border: none;
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                }
+
+                                `
+                            }
+                        </style>
+                    </div>
+                    );
+                    };
+
+                    export default ReportList;

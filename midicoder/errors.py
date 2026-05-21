@@ -795,6 +795,25 @@ class ErrorCode(str, Enum):
     CP33_INVALID_CURRENCY_PAIR = "MDC-CP33-015"
 
     # =========================================================================
+    # CP34: Report & Document Generator Errors
+    # =========================================================================
+    CP34_EMPTY_REPORT_ID = "MDC-CP34-001"
+    CP34_INVALID_FORMAT = "MDC-CP34-002"
+    CP34_ENTITY_NOT_FOUND = "MDC-CP34-003"
+    CP34_TEMPLATE_RENDER_FAILED = "MDC-CP34-004"
+    CP34_PDF_GENERATION_FAILED = "MDC-CP34-005"
+    CP34_EXCEL_GENERATION_FAILED = "MDC-CP34-006"
+    CP34_CSV_GENERATION_FAILED = "MDC-CP34-007"
+    CP34_BATCH_JOB_FAILED = "MDC-CP34-008"
+    CP34_BATCH_JOB_NOT_FOUND = "MDC-CP34-009"
+    CP34_STORAGE_SAVE_FAILED = "MDC-CP34-010"
+    CP34_INVALID_LAYOUT = "MDC-CP34-011"
+    CP34_INVALID_AGGREGATION = "MDC-CP34-012"
+    CP34_REPORT_SPEC_INVALID = "MDC-CP34-013"
+    CP34_PARSER_ERROR = "MDC-CP34-014"
+    CP34_EMIT_FAILED = "MDC-CP34-015"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1199,6 +1218,24 @@ class MidicoderErrorManager:
         ErrorCode.CP20_MISSING_AUTH_INJECT: "Thiếu auth injection trong client.",
         ErrorCode.CP20_BRIDGE_CONFIG_INVALID: "Config realtime bridge không hợp lệ.",
         ErrorCode.CP20_ENDPOINT_DUPLICATE: "Duplicate endpoint trong ApiSpec.",
+
+        # CP34: Report & Document Generator Error Templates
+        ErrorCode.CP34_EMPTY_REPORT_ID: "Report ID không được để trống.",
+        ErrorCode.CP34_INVALID_FORMAT: "Format báo cáo không hợp lệ.",
+        ErrorCode.CP34_ENTITY_NOT_FOUND: "Không tìm thấy entity để tạo báo cáo.",
+        ErrorCode.CP34_TEMPLATE_RENDER_FAILED: "Render template báo cáo thất bại.",
+        ErrorCode.CP34_PDF_GENERATION_FAILED: "Tạo file PDF thất bại.",
+        ErrorCode.CP34_EXCEL_GENERATION_FAILED: "Tạo file Excel thất bại.",
+        ErrorCode.CP34_CSV_GENERATION_FAILED: "Tạo file CSV thất bại.",
+        ErrorCode.CP34_BATCH_JOB_FAILED: "Batch job tạo báo cáo thất bại.",
+        ErrorCode.CP34_BATCH_JOB_NOT_FOUND: "Không tìm thấy batch job.",
+        ErrorCode.CP34_STORAGE_SAVE_FAILED: "Lưu file báo cáo vào storage thất bại.",
+        ErrorCode.CP34_INVALID_LAYOUT: "Layout báo cáo không hợp lệ.",
+        ErrorCode.CP34_INVALID_AGGREGATION: "Aggregation không hợp lệ.",
+        ErrorCode.CP34_REPORT_SPEC_INVALID: "Report specification không hợp lệ.",
+        ErrorCode.CP34_PARSER_ERROR: "Lỗi parse định nghĩa báo cáo.",
+        ErrorCode.CP34_EMIT_FAILED: "Không thể emit báo cáo.",
+
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",
         ErrorCode.CP53_DUPLICATE_DP_ID: "Domain pack ID trung lap.",
@@ -1547,6 +1584,74 @@ class MidicoderErrorManager:
         ErrorCode.CP28_CODE_INJECT_FAILED: [
             "Kiểm tra target path pattern hợp lệ",
             "Xem logs cho error chi tiết",
+        ],
+
+        # CP34: Report & Document Generator Suggestions
+        ErrorCode.CP34_EMPTY_REPORT_ID: [
+            "Cung cấp report ID khác trống (ví dụ: 'sales_report', 'invoice')",
+            "Sử dụng snake_case cho report ID",
+        ],
+        ErrorCode.CP34_INVALID_FORMAT: [
+            "Kiểm tra format nằm trong catalog: pdf, excel, csv",
+            "Xem documentation cho supported output formats",
+        ],
+        ErrorCode.CP34_ENTITY_NOT_FOUND: [
+            "Kiểm tra entity reference có tồn tại không",
+            "Xem danh sách entities hợp lệ trong project",
+        ],
+        ErrorCode.CP34_TEMPLATE_RENDER_FAILED: [
+            "Kiểm tra template file tồn tại và syntax đúng",
+            "Xem logs cho lỗi template engine chi tiết",
+            "Đảm bảo context data đầy đủ khi render",
+        ],
+        ErrorCode.CP34_PDF_GENERATION_FAILED: [
+            "Kiểm tra PDF library đã được cài đặt (ví dụ: weasyprint, reportlab)",
+            "Xem logs cho lỗi generation chi tiết",
+            "Đảm bảo template input hợp lệ",
+        ],
+        ErrorCode.CP34_EXCEL_GENERATION_FAILED: [
+            "Kiểm tra openpyxl library đã được cài đặt",
+            "Xem logs cho lỗi generation chi tiết",
+        ],
+        ErrorCode.CP34_CSV_GENERATION_FAILED: [
+            "Kiểm tra dữ liệu export hợp lệ",
+            "Xem logs cho lỗi generation chi tiết",
+        ],
+        ErrorCode.CP34_BATCH_JOB_FAILED: [
+            "Kiểm tra Celery worker đang chạy",
+            "Xem logs batch job cho error chi tiết",
+            "Kiểm tra resources (CPU, memory) đủ cho job",
+        ],
+        ErrorCode.CP34_BATCH_JOB_NOT_FOUND: [
+            "Kiểm tra batch job ID có đúng không",
+            "List jobs hiện tại để tìm job ID",
+        ],
+        ErrorCode.CP34_STORAGE_SAVE_FAILED: [
+            "Kiểm tra storage backend configuration",
+            "Đảm bảo quyền ghi vào storage directory",
+            "Kiểm tra dung lượng đĩa còn trống",
+        ],
+        ErrorCode.CP34_INVALID_LAYOUT: [
+            "Kiểm tra layout type nằm trong catalog hợp lệ",
+            "Xem documentation cho supported report layouts",
+        ],
+        ErrorCode.CP34_INVALID_AGGREGATION: [
+            "Kiểm tra aggregation type hợp lệ (sum, average, count, max, min)",
+            "Đảm bảo aggregation field tồn tại trong dataset",
+        ],
+        ErrorCode.CP34_REPORT_SPEC_INVALID: [
+            "Kiểm tra report specification không đúng schema",
+            "Xem documentation cho report spec structure",
+        ],
+        ErrorCode.CP34_PARSER_ERROR: [
+            "Kiểm tra YAML/JSON syntax trong định nghĩa báo cáo",
+            "Đảm bảo indentation đúng (2 spaces)",
+            "Sử dụng validator online để kiểm tra format",
+        ],
+        ErrorCode.CP34_EMIT_FAILED: [
+            "Kiểm tra output path có thể ghi được",
+            "Xem logs cho lỗi emit chi tiết",
+            "Đảm bảo report spec hợp lệ trước khi emit",
         ],
     }
 

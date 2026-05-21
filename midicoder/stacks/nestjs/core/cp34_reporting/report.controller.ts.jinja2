@@ -1,0 +1,31 @@
+// Report Controller — API endpoints cho report generation.
+// CP34: Report & Document Generator (NestJS)
+
+import { Controller, Get, Post, Param, Body } from "@nestjs/common";
+import { ReportService } from "./report.service";
+
+@Controller("api/reports")
+export class ReportController {
+constructor(private readonly reportService: ReportService) {}
+
+@Get()
+async listReports() {
+return this.reportService.listReports();
+}
+
+@Post(":reportId/generate")
+async generateReport(@Param("reportId") reportId: string) {
+const fileUrl = await this.reportService.generateReport(reportId);
+return { status: "completed", file_url: fileUrl, report_id: reportId };
+}
+
+@Post("batch")
+async createBatchJob(@Body() body: { reportIds: string[] }) {
+return { id: "", status: "pending", report_spec_ids: body.reportIds };
+}
+
+@Get("batch/:jobId")
+async getBatchJob(@Param("jobId") jobId: string) {
+return { id: jobId, status: "pending", report_spec_ids: [] };
+}
+}

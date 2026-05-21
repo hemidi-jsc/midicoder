@@ -1,0 +1,57 @@
+"""Excel Generator — Wrapper cho openpyxl để generate Excel report.
+
+CP34: Report & Document Generator
+"""
+
+import logging
+from typing import Any, Dict, List
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+
+logger = logging.getLogger(__name__)
+
+
+class ExcelGenerator:
+    """Generator Excel bằng openpyxl."""
+
+    def __init__(self):
+        """Init Excel generator."""
+        self.header_font = Font(bold=True, color="FFFFFF", size=11)
+        self.header_fill = PatternFill(start_color="4CAF50", end_color="4CAF50", fill_type="solid")
+        self.header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    def generate(self, spec, data: List[Dict[str, Any]]) -> str:
+        """
+        Generate Excel file từ report spec và data.
+
+        Args:
+            spec: ReportSpec chứa config
+            data: Danh sách records
+
+        Returns:
+            Storage URL của Excel file
+        """
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = spec.name[:31]
+            fields = getattr(spec, 'fields', None) or (list(data[0].keys()) if data else [])
+
+            for col_idx, f in enumerate(fields, 1):
+                cell = ws.cell(row=1, column=col_idx, value=f)
+                cell.font = self.header_font
+                cell.fill = self.header_fill
+
+            for row_idx, row in enumerate(data, 2):
+                for col_idx, f in enumerate(fields, 1):
+                    ws.cell(row=row_idx, column=col_idx, value=row.get(f, ""))
+
+            ws.freeze_panes = "A2"
+
+            import io
+            buf = io.BytesIO()
+            wb.save(buf)
+            return f"/storage/reports/{spec.id}.xlsx"
+        except Exception as e:
+            raise RuntimeError(f"Excel generation failed for report {getattr(spec, 'id', '')}: {e}") from e

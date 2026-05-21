@@ -1,0 +1,100 @@
+// Report List Component — Hiển thị danh sách reports có thể generate.
+// CP34: Report & Document Generator (Angular)
+{% if collection %}
+// Tự động sinh từ {{ collection.reports | length }} report specs.
+{% endif %}
+
+import { Component, OnInit, OnDestroy } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { HttpClient } from "@angular/common/http";
+import { Subscription } from "rxjs";
+
+export interface ReportMeta {
+id: string;
+name: string;
+entity: string;
+format: string;
+layout: string;
+description: string;
+}
+
+@Component({
+selector: "app-report-list",
+standalone: true,
+imports: [CommonModule],
+template: `
+<div class="report-list">
+    <h2>Danh sách Báo cáo</h2>
+    <div class="report-grid">
+        <div *ngFor="let r of reports" class="report-card">
+            <h3>{{ r.name }}</h3>
+            <p class="entity">{{ r.entity }}</p>
+            <span class="format-badge">{{ r.format }}</span>
+            <p class="description">{{ r.description }}</p>
+            <button (click)="generate(r.id, $event)">Generate</button>
+        </div>
+    </div>
+</div>
+`,
+styles: [`
+:host { display: block; padding: 20px; }
+.report-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+gap: 16px;
+}
+.report-card {
+border: 1px solid #ddd;
+border-radius: 8px;
+padding: 16px;
+transition: box-shadow 0.2s;
+}
+.report-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.format-badge {
+display: inline-block;
+padding: 2px 8px;
+border-radius: 4px;
+background: #4CAF50;
+color: white;
+font-size: 12px;
+}
+.entity { color: #666; margin: 4px 0; }
+.description { color: #888; font-size: 14px; }
+button {
+margin-top: 8px;
+padding: 8px 16px;
+background: #4CAF50;
+color: white;
+border: none;
+border-radius: 4px;
+cursor: pointer;
+}
+`]
+})
+export class ReportListComponent implements OnInit, OnDestroy {
+reports: ReportMeta[] = [];
+private subscriptions: Subscription = new Subscription();
+
+constructor(private http: HttpClient) {}
+
+ngOnInit(): void {
+const sub = this.http.get<ReportMeta[]>("/api/reports").subscribe({
+    next: (data) => { this.reports = data; },
+    error: (err) => { console.error("Failed to load reports:", err); },
+    });
+    this.subscriptions.add(sub);
+    }
+
+    ngOnDestroy(): void {
+    this.subscriptions.unsubscribe();
+    }
+
+    generate(id: string, event?: Event): void {
+    event?.stopPropagation();
+    const sub = this.http.post(`/api/reports/${id}/generate`, {}).subscribe({
+    next: (res: any) => window.open(res.file_url, "_blank"),
+    error: (err) => { console.error("Failed to generate report:", err); },
+    });
+    this.subscriptions.add(sub);
+    }
+    }

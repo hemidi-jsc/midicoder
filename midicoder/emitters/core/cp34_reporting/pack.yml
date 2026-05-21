@@ -1,0 +1,171 @@
+pack:
+  id: "CP34"
+  name: "Report & Document Generator"
+  internal_id: "cp34_reporting"
+  version: "1.0.0"
+  status: "stable"
+  category: "document"
+  depends_on: ["CP01", "CP08", "CP11", "CP13"]
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP34"
+    range: "MDC-CP34-001 to MDC-CP34-015"
+  capabilities_provided:
+    - pdf_generate
+    - excel_export
+    - csv_export
+    - report_template
+    - batch_doc_process
+    - report_viewer
+  capabilities:
+    - id: "pdf_generate"
+      emitter: "fastapi, nestjs"
+    - id: "excel_export"
+      emitter: "fastapi, nestjs"
+    - id: "csv_export"
+      emitter: "fastapi, nestjs"
+    - id: "report_template"
+      emitter: "fastapi, nestjs"
+    - id: "batch_doc_process"
+      emitter: "fastapi, nestjs"
+    - id: "report_viewer"
+      emitter: "angular, react"
+  definitions:
+    - name: "ReportSpec"
+      description: "DSL spec cho 1 report (entity, fields, format, layout, aggregations)"
+    - name: "BatchJob"
+      description: "Async job để xử lý batch document processing qua CP13"
+    - name: "ReportCollection"
+      description: "Collection chứa danh sách report specs"
+    - name: "ReportFormat"
+      description: "Enum: PDF, XLSX, CSV"
+  obligations:
+    - name: "ReportDeterminism"
+      description: "Cùng report spec + cùng data → cùng output (deterministic)"
+    - name: "BatchAsyncSafety"
+      description: "Batch job phải có retry policy và error tracking"
+  file_contributions:
+    infrastructure:
+      - path: "app/services/report_service.py"
+        file_type: "service"
+        template: "cp34_reporting/report_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp34.report.fastapi"
+        context_keys: ["collection", "entities"]
+      - path: "app/routes/reports.py"
+        file_type: "route"
+        template: "cp34_reporting/report_routes.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp34.report.fastapi"
+        context_keys: ["collection"]
+      - path: "app/workers/report_worker.py"
+        file_type: "worker"
+        template: "cp34_reporting/report_worker.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp34.report.fastapi"
+        context_keys: ["collection"]
+      - path: "app/generators/pdf_generator.py"
+        file_type: "generator"
+        template: "cp34_reporting/pdf_generator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp34.report.fastapi"
+        context_keys: ["collection"]
+      - path: "app/generators/excel_generator.py"
+        file_type: "generator"
+        template: "cp34_reporting/excel_generator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp34.report.fastapi"
+        context_keys: ["collection"]
+      - path: "app/generators/csv_generator.py"
+        file_type: "generator"
+        template: "cp34_reporting/csv_generator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp34.report.fastapi"
+        context_keys: ["collection"]
+      - path: "src/reports/report.service.ts"
+        file_type: "service"
+        template: "cp34_reporting/report.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp34.report.nestjs"
+        context_keys: ["collection"]
+      - path: "src/reports/report.controller.ts"
+        file_type: "controller"
+        template: "cp34_reporting/report.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp34.report.nestjs"
+        context_keys: ["collection"]
+      - path: "src/reports/pdf-generator.service.ts"
+        file_type: "generator"
+        template: "cp34_reporting/pdf-generator.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp34.report.nestjs"
+        context_keys: ["collection"]
+      - path: "src/reports/excel-generator.service.ts"
+        file_type: "generator"
+        template: "cp34_reporting/excel-generator.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp34.report.nestjs"
+        context_keys: ["collection"]
+      - path: "src/reports/csv-generator.service.ts"
+        file_type: "generator"
+        template: "cp34_reporting/csv-generator.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp34.report.nestjs"
+        context_keys: ["collection"]
+      - path: "src/reports/batch-worker.service.ts"
+        file_type: "worker"
+        template: "cp34_reporting/batch-worker.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp34.report.nestjs"
+        context_keys: ["collection"]
+      - path: "src/app/reports/report-list.component.ts"
+        file_type: "component"
+        template: "cp34_reporting/report-list.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: "cp34.report.angular"
+        context_keys: ["collection"]
+      - path: "src/app/reports/report-viewer.component.ts"
+        file_type: "component"
+        template: "cp34_reporting/report-viewer.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: "cp34.report.angular"
+        context_keys: ["collection"]
+      - path: "src/app/reports/batch-status.component.ts"
+        file_type: "component"
+        template: "cp34_reporting/batch-status.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: "cp34.report.angular"
+        context_keys: ["collection"]
+      - path: "src/components/reports/ReportList.tsx"
+        file_type: "component"
+        template: "cp34_reporting/ReportList.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: "cp34.report.react"
+        context_keys: ["collection"]
+      - path: "src/components/reports/ReportViewer.tsx"
+        file_type: "component"
+        template: "cp34_reporting/ReportViewer.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: "cp34.report.react"
+        context_keys: ["collection"]
+      - path: "src/components/reports/BatchStatus.tsx"
+        file_type: "component"
+        template: "cp34_reporting/BatchStatus.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: "cp34.report.react"
+        context_keys: ["collection"]
+  frontend_integration:
+    angular:
+      - ReportListComponent
+      - ReportViewerComponent
+      - BatchStatusComponent
+    react:
+      - ReportList
+      - ReportViewer
+      - BatchStatus
+  recipes:
+    - basic_report_recipe
+    - pdf_report_recipe
+    - excel_export_recipe
+    - batch_report_recipe

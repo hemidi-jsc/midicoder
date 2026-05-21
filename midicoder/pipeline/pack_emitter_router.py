@@ -292,6 +292,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "ReactQualityEmitter",
         "cp24_quality",
     ),
+    # CP34 – Report & Document (FastAPI)
+    "cp34.report.fastapi": (
+        "midicoder.emitters.core.cp34_reporting.fastapi",
+        "FastAPIReportEmitter",
+        "cp34_report",
+    ),
+    # CP34 – Report & Document (NestJS)
+    "cp34.report.nestjs": (
+        "midicoder.emitters.core.cp34_reporting.nestjs",
+        "NestJSReportEmitter",
+        "cp34_report",
+    ),
+    # CP34 – Report & Document (Angular)
+    "cp34.report.angular": (
+        "midicoder.emitters.core.cp34_reporting.angular",
+        "AngularReportEmitter",
+        "cp34_report",
+    ),
+    # CP34 – Report & Document (React)
+    "cp34.report.react": (
+        "midicoder.emitters.core.cp34_reporting.react",
+        "ReactReportEmitter",
+        "cp34_report",
+    ),
 }
 
 
@@ -430,6 +454,13 @@ def _parse_quality_dict(raw: dict[str, Any]) -> Any:
     return parser.parse_from_metadata(raw)
 
 
+def _parse_report_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw report dict from DSL/MIR into CP34 ReportCollection."""
+    from midicoder.emitters.core.cp34_reporting.parser import ReportParser
+    parser = ReportParser()
+    return parser.parse_from_metadata(raw)
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
@@ -442,6 +473,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp19_ui_component": _parse_ui_component_dict,
     "cp22_realtime": _parse_realtime_dict,
     "cp24_quality": _parse_quality_dict,
+    "cp34_report": _parse_report_dict,
 }
 
 

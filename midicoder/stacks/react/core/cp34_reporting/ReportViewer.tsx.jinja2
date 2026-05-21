@@ -1,0 +1,56 @@
+// Report Viewer — Hiển thị report trong browser.
+// CP34: Report & Document Generator (React)
+
+import React, { useState, useEffect } from "react";
+
+export interface ReportViewerProps {
+reportId: string;
+format?: string;
+title?: string;
+}
+
+interface GenerateResponse {
+file_url: string;
+status: string;
+}
+
+const ReportViewer: React.FC<ReportViewerProps> = ({
+    reportId,
+    format = "pdf",
+    title = "Xem Báo cáo",
+    }) => {
+    const [url, setUrl] = useState<string>("");
+        const [loading, setLoading] = useState<boolean>(false);
+
+            const generate = async (): Promise<void> => {
+                setLoading(true);
+                try {
+                const res = await fetch(`/api/reports/${reportId}/generate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+                });
+                const data: GenerateResponse = await res.json();
+                setUrl(data.file_url);
+                } catch (err: unknown) {
+                console.error("Failed to generate report:", err);
+                } finally {
+                setLoading(false);
+                }
+                };
+
+                useEffect(() => {
+                generate();
+                }, [reportId]);
+
+                return (
+                <div className="report-viewer">
+                    <h2>{title}</h2>
+                    {format === "pdf" && url && <iframe src={url} width="100%" height="600px" />}
+                    <button onClick={()=> url && window.open(url, "_blank")}>Tải xuống</button>
+                    {loading && <p>Đang tạo báo cáo...</p>}
+                </div>
+                );
+                };
+
+                export default ReportViewer;

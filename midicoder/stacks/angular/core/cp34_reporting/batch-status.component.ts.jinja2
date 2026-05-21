@@ -1,0 +1,137 @@
+// Batch Status Component — Progress indicator cho batch job.
+// CP34: Report & Document Generator (Angular)
+
+import { Component, Input, OnInit, OnDestroy } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { HttpClient } from "@angular/common/http";
+import { Subscription, interval } from "rxjs";
+import { switchMap } from "rxjs/operators";
+
+export interface BatchJobStatus {
+id: string;
+status: "pending" | "running" | "completed" | "failed" | "cancelled";
+reportSpecIds: string[];
+resultUrls: string[];
+error: string;
+}
+
+@Component({
+selector: "app-batch-status",
+standalone: true,
+imports: [CommonModule],
+template: `
+<div class="batch-status">
+    <h3>Trạng thái Batch Job</h3>
+    <div class="status-badge" [ngClass]="job?.status">
+        {{ getStatusLabel(job?.status) }}
+    </div>
+
+    <div *ngIf="job?.status === 'running'" class="progress">
+        <div class="progress-bar" [style.width.%]="progressPercent"></div>
+        <p>{{ completedCount }} / {{ totalCount }} báo cáo</p>
+    </div>
+
+    <div *ngIf="job?.status === 'completed'" class="results">
+        <h4>Kết quả ({{ job.resultUrls.length }}):</h4>
+        <ul>
+            <li *ngFor="let url of job.resultUrls; let i = index">
+                <a [href]="url" target="_blank">Báo cáo {{ i + 1 }}</a>
+            </li>
+        </ul>
+    </div>
+
+    <div *ngIf="job?.status === 'failed'" class="error">
+        <p>{{ job.error }}</p>
+    </div>
+</div>
+`,
+styles: [`
+:host { display: block; padding: 20px; }
+.status-badge {
+display: inline-block;
+padding: 4px 12px;
+border-radius: 12px;
+font-size: 14px;
+font-weight: bold;
+}
+.status-badge.pending { background: #ff9800; color: white; }
+.status-badge.running { background: #2196f3; color: white; }
+.status-badge.completed { background: #4caf50; color: white; }
+.status-badge.failed { background: #f44336; color: white; }
+.status-badge.cancelled { background: #9e9e9e; color: white; }
+.progress { margin: 16px 0; }
+.progress-bar {
+height: 8px;
+background: #4caf50;
+border-radius: 4px;
+transition: width 0.3s;
+}
+.results ul { list-style: none; padding: 0; }
+.results li { padding: 4px 0; }
+.error { color: red; margin-top: 16px; }
+`]
+})
+export class BatchStatusComponent implements OnInit, OnDestroy {
+@Input() jobId: string = "";
+
+job: BatchJobStatus | null = null;
+private pollSubscription: Subscription | null = null;
+
+constructor(private http: HttpClient) {}
+
+ngOnInit(): void {
+this.startPolling();
+}
+
+ngOnDestroy(): void {
+this.stopPolling();
+}
+
+startPolling(): void {
+this.pollSubscription = interval(3000).pipe(
+switchMap(() => this.http.get<BatchJobStatus>(`/api/reports/batch/${this.jobId}`))
+    ).subscribe({
+    next: (data) => {
+    this.job = data;
+    if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
+    this.stopPolling();
+    }
+    },
+    error: (err) => {
+    console.error("Failed to poll batch status:", err);
+    },
+    });
+    }
+
+    stopPolling(): void {
+    if (this.pollSubscription) {
+    this.pollSubscription.unsubscribe();
+    this.pollSubscription = null;
+    }
+    }
+
+    get progressPercent(): number {
+    if (!this.job || this.job.status !== "running") return 0;
+    if (this.totalCount === 0) return 0;
+    return Math.round((this.completedCount / this.totalCount) * 100);
+    }
+
+    get completedCount(): number {
+    return this.job?.resultUrls?.length || 0;
+    }
+
+    get totalCount(): number {
+    return this.job?.reportSpecIds?.length || 0;
+    }
+
+    getStatusLabel(status?: string): string {
+    const labels: Record<string, string> = {
+        pending: "Đang chờ",
+        running: "Đang chạy",
+        completed: "Hoàn thành",
+        failed: "Thất bại",
+        cancelled: "Đã hủy",
+        };
+        return labels[status || ""] || "Không rõ";
+        }
+        }

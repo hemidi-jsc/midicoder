@@ -1,0 +1,146 @@
+"""Report Worker — Background worker cho batch document processing.
+
+CP34: Report & Document Generator
+"""
+
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Inline models (standalone — no midicoder imports)
+# ---------------------------------------------------------------------------
+
+class BatchJobStatus(str, Enum):
+    """Enum trạng thái batch job."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class BatchJob:
+    """Job để xử lý batch document async (qua CP13 worker)."""
+    report_spec_ids: list[str]
+    id: str = field(default_factory=lambda: str(uuid4()))
+    status: BatchJobStatus = BatchJobStatus.PENDING
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: Optional[datetime] = None
+    error: str = ""
+    result_urls: list[str] = field(default_factory=list)
+    retries: int = 0
+    max_retries: int = 3
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate batch job sau khi khởi tạo."""
+        if not self.report_spec_ids:
+            raise ValueError("Batch job phải có ít nhất 1 report spec")
+        if self.max_retries < 0:
+            self.max_retries = 3
+
+    def can_retry(self) -> bool:
+        """Kiểm tra job có thể retry không."""
+        return self.retries < self.max_retries and self.status == BatchJobStatus.FAILED
+
+    def mark_running(self) -> None:
+        """Đánh dấu job đang chạy."""
+        self.status = BatchJobStatus.RUNNING
+
+    def mark_completed(self, urls: list[str] | None = None) -> None:
+        """Đánh dấu job hoàn thành."""
+        self.status = BatchJobStatus.COMPLETED
+        self.completed_at = datetime.now(timezone.utc)
+        if urls:
+            self.result_urls = urls
+
+    def mark_failed(self, error_msg: str) -> None:
+        """Đánh dấu job thất bại."""
+        self.status = BatchJobStatus.FAILED
+        self.error = error_msg
+        self.completed_at = datetime.now(timezone.utc)
+
+    def mark_cancelled(self) -> None:
+        """Đánh dấu job bị hủy."""
+        self.status = BatchJobStatus.CANCELLED
+        self.completed_at = datetime.now(timezone.utc)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển batch job sang dict format."""
+        return {
+            "id": self.id,
+            "status": self.status.value,
+            "report_spec_ids": self.report_spec_ids,
+            "created_at": self.created_at.isoformat(),
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "error": self.error,
+            "result_urls": self.result_urls,
+            "retries": self.retries,
+            "max_retries": self.max_retries,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BatchJob":
+        """Tạo BatchJob từ dict."""
+        return cls(
+            id=data.get("id", str(uuid4())),
+            report_spec_ids=data.get("report_spec_ids", []),
+            status=BatchJobStatus(data.get("status", "pending")),
+            created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(timezone.utc),
+            completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
+            error=data.get("error", ""),
+            result_urls=data.get("result_urls", []),
+            retries=data.get("retries", 0),
+            max_retries=data.get("max_retries", 3),
+            metadata=data.get("metadata", {}),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Worker
+# ---------------------------------------------------------------------------
+
+class ReportWorker:
+    """Background worker xử lý batch report generation."""
+
+    def __init__(self, db=None):
+        """Init report worker."""
+        self._db = db
+
+    def execute_job(self, job) -> None:
+        """Execute batch job."""
+        job.mark_running()
+        result_urls = []
+        try:
+            from app.services.report_service import ReportService
+            service = ReportService(self._db)
+            for report_id in job.report_spec_ids:
+                try:
+                    file_url = service.generate_report(report_id)
+                    result_urls.append(file_url)
+                except Exception as e:
+                    result_urls.append(f"error:{report_id}:{str(e)}")
+            job.mark_completed(result_urls)
+        except Exception as e:
+            if job.can_retry():
+                job.retries += 1
+                self.execute_job(job)
+            else:
+                job.mark_failed(str(e))
+
+
+def report_batch_handler(job_data: Dict[str, Any], db=None) -> Dict[str, Any]:
+    """Handler cho CP13 worker."""
+    job = BatchJob.from_dict(job_data)
+    worker = ReportWorker(db)
+    worker.execute_job(job)
+    return job.to_dict()

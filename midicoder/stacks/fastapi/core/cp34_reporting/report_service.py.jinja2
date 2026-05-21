@@ -1,0 +1,298 @@
+"""Report Service — Service quản lý generate report và document.
+
+CP34: Report & Document Generator
+{% if collection %}
+Tự động sinh từ {{ collection.reports | length }} report specs.
+{% endif %}
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, List, Optional
+from pathlib import Path
+from uuid import uuid4
+
+from sqlalchemy.orm import Session
+
+
+# ---------------------------------------------------------------------------
+# Inline models (standalone — no midicoder imports)
+# ---------------------------------------------------------------------------
+
+class ReportFormat(str, Enum):
+    """Enum định dạng output của report."""
+    PDF = "pdf"
+    XLSX = "xlsx"
+    CSV = "csv"
+
+
+class ReportLayout(str, Enum):
+    """Enum layout hiển thị report."""
+    TABLE = "table"
+    DASHBOARD = "dashboard"
+    LIST = "list"
+
+
+class AggregationFunc(str, Enum):
+    """Enum hàm aggregation cho report."""
+    SUM = "SUM"
+    COUNT = "COUNT"
+    AVG = "AVG"
+    MIN = "MIN"
+    MAX = "MAX"
+
+
+class BatchJobStatus(str, Enum):
+    """Enum trạng thái batch job."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class ReportSpec:
+    """Spec cho 1 report — parse từ DSL YAML."""
+    id: str
+    name: str
+    entity: str
+    fields: list[str] = field(default_factory=list)
+    filter: dict[str, Any] = field(default_factory=dict)
+    format: ReportFormat = ReportFormat.PDF
+    layout: ReportLayout = ReportLayout.TABLE
+    group_by: str = ""
+    aggregations: list[str] = field(default_factory=list)
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate report spec sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            raise ValueError("Report spec ID không được để trống")
+        if not self.entity or not self.entity.strip():
+            raise ValueError("Report spec entity không được để trống")
+        valid_funcs = {af.value for af in AggregationFunc}
+        for agg in self.aggregations:
+            if agg.upper() not in valid_funcs:
+                raise ValueError(f"Aggregation function không hợp lệ: {agg}")
+
+    def has_aggregation(self) -> bool:
+        """Kiểm tra report có aggregation không."""
+        return len(self.aggregations) > 0
+
+    def needs_grouping(self) -> bool:
+        """Kiểm tra report cần group by không."""
+        return bool(self.group_by and self.group_by.strip())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển report spec sang dict format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "entity": self.entity,
+            "fields": self.fields,
+            "filter": self.filter,
+            "format": self.format.value,
+            "layout": self.layout.value,
+            "group_by": self.group_by,
+            "aggregations": self.aggregations,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ReportSpec":
+        """Tạo ReportSpec từ dict."""
+        fmt_str = data.get("format", "pdf")
+        layout_str = data.get("layout", "table")
+
+        try:
+            fmt = ReportFormat(fmt_str)
+        except ValueError:
+            fmt = ReportFormat.PDF
+
+        try:
+            layout = ReportLayout(layout_str)
+        except ValueError:
+            layout = ReportLayout.TABLE
+
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            entity=data.get("entity", ""),
+            fields=data.get("fields", []),
+            filter=data.get("filter", {}),
+            format=fmt,
+            layout=layout,
+            group_by=data.get("group_by", ""),
+            aggregations=data.get("aggregations", []),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class BatchJob:
+    """Job để xử lý batch document async (qua CP13 worker)."""
+    report_spec_ids: list[str]
+    id: str = field(default_factory=lambda: str(uuid4()))
+    status: BatchJobStatus = BatchJobStatus.PENDING
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: Optional[datetime] = None
+    error: str = ""
+    result_urls: list[str] = field(default_factory=list)
+    retries: int = 0
+    max_retries: int = 3
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate batch job sau khi khởi tạo."""
+        if not self.report_spec_ids:
+            raise ValueError("Batch job phải có ít nhất 1 report spec")
+        if self.max_retries < 0:
+            self.max_retries = 3
+
+    def can_retry(self) -> bool:
+        """Kiểm tra job có thể retry không."""
+        return self.retries < self.max_retries and self.status == BatchJobStatus.FAILED
+
+    def mark_running(self) -> None:
+        """Đánh dấu job đang chạy."""
+        self.status = BatchJobStatus.RUNNING
+
+    def mark_completed(self, urls: list[str] | None = None) -> None:
+        """Đánh dấu job hoàn thành."""
+        self.status = BatchJobStatus.COMPLETED
+        self.completed_at = datetime.now(timezone.utc)
+        if urls:
+            self.result_urls = urls
+
+    def mark_failed(self, error_msg: str) -> None:
+        """Đánh dấu job thất bại."""
+        self.status = BatchJobStatus.FAILED
+        self.error = error_msg
+        self.completed_at = datetime.now(timezone.utc)
+
+    def mark_cancelled(self) -> None:
+        """Đánh dấu job bị hủy."""
+        self.status = BatchJobStatus.CANCELLED
+        self.completed_at = datetime.now(timezone.utc)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển batch job sang dict format."""
+        return {
+            "id": self.id,
+            "status": self.status.value,
+            "report_spec_ids": self.report_spec_ids,
+            "created_at": self.created_at.isoformat(),
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "error": self.error,
+            "result_urls": self.result_urls,
+            "retries": self.retries,
+            "max_retries": self.max_retries,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BatchJob":
+        """Tạo BatchJob từ dict."""
+        return cls(
+            id=data.get("id", str(uuid4())),
+            report_spec_ids=data.get("report_spec_ids", []),
+            status=BatchJobStatus(data.get("status", "pending")),
+            created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(timezone.utc),
+            completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
+            error=data.get("error", ""),
+            result_urls=data.get("result_urls", []),
+            retries=data.get("retries", 0),
+            max_retries=data.get("max_retries", 3),
+            metadata=data.get("metadata", {}),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+
+class ReportService:
+    """Service quản lý generate report và document."""
+
+    REPORT_SPECS: Dict[str, ReportSpec] = {}
+
+    def __init__(self, db: Session):
+        """
+        Init report service.
+
+        Args:
+            db: SQLAlchemy session
+        """
+        self._db = db
+
+    def generate_report(
+        self,
+        report_id: str,
+        fmt: ReportFormat | None = None,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Generate report và trả về file path hoặc storage URL.
+
+        Args:
+            report_id: ID của report spec
+            fmt: Định dạng output (override spec)
+            filters: Query filters (optional)
+
+        Returns:
+            Storage URL của file đã generate
+        """
+        spec = self.REPORT_SPECS.get(report_id)
+        if not spec:
+            raise ValueError(f"Report spec not found: {report_id}")
+
+        output_format = fmt or spec.format
+        data = self._query_entity_data(spec, filters)
+
+        if output_format == ReportFormat.PDF:
+            from app.generators.pdf_generator import PDFGenerator
+            return PDFGenerator().generate(spec, data)
+        elif output_format == ReportFormat.XLSX:
+            from app.generators.excel_generator import ExcelGenerator
+            return ExcelGenerator().generate(spec, data)
+        elif output_format == ReportFormat.CSV:
+            from app.generators.csv_generator import CSVGenerator
+            return CSVGenerator().generate(spec, data)
+        else:
+            raise ValueError(f"Invalid format: {output_format}")
+
+    def _query_entity_data(
+        self,
+        spec: ReportSpec,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Query data từ entity source."""
+        combined_filters = {}
+        combined_filters.update(spec.filter or {})
+        if filters:
+            combined_filters.update(filters)
+        return []
+
+    def create_batch_job(self, report_ids: List[str]) -> BatchJob:
+        """Tạo batch job để generate nhiều reports async."""
+        return BatchJob(report_spec_ids=report_ids)
+
+    def get_batch_job(self, job_id: str) -> Optional[BatchJob]:
+        """Lấy thông tin batch job."""
+        return None
+
+    def list_reports(self) -> List[Dict[str, Any]]:
+        """Liệt kê tất cả reports có thể generate."""
+        return [
+            {
+                "id": spec.id,
+                "name": spec.name,
+                "entity": spec.entity,
+                "format": spec.format.value,
+                "layout": spec.layout.value,
+                "description": spec.description,
+            }
+            for spec in self.REPORT_SPECS.values()
+        ]

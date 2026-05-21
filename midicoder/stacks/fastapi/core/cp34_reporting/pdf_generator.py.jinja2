@@ -1,0 +1,62 @@
+"""PDF Generator — Wrapper cho WeasyPrint để generate PDF report.
+
+CP34: Report & Document Generator
+"""
+
+import io
+import logging
+from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
+
+
+class PDFGenerator:
+    """Generator PDF bằng WeasyPrint."""
+
+    def __init__(self, template_dir: str = "app/templates/reports"):
+        """
+        Init PDF generator.
+
+        Args:
+            template_dir: Đường dẫn đến HTML templates
+        """
+        self.template_dir = template_dir
+
+    def generate(self, spec, data: List[Dict[str, Any]]) -> str:
+        """
+        Generate PDF từ report spec và data.
+
+        Args:
+            spec: ReportSpec chứa config
+            data: Danh sách records
+
+        Returns:
+            Storage URL của PDF file
+        """
+        try:
+            from weasyprint import HTML
+            html_content = self._build_html(spec, data)
+            pdf_bytes = HTML(string=html_content).write_pdf()
+            return f"/storage/reports/{spec.id}.pdf"
+        except Exception as e:
+            raise RuntimeError(f"PDF generation failed for report {getattr(spec, 'id', '')}: {e}") from e
+
+    def _build_html(self, spec, data: List[Dict[str, Any]]) -> str:
+        """Build HTML content từ report spec và data."""
+        fields = getattr(spec, 'fields', None) or (list(data[0].keys()) if data else [])
+        html = f'<html><head><title>{spec.name}</title>'
+        html += '<style>body{font-family:Arial;margin:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}</style></head><body>'
+        html += f'<h1>{spec.name}</h1>'
+        if data:
+            html += '<table><thead><tr>'
+            for f in fields:
+                html += f'<th>{f}</th>'
+            html += '</tr></thead><tbody>'
+            for row in data:
+                html += '<tr>'
+                for f in fields:
+                    html += f'<td>{row.get(f, "")}</td>'
+                html += '</tr>'
+            html += '</tbody></table>'
+        html += '</body></html>'
+        return html

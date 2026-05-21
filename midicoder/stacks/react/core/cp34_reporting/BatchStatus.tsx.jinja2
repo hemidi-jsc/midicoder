@@ -1,0 +1,70 @@
+// Batch Status — Progress indicator cho batch job.
+// CP34: Report & Document Generator (React)
+
+import React, { useState, useEffect } from "react";
+
+export interface BatchStatusProps {
+jobId: string;
+}
+
+type BatchStatusValue = "pending" | "running" | "completed" | "failed";
+
+interface BatchJob {
+status: BatchStatusValue;
+reportSpecIds: string[];
+resultUrls: string[];
+error?: string;
+}
+
+const statusLabels: Record<BatchStatusValue, string> = {
+    pending: "Đang chờ",
+    running: "Đang chạy",
+    completed: "Hoàn thành",
+    failed: "Thất bại",
+    };
+
+    const BatchStatus: React.FC<BatchStatusProps> = ({ jobId }) => {
+        const [job, setJob] = useState<BatchJob | null>(null);
+
+            useEffect(() => {
+            const poll = async (): Promise<void> => {
+                try {
+                const res = await fetch(`/api/reports/batch/${jobId}`);
+                const data: BatchJob = await res.json();
+                setJob(data);
+                } catch (err: unknown) {
+                console.error("Failed to poll batch status:", err);
+                }
+                };
+
+                poll();
+                const t = setInterval(poll, 3000);
+                return () => clearInterval(t);
+                }, [jobId]);
+
+                if (!job) return <p>Đang tải...</p>;
+
+                return (
+                <div className="batch-status">
+                    <h3>Trạng thái Batch Job</h3>
+                    <span>{statusLabels[job.status]}</span>
+                    {job.status === "running" && (
+                    <p>{job.resultUrls?.length || 0} / {job.reportSpecIds?.length || 0}</p>
+                    )}
+                    {job.status === "completed" && (
+                    <ul>
+                        {job.resultUrls.map((url: string, index: number) => (
+                        <li key={index}>
+                            <a href={url} target="_blank" rel="noopener noreferrer">
+                                Download {index + 1}
+                            </a>
+                        </li>
+                        ))}
+                    </ul>
+                    )}
+                    {job.status === "failed" && <p className="error">{job.error}</p>}
+                </div>
+                );
+                };
+
+                export default BatchStatus;

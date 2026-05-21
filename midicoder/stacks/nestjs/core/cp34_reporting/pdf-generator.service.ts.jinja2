@@ -1,0 +1,64 @@
+// PDF Generator Service — Wrapper cho Puppeteer.
+// CP34: Report & Document Generator (NestJS)
+
+import { Injectable } from "@nestjs/common";
+import puppeteer from "puppeteer";
+
+@Injectable()
+export class PdfGeneratorService {
+/**
+* Generate PDF từ report spec và data.
+*/
+async generate(spec: any, data: any[]): Promise<string> {
+    const html = this.buildHtml(spec, data);
+    const browser = await puppeteer.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    const pdf = await page.pdf({ format: "A4", margin: { top: "2cm", right: "2cm", bottom: "2cm", left: "2cm" } });
+    await browser.close();
+    return `/storage/reports/${spec.id}.pdf`;
+    }
+
+    private buildHtml(spec: any, data: any[]): string {
+    const fields = spec.fields || (data.length > 0 ? Object.keys(data[0]) : []);
+    let html = `<html>
+
+    <head>
+        <title>${spec.name}</title>`;
+        html += `<style>
+            body {
+                font-family: Arial;
+                margin: 20px
+            }
+
+            table {
+                border-collapse: collapse;
+                width: 100%
+            }
+
+            th,
+            td {
+                border: 1px solid #ddd;
+                padding: 8px
+            }
+        </style>
+    </head>
+
+    <body>`;
+        html += `<h1>${spec.name}</h1>`;
+        if (data.length > 0) {
+        html += `<table>
+            <thead>
+                <tr>${fields.map(f => `<th>${f}</th>`).join("")}</tr>
+            </thead>
+            <tbody>`;
+                for (const row of data) { html += `<tr>${fields.map(f => `<td>${row[f] ?? ""}</td>`).join("")}</tr>`; }
+                html += `</tbody>
+        </table>`;
+        }
+        html += `</body>
+
+    </html>`;
+    return html;
+    }
+    }

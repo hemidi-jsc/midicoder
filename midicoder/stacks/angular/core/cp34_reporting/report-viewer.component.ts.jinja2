@@ -1,0 +1,136 @@
+// Report Viewer Component — Hiển thị report trong browser.
+// CP34: Report & Document Generator (Angular)
+// Hỗ trợ: PDF embed (iframe), Excel/CSV download.
+
+import { Component, Input, OnInit, OnDestroy } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { HttpClient } from "@angular/common/http";
+import { DomSanitizer, SafeResourceUrl } from "@angular/platform-browser";
+import { Subscription } from "rxjs";
+
+export interface ViewerConfig {
+reportId: string;
+format: "pdf" | "xlsx" | "csv";
+autoGenerate?: boolean;
+}
+
+@Component({
+selector: "app-report-viewer",
+standalone: true,
+imports: [CommonModule],
+template: `
+<div class="report-viewer">
+    <div class="viewer-header">
+        <h2>{{ title }}</h2>
+        <div class="actions">
+            <button (click)="regenerate()">Tạo lại</button>
+            <button (click)="download()" [disabled]="!downloadUrl">Tải xuống</button>
+        </div>
+    </div>
+
+    <ng-container [ngSwitch]="config?.format">
+        <!-- PDF Viewer — sanitized iframe -->
+        <iframe *ngSwitchCase="'pdf'" [src]="safeUrl" class="pdf-frame" title="PDF Viewer"></iframe>
+
+        <!-- Excel/CSV — Download only -->
+        <div *ngSwitchDefault class="download-prompt">
+            <p>Báo cáo sẽ được tải xuống dưới định dạng {{ config?.format }}.</p>
+            <button (click)="download()">Tải xuống</button>
+        </div>
+    </ng-container>
+
+    <div *ngIf="loading" class="loading">
+        <p>Đang tạo báo cáo...</p>
+    </div>
+
+    <div *ngIf="error" class="error">
+        <p>{{ error }}</p>
+    </div>
+</div>
+`,
+styles: [`
+:host { display: block; padding: 20px; }
+.viewer-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 16px;
+}
+.pdf-frame {
+width: 100%;
+height: 80vh;
+border: 1px solid #ddd;
+border-radius: 4px;
+}
+.loading { text-align: center; padding: 40px; color: #666; }
+.error { text-align: center; padding: 40px; color: red; }
+button {
+padding: 8px 16px;
+background: #4CAF50;
+color: white;
+border: none;
+border-radius: 4px;
+cursor: pointer;
+margin-left: 8px;
+}
+button:disabled { background: #ccc; cursor: not-allowed; }
+`]
+})
+export class ReportViewerComponent implements OnInit, OnDestroy {
+@Input() config: ViewerConfig | null = null;
+@Input() title: string = "Xem Báo cáo";
+
+loading = false;
+error: string = "";
+pdfUrl: string = "";
+safeUrl: SafeResourceUrl | null = null;
+downloadUrl: string = "";
+private subscriptions: Subscription = new Subscription();
+
+constructor(
+private http: HttpClient,
+private sanitizer: DomSanitizer
+) {}
+
+ngOnInit(): void {
+if (this.config?.autoGenerate !== false) {
+this.generate();
+}
+}
+
+ngOnDestroy(): void {
+this.subscriptions.unsubscribe();
+}
+
+generate(): void {
+if (!this.config?.reportId) return;
+this.loading = true;
+this.error = "";
+
+const sub = this.http.post(`/api/reports/${this.config.reportId}/generate`, {}).subscribe({
+next: (res: any) => {
+this.loading = false;
+this.downloadUrl = res.file_url;
+if (this.config?.format === "pdf") {
+this.pdfUrl = res.file_url;
+this.safeUrl = this.sanitizer.bypassSecurityTrustResourceUrl(res.file_url);
+}
+},
+error: (err) => {
+this.loading = false;
+this.error = `Tạo báo cáo thất bại: ${err.message || "Lỗi không rõ"}`;
+},
+});
+this.subscriptions.add(sub);
+}
+
+regenerate(): void {
+this.generate();
+}
+
+download(): void {
+if (this.downloadUrl) {
+window.open(this.downloadUrl, "_blank");
+}
+}
+}

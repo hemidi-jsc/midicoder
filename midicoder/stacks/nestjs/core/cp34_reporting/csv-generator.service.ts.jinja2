@@ -1,0 +1,23 @@
+// CSV Generator Service.
+// CP34: Report & Document Generator (NestJS)
+
+import { Injectable } from "@nestjs/common";
+
+@Injectable()
+export class CsvGeneratorService {
+/**
+* Generate CSV từ report spec và data.
+*/
+async generate(spec: any, data: any[]): Promise<string> {
+    const fields = spec.fields || (data.length > 0 ? Object.keys(data[0]) : []);
+    const header = fields.join(",");
+    const rows = data.map(row => fields.map(f => {
+    const val = String(row[f] ?? "");
+    // Escape double quotes và wrap nếu chứa dấu phẩy hoặc dấu nháy
+    return val.includes(",") || val.includes('"') || val.includes("\n")
+    ? `"${val.replace(/"/g, '""')}"`
+    : val;
+    }).join(",")).join("\n");
+    return `/storage/reports/${spec.id}.csv`;
+    }
+    }

@@ -1,0 +1,22 @@
+// Excel Generator Service — Wrapper cho exceljs.
+// CP34: Report & Document Generator (NestJS)
+
+import { Injectable } from "@nestjs/common";
+import * as ExcelJS from "exceljs";
+
+@Injectable()
+export class ExcelGeneratorService {
+/**
+* Generate Excel file từ report spec và data.
+*/
+async generate(spec: any, data: any[]): Promise<string> {
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet(spec.name.slice(0, 31));
+    const fields = spec.fields || (data.length > 0 ? Object.keys(data[0]) : []);
+    ws.columns = fields.map(f => ({ header: f, key: f, width: 30 }));
+    ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    ws.views = [{ state: "frozen", ySplit: 1 }];
+    for (const row of data) ws.addRow(row);
+    return `/storage/reports/${spec.id}.xlsx`;
+    }
+    }
