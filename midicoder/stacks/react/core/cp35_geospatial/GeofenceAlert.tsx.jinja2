@@ -1,0 +1,203 @@
+// Geofence Alert — Hiển thị cảnh báo geofence enter/exit.
+// CP35: Geospatial Services (React)
+// Dùng polling để cập nhật cảnh báo theo thời gian thực.
+// Cleanup interval khi component unmount.
+{% if collection %}
+// Tự động sinh từ {{ collection.reports | length }} geospatial specs.
+{% endif %}
+
+import React, { useState, useEffect, useCallback } from "react";
+
+export interface GeofenceEvent {
+  id: string;
+  geofenceId: string;
+  geofenceName: string;
+  type: "enter" | "exit";
+  message: string;
+  timestamp: string;
+  location: { latitude: number; longitude: number };
+  details?: string;
+}
+
+interface GeofenceAlertProps {
+  geofenceId?: string;
+  pollingInterval?: number;
+  onDismiss?: (alertId: string) => void;
+  onError?: (error: string) => void;
+}
+
+interface GeofenceAlertState {
+  events: GeofenceEvent[];
+  loading: boolean;
+  error: string | null;
+}
+
+const GeofenceAlert: React.FC<GeofenceAlertProps> = ({
+  geofenceId,
+  pollingInterval = 30000,
+  onDismiss,
+  onError,
+}) => {
+  const [state, setState] = useState<GeofenceAlertState>({
+    events: [],
+    loading: false,
+    error: null,
+  });
+
+  // Fetch alerts từ API
+  const fetchAlerts = useCallback(async (): Promise<void> => {
+    setState((prev) => ({ ...prev, loading: true }));
+
+    try {
+      const url = geofenceId
+        ? `/api/geospatial/geofences/${geofenceId}/alerts`
+        : "/api/geospatial/alerts";
+
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: Không thể tải cảnh báo`);
+      }
+      const data: GeofenceEvent[] = await res.json();
+      setState((prev) => ({ ...prev, events: data, loading: false }));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setState((prev) => ({ ...prev, loading: false, error: message }));
+      onError?.(message);
+    }
+  }, [geofenceId, onError]);
+
+  // Load ban đầu và setup polling
+  useEffect(() => {
+    fetchAlerts();
+
+    const timer = setInterval(() => {
+      fetchAlerts();
+    }, pollingInterval);
+
+    // Cleanup: xóa interval khi component unmount
+    return () => clearInterval(timer);
+  }, [fetchAlerts, pollingInterval]);
+
+  const handleDismiss = (alertId: string): void => {
+    setState((prev) => ({
+      ...prev,
+      events: prev.events.filter((e) => e.id !== alertId),
+    }));
+    onDismiss?.(alertId);
+  };
+
+  const handleClearAll = (): void => {
+    setState((prev) => ({ ...prev, events: [] }));
+  };
+
+  const formatDate = (timestamp: string): string => {
+    const date = new Date(timestamp);
+    return date.toLocaleString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+
+  const getTypeLabel = (type: "enter" | "exit"): string => {
+    return type === "enter" ? "Vào khu vực" : "Ra khỏi khu vực";
+  };
+
+  return (
+    <div className="geofence-alerts">
+      <div className="alert-header">
+        <h3>Cảnh báo Geofence ({state.events.length})</h3>
+        <button onClick={handleClearAll}>Xóa tất cả</button>
+      </div>
+
+      {state.loading && <div className="loading">Đang tải cảnh báo...</div>}
+
+      {!state.loading && state.events.length === 0 && (
+        <div className="empty-state">Không có cảnh báo geofence.</div>
+      )}
+
+      {state.events.map((e: GeofenceEvent) => (
+        <div key={e.id} className={`alert-item alert-${e.type}`}>
+          <div className="alert-icon">
+            {e.type === "enter" ? "[Vào]" : "[Ra]"}
+          </div>
+          <div className="alert-content">
+            <div className="alert-title">
+              {getTypeLabel(e.type)}: {e.geofenceName}
+            </div>
+            <div className="alert-message">{e.message}</div>
+            <div className="alert-time">{formatDate(e.timestamp)}</div>
+            {e.details && (
+              <div className="alert-details">{e.details}</div>
+            )}
+          </div>
+          <div className="alert-actions">
+            <button onClick={() => handleDismiss(e.id)}>Đóng</button>
+          </div>
+        </div>
+      ))}
+
+      {state.error && <div className="error-message">{state.error}</div>}
+
+      <style jsx>{`
+        .geofence-alerts { padding: 20px; }
+        .alert-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+        .loading { text-align: center; padding: 40px; color: #666; }
+        .empty-state { text-align: center; padding: 40px; color: #999; }
+        .alert-item {
+          display: flex;
+          gap: 12px;
+          padding: 12px;
+          margin: 8px 0;
+          border-radius: 8px;
+          border: 1px solid #ddd;
+          animation: slideIn 0.3s ease-out;
+        }
+        .alert-enter {
+          border-left: 4px solid #ff9800;
+          background: #fff8e1;
+        }
+        .alert-exit {
+          border-left: 4px solid #4caf50;
+          background: #e8f5e9;
+        }
+        .alert-icon { font-size: 16px; font-weight: bold; flex-shrink: 0; }
+        .alert-content { flex: 1; }
+        .alert-title { font-weight: bold; margin-bottom: 4px; }
+        .alert-message { color: #333; margin-bottom: 4px; }
+        .alert-time { color: #999; font-size: 12px; }
+        .alert-details {
+          margin-top: 8px;
+          padding: 8px;
+          background: rgba(0,0,0,0.05);
+          border-radius: 4px;
+          font-size: 13px;
+        }
+        .alert-actions { flex-shrink: 0; }
+        .error-message { color: red; margin-top: 16px; }
+        button {
+          padding: 6px 12px;
+          background: #f44336;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        @keyframes slideIn {
+          from { opacity: 0; transform: translateX(-20px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default GeofenceAlert;

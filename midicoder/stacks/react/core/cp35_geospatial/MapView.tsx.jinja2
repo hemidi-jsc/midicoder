@@ -1,0 +1,311 @@
+// Map View — Hiển thị bản đồ với marker và route.
+// CP35: Geospatial Services (React)
+// Dùng react-leaflet
+{% if collection %}
+// Tự động sinh từ {{ collection.reports | length }} geospatial specs.
+{% endif %}
+
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Polyline,
+  Circle,
+  Polygon,
+  Popup,
+  Rectangle,
+} from "react-leaflet";
+import L from "leaflet";
+
+// Override default marker icon
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  icons: {
+    icon: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    iconRetina: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    shadow: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  },
+});
+
+export interface MapMarker {
+  position: [number, number];
+  label: string;
+  popup: string;
+}
+
+export interface MapRoute {
+  name: string;
+  positions: [number, number][];
+  color: string;
+  weight: number;
+}
+
+export interface GeofenceZone {
+  id: string;
+  name: string;
+  shape: "circle" | "polygon" | "rectangle";
+  center?: [number, number];
+  radius_m?: number;
+  points?: [number, number][];
+  bounds?: [[number, number], [number, number]];
+}
+
+interface MapViewProps {
+  center?: [number, number];
+  zoom?: number;
+  height?: number;
+  markers?: MapMarker[];
+  routes?: MapRoute[];
+  geofences?: GeofenceZone[];
+  hasRouting?: boolean;
+  onError?: (error: string) => void;
+}
+
+interface MapViewState {
+  markers: MapMarker[];
+  routes: MapRoute[];
+  geofences: GeofenceZone[];
+  loading: boolean;
+  error: string | null;
+}
+
+const MapView: React.FC<MapViewProps> = ({
+  center = [10.7769, 106.7009],
+  zoom = 13,
+  height = 400,
+  markers: propMarkers = [],
+  routes: propRoutes = [],
+  geofences: propGeofences = [],
+  hasRouting = false,
+  onError,
+}) => {
+  const [state, setState] = useState<MapViewState>({
+    markers: propMarkers,
+    routes: propRoutes,
+    geofences: propGeofences,
+    loading: false,
+    error: null,
+  });
+
+  const [mapCenter, setMapCenter] = useState<[number, number]>(center);
+  const [mapZoom, setMapZoom] = useState<number>(zoom);
+
+  // Load dữ liệu từ API nếu không được truyền qua props
+  useEffect(() => {
+    const fetchData = async (): Promise<void> => {
+      if (propMarkers.length > 0) return;
+
+      setState((prev) => ({ ...prev, loading: true }));
+      try {
+        const [markersRes, geofencesRes] = await Promise.all([
+          fetch("/api/geospatial/markers"),
+          fetch("/api/geospatial/geofences"),
+        ]);
+
+        const markersData: MapMarker[] = await markersRes.json();
+        const geofencesData: GeofenceZone[] = await geofencesRes.json();
+
+        setState((prev) => ({
+          ...prev,
+          markers: markersData,
+          geofences: geofencesData,
+          loading: false,
+        }));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        setState((prev) => ({ ...prev, loading: false, error: message }));
+        onError?.(message);
+      }
+    };
+
+    fetchData();
+  }, [propMarkers.length]);
+
+  const handleZoomIn = useCallback((): void => {
+    setMapZoom((z) => Math.min(z + 1, 19));
+  }, []);
+
+  const handleZoomOut = useCallback((): void => {
+    setMapZoom((z) => Math.max(z - 1, 1));
+  }, []);
+
+  const handleReset = useCallback((): void => {
+    setMapCenter(center);
+    setMapZoom(zoom);
+  }, [center, zoom]);
+
+  const renderGeofence = (gf: GeofenceZone, index: number): React.ReactNode => {
+    const colorMap: Record<string, string> = {
+      circle: "red",
+      polygon: "blue",
+      rectangle: "green",
+    };
+    const fillColorMap: Record<string, string> = {
+      circle: "rgba(255, 0, 0, 0.2)",
+      polygon: "rgba(0, 0, 255, 0.2)",
+      rectangle: "rgba(0, 255, 0, 0.2)",
+    };
+    const color = colorMap[gf.shape] || "purple";
+    const fillColor = fillColorMap[gf.shape] || "rgba(128, 0, 128, 0.2)";
+
+    switch (gf.shape) {
+      case "circle":
+        if (gf.center && gf.radius_m) {
+          return (
+            <Circle
+              key={`circle-${index}`}
+              center={gf.center}
+              radius={gf.radius_m}
+              pathOptions={{ color, fillColor, weight: 2 }}
+            />
+          );
+        }
+        return null;
+      case "polygon":
+        if (gf.points && gf.points.length >= 3) {
+          return (
+            <Polygon
+              key={`polygon-${index}`}
+              positions={gf.points}
+              pathOptions={{ color, fillColor, weight: 2 }}
+            />
+          );
+        }
+        return null;
+      case "rectangle":
+        if (gf.bounds) {
+          return (
+            <Rectangle
+              key={`rect-${index}`}
+              bounds={gf.bounds}
+              pathOptions={{ color, fillColor, weight: 2 }}
+            />
+          );
+        }
+        return null;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="map-view">
+      <div className="map-header">
+        <h2>Bản đồ Địa lý</h2>
+        <div className="map-controls">
+          <button onClick={handleZoomIn}>Zoom In</button>
+          <button onClick={handleZoomOut}>Zoom Out</button>
+          <button onClick={handleReset}>Đặt lại</button>
+        </div>
+      </div>
+
+      {state.loading && <div className="loading">Đang tải bản đồ...</div>}
+
+      <MapContainer
+        center={mapCenter}
+        zoom={mapZoom}
+        style={{ height: `${height}px`, width: "100%" }}
+      >
+        <TileLayer
+          attribution='&amp;copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        {state.markers.map((m: MapMarker, i: number) => (
+          <Marker key={`marker-${i}`} position={m.position}>
+            <Popup>
+              <strong>{m.label}</strong>
+              <br />
+              {m.popup}
+            </Popup>
+          </Marker>
+        ))}
+
+        {state.routes.map((r: MapRoute, i: number) => (
+          <Polyline
+            key={`route-${i}`}
+            positions={r.positions}
+            pathOptions={{ color: r.color, weight: r.weight }}
+          />
+        ))}
+
+        {state.geofences.map(renderGeofence)}
+      </MapContainer>
+
+      <div className="map-legend">
+        <h3>Hướng dẫn</h3>
+        {state.geofences.map((gf: GeofenceZone, i: number) => (
+          <div key={`legend-${i}`} className="legend-item">
+            <span className={`legend-shape legend-${gf.shape}`}></span>
+            {gf.name} ({gf.shape})
+          </div>
+        ))}
+        {hasRouting && (
+          <div className="legend-item">
+            <span className="legend-route"></span> Route (Polyline)
+          </div>
+        )}
+      </div>
+
+      {state.error && <div className="error-message">{state.error}</div>}
+
+      <style jsx>{`
+        .map-view { padding: 20px; }
+        .map-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+        .map-controls button {
+          margin-left: 8px;
+          padding: 6px 12px;
+          background: #2196f3;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        .loading { text-align: center; padding: 40px; color: #666; }
+        .map-legend { margin-top: 16px; padding: 12px; background: #f5f5f5; border-radius: 4px; }
+        .legend-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin: 4px 0;
+          font-size: 14px;
+        }
+        .legend-shape.legend-circle {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: rgba(255, 0, 0, 0.3);
+          border: 2px solid red;
+        }
+        .legend-shape.legend-polygon {
+          width: 12px;
+          height: 12px;
+          background: rgba(0, 0, 255, 0.3);
+          border: 2px solid blue;
+          clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+        }
+        .legend-shape.legend-rectangle {
+          width: 16px;
+          height: 10px;
+          background: rgba(0, 255, 0, 0.3);
+          border: 2px solid green;
+        }
+        .legend-route {
+          width: 24px;
+          height: 4px;
+          background: #ff9800;
+          border-radius: 2px;
+        }
+        .error-message { color: red; margin-top: 16px; }
+      `}</style>
+    </div>
+  );
+};
+
+export default MapView;

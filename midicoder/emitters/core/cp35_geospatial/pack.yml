@@ -1,0 +1,129 @@
+pack:
+  id: "CP35"
+  name: "Geospatial Services"
+  internal_id: "cp35_geospatial"
+  version: "1.0.0"
+  status: "stable"
+  category: "geospatial"
+  depends_on: ["CP01", "CP05", "CP12"]
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP35"
+    range: "MDC-CP35-001 to MDC-CP35-012"
+  capabilities_provided:
+    - location_query
+    - geofence_check
+    - route_calc
+    - distance_calc
+    - geofence_alert
+  capabilities:
+    - id: "location_query"
+      emitter: "fastapi, nestjs"
+    - id: "geofence_check"
+      emitter: "fastapi, nestjs"
+    - id: "route_calc"
+      emitter: "fastapi, nestjs"
+    - id: "distance_calc"
+      emitter: "fastapi, nestjs"
+    - id: "geofence_alert"
+      emitter: "angular, react"
+  definitions:
+    - name: "GeospatialSpec"
+      description: "DSL spec cho geospatial service (entity, location fields, geofences, routing)"
+    - name: "Geofence"
+      description: "Khu vực giới hạn (3 shapes: circle, polygon, rectangle) với alert rules"
+    - name: "GeoPoint"
+      description: "Điểm tọa độ (latitude, longitude) với metadata"
+    - name: "GeospatialCollection"
+      description: "Collection chứa danh sách geospatial specs"
+  obligations:
+    - name: "GeofenceTriggerConsistency"
+      description: "Point-enter/exit geofence phải nhất quán (không trigger kép, không bỏ lỡ)"
+    - name: "RoutingDeterminism"
+      description: "Cùng origin/destination/profile → cùng route result (deterministic)"
+  file_contributions:
+    infrastructure:
+      - path: "app/services/geospatial_service.py"
+        file_type: "service"
+        template: "cp35_geospatial/geospatial_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp35.geospatial.fastapi"
+        context_keys: ["collection", "entities"]
+      - path: "app/services/geofence_service.py"
+        file_type: "service"
+        template: "cp35_geospatial/geofence_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp35.geospatial.fastapi"
+        context_keys: ["collection", "entities"]
+      - path: "app/services/routing_service.py"
+        file_type: "service"
+        template: "cp35_geospatial/routing_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp35.geospatial.fastapi"
+        context_keys: ["collection", "entities"]
+      - path: "app/routes/geospatial.py"
+        file_type: "route"
+        template: "cp35_geospatial/geospatial_routes.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: "cp35.geospatial.fastapi"
+        context_keys: ["collection"]
+      - path: "src/geospatial/geospatial.service.ts"
+        file_type: "service"
+        template: "cp35_geospatial/geospatial.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp35.geospatial.nestjs"
+        context_keys: ["collection"]
+      - path: "src/geospatial/geofence.service.ts"
+        file_type: "service"
+        template: "cp35_geospatial/geofence.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp35.geospatial.nestjs"
+        context_keys: ["collection"]
+      - path: "src/geospatial/routing.service.ts"
+        file_type: "service"
+        template: "cp35_geospatial/routing.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp35.geospatial.nestjs"
+        context_keys: ["collection"]
+      - path: "src/geospatial/geospatial.controller.ts"
+        file_type: "controller"
+        template: "cp35_geospatial/geospatial.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp35.geospatial.nestjs"
+        context_keys: ["collection"]
+      - path: "src/app/geospatial/map-viewer.component.ts"
+        file_type: "component"
+        template: "cp35_geospatial/map-viewer.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: "cp35.geospatial.angular"
+        context_keys: ["collection"]
+      - path: "src/app/geospatial/geofence-alert.component.ts"
+        file_type: "component"
+        template: "cp35_geospatial/geofence-alert.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: "cp35.geospatial.angular"
+        context_keys: ["collection"]
+      - path: "src/components/geospatial/MapView.tsx"
+        file_type: "component"
+        template: "cp35_geospatial/MapView.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: "cp35.geospatial.react"
+        context_keys: ["collection"]
+      - path: "src/components/geospatial/GeofenceAlert.tsx"
+        file_type: "component"
+        template: "cp35_geospatial/GeofenceAlert.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: "cp35.geospatial.react"
+        context_keys: ["collection"]
+  frontend_integration:
+    angular:
+      - MapViewerComponent
+      - GeofenceAlertComponent
+    react:
+      - MapView
+      - GeofenceAlert
+  recipes:
+    - geofence_monitoring_recipe
+    - routing_service_recipe
+    - location_tracker_recipe

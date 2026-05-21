@@ -1,0 +1,123 @@
+// Geospatial Controller — API endpoints cho geospatial services.
+// CP35: Geospatial Pack (NestJS)
+
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+} from "@nestjs/common";
+import { GeospatialService, GeoPoint } from "./geospatial.service";
+import {
+  GeofenceService,
+  Geofence,
+  GeofenceShape,
+} from "./geofence.service";
+import { RoutingService } from "./routing.service";
+
+@Controller("api/geospatial")
+export class GeospatialController {
+  constructor(
+    private readonly geoService: GeospatialService,
+    private readonly geofenceService: GeofenceService,
+    private readonly routingService: RoutingService,
+  ) {}
+
+  /**
+   * Tính khoảng cách giữa 2 điểm tọa độ.
+   *
+   * @example GET /api/geospatial/distance?lat1=10.78&lng1=106.68&lat2=21.03&lng2=105.85&unit=kilometers
+   */
+  @Get("distance")
+  calculateDistance(
+    @Query("lat1") lat1: number,
+    @Query("lng1") lng1: number,
+    @Query("lat2") lat2: number,
+    @Query("lng2") lng2: number,
+    @Query("unit") unit: string = "kilometers",
+  ) {
+    const p1 = new GeoPoint(lat1, lng1);
+    const p2 = new GeoPoint(lat2, lng2);
+    return {
+      distance: this.geoService.calculateDistance(p1, p2, unit),
+      unit,
+    };
+  }
+
+  /**
+   * Liệt kê tất cả geofences.
+   */
+  @Get("geofences")
+  listGeofences() {
+    return this.geofenceService.listGeofences();
+  }
+
+  /**
+   * Tạo geofence mới.
+   */
+  @Post("geofences")
+  createGeofence(@Body() body: Geofence) {
+    this.geofenceService.createGeofence(body);
+    return { id: body.id, name: body.name, shape: body.shape };
+  }
+
+  /**
+   * Kiểm tra điểm có nằm trong geofence không.
+   *
+   * @example POST /api/geospatial/geofences/:id/check
+   * Body: { "latitude": 10.78, "longitude": 106.68 }
+   */
+  @Post("geofences/:id/check")
+  checkGeofence(
+    @Param("id") id: string,
+    @Body() body: { latitude: number; longitude: number },
+  ) {
+    const geofences = this.geofenceService.listGeofences();
+    const gf = geofences.find((g) => g.id === id);
+    if (!gf) {
+      throw new Error(`Geofence ${id} không tìm thấy`);
+    }
+    const point = { latitude: body.latitude, longitude: body.longitude };
+    const inside = this.geofenceService.checkGeofence(gf, point);
+    return { geofence_id: id, inside, event: inside ? "enter" : "exit" };
+  }
+
+  /**
+   * Tính route từ điểm A đến điểm B.
+   *
+   * @example POST /api/geospatial/route
+   * Body: { "origin": { "latitude": 10.78, "longitude": 106.68 }, "destination": { "latitude": 21.03, "longitude": 105.85 }, "profile": "driving" }
+   */
+  @Post("route")
+  async calculateRoute(
+    @Body()
+    body: {
+      origin: { latitude: number; longitude: number };
+      destination: { latitude: number; longitude: number };
+      profile?: string;
+    },
+  ) {
+    const route = await this.routingService.calculateRoute(
+      body.origin,
+      body.destination,
+      body.profile || "driving",
+    );
+    return route;
+  }
+
+  /**
+   * Reverse geocoding — tra cứu địa chỉ từ tọa độ.
+   *
+   * @example GET /api/geospatial/reverse-geocode?lat=10.78&lng=106.68
+   */
+  @Get("reverse-geocode")
+  async reverseGeocode(
+    @Query("lat") lat: number,
+    @Query("lng") lng: number,
+  ) {
+    const address = await this.geoService.reverseGeocode(lat, lng);
+    return { latitude: lat, longitude: lng, address };
+  }
+}

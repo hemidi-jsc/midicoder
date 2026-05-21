@@ -814,6 +814,23 @@ class ErrorCode(str, Enum):
     CP34_EMIT_FAILED = "MDC-CP34-015"
 
     # =========================================================================
+    # CP35: Geospatial Services Errors
+    # =========================================================================
+    CP35_EMPTY_GEO_POINT = "MDC-CP35-001"
+    CP35_INVALID_LATITUDE = "MDC-CP35-002"
+    CP35_INVALID_LONGITUDE = "MDC-CP35-003"
+    CP35_INVALID_GEOFENCE_SHAPE = "MDC-CP35-004"
+    CP35_GEOFENCE_EMPTY_RADIUS = "MDC-CP35-005"
+    CP35_GEOFENCE_TOO_FEW_POINTS = "MDC-CP35-006"
+    CP35_ROUTING_FAILED = "MDC-CP35-007"
+    CP35_ROUTING_ENDPOINT_UNAVAILABLE = "MDC-CP35-008"
+    CP35_GEOSPEC_INVALID = "MDC-CP35-009"
+    CP35_COLLECTION_EMPTY = "MDC-CP35-010"
+    CP35_REVERSE_GEO_FAILED = "MDC-CP35-011"
+    CP35_DISTANCE_UNIT_INVALID = "MDC-CP35-012"
+    CP35_PARSER_ERROR = "MDC-CP35-013"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1236,6 +1253,21 @@ class MidicoderErrorManager:
         ErrorCode.CP34_PARSER_ERROR: "Lỗi parse định nghĩa báo cáo.",
         ErrorCode.CP34_EMIT_FAILED: "Không thể emit báo cáo.",
 
+        # CP35: Geospatial Services Error Templates
+        ErrorCode.CP35_EMPTY_GEO_POINT: "Tọa độ địa lý bị trống",
+        ErrorCode.CP35_INVALID_LATITUDE: "Vĩ độ không hợp lệ: {value} (phải trong -90..90)",
+        ErrorCode.CP35_INVALID_LONGITUDE: "Kinh độ không hợp lệ: {value} (phải trong -180..180)",
+        ErrorCode.CP35_INVALID_GEOFENCE_SHAPE: "Shape geofence không hợp lệ: {shape}",
+        ErrorCode.CP35_GEOFENCE_EMPTY_RADIUS: "Bán kính geofence phải > 0 (received: {radius})",
+        ErrorCode.CP35_GEOFENCE_TOO_FEW_POINTS: "Polygon cần tối thiểu 3 điểm (received: {count})",
+        ErrorCode.CP35_ROUTING_FAILED: "Tính route thất bại: {error}",
+        ErrorCode.CP35_ROUTING_ENDPOINT_UNAVAILABLE: "OSRM endpoint không khả dụng: {endpoint}",
+        ErrorCode.CP35_GEOSPEC_INVALID: "Geospatial spec không hợp lệ: {reason}",
+        ErrorCode.CP35_COLLECTION_EMPTY: "GeospatialCollection trống",
+        ErrorCode.CP35_REVERSE_GEO_FAILED: "Reverse geocoding thất bại: {error}",
+        ErrorCode.CP35_DISTANCE_UNIT_INVALID: "Đơn vị khoảng cách không hợp lệ: {unit}",
+        ErrorCode.CP35_PARSER_ERROR: "Lỗi parse geospatial DSL: {error}",
+
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",
         ErrorCode.CP53_DUPLICATE_DP_ID: "Domain pack ID trung lap.",
@@ -1653,6 +1685,21 @@ class MidicoderErrorManager:
             "Xem logs cho lỗi emit chi tiết",
             "Đảm bảo report spec hợp lệ trước khi emit",
         ],
+
+        # CP35: Geospatial Services Suggestions
+        ErrorCode.CP35_EMPTY_GEO_POINT: "Cung cấp tọa độ (lat, lng) hợp lệ",
+        ErrorCode.CP35_INVALID_LATITUDE: "Vĩ độ phải là số thực trong khoảng -90 đến 90",
+        ErrorCode.CP35_INVALID_LONGITUDE: "Kinh độ phải là số thực trong khoảng -180 đến 180",
+        ErrorCode.CP35_INVALID_GEOFENCE_SHAPE: "Shape phải là 'circle', 'polygon' hoặc 'rectangle'",
+        ErrorCode.CP35_GEOFENCE_EMPTY_RADIUS: "Bán kính phải là số dương (mét)",
+        ErrorCode.CP35_GEOFENCE_TOO_FEW_POINTS: "Cần ít nhất 3 điểm để tạo polygon",
+        ErrorCode.CP35_ROUTING_FAILED: "Kiểm tra OSRM endpoint và cấu hình network",
+        ErrorCode.CP35_ROUTING_ENDPOINT_UNAVAILABLE: "Đảm bảo OSRM server đang chạy tại {endpoint}",
+        ErrorCode.CP35_GEOSPEC_INVALID: "Kiểm tra cấu trúc geospatial spec trong DSL YAML",
+        ErrorCode.CP35_COLLECTION_EMPTY: "Thêm ít nhất 1 geospatial spec vào collection",
+        ErrorCode.CP35_REVERSE_GEO_FAILED: "Kiểm tra kết nối đến Nominatim/GeoPy API",
+        ErrorCode.CP35_DISTANCE_UNIT_INVALID: "Đơn vị phải là 'meter', 'kilometer' hoặc 'mile'",
+        ErrorCode.CP35_PARSER_ERROR: "Kiểm tra cú pháp YAML geospatial DSL và cấu trúc geospatial_specs",
     }
 
     @classmethod

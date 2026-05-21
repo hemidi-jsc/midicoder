@@ -69,6 +69,7 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP32": "cp32_state_machine",
     "CP33": "cp33_financial",
     "CP34": "cp34_reporting",
+    "CP35": "cp35_geospatial",
     "CP51": "cp51_blueprint",
     "CP52": "cp52_invariant",
     "CP53": "cp53_domain_bridge",

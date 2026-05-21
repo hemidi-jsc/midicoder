@@ -1,0 +1,207 @@
+// Geofence Alert Component — Hiển thị cảnh báo geofence enter/exit.
+// CP35: Geospatial Services (Angular)
+// Dùng DomSanitizer để render thông tin geofence trong iframe (nếu có).
+// Cleanup Subscription khi component bị phá hủy.
+{% if collection %}
+// Tự động sinh từ {{ collection.reports | length }} geospatial specs.
+{% endif %}
+
+import { Component, OnInit, OnDestroy, Input } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { HttpClient } from "@angular/common/http";
+import { Subscription, interval } from "rxjs";
+import { switchMap } from "rxjs/operators";
+import { DomSanitizer, SafeHtml } from "@angular/platform-browser";
+
+export interface GeofenceAlertData {
+  id: string;
+  geofenceId: string;
+  geofenceName: string;
+  type: "enter" | "exit";
+  message: string;
+  timestamp: Date;
+  location: { latitude: number; longitude: number };
+  details: SafeHtml | string;
+}
+
+@Component({
+  selector: "app-geofence-alert",
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div class="geofence-alerts">
+      <div class="alert-header">
+        <h3>Cảnh báo Geofence ({{ alerts.length }})</h3>
+        <button (click)="clearAll()">Xóa tất cả</button>
+      </div>
+
+      <div *ngIf="loading" class="loading">
+        Đang tải cảnh báo...
+      </div>
+
+      <div *ngIf="!loading && alerts.length === 0" class="empty-state">
+        Không có cảnh báo geofence.
+      </div>
+
+      <div
+        *ngFor="let alert of alerts"
+        class="alert-item"
+        [class]="alert.type"
+      >
+        <div class="alert-icon">
+          {{ alert.type === 'enter' ? '[Vào]' : '[Ra]' }}
+        </div>
+        <div class="alert-content">
+          <div class="alert-title">
+            {{ alert.type === 'enter' ? 'Vào khu vực' : 'Ra khỏi khu vực' }}:
+            {{ alert.geofenceName }}
+          </div>
+          <div class="alert-message">
+            {{ alert.message }}
+          </div>
+          <div class="alert-time">
+            {{ alert.timestamp | date:'dd/MM/yyyy HH:mm:ss' }}
+          </div>
+          <div *ngIf="alert.details" class="alert-details" [innerHTML]="alert.details"></div>
+        </div>
+        <div class="alert-actions">
+          <button (click)="dismissAlert(alert.id)">Đóng</button>
+        </div>
+      </div>
+
+      <div *ngIf="error" class="error-message">
+        {{ error }}
+      </div>
+    </div>
+  `,
+  styles: [`
+    :host { display: block; padding: 20px; }
+    .alert-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .loading { text-align: center; padding: 40px; color: #666; }
+    .empty-state { text-align: center; padding: 40px; color: #999; }
+    .alert-item {
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      animation: slideIn 0.3s ease-out;
+    }
+    .alert-item.enter {
+      border-left: 4px solid #ff9800;
+      background: #fff8e1;
+    }
+    .alert-item.exit {
+      border-left: 4px solid #4caf50;
+      background: #e8f5e9;
+    }
+    .alert-icon { font-size: 16px; font-weight: bold; flex-shrink: 0; }
+    .alert-content { flex: 1; }
+    .alert-title { font-weight: bold; margin-bottom: 4px; }
+    .alert-message { color: #333; margin-bottom: 4px; }
+    .alert-time { color: #999; font-size: 12px; }
+    .alert-details {
+      margin-top: 8px;
+      padding: 8px;
+      background: rgba(0,0,0,0.05);
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .alert-actions { flex-shrink: 0; }
+    .error-message { color: red; margin-top: 16px; }
+    button {
+      padding: 6px 12px;
+      background: #f44336;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+  `]
+})
+export class GeofenceAlertComponent implements OnInit, OnDestroy {
+  @Input() geofenceId: string = "";
+  @Input() pollingInterval: number = 30000; // 30 giây
+
+  alerts: GeofenceAlertData[] = [];
+  loading = false;
+  error: string = "";
+
+  private subscriptions: Subscription = new Subscription();
+
+  constructor(
+    private http: HttpClient,
+    private sanitizer: DomSanitizer
+  ) {}
+
+  ngOnInit(): void {
+    this.loadAlerts();
+    this.startPolling();
+  }
+
+  ngOnDestroy(): void {
+    this.subscriptions.unsubscribe();
+  }
+
+  loadAlerts(): void {
+    this.loading = true;
+    const url = this.geofenceId
+      ? `/api/geospatial/geofences/${this.geofenceId}/alerts`
+      : "/api/geospatial/alerts";
+
+    const sub = this.http.get<any[]>(url).subscribe({
+      next: (data) => {
+        this.alerts = data.map((raw) => ({
+          ...raw,
+          details: this.sanitizer.bypassSecurityTrustHtml(raw.details || ""),
+        }));
+        this.loading = false;
+      },
+      error: (err) => {
+        this.loading = false;
+        this.error = "Không thể tải cảnh báo: " + err.message;
+        console.error("Failed to load geofence alerts:", err);
+      },
+    });
+    this.subscriptions.add(sub);
+  }
+
+  startPolling(): void {
+    const pollSub = interval(this.pollingInterval).pipe(
+      switchMap(() => this.http.get<any[]>(this.geofenceId
+        ? `/api/geospatial/geofences/${this.geofenceId}/alerts`
+        : "/api/geospatial/alerts"
+      ))
+    ).subscribe({
+      next: (data) => {
+        const newAlerts = data.map((raw) => ({
+          ...raw,
+          details: this.sanitizer.bypassSecurityTrustHtml(raw.details || ""),
+        }));
+        this.alerts = newAlerts;
+      },
+      error: (err) => {
+        console.error("Polling geofence alerts failed:", err);
+      },
+    });
+    this.subscriptions.add(pollSub);
+  }
+
+  dismissAlert(alertId: string): void {
+    this.alerts = this.alerts.filter((a) => a.id !== alertId);
+  }
+
+  clearAll(): void {
+    this.alerts = [];
+  }
+}

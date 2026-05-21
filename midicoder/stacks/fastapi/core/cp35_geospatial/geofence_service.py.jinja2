@@ -1,0 +1,414 @@
+"""Geofence Service — Service quản lý geofence và check point.
+
+CP35: Geospatial Services
+
+Cung cấp:
+- Tạo geofence (circle, polygon, rectangle)
+- Kiểm tra điểm có nằm trong geofence không
+- Monitor enter/exit events
+- Haversine cho circle, ray casting cho polygon, bounding box cho rectangle
+"""
+
+import logging
+import math
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+
+# ---------------------------------------------------------------------------
+# Inline models (Rule V1: no midicoder imports)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GeoPoint:
+    """Điểm tọa độ địa lý (vĩ độ, kinh độ)."""
+    latitude: float  # -90..90
+    longitude: float  # -180..180
+
+    def to_dict(self) -> dict:
+        """Chuyển GeoPoint sang dict format."""
+        return {"latitude": self.latitude, "longitude": self.longitude}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "GeoPoint":
+        """Tạo GeoPoint từ dict."""
+        return cls(latitude=data["latitude"], longitude=data["longitude"])
+
+
+class GeofenceShape(str, Enum):
+    """Hình dạng của geofence."""
+    CIRCLE = "circle"
+    POLYGON = "polygon"
+    RECTANGLE = "rectangle"
+
+
+class GeofenceEvent(str, Enum):
+    """Sự kiện geofence."""
+    ENTER = "enter"
+    EXIT = "exit"
+
+
+@dataclass
+class Geofence:
+    """Geofence — vùng địa lý để monitor enter/exit events."""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ""
+    shape: GeofenceShape = GeofenceShape.CIRCLE
+    center: Optional[GeoPoint] = None
+    radius_m: float = 0.0
+    points: List[GeoPoint] = field(default_factory=list)
+    min_lat: float = -90.0
+    min_lng: float = -180.0
+    max_lat: float = 90.0
+    max_lng: float = 180.0
+    enabled: bool = True
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển geofence sang dict format."""
+        result: Dict[str, Any] = {
+            "id": self.id,
+            "name": self.name,
+            "shape": self.shape.value,
+            "enabled": self.enabled,
+            "created_at": self.created_at.isoformat(),
+            "metadata": self.metadata,
+        }
+        if self.shape == GeofenceShape.CIRCLE and self.center:
+            result["center"] = self.center.to_dict()
+            result["radius_m"] = self.radius_m
+        elif self.shape == GeofenceShape.POLYGON:
+            result["points"] = [p.to_dict() for p in self.points]
+        elif self.shape == GeofenceShape.RECTANGLE:
+            result["min_lat"] = self.min_lat
+            result["min_lng"] = self.min_lng
+            result["max_lat"] = self.max_lat
+            result["max_lng"] = self.max_lng
+        return result
+
+
+@dataclass
+class GeofenceMonitorEvent:
+    """Sự kiện monitor geofence."""
+    geofence_id: str = ""
+    event_type: str = "enter"
+    point: Optional[GeoPoint] = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển event sang dict format."""
+        result: Dict[str, Any] = {
+            "geofence_id": self.geofence_id,
+            "event_type": self.event_type,
+            "timestamp": self.timestamp.isoformat(),
+            "metadata": self.metadata,
+        }
+        if self.point:
+            result["point"] = self.point.to_dict()
+        return result
+
+
+logger = logging.getLogger(__name__)
+
+
+class GeofenceService:
+    """Service quản lý geofence và check point.
+
+    Cung cấp các phương thức:
+    - create_geofence: tạo geofence mới
+    - check_geofence: kiểm tra điểm có trong geofence
+    - monitor_point: monitor enter/exit events
+    - list_geofences: liệt kê tất cả geofences
+    - delete_geofence: xóa geofence
+    """
+
+    def __init__(self) -> None:
+        """Init geofence service."""
+        self._geofences: Dict[str, Geofence] = {}
+        self._history: Dict[str, List[bool]] = {}  # geofence_id -> list of last states
+
+    def create_geofence(
+        self,
+        name: str,
+        shape: str = "circle",
+        center: Optional[Dict[str, float]] = None,
+        radius_m: float = 0.0,
+        points: Optional[List[Dict[str, float]]] = None,
+        min_lat: float = -90.0,
+        min_lng: float = -180.0,
+        max_lat: float = 90.0,
+        max_lng: float = 180.0,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Geofence:
+        """Tạo geofence mới.
+
+        Args:
+            name: Tên geofence
+            shape: Hình dạng (circle, polygon, rectangle)
+            center: Tâm hình tròn (circle)
+            radius_m: Bán kính tính bằng mét (circle)
+            points: Danh sách điểm (polygon)
+            min_lat, min_lng, max_lat, max_lng: Boundary (rectangle)
+            metadata: Metadata mở rộng
+
+        Returns:
+            Geofence đã tạo
+
+        Raises:
+            ValueError: Nếu tham số không hợp lệ
+        """
+        try:
+            gf_shape = GeofenceShape(shape)
+        except ValueError:
+            valid = [s.value for s in GeofenceShape]
+            raise ValueError(f"Shape không hợp lệ: {shape}. Dùng: {valid}")
+
+        gf = Geofence(
+            name=name,
+            shape=gf_shape,
+            metadata=metadata or {},
+        )
+
+        if gf_shape == GeofenceShape.CIRCLE:
+            if not center:
+                raise ValueError("Circle cần center")
+            gf.center = GeoPoint.from_dict(center)
+            gf.radius_m = radius_m
+            if radius_m <= 0:
+                raise ValueError("Bán kính phải > 0")
+        elif gf_shape == GeofenceShape.POLYGON:
+            if not points or len(points) < 3:
+                raise ValueError("Polygon cần ít nhất 3 điểm")
+            gf.points = [GeoPoint.from_dict(p) for p in points]
+        elif gf_shape == GeofenceShape.RECTANGLE:
+            gf.min_lat = min_lat
+            gf.min_lng = min_lng
+            gf.max_lat = max_lat
+            gf.max_lng = max_lng
+
+        self._geofences[gf.id] = gf
+        self._history[gf.id] = []
+        logger.info("Created geofence: %s (%s)", gf.id, name)
+        return gf
+
+    def check_geofence(
+        self,
+        geofence_id: str,
+        point: Dict[str, float],
+    ) -> Dict[str, Any]:
+        """Kiểm tra điểm có nằm trong geofence không.
+
+        Args:
+            geofence_id: ID của geofence
+            point: Điểm cần kiểm tra {latitude, longitude}
+
+        Returns:
+            Dict với is_inside (bool) và distance_m
+
+        Raises:
+            ValueError: Nếu geofence không tìm thấy
+        """
+        gf = self._geofences.get(geofence_id)
+        if not gf:
+            raise ValueError(f"Geofence không tìm thấy: {geofence_id}")
+        gp = GeoPoint.from_dict(point)
+        is_inside = self._contains(gf, gp)
+        distance = self._nearest_distance(gf, gp)
+        return {
+            "geofence_id": geofence_id,
+            "is_inside": is_inside,
+            "distance_m": distance,
+            "shape": gf.shape.value,
+        }
+
+    def monitor_point(
+        self,
+        geofence_id: str,
+        point: Dict[str, float],
+    ) -> GeofenceMonitorEvent:
+        """Monitor điểm để phát hiện enter/exit event.
+
+        Args:
+            geofence_id: ID của geofence
+            point: Điểm cần monitor {latitude, longitude}
+
+        Returns:
+            GeofenceMonitorEvent với event type (enter/exit)
+        """
+        gf = self._geofences.get(geofence_id)
+        if not gf:
+            raise ValueError(f"Geofence không tìm thấy: {geofence_id}")
+        gp = GeoPoint.from_dict(point)
+        is_inside = self._contains(gf, gp)
+
+        history = self._history.get(geofence_id, [])
+        event_type = GeofenceEvent.ENTER.value
+        if history:
+            last_state = history[-1]
+            if last_state and not is_inside:
+                event_type = GeofenceEvent.EXIT.value
+            elif last_state == is_inside:
+                event_type = "none"
+        history.append(is_inside)
+
+        event = GeofenceMonitorEvent(
+            geofence_id=geofence_id,
+            event_type=event_type,
+            point=gp,
+        )
+        logger.info("Geofence event: %s (%s)", event_type, geofence_id)
+        return event
+
+    def list_geofences(self) -> List[Dict[str, Any]]:
+        """Liệt kê tất cả geofences.
+
+        Returns:
+            Danh sách geofences dưới dạng dict
+        """
+        return [gf.to_dict() for gf in self._geofences.values()]
+
+    def get_geofence(self, geofence_id: str) -> Optional[Dict[str, Any]]:
+        """Lấy thông tin một geofence.
+
+        Args:
+            geofence_id: ID của geofence
+
+        Returns:
+            Dict của geofence hoặc None
+        """
+        gf = self._geofences.get(geofence_id)
+        return gf.to_dict() if gf else None
+
+    def delete_geofence(self, geofence_id: str) -> bool:
+        """Xóa geofence.
+
+        Args:
+            geofence_id: ID của geofence
+
+        Returns:
+            True nếu xóa thành công, False nếu không tìm thấy
+        """
+        if geofence_id in self._geofences:
+            del self._geofences[geofence_id]
+            self._history.pop(geofence_id, None)
+            logger.info("Deleted geofence: %s", geofence_id)
+            return True
+        return False
+
+    # ---------------------------------------------------------------
+    # Internal: Contains check
+    # ---------------------------------------------------------------
+
+    def _contains(self, gf: Geofence, point: GeoPoint) -> bool:
+        """Kiểm tra điểm có trong geofence không (dispatch theo shape)."""
+        if gf.shape == GeofenceShape.CIRCLE:
+            return self._circle_contains(gf, point)
+        elif gf.shape == GeofenceShape.POLYGON:
+            return self._polygon_contains(gf, point)
+        elif gf.shape == GeofenceShape.RECTANGLE:
+            return self._rectangle_contains(gf, point)
+        return False
+
+    def _circle_contains(self, gf: Geofence, point: GeoPoint) -> bool:
+        """Haversine distance check cho hình tròn.
+
+        Tính khoảng cách Haversine giữa tâm và điểm,
+        so sánh với bán kính.
+        """
+        if not gf.center:
+            return False
+        R = 6371000.0  # Bán kính Trái Đất (mét)
+        lat1 = math.radians(gf.center.latitude)
+        lon1 = math.radians(gf.center.longitude)
+        lat2 = math.radians(point.latitude)
+        lon2 = math.radians(point.longitude)
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        )
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        distance = R * c
+        return distance <= gf.radius_m
+
+    def _polygon_contains(self, gf: Geofence, point: GeoPoint) -> bool:
+        """Ray casting algorithm cho point-in-polygon.
+
+        Dùng ray casting để kiểm tra điểm có nằm trong
+        đa giác kín hay không.
+        """
+        n = len(gf.points)
+        if n < 3:
+            return False
+        inside = False
+        x, y = point.latitude, point.longitude
+        p1x, p1y = gf.points[0].latitude, gf.points[0].longitude
+        for i in range(1, n + 1):
+            p2x, p2y = gf.points[i % n].latitude, gf.points[i % n].longitude
+            if y > min(p1y, p2y):
+                if y <= max(p1y, p2y):
+                    if x <= max(p1x, p2x):
+                        if p1y != p2y:
+                            xints = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                        if p1x == p2x or x <= xints:
+                            inside = not inside
+            p1x, p1y = p2x, p2y
+        return inside
+
+    def _rectangle_contains(self, gf: Geofence, point: GeoPoint) -> bool:
+        """Bounding box check cho rectangle.
+
+        Kiểm tra điểm có nằm trong hộp boundary hay không.
+        """
+        return (
+            gf.min_lat <= point.latitude <= gf.max_lat
+            and gf.min_lng <= point.longitude <= gf.max_lng
+        )
+
+    def _nearest_distance(self, gf: Geofence, point: GeoPoint) -> float:
+        """Tính khoảng cách gần nhất từ điểm đến biên geofence (mét).
+
+        Returns:
+            Khoảng cách tính bằng mét. Trả về 0 nếu điểm nằm trong.
+        """
+        R = 6371000.0
+        if gf.shape == GeofenceShape.CIRCLE and gf.center:
+            lat1 = math.radians(gf.center.latitude)
+            lon1 = math.radians(gf.center.longitude)
+            lat2 = math.radians(point.latitude)
+            lon2 = math.radians(point.longitude)
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return abs(R * c - gf.radius_m)
+        elif gf.shape == GeofenceShape.RECTANGLE:
+            if self._rectangle_contains(gf, point):
+                return 0.0
+            # Approximate: distance to nearest corner
+            corners = [
+                GeoPoint(gf.min_lat, gf.min_lng),
+                GeoPoint(gf.min_lat, gf.max_lng),
+                GeoPoint(gf.max_lat, gf.min_lng),
+                GeoPoint(gf.max_lat, gf.max_lng),
+            ]
+            min_d = float("inf")
+            for corner in corners:
+                la1 = math.radians(corner.latitude)
+                lo1 = math.radians(corner.longitude)
+                la2 = math.radians(point.latitude)
+                lo2 = math.radians(point.longitude)
+                dlat = la2 - la1
+                dlon = lo2 - lo1
+                a = math.sin(dlat / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlon / 2) ** 2
+                c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+                min_d = min(min_d, R * c)
+            return min_d
+        return 0.0

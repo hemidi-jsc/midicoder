@@ -1,0 +1,176 @@
+"""Geospatial Service — Service tính toán khoảng cách và geocoding.
+
+CP35: Geospatial Services
+{% if collection %}
+Tự động sinh từ {{ collection.reports | length }} geospatial specs.
+{% endif %}
+
+Cung cấp:
+- Tính khoảng cách giữa 2 điểm (geopy)
+- Reverse/forward geocoding (Nominatim)
+- Batch geocoding
+"""
+
+import logging
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from geopy.distance import geodesic
+from geopy.geocoders import Nominatim
+
+
+# ---------------------------------------------------------------------------
+# Inline models (Rule V1: no midicoder imports)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GeoPoint:
+    """Điểm tọa độ địa lý (vĩ độ, kinh độ)."""
+    latitude: float  # -90..90
+    longitude: float  # -180..180
+
+    def to_dict(self) -> dict:
+        """Chuyển GeoPoint sang dict format."""
+        return {"latitude": self.latitude, "longitude": self.longitude}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "GeoPoint":
+        """Tạo GeoPoint từ dict."""
+        return cls(latitude=data["latitude"], longitude=data["longitude"])
+
+
+class DistanceUnit(str, Enum):
+    """Đơn vị đo khoảng cách."""
+    METER = "meter"
+    KILOMETER = "kilometer"
+    MILE = "mile"
+
+
+# Conversion factors (meters → target)
+UNITS: Dict[str, float] = {"meter": 1.0, "kilometer": 0.001, "mile": 0.000621371}
+
+logger = logging.getLogger(__name__)
+
+
+class GeospatialService:
+    """Service tính toán khoảng cách và geocoding.
+
+    Cung cấp các phương thức:
+    - calculate_distance: tính khoảng cách 2 điểm
+    - reverse_geocode: reverse geocoding từ tọa độ
+    - forward_geocode: forward geocoding từ địa chỉ
+    - batch_geocode: batch reverse geocoding
+    """
+
+    # Spec registry
+{% if collection %}
+    SPECS: Dict[str, Dict[str, Any]] = {
+{% for spec in collection.reports %}
+        "{{ spec.id }}": {"id": "{{ spec.id }}", "entity": "{{ spec.entity }}", "reverse_geocoding": {{ spec.reverse_geocoding_enabled | lower }}},
+{% endfor %}
+    }
+{% else %}
+    SPECS: Dict[str, Dict[str, Any]] = {}
+{% endif %}
+
+    def __init__(self, user_agent: str = "MidicoderCE/1.0") -> None:
+        """Init geospatial service.
+
+        Args:
+            user_agent: User agent cho Nominatim
+        """
+        self._nominatim = Nominatim(user_agent=user_agent)
+
+    def calculate_distance(
+        self,
+        point1: GeoPoint,
+        point2: GeoPoint,
+        unit: str = "meter",
+    ) -> float:
+        """Tính khoảng cách giữa 2 điểm địa lý.
+
+        Args:
+            point1: Điểm đầu tiên
+            point2: Điểm thứ hai
+            unit: Đơn vị đo (meter, kilometer, mile)
+
+        Returns:
+            Khoảng cách tính theo đơn vị
+
+        Raises:
+            ValueError: Nếu đơn vị không hợp lệ
+        """
+        if unit not in UNITS:
+            raise ValueError(f"Đơn vị không hợp lệ: {unit}. Dùng: {list(UNITS.keys())}")
+
+        coords1 = (point1.latitude, point1.longitude)
+        coords2 = (point2.latitude, point2.longitude)
+        meters = geodesic(coords1, coords2).meters
+        return meters * UNITS[unit]
+
+    def reverse_geocode(
+        self,
+        latitude: float,
+        longitude: float,
+    ) -> str:
+        """Reverse geocoding — từ tọa độ sang địa chỉ.
+
+        Args:
+            latitude: Vĩ độ
+            longitude: Kinh độ
+
+        Returns:
+            Địa chỉ dạng string hoặc empty string nếu không tìm thấy
+        """
+        try:
+            location = self._nominatim.reverse((latitude, longitude), language="vi")
+            return location.address if location else ""
+        except Exception as e:
+            logger.warning("Reverse geocode failed: %s", str(e))
+            return ""
+
+    def forward_geocode(self, address: str) -> Optional[GeoPoint]:
+        """Forward geocoding — từ địa chỉ sang tọa độ.
+
+        Args:
+            address: Địa chỉ dạng string
+
+        Returns:
+            GeoPoint hoặc None nếu không tìm thấy
+        """
+        try:
+            location = self._nominatim.geocode(address, language="vi")
+            if location:
+                return GeoPoint(latitude=location.latitude, longitude=location.longitude)
+            return None
+        except Exception as e:
+            logger.warning("Forward geocode failed: %s", str(e))
+            return None
+
+    def batch_geocode(
+        self,
+        points: List[GeoPoint],
+        delay: float = 1.0,
+    ) -> List[Dict[str, Any]]:
+        """Batch reverse geocoding — xử lý nhiều điểm.
+
+        Args:
+            points: Danh sách GeoPoint
+            delay: Thời gian chờ giữa các request (giây)
+
+        Returns:
+            Danh sách kết quả với tọa độ và địa chỉ
+        """
+        results: List[Dict[str, Any]] = []
+        for point in points:
+            address = self.reverse_geocode(point.latitude, point.longitude)
+            results.append({
+                "point": point.to_dict(),
+                "address": address,
+                "found": bool(address),
+            })
+            time.sleep(delay)
+        return results

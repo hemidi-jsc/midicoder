@@ -776,7 +776,7 @@ core_packs:
       - route_calc
       - distance_calc
     category: geospatial
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP38
     name: Data Import/Export/ETL

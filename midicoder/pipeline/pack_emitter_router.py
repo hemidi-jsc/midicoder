@@ -316,6 +316,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "ReactReportEmitter",
         "cp34_report",
     ),
+    # CP35 – Geospatial Services (FastAPI)
+    "cp35.geospatial.fastapi": (
+        "midicoder.emitters.core.cp35_geospatial.fastapi",
+        "FastAPIGeospatialEmitter",
+        "cp35_geospatial",
+    ),
+    # CP35 – Geospatial Services (NestJS)
+    "cp35.geospatial.nestjs": (
+        "midicoder.emitters.core.cp35_geospatial.nestjs",
+        "NestJSGeospatialEmitter",
+        "cp35_geospatial",
+    ),
+    # CP35 – Geospatial Services (Angular)
+    "cp35.geospatial.angular": (
+        "midicoder.emitters.core.cp35_geospatial.angular",
+        "AngularGeospatialEmitter",
+        "cp35_geospatial",
+    ),
+    # CP35 – Geospatial Services (React)
+    "cp35.geospatial.react": (
+        "midicoder.emitters.core.cp35_geospatial.react",
+        "ReactGeospatialEmitter",
+        "cp35_geospatial",
+    ),
 }
 
 
@@ -461,6 +485,13 @@ def _parse_report_dict(raw: dict[str, Any]) -> Any:
     return parser.parse_from_metadata(raw)
 
 
+def _parse_geospatial_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw geospatial dict from DSL/MIR into CP35 GeospatialCollection."""
+    from midicoder.emitters.core.cp35_geospatial.parser import GeospatialParser
+    parser = GeospatialParser()
+    return parser.parse_from_metadata(raw)
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
@@ -474,6 +505,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp22_realtime": _parse_realtime_dict,
     "cp24_quality": _parse_quality_dict,
     "cp34_report": _parse_report_dict,
+    "cp35_geospatial": _parse_geospatial_dict,
 }
 
 

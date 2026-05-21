@@ -1,0 +1,188 @@
+// Routing Service — Tính route qua OSRM API.
+// CP35: Geospatial Pack (NestJS)
+
+import { Injectable } from "@nestjs/common";
+import fetch from "node-fetch";
+
+{% if collection %}
+// Tự động sinh cho {{ spec_count }} geospatial specs.
+{% endif %}
+
+/**
+ * Một bước trong route.
+ */
+export interface RouteStep {
+  instruction: string;
+  distance_m: number;
+  duration_s: number;
+}
+
+/**
+ * Kết quả tính route.
+ */
+export interface RouteResult {
+  origin: { latitude: number; longitude: number };
+  destination: { latitude: number; longitude: number };
+  distance_m: number;
+  duration_s: number;
+  geometry: { latitude: number; longitude: number }[];
+  steps: RouteStep[];
+  profile: "driving" | "walking" | "cycling";
+}
+
+/**
+ * Điểm tọa độ địa lý.
+ */
+export interface GeoPoint {
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Profile di chuyển cho routing.
+ */
+export enum RoutingProfile {
+  DRIVING = "driving",
+  WALKING = "walking",
+  CYCLING = "cycling",
+}
+
+@Injectable()
+export class RoutingService {
+  private readonly osrmEndpoint: string;
+
+  constructor() {
+    this.osrmEndpoint =
+      process.env.OSRM_ENDPOINT || "https://router.project-osrm.org";
+  }
+
+  /**
+   * Tính route từ điểm A đến điểm B.
+   *
+   * @param origin Điểm xuất phát
+   * @param destination Điểm đến
+   * @param profile Profile di chuyển (mặc định: "driving")
+   * @returns RouteResult chứa distance, duration, geometry
+   */
+  async calculateRoute(
+    origin: GeoPoint,
+    destination: GeoPoint,
+    profile: string = "driving",
+  ): Promise<RouteResult> {
+    try {
+      const coordStr = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`;
+      const url = `${this.osrmEndpoint}/route/v1/${profile}/${coordStr}?overview=full&geometries=geojson`;
+      const resp = await fetch(url);
+      const data = (await resp.json()) as {
+        routes?: Array<{
+          distance: number;
+          duration: number;
+          geometry: { coordinates: [number, number][] };
+        }>;
+      };
+
+      // Fallback: straight-line khi OSRM không trả về route.
+      if (!data.routes || data.routes.length === 0) {
+        return this._fallbackRoute(origin, destination, profile);
+      }
+
+      const route = data.routes[0];
+      return {
+        origin: { latitude: origin.latitude, longitude: origin.longitude },
+        destination: {
+          latitude: destination.latitude,
+          longitude: destination.longitude,
+        },
+        distance_m: route.distance,
+        duration_s: route.duration,
+        geometry: (route.geometry.coordinates || []).map(
+          (c: [number, number]) => ({ latitude: c[1], longitude: c[0] }),
+        ),
+        steps: [],
+        profile: profile as any,
+      };
+    } catch {
+      // Fallback: straight-line khi OSRM unavailable.
+      return this._fallbackRoute(origin, destination, profile);
+    }
+  }
+
+  /**
+   * Tính distance matrix cho nhiều điểm.
+   *
+   * @param origins Danh sách điểm xuất phát
+   * @param destinations Danh sách điểm đến
+   * @param profile Profile di chuyển
+   * @returns Matrix distances và durations
+   */
+  async calculateDistanceMatrix(
+    origins: GeoPoint[],
+    destinations: GeoPoint[],
+    profile: string = "driving",
+  ): Promise<{ distances: number[][]; durations: number[][] }> {
+    const originStr = origins
+      .map((p) => `${p.longitude},${p.latitude}`)
+      .join(";");
+    const destStr = destinations
+      .map((p) => `${p.longitude},${p.latitude}`)
+      .join(";");
+
+    const url = `${this.osrmEndpoint}/table/v1/${profile}/${originStr}:${destStr}`;
+    const resp = await fetch(url);
+    const data = (await resp.json()) as {
+      durations: number[][];
+      distances: number[][];
+    };
+
+    return {
+      distances: data.distances || [],
+      durations: data.durations || [],
+    };
+  }
+
+  /**
+   * Fallback: tính straight-line (Haversine) khi OSRM unavailable.
+   */
+  private _fallbackRoute(
+    origin: GeoPoint,
+    destination: GeoPoint,
+    profile: string,
+  ): RouteResult {
+    const R = 6371000; // Earth radius in meters
+    const dLat = ((destination.latitude - origin.latitude) * Math.PI) / 180;
+    const dLon = ((destination.longitude - origin.longitude) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((origin.latitude * Math.PI) / 180) *
+        Math.cos((destination.latitude * Math.PI) / 180) *
+        Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+
+    // Tốc độ trung bình theo profile (m/s)
+    const speed =
+      profile === "walking" ? 1.4 : profile === "cycling" ? 5.5 : 15;
+
+    return {
+      origin: { latitude: origin.latitude, longitude: origin.longitude },
+      destination: {
+        latitude: destination.latitude,
+        longitude: destination.longitude,
+      },
+      distance_m: distance,
+      duration_s: distance / speed,
+      geometry: [
+        { latitude: origin.latitude, longitude: origin.longitude },
+        { latitude: destination.latitude, longitude: destination.longitude },
+      ],
+      steps: [
+        {
+          instruction: "Đi thẳng",
+          distance_m: distance,
+          duration_s: distance / speed,
+        },
+      ],
+      profile: profile as any,
+    };
+  }
+}

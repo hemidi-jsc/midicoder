@@ -1,0 +1,228 @@
+"""Geospatial API Routes — Endpoints cho geospatial services.
+
+CP35: Geospatial Services
+
+Endpoints:
+- GET /api/geospatial/distance — tính khoảng cách 2 điểm
+- GET /api/geospatial/geofences — list geofences
+- POST /api/geospatial/geofences — tạo geofence
+- POST /api/geospatial/geofences/{id}/check — check point trong geofence
+- POST /api/geospatial/route — tính route
+- GET /api/geospatial/reverse-geocode — reverse geocoding
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional
+
+from app.services.geospatial_service import GeospatialService, GeoPoint as ServiceGeoPoint
+from app.services.geofence_service import GeofenceService
+from app.services.routing_service import RoutingService
+
+
+router = APIRouter(prefix="/api/geospatial", tags=["geospatial"])
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas
+# ---------------------------------------------------------------------------
+
+
+class DistanceRequest(BaseModel):
+    """Request schema cho tính khoảng cách."""
+    lat1: float = Field(..., ge=-90, le=90, description="Vĩ độ điểm 1")
+    lon1: float = Field(..., ge=-180, le=180, description="Kinh độ điểm 1")
+    lat2: float = Field(..., ge=-90, le=90, description="Vĩ độ điểm 2")
+    lon2: float = Field(..., ge=-180, le=180, description="Kinh độ điểm 2")
+    unit: str = Field("meter", description="Đơn vị: meter, kilometer, mile")
+
+
+class DistanceResponse(BaseModel):
+    """Response schema cho khoảng cách."""
+    distance: float
+    unit: str
+
+
+class GeofenceCreateRequest(BaseModel):
+    """Request schema cho tạo geofence."""
+    name: str = Field(..., description="Tên geofence")
+    shape: str = Field("circle", description="Hình dạng: circle, polygon, rectangle")
+    center: Optional[Dict[str, float]] = Field(None, description="Tâm (circle)")
+    radius_m: float = Field(0.0, description="Bán kính (circle)")
+    points: Optional[List[Dict[str, float]]] = Field(None, description="Điểm (polygon)")
+    min_lat: float = Field(-90.0, description="Min vĩ độ (rectangle)")
+    min_lng: float = Field(-180.0, description="Min kinh độ (rectangle)")
+    max_lat: float = Field(90.0, description="Max vĩ độ (rectangle)")
+    max_lng: float = Field(180.0, description="Max kinh độ (rectangle)")
+    metadata: Optional[Dict] = Field(None, description="Metadata")
+
+
+class GeofenceCheckRequest(BaseModel):
+    """Request schema cho check point trong geofence."""
+    latitude: float = Field(..., description="Vĩ độ điểm")
+    longitude: float = Field(..., description="Kinh độ điểm")
+
+
+class GeofenceCheckResponse(BaseModel):
+    """Response schema cho check geofence."""
+    geofence_id: str
+    is_inside: bool
+    distance_m: float
+    shape: str
+
+
+class RouteRequest(BaseModel):
+    """Request schema cho tính route."""
+    origin_lat: float = Field(..., description="Vĩ độ điểm xuất phát")
+    origin_lon: float = Field(..., description="Kinh độ điểm xuất phát")
+    dest_lat: float = Field(..., description="Vĩ độ điểm đến")
+    dest_lon: float = Field(..., description="Kinh độ điểm đến")
+    profile: str = Field("driving", description="Profile: driving, walking, cycling")
+
+
+class ReverseGeocodeRequest(BaseModel):
+    """Request schema cho reverse geocoding."""
+    latitude: float = Field(..., description="Vĩ độ")
+    longitude: float = Field(..., description="Kinh độ")
+
+
+class ReverseGeocodeResponse(BaseModel):
+    """Response schema cho reverse geocoding."""
+    address: str
+    latitude: float
+    longitude: float
+
+
+# ---------------------------------------------------------------------------
+# Dependency injectors
+# ---------------------------------------------------------------------------
+
+_geospatial_service = GeospatialService()
+_geofence_service = GeofenceService()
+_routing_service = RoutingService()
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/distance", response_model=DistanceResponse)
+def calculate_distance(
+    lat1: float = Query(..., ge=-90, le=90, description="Vĩ độ điểm 1"),
+    lon1: float = Query(..., ge=-180, le=180, description="Kinh độ điểm 1"),
+    lat2: float = Query(..., ge=-90, le=90, description="Vĩ độ điểm 2"),
+    lon2: float = Query(..., ge=-180, le=180, description="Kinh độ điểm 2"),
+    unit: str = Query("meter", description="Đơn vị: meter, kilometer, mile"),
+):
+    """Tính khoảng cách giữa 2 điểm địa lý.
+
+    Args:
+        lat1, lon1: Tọa độ điểm 1
+        lat2, lon2: Tọa độ điểm 2
+        unit: Đơn vị đo
+
+    Returns:
+        Khoảng cách theo đơn vị
+    """
+    point1 = ServiceGeoPoint(latitude=lat1, longitude=lon1)
+    point2 = ServiceGeoPoint(latitude=lat2, longitude=lon2)
+    distance = _geospatial_service.calculate_distance(point1, point2, unit)
+    return DistanceResponse(distance=distance, unit=unit)
+
+
+@router.get("/geofences")
+def list_geofences():
+    """Liệt kê tất cả geofences.
+
+    Returns:
+        Danh sách geofences
+    """
+    return _geofence_service.list_geofences()
+
+
+@router.post("/geofences", status_code=201)
+def create_geofence(request: GeofenceCreateRequest):
+    """Tạo geofence mới.
+
+    Args:
+        request: Dữ liệu geofence
+
+    Returns:
+        Geofence đã tạo
+    """
+    try:
+        gf = _geofence_service.create_geofence(
+            name=request.name,
+            shape=request.shape,
+            center=request.center,
+            radius_m=request.radius_m,
+            points=request.points,
+            min_lat=request.min_lat,
+            min_lng=request.min_lng,
+            max_lat=request.max_lat,
+            max_lng=request.max_lng,
+            metadata=request.metadata,
+        )
+        return gf.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/geofences/{geofence_id}/check", response_model=GeofenceCheckResponse)
+def check_geofence(geofence_id: str, request: GeofenceCheckRequest):
+    """Kiểm tra điểm có nằm trong geofence không.
+
+    Args:
+        geofence_id: ID của geofence
+        request: Tọa độ điểm cần kiểm tra
+
+    Returns:
+        Kết quả kiểm tra (is_inside, distance)
+    """
+    try:
+        result = _geofence_service.check_geofence(
+            geofence_id,
+            {"latitude": request.latitude, "longitude": request.longitude}
+        )
+        return GeofenceCheckResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/route")
+def calculate_route(request: RouteRequest):
+    """Tính route giữa 2 điểm.
+
+    Args:
+        request: Dữ liệu route (origin, destination, profile)
+
+    Returns:
+        RouteResult với distance, duration, geometry, steps
+    """
+    origin = {"latitude": request.origin_lat, "longitude": request.origin_lon}
+    destination = {"latitude": request.dest_lat, "longitude": request.dest_lon}
+    result = _routing_service.calculate_route(origin, destination, request.profile)
+    return result.to_dict()
+
+
+@router.get("/reverse-geocode", response_model=ReverseGeocodeResponse)
+def reverse_geocode(
+    latitude: float = Query(..., ge=-90, le=90, description="Vĩ độ"),
+    longitude: float = Query(..., ge=-180, le=180, description="Kinh độ"),
+):
+    """Reverse geocoding — từ tọa độ sang địa chỉ.
+
+    Args:
+        latitude: Vĩ độ
+        longitude: Kinh độ
+
+    Returns:
+        Địa chỉ và tọa độ
+    """
+    address = _geospatial_service.reverse_geocode(latitude, longitude)
+    return ReverseGeocodeResponse(
+        address=address,
+        latitude=latitude,
+        longitude=longitude,
+    )

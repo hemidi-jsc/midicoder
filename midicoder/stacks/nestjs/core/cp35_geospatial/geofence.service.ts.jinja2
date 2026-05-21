@@ -1,0 +1,209 @@
+// Geofence Service — Quản lý geofence và check enter/exit.
+// Hỗ trợ: Circle, Polygon, Rectangle.
+// CP35: Geospatial Pack (NestJS)
+
+import { Injectable } from "@nestjs/common";
+import * as turf from "@turf/turf";
+
+{% if collection %}
+// Tự động sinh với {{ geofence_count }} geofences.
+{% endif %}
+
+export enum GeofenceShape {
+  CIRCLE = "circle",
+  POLYGON = "polygon",
+  RECTANGLE = "rectangle",
+}
+
+/**
+ * Điểm tọa độ địa lý.
+ */
+export interface GeoPoint {
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Geofence — vùng địa lý để monitor enter/exit events.
+ */
+export interface Geofence {
+  id: string;
+  name: string;
+  shape: GeofenceShape;
+  // Circle: center + radius
+  center?: GeoPoint;
+  radius_m?: number;
+  // Polygon: list of points (closed)
+  points?: GeoPoint[];
+  // Rectangle: min/max bounds
+  min_lat?: number;
+  min_lng?: number;
+  max_lat?: number;
+  max_lng?: number;
+  enabled: boolean;
+  metadata?: Record<string, any>;
+}
+
+/**
+ * Kết quả kiểm tra geofence.
+ */
+export interface GeofenceCheckResult {
+  geofence_id: string;
+  inside: boolean;
+  event: "enter" | "exit";
+}
+
+@Injectable()
+export class GeofenceService {
+  private readonly geofences: Map<string, Geofence> = new Map();
+
+  {% for gf in all_geofences %}
+  // Pre-registered geofence: {{ gf.name }} ({{ gf.shape.value }})
+  private readonly _{{ loop.index }}_INIT_GF = {
+    id: "{{ gf.id }}",
+    name: "{{ gf.name }}",
+    shape: GeofenceShape.{{ gf.shape.name }},
+    enabled: true,
+    {% if gf.shape.name == "CIRCLE" and gf.center %}
+    center: { latitude: {{ gf.center.latitude }}, longitude: {{ gf.center.longitude }} },
+    radius_m: {{ gf.radius_m }},
+    {% elif gf.shape.name == "POLYGON" %}
+    points: [
+      {% for p in gf.points %}
+      { latitude: {{ p.latitude }}, longitude: {{ p.longitude }} },
+      {% endfor %}
+    ],
+    {% elif gf.shape.name == "RECTANGLE" %}
+    min_lat: {{ gf.min_lat }},
+    min_lng: {{ gf.min_lng }},
+    max_lat: {{ gf.max_lat }},
+    max_lng: {{ gf.max_lng }},
+    {% endif %}
+  } as Geofence;
+  {% endfor %}
+
+  constructor() {
+    {% for gf in all_geofences %}
+    this.geofences.set("{{ gf.id }}", this._{{ loop.index }}_INIT_GF);
+    {% endfor %}
+  }
+
+  /**
+   * Tạo geofence mới.
+   *
+   * @param geofence Định nghĩa geofence
+   */
+  createGeofence(geofence: Geofence): void {
+    this.geofences.set(geofence.id, geofence);
+  }
+
+  /**
+   * Xóa geofence theo ID.
+   *
+   * @param id ID của geofence
+   */
+  removeGeofence(id: string): boolean {
+    return this.geofences.delete(id);
+  }
+
+  /**
+   * Kiểm tra điểm có nằm trong geofence không.
+   *
+   * @param geofence Geofence cần kiểm tra
+   * @param point Điểm tọa độ
+   * @returns True nếu điểm nằm trong geofence
+   */
+  checkGeofence(geofence: Geofence, point: GeoPoint): boolean {
+    if (!geofence.enabled) {
+      return false;
+    }
+
+    switch (geofence.shape) {
+      case GeofenceShape.CIRCLE:
+        // Circle: turf.distance()
+        return this._checkCircle(geofence, point);
+      case GeofenceShape.POLYGON:
+        // Polygon: turf.booleanPointInPolygon()
+        return this._checkPolygon(geofence, point);
+      case GeofenceShape.RECTANGLE:
+        // Rectangle: coordinate comparison
+        return this._checkRectangle(geofence, point);
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Monitor điểm — trả về danh sách geofences chứa điểm.
+   *
+   * @param point Điểm tọa độ cần monitor
+   * @returns Danh sách kết quả check
+   */
+  monitorPoint(point: GeoPoint): GeofenceCheckResult[] {
+    const results: GeofenceCheckResult[] = [];
+    for (const [id, gf] of this.geofences) {
+      if (!gf.enabled) continue;
+      const inside = this.checkGeofence(gf, point);
+      results.push({
+        geofence_id: id,
+        inside,
+        event: inside ? "enter" : "exit",
+      });
+    }
+    return results;
+  }
+
+  /**
+   * Liệt kê tất cả geofences.
+   */
+  listGeofences(): Geofence[] {
+    return Array.from(this.geofences.values());
+  }
+
+  /**
+   * Lấy geofence theo ID.
+   *
+   * @param id ID của geofence
+   */
+  getGeofence(id: string): Geofence | undefined {
+    return this.geofences.get(id);
+  }
+
+  /**
+   * Circle: dùng turf.distance() để kiểm tra.
+   */
+  private _checkCircle(geofence: Geofence, point: GeoPoint): boolean {
+    if (!geofence.center || geofence.radius_m == null) return false;
+    const center = turf.point([geofence.center.longitude, geofence.center.latitude]);
+    const pt = turf.point([point.longitude, point.latitude]);
+    const dist = turf.distance(center, pt, { units: "meters" });
+    return dist <= geofence.radius_m;
+  }
+
+  /**
+   * Polygon: dùng turf.booleanPointInPolygon().
+   */
+  private _checkPolygon(geofence: Geofence, point: GeoPoint): boolean {
+    if (!geofence.points || geofence.points.length < 3) return false;
+    const coords = geofence.points.map(
+      (p) => [p.longitude, p.latitude] as [number, number],
+    );
+    // Đóng polygon: thêm điểm đầu vào cuối.
+    coords.push(coords[0]);
+    const polygon = turf.polygon([coords]);
+    const pt = turf.point([point.longitude, point.latitude]);
+    return turf.booleanPointInPolygon(pt, polygon);
+  }
+
+  /**
+   * Rectangle: so sánh tọa độ min/max.
+   */
+  private _checkRectangle(geofence: Geofence, point: GeoPoint): boolean {
+    return (
+      point.latitude >= (geofence.min_lat ?? -90) &&
+      point.latitude <= (geofence.max_lat ?? 90) &&
+      point.longitude >= (geofence.min_lng ?? -180) &&
+      point.longitude <= (geofence.max_lng ?? 180)
+    );
+  }
+}

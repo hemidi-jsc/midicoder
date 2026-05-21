@@ -1,0 +1,118 @@
+// Geospatial Service — Service tính toán địa lý.
+// Dùng @turf/turf cho geometry operations.
+// CP35: Geospatial Pack (NestJS)
+
+import { Injectable } from "@nestjs/common";
+import * as turf from "@turf/turf";
+
+{% if collection %}
+// Tự động sinh từ {{ spec_count }} geospatial specs.
+{% endif %}
+
+export class GeoPoint {
+  latitude: number;
+  longitude: number;
+
+  constructor(lat: number, lng: number) {
+    this.latitude = lat;
+    this.longitude = lng;
+  }
+}
+
+/**
+ * Interface định nghĩa các method chính của GeospatialService.
+ */
+export interface GeospatialService {
+  calculateDistance(p1: GeoPoint, p2: GeoPoint, unit?: string): number;
+  reverseGeocode(lat: number, lng: number): Promise<string>;
+}
+
+@Injectable()
+export class GeospatialService {
+  /**
+   * Haversine distance giữa 2 điểm tọa độ.
+   *
+   * @param p1 Điểm đầu tiên
+   * @param p2 Điểm thứ hai
+   * @param unit Đơn vị đo (mặc định: "kilometers")
+   * @returns Khoảng cách giữa 2 điểm
+   */
+  calculateDistance(p1: GeoPoint, p2: GeoPoint, unit: string = "kilometers"): number {
+    const pt1 = turf.point([p1.longitude, p1.latitude]);
+    const pt2 = turf.point([p2.longitude, p2.latitude]);
+    return turf.distance(pt1, pt2, { units: unit as any });
+  }
+
+  /**
+   * Reverse geocoding — tra cứu địa chỉ từ tọa độ.
+   * Dùng OpenStreetMap Nominatim API.
+   *
+   * @param lat Vĩ độ
+   * @param lng Kinh độ
+   * @returns Địa chỉ dạng chuỗi
+   */
+{% if has_reverse_geocoding %}
+  async reverseGeocode(lat: number, lng: number): Promise<string> {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+    const resp = await fetch(url, {
+      headers: { "Accept-Language": "vi" },
+    });
+    const data = (await resp.json()) as { display_name: string };
+    return data.display_name || `(${lat}, ${lng})`;
+  }
+{% else %}
+  // Reverse geocoding chưa được kích hoạt trong bất kỳ spec nào.
+  async reverseGeocode(lat: number, lng: number): Promise<string> {
+    throw new Error("Reverse geocoding không được kích hoạt");
+  }
+{% endif %}
+
+  /**
+   * Tính bearing giữa 2 điểm (góc hướng di chuyển).
+   *
+   * @param p1 Điểm xuất phát
+   * @param p2 Điểm đến
+   * @returns Bearing tính bằng độ (0-360)
+   */
+  calculateBearing(p1: GeoPoint, p2: GeoPoint): number {
+    const pt1 = turf.point([p1.longitude, p1.latitude]);
+    const pt2 = turf.point([p2.longitude, p2.latitude]);
+    return turf.bearing(pt1, pt2);
+  }
+
+  /**
+   * Tính điểm đến từ điểm xuất phát, bearing và khoảng cách.
+   *
+   * @param p1 Điểm xuất phát
+   * @param bearing Hướng di chuyển (độ)
+   * @param distance Khoảng cách
+   * @param unit Đơn vị đo
+   * @returns Điểm đến mới
+   */
+  destinationPoint(
+    p1: GeoPoint,
+    bearing: number,
+    distance: number,
+    unit: string = "kilometers",
+  ): GeoPoint {
+    const pt = turf.point([p1.longitude, p1.latitude]);
+    const dest = turf.destination(pt, distance, bearing, { units: unit as any });
+    const coords = dest.geometry.coordinates as [number, number];
+    return new GeoPoint(coords[1], coords[0]);
+  }
+
+  /**
+   * Kiểm tra điểm có nằm trong bán kính của tâm hay không.
+   *
+   * @param center Tâm
+   * @param point Điểm cần kiểm tra
+   * @param radius_m Bán kính tính bằng mét
+   * @returns True nếu điểm nằm trong bán kính
+   */
+  isWithinRadius(center: GeoPoint, point: GeoPoint, radius_m: number): boolean {
+    const c = turf.point([center.longitude, center.latitude]);
+    const p = turf.point([point.longitude, point.latitude]);
+    const dist = turf.distance(c, p, { units: "meters" });
+    return dist <= radius_m;
+  }
+}
