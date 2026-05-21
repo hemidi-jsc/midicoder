@@ -1,0 +1,69 @@
+/**
+ * State Registry Service — quản lý các state machines.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ */
+import { Injectable } from "@nestjs/common";
+
+export interface StateMachineEntry {
+  machineId: string;
+  entityType: string;
+  states: string[];
+  initialState: string;
+  transitions: Record<string, string[]>;
+  finalStates?: string[];
+}
+
+@Injectable()
+export class StateRegistryService {
+  private readonly machines = new Map<string, StateMachineEntry>();
+  private readonly byEntity = new Map<string, string>();
+
+  constructor() {
+    // Tự động đăng ký
+{% for sm in state_machines %}
+    this.machines.set("{{ sm.machine_id }}", {
+      machineId: "{{ sm.machine_id }}",
+      entityType: "{{ sm.entity_type }}",
+      states: {{ sm.states | tojson }},
+      initialState: "{{ sm.initial_state }}",
+      transitions: {{ sm.transitions | tojson }},
+      finalStates: {{ sm.final_states | tojson }},
+    });
+    this.byEntity.set("{{ sm.entity_type }}", "{{ sm.machine_id }}");
+{% endfor %}
+  }
+
+  /**
+   * Đăng ký một state machine.
+   */
+  register(entry: StateMachineEntry): void {
+    this.machines.set(entry.machineId, entry);
+    this.byEntity.set(entry.entityType, entry.machineId);
+  }
+
+  /**
+   * Lấy state machine theo machineId.
+   */
+  getById(machineId: string): StateMachineEntry | undefined {
+    return this.machines.get(machineId);
+  }
+
+  /**
+   * Lấy state machine theo entity type.
+   */
+  getByEntity(entityType: string): StateMachineEntry | undefined {
+    const machineId = this.byEntity.get(entityType);
+    if (machineId) {
+      return this.machines.get(machineId);
+    }
+    return undefined;
+  }
+
+  /**
+   * Lấy tất cả state machines.
+   */
+  listAll(): StateMachineEntry[] {
+    return Array.from(this.machines.values());
+  }
+}

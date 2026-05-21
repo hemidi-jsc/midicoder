@@ -1,0 +1,173 @@
+"""
+Mô-đun State Machine Engine cho entity lifecycle.
+
+Tự động tạo bởi Midicoder CE — không chỉnh sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+
+@dataclass
+class StateMachineConfig:
+    """Cấu hình state machine cho một entity type."""
+
+    machine_id: str
+    entity_type: str
+    states: List[str]
+    initial_state: str
+    transitions: Dict[str, List[str]]
+    final_states: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class StateMachineEngine:
+    """Engine runtime cho entity lifecycle state machine.
+
+    Cung cấp:
+    - Validate transitions
+    - Execute transitions với audit trail
+    - Tích hợp CP14 (audit) và CP05 (event)
+    """
+
+    def __init__(
+        self,
+        audit_logger=None,
+        event_publisher=None,
+    ):
+        """Khởi tạo engine.
+
+        Args:
+            audit_logger: Callback ghi audit log.
+            event_publisher: Callback publish event.
+        """
+        self._configs: Dict[str, StateMachineConfig] = {}
+        self._instances: Dict[str, Dict[str, Any]] = {}
+        self._audit_logger = audit_logger
+        self._event_publisher = event_publisher
+
+{% for sm in state_machines %}
+    # --- {{ sm.entity_type }} State Machine ---
+    {{ sm.entity_type }}_CONFIG = StateMachineConfig(
+        machine_id="{{ sm.machine_id }}",
+        entity_type="{{ sm.entity_type }}",
+        states={{ sm.states }},
+        initial_state="{{ sm.initial_state }}",
+        transitions={{ sm.transitions }},
+        final_states={{ sm.final_states }},
+    )
+{% endfor %}
+
+    def register(self, config: StateMachineConfig) -> None:
+        """Đăng ký state machine config.
+
+        Args:
+            config: StateMachineConfig.
+        """
+        self._configs[config.machine_id] = config
+
+    def transition(
+        self,
+        entity_id: str,
+        machine_id: str,
+        to_state: str,
+        user_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Execute transition cho một entity.
+
+        Args:
+            entity_id: ID của entity.
+            machine_id: ID của state machine.
+            to_state: State mục tiêu.
+            user_id: ID người thực hiện.
+            metadata: Metadata bổ sung.
+
+        Returns:
+            Kết quả transition.
+        """
+        config = self._configs.get(machine_id)
+        if not config:
+            raise ValueError(f"State machine '{machine_id}' không tồn tại")
+
+        instance = self._instances.get(entity_id)
+        if not instance:
+            raise ValueError(f"Entity instance '{entity_id}' không tồn tại")
+
+        from_state = instance["current_state"]
+        valid = config.transitions.get(from_state, [])
+
+        if to_state not in valid:
+            raise ValueError(
+                f"Transition '{from_state}' → '{to_state}' không hợp lệ. "
+                f"Target hợp lệ: {valid}"
+            )
+
+        # Cập nhật state
+        instance["current_state"] = to_state
+        instance["updated_at"] = datetime.utcnow()
+        instance["history"].append({
+            "from_state": from_state,
+            "to_state": to_state,
+            "user_id": user_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "metadata": metadata or {},
+        })
+
+        # Audit log (CP14)
+        if self._audit_logger:
+            self._audit_logger("state_transition", {
+                "entity_id": entity_id,
+                "machine_id": machine_id,
+                "from_state": from_state,
+                "to_state": to_state,
+                "user_id": user_id,
+            })
+
+        # Publish event (CP05)
+        if self._event_publisher:
+            self._event_publisher("entity.state_changed", {
+                "entity_id": entity_id,
+                "from_state": from_state,
+                "to_state": to_state,
+            })
+
+        return {
+            "success": True,
+            "entity_id": entity_id,
+            "from_state": from_state,
+            "to_state": to_state,
+        }
+
+    def create_instance(
+        self,
+        entity_id: str,
+        machine_id: str,
+    ) -> Dict[str, Any]:
+        """Tạo state instance mới cho entity.
+
+        Args:
+            entity_id: ID của entity.
+            machine_id: ID của state machine.
+
+        Returns:
+            State instance mới.
+        """
+        config = self._configs.get(machine_id)
+        if not config:
+            raise ValueError(f"State machine '{machine_id}' không tồn tại")
+
+        instance = {
+            "entity_id": entity_id,
+            "machine_id": machine_id,
+            "current_state": config.initial_state,
+            "history": [],
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        self._instances[entity_id] = instance
+        return instance

@@ -1,0 +1,105 @@
+"""
+Mô-đun State Registry — quản lý các state machines.
+
+Tự động tạo bởi Midicoder CE — không chỉnh sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+
+class StateRegistry:
+    """Registry để quản lý state machines.
+
+    Cung cấp:
+    - Tự động đăng ký các state machines
+    - Lookup theo entity_type hoặc machine_id
+    """
+
+    def __init__(self):
+        """Khởi tạo registry."""
+        self._machines: Dict[str, Dict[str, Any]] = {}
+        self._by_entity: Dict[str, str] = {}
+
+    @classmethod
+    def create_default(cls) -> StateRegistry:
+        """Tạo registry với các state machines mặc định.
+
+        Returns:
+            StateRegistry đã đăng ký.
+        """
+        registry = cls()
+{% for sm in state_machines %}
+        registry.register(
+            machine_id="{{ sm.machine_id }}",
+            entity_type="{{ sm.entity_type }}",
+            states={{ sm.states }},
+            initial_state="{{ sm.initial_state }}",
+            transitions={{ sm.transitions }},
+            final_states={{ sm.final_states }},
+        )
+{% endfor %}
+        return registry
+
+    def register(
+        self,
+        machine_id: str,
+        entity_type: str,
+        states: list,
+        initial_state: str,
+        transitions: dict,
+        final_states: Optional[list] = None,
+    ) -> None:
+        """Đăng ký một state machine.
+
+        Args:
+            machine_id: ID của state machine.
+            entity_type: Entity type.
+            states: Danh sách states.
+            initial_state: State ban đầu.
+            transitions: Mapping transitions.
+            final_states: Danh sách final states.
+        """
+        self._machines[machine_id] = {
+            "machine_id": machine_id,
+            "entity_type": entity_type,
+            "states": states,
+            "initial_state": initial_state,
+            "transitions": transitions,
+            "final_states": final_states or [],
+        }
+        self._by_entity[entity_type] = machine_id
+
+    def get_by_id(self, machine_id: str) -> Optional[Dict[str, Any]]:
+        """Lấy state machine theo machine_id.
+
+        Args:
+            machine_id: ID của state machine.
+
+        Returns:
+            Config dict hoặc None.
+        """
+        return self._machines.get(machine_id)
+
+    def get_by_entity(self, entity_type: str) -> Optional[Dict[str, Any]]:
+        """Lấy state machine theo entity type.
+
+        Args:
+            entity_type: Tên entity type.
+
+        Returns:
+            Config dict hoặc None.
+        """
+        machine_id = self._by_entity.get(entity_type)
+        if machine_id:
+            return self._machines.get(machine_id)
+        return None
+
+    def list_all(self) -> Dict[str, Dict[str, Any]]:
+        """Lấy tất cả state machines.
+
+        Returns:
+            Dict của tất cả configs.
+        """
+        return dict(self._machines)

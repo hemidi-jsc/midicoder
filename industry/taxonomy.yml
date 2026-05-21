@@ -601,8 +601,8 @@ core_packs:
       - state_validate
       - lifecycle_manage
     category: runtime
-    status: planned
-    version: 1.0.0
+    status: stable
+    version: 1.1.0
   - id: CP33
     name: Financial Engine
     internal_id: cp33_financial

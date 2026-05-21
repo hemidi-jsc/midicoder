@@ -766,6 +766,16 @@ class ErrorCode(str, Enum):
     CP31_DSL_PARSE_ERROR = "MDC-CP31-008"
 
     # =========================================================================
+    # CP32: State Machine Engine Errors
+    # =========================================================================
+    CP32_INVALID_STATE = "MDC-CP32-001"
+    CP32_INVALID_TRANSITION = "MDC-CP32-002"
+    CP32_INSTANCE_NOT_FOUND = "MDC-CP32-003"
+    CP32_ALREADY_IN_STATE = "MDC-CP32-004"
+    CP32_DSL_PARSE_ERROR = "MDC-CP32-005"
+    CP32_REGISTRY_NOT_FOUND = "MDC-CP32-006"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

@@ -1,0 +1,144 @@
+/**
+ * State Machine Service — entity lifecycle FSM.
+ *
+ * Tự động tạo bởi Midicoder CE.
+ */
+import { Injectable } from "@nestjs/common";
+
+export interface StateMachineConfig {
+  machineId: string;
+  entityType: string;
+  states: string[];
+  initialState: string;
+  transitions: Record<string, string[]>;
+  finalStates?: string[];
+}
+
+export interface StateInstance {
+  entityId: string;
+  machineId: string;
+  currentState: string;
+  history: Array<{
+    fromState: string;
+    toState: string;
+    userId?: string;
+    timestamp: string;
+    metadata?: Record<string, any>;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+@Injectable()
+export class StateMachineService {
+  private readonly configs = new Map<string, StateMachineConfig>();
+  private readonly instances = new Map<string, StateInstance>();
+
+  constructor() {
+    // Tự động đăng ký state machines
+{% for sm in state_machines %}
+    this.configs.set("{{ sm.machine_id }}", {
+      machineId: "{{ sm.machine_id }}",
+      entityType: "{{ sm.entity_type }}",
+      states: {{ sm.states | tojson }},
+      initialState: "{{ sm.initial_state }}",
+      transitions: {{ sm.transitions | tojson }},
+      finalStates: {{ sm.final_states | tojson }},
+    });
+{% endfor %}
+  }
+
+  /**
+   * Đăng ký state machine config.
+   */
+  register(config: StateMachineConfig): void {
+    this.configs.set(config.machineId, config);
+  }
+
+  /**
+   * Execute transition cho một entity.
+   */
+  transition(
+    entityId: string,
+    machineId: string,
+    toState: string,
+    userId?: string,
+    metadata?: Record<string, any>,
+  ): { success: boolean; fromState: string; toState: string } {
+    const config = this.configs.get(machineId);
+    if (!config) {
+      throw new Error(`State machine '${machineId}' không tồn tại`);
+    }
+
+    const instance = this.instances.get(entityId);
+    if (!instance) {
+      throw new Error(`Entity instance '${entityId}' không tồn tại`);
+    }
+
+    const fromState = instance.currentState;
+    const valid = config.transitions[fromState] || [];
+
+    if (!valid.includes(toState)) {
+      throw new Error(
+        `Transition '${fromState}' → '${toState}' không hợp lệ. Target hợp lệ: ${valid.join(", ")}`,
+      );
+    }
+
+    // Cập nhật state
+    instance.currentState = toState;
+    instance.updatedAt = new Date().toISOString();
+    instance.history.push({
+      fromState,
+      toState,
+      userId,
+      timestamp: new Date().toISOString(),
+      metadata: metadata || {},
+    });
+
+    return { success: true, fromState, toState };
+  }
+
+  /**
+   * Tạo state instance mới.
+   */
+  createInstance(entityId: string, machineId: string): StateInstance {
+    const config = this.configs.get(machineId);
+    if (!config) {
+      throw new Error(`State machine '${machineId}' không tồn tại`);
+    }
+
+    const now = new Date().toISOString();
+    const instance: StateInstance = {
+      entityId,
+      machineId,
+      currentState: config.initialState,
+      history: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.instances.set(entityId, instance);
+    return instance;
+  }
+
+  /**
+   * Lấy current state của entity.
+   */
+  getCurrentState(entityId: string): string {
+    const instance = this.instances.get(entityId);
+    if (!instance) {
+      throw new Error(`Entity instance '${entityId}' không tồn tại`);
+    }
+    return instance.currentState;
+  }
+
+  /**
+   * Lấy lịch sử transitions.
+   */
+  getHistory(entityId: string): StateInstance["history"] {
+    const instance = this.instances.get(entityId);
+    if (!instance) {
+      throw new Error(`Entity instance '${entityId}' không tồn tại`);
+    }
+    return instance.history;
+  }
+}
