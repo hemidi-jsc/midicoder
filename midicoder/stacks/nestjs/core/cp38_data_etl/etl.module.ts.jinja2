@@ -1,0 +1,124 @@
+/**
+ * ETL Module cho Data Import/Export/ETL.
+ *
+ * Module NestJS tổng hợp toàn bộ các thành phần
+ * của hệ thống Import/Export/ETL:
+ *
+ * Entities (TypeORM):
+ * - ImportJob: Theo dõi công việc import
+ * - ExportJob: Theo dõi công việc export
+ * - ETLJob: Theo dõi pipeline ETL
+ * - ETLMapping: Ánh xạ trường trong ETL
+ * - ImportError: Lỗi từng hàng khi import
+ * - BulkConfig: Cấu hình xử lý hàng loạt
+ *
+ * Services:
+ * - ImportService: Xử lý upload và import dữ liệu
+ * - ExportService: Xử lý export và download
+ * - ETLService: Chạy pipeline Extract-Transform-Load
+ * - BulkProcessorService: Xử lý chunk với retry và progress tracking
+ *
+ * Controllers:
+ * - ImportController: REST API cho import (prefix: data/import)
+ * - ExportController: REST API cho export (prefix: data/export)
+ *
+ * CP38: Data Import/Export/ETL
+ */
+
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import {
+  ImportJob,
+  ExportJob,
+  ETLJob,
+  ETLMapping,
+  ImportError,
+  BulkConfig,
+} from './import.entity';
+import { ImportService } from './import.service';
+import { ExportService } from './export.service';
+import { ETLService } from './etl.service';
+import { BulkProcessorService } from './bulk-processor.service';
+import { ImportController } from './import.controller';
+import { ExportController } from './export.controller';
+
+/**
+ * Module chính cho Data Import/Export/ETL.
+ *
+ * Cấu trúc module:
+ *
+ *   ETLModule
+ *   ├── TypeOrmModule (6 entities)
+ *   │   ├── ImportJob
+ *   │   ├── ExportJob
+ *   │   ├── ETLJob
+ *   │   ├── ETLMapping
+ *   │   ├── ImportError
+ *   │   └── BulkConfig
+ *   ├── Controllers
+ *   │   ├── ImportController  (/data/import/*)
+ *   │   └── ExportController  (/data/export/*)
+ *   └── Services (exported)
+ *       ├── ImportService
+ *       ├── ExportService
+ *       ├── ETLService
+ *       └── BulkProcessorService
+ *
+ * Usage:
+ * ```typescript
+ * // Import vào module cha (ví dụ: AppModule hoặc DataModule)
+ * @Module({
+ *   imports: [
+ *     ETLModule,
+ *     // ... các module khác
+ *   ],
+ * })
+ * export class AppModule {}
+ *
+ * // Inject services vào controller hoặc service khác
+ * @Injectable()
+ * export class MyService {
+ *   constructor(
+ *     private readonly importService: ImportService,
+ *     private readonly exportService: ExportService,
+ *     private readonly etlService: ETLService,
+ *   ) {}
+ * }
+ * ```
+ */
+@Module({
+  // Đăng ký tất cả TypeORM entities để tạo repositories
+  imports: [
+    TypeOrmModule.forFeature([
+      ImportJob,      // Entity cho công việc import
+      ExportJob,      // Entity cho công việc export
+      ETLJob,         // Entity cho pipeline ETL
+      ETLMapping,     // Entity cho ánh xạ trường ETL
+      ImportError,    // Entity cho lỗi từng hàng import
+      BulkConfig,     // Entity cho cấu hình hàng loạt
+    ]),
+  ],
+
+  // Controllers: cung cấp REST API endpoints
+  controllers: [
+    ImportController,  // POST/GET /data/import/*
+    ExportController,  // POST/GET /data/export/*
+  ],
+
+  // Services: logic nghiệp vụ
+  providers: [
+    ImportService,         // Xử lý upload, parse, execute import
+    ExportService,         // Xử lý create, execute, download export
+    ETLService,            // Chạy pipeline ETL: extract -> transform -> load
+    BulkProcessorService,  // Xử lý chunk với retry, backoff, progress
+  ],
+
+  // Export services để các module khác có thể inject
+  exports: [
+    ImportService,
+    ExportService,
+    ETLService,
+    BulkProcessorService,
+  ],
+})
+export class ETLModule {}

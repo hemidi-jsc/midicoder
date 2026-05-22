@@ -1,0 +1,633 @@
+# coding: utf-8
+"""
+Bulk Worker cho Data Import — Background Worker.
+
+Cung cấp lớp BulkWorker để xử lý hàng loạt dữ liệu:
+- process_chunk: Xử lý một chunk dữ liệu
+- execute_with_retry: Thực thi với retry mechanism
+- track_progress: Theo dõi tiến trình
+- rollback_chunk: Rollback chunk nếu lỗi
+
+Worker này được dùng bởi ImportService để xử lý từng chunk
+dữ liệu với chunking, retry, và error tracking.
+
+Các trạng thái job: {{ ', '.join(job_statuses) }}
+
+CP38: Data Import/Export/ETL
+"""
+
+import asyncio
+import logging
+import time
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import insert, text
+from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+# Logger cho module
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Exception: BulkWorkerError
+# ============================================================================
+
+class BulkWorkerError(Exception):
+    """Exception base cho BulkWorker."""
+
+    def __init__(self, message: str, error_code: str = "WORKER_ERROR") -> None:
+        self.message = message
+        self.error_code = error_code
+        super().__init__(self.message)
+
+
+class ChunkProcessError(BulkWorkerError):
+    """Lỗi khi xử lý chunk."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="CHUNK_PROCESS_ERROR")
+
+
+class RetryExhaustedError(BulkWorkerError):
+    """Lỗi khi hết số lần retry."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="RETRY_EXHAUSTED")
+
+
+class ProgressTrackingError(BulkWorkerError):
+    """Lỗi khi theo dõi tiến trình."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="PROGRESS_TRACKING_ERROR")
+
+
+# ============================================================================
+# Progress Tracker
+# ============================================================================
+
+class ProgressTracker:
+    """
+    Theo dõi tiến trình xử lý chunk.
+
+    Lưu số lượng thành công, thất bại, thời gian xử lý
+    cho mỗi chunk và tổng cộng.
+
+    Attributes:
+        total_chunks: Tổng số chunks
+        completed_chunks: Số chunks đã hoàn thành
+        total_processed: Tổng số bản ghi đã xử lý
+        total_errors: Tổng số lỗi
+        start_time: Thời điểm bắt đầu
+        chunk_times: Thời gian xử lý từng chunk
+    """
+
+    def __init__(self, total_chunks: int = 0) -> None:
+        """
+        Khởi tạo ProgressTracker.
+
+        Args:
+            total_chunks: Tổng số chunks cần xử lý
+        """
+        self.total_chunks = total_chunks
+        self.completed_chunks = 0
+        self.total_processed = 0
+        self.total_errors = 0
+        self.start_time = time.time()
+        self.chunk_times: List[float] = []
+
+    def record_chunk_result(
+        self,
+        success_count: int,
+        error_count: int,
+        duration: float,
+    ) -> None:
+        """
+        Ghi nhận kết quả của một chunk.
+
+        Args:
+            success_count: Số bản ghi xử lý thành công
+            error_count: Số lỗi trong chunk
+            duration: Thời gian xử lý chunk (giây)
+        """
+        self.completed_chunks += 1
+        self.total_processed += success_count
+        self.total_errors += error_count
+        self.chunk_times.append(duration)
+
+    @property
+    def elapsed_seconds(self) -> float:
+        """Thời gian đã trôi qua từ khi bắt đầu (giây)."""
+        return time.time() - self.start_time
+
+    @property
+    def average_chunk_time(self) -> float:
+        """Thời gian trung bình cho mỗi chunk (giây)."""
+        if not self.chunk_times:
+            return 0.0
+        return sum(self.chunk_times) / len(self.chunk_times)
+
+    @property
+    def estimated_remaining_seconds(self) -> float:
+        """Ước lượng thời gian còn lại (giây)."""
+        remaining = self.total_chunks - self.completed_chunks
+        if remaining <= 0:
+            return 0.0
+        return remaining * self.average_chunk_time
+
+    @property
+    def progress_percentage(self) -> float:
+        """Phần trăm tiến trình (0-100)."""
+        if self.total_chunks == 0:
+            return 0.0
+        return round((self.completed_chunks / self.total_chunks) * 100, 2)
+
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Lấy tóm tắt tiến trình.
+
+        Returns:
+            Dictionary với summary info
+        """
+        return {
+            "total_chunks": self.total_chunks,
+            "completed_chunks": self.completed_chunks,
+            "total_processed": self.total_processed,
+            "total_errors": self.total_errors,
+            "progress_percentage": self.progress_percentage,
+            "elapsed_seconds": round(self.elapsed_seconds, 2),
+            "average_chunk_time": round(self.average_chunk_time, 2),
+            "estimated_remaining_seconds": round(self.estimated_remaining_seconds, 2),
+        }
+
+
+# ============================================================================
+# BulkWorker
+# ============================================================================
+
+class BulkWorker:
+    """
+    Worker xử lý bulk operations cho data import.
+
+    Chịu trách nhiệm xử lý từng chunk dữ liệu với:
+    - Chunking: Chia dữ liệu thành các chunk nhỏ
+    - Retry: Tự động retry khi gặp lỗi tạm thời
+    - Progress tracking: Theo dõi tiến trình real-time
+    - Error handling: Catch và log lỗi, tiếp tục hoặc dừng
+    - Rollback: Hoàn tác chunk nếu toàn bộ chunk lỗi
+
+    Flow xử lý:
+        ┌──────────┐     ┌─────────────┐     ┌──────────────┐
+        │ Chunk 1  │────>│ Retry (max N)│────>│ DB Insert    │
+        └──────────┘     └─────────────┘     └──────────────┘
+              │                                      │
+              v                                      v
+        ┌──────────┐                         ┌──────────────┐
+        │ Chunk 2  │                         │ Track Result │
+        └──────────┘                         └──────────────┘
+
+    Usage:
+        worker = BulkWorker(
+            db=db_session,
+            chunk_size=1000,
+            max_retries=3,
+            retry_delay=1.0,
+            continue_on_error=True,
+        )
+
+        result = await worker.process_chunk(chunk, target_table="users")
+    """
+
+    def __init__(
+        self,
+        db: AsyncSession,
+        chunk_size: int = 1000,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        continue_on_error: bool = True,
+        batch_commit_size: int = 500,
+    ) -> None:
+        """
+        Khởi tạo BulkWorker.
+
+        Args:
+            db: AsyncSession cho database
+            chunk_size: Số bản ghi mỗi chunk (default 1000)
+            max_retries: Số lần retry tối đa cho mỗi chunk (default 3)
+            retry_delay: Thời gian chờ giữa các lần retry (giây, default 1.0)
+            continue_on_error: Có tiếp tục khi gặp lỗi không (default True)
+            batch_commit_size: Số bản ghi mỗi lần commit (default 500)
+        """
+        self.db = db
+        self.chunk_size = chunk_size
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.continue_on_error = continue_on_error
+        self.batch_commit_size = batch_commit_size
+
+        # Progress tracker
+        self.tracker = ProgressTracker()
+
+    async def process_chunk(
+        self,
+        chunk: List[Dict[str, Any]],
+        target_table: Optional[str],
+        headers: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Xử lý một chunk dữ liệu.
+
+        Thử insert từng bản ghi vào database.
+        Với từng lỗi, thử retry max_retries lần.
+        Log chi tiết và trả về kết quả.
+
+        Args:
+            chunk: Danh sách dictionary — mỗi dict là một bản ghi
+            target_table: Tên bảng đích (nếu None, chỉ validate)
+            headers: Danh sách headers (optional)
+
+        Returns:
+            Dictionary với:
+            - success_count: Số bản ghi thành công
+            - error_count: Số lỗi
+            - errors: Danh sách chi tiết lỗi
+            - duration: Thời gian xử lý (giây)
+        """
+        start_time = time.time()
+        success_count = 0
+        error_count = 0
+        errors: List[Dict[str, Any]] = []
+
+        logger.debug("Process chunk: size=%d, table=%s", len(chunk), target_table)
+
+        for row_index, record in enumerate(chunk):
+            row_number = row_index + 1  # Bắt đầu từ 1
+
+            try:
+                # Validate record
+                validation_error = self._validate_record(record, headers)
+                if validation_error:
+                    error_count += 1
+                    errors.append({
+                        "row_number": row_number,
+                        "row_data": record,
+                        "error_type": "validation",
+                        "error_message": validation_error,
+                        "column_name": None,
+                        "can_retry": False,
+                    })
+
+                    if not self.continue_on_error:
+                        break
+                    continue
+
+                # Insert vào database (với retry)
+                if target_table:
+                    inserted = await self.execute_with_retry(
+                        record=record,
+                        target_table=target_table,
+                    )
+
+                    if inserted:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                        errors.append({
+                            "row_number": row_number,
+                            "row_data": record,
+                            "error_type": "database",
+                            "error_message": "Không thể insert sau khi retry hết",
+                            "column_name": None,
+                            "can_retry": True,
+                        })
+
+                        if not self.continue_on_error:
+                            break
+                else:
+                    # Không có target table — chỉ validate
+                    success_count += 1
+
+            except Exception as e:
+                error_count += 1
+                errors.append({
+                    "row_number": row_number,
+                    "row_data": record,
+                    "error_type": "unexpected",
+                    "error_message": f"Lỗi không mong muốn: {str(e)}",
+                    "column_name": None,
+                    "can_retry": True,
+                })
+
+                logger.warning(
+                    "Row %d lỗi: %s",
+                    row_number,
+                    str(e),
+                )
+
+                if not self.continue_on_error:
+                    logger.warning(
+                        "Dừng xử lý chunk do continue_on_error=False",
+                    )
+                    break
+
+        # Tính thời gian xử lý
+        duration = time.time() - start_time
+
+        # Theo dõi tiến trình
+        self.tracker.record_chunk_result(success_count, error_count, duration)
+
+        logger.info(
+            "Chunk hoàn thành: success=%d, errors=%d, duration=%.3fs",
+            success_count,
+            error_count,
+            duration,
+        )
+
+        return {
+            "success_count": success_count,
+            "error_count": error_count,
+            "errors": errors,
+            "duration": round(duration, 3),
+        }
+
+    async def execute_with_retry(
+        self,
+        record: Dict[str, Any],
+        target_table: str,
+    ) -> bool:
+        """
+        Thực thi insert bản ghi với retry mechanism.
+
+        Thử insert vào database. Nếu gặp lỗi tạm thời (connection, timeout),
+        chờ và thử lại. Hết số lần retry thì trả về False.
+
+        Args:
+            record: Dictionary với data cần insert
+            target_table: Tên bảng đích
+
+        Returns:
+            True nếu insert thành công (sau 1 hoặc nhiều lần retry)
+            False nếu hết số lần retry
+
+        Raises:
+            RetryExhaustedError: Nếu hết số lần retry và continue_on_error=False
+        """
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                # Build INSERT statement
+                columns = list(record.keys())
+                col_names = ", ".join(columns)
+                placeholders = ", ".join(f":{col}" for col in columns)
+
+                sql = text(
+                    f"INSERT INTO {target_table} ({col_names}) VALUES ({placeholders})"
+                )
+
+                await self.db.execute(sql, record)
+
+                if attempt > 1:
+                    logger.info(
+                        "Insert thành công sau lần retry %d/%d",
+                        attempt,
+                        self.max_retries,
+                    )
+
+                return True
+
+            except IntegrityError as e:
+                # Lỗi constraint — thường không retry được
+                last_error = e
+                logger.warning(
+                    "IntegrityError (row không valid, không retry): %s",
+                    str(e),
+                )
+                await self.db.rollback()
+                return False
+
+            except DBAPIError as e:
+                # Lỗi database — có thể retry (connection, timeout)
+                last_error = e
+                await self.db.rollback()
+
+                if attempt < self.max_retries:
+                    wait_time = self.retry_delay * attempt  # Linear backoff
+                    logger.warning(
+                        "DBAPIError (lần %d/%d, chờ %.1fs): %s",
+                        attempt,
+                        self.max_retries,
+                        wait_time,
+                        str(e),
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(
+                        "Hết số lần retry cho record: %s",
+                        str(e),
+                    )
+
+            except Exception as e:
+                # Lỗi khác — không retry
+                last_error = e
+                logger.error("Lỗi không retry được: %s", str(e))
+                await self.db.rollback()
+                return False
+
+        # Hết số lần retry
+        if not self.continue_on_error and last_error:
+            raise RetryExhaustedError(
+                f"Hết {self.max_retries} lần retry: {str(last_error)}"
+            )
+
+        return False
+
+    def track_progress(self) -> Dict[str, Any]:
+        """
+        Lấy thông tin tiến trình hiện tại.
+
+        Trả về dictionary với:
+        - total_chunks: Tổng số chunks
+        - completed_chunks: Số chunks đã xong
+        - total_processed: Tổng bản ghi đã xử lý
+        - total_errors: Tổng lỗi
+        - progress_percentage: Phần trăm tiến trình
+        - elapsed_seconds: Thời gian đã trôi qua
+        - estimated_remaining_seconds: Ước lượng thời gian còn lại
+
+        Returns:
+            Dictionary với progress info
+
+        Raises:
+            ProgressTrackingError: Nếu tracker không được khởi tạo
+        """
+        try:
+            return self.tracker.get_summary()
+        except Exception as e:
+            raise ProgressTrackingError(f"Lỗi lấy progress: {str(e)}")
+
+    async def rollback_chunk(
+        self,
+        chunk: List[Dict[str, Any]],
+        target_table: str,
+        result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Rollback một chunk — xóa các bản ghi đã insert thành công.
+
+        Dùng khi cần hoàn tác toàn bộ chunk (ví dụ: chunk quá nhiều lỗi
+        vượt quá max_error_rate).
+
+        Lưu ý: Phương thức này yêu cầu mỗi record có trường "id" để
+        xác định bản ghi cần xóa.
+
+        Args:
+            chunk: Chunk dữ liệu gốc
+            target_table: Tên bảng đích
+            result: Kết quả từ process_chunk (với success_count, errors)
+
+        Returns:
+            Dictionary với rollback result:
+            - rolled_back: Số bản ghi đã rollback
+            - failed: Số bản ghi không rollback được
+
+        Raises:
+            ChunkProcessError: Nếu rollback thất bại
+        """
+        rolled_back = 0
+        failed = 0
+
+        logger.info(
+            "Rollback chunk: table=%s, success_count=%d",
+            target_table,
+            result.get("success_count", 0),
+        )
+
+        for record in chunk:
+            record_id = record.get("id")
+            if record_id is None:
+                # Không có ID — không thể rollback record này
+                failed += 1
+                logger.warning(
+                    "Không thể rollback record không có ID: %s",
+                    record,
+                )
+                continue
+
+            try:
+                delete_sql = text(f"DELETE FROM {target_table} WHERE id = :id")
+                await self.db.execute(delete_sql, {"id": record_id})
+                rolled_back += 1
+
+            except Exception as e:
+                failed += 1
+                logger.error(
+                    "Rollback record %d lỗi: %s",
+                    record_id,
+                    str(e),
+                )
+
+        # Cập nhật tracker
+        if rolled_back > 0:
+            self.tracker.total_processed -= rolled_back
+
+        logger.info(
+            "Rollback hoàn thành: rolled_back=%d, failed=%d",
+            rolled_back,
+            failed,
+        )
+
+        return {
+            "rolled_back": rolled_back,
+            "failed": failed,
+        }
+
+    def reset_tracker(self) -> None:
+        """
+        Reset progress tracker về trạng thái ban đầu.
+
+        Dùng khi bắt đầu xử lý job mới.
+        """
+        self.tracker = ProgressTracker()
+        logger.info("Progress tracker đã được reset")
+
+    def set_total_chunks(self, total_chunks: int) -> None:
+        """
+        Thiết lập tổng số chunks cho tracker.
+
+        Args:
+            total_chunks: Tổng số chunks sẽ xử lý
+        """
+        self.tracker.total_chunks = total_chunks
+
+    # ========================================================================
+    # Internal methods
+    # ========================================================================
+
+    def _validate_record(
+        self,
+        record: Dict[str, Any],
+        headers: Optional[List[str]],
+    ) -> Optional[str]:
+        """
+        Validate một record.
+
+        Kiểm tra:
+        - Record không rỗng
+        - Các fields có giá trị hợp lệ
+        - Headers khớp (nếu có)
+
+        Args:
+            record: Dictionary với record data
+            headers: Danh sách headers (optional)
+
+        Returns:
+            None nếu valid, error message nếu invalid
+        """
+        if not record:
+            return "Record rỗng"
+
+        if headers:
+            # Kiểm tra các required fields có trong record không
+            missing_fields = []
+            for header in headers:
+                if header not in record:
+                    missing_fields.append(header)
+
+            if missing_fields:
+                return (
+                    f"Thiếu các trường: {', '.join(missing_fields)}"
+                )
+
+        return None
+
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """
+        Kiểm tra lỗi có thể retry được không.
+
+        Lỗi có thể retry:
+        - DBAPIError (connection, timeout)
+        - asyncio.TimeoutError
+
+        Lỗi không thể retry:
+        - IntegrityError (violation constraint)
+        - ValueError, TypeError (data không hợp lệ)
+
+        Args:
+            error: Exception cần kiểm tra
+
+        Returns:
+            True nếu có thể retry
+        """
+        if isinstance(error, IntegrityError):
+            return False
+        if isinstance(error, (ValueError, TypeError)):
+            return False
+        if isinstance(error, DBAPIError):
+            return True
+        if isinstance(error, asyncio.TimeoutError):
+            return True
+        # Default: không retry
+        return False

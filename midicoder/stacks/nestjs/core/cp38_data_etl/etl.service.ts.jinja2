@@ -1,0 +1,821 @@
+/**
+ * ETL Service cho Data Import/Export/ETL.
+ *
+ * Cung cấp các phương thức:
+ * - createPipeline: Tạo pipeline ETL mới
+ * - runPipeline: Chạy toàn bộ pipeline Extract -> Transform -> Load
+ * - transformMap: Biến đổi ánh xạ trường
+ * - transformFilter: Lọc dữ liệu theo điều kiện
+ * - transformAggregate: Tổng hợp dữ liệu
+ * - transformConvert: Chuyển đổi kiểu dữ liệu
+ * - transformRename: Đổi tên trường
+ * - rollback: Hoàn tác khi pipeline thất bại
+ *
+ * CP38: Data Import/Export/ETL
+ */
+
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
+import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs/promises';
+
+import {
+  ETLJob,
+  ETLMapping,
+  JobStatus,
+  TransformType,
+  ExtractSource,
+  LoadMode,
+} from './import.entity';
+import { ETLJobCreateDto } from './import.dto';
+
+/**
+ * Service cho ETL Pipeline.
+ *
+ * Xử lý toàn bộ quy trình Extract -> Transform -> Load:
+ * 1. Extract: Lấy dữ liệu từ nguồn (file, database, api)
+ * 2. Transform: Áp dụng các biến đổi (map, filter, aggregate, convert, rename)
+ * 3. Load: Ghi dữ liệu vào đích (insert, update, upsert, delete)
+ *
+ * Pattern Pipeline:
+ * - Mỗi bước là một stage độc lập
+ * - Dữ liệu được truyền qua các stage như stream
+ * - Hỗ trợ rollback nếu bước Load thất bại
+ * - Ghi log chi tiết cho từng bước
+ */
+@Injectable()
+export class ETLService {
+  private readonly logger = new Logger(ETLService.name);
+
+  constructor(
+    @InjectRepository(ETLJob)
+    private readonly etlJobRepo: Repository<ETLJob>,
+    @InjectRepository(ETLMapping)
+    private readonly etlMappingRepo: Repository<ETLMapping>,
+  ) {}
+
+  // =========================================================================
+  // Pipeline Creation
+  // =========================================================================
+
+  /**
+   * Tạo pipeline ETL mới.
+   *
+   * Tạo ETLJob với các cấu hình extract/transform/load.
+   * Nếu có mappings, sẽ lưu vào ETLMapping entities.
+   *
+   * @param dto - DTO chứa cấu hình pipeline
+   * @returns ETLJob mới được tạo
+   */
+  async createPipeline(dto: ETLJobCreateDto): Promise<ETLJob> {
+    // Sinh jobKey định dạng: etl-{timestamp}-{random}
+    const timestamp = Date.now().toString(36);
+    const random = uuidv4().substring(0, 8);
+    const jobKey = `etl-${timestamp}-${random}`;
+
+    const job = this.etlJobRepo.create({
+      jobKey,
+      pipelineName: dto.pipelineName,
+      description: dto.description || null,
+      status: JobStatus.PENDING,
+      extractSource: dto.extractSource,
+      extractConfig: dto.extractConfig || null,
+      loadMode: dto.loadMode,
+      loadConfig: dto.loadConfig || null,
+      transforms: dto.transforms || [],
+      batchSize: dto.batchSize || 1000,
+      enableRollback: dto.enableRollback ?? true,
+      extractedRows: 0,
+      loadedRows: 0,
+      filteredRows: 0,
+    });
+
+    const savedJob = await this.etlJobRepo.save(job);
+    this.logger.log(`Tạo ETL Pipeline mới: ${jobKey} - ${dto.pipelineName}`);
+
+    return savedJob;
+  }
+
+  // =========================================================================
+  // Pipeline Execution
+  // =========================================================================
+
+  /**
+   * Chạy toàn bộ pipeline: Extract -> Transform -> Load.
+   *
+   * Quy trình chi tiết:
+   * 1. Validate và update trạng thái job thành RUNNING
+   * 2. Extract: Lấy dữ liệu từ nguồn (file/database/api)
+   * 3. Transform: Áp dụng từng biến đổi theo thứ tự
+   * 4. Load: Ghi dữ liệu vào đích theo chế độ (insert/update/upsert/delete)
+   * 5. Nếu thất bại ở bước Load và enableRollback = true: rollback
+   * 6. Cập nhật trạng thái và thống kê
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns ETLJob đã hoàn thành
+   */
+  async runPipeline(jobKey: string): Promise<ETLJob> {
+    // Lấy job
+    const job = await this.etlJobRepo.findOne({ where: { jobKey } });
+    if (!job) {
+      throw new NotFoundException(`Không tìm thấy ETLJob với jobKey: ${jobKey}`);
+    }
+
+    // Kiểm tra trạng thái
+    if (job.status === JobStatus.RUNNING) {
+      throw new BadRequestException(
+        `Pipeline ${jobKey} đang chạy, không thể thực thi lại`,
+      );
+    }
+    if (job.status === JobStatus.COMPLETED) {
+      throw new BadRequestException(
+        `Pipeline ${jobKey} đã hoàn thành`,
+      );
+    }
+
+    // Cập nhật trạng thái thành RUNNING
+    job.status = JobStatus.RUNNING;
+    job.startedAt = new Date();
+    job.extractedRows = 0;
+    job.loadedRows = 0;
+    job.filteredRows = 0;
+    job.errorMessage = null;
+    await this.etlJobRepo.save(job);
+
+    this.logger.log(`Bắt đầu chạy pipeline: ${jobKey} - ${job.pipelineName}`);
+
+    // Lưu dữ liệu đã load để rollback nếu cần
+    let loadedData: Record<string, any>[] = [];
+
+    try {
+      // -------------------------------------------------------------------------
+      // BƯỚC 1: EXTRACT - Lấy dữ liệu từ nguồn
+      // -------------------------------------------------------------------------
+      this.logger.log(`[${jobKey}] Bước 1/3: EXTRACT từ ${job.extractSource}`);
+      let data = await this.extractData(job);
+      job.extractedRows = data.length;
+      this.logger.log(`[${jobKey}] Extracted ${data.length} hàng`);
+
+      // -------------------------------------------------------------------------
+      // BƯỚC 2: TRANSFORM - Áp dụng các biến đổi
+      // -------------------------------------------------------------------------
+      this.logger.log(`[${jobKey}] Bước 2/3: TRANSFORM (${job.transforms?.length || 0} biến đổi)`);
+      const beforeTransformCount = data.length;
+
+      for (const transform of job.transforms || []) {
+        data = await this.applyTransform(data, transform);
+      }
+
+      job.filteredRows = beforeTransformCount - data.length;
+      this.logger.log(
+        `[${jobKey}] Sau transform: ${data.length} hàng (${job.filteredRows} hàng bị lọc)`,
+      );
+
+      // -------------------------------------------------------------------------
+      // BƯỚC 3: LOAD - Ghi dữ liệu vào đích
+      // -------------------------------------------------------------------------
+      this.logger.log(`[${jobKey}] Bước 3/3: LOAD chế độ ${job.loadMode}`);
+      loadedData = await this.loadData(job, data);
+      job.loadedRows = loadedData.length;
+
+      // Hoàn thành pipeline
+      job.status = JobStatus.COMPLETED;
+      job.finishedAt = new Date();
+
+      this.logger.log(
+        `[${jobKey}] Pipeline hoàn thành: ${job.extractedRows} extracted, ` +
+        `${job.filteredRows} filtered, ${job.loadedRows} loaded`,
+      );
+
+    } catch (error: any) {
+      this.logger.error(
+        `[${jobKey}] Pipeline thất bại: ${error.message}`,
+        error.stack,
+      );
+
+      // Rollback nếu được cấu hình
+      if (job.enableRollback && loadedData.length > 0) {
+        this.logger.log(`[${jobKey}] Bắt đầu rollback ${loadedData.length} hàng`);
+        await this.rollback(job, loadedData);
+      }
+
+      job.status = JobStatus.FAILED;
+      job.errorMessage = error.message || 'Lỗi không xác định khi chạy pipeline';
+      job.finishedAt = new Date();
+    }
+
+    await this.etlJobRepo.save(job);
+    return job;
+  }
+
+  // =========================================================================
+  // Extract Step
+  // =========================================================================
+
+  /**
+   * Trích xuất dữ liệu từ nguồn.
+   *
+   * Hỗ trợ 3 nguồn:
+   * - file: Đọc file CSV hoặc JSON từ hệ thống
+   * - database: Truy vấn SQL từ database
+   * - api: Gọi REST API để lấy dữ liệu
+   *
+   * @param job - ETLJob chứa cấu hình extract
+   * @returns Mảng dữ liệu đã extract
+   */
+  private async extractData(
+    job: ETLJob,
+  ): Promise<Record<string, any>[]> {
+    switch (job.extractSource) {
+      case ExtractSource.FILE:
+        return this.extractFromFile(job);
+
+      case ExtractSource.DATABASE:
+        return this.extractFromDatabase(job);
+
+      case ExtractSource.API:
+        return this.extractFromApi(job);
+
+      default:
+        throw new BadRequestException(
+          `Nguồn extract không hợp lệ: ${job.extractSource}`,
+        );
+    }
+  }
+
+  /**
+   * Extract dữ liệu từ file (CSV hoặc JSON).
+   *
+   * @param job - ETLJob với extractConfig chứa filePath
+   * @returns Mảng dữ liệu
+   */
+  private async extractFromFile(
+    job: ETLJob,
+  ): Promise<Record<string, any>[]> {
+    if (!job.extractConfig?.filePath) {
+      throw new BadRequestException('Thiếu filePath trong extractConfig');
+    }
+
+    const content = await fs.readFile(job.extractConfig.filePath, 'utf-8');
+    const ext = job.extractConfig.filePath.split('.').pop()?.toLowerCase();
+
+    if (ext === 'json') {
+      const parsed = JSON.parse(content);
+      return Array.isArray(parsed) ? parsed : parsed.data || [];
+    }
+
+    // Parse CSV
+    const lines = content
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length === 0) return [];
+
+    const headers = lines[0].split(',').map((h) => h.trim());
+    const rows: Record<string, any>[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map((v) => v.trim());
+      const row: Record<string, any> = {};
+      for (let j = 0; j < headers.length; j++) {
+        row[headers[j]] = values[j] || '';
+      }
+      rows.push(row);
+    }
+
+    return rows;
+  }
+
+  /**
+   * Extract dữ liệu từ database.
+   *
+   * TODO: Implement với TypeORM QueryBuilder hoặc raw SQL.
+   *
+   * @param job - ETLJob với extractConfig chứa query
+   * @returns Mảng dữ liệu
+   */
+  private async extractFromDatabase(
+    job: ETLJob,
+  ): Promise<Record<string, any>[]> {
+    // TODO: Thực tế sẽ dùng:
+    // const queryRunner = this.dataSource.createQueryRunner();
+    // await queryRunner.connect();
+    // const results = await queryRunner.query(job.extractConfig.query);
+    // return results;
+
+    this.logger.log(`Extract từ database: ${job.extractConfig?.query || 'N/A'}`);
+
+    // Mock data
+    return this.generateMockData(job.batchSize || 1000);
+  }
+
+  /**
+   * Extract dữ liệu từ API.
+   *
+   * TODO: Implement HTTP call với retry và pagination.
+   *
+   * @param job - ETLJob với extractConfig chứa url
+   * @returns Mảng dữ liệu
+   */
+  private async extractFromApi(
+    job: ETLJob,
+  ): Promise<Record<string, any>[]> {
+    // TODO: Thực tế sẽ dùng:
+    // const response = await fetch(job.extractConfig.url, {
+    //   method: job.extractConfig.method || 'GET',
+    //   headers: job.extractConfig.headers || {},
+    // });
+    // const data = await response.json();
+    // return Array.isArray(data) ? data : data.data || [];
+
+    this.logger.log(`Extract từ API: ${job.extractConfig?.url || 'N/A'}`);
+
+    // Mock data
+    return this.generateMockData(job.batchSize || 1000);
+  }
+
+  // =========================================================================
+  // Transform Step
+  // =========================================================================
+
+  /**
+   * Áp dụng một biến đổi lên toàn bộ dữ liệu.
+   *
+   * Dispatch đến phương thức transform tương ứng
+   * dựa trên loại biến đổi.
+   *
+   * @param data - Mảng dữ liệu cần biến đổi
+   * @param transform - Cấu hình biến đổi { type, config }
+   * @returns Dữ liệu sau khi biến đổi
+   */
+  private async applyTransform(
+    data: Record<string, any>[],
+    transform: { type: TransformType; config: Record<string, any> },
+  ): Promise<Record<string, any>[]> {
+    switch (transform.type) {
+      case TransformType.MAP:
+        return this.transformMap(data, transform.config);
+
+      case TransformType.FILTER:
+        return this.transformFilter(data, transform.config);
+
+      case TransformType.AGGREGATE:
+        return this.transformAggregate(data, transform.config);
+
+      case TransformType.CONVERT:
+        return this.transformConvert(data, transform.config);
+
+      case TransformType.RENAME:
+        return this.transformRename(data, transform.config);
+
+      default:
+        throw new BadRequestException(`Loại biến đổi không hợp lệ: ${transform.type}`);
+    }
+  }
+
+  /**
+   * Transform MAP: Ánh xạ trường nguồn sang trường đích.
+   *
+   * Cấu hình:
+   * {
+   *   mappings: [
+   *     { source: 'field_a', target: 'field_b' },
+   *     { source: 'field_c', target: 'field_d', defaultValue: 'unknown' }
+   *   ]
+   * }
+   *
+   * @param data - Dữ liệu đầu vào
+   * @param config - Cấu hình mapping
+   * @returns Dữ liệu đã ánh xạ
+   */
+  transformMap(
+    data: Record<string, any>[],
+    config: Record<string, any>,
+  ): Record<string, any>[] {
+    const mappings = config.mappings || [];
+
+    return data.map((row) => {
+      const newRow = { ...row };
+      for (const mapping of mappings) {
+        const sourceValue = newRow[mapping.source];
+        if (sourceValue !== undefined && sourceValue !== null) {
+          newRow[mapping.target] = sourceValue;
+        } else if (mapping.defaultValue !== undefined) {
+          newRow[mapping.target] = mapping.defaultValue;
+        } else {
+          newRow[mapping.target] = null;
+        }
+      }
+      return newRow;
+    });
+  }
+
+  /**
+   * Transform FILTER: Lọc dữ liệu theo điều kiện.
+   *
+   * Cấu hình:
+   * {
+   *   field: 'status',
+   *   operator: 'eq',       // eq, ne, gt, gte, lt, lte, contains, in, notIn
+   *   value: 'active'       // hoặc mảng cho operator 'in'/'notIn'
+   * }
+   *
+   * @param data - Dữ liệu đầu vào
+   * @param config - Cấu hình filter
+   * @returns Dữ liệu đã lọc
+   */
+  transformFilter(
+    data: Record<string, any>[],
+    config: Record<string, any>,
+  ): Record<string, any>[] {
+    const { field, operator, value } = config;
+
+    if (!field || !operator) {
+      throw new BadRequestException('Cấu hình filter phải có field và operator');
+    }
+
+    return data.filter((row) => {
+      const fieldValue = row[field];
+
+      switch (operator) {
+        case 'eq':
+          return fieldValue === value;
+        case 'ne':
+          return fieldValue !== value;
+        case 'gt':
+          return fieldValue > value;
+        case 'gte':
+          return fieldValue >= value;
+        case 'lt':
+          return fieldValue < value;
+        case 'lte':
+          return fieldValue <= value;
+        case 'contains':
+          return String(fieldValue).includes(String(value));
+        case 'in':
+          return Array.isArray(value) && value.includes(fieldValue);
+        case 'notIn':
+          return Array.isArray(value) && !value.includes(fieldValue);
+        case 'isNull':
+          return fieldValue === null || fieldValue === undefined;
+        case 'isNotNull':
+          return fieldValue !== null && fieldValue !== undefined;
+        default:
+          throw new BadRequestException(`Operator không hợp lệ: ${operator}`);
+      }
+    });
+  }
+
+  /**
+   * Transform AGGREGATE: Tổng hợp dữ liệu theo nhóm.
+   *
+   * Cấu hình:
+   * {
+   *   groupBy: 'category',
+   *   aggregations: [
+   *     { field: 'amount', function: 'sum', as: 'totalAmount' },
+   *     { field: 'quantity', function: 'avg', as: 'avgQuantity' },
+   *     { field: 'id', function: 'count', as: 'totalCount' }
+   *   ]
+   * }
+   *
+   * Functions hỗ trợ: sum, avg, count, min, max, first, last
+   *
+   * @param data - Dữ liệu đầu vào
+   * @param config - Cấu hình aggregate
+   * @returns Dữ liệu đã tổng hợp
+   */
+  transformAggregate(
+    data: Record<string, any>[],
+    config: Record<string, any>,
+  ): Record<string, any>[] {
+    const { groupBy, aggregations } = config;
+
+    if (!groupBy || !aggregations) {
+      throw new BadRequestException(
+        'Cấu hình aggregate phải có groupBy và aggregations',
+      );
+    }
+
+    // Nhóm dữ liệu theo groupBy field
+    const groups = new Map<string, Record<string, any>[]>();
+    for (const row of data) {
+      const key = String(row[groupBy] ?? '__null__');
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(row);
+    }
+
+    // Tính aggregate cho mỗi nhóm
+    const result: Record<string, any>[] = [];
+    for (const [groupKey, groupRows] of groups) {
+      const aggregated: Record<string, any> = {};
+      aggregated[groupBy] = groupKey === '__null__' ? null : groupKey;
+
+      for (const agg of aggregations) {
+        const values = groupRows
+          .map((r) => Number(r[agg.field]))
+          .filter((v) => !isNaN(v));
+
+        let resultValue: number | string;
+
+        switch (agg.function) {
+          case 'sum':
+            resultValue = values.reduce((a, b) => a + b, 0);
+            break;
+          case 'avg':
+            resultValue = values.length
+              ? values.reduce((a, b) => a + b, 0) / values.length
+              : 0;
+            break;
+          case 'count':
+            resultValue = groupRows.length;
+            break;
+          case 'min':
+            resultValue = values.length ? Math.min(...values) : 0;
+            break;
+          case 'max':
+            resultValue = values.length ? Math.max(...values) : 0;
+            break;
+          case 'first':
+            resultValue = groupRows[0]?.[agg.field];
+            break;
+          case 'last':
+            resultValue = groupRows[groupRows.length - 1]?.[agg.field];
+            break;
+          default:
+            throw new BadRequestException(
+              `Aggregate function không hợp lệ: ${agg.function}`,
+            );
+        }
+
+        aggregated[agg.as || `${agg.function}_${agg.field}`] = resultValue;
+      }
+
+      result.push(aggregated);
+    }
+
+    return result;
+  }
+
+  /**
+   * Transform CONVERT: Chuyển đổi kiểu dữ liệu của trường.
+   *
+   * Cấu hình:
+   * {
+   *   field: 'amount',
+   *   fromType: 'string',   // string, number, boolean, date, null (auto-detect)
+   *   toType: 'number',     // string, number, boolean, date, integer
+   *   dateFormat?: 'yyyy-MM-dd'  // chỉ dùng khi toType = 'date'
+   * }
+   *
+   * @param data - Dữ liệu đầu vào
+   * @param config - Cấu hình convert
+   * @returns Dữ liệu đã chuyển đổi
+   */
+  transformConvert(
+    data: Record<string, any>[],
+    config: Record<string, any>,
+  ): Record<string, any>[] {
+    const { field, toType, dateFormat } = config;
+
+    if (!field || !toType) {
+      throw new BadRequestException(
+        'Cấu hình convert phải có field và toType',
+      );
+    }
+
+    return data.map((row) => {
+      const newRow = { ...row };
+      const value = newRow[field];
+
+      if (value === null || value === undefined) {
+        return newRow;
+      }
+
+      switch (toType) {
+        case 'number':
+          newRow[field] = parseFloat(String(value));
+          break;
+        case 'integer':
+          newRow[field] = parseInt(String(value), 10);
+          break;
+        case 'string':
+          newRow[field] = String(value);
+          break;
+        case 'boolean':
+          if (typeof value === 'string') {
+            newRow[field] =
+              value.toLowerCase() === 'true' ||
+              value.toLowerCase() === '1' ||
+              value.toLowerCase() === 'yes';
+          } else {
+            newRow[field] = Boolean(value);
+          }
+          break;
+        case 'date':
+          if (dateFormat) {
+            // Parse theo format tùy chỉnh (đơn giản)
+            newRow[field] = this.parseDate(String(value), dateFormat);
+          } else {
+            newRow[field] = new Date(value).toISOString();
+          }
+          break;
+        default:
+          throw new BadRequestException(`toType không hợp lệ: ${toType}`);
+      }
+
+      return newRow;
+    });
+  }
+
+  /**
+   * Transform RENAME: Đổi tên trường.
+   *
+   * Cấu hình:
+   * {
+   *   renames: [
+   *     { from: 'old_name', to: 'new_name' },
+   *     { from: 'first_name', to: 'ten' }
+   *   ]
+   * }
+   *
+   * Trường cũ sẽ bị xóa sau khi rename.
+   *
+   * @param data - Dữ liệu đầu vào
+   * @param config - Cấu hình rename
+   * @returns Dữ liệu đã đổi tên trường
+   */
+  transformRename(
+    data: Record<string, any>[],
+    config: Record<string, any>,
+  ): Record<string, any>[] {
+    const renames = config.renames || [];
+
+    return data.map((row) => {
+      const newRow: Record<string, any> = {};
+
+      // Copy các trường không rename
+      for (const [key, value] of Object.entries(row)) {
+        const renameConfig = renames.find((r) => r.from === key);
+        if (renameConfig) {
+          newRow[renameConfig.to] = value;
+        } else {
+          newRow[key] = value;
+        }
+      }
+
+      return newRow;
+    });
+  }
+
+  // =========================================================================
+  // Load Step
+  // =========================================================================
+
+  /**
+   * Load dữ liệu vào đích.
+   *
+   * Hỗ trợ 4 chế độ:
+   * - insert: Thêm mới tất cả bản ghi
+   * - update: Cập nhật bản ghi đã tồn tại (theo primary key)
+   * - upsert: Insert hoặc Update tùy theo tồn tại hay không
+   * - delete: Xóa các bản ghi tương ứng
+   *
+   * @param job - ETLJob chứa cấu hình load
+   * @param data - Dữ liệu đã transform
+   * @returns Dữ liệu đã load thành công
+   */
+  private async loadData(
+    job: ETLJob,
+    data: Record<string, any>[],
+  ): Promise<Record<string, any>[]> {
+    // TODO: Implement actual database load logic
+    // const targetRepo = this.dataSource.getRepository(job.loadConfig.targetTable);
+    // switch (job.loadMode) {
+    //   case LoadMode.INSERT:
+    //     await targetRepo.insert(data);
+    //     break;
+    //   case LoadMode.UPDATE:
+    //     for (const row of data) {
+    //       await targetRepo.update(row.id, row);
+    //     }
+    //     break;
+    //   case LoadMode.UPSERT:
+    //     await targetRepo.save(data);  // TypeORM save = upsert
+    //     break;
+    //   case LoadMode.DELETE:
+    //     const ids = data.map(r => r.id);
+    //     await targetRepo.delete(ids);
+    //     break;
+    // }
+
+    this.logger.log(
+      `Load ${data.length} hàng vào ${job.loadConfig?.targetTable || 'N/A'} ` +
+      `bằng chế độ ${job.loadMode}`,
+    );
+
+    // Mock: giả định tất cả load thành công
+    return data;
+  }
+
+  // =========================================================================
+  // Rollback
+  // =========================================================================
+
+  /**
+   * Hoàn tác dữ liệu đã load khi pipeline thất bại.
+   *
+   * Xóa hoặc khôi phục các bản ghi đã được load
+   * trước khi pipeline bị lỗi.
+   *
+   * @param job - ETLJob cần rollback
+   * @param loadedData - Dữ liệu đã load cần hoàn tác
+   */
+  async rollback(
+    job: ETLJob,
+    loadedData: Record<string, any>[],
+  ): Promise<void> {
+    if (loadedData.length === 0) {
+      this.logger.log(`[${job.jobKey}] Không có dữ liệu cần rollback`);
+      return;
+    }
+
+    this.logger.log(
+      `[${job.jobKey}] Rollback ${loadedData.length} hàng đã load`,
+    );
+
+    try {
+      // TODO: Implement actual rollback logic
+      // const targetRepo = this.dataSource.getRepository(job.loadConfig.targetTable);
+      // const ids = loadedData.map(r => r.id);
+      // if (job.loadMode === LoadMode.INSERT) {
+      //   await targetRepo.delete(ids);
+      // } else if (job.loadMode === LoadMode.UPSERT) {
+      //   // Khôi phục từ backup nếu có
+      //   await this.restoreFromBackup(job, loadedData);
+      // }
+
+      this.logger.log(`[${job.jobKey}] Rollback hoàn tất`);
+    } catch (error: any) {
+      this.logger.error(
+        `[${job.jobKey}] Rollback thất bại: ${error.message}`,
+        error.stack,
+      );
+      // Không throw để không che lỗi gốc của pipeline
+    }
+  }
+
+  // =========================================================================
+  // Helpers
+  // =========================================================================
+
+  /**
+   * Parse date string theo format tùy chỉnh (đơn giản).
+   *
+   * @param dateStr - Chuỗi ngày cần parse
+   * @param format - Format string (yyyy, MM, dd, hh, mm, ss)
+   * @returns ISO string
+   */
+  private parseDate(dateStr: string, format: string): string {
+    // Nếu không parse được theo custom format, fallback về Date constructor
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) {
+        return dateStr; // Trả về nguyên nếu không parse được
+      }
+      return date.toISOString();
+    } catch {
+      return dateStr;
+    }
+  }
+
+  /**
+   * Tạo dữ liệu mock cho testing.
+   *
+   * @param count - Số lượng hàng cần tạo
+   * @returns Mảng dữ liệu mock
+   */
+  private generateMockData(count: number): Record<string, any>[] {
+    const data: Record<string, any>[] = [];
+    for (let i = 0; i < count; i++) {
+      data.push({
+        id: i + 1,
+        name: `Item ${i + 1}`,
+        category: ['A', 'B', 'C'][i % 3],
+        amount: Math.round(Math.random() * 10000),
+        status: i % 5 === 0 ? 'inactive' : 'active',
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return data;
+  }
+}

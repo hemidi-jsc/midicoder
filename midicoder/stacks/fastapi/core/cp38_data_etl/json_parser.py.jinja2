@@ -1,0 +1,871 @@
+# coding: utf-8
+"""
+JSON Parser cho Data Import.
+
+Cung cấp lớp JSONParser để parse và validate file JSON:
+- parse_array: Parse JSON array thành danh sách dictionaries
+- parse_streaming: Parse JSON theo từng item (generator) — hỗ trợ file lớn
+- flatten_nested: Làm phẳng dictionary lồng nhau
+- validate_schema: Validate toàn bộ JSON data theo schema
+- validate_row: Validate một hàng theo schema
+
+Hỗ trợ các định dạng: {{ ', '.join(import_formats) }}
+
+CP38: Data Import/Export/ETL
+"""
+
+import io
+import json
+import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Generator, Union
+
+# Logger cho module
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Exception: JSONParserError
+# ============================================================================
+
+class JSONParserError(Exception):
+    """Exception base cho JSONParser."""
+
+    def __init__(self, message: str, error_code: str = "JSON_PARSE_ERROR") -> None:
+        self.message = message
+        self.error_code = error_code
+        super().__init__(self.message)
+
+
+class SchemaValidationError(JSONParserError):
+    """Lỗi validate schema."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="SCHEMA_VALIDATION_ERROR")
+
+
+class RowValidationError(JSONParserError):
+    """Lỗi validate hàng."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="ROW_VALIDATION_ERROR")
+
+
+# ============================================================================
+# JSONParser
+# ============================================================================
+
+class JSONParser:
+    """
+    Parser cho file JSON với các tính năng:
+
+    1. Parse array: Parse JSON array thành danh sách dictionaries
+       Hỗ trợ cả JSON array chuẩn và JSON Lines (newline-delimited JSON)
+
+    2. Parse streaming: Parse JSON theo từng item (generator)
+       Dùng cho file JSON lớn — không load toàn bộ vào memory
+       Sử dụng ijson library nếu có, fallback sang parse thủ công
+
+    3. Flatten nested: Làm phẳng dictionary lồng nhau
+       Chuyển nested dict/list thành 1 cấp với dấu phân tách
+
+    4. Validate schema: Validate toàn bộ JSON data theo JSON Schema
+       Kiểm tra required fields, types, patterns
+
+    5. Validate row: Validate một hàng (dictionary) theo schema
+       Kiểm tra từng field với rules về type, required, range
+
+    Usage:
+        parser = JSONParser()
+
+        # Parse toàn bộ
+        rows = parser.parse_sync(content_bytes)
+
+        # Parse streaming (generator)
+        for row in parser.parse_streaming(content_bytes):
+            process(row)
+
+        # Flatten nested
+        flat = parser.flatten_nested({"a": {"b": 1}})
+        # => {"a.b": 1}
+
+        # Validate
+        is_valid, errors = parser.validate_row(row, schema)
+    """
+
+    def __init__(
+        self,
+        encoding: str = "utf-8",
+        ensure_ascii: bool = False,
+        indent: Optional[int] = None,
+    ) -> None:
+        """
+        Khởi tạo JSONParser.
+
+        Args:
+            encoding: Encoding của file (default: utf-8)
+            ensure_ascii: Có escape non-ASCII characters không (default: False)
+            indent: Số khoảng trắng indent khi parse pretty JSON (default: None)
+        """
+        self.encoding = encoding
+        self.ensure_ascii = ensure_ascii
+        self.indent = indent
+        self._has_ijson = False
+
+        # Kiểm tra có ijson không
+        try:
+            import ijson  # noqa: F401
+            self._has_ijson = True
+            logger.debug("ijson library available — streaming parse enabled")
+        except ImportError:
+            logger.debug("ijson not available — using fallback streaming parser")
+
+    def parse_array(self, content: Union[str, bytes]) -> List[Dict[str, Any]]:
+        """
+        Parse JSON array thành danh sách dictionaries.
+
+        Hỗ trợ:
+        - JSON array: [{"key": "value"}, ...]
+        - JSON object đơn: {"key": "value"} => wrap thành list
+        - JSON Lines: mỗi dòng là một JSON object
+
+        Args:
+            content: Nội dung JSON (string hoặc bytes)
+
+        Returns:
+            Danh sách dictionaries
+
+        Raises:
+            JSONParserError: Nếu JSON không hợp lệ hoặc không phải array
+        """
+        # Decode bytes thành string
+        if isinstance(content, bytes):
+            try:
+                text = content.decode(self.encoding)
+            except UnicodeDecodeError:
+                text = content.decode("utf-8", errors="replace")
+        else:
+            text = content
+
+        text = text.strip()
+
+        if not text:
+            return []
+
+        # Thử parse như JSON array/object chuẩn trước
+        try:
+            data = json.loads(text)
+
+            if isinstance(data, list):
+                # Đảm bảo tất cả items đều là dict
+                result = []
+                for i, item in enumerate(data):
+                    if isinstance(item, dict):
+                        result.append(item)
+                    else:
+                        logger.warning(
+                            "Item %d không phải dict, chuyển thành dict: %s",
+                            i,
+                            type(item).__name__,
+                        )
+                        result.append({"value": item})
+                return result
+
+            elif isinstance(data, dict):
+                # JSON object đơn — wrap thành list
+                return [data]
+
+            else:
+                raise JSONParserError(
+                    f"JSON root phải là array hoặc object, nhận được: {type(data).__name__}"
+                )
+
+        except json.JSONDecodeError as e:
+            # Không phải JSON array/object chuẩn — thử JSON Lines
+            logger.info(
+                "JSON array parse fail, thử JSON Lines: %s",
+                str(e),
+            )
+            return self._parse_json_lines(text)
+
+    def parse_streaming(
+        self,
+        content: Union[str, bytes],
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Parse JSON theo từng item (generator).
+
+        Dùng cho file JSON lớn — không load toàn bộ vào memory.
+        Ưu tiên dùng ijson nếu có, fallback sang parse thủ công.
+
+        Hỗ trợ:
+        - JSON array (với ijson hoặc manual)
+        - JSON Lines (luôn dùng manual)
+
+        Args:
+            content: Nội dung JSON (string hoặc bytes)
+
+        Yields:
+            Dictionary cho mỗi JSON object
+
+        Raises:
+            JSONParserError: Nếu JSON không hợp lệ
+        """
+        # Decode bytes thành string
+        if isinstance(content, bytes):
+            try:
+                text = content.decode(self.encoding)
+            except UnicodeDecodeError:
+                text = content.decode("utf-8", errors="replace")
+        else:
+            text = content
+
+        text = text.strip()
+
+        if not text:
+            return
+
+        # Kiểm tra format: array hay JSON Lines
+        is_array = text.startswith("[")
+
+        if is_array:
+            if self._has_ijson:
+                # Dùng ijson để parse streaming (hiệu quả nhất)
+                yield from self._parse_with_ijson(content if isinstance(content, bytes) else text.encode(self.encoding))
+            else:
+                # Fallback: parse array thủ công
+                yield from self._parse_array_streaming(text)
+        else:
+            # JSON Lines
+            yield from self._parse_json_lines_streaming(text)
+
+    def flatten_nested(
+        self,
+        data: Dict[str, Any],
+        parent_key: str = "",
+        separator: str = ".",
+        max_depth: int = 10,
+    ) -> Dict[str, Any]:
+        """
+        Làm phẳng dictionary lồng nhau thành dictionary 1 cấp.
+
+        Dùng dấu phân tách (default: ".") để join nested keys.
+        Hỗ trợ dict và list lồng nhau.
+
+        Example:
+            Input:  {"user": {"name": "Anh", "addr": {"city": "HN"}}, "tags": [1, 2]}
+            Output: {"user.name": "Anh", "user.addr.city": "HN", "tags[0]": 1, "tags[1]": 2}
+
+        Args:
+            data: Dictionary có thể lồng nhau
+            parent_key: Key cha (dùng cho recursive call)
+            separator: Dấu phân tách (default: ".")
+            max_depth: Độ sâu đệ quy tối đa (default: 10)
+
+        Returns:
+            Dictionary đã làm phẳng
+        """
+        if max_depth <= 0:
+            # Đạt max depth — không flatten nữa
+            return {parent_key: data} if parent_key else {}
+
+        items: Dict[str, Any] = {}
+
+        for key, value in data.items():
+            new_key = f"{parent_key}{separator}{key}" if parent_key else key
+
+            if isinstance(value, dict):
+                # Đệ quy vào nested dict
+                nested = self.flatten_nested(
+                    value,
+                    parent_key=new_key,
+                    separator=separator,
+                    max_depth=max_depth - 1,
+                )
+                items.update(nested)
+
+            elif isinstance(value, list):
+                # Xử lý list — flatten từng item
+                for index, item in enumerate(value):
+                    list_key = f"{new_key}[{index}]"
+
+                    if isinstance(item, dict):
+                        nested = self.flatten_nested(
+                            item,
+                            parent_key=list_key,
+                            separator=separator,
+                            max_depth=max_depth - 1,
+                        )
+                        items.update(nested)
+                    elif isinstance(item, list):
+                        # Nested list — flatten recursively
+                        nested = self.flatten_nested(
+                            {"item": item},
+                            parent_key=list_key,
+                            separator=separator,
+                            max_depth=max_depth - 1,
+                        )
+                        items.update(nested)
+                    else:
+                        items[list_key] = item
+            else:
+                items[new_key] = value
+
+        return items
+
+    def unflatten(
+        self,
+        data: Dict[str, Any],
+        separator: str = ".",
+    ) -> Dict[str, Any]:
+        """
+        Ngược lại với flatten — tạo dictionary lồng nhau từ dictionary phẳng.
+
+        Example:
+            Input:  {"user.name": "Anh", "user.addr.city": "HN"}
+            Output: {"user": {"name": "Anh", "addr": {"city": "HN"}}}
+
+        Args:
+            data: Dictionary đã flatten
+            separator: Dấu phân tách (default: ".")
+
+        Returns:
+            Dictionary lồng nhau
+        """
+        result: Dict[str, Any] = {}
+
+        for key, value in data.items():
+            # Xử lý cả array index notation: user.tags[0]
+            parts = self._split_key(key, separator)
+
+            current = result
+            for i, part in enumerate(parts[:-1]):
+                # Kiểm tra part có phải array index không
+                next_part = parts[i + 1]
+                is_array = next_part.startswith("[") and "]" in next_part
+
+                if is_array:
+                    if part not in current:
+                        current[part] = []
+                    # Lấy index từ next_part
+                    idx_str = next_part[1:next_part.index("]")]
+                    try:
+                        idx = int(idx_str)
+                        # Đảm bảo list đủ dài
+                        while len(current[part]) <= idx:
+                            current[part].append({})
+                        current = current[part][idx]
+                    except (ValueError, IndexError):
+                        current[part] = {}
+                        current = current[part]
+                    # Bỏ qua next_part vì đã xử lý
+                    # (continue tự động vì loop)
+                else:
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
+
+            # Set giá trị ở key cuối
+            last_part = parts[-1]
+            if not last_part.startswith("["):
+                current[last_part] = value
+
+        return result
+
+    def validate_schema(
+        self,
+        data: List[Dict[str, Any]],
+        schema: Dict[str, Dict[str, Any]],
+    ) -> Tuple[bool, List[Dict[str, Any]]]:
+        """
+        Validate toàn bộ danh sách records theo schema.
+
+        Kiểm tra từng record với validate_row và tổng hợp kết quả.
+
+        Args:
+            data: Danh sách records cần validate
+            schema: Schema validate (cùng format với validate_row)
+
+        Returns:
+            Tuple: (all_valid, validation_results)
+            - all_valid: True nếu tất cả records đều hợp lệ
+            - validation_results: Danh sách dict {row_index, is_valid, errors}
+        """
+        results = []
+        all_valid = True
+
+        for row_index, record in enumerate(data):
+            is_valid, errors = self.validate_row(record, schema)
+
+            results.append({
+                "row_index": row_index,
+                "is_valid": is_valid,
+                "errors": errors,
+            })
+
+            if not is_valid:
+                all_valid = False
+
+        valid_count = sum(1 for r in results if r["is_valid"])
+        invalid_count = len(results) - valid_count
+
+        logger.info(
+            "Validate schema: %d valid, %d invalid / %d total",
+            valid_count,
+            invalid_count,
+            len(results),
+        )
+
+        return all_valid, results
+
+    def validate_row(
+        self,
+        row: Dict[str, Any],
+        schema: Dict[str, Dict[str, Any]],
+    ) -> Tuple[bool, List[str]]:
+        """
+        Validate một hàng (dictionary) theo schema.
+
+        Schema có dạng:
+        {
+            "field_name": {
+                "type": "str|int|float|bool|datetime|object|array",
+                "required": True,
+                "min_length": 1,
+                "max_length": 255,
+                "min_value": 0,
+                "max_value": 999,
+                "pattern": "^[a-z]+$",
+                "allowed_values": ["active", "inactive"],
+                "default": "",
+                "nullable": False,
+            }
+        }
+
+        Args:
+            row: Dictionary với row data
+            schema: Schema validate
+
+        Returns:
+            Tuple: (is_valid, errors)
+            - is_valid: True nếu row hợp lệ
+            - errors: Danh sách error messages
+
+        Raises:
+            RowValidationError: Nếu schema rỗng
+        """
+        if not schema:
+            raise RowValidationError("Schema không được rỗng")
+
+        errors = []
+
+        for field_name, field_rules in schema.items():
+            value = row.get(field_name)
+            is_required = field_rules.get("required", False)
+            is_nullable = field_rules.get("nullable", False)
+
+            # Kiểm tra required và nullable
+            if value is None:
+                if is_required and not is_nullable:
+                    errors.append(
+                        f"Trường '{field_name}' là bắt buộc nhưng không có giá trị"
+                    )
+                elif is_nullable:
+                    continue  # Nullable và value là None => hợp lệ
+                else:
+                    continue  # Không required, value None => hợp lệ
+                continue
+
+            # Kiểm tra empty string như null
+            if isinstance(value, str) and not value.strip():
+                if is_required and not is_nullable:
+                    errors.append(
+                        f"Trường '{field_name}' là bắt buộc nhưng giá trị rỗng"
+                    )
+                continue
+
+            # Validate type
+            expected_type = field_rules.get("type")
+            if expected_type:
+                type_error = self._validate_type(value, expected_type, field_name)
+                if type_error:
+                    errors.append(type_error)
+                    continue  # Không validate tiếp nếu type sai
+
+            # Validate min_length (cho string)
+            min_length = field_rules.get("min_length")
+            if min_length is not None and isinstance(value, str):
+                if len(value) < min_length:
+                    errors.append(
+                        f"Trường '{field_name}' phải có ít nhất {min_length} ký tự "
+                        f"(hiện tại: {len(value)})"
+                    )
+
+            # Validate max_length (cho string)
+            max_length = field_rules.get("max_length")
+            if max_length is not None and isinstance(value, str):
+                if len(value) > max_length:
+                    errors.append(
+                        f"Trường '{field_name}' không được quá {max_length} ký tự "
+                        f"(hiện tại: {len(value)})"
+                    )
+
+            # Validate min_value (cho number)
+            min_value = field_rules.get("min_value")
+            if min_value is not None and isinstance(value, (int, float)):
+                if value < min_value:
+                    errors.append(
+                        f"Trường '{field_name}' phải >= {min_value} "
+                        f"(hiện tại: {value})"
+                    )
+
+            # Validate max_value (cho number)
+            max_value = field_rules.get("max_value")
+            if max_value is not None and isinstance(value, (int, float)):
+                if value > max_value:
+                    errors.append(
+                        f"Trường '{field_name}' phải <= {max_value} "
+                        f"(hiện tại: {value})"
+                    )
+
+            # Validate pattern (cho string)
+            pattern = field_rules.get("pattern")
+            if pattern and isinstance(value, str):
+                import re
+                if not re.match(pattern, value):
+                    errors.append(
+                        f"Trường '{field_name}' không khớp pattern '{pattern}': '{value}'"
+                    )
+
+            # Validate allowed_values
+            allowed = field_rules.get("allowed_values")
+            if allowed is not None:
+                if value not in allowed:
+                    errors.append(
+                        f"Trường '{field_name}' phải là một trong: {allowed} "
+                        f"(hiện tại: {value!r})"
+                    )
+
+            # Validate nested object (type: "object")
+            if expected_type == "object" and isinstance(value, dict):
+                nested_schema = field_rules.get("properties", {})
+                if nested_schema:
+                    nested_valid, nested_errors = self.validate_row(value, nested_schema)
+                    if not nested_valid:
+                        for err in nested_errors:
+                            errors.append(f"{field_name}.{err}")
+
+            # Validate array items (type: "array")
+            if expected_type == "array" and isinstance(value, list):
+                item_schema = field_rules.get("items_schema")
+                if item_schema:
+                    for idx, item in enumerate(value):
+                        if isinstance(item, dict):
+                            item_valid, item_errors = self.validate_row(item, item_schema)
+                            if not item_valid:
+                                for err in item_errors:
+                                    errors.append(f"{field_name}[{idx}].{err}")
+
+        is_valid = len(errors) == 0
+        return is_valid, errors
+
+    def parse_sync(self, content: bytes) -> List[Dict[str, Any]]:
+        """
+        Parse toàn bộ nội dung JSON thành danh sách dictionaries.
+
+        Method wrapper để tương thích với interface của CSVParser.
+        Gọi parse_array bên trong.
+
+        Args:
+            content: Nội dung file JSON (bytes)
+
+        Returns:
+            Danh sách dictionaries
+        """
+        return self.parse_array(content)
+
+    # ========================================================================
+    # Internal methods
+    # ========================================================================
+
+    def _parse_json_lines(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Parse JSON Lines (newline-delimited JSON).
+
+        Mỗi dòng là một JSON object độc lập.
+
+        Args:
+            text: Nội dung JSON Lines
+
+        Returns:
+            Danh sách dictionaries
+        """
+        results = []
+        lines = text.split("\n")
+
+        for line_num, line in enumerate(lines, 1):
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                obj = json.loads(line)
+                if isinstance(obj, dict):
+                    results.append(obj)
+                else:
+                    logger.warning(
+                        "Dòng %d không phải object: %s",
+                        line_num,
+                        type(obj).__name__,
+                    )
+                    results.append({"value": obj})
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "Dòng %d parse lỗi: %s — skip",
+                    line_num,
+                    str(e),
+                )
+                continue
+
+        logger.info("Parse JSON Lines: %d objects từ %d dòng", len(results), len(lines))
+        return results
+
+    def _parse_json_lines_streaming(
+        self,
+        text: str,
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Parse JSON Lines theo từng dòng (generator).
+
+        Args:
+            text: Nội dung JSON Lines
+
+        Yields:
+            Dictionary cho mỗi dòng
+        """
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                obj = json.loads(line)
+                if isinstance(obj, dict):
+                    yield obj
+                else:
+                    yield {"value": obj}
+            except json.JSONDecodeError:
+                continue
+
+    def _parse_array_streaming(
+        self,
+        text: str,
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Parse JSON array theo từng item (manual, không dùng ijson).
+
+        Fallback khi không có ijson. Parse toàn bộ array rồi yield từng item.
+
+        Args:
+            text: Nội dung JSON array
+
+        Yields:
+            Dictionary cho mỗi item
+        """
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        yield item
+                    else:
+                        yield {"value": item}
+            elif isinstance(data, dict):
+                yield data
+        except json.JSONDecodeError as e:
+            raise JSONParserError(f"Không thể parse JSON array: {str(e)}")
+
+    def _parse_with_ijson(
+        self,
+        content: bytes,
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Parse JSON array streaming với ijson.
+
+        Ijson là thư viện parse JSON streaming hiệu quả.
+        Chỉ parse khi cần, không load toàn bộ vào memory.
+
+        Args:
+            content: Nội dung JSON (bytes)
+
+        Yields:
+            Dictionary cho mỗi item trong array
+        """
+        import ijson
+
+        try:
+            # Parse từng item trong array root
+            parser = ijson.items(
+                io.BytesIO(content),
+                "item",
+                use_float=True,
+            )
+            for item in parser:
+                if isinstance(item, dict):
+                    yield item
+                else:
+                    yield {"value": item}
+        except ijson.common.IncompleteJSONError as e:
+            raise JSONParserError(f"JSON không hoàn chỉnh: {str(e)}")
+        except Exception as e:
+            raise JSONParserError(f"Lỗi ijson parse: {str(e)}")
+
+    def _validate_type(
+        self,
+        value: Any,
+        expected_type: str,
+        field_name: str,
+    ) -> Optional[str]:
+        """
+        Validate kiểu dữ liệu của value.
+
+        Args:
+            value: Giá trị cần validate
+            expected_type: Kiểu mong đợi
+            field_name: Tên trường (cho error message)
+
+        Returns:
+            None nếu valid, error message nếu invalid
+        """
+        type_map = {
+            "str": str,
+            "string": str,
+            "int": int,
+            "integer": int,
+            "float": (int, float),
+            "number": (int, float),
+            "bool": bool,
+            "boolean": bool,
+            "object": dict,
+            "array": list,
+        }
+
+        python_type = type_map.get(expected_type)
+        if python_type is None:
+            return None  # Không biết type — skip validate
+
+        if expected_type in ("float", "number"):
+            # Number bao gồm cả int và float
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return None
+            # Thử parse string thành number
+            if isinstance(value, str):
+                try:
+                    float(value)
+                    return None
+                except ValueError:
+                    pass
+            return (
+                f"Trường '{field_name}' phải là số (number), "
+                f"nhận được: {type(value).__name__} ({value!r})"
+            )
+
+        if expected_type in ("int", "integer"):
+            if isinstance(value, int) and not isinstance(value, bool):
+                return None
+            if isinstance(value, str):
+                try:
+                    int(value)
+                    return None
+                except ValueError:
+                    pass
+            return (
+                f"Trường '{field_name}' phải là số nguyên (int), "
+                f"nhận được: {type(value).__name__} ({value!r})"
+            )
+
+        if expected_type in ("str", "string"):
+            if isinstance(value, str):
+                return None
+            # Các kiểu khác có thể cast thành string
+            return None
+
+        if expected_type in ("bool", "boolean"):
+            if isinstance(value, bool):
+                return None
+            if isinstance(value, str) and value.lower() in ("true", "false", "0", "1"):
+                return None
+            return (
+                f"Trường '{field_name}' phải là boolean, "
+                f"nhận được: {type(value).__name__} ({value!r})"
+            )
+
+        if expected_type == "object":
+            if isinstance(value, dict):
+                return None
+            if isinstance(value, str):
+                try:
+                    json.loads(value)
+                    return None
+                except json.JSONDecodeError:
+                    pass
+            return (
+                f"Trường '{field_name}' phải là object/dict, "
+                f"nhận được: {type(value).__name__}"
+            )
+
+        if expected_type == "array":
+            if isinstance(value, list):
+                return None
+            return (
+                f"Trường '{field_name}' phải là array/list, "
+                f"nhận được: {type(value).__name__}"
+            )
+
+        if expected_type == "datetime":
+            if isinstance(value, str):
+                try:
+                    datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    return None
+                except (ValueError, TypeError):
+                    pass
+            if isinstance(value, datetime):
+                return None
+            return (
+                f"Trường '{field_name}' phải là datetime (ISO format), "
+                f"nhận được: {type(value).__name__} ({value!r})"
+            )
+
+        return None
+
+    def _split_key(self, key: str, separator: str) -> List[str]:
+        """
+        Tách key đã flatten thành danh sách parts.
+
+        Xử lý cả array index notation: user.tags[0]
+        => ["user", "tags", "[0]"]
+
+        Args:
+            key: Key đã flatten
+            separator: Dấu phân tách
+
+        Returns:
+            Danh sách parts
+        """
+        # Split theo separator trước
+        parts = key.split(separator)
+
+        result = []
+        for part in parts:
+            # Kiểm tra có array index không
+            if "[" in part:
+                # Tách phần key và array index
+                bracket_idx = part.index("[")
+                key_part = part[:bracket_idx]
+                if key_part:
+                    result.append(key_part)
+                result.append(part[bracket_idx:])
+            else:
+                result.append(part)
+
+        return result

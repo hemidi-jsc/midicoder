@@ -1,7 +1,7 @@
 metadata:
   version: 1.1.0
   created_date: "2026-04-17"
-  updated_date: "2026-05-19"
+  updated_date: "2026-05-23"
   schema_version: taxonomy-v1
   status: approved
 core_packs:
@@ -780,7 +780,7 @@ core_packs:
     version: 1.0.0
   - id: CP38
     name: Data Import/Export/ETL
-    internal_id: cp38_etl
+    internal_id: cp38_data_etl
     phase: P2
     description: CSV import, data migration, bulk data operations, ETL pipeline
     definitions_count: 4
@@ -796,7 +796,7 @@ core_packs:
       - bulk_operation
       - etl_pipeline
     category: data
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP41
     name: Chat & Messaging

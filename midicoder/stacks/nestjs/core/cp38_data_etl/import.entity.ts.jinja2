@@ -1,0 +1,881 @@
+/**
+ * Các TypeORM Entity cho Data Import/Export/ETL.
+ *
+ * Bao gồm 6 entities:
+ * - ImportJob: Theo dõi công việc import dữ liệu
+ * - ExportJob: Theo dõi công việc export dữ liệu
+ * - ETLJob: Theo dõi công việc ETL pipeline
+ * - ETLMapping: Ánh xạ trường cho phép biến đổi ETL
+ * - ImportError: Ghi lại lỗi từng hàng khi import
+ * - BulkConfig: Cấu hình xử lý hàng loạt
+ *
+ * CP38: Data Import/Export/ETL
+ */
+
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+  JoinColumn,
+  OneToOne,
+  OneToMany,
+} from 'typeorm';
+
+// ============================================================================
+// Enums cho trạng thái và loại công việc
+// ============================================================================
+
+/**
+ * Trạng thái của công việc import/export/ETL.
+ */
+export enum JobStatus {
+  PENDING = 'pending',
+  RUNNING = 'running',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  CANCELLED = 'cancelled',
+}
+
+/**
+ * Định dạng file import.
+ */
+export enum ImportFormat {
+  CSV = 'csv',
+  JSON = 'json',
+}
+
+/**
+ * Loại biến đổi trong pipeline ETL.
+ */
+export enum TransformType {
+  MAP = 'map',
+  FILTER = 'filter',
+  AGGREGATE = 'aggregate',
+  CONVERT = 'convert',
+  RENAME = 'rename',
+}
+
+/**
+ * Nguồn dữ liệu cho bước Extract.
+ */
+export enum ExtractSource {
+  FILE = 'file',
+  DATABASE = 'database',
+  API = 'api',
+}
+
+/**
+ * Chế độ ghi dữ liệu cho bước Load.
+ */
+export enum LoadMode {
+  INSERT = 'insert',
+  UPDATE = 'update',
+  UPSERT = 'upsert',
+  DELETE = 'delete',
+}
+
+// ============================================================================
+// ImportJob Entity
+// ============================================================================
+
+/**
+ * Entity cho công việc import dữ liệu.
+ *
+ * Theo dõi toàn bộ vòng đời của một lần import:
+ * từ tải file lên, xác thực, đến xử lý từng chunk.
+ *
+ * Usage:
+ * ```typescript
+ * const job = new ImportJob();
+ * job.fileName = 'data.csv';
+ * job.format = ImportFormat.CSV;
+ * job.totalRows = 10000;
+ * await repository.save(job);
+ * ```
+ */
+@Entity('import_jobs')
+@Index('idx_import_jobs_status', ['status'])
+@Index('idx_import_jobs_created', ['createdAt'])
+export class ImportJob {
+  /**
+   * Khóa chính UUID tự sinh.
+   */
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  /**
+   * Mã định danh ngắn gọn cho công việc.
+   * Dùng để tham chiếu qua API thay vì UUID dài.
+   */
+  @Column({ name: 'job_key', length: 64, unique: true })
+  jobKey: string;
+
+  /**
+   * Tên file gốc được upload.
+   */
+  @Column({ name: 'file_name', length: 512 })
+  fileName: string;
+
+  /**
+   * Đường dẫn lưu trữ file trên hệ thống.
+   */
+  @Column({ name: 'file_path', length: 1024 })
+  filePath: string;
+
+  /**
+   * Kích thước file tính bằng byte.
+   */
+  @Column({ name: 'file_size', type: 'bigint', default: 0 })
+  fileSize: number;
+
+  /**
+   * Định dạng file: CSV hoặc JSON.
+   */
+  @Column({
+    type: 'enum',
+    enum: ImportFormat,
+    default: ImportFormat.CSV,
+  })
+  format: ImportFormat;
+
+  /**
+   * Trạng thái hiện tại của công việc.
+   */
+  @Column({
+    type: 'enum',
+    enum: JobStatus,
+    default: JobStatus.PENDING,
+  })
+  status: JobStatus;
+
+  /**
+   * Tổng số hàng trong file.
+   * Được xác định sau khi đọc file.
+   */
+  @Column({ name: 'total_rows', type: 'int', default: 0 })
+  totalRows: number;
+
+  /**
+   * Số hàng đã xử lý thành công.
+   */
+  @Column({ name: 'processed_rows', type: 'int', default: 0 })
+  processedRows: number;
+
+  /**
+   * Số hàng có lỗi khi xử lý.
+   */
+  @Column({ name: 'error_rows', type: 'int', default: 0 })
+  errorRows: number;
+
+  /**
+   * Kích thước chunk (số hàng mỗi đợt xử lý).
+   */
+  @Column({ name: 'chunk_size', type: 'int', default: 1000 })
+  chunkSize: number;
+
+  /**
+   * Số lần thử lại tối đa cho mỗi chunk.
+   */
+  @Column({ name: 'max_retries', type: 'int', default: 3 })
+  maxRetries: number;
+
+  /**
+   * Thông tin lỗi tổng hợp (nếu công việc thất bại).
+   */
+  @Column({ name: 'error_message', type: 'text', nullable: true })
+  errorMessage: string | null;
+
+  /**
+   * Kết quả tóm tắt sau khi hoàn thành.
+   */
+  @Column({ name: 'result_summary', type: 'jsonb', nullable: true })
+  resultSummary: Record<string, any> | null;
+
+  /**
+   * Thời điểm tạo bản ghi (tự động).
+   */
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  /**
+   * Thời điểm cập nhật cuối (tự động).
+   */
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+
+  /**
+   * Thời điểm công việc bắt đầu chạy.
+   */
+  @Column({ name: 'started_at', type: 'timestamp', nullable: true })
+  startedAt: Date | null;
+
+  /**
+   * Thời điểm công việc hoàn thành (thành công hay thất bại).
+   */
+  @Column({ name: 'finished_at', type: 'timestamp', nullable: true })
+  finishedAt: Date | null;
+
+  /**
+   * Mối quan hệ 1-1 với danh sách lỗi hàng.
+   */
+  @OneToMany(() => ImportError, (error) => error.job)
+  errors: ImportError[];
+
+  /**
+   * Tính phần trăm tiến độ.
+   *
+   * @returns Phần trăm đã xử lý (0-100)
+   */
+  get progress(): number {
+    if (this.totalRows === 0) return 0;
+    return Math.round((this.processedRows / this.totalRows) * 100);
+  }
+
+  /**
+   * Kiểm tra công việc có đang chạy không.
+   *
+   * @returns True nếu trạng thái là RUNNING
+   */
+  get isRunning(): boolean {
+    return this.status === JobStatus.RUNNING;
+  }
+
+  /**
+   * Kiểm tra công việc đã hoàn thành (thành công) chưa.
+   *
+   * @returns True nếu trạng thái là COMPLETED
+   */
+  get isCompleted(): boolean {
+    return this.status === JobStatus.COMPLETED;
+  }
+}
+
+// ============================================================================
+// ExportJob Entity
+// ============================================================================
+
+/**
+ * Entity cho công việc export dữ liệu.
+ *
+ * Theo dõi quá trình xuất dữ liệu từ cơ sở dữ liệu
+ * sang các định dạng file như CSV, JSON.
+ *
+ * Usage:
+ * ```typescript
+ * const job = new ExportJob();
+ * job.jobKey = 'exp-001';
+ * job.format = ImportFormat.JSON;
+ * job.queryFilter = { status: 'active' };
+ * await repository.save(job);
+ * ```
+ */
+@Entity('export_jobs')
+@Index('idx_export_jobs_status', ['status'])
+@Index('idx_export_jobs_created', ['createdAt'])
+export class ExportJob {
+  /**
+   * Khóa chính UUID tự sinh.
+   */
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  /**
+   * Mã định danh ngắn gọn cho công việc export.
+   */
+  @Column({ name: 'job_key', length: 64, unique: true })
+  jobKey: string;
+
+  /**
+   * Tên file output sẽ được tạo ra.
+   */
+  @Column({ name: 'file_name', length: 512 })
+  fileName: string;
+
+  /**
+   * Đường dẫn lưu trữ file output.
+   */
+  @Column({ name: 'file_path', length: 1024, nullable: true })
+  filePath: string | null;
+
+  /**
+   * Kích thước file output tính bằng byte.
+   */
+  @Column({ name: 'file_size', type: 'bigint', default: 0 })
+  fileSize: number;
+
+  /**
+   * Định dạng export: CSV hoặc JSON.
+   */
+  @Column({
+    type: 'enum',
+    enum: ImportFormat,
+    default: ImportFormat.CSV,
+  })
+  format: ImportFormat;
+
+  /**
+   * Trạng thái hiện tại của công việc.
+   */
+  @Column({
+    type: 'enum',
+    enum: JobStatus,
+    default: JobStatus.PENDING,
+  })
+  status: JobStatus;
+
+  /**
+   * Bộ lọc truy vấn để lấy dữ liệu cần export.
+   * Lưu ở định dạng JSONB, ví dụ: { "status": "active", "createdAt": { "$gt": "..." } }
+   */
+  @Column({ name: 'query_filter', type: 'jsonb', nullable: true })
+  queryFilter: Record<string, any> | null;
+
+  /**
+   * Danh sách các trường cần export.
+   * Nếu null thì export tất cả trường.
+   */
+  @Column({ name: 'selected_columns', type: 'text', array: true, nullable: true })
+  selectedColumns: string[] | null;
+
+  /**
+   * Tên bảng/entity cần export.
+   */
+  @Column({ name: 'source_table', length: 256 })
+  sourceTable: string;
+
+  /**
+   * Tổng số hàng sẽ được export.
+   */
+  @Column({ name: 'total_rows', type: 'int', default: 0 })
+  totalRows: number;
+
+  /**
+   * Số hàng đã ghi vào file.
+   */
+  @Column({ name: 'exported_rows', type: 'int', default: 0 })
+  exportedRows: number;
+
+  /**
+   * Kích thước chunk khi xuất dữ liệu.
+   */
+  @Column({ name: 'chunk_size', type: 'int', default: 1000 })
+  chunkSize: number;
+
+  /**
+   * Thông tin lỗi (nếu có).
+   */
+  @Column({ name: 'error_message', type: 'text', nullable: true })
+  errorMessage: string | null;
+
+  /**
+   * Thời điểm tạo (tự động).
+   */
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  /**
+   * Thời điểm cập nhật (tự động).
+   */
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+
+  /**
+   * Thời điểm bắt đầu export.
+   */
+  @Column({ name: 'started_at', type: 'timestamp', nullable: true })
+  startedAt: Date | null;
+
+  /**
+   * Thời điểm hoàn thành export.
+   */
+  @Column({ name: 'finished_at', type: 'timestamp', nullable: true })
+  finishedAt: Date | null;
+
+  /**
+   * Tính phần trăm tiến độ export.
+   *
+   * @returns Phần trăm đã xuất (0-100)
+   */
+  get progress(): number {
+    if (this.totalRows === 0) return 0;
+    return Math.round((this.exportedRows / this.totalRows) * 100);
+  }
+}
+
+// ============================================================================
+// ETLJob Entity
+// ============================================================================
+
+/**
+ * Entity cho công việc ETL Pipeline.
+ *
+ * Quản lý toàn bộ quy trình Extract -> Transform -> Load,
+ * bao gồm cấu hình nguồn, biến đổi, và đích đến.
+ *
+ * Usage:
+ * ```typescript
+ * const job = new ETLJob();
+ * job.jobKey = 'etl-001';
+ * job.extractSource = ExtractSource.DATABASE;
+ * job.loadMode = LoadMode.UPSERT;
+ * await repository.save(job);
+ * ```
+ */
+@Entity('etl_jobs')
+@Index('idx_etl_jobs_status', ['status'])
+@Index('idx_etl_jobs_created', ['createdAt'])
+export class ETLJob {
+  /**
+   * Khóa chính UUID tự sinh.
+   */
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  /**
+   * Mã định danh ngắn gọn cho pipeline ETL.
+   */
+  @Column({ name: 'job_key', length: 64, unique: true })
+  jobKey: string;
+
+  /**
+   * Tên mô tả pipeline.
+   */
+  @Column({ name: 'pipeline_name', length: 256 })
+  pipelineName: string;
+
+  /**
+   * Mô tả chi tiết về pipeline.
+   */
+  @Column({ name: 'description', type: 'text', nullable: true })
+  description: string | null;
+
+  /**
+   * Trạng thái hiện tại của pipeline.
+   */
+  @Column({
+    type: 'enum',
+    enum: JobStatus,
+    default: JobStatus.PENDING,
+  })
+  status: JobStatus;
+
+  /**
+   * Nguồn dữ liệu cho bước Extract.
+   */
+  @Column({
+    name: 'extract_source',
+    type: 'enum',
+    enum: ExtractSource,
+  })
+  extractSource: ExtractSource;
+
+  /**
+   * Cấu hình nguồn extract (đường dẫn file, connection string, URL API).
+   */
+  @Column({ name: 'extract_config', type: 'jsonb', nullable: true })
+  extractConfig: Record<string, any> | null;
+
+  /**
+   * Chế độ ghi cho bước Load.
+   */
+  @Column({
+    name: 'load_mode',
+    type: 'enum',
+    enum: LoadMode,
+    default: LoadMode.INSERT,
+  })
+  loadMode: LoadMode;
+
+  /**
+   * Cấu hình đích đến cho bước Load (tên bảng, schema, v.v.).
+   */
+  @Column({ name: 'load_config', type: 'jsonb', nullable: true })
+  loadConfig: Record<string, any> | null;
+
+  /**
+   * Danh sách các biến đổi trong pipeline.
+   * Mảng các đối tượng { type, config }.
+   */
+  @Column({ name: 'transforms', type: 'jsonb', default: '[]' })
+  transforms: Array<{ type: TransformType; config: Record<string, any> }> | null;
+
+  /**
+   * Tổng số bản ghi đã extract.
+   */
+  @Column({ name: 'extracted_rows', type: 'int', default: 0 })
+  extractedRows: number;
+
+  /**
+   * Tổng số bản ghi đã load vào đích.
+   */
+  @Column({ name: 'loaded_rows', type: 'int', default: 0 })
+  loadedRows: number;
+
+  /**
+   * Số bản ghi bị loại bỏ qua bước filter.
+   */
+  @Column({ name: 'filtered_rows', type: 'int', default: 0 })
+  filteredRows: number;
+
+  /**
+   * Thông tin lỗi (nếu pipeline thất bại).
+   */
+  @Column({ name: 'error_message', type: 'text', nullable: true })
+  errorMessage: string | null;
+
+  /**
+   * Kích thước batch khi xử lý.
+   */
+  @Column({ name: 'batch_size', type: 'int', default: 1000 })
+  batchSize: number;
+
+  /**
+   * Có cho phép rollback khi thất bại không.
+   */
+  @Column({ name: 'enable_rollback', type: 'boolean', default: true })
+  enableRollback: boolean;
+
+  /**
+   * Thời điểm tạo (tự động).
+   */
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  /**
+   * Thời điểm cập nhật (tự động).
+   */
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+
+  /**
+   * Thời điểm bắt đầu chạy pipeline.
+   */
+  @Column({ name: 'started_at', type: 'timestamp', nullable: true })
+  startedAt: Date | null;
+
+  /**
+   * Thời điểm hoàn thành pipeline.
+   */
+  @Column({ name: 'finished_at', type: 'timestamp', nullable: true })
+  finishedAt: Date | null;
+
+  /**
+   * Mối quan hệ 1-N với các ánh xạ ETL.
+   */
+  @OneToMany(() => ETLMapping, (mapping) => mapping.job)
+  mappings: ETLMapping[];
+
+  /**
+   * Tính phần trăm tiến độ của pipeline.
+   *
+   * @returns Phần trăm đã load (0-100)
+   */
+  get progress(): number {
+    if (this.extractedRows === 0) return 0;
+    return Math.round((this.loadedRows / this.extractedRows) * 100);
+  }
+}
+
+// ============================================================================
+// ETLMapping Entity
+// ============================================================================
+
+/**
+ * Entity cho ánh xạ trường trong pipeline ETL.
+ *
+ * Định nghĩa cách ánh xạ trường từ nguồn sang đích,
+ * bao gồm cả các biến đổi kèm theo.
+ *
+ * Usage:
+ * ```typescript
+ * const mapping = new ETLMapping();
+ * mapping.job = etlJob;
+ * mapping.sourceField = 'first_name';
+ * mapping.targetField = 'ten_han';
+ * mapping.transformType = TransformType.MAP;
+ * await mappingRepository.save(mapping);
+ * ```
+ */
+@Entity('etl_mappings')
+@Index('idx_etl_mappings_job', ['jobId'])
+export class ETLMapping {
+  /**
+   * Khóa chính UUID tự sinh.
+   */
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  /**
+   * ID của ETLJob mà mapping này thuộc về.
+   */
+  @Column({ name: 'job_id', type: 'uuid' })
+  jobId: string;
+
+  /**
+   * Mối quan hệ N-1 với ETLJob.
+   */
+  @JoinColumn({ name: 'job_id' })
+  @OneToOne(() => ETLJob)
+  job: ETLJob;
+
+  /**
+   * Tên trường ở nguồn dữ liệu.
+   */
+  @Column({ name: 'source_field', length: 256 })
+  sourceField: string;
+
+  /**
+   * Tên trường ở đích đến.
+   */
+  @Column({ name: 'target_field', length: 256 })
+  targetField: string;
+
+  /**
+   * Loại biến đổi áp dụng cho ánh xạ này.
+   * Null nếu không có biến đổi (ánh xạ trực tiếp).
+   */
+  @Column({
+    name: 'transform_type',
+    type: 'enum',
+    enum: TransformType,
+    nullable: true,
+  })
+  transformType: TransformType | null;
+
+  /**
+   * Cấu hình chi tiết cho biến đổi.
+   * Ví dụ: { "dateFormat": "yyyy-MM-dd" } cho transform CONVERT
+   */
+  @Column({ name: 'transform_config', type: 'jsonb', nullable: true })
+  transformConfig: Record<string, any> | null;
+
+  /**
+   * Giá trị mặc định nếu trường nguồn rỗng.
+   */
+  @Column({ name: 'default_value', type: 'text', nullable: true })
+  defaultValue: string | null;
+
+  /**
+   * Thứ tự xử lý (cho các pipeline nhiều bước).
+   */
+  @Column({ name: 'order_index', type: 'int', default: 0 })
+  orderIndex: number;
+
+  /**
+   * Có bắt buộc không (nếu true, hàng bị loại nếu trường nguồn null).
+   */
+  @Column({ name: 'required', type: 'boolean', default: false })
+  required: boolean;
+
+  /**
+   * Thời điểm tạo (tự động).
+   */
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  /**
+   * Thời điểm cập nhật (tự động).
+   */
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+
+// ============================================================================
+// ImportError Entity
+// ============================================================================
+
+/**
+ * Entity cho lỗi từng hàng khi import.
+ *
+ * Ghi lại chi tiết lỗi khi một hàng không thể xử lý,
+ * giúp người dùng xác định và sửa dữ liệu.
+ *
+ * Usage:
+ * ```typescript
+ * const error = new ImportError();
+ * error.job = importJob;
+ * error.rowNumber = 42;
+ * error.rowData = { name: '', email: 'invalid' };
+ * error.errorMessage = 'Trường name không được để trống';
+ * await errorRepository.save(error);
+ * ```
+ */
+@Entity('import_errors')
+@Index('idx_import_errors_job', ['jobId'])
+@Index('idx_import_errors_row', ['jobId', 'rowNumber'])
+export class ImportError {
+  /**
+   * Khóa chính UUID tự sinh.
+   */
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  /**
+   * ID của ImportJob chứa lỗi này.
+   */
+  @Column({ name: 'job_id', type: 'uuid' })
+  jobId: string;
+
+  /**
+   * Mối quan hệ N-1 với ImportJob.
+   */
+  @JoinColumn({ name: 'job_id' })
+  @OneToOne(() => ImportJob)
+  job: ImportJob;
+
+  /**
+   * Số thứ tự hàng trong file (bắt đầu từ 1, hàng 0 là header).
+   */
+  @Column({ name: 'row_number', type: 'int' })
+  rowNumber: number;
+
+  /**
+   * Dữ liệu gốc của hàng bị lỗi.
+   * Lưu ở định dạng JSON để dễ xem lại.
+   */
+  @Column({ name: 'row_data', type: 'jsonb' })
+  rowData: Record<string, any>;
+
+  /**
+   * Thông báo lỗi chi tiết.
+   */
+  @Column({ name: 'error_message', type: 'text' })
+  errorMessage: string;
+
+  /**
+   * Loại lỗi: validation, type_error, duplicate, constraint_violation, v.v.
+   */
+  @Column({ name: 'error_type', length: 128, default: 'validation' })
+  errorType: string;
+
+  /**
+   * Tên trường gây ra lỗi (nếu có thể xác định).
+   */
+  @Column({ name: 'field_name', length: 256, nullable: true })
+  fieldName: string | null;
+
+  /**
+   * Thời điểm ghi lỗi (tự động).
+   */
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+}
+
+// ============================================================================
+// BulkConfig Entity
+// ============================================================================
+
+/**
+ * Entity cho cấu hình xử lý hàng loạt.
+ *
+ * Lưu trữ các tham số cấu hình toàn cục cho việc
+ * xử lý dữ liệu theo batch/chunk.
+ *
+ * Usage:
+ * ```typescript
+ * const config = new BulkConfig();
+ * config.key = 'default';
+ * config.chunkSize = 500;
+ * config.maxRetries = 3;
+ * config.concurrentWorkers = 4;
+ * await repository.save(config);
+ * ```
+ */
+@Entity('bulk_configs')
+@Index('idx_bulk_configs_key', ['key'], { unique: true })
+export class BulkConfig {
+  /**
+   * Khóa chính UUID tự sinh.
+   */
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  /**
+   * Khóa định danh ngắn gọn cho cấu hình.
+   * Ví dụ: 'default', 'high_volume', 'sensitive_data'.
+   */
+  @Column({ length: 128, unique: true })
+  key: string;
+
+  /**
+   * Tên mô tả cho cấu hình.
+   */
+  @Column({ name: 'display_name', length: 256 })
+  displayName: string;
+
+  /**
+   * Mô tả chi tiết về mục đích sử dụng.
+   */
+  @Column({ name: 'description', type: 'text', nullable: true })
+  description: string | null;
+
+  /**
+   * Kích thước chunk - số hàng xử lý mỗi đợt.
+   */
+  @Column({ name: 'chunk_size', type: 'int', default: 1000 })
+  chunkSize: number;
+
+  /**
+   * Số lần thử lại tối đa cho mỗi chunk.
+   */
+  @Column({ name: 'max_retries', type: 'int', default: 3 })
+  maxRetries: number;
+
+  /**
+   * Thời gian chờ giữa các lần thử lại (ms).
+   */
+  @Column({ name: 'retry_delay_ms', type: 'int', default: 1000 })
+  retryDelayMs: number;
+
+  /**
+   * Số worker song song tối đa.
+   */
+  @Column({ name: 'concurrent_workers', type: 'int', default: 1 })
+  concurrentWorkers: number;
+
+  /**
+   * Thời gian chờ timeout cho mỗi chunk (giây).
+   */
+  @Column({ name: 'timeout_seconds', type: 'int', default: 300 })
+  timeoutSeconds: number;
+
+  /**
+   * Có bật rollback tự động khi chunk thất bại không.
+   */
+  @Column({ name: 'auto_rollback', type: 'boolean', default: true })
+  autoRollback: boolean;
+
+  /**
+   * Có bật logging chi tiết không.
+   */
+  @Column({ name: 'enable_logging', type: 'boolean', default: true })
+  enableLogging: boolean;
+
+  /**
+   * Cấu hình bổ sung dưới dạng JSON.
+   * Cho phép mở rộng linh hoạt.
+   */
+  @Column({ name: 'extra_config', type: 'jsonb', nullable: true })
+  extraConfig: Record<string, any> | null;
+
+  /**
+   * Có đang hoạt động không.
+   */
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive: boolean;
+
+  /**
+   * Thời điểm tạo (tự động).
+   */
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  /**
+   * Thời điểm cập nhật (tự động).
+   */
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}

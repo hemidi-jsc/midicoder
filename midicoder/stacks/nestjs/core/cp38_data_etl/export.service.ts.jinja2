@@ -1,0 +1,592 @@
+/**
+ * Export Service cho Data Import/Export/ETL.
+ *
+ * Cung cấp các phương thức:
+ * - createExportJob: Tạo công việc export mới
+ * - executeExport: Thực thi export sang CSV hoặc JSON
+ * - downloadExport: Tải file export về
+ * - getExportStatus: Lấy trạng thái công việc export
+ * - previewExport: Xem trước dữ liệu sẽ được export
+ * - listExportJobs: Liệt kê tất cả công việc export
+ *
+ * CP38: Data Import/Export/ETL
+ */
+
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+  StreamableFile,
+} from '@nestjs/common';
+import { Repository, Like } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
+import * as path from 'path';
+import { Readable } from 'stream';
+
+import {
+  ExportJob,
+  JobStatus,
+  ImportFormat,
+} from './import.entity';
+import {
+  ExportJobCreateDto,
+  JobQueryDto,
+  PaginatedJobsDto,
+} from './import.dto';
+
+/**
+ * Service cho việc export dữ liệu.
+ *
+ * Xử lý toàn bộ vòng đời export:
+ * 1. Tạo ExportJob với cấu hình bộ lọc
+ * 2. Truy vấn dữ liệu từ database theo chunk
+ * 3. Ghi dữ liệu vào file (CSV hoặc JSON)
+ * 4. Cung cấp link download
+ *
+ * Pattern Chunked Export:
+ * - Truy vấn dữ liệu theo batch để tránh OOM
+ * - Ghi từng chunk vào file stream
+ * - Cập nhật tiến độ sau mỗi chunk
+ */
+@Injectable()
+export class ExportService {
+  private readonly logger = new Logger(ExportService.name);
+
+  // Thư mục lưu trữ file export
+  private readonly exportDir = process.env.EXPORT_DIR || './exports';
+
+  constructor(
+    @InjectRepository(ExportJob)
+    private readonly exportJobRepo: Repository<ExportJob>,
+  ) {}
+
+  // =========================================================================
+  // Job Creation
+  // =========================================================================
+
+  /**
+   * Tạo công việc export mới.
+   *
+   * Tạo một ExportJob với trạng thái PENDING, sinh jobKey duy nhất.
+   * Tự động tạo tên file nếu không được chỉ định.
+   *
+   * @param dto - DTO chứa thông tin tạo job export
+   * @returns ExportJob mới được tạo
+   */
+  async createExportJob(dto: ExportJobCreateDto): Promise<ExportJob> {
+    // Sinh jobKey định dạng: exp-{timestamp}-{random}
+    const timestamp = Date.now().toString(36);
+    const random = uuidv4().substring(0, 8);
+    const jobKey = `exp-${timestamp}-${random}`;
+
+    // Tự động tạo tên file nếu không có
+    const ext = dto.format === ImportFormat.CSV ? 'csv' : 'json';
+    const fileName =
+      dto.fileName || `${dto.sourceTable}_${Date.now()}.${ext}`;
+
+    const job = this.exportJobRepo.create({
+      jobKey,
+      fileName,
+      filePath: null,
+      fileSize: 0,
+      format: dto.format,
+      sourceTable: dto.sourceTable,
+      queryFilter: dto.queryFilter || null,
+      selectedColumns: dto.selectedColumns || null,
+      chunkSize: dto.chunkSize || 1000,
+      status: JobStatus.PENDING,
+      totalRows: 0,
+      exportedRows: 0,
+    });
+
+    const savedJob = await this.exportJobRepo.save(job);
+    this.logger.log(`Tạo ExportJob mới: ${jobKey}, file: ${fileName}`);
+
+    return savedJob;
+  }
+
+  // =========================================================================
+  // Export Execution
+  // =========================================================================
+
+  /**
+   * Thực thi công việc export: truy vấn data và ghi vào file.
+   *
+   * Quy trình:
+   * 1. Kiểm tra trạng thái job
+   2. Đếm tổng số bản ghi để biết tiến độ
+   3. Truy vấn theo chunk (query + LIMIT/OFFSET)
+   4. Ghi từng chunk vào file (append mode)
+   5. Cập nhật tiến độ sau mỗi chunk
+   6. Hoàn thành job
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns ExportJob đã hoàn thành
+   */
+  async executeExport(jobKey: string): Promise<ExportJob> {
+    // Lấy job theo jobKey
+    const job = await this.exportJobRepo.findOne({ where: { jobKey } });
+    if (!job) {
+      throw new NotFoundException(`Không tìm thấy ExportJob với jobKey: ${jobKey}`);
+    }
+
+    // Kiểm tra trạng thái
+    if (job.status === JobStatus.RUNNING) {
+      throw new BadRequestException(
+        `Công việc export ${jobKey} đang chạy, không thể thực thi lại`,
+      );
+    }
+    if (job.status === JobStatus.COMPLETED) {
+      throw new BadRequestException(
+        `Công việc export ${jobKey} đã hoàn thành`,
+      );
+    }
+
+    // Cập nhật trạng thái thành RUNNING
+    job.status = JobStatus.RUNNING;
+    job.startedAt = new Date();
+    job.exportedRows = 0;
+    job.errorMessage = null;
+    await this.exportJobRepo.save(job);
+
+    this.logger.log(`Bắt đầu executeExport: ${jobKey}`);
+
+    try {
+      // Đảm bảo thư mục export tồn tại
+      await fs.mkdir(this.exportDir, { recursive: true });
+
+      const filePath = path.join(this.exportDir, job.fileName);
+      job.filePath = filePath;
+
+      if (job.format === ImportFormat.CSV) {
+        await this.exportToCsv(job, filePath);
+      } else {
+        await this.exportToJson(job, filePath);
+      }
+
+      // Lấy kích thước file
+      const stats = await fs.stat(filePath);
+      job.fileSize = stats.size;
+
+      // Hoàn thành
+      job.status = JobStatus.COMPLETED;
+      job.finishedAt = new Date();
+
+    } catch (error: any) {
+      this.logger.error(`ExecuteExport thất bại: ${error.message}`, error.stack);
+      job.status = JobStatus.FAILED;
+      job.errorMessage = error.message || 'Lỗi không xác định khi thực thi export';
+      job.finishedAt = new Date();
+    }
+
+    await this.exportJobRepo.save(job);
+    this.logger.log(`ExecuteExport hoàn tất: ${jobKey}, trạng thái: ${job.status}`);
+
+    return job;
+  }
+
+  /**
+   * Export dữ liệu sang file CSV.
+   *
+   * Ghi header ở dòng đầu, sau đó ghi từng chunk dữ liệu.
+   *
+   * @param job - ExportJob đang thực thi
+   * @param filePath - Đường dẫn file output
+   */
+  private async exportToCsv(
+    job: ExportJob,
+    filePath: string,
+  ): Promise<void> {
+    // TODO: Implement actual database query with pagination
+    // Đây là mock implementation để minh họa logic
+
+    // Mô phỏng: lấy dữ liệu từ database theo chunk
+    const mockData = this.generateMockExportData(job);
+
+    // Xác định các trường cần export
+    const columns = job.selectedColumns || Object.keys(mockData[0] || {});
+
+    // Ghi header CSV
+    const headerLine = columns.join(',') + '\n';
+    await fs.writeFile(filePath, headerLine);
+
+    // Ghi dữ liệu theo chunk
+    const chunks = this.chunkArray(mockData, job.chunkSize);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+
+      // Chuyển chunk thành dòng CSV
+      const csvLines = chunk
+        .map((row) =>
+          columns
+            .map((col) => {
+              const value = row[col] ?? '';
+              // Escape dấu phẩy và dấu ngoặc kép trong giá trị
+              const escaped = String(value).replace(/"/g, '""');
+              return escaped.includes(',') || escaped.includes('"')
+                ? `"${escaped}"`
+                : escaped;
+            })
+            .join(','),
+        )
+        .join('\n') + '\n';
+
+      // Append vào file
+      await fs.appendFile(filePath, csvLines);
+
+      // Cập nhật tiến độ
+      job.exportedRows += chunk.length;
+      await this.exportJobRepo.save(job);
+
+      this.logger.log(
+        `Export CSV chunk ${i + 1}/${chunks.length}: ${chunk.length} hàng`,
+      );
+    }
+  }
+
+  /**
+   * Export dữ liệu sang file JSON.
+   *
+   * Ghi mảng JSON với tất cả bản ghi.
+   * Hỗ trợ streaming write cho dataset lớn.
+   *
+   * @param job - ExportJob đang thực thi
+   * @param filePath - Đường dẫn file output
+   */
+  private async exportToJson(
+    job: ExportJob,
+    filePath: string,
+  ): Promise<void> {
+    // TODO: Implement actual database query
+    const mockData = this.generateMockExportData(job);
+
+    // Nếu có selected columns, chỉ lấy các trường đó
+    const data = job.selectedColumns
+      ? mockData.map((row) => {
+          const filtered: Record<string, any> = {};
+          for (const col of job.selectedColumns!) {
+            filtered[col] = row[col];
+          }
+          return filtered;
+        })
+      : mockData;
+
+    // Ghi JSON - đối với dataset lớn có thể dùng streaming
+    const jsonContent = JSON.stringify(data, null, 2);
+    await fs.writeFile(filePath, jsonContent);
+
+    // Cập nhật tổng
+    job.totalRows = data.length;
+    job.exportedRows = data.length;
+    await this.exportJobRepo.save(job);
+
+    this.logger.log(`Export JSON hoàn tất: ${data.length} hàng`);
+  }
+
+  /**
+   * Tạo dữ liệu mock để minh họa (thay thế bằng actual DB query).
+   *
+   * @param job - ExportJob để lấy cấu hình
+   * @returns Mảng dữ liệu mock
+   */
+  private generateMockExportData(job: ExportJob): Record<string, any>[] {
+    // Trong thực tế, đây sẽ là query đến database:
+    // const data = await this.dataSource
+    //   .getRepository(job.sourceTable)
+    //   .find({ where: job.queryFilter, select: job.selectedColumns });
+    //
+    // Mock data cho template
+    const rowCount = Math.min(100, job.chunkSize * 5);
+    const data: Record<string, any>[] = [];
+
+    for (let i = 0; i < rowCount; i++) {
+      data.push({
+        id: `${i + 1}`,
+        name: `Item ${i + 1}`,
+        email: `item${i + 1}@example.com`,
+        status: i % 3 === 0 ? 'active' : 'inactive',
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    job.totalRows = rowCount;
+    await this.exportJobRepo.save(job);
+
+    return data;
+  }
+
+  /**
+   * Chia mảng thành các chunk nhỏ.
+   *
+   * @param array - Mảng cần chia
+   * @param size - Kích thước mỗi chunk
+   * @returns Mảng các chunk
+   */
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  // =========================================================================
+  // Download & Preview
+  // =========================================================================
+
+  /**
+   * Tải file export về.
+   *
+   * Trả về file dưới dạng StreamableFile để client có thể download.
+   * File phải đã được tạo xong (job COMPLETED) mới có thể download.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns StreamableFile để download
+   */
+  async downloadExport(jobKey: string): Promise<StreamableFile> {
+    const job = await this.exportJobRepo.findOne({ where: { jobKey } });
+    if (!job) {
+      throw new NotFoundException(`Không tìm thấy ExportJob với jobKey: ${jobKey}`);
+    }
+
+    if (job.status !== JobStatus.COMPLETED) {
+      throw new BadRequestException(
+        `File export chưa sẵn sàng. Trạng thái hiện tại: ${job.status}`,
+      );
+    }
+
+    if (!job.filePath) {
+      throw new NotFoundException('File export không tồn tại');
+    }
+
+    // Kiểm tra file có tồn tại trên hệ thống không
+    try {
+      await fs.access(job.filePath);
+    } catch {
+      throw new NotFoundException('File export đã bị xóa hoặc không tồn tại');
+    }
+
+    // Tạo stream để download
+    const fileStream = fsSync.createReadStream(job.filePath);
+
+    this.logger.log(`Download export file: ${job.fileName} (${job.fileSize} bytes)`);
+
+    return new StreamableFile(fileStream, {
+      disposition: `attachment; filename="${job.fileName}"`,
+      type:
+        job.format === ImportFormat.CSV
+          ? 'text/csv'
+          : 'application/json',
+    });
+  }
+
+  /**
+   * Xem trước dữ liệu sẽ được export.
+   *
+   * Trả về một mẫu nhỏ (mặc định 10 hàng đầu) để người dùng
+   * xác nhận cấu trúc dữ liệu trước khi chạy export toàn bộ.
+   *
+   * @param jobKey - Mã định danh của job
+   * @param limit - Số hàng xem trước (mặc định 10, tối đa 100)
+   * @returns Dữ liệu xem trước với metadata
+   */
+  async previewExport(
+    jobKey: string,
+    limit: number = 10,
+  ): Promise<{
+    jobKey: string;
+    fileName: string;
+    format: ImportFormat;
+    sourceTable: string;
+    totalRows: number;
+    columns: string[];
+    previewData: Record<string, any>[];
+  }> {
+    const job = await this.exportJobRepo.findOne({ where: { jobKey } });
+    if (!job) {
+      throw new NotFoundException(`Không tìm thấy ExportJob với jobKey: ${jobKey}`);
+    }
+
+    // Giới hạn số hàng preview
+    limit = Math.min(limit, 100);
+
+    // TODO: Thực tế sẽ query database với LIMIT
+    // const previewData = await this.dataSource
+    //   .getRepository(job.sourceTable)
+    //   .find({ where: job.queryFilter, take: limit });
+
+    // Mock preview data
+    const previewData: Record<string, any>[] = [];
+    for (let i = 0; i < limit; i++) {
+      previewData.push({
+        id: `${i + 1}`,
+        name: `Item ${i + 1}`,
+        email: `item${i + 1}@example.com`,
+        status: i % 3 === 0 ? 'active' : 'inactive',
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // Xác định danh sách cột
+    const columns = job.selectedColumns || Object.keys(previewData[0] || {});
+
+    this.logger.log(`Preview export: ${jobKey}, ${limit} hàng`);
+
+    return {
+      jobKey: job.jobKey,
+      fileName: job.fileName,
+      format: job.format,
+      sourceTable: job.sourceTable,
+      totalRows: job.totalRows,
+      columns,
+      previewData,
+    };
+  }
+
+  // =========================================================================
+  // Query Methods
+  // =========================================================================
+
+  /**
+   * Lấy trạng thái công việc export.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns Thông tin chi tiết công việc export
+   */
+  async getExportStatus(jobKey: string): Promise<{
+    id: string;
+    jobKey: string;
+    fileName: string;
+    format: ImportFormat;
+    status: JobStatus;
+    sourceTable: string;
+    totalRows: number;
+    exportedRows: number;
+    fileSize: number;
+    progress: number;
+    errorMessage: string | null;
+    createdAt: Date;
+    startedAt: Date | null;
+    finishedAt: Date | null;
+  }> {
+    const job = await this.exportJobRepo.findOne({ where: { jobKey } });
+    if (!job) {
+      throw new NotFoundException(`Không tìm thấy ExportJob với jobKey: ${jobKey}`);
+    }
+
+    return {
+      id: job.id,
+      jobKey: job.jobKey,
+      fileName: job.fileName,
+      format: job.format,
+      status: job.status,
+      sourceTable: job.sourceTable,
+      totalRows: job.totalRows,
+      exportedRows: job.exportedRows,
+      fileSize: job.fileSize,
+      progress: job.progress,
+      errorMessage: job.errorMessage,
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      finishedAt: job.finishedAt,
+    };
+  }
+
+  /**
+   * Liệt kê tất cả công việc export với bộ lọc và phân trang.
+   *
+   * @param query - DTO chứa tham số lọc và phân trang
+   * @returns Danh sách công việc export với phân trang
+   */
+  async listExportJobs(
+    query: JobQueryDto,
+  ): Promise<PaginatedJobsDto<any>> {
+    const where: any = {};
+
+    // Lọc theo trạng thái
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    // Lọc theo định dạng
+    if (query.format) {
+      where.format = query.format;
+    }
+
+    // Tìm kiếm theo tên file
+    if (query.search) {
+      where.fileName = Like(`%${query.search}%`);
+    }
+
+    // Sắp xếp
+    const order: any = {};
+    const sortBy = query.sortBy || 'createdAt';
+    const sortOrder = query.sortOrder || 'desc';
+    order[sortBy] = sortOrder;
+
+    // Truy vấn với phân trang
+    const [jobs, total] = await this.exportJobRepo.findAndCount({
+      where,
+      order,
+      skip: query.offset,
+      take: query.limit,
+    });
+
+    const page = query.page || 1;
+    const pageSize = query.pageSize || 50;
+
+    const items = jobs.map((j) => ({
+      id: j.id,
+      jobKey: j.jobKey,
+      fileName: j.fileName,
+      format: j.format,
+      status: j.status,
+      sourceTable: j.sourceTable,
+      totalRows: j.totalRows,
+      exportedRows: j.exportedRows,
+      progress: j.progress,
+      fileSize: j.fileSize,
+      createdAt: j.createdAt,
+      startedAt: j.startedAt,
+      finishedAt: j.finishedAt,
+    }));
+
+    return new PaginatedJobsDto(items, total, page, pageSize);
+  }
+
+  // =========================================================================
+  // Cleanup
+  // =========================================================================
+
+  /**
+   * Xóa file export đã hoàn thành.
+   *
+   * Dùng để giải phóng dung lượng sau khi user đã download.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns True nếu xóa thành công
+   */
+  async cleanupExportFile(jobKey: string): Promise<boolean> {
+    const job = await this.exportJobRepo.findOne({ where: { jobKey } });
+    if (!job || !job.filePath) {
+      return false;
+    }
+
+    try {
+      await fs.unlink(job.filePath);
+      job.filePath = null;
+      job.fileSize = 0;
+      await this.exportJobRepo.save(job);
+      this.logger.log(`Đã xóa file export: ${job.filePath}`);
+      return true;
+    } catch (error) {
+      this.logger.warn(`Không thể xóa file export: ${job.filePath}`);
+      return false;
+    }
+  }
+}

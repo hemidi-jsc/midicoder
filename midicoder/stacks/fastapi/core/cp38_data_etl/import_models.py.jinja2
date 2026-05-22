@@ -1,0 +1,1100 @@
+# coding: utf-8
+"""
+SQLAlchemy Models cho Data Import/Export/ETL.
+
+Bao gồm các model:
+- ImportJob: Theo dõi tiến trình nhập liệu
+- ExportJob: Theo dõi tiến trình xuất dữ liệu
+- ETLJob: Theo dõi pipeline ETL
+- ETLMapping: Ánh xạ trường cho transform
+- ImportError: Lỗi từng hàng khi nhập liệu
+- BulkConfig: Cấu hình bulk operations
+
+CP38: Data Import/Export/ETL
+"""
+
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
+
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Uuid,
+    JSON,
+    Float,
+    Boolean,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+
+# ============================================================================
+# Enum: Trạng thái job
+# ============================================================================
+
+class JobStatus(str, Enum):
+    """Trạng thái của import/export/ETL jobs."""
+
+{% for status in job_statuses %}
+    {{ status }} = "{{ status }}"
+
+{% endfor %}
+
+    def __str__(self) -> str:
+        """Trả về giá trị enum."""
+        return self.value
+
+
+# ============================================================================
+# Enum: Định dạng file
+# ============================================================================
+
+class FileFormat(str, Enum):
+    """Định dạng file hỗ trợ."""
+
+{% for fmt in import_formats %}
+    {{ fmt }} = "{{ fmt }}"
+
+{% endfor %}
+
+    def __str__(self) -> str:
+        """Trả về giá trị enum."""
+        return self.value
+
+
+# ============================================================================
+# Enum: Loại load mode
+# ============================================================================
+
+class LoadMode(str, Enum):
+    """Chế độ load dữ liệu."""
+
+{% for mode in load_modes %}
+    {{ mode }} = "{{ mode }}"
+
+{% endfor %}
+
+    def __str__(self) -> str:
+        """Trả về giá trị enum."""
+        return self.value
+
+
+# ============================================================================
+# Model: ImportJob
+# ============================================================================
+
+class ImportJob:
+    """
+    Model theo dõi tiến trình nhập liệu.
+
+    Mỗi import job đại diện cho một lần upload và xử lý file nhập liệu.
+    Theo dõi số lượng hàng đã xử lý, lỗi, và trạng thái hiện tại.
+
+    Attributes:
+        job_key: Khóa duy nhất của job (UUID)
+        filename: Tên file gốc
+        file_format: Định dạng file (csv, json)
+        status: Trạng thái hiện tại
+        total_rows: Tổng số hàng trong file
+        processed_rows: Số hàng đã xử lý thành công
+        error_count: Số hàng có lỗi
+        file_size_bytes: Kích thước file (byte)
+        target_table: Bảng đích trong database
+        created_by: Người tạo job
+        error_message: Thông báo lỗi nếu job thất bại
+        started_at: Thời điểm bắt đầu xử lý
+        completed_at: Thời điểm hoàn thành
+        created_at: Thời điểm tạo job
+        updated_at: Thời điểm cập nhật cuối
+    """
+
+    __tablename__ = "import_jobs"
+
+    # Khóa duy nhất của job
+    job_key: Mapped[str] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=lambda: str(uuid4()),
+        nullable=False,
+        index=True,
+        comment="Khóa duy nhất của import job (UUID)",
+    )
+
+    # Tên file gốc
+    filename: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False,
+        comment="Tên file gốc khi upload",
+    )
+
+    # Định dạng file
+    file_format: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        comment="Định dạng file: csv hoặc json",
+    )
+
+    # Trạng thái job
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=JobStatus.pending.value,
+        index=True,
+        comment="Trạng thái: pending, running, completed, failed, cancelled",
+    )
+
+    # Tổng số hàng
+    total_rows: Mapped[int] = mapped_column(
+        Integer,
+        nullable=True,
+        default=0,
+        comment="Tổng số hàng trong file",
+    )
+
+    # Số hàng đã xử lý thành công
+    processed_rows: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Số hàng đã xử lý thành công",
+    )
+
+    # Số hàng có lỗi
+    error_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Số hàng có lỗi",
+    )
+
+    # Kích thước file (byte)
+    file_size_bytes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=True,
+        default=0,
+        comment="Kích thước file tính bằng byte",
+    )
+
+    # Bảng đích
+    target_table: Mapped[Optional[str]] = mapped_column(
+        String(256),
+        nullable=True,
+        comment="Tên bảng đích trong database",
+    )
+
+    # Người tạo job
+    created_by: Mapped[Optional[str]] = mapped_column(
+        String(256),
+        nullable=True,
+        comment="User/tenant tạo job",
+    )
+
+    # Thông báo lỗi
+    error_message: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Thông báo lỗi chi tiết nếu job thất bại",
+    )
+
+    # Thời điểm bắt đầu xử lý
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        comment="Thời điểm bắt đầu execute job",
+    )
+
+    # Thời điểm hoàn thành
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        comment="Thời điểm hoàn thành (thành công hay thất bại)",
+    )
+
+    # Thời điểm tạo job
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        index=True,
+        comment="Thời điểm tạo import job",
+    )
+
+    # Thời điểm cập nhật cuối
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+        comment="Thời điểm cập nhật cuối cùng",
+    )
+
+    # Relationship: các lỗi hàng
+    row_errors: Mapped[List["ImportError"]] = relationship(
+        "ImportError",
+        back_populates="import_job",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    def to_dict(self, exclude: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Chuyển model thành dictionary.
+
+        Args:
+            exclude: List các field không include
+
+        Returns:
+            Dictionary chứa tất cả attributes
+        """
+        exclude = exclude or []
+        result = {}
+        for column in self.__table__.columns:
+            if column.name not in exclude:
+                value = getattr(self, column.name)
+                if isinstance(value, datetime):
+                    result[column.name] = value.isoformat()
+                elif isinstance(value, UUID):
+                    result[column.name] = str(value)
+                else:
+                    result[column.name] = value
+        return result
+
+    def progress_percentage(self) -> float:
+        """Tính phần trăm tiến trình."""
+        if not self.total_rows or self.total_rows == 0:
+            return 0.0
+        return round((self.processed_rows / self.total_rows) * 100, 2)
+
+    def is_terminal(self) -> bool:
+        """Kiểm tra job đã ở trạng thái cuối chưa."""
+        return self.status in (
+            JobStatus.completed.value,
+            JobStatus.failed.value,
+            JobStatus.cancelled.value,
+        )
+
+    def __repr__(self) -> str:
+        return f"<ImportJob(job_key={self.job_key}, status={self.status}, filename={self.filename})>"
+
+
+# ============================================================================
+# Model: ExportJob
+# ============================================================================
+
+class ExportJob:
+    """
+    Model theo dõi tiến trình xuất dữ liệu.
+
+    Mỗi export job đại diện cho một yêu cầu xuất dữ liệu ra file CSV/JSON.
+    Hỗ trợ phân trang và filter.
+
+    Attributes:
+        job_key: Khóa duy nhất của job (UUID)
+        output_filename: Tên file đầu ra
+        file_format: Định dạng xuất (csv, json)
+        status: Trạng thái hiện tại
+        total_rows: Tổng số hàng sẽ xuất
+        exported_rows: Số hàng đã xuất
+        query_filter: Bộ lọc query (JSON)
+        columns: Cột cần xuất (JSON list)
+        file_size_bytes: Kích thước file đầu ra
+        download_url: URL tải file
+        page_size: Số hàng mỗi trang
+        current_page: Trang hiện tại
+        created_by: Người tạo job
+        error_message: Thông báo lỗi
+        created_at: Thời điểm tạo
+        completed_at: Thời điểm hoàn thành
+        updated_at: Thời điểm cập nhật
+    """
+
+    __tablename__ = "export_jobs"
+
+    # Khóa duy nhất
+    job_key: Mapped[str] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=lambda: str(uuid4()),
+        nullable=False,
+        index=True,
+        comment="Khóa duy nhất của export job (UUID)",
+    )
+
+    # Tên file đầu ra
+    output_filename: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False,
+        comment="Tên file sẽ xuất ra",
+    )
+
+    # Định dạng file
+    file_format: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        comment="Định dạng xuất: csv hoặc json",
+    )
+
+    # Trạng thái
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=JobStatus.pending.value,
+        index=True,
+        comment="Trạng thái job",
+    )
+
+    # Tổng số hàng sẽ xuất
+    total_rows: Mapped[int] = mapped_column(
+        Integer,
+        nullable=True,
+        default=0,
+        comment="Tổng số hàng sẽ xuất",
+    )
+
+    # Số hàng đã xuất
+    exported_rows: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Số hàng đã xuất thành công",
+    )
+
+    # Bộ lọc query (JSON object)
+    query_filter: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Bộ lọc query dưới dạng JSON",
+    )
+
+    # Các cột cần xuất (JSON list)
+    columns: Mapped[Optional[List[str]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Danh sách cột cần xuất",
+    )
+
+    # Kích thước file đầu ra
+    file_size_bytes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=True,
+        default=0,
+        comment="Kích thước file đầu ra (byte)",
+    )
+
+    # URL tải file
+    download_url: Mapped[Optional[str]] = mapped_column(
+        String(1024),
+        nullable=True,
+        comment="URL để tải file đã xuất",
+    )
+
+    # Số hàng mỗi trang
+    page_size: Mapped[int] = mapped_column(
+        Integer,
+        nullable=True,
+        default=1000,
+        comment="Số hàng mỗi trang (dùng cho phân trang)",
+    )
+
+    # Trang hiện tại
+    current_page: Mapped[int] = mapped_column(
+        Integer,
+        nullable=True,
+        default=1,
+        comment="Trang hiện tại đang xử lý",
+    )
+
+    # Người tạo job
+    created_by: Mapped[Optional[str]] = mapped_column(
+        String(256),
+        nullable=True,
+        comment="User/tenant tạo job",
+    )
+
+    # Thông báo lỗi
+    error_message: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Thông báo lỗi nếu thất bại",
+    )
+
+    # Thời điểm tạo
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        index=True,
+        comment="Thời điểm tạo export job",
+    )
+
+    # Thời điểm hoàn thành
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        comment="Thời điểm hoàn thành",
+    )
+
+    # Thời điểm cập nhật
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+        comment="Thời điểm cập nhật cuối",
+    )
+
+    def to_dict(self, exclude: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Chuyển model thành dictionary."""
+        exclude = exclude or []
+        result = {}
+        for column in self.__table__.columns:
+            if column.name not in exclude:
+                value = getattr(self, column.name)
+                if isinstance(value, datetime):
+                    result[column.name] = value.isoformat()
+                elif isinstance(value, UUID):
+                    result[column.name] = str(value)
+                else:
+                    result[column.name] = value
+        return result
+
+    def progress_percentage(self) -> float:
+        """Tính phần trăm tiến trình."""
+        if not self.total_rows or self.total_rows == 0:
+            return 0.0
+        return round((self.exported_rows / self.total_rows) * 100, 2)
+
+    def is_terminal(self) -> bool:
+        """Kiểm tra job đã ở trạng thái cuối chưa."""
+        return self.status in (
+            JobStatus.completed.value,
+            JobStatus.failed.value,
+            JobStatus.cancelled.value,
+        )
+
+    def __repr__(self) -> str:
+        return f"<ExportJob(job_key={self.job_key}, status={self.status}, filename={self.output_filename})>"
+
+
+# ============================================================================
+# Model: ETLJob
+# ============================================================================
+
+class ETLJob:
+    """
+    Model theo dõi ETL pipeline.
+
+    Mỗi ETL job đại diện cho một pipeline hoàn chỉnh:
+    Extract → Transform → Load.
+
+    Attributes:
+        job_key: Khóa duy nhất của job (UUID)
+        pipeline_name: Tên pipeline
+        source_type: Nguồn dữ liệu (file, database, api)
+        source_config: Cấu hình nguồn (JSON)
+        transform_steps: Các bước transform (JSON list)
+        target_table: Bảng đích
+        load_mode: Chế độ load (insert, update, upsert, delete)
+        status: Trạng thái hiện tại
+        total_records: Tổng bản ghi cần xử lý
+        processed_records: Số bản ghi đã xử lý
+        error_count: Số bản ghi có lỗi
+        current_step: Bước đang thực hiện
+        rollback_enabled: Có rollback nếu lỗi không
+        created_by: Người tạo
+        error_message: Thông báo lỗi
+        started_at: Thời điểm bắt đầu
+        completed_at: Thời điểm hoàn thành
+        created_at: Thời điểm tạo
+        updated_at: Thời điểm cập nhật
+    """
+
+    __tablename__ = "etl_jobs"
+
+    # Khóa duy nhất
+    job_key: Mapped[str] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=lambda: str(uuid4()),
+        nullable=False,
+        index=True,
+        comment="Khóa duy nhất của ETL job (UUID)",
+    )
+
+    # Tên pipeline
+    pipeline_name: Mapped[str] = mapped_column(
+        String(256),
+        nullable=False,
+        comment="Tên của ETL pipeline",
+    )
+
+    # Nguồn dữ liệu
+    source_type: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        comment="Loại nguồn: file, database, api",
+    )
+
+    # Cấu hình nguồn (JSON)
+    source_config: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Cấu hình chi tiết cho nguồn dữ liệu",
+    )
+
+    # Các bước transform (JSON list)
+    transform_steps: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Danh sách các bước transform",
+    )
+
+    # Bảng đích
+    target_table: Mapped[str] = mapped_column(
+        String(256),
+        nullable=False,
+        comment="Tên bảng đích trong database",
+    )
+
+    # Chế độ load
+    load_mode: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=LoadMode.insert.value,
+        comment="Chế độ load: insert, update, upsert, delete",
+    )
+
+    # Trạng thái
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=JobStatus.pending.value,
+        index=True,
+        comment="Trạng thái job",
+    )
+
+    # Tổng bản ghi
+    total_records: Mapped[int] = mapped_column(
+        Integer,
+        nullable=True,
+        default=0,
+        comment="Tổng số bản ghi cần xử lý",
+    )
+
+    # Đã xử lý
+    processed_records: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Số bản ghi đã xử lý",
+    )
+
+    # Số lỗi
+    error_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Số bản ghi có lỗi",
+    )
+
+    # Bước đang thực hiện
+    current_step: Mapped[Optional[str]] = mapped_column(
+        String(128),
+        nullable=True,
+        comment="Bước đang thực hiện (extract, transform, load)",
+    )
+
+    # Có rollback không
+    rollback_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="Có rollback nếu pipeline thất bại",
+    )
+
+    # Người tạo
+    created_by: Mapped[Optional[str]] = mapped_column(
+        String(256),
+        nullable=True,
+        comment="User/tenant tạo job",
+    )
+
+    # Thông báo lỗi
+    error_message: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Thông báo lỗi chi tiết",
+    )
+
+    # Thời điểm bắt đầu
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        comment="Thời điểm bắt đầu pipeline",
+    )
+
+    # Thời điểm hoàn thành
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        comment="Thời điểm hoàn thành",
+    )
+
+    # Thời điểm tạo
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        index=True,
+        comment="Thời điểm tạo ETL job",
+    )
+
+    # Thời điểm cập nhật
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+        comment="Thời điểm cập nhật cuối",
+    )
+
+    # Relationship: mappings
+    mappings: Mapped[List["ETLMapping"]] = relationship(
+        "ETLMapping",
+        back_populates="etl_job",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    def to_dict(self, exclude: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Chuyển model thành dictionary."""
+        exclude = exclude or []
+        result = {}
+        for column in self.__table__.columns:
+            if column.name not in exclude:
+                value = getattr(self, column.name)
+                if isinstance(value, datetime):
+                    result[column.name] = value.isoformat()
+                elif isinstance(value, UUID):
+                    result[column.name] = str(value)
+                else:
+                    result[column.name] = value
+        return result
+
+    def progress_percentage(self) -> float:
+        """Tính phần trăm tiến trình."""
+        if not self.total_records or self.total_records == 0:
+            return 0.0
+        return round((self.processed_records / self.total_records) * 100, 2)
+
+    def is_terminal(self) -> bool:
+        """Kiểm tra job đã ở trạng thái cuối chưa."""
+        return self.status in (
+            JobStatus.completed.value,
+            JobStatus.failed.value,
+            JobStatus.cancelled.value,
+        )
+
+    def __repr__(self) -> str:
+        return f"<ETLJob(job_key={self.job_key}, status={self.status}, pipeline={self.pipeline_name})>"
+
+
+# ============================================================================
+# Model: ETLMapping
+# ============================================================================
+
+class ETLMapping:
+    """
+    Model ánh xạ trường cho ETL transform.
+
+    Định nghĩa cách ánh xạ trường từ nguồn sang đích.
+    Mỗi mapping liên kết với một ETLJob.
+
+    Attributes:
+        id: Khóa chính (auto increment)
+        etl_job_key: Khóa của ETL job liên kết
+        source_field: Tên trường nguồn
+        target_field: Tên trường đích
+        transform_type: Loại transform (map, filter, aggregate, convert, rename)
+        transform_config: Cấu hình transform (JSON)
+        is_required: Trường có bắt buộc không
+        default_value: Giá trị mặc định nếu trường trống
+        created_at: Thời điểm tạo
+    """
+
+    __tablename__ = "etl_mappings"
+
+    # Khóa chính
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        nullable=False,
+        comment="Primary key",
+    )
+
+    # Khóa ETL job
+    etl_job_key: Mapped[str] = mapped_column(
+        Uuid,
+        ForeignKey("etl_jobs.job_key", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Khóa của ETL job liên kết",
+    )
+
+    # Trường nguồn
+    source_field: Mapped[str] = mapped_column(
+        String(256),
+        nullable=False,
+        comment="Tên trường ở nguồn dữ liệu",
+    )
+
+    # Trường đích
+    target_field: Mapped[str] = mapped_column(
+        String(256),
+        nullable=False,
+        comment="Tên trường ở bảng đích",
+    )
+
+    # Loại transform
+    transform_type: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="Loại transform: map, filter, aggregate, convert, rename",
+    )
+
+    # Cấu hình transform (JSON)
+    transform_config: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Cấu hình chi tiết cho transform",
+    )
+
+    # Có bắt buộc không
+    is_required: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Trường có bắt buộc phải có giá trị không",
+    )
+
+    # Giá trị mặc định
+    default_value: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Giá trị mặc định nếu trường nguồn trống",
+    )
+
+    # Thời điểm tạo
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        comment="Thời điểm tạo mapping",
+    )
+
+    # Relationship
+    etl_job: Mapped["ETLJob"] = relationship(
+        "ETLJob",
+        back_populates="mappings",
+        lazy="selectin",
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển model thành dictionary."""
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if isinstance(value, datetime):
+                result[column.name] = value.isoformat()
+            elif isinstance(value, UUID):
+                result[column.name] = str(value)
+            else:
+                result[column.name] = value
+        return result
+
+    def __repr__(self) -> str:
+        return f"<ETLMapping({self.source_field} -> {self.target_field}, type={self.transform_type})>"
+
+
+# ============================================================================
+# Model: ImportError
+# ============================================================================
+
+class ImportError:
+    """
+    Model lưu lỗi từng hàng khi nhập liệu.
+
+    Mỗi lỗi đại diện cho một hàng có vấn đề trong quá trình import.
+    Lưu thông tin chi tiết để debug và retry.
+
+    Attributes:
+        id: Khóa chính (auto increment)
+        import_job_key: Khóa của import job liên kết
+        row_number: Số thứ tự hàng (bắt đầu từ 1)
+        row_data: Dữ liệu gốc của hàng (JSON)
+        error_type: Loại lỗi (validation, type_mismatch, constraint, duplicate)
+        error_message: Thông báo lỗi chi tiết
+        column_name: Cột gây lỗi (nếu có)
+        can_retry: Có thể retry hàng này không
+        retried_at: Thời điểm đã retry
+        created_at: Thời điểm tạo
+    """
+
+    __tablename__ = "import_errors"
+
+    # Khóa chính
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        nullable=False,
+        comment="Primary key",
+    )
+
+    # Khóa import job
+    import_job_key: Mapped[str] = mapped_column(
+        Uuid,
+        ForeignKey("import_jobs.job_key", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Khóa của import job liên kết",
+    )
+
+    # Số hàng
+    row_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+        comment="Số thứ tự hàng trong file (bắt đầu từ 1)",
+    )
+
+    # Dữ liệu hàng (JSON)
+    row_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Dữ liệu gốc của hàng có lỗi",
+    )
+
+    # Loại lỗi
+    error_type: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        comment="Loại lỗi: validation, type_mismatch, constraint, duplicate",
+    )
+
+    # Thông báo lỗi
+    error_message: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="Thông báo lỗi chi tiết",
+    )
+
+    # Cột gây lỗi
+    column_name: Mapped[Optional[str]] = mapped_column(
+        String(256),
+        nullable=True,
+        comment="Tên cột gây ra lỗi (nếu xác định được)",
+    )
+
+    # Có thể retry không
+    can_retry: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="Hàng này có thể thử lại được không",
+    )
+
+    # Thời điểm retry
+    retried_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        comment="Thời điểm đã retry thành công",
+    )
+
+    # Thời điểm tạo
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        comment="Thời điểm ghi nhận lỗi",
+    )
+
+    # Relationship
+    import_job: Mapped["ImportJob"] = relationship(
+        "ImportJob",
+        back_populates="row_errors",
+        lazy="selectin",
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển model thành dictionary."""
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if isinstance(value, datetime):
+                result[column.name] = value.isoformat()
+            elif isinstance(value, UUID):
+                result[column.name] = str(value)
+            else:
+                result[column.name] = value
+        return result
+
+    def __repr__(self) -> str:
+        return f"<ImportError(row={self.row_number}, type={self.error_type})>"
+
+
+# ============================================================================
+# Model: BulkConfig
+# ============================================================================
+
+class BulkConfig:
+    """
+    Model cấu hình cho bulk operations.
+
+    Lưu các tham số cấu hình như chunk size, retry count, timeout.
+    Có thể áp dụng cho import, export, hoặc ETL jobs.
+
+    Attributes:
+        id: Khóa chính (auto increment)
+        config_name: Tên cấu hình
+        chunk_size: Số hàng mỗi chunk
+        max_retries: Số lần retry tối đa
+        retry_delay_seconds: Thời gian chờ giữa các retry (giây)
+        timeout_seconds: Thời gian timeout cho mỗi chunk (giây)
+        parallel_workers: Số worker song song
+        batch_commit_size: Số bản ghi mỗi lần commit
+        continue_on_error: Tiếp tục khi gặp lỗi
+        max_error_rate: Tỷ lệ lỗi tối đa (0.0 - 1.0)
+        is_active: Cấu hình có đang active không
+        created_at: Thời điểm tạo
+        updated_at: Thời điểm cập nhật
+    """
+
+    __tablename__ = "bulk_configs"
+
+    # Khóa chính
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        nullable=False,
+        comment="Primary key",
+    )
+
+    # Tên cấu hình
+    config_name: Mapped[str] = mapped_column(
+        String(256),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Tên duy nhất của cấu hình",
+    )
+
+    # Chunk size
+    chunk_size: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1000,
+        comment="Số hàng xử lý mỗi chunk",
+    )
+
+    # Max retries
+    max_retries: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=3,
+        comment="Số lần retry tối đa cho mỗi chunk",
+    )
+
+    # Retry delay (giây)
+    retry_delay_seconds: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=1.0,
+        comment="Thời gian chờ giữa các lần retry (giây)",
+    )
+
+    # Timeout (giây)
+    timeout_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=300,
+        comment="Timeout cho mỗi chunk (giây)",
+    )
+
+    # Số worker song song
+    parallel_workers: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="Số worker xử lý song song",
+    )
+
+    # Batch commit size
+    batch_commit_size: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=500,
+        comment="Số bản ghi mỗi lần commit transaction",
+    )
+
+    # Tiếp tục khi lỗi
+    continue_on_error: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="Có tiếp tục xử lý khi gặp lỗi không",
+    )
+
+    # Tỷ lệ lỗi tối đa
+    max_error_rate: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.1,
+        comment="Tỷ lệ lỗi tối đa (0.0 - 1.0), vượt quá sẽ dừng job",
+    )
+
+    # Có active không
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        index=True,
+        comment="Cấu hình có đang active không",
+    )
+
+    # Thời điểm tạo
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        comment="Thời điểm tạo",
+    )
+
+    # Thời điểm cập nhật
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+        comment="Thời điểm cập nhật cuối",
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Chuyển model thành dictionary."""
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if isinstance(value, datetime):
+                result[column.name] = value.isoformat()
+            else:
+                result[column.name] = value
+        return result
+
+    def __repr__(self) -> str:
+        return f"<BulkConfig(name={self.config_name}, chunk={self.chunk_size}, workers={self.parallel_workers})>"

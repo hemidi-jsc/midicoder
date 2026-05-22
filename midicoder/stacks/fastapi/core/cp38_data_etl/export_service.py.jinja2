@@ -1,0 +1,665 @@
+# coding: utf-8
+"""
+Export Service cho Data Export.
+
+Cung cấp các phương thức:
+- create_export_job: Tạo export job mới
+- execute_export: Thực thi export job (CSV/JSON)
+- download_export: Tải file đã xuất
+- get_export_status: Lấy trạng thái export job
+- preview_export: Xem trước N hàng đầu tiên
+- list_export_jobs: Danh sách export jobs với pagination
+
+CP38: Data Import/Export/ETL
+"""
+
+import csv
+import io
+import json
+import logging
+import time
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+from sqlalchemy import select, func, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .import_models import ExportJob, JobStatus
+
+# Logger cho module
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Exception: ExportServiceError
+# ============================================================================
+
+class ExportServiceError(Exception):
+    """Exception base cho ExportService."""
+
+    def __init__(self, message: str, error_code: str = "EXPORT_ERROR") -> None:
+        self.message = message
+        self.error_code = error_code
+        super().__init__(self.message)
+
+
+class JobNotFoundError(ExportServiceError):
+    """Lỗi job không tìm thấy."""
+
+    def __init__(self, job_key: str) -> None:
+        super().__init__(
+            f"Export job không tìm thấy với key: {job_key}",
+            error_code="JOB_NOT_FOUND",
+        )
+
+
+class FileNotReadyError(ExportServiceError):
+    """Lỗi file chưa sẵn sàng để tải."""
+
+    def __init__(self, job_key: str) -> None:
+        super().__init__(
+            f"File chưa sẵn sàng để tải (job: {job_key})",
+            error_code="FILE_NOT_READY",
+        )
+
+
+# ============================================================================
+# ExportService
+# ============================================================================
+
+class ExportService:
+    """
+    Service chính cho export operations.
+
+    Quản lý toàn bộ vòng đời của export job:
+    1. Tạo export job với query filter và column selection
+    2. Thực thi export — query database, ghi ra CSV/JSON
+    3. Hỗ trợ phân trang cho export dữ liệu lớn
+    4. Preview N hàng đầu tiên trước khi export full
+    5. Download file đã xuất
+
+    Usage:
+        service = ExportService(db_session)
+
+        # Tạo export job
+        job = await service.create_export_job(
+            output_filename="users_export.csv",
+            file_format="csv",
+            query_filter={"status": "active"},
+            columns=["id", "name", "email"],
+        )
+
+        # Thực thi export
+        await service.execute_export(job.job_key)
+
+        # Tải file
+        content = await service.download_export(job.job_key)
+    """
+
+    def __init__(self, db: AsyncSession) -> None:
+        """
+        Khởi tạo ExportService.
+
+        Args:
+            db: AsyncSession cho database
+        """
+        self.db = db
+        # Cache file content trong memory (trong production nên dùng file storage/S3)
+        self._file_cache: Dict[str, bytes] = {}
+
+    async def create_export_job(
+        self,
+        output_filename: str,
+        file_format: str,
+        source_table: str,
+        query_filter: Optional[Dict[str, Any]] = None,
+        columns: Optional[List[str]] = None,
+        page_size: int = 1000,
+        created_by: Optional[str] = None,
+    ) -> ExportJob:
+        """
+        Tạo export job mới.
+
+        Job sẽ ở trạng thái pending, chưa thực thi export ngay.
+
+        Args:
+            output_filename: Tên file đầu ra (phải có extension .csv hoặc .json)
+            file_format: Định dạng file ("csv" hoặc "json")
+            source_table: Tên bảng nguồn để xuất dữ liệu
+            query_filter: Bộ lọc query (dict, optional) — các điều kiện WHERE
+            columns: Danh sách cột cần xuất (optional, None = tất cả)
+            page_size: Số hàng mỗi trang cho phân trang (default 1000)
+            created_by: Người tạo job (optional)
+
+        Returns:
+            ExportJob mới tạo
+
+        Raises:
+            ExportServiceError: Nếu tham số không hợp lệ
+        """
+        # Validate file format
+        if file_format not in ("csv", "json"):
+            raise ExportServiceError(
+                f"Định dạng file '{file_format}' không hợp lệ. Hãy dùng 'csv' hoặc 'json'",
+                error_code="INVALID_FORMAT",
+            )
+
+        # Validate output filename
+        if not output_filename:
+            raise ExportServiceError("Tên file đầu ra không được để trống")
+
+        # Tạo export job
+        job = ExportJob(
+            job_key=str(uuid4()),
+            output_filename=output_filename,
+            file_format=file_format,
+            status=JobStatus.pending.value,
+            query_filter=query_filter,
+            columns=columns,
+            page_size=page_size,
+            created_by=created_by,
+        )
+
+        # Lưu source table vào metadata
+        job._source_table = source_table  # type: ignore[attr-defined]
+
+        self.db.add(job)
+        await self.db.flush()
+
+        logger.info(
+            "Tạo export job: job_key=%s, filename=%s, table=%s",
+            job.job_key,
+            output_filename,
+            source_table,
+        )
+
+        return job
+
+    async def execute_export(self, job_key: str) -> ExportJob:
+        """
+        Thực thi export job.
+
+        Query dữ liệu từ database, phân trang nếu cần, và ghi ra file CSV/JSON.
+
+        Flow:
+        1. Validate job ở trạng thái pending
+        2. Build query từ source_table, columns, query_filter
+        3. Đếm tổng số hàng
+        4. Export dữ liệu theo từng page (chunked)
+        5. Ghi file vào memory cache (hoặc file storage)
+        6. Cập nhật trạng thái job
+
+        Args:
+            job_key: Khóa của export job
+
+        Returns:
+            ExportJob đã cập nhật
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+            ExportServiceError: Nếu job đang chạy hoặc đã hoàn thành
+        """
+        # Tìm job
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        # Validate trạng thái
+        if job.status == JobStatus.running.value:
+            raise ExportServiceError(
+                f"Export job đang chạy: {job_key}",
+                error_code="JOB_ALREADY_RUNNING",
+            )
+
+        if job.is_terminal():
+            raise ExportServiceError(
+                f"Job đã ở trạng thái '{job.status}', không thể execute lại",
+                error_code="JOB_TERMINAL",
+            )
+
+        # Cập nhật trạng thái thành running
+        job.status = JobStatus.running.value
+        job.started_at = datetime.utcnow()  # type: ignore[assignment]
+        await self.db.flush()
+
+        source_table = getattr(job, "_source_table", None)
+        if not source_table:
+            job.status = JobStatus.failed.value
+            job.error_message = "Không tìm thấy source_table cho job này"
+            job.completed_at = datetime.utcnow()
+            await self.db.flush()
+            return job
+
+        logger.info("Bắt đầu execute export job: job_key=%s, table=%s", job_key, source_table)
+
+        start_time = time.time()
+
+        try:
+            # Bước 1: Đếm tổng số hàng
+            count_sql = text(f"SELECT COUNT(*) FROM {source_table}")
+            params = {}
+
+            if job.query_filter:
+                where_clauses = []
+                for col, val in job.query_filter.items():
+                    param_key = f"f_{col}"
+                    where_clauses.append(f"{col} = :{param_key}")
+                    params[param_key] = val
+                count_sql = text(f"{count_sql.get_final_statement() if hasattr(count_sql, 'get_final_statement') else str(count_sql)} WHERE {' AND '.join(where_clauses)}")
+
+            count_result = await self.db.execute(count_sql, params)
+            total = count_result.scalar() or 0
+            job.total_rows = total
+
+            # Bước 2: Export dữ liệu theo từng trang
+            if job.file_format == "csv":
+                await self._export_csv(job, source_table, params)
+            else:
+                await self._export_json(job, source_table, params)
+
+            # Bước 3: Cập nhật trạng thái thành completed
+            job.status = JobStatus.completed.value
+            job.completed_at = datetime.utcnow()
+
+            duration = time.time() - start_time
+            logger.info(
+                "Export hoàn thành: job_key=%s, rows=%d, size=%d, duration=%.2fs",
+                job_key,
+                job.exported_rows,
+                job.file_size_bytes,
+                duration,
+            )
+
+        except Exception as e:
+            job.status = JobStatus.failed.value
+            job.error_message = f"Lỗi khi export: {str(e)}"
+            job.completed_at = datetime.utcnow()
+            logger.error("Export thất bại: job_key=%s, error=%s", job_key, str(e), exc_info=True)
+
+        await self.db.flush()
+        return job
+
+    async def _export_csv(
+        self,
+        job: ExportJob,
+        source_table: str,
+        filter_params: Dict[str, Any],
+    ) -> None:
+        """
+        Export dữ liệu ra file CSV.
+
+        Query từng page, ghi vào StringIO, sau đó encode thành bytes.
+
+        Args:
+            job: ExportJob đang xử lý
+            source_table: Tên bảng nguồn
+            filter_params: Tham số filter từ query_filter
+        """
+        output = io.StringIO()
+        writer = None
+        total_exported = 0
+
+        # Query trang đầu tiên để lấy columns
+        columns = job.columns or ["*"]
+        columns_str = ", ".join(columns) if columns and columns[0] != "*" else "*"
+
+        where_clause = ""
+        if job.query_filter:
+            where_parts = []
+            for col, val in job.query_filter.items():
+                param_key = f"f_{col}"
+                where_parts.append(f"{col} = :{param_key}")
+            where_clause = f" WHERE {' AND '.join(where_parts)}"
+
+        for page in range(1, 10000):  # Giới hạn tối đa 10000 trang
+            offset = (page - 1) * job.page_size
+            sql = text(
+                f"SELECT {columns_str} FROM {source_table}{where_clause} "
+                f"LIMIT :limit OFFSET :offset"
+            )
+            params = {**filter_params, "limit": job.page_size, "offset": offset}
+
+            result = await self.db.execute(sql, params)
+            rows = result.fetchall()
+
+            if not rows:
+                break
+
+            # Lấy column names từ lần query đầu tiên
+            if page == 1:
+                column_names = list(result.keys())
+                writer = csv.DictWriter(output, fieldnames=column_names)
+                writer.writeheader()
+
+            # Ghi rows
+            for row in rows:
+                row_dict = dict(row._mapping) if hasattr(row, "_mapping") else dict(zip(result.keys(), row))
+                writer.writerow(row_dict)
+                total_exported += 1
+
+            # Cập nhật tiến trình
+            job.exported_rows = total_exported
+            await self.db.flush()
+
+        # Đóng file và lưu vào cache
+        csv_content = output.getvalue()
+        encoded = csv_content.encode("utf-8-sig")  # UTF-8 với BOM cho Excel
+        self._file_cache[job.job_key] = encoded
+        job.file_size_bytes = len(encoded)
+
+        output.close()
+
+    async def _export_json(
+        self,
+        job: ExportJob,
+        source_table: str,
+        filter_params: Dict[str, Any],
+    ) -> None:
+        """
+        Export dữ liệu ra file JSON.
+
+        Query từng page, tích lũy vào list, sau đó serialize thành JSON.
+
+        Args:
+            job: ExportJob đang xử lý
+            source_table: Tên bảng nguồn
+            filter_params: Tham số filter từ query_filter
+        """
+        all_rows: List[Dict[str, Any]] = []
+        total_exported = 0
+
+        columns = job.columns or ["*"]
+        columns_str = ", ".join(columns) if columns and columns[0] != "*" else "*"
+
+        where_clause = ""
+        if job.query_filter:
+            where_parts = []
+            for col, val in job.query_filter.items():
+                param_key = f"f_{col}"
+                where_parts.append(f"{col} = :{param_key}")
+            where_clause = f" WHERE {' AND '.join(where_parts)}"
+
+        for page in range(1, 10000):
+            offset = (page - 1) * job.page_size
+            sql = text(
+                f"SELECT {columns_str} FROM {source_table}{where_clause} "
+                f"LIMIT :limit OFFSET :offset"
+            )
+            params = {**filter_params, "limit": job.page_size, "offset": offset}
+
+            result = await self.db.execute(sql, params)
+            rows = result.fetchall()
+
+            if not rows:
+                break
+
+            for row in rows:
+                row_dict = dict(row._mapping) if hasattr(row, "_mapping") else dict(zip(result.keys(), row))
+                # Serialize datetime objects
+                row_dict = self._serialize_row(row_dict)
+                all_rows.append(row_dict)
+                total_exported += 1
+
+            job.exported_rows = total_exported
+            await self.db.flush()
+
+        # Serialize thành JSON
+        json_content = json.dumps(all_rows, ensure_ascii=False, indent=2, default=str)
+        encoded = json_content.encode("utf-8")
+        self._file_cache[job.job_key] = encoded
+        job.file_size_bytes = len(encoded)
+
+    async def download_export(self, job_key: str) -> bytes:
+        """
+        Tải nội dung file đã xuất.
+
+        Chỉ trả về file nếu job đã completed.
+
+        Args:
+            job_key: Khóa của export job
+
+        Returns:
+            Nội dung file (bytes)
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+            FileNotReadyError: Nếu file chưa sẵn sàng
+        """
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        if job.status != JobStatus.completed.value:
+            raise FileNotReadyError(
+                f"Job chưa hoàn thành (status: {job.status})"
+            )
+
+        content = self._file_cache.get(job_key)
+        if content is None:
+            raise FileNotReadyError(
+                f"File không tìm thấy trong cache (job: {job_key})"
+            )
+
+        return content
+
+    async def get_export_status(self, job_key: str) -> Dict[str, Any]:
+        """
+        Lấy trạng thái của export job.
+
+        Args:
+            job_key: Khóa của export job
+
+        Returns:
+            Dictionary với thông tin job
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+        """
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        return {
+            "job_key": job.job_key,
+            "job_type": "export",
+            "output_filename": job.output_filename,
+            "file_format": job.file_format,
+            "status": job.status,
+            "total_rows": job.total_rows,
+            "exported_rows": job.exported_rows,
+            "progress_percentage": job.progress_percentage(),
+            "file_size_bytes": job.file_size_bytes,
+            "is_terminal": job.is_terminal(),
+            "download_ready": job.status == JobStatus.completed.value,
+            "error_message": job.error_message,
+            "created_at": job.created_at.isoformat(),
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        }
+
+    async def preview_export(
+        self,
+        job_key: str,
+        preview_count: int = 10,
+    ) -> Dict[str, Any]:
+        """
+        Xem trước N hàng đầu tiên của dữ liệu export.
+
+        Query source table với cùng filter, trả về preview_count hàng đầu.
+
+        Args:
+            job_key: Khóa của export job
+            preview_count: Số hàng xem trước (default 10)
+
+        Returns:
+            Dictionary với preview rows, columns, và total available
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+        """
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        source_table = getattr(job, "_source_table", None)
+        if not source_table:
+            return {
+                "job_key": job_key,
+                "preview_rows": [],
+                "total_preview": 0,
+                "total_available": None,
+                "columns": [],
+                "error": "Không tìm thấy source_table cho job này",
+            }
+
+        # Build query
+        columns = job.columns or ["*"]
+        columns_str = ", ".join(columns) if columns and columns[0] != "*" else "*"
+
+        where_clause = ""
+        params: Dict[str, Any] = {}
+        if job.query_filter:
+            where_parts = []
+            for col, val in job.query_filter.items():
+                param_key = f"f_{col}"
+                where_parts.append(f"{col} = :{param_key}")
+                params[param_key] = val
+            where_clause = f" WHERE {' AND '.join(where_parts)}"
+
+        # Query preview
+        sql = text(
+            f"SELECT {columns_str} FROM {source_table}{where_clause} "
+            f"LIMIT :limit"
+        )
+        params["limit"] = preview_count
+
+        result = await self.db.execute(sql, params)
+        rows = result.fetchall()
+        column_names = list(result.keys())
+
+        # Serialize rows
+        preview_rows = []
+        for row in rows:
+            row_dict = dict(row._mapping) if hasattr(row, "_mapping") else dict(zip(column_names, row))
+            row_dict = self._serialize_row(row_dict)
+            preview_rows.append(row_dict)
+
+        # Đếm total
+        count_sql = text(
+            f"SELECT COUNT(*) FROM {source_table}{where_clause}"
+        )
+        count_result = await self.db.execute(count_sql, {k: v for k, v in params.items() if k != "limit"})
+        total_available = count_result.scalar() or 0
+
+        return {
+            "job_key": job_key,
+            "preview_rows": preview_rows,
+            "total_preview": len(preview_rows),
+            "total_available": total_available,
+            "columns": column_names,
+        }
+
+    async def list_export_jobs(
+        self,
+        status: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        Lấy danh sách export jobs với filter và pagination.
+
+        Args:
+            status: Filter theo trạng thái (optional)
+            page: Số trang (bắt đầu từ 1)
+            page_size: Số jobs mỗi trang
+
+        Returns:
+            Dictionary với danh sách jobs và pagination
+        """
+        stmt = select(ExportJob)
+
+        if status:
+            stmt = stmt.where(ExportJob.status == status)
+
+        stmt = stmt.order_by(ExportJob.created_at.desc())
+
+        # Count
+        count_stmt = select(func.count()).select_from(ExportJob)
+        if status:
+            count_stmt = count_stmt.where(ExportJob.status == status)
+        count_result = await self.db.execute(count_stmt)
+        total = count_result.scalar() or 0
+
+        # Pagination
+        offset = (page - 1) * page_size
+        stmt = stmt.offset(offset).limit(page_size)
+
+        result = await self.db.execute(stmt)
+        jobs = list(result.scalars().all())
+
+        return {
+            "items": [j.to_dict() for j in jobs],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 0,
+        }
+
+    async def cancel_export(self, job_key: str) -> ExportJob:
+        """
+        Hủy export job đang chạy hoặc pending.
+
+        Args:
+            job_key: Khóa của export job
+
+        Returns:
+            ExportJob đã cancel
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+        """
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        if job.is_terminal():
+            raise ExportServiceError(
+                f"Không thể cancel job đã ở trạng thái '{job.status}'",
+                error_code="CANNOT_CANCEL",
+            )
+
+        job.status = JobStatus.cancelled.value
+        job.completed_at = datetime.utcnow()
+        await self.db.flush()
+
+        logger.info("Export job bị hủy: job_key=%s", job_key)
+        return job
+
+    # ========================================================================
+    # Internal methods
+    # ========================================================================
+
+    async def _get_job_by_key(self, job_key: str) -> Optional[ExportJob]:
+        """Tìm export job theo job_key."""
+        stmt = select(ExportJob).where(ExportJob.job_key == job_key)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    def _serialize_row(row: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Serialize các giá trị datetime trong row thành string.
+
+        Args:
+            row: Dictionary với row data
+
+        Returns:
+            Row đã được serialize
+        """
+        serialized = {}
+        for key, value in row.items():
+            if isinstance(value, datetime):
+                serialized[key] = value.isoformat()
+            else:
+                serialized[key] = value
+        return serialized

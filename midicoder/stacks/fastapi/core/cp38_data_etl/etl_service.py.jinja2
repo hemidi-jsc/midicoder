@@ -1,0 +1,1318 @@
+# coding: utf-8
+"""
+ETL Service cho Data Pipeline (Extract → Transform → Load).
+
+Cung cấp các phương thức:
+- create_etl_pipeline: Tạo ETL job mới
+- run_pipeline: Chạy pipeline (extract → transform → load)
+- transform_map: Ánh xạ trường nguồn sang đích
+- transform_filter: Lọc bản ghi theo điều kiện
+- transform_aggregate: Tổng hợp/gộp dữ liệu
+- transform_convert: Chuyển đổi kiểu dữ liệu
+- transform_rename: Đổi tên trường
+- rollback: Rollback pipeline nếu thất bại
+
+CP38: Data Import/Export/ETL
+"""
+
+import asyncio
+import csv
+import io
+import json
+import logging
+import time
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from uuid import uuid4
+
+from sqlalchemy import select, text, insert, update, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .import_models import ETLJob, ETLMapping, JobStatus, LoadMode
+from .csv_parser import CSVParser
+from .json_parser import JSONParser
+
+# Logger cho module
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Exception: ETLServiceError
+# ============================================================================
+
+class ETLServiceError(Exception):
+    """Exception base cho ETLService."""
+
+    def __init__(self, message: str, error_code: str = "ETL_ERROR") -> None:
+        self.message = message
+        self.error_code = error_code
+        super().__init__(self.message)
+
+
+class JobNotFoundError(ETLServiceError):
+    """Lỗi job không tìm thấy."""
+
+    def __init__(self, job_key: str) -> None:
+        super().__init__(
+            f"ETL job không tìm thấy với key: {job_key}",
+            error_code="JOB_NOT_FOUND",
+        )
+
+
+class ExtractError(ETLServiceError):
+    """Lỗi khi extract dữ liệu."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="EXTRACT_ERROR")
+
+
+class TransformError(ETLServiceError):
+    """Lỗi khi transform dữ liệu."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="TRANSFORM_ERROR")
+
+
+class LoadError(ETLServiceError):
+    """Lỗi khi load dữ liệu."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="LOAD_ERROR")
+
+
+# ============================================================================
+# Transform Registry
+# ============================================================================
+
+# Bản đồ hàm transform — map từ transform type string sang hàm xử lý
+TRANSFORM_REGISTRY: Dict[str, Callable] = {}
+
+
+def register_transform(name: str) -> Callable:
+    """
+    Decorator để đăng ký hàm transform.
+
+    Usage:
+        @register_transform("custom_transform")
+        def custom_transform(records, config):
+            ...
+    """
+    def decorator(func: Callable) -> Callable:
+        TRANSFORM_REGISTRY[name] = func
+        return func
+    return decorator
+
+
+# ============================================================================
+# ETLService
+# ============================================================================
+
+class ETLService:
+    """
+    Service chính cho ETL pipeline.
+
+    Quản lý toàn bộ vòng đời của ETL job:
+    1. Create: Tạo pipeline với cấu hình source, transforms, target
+    2. Extract: Lấy dữ liệu từ nguồn (file, database, api)
+    3. Transform: Áp dụng các bước transform (map, filter, aggregate, convert, rename)
+    4. Load: Ghi dữ liệu vào bảng đích (insert, update, upsert, delete)
+    5. Rollback: Hoàn tác nếu pipeline thất bại
+
+    Flow ETL:
+        ┌──────────┐     ┌──────────────┐     ┌──────────┐
+        │ Extract  │────>│ Transform    │────>│ Load     │
+        │ (source) │     │ (pipeline)   │     │ (target) │
+        └──────────┘     └──────────────┘     └──────────┘
+             │                │                    │
+        file/database       map/filter          insert/upsert
+        /api               /aggregate          /update/delete
+                          /convert
+                          /rename
+
+    Usage:
+        service = ETLService(db_session)
+
+        # Tạo pipeline
+        job = await service.create_etl_pipeline(
+            pipeline_name="import_products",
+            source_type="file",
+            source_config={"path": "/data/products.csv"},
+            target_table="products",
+            load_mode="upsert",
+        )
+
+        # Chạy pipeline
+        await service.run_pipeline(job.job_key)
+    """
+
+    def __init__(self, db: AsyncSession) -> None:
+        """
+        Khởi tạo ETLService.
+
+        Args:
+            db: AsyncSession cho database
+        """
+        self.db = db
+
+    async def create_etl_pipeline(
+        self,
+        pipeline_name: str,
+        source_type: str,
+        source_config: Dict[str, Any],
+        target_table: str,
+        load_mode: str = "insert",
+        transform_steps: Optional[List[Dict[str, Any]]] = None,
+        mappings: Optional[List[Dict[str, Any]]] = None,
+        rollback_enabled: bool = True,
+        created_by: Optional[str] = None,
+    ) -> ETLJob:
+        """
+        Tạo ETL pipeline mới.
+
+        Pipeline sẽ ở trạng thái pending, chưa thực thi.
+
+        Args:
+            pipeline_name: Tên pipeline (duy nhất trong scope)
+            source_type: Loại nguồn dữ liệu (file, database, api)
+            source_config: Cấu hình chi tiết cho nguồn dữ liệu
+            target_table: Tên bảng đích trong database
+            load_mode: Chế độ load (insert, update, upsert, delete)
+            transform_steps: Danh sách các bước transform (optional)
+            mappings: Danh sách ánh xạ trường (optional)
+            rollback_enabled: Có rollback nếu thất bại (default True)
+            created_by: Người tạo (optional)
+
+        Returns:
+            ETLJob mới tạo
+
+        Raises:
+            ETLServiceError: Nếu tham số không hợp lệ
+        """
+        # Validate source_type
+        valid_sources = [s.value for s in ["file", "database", "api"]]
+        if source_type not in valid_sources:
+            raise ETLServiceError(
+                f"Source type '{source_type}' không hợp lệ. "
+                f"Hãy chọn trong: {', '.join(valid_sources)}",
+                error_code="INVALID_SOURCE_TYPE",
+            )
+
+        # Validate load_mode
+        valid_modes = [m.value for m in LoadMode]
+        if load_mode not in valid_modes:
+            raise ETLServiceError(
+                f"Load mode '{load_mode}' không hợp lệ. "
+                f"Hãy chọn trong: {', '.join(valid_modes)}",
+                error_code="INVALID_LOAD_MODE",
+            )
+
+        # Validate transform_steps
+        if transform_steps:
+            valid_types = ["map", "filter", "aggregate", "convert", "rename"]
+            for step in transform_steps:
+                if step.get("type") not in valid_types:
+                    raise ETLServiceError(
+                        f"Transform type '{step.get('type')}' không hợp lệ. "
+                        f"Hãy chọn trong: {', '.join(valid_types)}",
+                        error_code="INVALID_TRANSFORM_TYPE",
+                    )
+
+        # Tạo ETL job
+        job = ETLJob(
+            job_key=str(uuid4()),
+            pipeline_name=pipeline_name,
+            source_type=source_type,
+            source_config=source_config,
+            transform_steps=transform_steps or [],
+            target_table=target_table,
+            load_mode=load_mode,
+            status=JobStatus.pending.value,
+            rollback_enabled=rollback_enabled,
+            created_by=created_by,
+        )
+
+        self.db.add(job)
+        await self.db.flush()
+
+        # Tạo ETL mappings nếu có
+        if mappings:
+            for mapping_data in mappings:
+                mapping = ETLMapping(
+                    etl_job_key=job.job_key,
+                    source_field=mapping_data["source_field"],
+                    target_field=mapping_data["target_field"],
+                    transform_type=mapping_data.get("transform_type"),
+                    transform_config=mapping_data.get("transform_config"),
+                    is_required=mapping_data.get("is_required", False),
+                    default_value=mapping_data.get("default_value"),
+                )
+                self.db.add(mapping)
+
+        await self.db.flush()
+
+        logger.info(
+            "Tạo ETL pipeline: job_key=%s, name=%s, source=%s, target=%s",
+            job.job_key,
+            pipeline_name,
+            source_type,
+            target_table,
+        )
+
+        return job
+
+    async def run_pipeline(self, job_key: str) -> ETLJob:
+        """
+        Chạy ETL pipeline hoàn chỉnh: Extract → Transform → Load.
+
+        Thực thi từng bước theo thứ tự và cập nhật trạng thái job sau mỗi bước.
+
+        Flow:
+        1. Validate job ở trạng thái pending
+        2. Update status = running, current_step = extract
+        3. Extract dữ liệu từ nguồn
+        4. Update current_step = transform
+        5. Áp dụng từng bước transform
+        6. Update current_step = load
+        7. Load dữ liệu vào bảng đích
+        8. Cập nhật trạng thái completed hoặc failed
+
+        Nếu rollback_enabled = True và có lỗi ở bước load,
+        sẽ gọi rollback để hoàn tác các thay đổi.
+
+        Args:
+            job_key: Khóa của ETL job
+
+        Returns:
+            ETLJob đã cập nhật trạng thái
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+            ETLServiceError: Nếu job đã ở trạng thái cuối
+        """
+        # Tìm job
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        if job.status == JobStatus.running.value:
+            raise ETLServiceError(
+                f"ETL pipeline đang chạy: {job_key}",
+                error_code="PIPELINE_RUNNING",
+            )
+
+        if job.is_terminal():
+            raise ETLServiceError(
+                f"Pipeline đã ở trạng thái '{job.status}'",
+                error_code="PIPELINE_TERMINAL",
+            )
+
+        # Cập nhật trạng thái
+        job.status = JobStatus.running.value
+        job.started_at = datetime.utcnow()
+        await self.db.flush()
+
+        start_time = time.time()
+        records: List[Dict[str, Any]] = []
+        saved_state: Optional[List[Dict[str, Any]]] = None
+
+        logger.info("Bắt đầu chạy ETL pipeline: job_key=%s, name=%s", job_key, job.pipeline_name)
+
+        try:
+            # =================================================================
+            # Bước 1: Extract
+            # =================================================================
+            job.current_step = "extract"
+            await self.db.flush()
+
+            logger.info("Bước Extract: job_key=%s, source=%s", job_key, job.source_type)
+
+            records = await self._extract(job)
+
+            job.total_records = len(records)
+            await self.db.flush()
+
+            logger.info("Extract hoàn thành: %d bản ghi", len(records))
+
+            if not records:
+                job.status = JobStatus.completed.value
+                job.completed_at = datetime.utcnow()
+                job.current_step = "done"
+                await self.db.flush()
+                logger.warning("Pipeline kết thúc: không có dữ liệu từ extract")
+                return job
+
+            # =================================================================
+            # Bước 2: Transform
+            # =================================================================
+            job.current_step = "transform"
+            await self.db.flush()
+
+            logger.info("Bước Transform: job_key=%s, steps=%d", job_key, len(job.transform_steps or []))
+
+            if job.transform_steps:
+                for step_index, step in enumerate(job.transform_steps):
+                    step_type = step.get("type")
+                    step_config = step.get("config", {})
+
+                    logger.info(
+                        "Apply transform step %d/%d: type=%s",
+                        step_index + 1,
+                        len(job.transform_steps),
+                        step_type,
+                    )
+
+                    records = self._apply_transform(records, step_type, step_config)
+
+            # Áp dụng mappings (nếu có)
+            mappings = await self._get_mappings_for_job(job_key)
+            if mappings:
+                records = self._apply_mappings(records, mappings)
+
+            job.processed_records = len(records)
+            await self.db.flush()
+
+            logger.info("Transform hoàn thành: %d bản ghi sau transform", len(records))
+
+            # =================================================================
+            # Bước 3: Load
+            # =================================================================
+            job.current_step = "load"
+            await self.db.flush()
+
+            logger.info("Bước Load: job_key=%s, target=%s, mode=%s", job_key, job.target_table, job.load_mode)
+
+            # Lưu state để rollback nếu cần
+            if job.rollback_enabled:
+                saved_state = await self._capture_state_for_rollback(job)
+
+            # Load dữ liệu vào target
+            load_result = await self._load(job, records)
+
+            job.processed_records = load_result["success_count"]
+            job.error_count = load_result["error_count"]
+
+            if load_result["error_count"] > 0:
+                logger.warning(
+                    "Load có lỗi: %d thành công, %d lỗi",
+                    load_result["success_count"],
+                    load_result["error_count"],
+                )
+
+            # =================================================================
+            # Hoàn thành
+            # =================================================================
+            job.status = JobStatus.completed.value
+            job.completed_at = datetime.utcnow()
+            job.current_step = "done"
+
+            duration = time.time() - start_time
+
+            logger.info(
+                "ETL pipeline hoàn thành: job_key=%s, processed=%d, errors=%d, duration=%.2fs",
+                job_key,
+                job.processed_records,
+                job.error_count,
+                duration,
+            )
+
+        except ExtractError as e:
+            job.status = JobStatus.failed.value
+            job.error_message = f"Lỗi Extract: {str(e)}"
+            job.completed_at = datetime.utcnow()
+
+            logger.error("Extract thất bại: job_key=%s, error=%s", job_key, str(e))
+
+        except TransformError as e:
+            job.status = JobStatus.failed.value
+            job.error_message = f"Lỗi Transform: {str(e)}"
+            job.completed_at = datetime.utcnow()
+
+            logger.error("Transform thất bại: job_key=%s, error=%s", job_key, str(e))
+
+        except LoadError as e:
+            job.status = JobStatus.failed.value
+            job.error_message = f"Lỗi Load: {str(e)}"
+            job.completed_at = datetime.utcnow()
+
+            # Rollback nếu enabled
+            if job.rollback_enabled and saved_state:
+                await self.rollback(job, saved_state)
+                job.error_message += " (đã rollback)"
+
+            logger.error("Load thất bại: job_key=%s, error=%s", job_key, str(e))
+
+        except Exception as e:
+            job.status = JobStatus.failed.value
+            job.error_message = f"Lỗi hệ thống: {str(e)}"
+            job.completed_at = datetime.utcnow()
+
+            if job.rollback_enabled and saved_state:
+                await self.rollback(job, saved_state)
+
+            logger.error("Pipeline thất bại: job_key=%s, error=%s", job_key, str(e), exc_info=True)
+
+        await self.db.flush()
+        return job
+
+    # ========================================================================
+    # Transform Methods
+    # ========================================================================
+
+    def transform_map(
+        self,
+        records: List[Dict[str, Any]],
+        config: Dict[str, str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Transform Map — ánh xạ trường nguồn sang trường đích.
+
+        Config có dạng: {"source_field": "target_field", ...}
+
+        Example:
+            config = {"first_name": "ho_ten", "email_addr": "email"}
+            Input:  [{"first_name": "Anh", "email_addr": "a@b.com"}]
+            Output: [{"ho_ten": "Anh", "email": "a@b.com"}]
+
+        Args:
+            records: Danh sách bản ghi đầu vào
+            config: Config mapping {source: target}
+
+        Returns:
+            Danh sách bản ghi đã map
+        """
+        result = []
+        for record in records:
+            new_record = {}
+            for source_field, target_field in config.items():
+                value = record.get(source_field)
+                if value is not None:
+                    new_record[target_field] = value
+                # Giữ lại các trường không được map
+                if source_field not in config:
+                    pass  # Không copy các trường không trong config
+            # Copy các trường còn lại
+            for key, value in record.items():
+                if key not in config:
+                    new_record[key] = value
+            result.append(new_record)
+
+        logger.debug("Transform map: %d records, config=%s", len(result), config)
+        return result
+
+    def transform_filter(
+        self,
+        records: List[Dict[str, Any]],
+        config: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        Transform Filter — lọc bản ghi theo điều kiện.
+
+        Config có dạng: {"field": "value"} hoặc {"field": {"op": "value"}}
+        Các operators: "eq", "ne", "gt", "lt", "gte", "lte", "contains", "in"
+
+        Example:
+            config = {"status": "active", "age": {"op": "gt", "value": 18}}
+            => Lọc các bản ghi có status="active" và age > 18
+
+        Args:
+            records: Danh sách bản ghi đầu vào
+            config: Config filter {field: value} hoặc {field: {"op": op, "value": val}}
+
+        Returns:
+            Danh sách bản ghi sau khi lọc
+        """
+        result = []
+        for record in records:
+            if self._matches_filter(record, config):
+                result.append(record)
+
+        logger.debug("Transform filter: %d/%d records passed", len(result), len(records))
+        return result
+
+    def transform_aggregate(
+        self,
+        records: List[Dict[str, Any]],
+        config: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        Transform Aggregate — tổng hợp/gộp dữ liệu theo nhóm.
+
+        Config có dạng:
+        {
+            "group_by": ["category"],
+            "aggregations": {
+                "total_price": {"field": "price", "function": "sum"},
+                "avg_price": {"field": "price", "function": "avg"},
+                "count": {"function": "count"}
+            }
+        }
+
+        Các aggregation functions: "sum", "avg", "count", "min", "max", "first", "last"
+
+        Example:
+            Input:  [{"category": "A", "price": 10}, {"category": "A", "price": 20}]
+            Config: group_by=["category"], aggregations={"total": {"field": "price", "function": "sum"}}
+            Output: [{"category": "A", "total": 30}]
+
+        Args:
+            records: Danh sách bản ghi đầu vào
+            config: Config aggregate
+
+        Returns:
+            Danh sách bản ghi đã aggregate
+        """
+        group_by = config.get("group_by", [])
+        aggregations = config.get("aggregations", {})
+
+        if not group_by:
+            raise TransformError("Aggregate yêu cầu 'group_by' không rỗng")
+
+        # Nhóm records theo group_by fields
+        groups: Dict[tuple, List[Dict[str, Any]]] = {}
+        for record in records:
+            key = tuple(record.get(field, None) for field in group_by)
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(record)
+
+        # Aggregate từng nhóm
+        result = []
+        for key, group_records in groups.items():
+            aggregated = {}
+            # Thêm group_by fields
+            for field, value in zip(group_by, key):
+                aggregated[field] = value
+
+            # Tính aggregations
+            for agg_name, agg_config in aggregations.items():
+                func_name = agg_config.get("function", "sum")
+                field_name = agg_config.get("field")
+
+                values = []
+                if field_name:
+                    values = [
+                        r.get(field_name, 0)
+                        for r in group_records
+                        if r.get(field_name) is not None
+                    ]
+
+                aggregated[agg_name] = self._compute_aggregation(values, func_name)
+
+            result.append(aggregated)
+
+        logger.debug("Transform aggregate: %d groups from %d records", len(result), len(records))
+        return result
+
+    def transform_convert(
+        self,
+        records: List[Dict[str, Any]],
+        config: Dict[str, str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Transform Convert — chuyển đổi kiểu dữ liệu của trường.
+
+        Config có dạng: {"field_name": "target_type"}
+        Các kiểu: "int", "float", "str", "bool", "datetime", "upper", "lower", "strip"
+
+        Example:
+            config = {"age": "int", "name": "upper", "price": "float"}
+            Input:  [{"age": "25", "name": "anh", "price": "10.5"}]
+            Output: [{"age": 25, "name": "ANH", "price": 10.5}]
+
+        Args:
+            records: Danh sách bản ghi đầu vào
+            config: Config convert {field: target_type}
+
+        Returns:
+            Danh sách bản ghi đã convert kiểu
+        """
+        result = []
+        for record in records:
+            new_record = dict(record)
+            for field, target_type in config.items():
+                if field in new_record and new_record[field] is not None:
+                    try:
+                        new_record[field] = self._convert_value(new_record[field], target_type)
+                    except (ValueError, TypeError) as e:
+                        logger.warning(
+                            "Convert lỗi field=%s type=%s value=%s: %s",
+                            field, target_type, new_record.get(field), str(e),
+                        )
+                        # Giữ nguyên giá trị gốc nếu convert thất bại
+            result.append(new_record)
+
+        logger.debug("Transform convert: %d records, config=%s", len(result), config)
+        return result
+
+    def transform_rename(
+        self,
+        records: List[Dict[str, Any]],
+        config: Dict[str, str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Transform Rename — đổi tên trường.
+
+        Config có dạng: {"old_name": "new_name", ...}
+
+        Example:
+            config = {"user_name": "username", "user_email": "email"}
+            Input:  [{"user_name": "john", "user_email": "j@a.com"}]
+            Output: [{"username": "john", "email": "j@a.com"}]
+
+        Args:
+            records: Danh sách bản ghi đầu vào
+            config: Config rename {old: new}
+
+        Returns:
+            Danh sách bản ghi đã đổi tên trường
+        """
+        result = []
+        for record in records:
+            new_record = {}
+            for key, value in record.items():
+                new_key = config.get(key, key)
+                new_record[new_key] = value
+            result.append(new_record)
+
+        logger.debug("Transform rename: %d records, config=%s", len(result), config)
+        return result
+
+    async def rollback(
+        self,
+        job: ETLJob,
+        saved_state: List[Dict[str, Any]],
+    ) -> None:
+        """
+        Rollback các thay đổi từ ETL pipeline.
+
+        Khôi phục trạng thái bảng đích về trước khi load.
+        Hiện tại dùng approach đơn giản: xóa các bản ghi đã load
+        và chèn lại các bản ghi gốc.
+
+        Args:
+            job: ETL job cần rollback
+            saved_state: Trạng thái đã lưu trước khi load
+        """
+        logger.info("Rollback ETL pipeline: job_key=%s, target=%s", job.job_key, job.target_table)
+
+        try:
+            # Xóa các bản ghi đã load trong pipeline này
+            delete_stmt = text(
+                f"DELETE FROM {job.target_table} WHERE etl_job_key = :job_key"
+            )
+            await self.db.execute(delete_stmt, {"job_key": job.job_key})
+
+            # Khôi phục bản ghi gốc
+            for record in saved_state:
+                columns = list(record.keys())
+                placeholders = ", ".join(f":{col}" for col in columns)
+                col_names = ", ".join(columns)
+                insert_stmt = text(
+                    f"INSERT INTO {job.target_table} ({col_names}) VALUES ({placeholders})"
+                )
+                await self.db.execute(insert_stmt, record)
+
+            await self.db.flush()
+            logger.info("Rollback thành công: job_key=%s", job.job_key)
+
+        except Exception as e:
+            logger.error("Rollback thất bại: job_key=%s, error=%s", job.job_key, str(e), exc_info=True)
+            raise ETLServiceError(f"Rollback thất bại: {str(e)}", error_code="ROLLBACK_ERROR")
+
+    # ========================================================================
+    # Internal methods
+    # ========================================================================
+
+    async def _get_job_by_key(self, job_key: str) -> Optional[ETLJob]:
+        """Tìm ETL job theo job_key."""
+        stmt = select(ETLJob).where(ETLJob.job_key == job_key)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _get_mappings_for_job(self, job_key: str) -> List[ETLMapping]:
+        """Lấy danh sách mappings cho ETL job."""
+        stmt = select(ETLMapping).where(ETLMapping.etl_job_key == job_key)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _extract(self, job: ETLJob) -> List[Dict[str, Any]]:
+        """
+        Extract dữ liệu từ nguồn.
+
+        Hỗ trợ 3 loại nguồn:
+        - file: Đọc file CSV/JSON từ đường dẫn
+        - database: Query từ bảng nguồn trong database
+        - api: Gọi API endpoint (mock — cần implement theo API cụ thể)
+
+        Args:
+            job: ETL job với source_config
+
+        Returns:
+            Danh sách records đã extract
+        """
+        source_type = job.source_type
+        config = job.source_config or {}
+
+        if source_type == "file":
+            return await self._extract_from_file(config)
+        elif source_type == "database":
+            return await self._extract_from_database(config)
+        elif source_type == "api":
+            return await self._extract_from_api(config)
+        else:
+            raise ExtractError(f"Source type '{source_type}' không được hỗ trợ")
+
+    async def _extract_from_file(self, config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract từ file CSV/JSON."""
+        file_path = config.get("path", "")
+        file_format = config.get("format", "csv")
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            if file_format == "json":
+                parser = JSONParser()
+                return parser.parse_sync(content.encode("utf-8"))
+            else:
+                parser = CSVParser()
+                rows, _ = parser.parse_sync(content.encode("utf-8"))
+                return rows
+
+        except FileNotFoundError:
+            raise ExtractError(f"Không tìm thấy file: {file_path}")
+        except Exception as e:
+            raise ExtractError(f"Lỗi đọc file {file_path}: {str(e)}")
+
+    async def _extract_from_database(self, config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract từ database table."""
+        table = config.get("table", "")
+        columns = config.get("columns", ["*"])
+        where_clause = config.get("where", "")
+
+        columns_str = ", ".join(columns) if columns else "*"
+        where_str = f" WHERE {where_clause}" if where_clause else ""
+
+        sql = text(f"SELECT {columns_str} FROM {table}{where_str}")
+        result = await self.db.execute(sql)
+        rows = result.fetchall()
+
+        records = []
+        for row in rows:
+            record = dict(row._mapping) if hasattr(row, "_mapping") else dict(zip(result.keys(), row))
+            records.append(record)
+
+        return records
+
+    async def _extract_from_api(self, config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract từ API endpoint.
+
+        Hiện tại là mock implementation — trong production cần dùng httpx/aiohttp.
+
+        Args:
+            config: Config với "url", "method", "headers", "params"
+
+        Returns:
+            Danh sách records từ API response
+        """
+        # Mock: trả về dữ liệu mẫu từ config
+        mock_data = config.get("mock_data", [])
+
+        # Trong production, sẽ:
+        # import aiohttp
+        # async with aiohttp.ClientSession() as session:
+        #     async with session.get(config["url"], headers=config.get("headers", {})) as resp:
+        #         data = await resp.json()
+        #         return data if isinstance(data, list) else [data]
+
+        logger.warning("API extract đang dùng mock data — cần implement thực tế")
+        return mock_data
+
+    def _apply_transform(
+        self,
+        records: List[Dict[str, Any]],
+        transform_type: str,
+        config: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        Apply một bước transform vào danh sách records.
+
+        Args:
+            records: Danh sách records
+            transform_type: Loại transform
+            config: Config cho transform
+
+        Returns:
+            Records sau khi transform
+
+        Raises:
+            TransformError: Nếu transform type không hợp lệ
+        """
+        transform_map = {
+            "map": self.transform_map,
+            "filter": self.transform_filter,
+            "aggregate": self.transform_aggregate,
+            "convert": self.transform_convert,
+            "rename": self.transform_rename,
+        }
+
+        # Kiểm tra custom transform từ registry
+        if transform_type in TRANSFORM_REGISTRY:
+            transform_fn = TRANSFORM_REGISTRY[transform_type]
+            return transform_fn(records, config)
+
+        transform_fn = transform_map.get(transform_type)
+        if not transform_fn:
+            raise TransformError(
+                f"Transform type '{transform_type}' không được hỗ trợ. "
+                f"Hãy chọn trong: {', '.join(transform_map.keys())} hoặc custom transform"
+            )
+
+        return transform_fn(records, config)
+
+    def _apply_mappings(
+        self,
+        records: List[Dict[str, Any]],
+        mappings: List[ETLMapping],
+    ) -> List[Dict[str, Any]]:
+        """
+        Apply ETL mappings — ánh xạ và validate các trường.
+
+        Args:
+            records: Danh sách records
+            mappings: Danh sách ETLMapping
+
+        Returns:
+            Records đã apply mappings
+        """
+        result = []
+        for record in records:
+            new_record = {}
+            for mapping in mappings:
+                source_value = record.get(mapping.source_field)
+
+                # Kiểm tra required field
+                if mapping.is_required and source_value is None:
+                    if mapping.default_value is not None:
+                        source_value = mapping.default_value
+                    else:
+                        logger.warning(
+                            "Required field '%s' không có giá trị trong record row",
+                            mapping.source_field,
+                        )
+
+                # Apply transform nếu có
+                if mapping.transform_type and source_value is not None:
+                    try:
+                        source_value = self._convert_value(
+                            source_value,
+                            mapping.transform_config.get("type", "str") if mapping.transform_config else "str",
+                        )
+                    except (ValueError, TypeError):
+                        pass  # Giữ nguyên nếu convert lỗi
+
+                new_record[mapping.target_field] = source_value
+
+            # Giữ các trường không có mapping
+            mapped_sources = {m.source_field for m in mappings}
+            for key, value in record.items():
+                if key not in mapped_sources:
+                    new_record[key] = value
+
+            result.append(new_record)
+
+        return result
+
+    async def _load(
+        self,
+        job: ETLJob,
+        records: List[Dict[str, Any]],
+    ) -> Dict[str, int]:
+        """
+        Load dữ liệu vào bảng đích.
+
+        Hỗ trợ các chế độ: insert, update, upsert, delete.
+
+        Args:
+            job: ETL job với target_table và load_mode
+            records: Danh sách records cần load
+
+        Returns:
+            Dictionary với success_count và error_count
+        """
+        success_count = 0
+        error_count = 0
+
+        if not records:
+            return {"success_count": 0, "error_count": 0}
+
+        if job.load_mode == LoadMode.insert.value:
+            return await self._load_insert(job.target_table, records)
+        elif job.load_mode == LoadMode.update.value:
+            return await self._load_update(job.target_table, records)
+        elif job.load_mode == LoadMode.upsert.value:
+            return await self._load_upsert(job.target_table, records)
+        elif job.load_mode == LoadMode.delete.value:
+            return await self._load_delete(job.target_table, records)
+        else:
+            raise LoadError(f"Load mode '{job.load_mode}' không được hỗ trợ")
+
+    async def _load_insert(
+        self,
+        table: str,
+        records: List[Dict[str, Any]],
+    ) -> Dict[str, int]:
+        """Chế độ insert — chèn mới các bản ghi."""
+        success = 0
+        errors = 0
+
+        for record in records:
+            try:
+                columns = list(record.keys())
+                col_names = ", ".join(columns)
+                placeholders = ", ".join(f":{col}" for col in columns)
+                sql = text(f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})")
+                await self.db.execute(sql, record)
+                success += 1
+            except Exception as e:
+                errors += 1
+                logger.warning("Insert lỗi: %s", str(e))
+
+        return {"success_count": success, "error_count": errors}
+
+    async def _load_update(
+        self,
+        table: str,
+        records: List[Dict[str, Any]],
+    ) -> Dict[str, int]:
+        """Chế độ update — cập nhật bản ghi theo primary key (id)."""
+        success = 0
+        errors = 0
+
+        for record in records:
+            try:
+                # Lấy key (default là "id")
+                key_value = record.get("id")
+                if key_value is None:
+                    errors += 1
+                    continue
+
+                # Build SET clause (không bao gồm key)
+                set_fields = {k: v for k, v in record.items() if k != "id"}
+                if not set_fields:
+                    continue
+
+                set_clause = ", ".join(f"{k} = :{k}" for k in set_fields)
+                sql = text(f"UPDATE {table} SET {set_clause} WHERE id = :id")
+                await self.db.execute(sql, record)
+                success += 1
+            except Exception as e:
+                errors += 1
+                logger.warning("Update lỗi: %s", str(e))
+
+        return {"success_count": success, "error_count": errors}
+
+    async def _load_upsert(
+        self,
+        table: str,
+        records: List[Dict[str, Any]],
+    ) -> Dict[str, int]:
+        """
+        Chế độ upsert — insert nếu mới, update nếu tồn tại.
+
+        Dùng ON CONFLICT (PostgreSQL) hoặc INSERT ... ON DUPLICATE KEY (MySQL).
+        Hiện tại dùng approach: thử insert, nếu lỗi duplicate thì update.
+        """
+        success = 0
+        errors = 0
+
+        for record in records:
+            try:
+                # Thử insert
+                columns = list(record.keys())
+                col_names = ", ".join(columns)
+                placeholders = ", ".join(f":{col}" for col in columns)
+                sql = text(f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})")
+
+                try:
+                    await self.db.execute(sql, record)
+                    success += 1
+                except Exception:
+                    # Nếu insert lỗi (duplicate key), thử update
+                    key_value = record.get("id")
+                    if key_value:
+                        set_fields = {k: v for k, v in record.items() if k != "id"}
+                        if set_fields:
+                            set_clause = ", ".join(f"{k} = :{k}" for k in set_fields)
+                            update_sql = text(f"UPDATE {table} SET {set_clause} WHERE id = :id")
+                            await self.db.execute(update_sql, record)
+                    success += 1
+            except Exception as e:
+                errors += 1
+                logger.warning("Upsert lỗi: %s", str(e))
+
+        return {"success_count": success, "error_count": errors}
+
+    async def _load_delete(
+        self,
+        table: str,
+        records: List[Dict[str, Any]],
+    ) -> Dict[str, int]:
+        """Chế độ delete — xóa các bản ghi theo primary key."""
+        success = 0
+        errors = 0
+
+        for record in records:
+            try:
+                key_value = record.get("id")
+                if key_value is None:
+                    errors += 1
+                    continue
+
+                sql = text(f"DELETE FROM {table} WHERE id = :id")
+                await self.db.execute(sql, {"id": key_value})
+                success += 1
+            except Exception as e:
+                errors += 1
+                logger.warning("Delete lỗi: %s", str(e))
+
+        return {"success_count": success, "error_count": errors}
+
+    async def _capture_state_for_rollback(
+        self,
+        job: ETLJob,
+    ) -> List[Dict[str, Any]]:
+        """
+        Lưu trạng thái hiện tại của bảng đích để rollback sau này.
+
+        Args:
+            job: ETL job
+
+        Returns:
+            Danh sách records hiện tại trong bảng đích
+        """
+        sql = text(f"SELECT * FROM {job.target_table}")
+        try:
+            result = await self.db.execute(sql)
+            rows = result.fetchall()
+            return [dict(r._mapping) if hasattr(r, "_mapping") else dict(zip(result.keys(), r)) for r in rows]
+        except Exception as e:
+            logger.warning("Không thể capture state cho rollback: %s", str(e))
+            return []
+
+    # ========================================================================
+    # Helper: Filter matching
+    # ========================================================================
+
+    def _matches_filter(
+        self,
+        record: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> bool:
+        """
+        Kiểm tra record có khớp với filter config không.
+
+        Args:
+            record: Bản ghi cần kiểm tra
+            config: Config filter
+
+        Returns:
+            True nếu record khớp tất cả điều kiện
+        """
+        for field, condition in config.items():
+            value = record.get(field)
+
+            if isinstance(condition, dict):
+                # Format: {"op": "gt", "value": 18}
+                op = condition.get("op", "eq")
+                cmp_value = condition.get("value")
+                if not self._compare(value, op, cmp_value):
+                    return False
+            else:
+                # Format: {"field": "value"} => eq
+                if value != condition:
+                    return False
+
+        return True
+
+    def _compare(self, value: Any, op: str, cmp_value: Any) -> bool:
+        """So sánh giá trị theo operator."""
+        try:
+            if op == "eq":
+                return value == cmp_value
+            elif op == "ne":
+                return value != cmp_value
+            elif op == "gt":
+                return value > cmp_value
+            elif op == "lt":
+                return value < cmp_value
+            elif op == "gte":
+                return value >= cmp_value
+            elif op == "lte":
+                return value <= cmp_value
+            elif op == "contains":
+                return cmp_value in str(value)
+            elif op == "in":
+                return value in cmp_value
+            else:
+                return value == cmp_value
+        except (TypeError, ValueError):
+            return False
+
+    # ========================================================================
+    # Helper: Aggregate functions
+    # ========================================================================
+
+    def _compute_aggregation(
+        self,
+        values: List[Any],
+        func_name: str,
+    ) -> Any:
+        """Tính aggregation function trên danh sách values."""
+        if not values:
+            return 0
+
+        numeric_values = [v for v in values if isinstance(v, (int, float))]
+
+        if func_name == "sum":
+            return sum(numeric_values) if numeric_values else 0
+        elif func_name == "avg":
+            return sum(numeric_values) / len(numeric_values) if numeric_values else 0
+        elif func_name == "count":
+            return len(values)
+        elif func_name == "min":
+            return min(numeric_values) if numeric_values else None
+        elif func_name == "max":
+            return max(numeric_values) if numeric_values else None
+        elif func_name == "first":
+            return values[0]
+        elif func_name == "last":
+            return values[-1]
+        else:
+            return sum(numeric_values)  # Default: sum
+
+    # ========================================================================
+    # Helper: Convert value
+    # ========================================================================
+
+    def _convert_value(self, value: Any, target_type: str) -> Any:
+        """
+        Chuyển đổi kiểu dữ liệu của giá trị.
+
+        Args:
+            value: Giá trị cần convert
+            target_type: Kiểu đích (int, float, str, bool, upper, lower, strip, datetime)
+
+        Returns:
+            Giá trị đã convert
+        """
+        if target_type == "int":
+            return int(value)
+        elif target_type == "float":
+            return float(value)
+        elif target_type == "str":
+            return str(value)
+        elif target_type == "bool":
+            if isinstance(value, str):
+                return value.lower() in ("true", "1", "yes", "on")
+            return bool(value)
+        elif target_type == "upper":
+            return str(value).upper()
+        elif target_type == "lower":
+            return str(value).lower()
+        elif target_type == "strip":
+            return str(value).strip()
+        elif target_type == "datetime":
+            if isinstance(value, str):
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return value
+        else:
+            return value
+
+    # ========================================================================
+    # List ETL jobs
+    # ========================================================================
+
+    async def list_etl_jobs(
+        self,
+        status: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        Lấy danh sách ETL jobs với filter và pagination.
+
+        Args:
+            status: Filter theo trạng thái (optional)
+            page: Số trang
+            page_size: Số jobs mỗi trang
+
+        Returns:
+            Dictionary với jobs và pagination
+        """
+        stmt = select(ETLJob)
+
+        if status:
+            stmt = stmt.where(ETLJob.status == status)
+
+        stmt = stmt.order_by(ETLJob.created_at.desc())
+
+        # Count
+        count_stmt = select(func.count()).select_from(ETLJob)
+        if status:
+            count_stmt = count_stmt.where(ETLJob.status == status)
+        count_result = await self.db.execute(count_stmt)
+        total = count_result.scalar() or 0
+
+        # Pagination
+        offset = (page - 1) * page_size
+        stmt = stmt.offset(offset).limit(page_size)
+
+        result = await self.db.execute(stmt)
+        jobs = list(result.scalars().all())
+
+        return {
+            "items": [j.to_dict() for j in jobs],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 0,
+        }
+
+    async def get_etl_status(self, job_key: str) -> Dict[str, Any]:
+        """
+        Lấy trạng thái của ETL job.
+
+        Args:
+            job_key: Khóa ETL job
+
+        Returns:
+            Dictionary với thông tin job
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+        """
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        return {
+            "job_key": job.job_key,
+            "job_type": "etl",
+            "pipeline_name": job.pipeline_name,
+            "source_type": job.source_type,
+            "target_table": job.target_table,
+            "load_mode": job.load_mode,
+            "status": job.status,
+            "current_step": job.current_step,
+            "total_records": job.total_records,
+            "processed_records": job.processed_records,
+            "error_count": job.error_count,
+            "progress_percentage": job.progress_percentage(),
+            "is_terminal": job.is_terminal(),
+            "error_message": job.error_message,
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+            "created_at": job.created_at.isoformat(),
+        }

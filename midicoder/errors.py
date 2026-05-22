@@ -883,6 +883,28 @@ class ErrorCode(str, Enum):
     CP37_RENDER_FAILED = "MDC-CP37-022"
 
     # =========================================================================
+    # CP38: Data Import/Export/ETL Errors
+    # =========================================================================
+    CP38_INVALID_IMPORT_FILE = "MDC-CP38-001"
+    CP38_UNSUPPORTED_FORMAT = "MDC-CP38-002"
+    CP38_FILE_SIZE_EXCEEDED = "MDC-CP38-003"
+    CP38_INVALID_COLUMN_MAPPING = "MDC-CP38-004"
+    CP38_DUPLICATE_JOB_KEY = "MDC-CP38-005"
+    CP38_JOB_NOT_FOUND = "MDC-CP38-006"
+    CP38_JOB_ALREADY_RUNNING = "MDC-CP38-007"
+    CP38_INVALID_ETL_STEP_TYPE = "MDC-CP38-008"
+    CP38_ETL_MISSING_EXTRACT_STEP = "MDC-CP38-009"
+    CP38_ETL_MISSING_LOAD_STEP = "MDC-CP38-010"
+    CP38_INVALID_BULK_CHUNK_SIZE = "MDC-CP38-011"
+    CP38_INVALID_TRANSFORM_CONFIG = "MDC-CP38-012"
+    CP38_INVALID_EXPORT_FORMAT = "MDC-CP38-013"
+    CP38_TARGET_ENTITY_NOT_FOUND = "MDC-CP38-014"
+    CP38_CSV_PARSE_FAILED = "MDC-CP38-015"
+    CP38_JSON_PARSE_FAILED = "MDC-CP38-016"
+    CP38_TEMPLATE_NOT_FOUND = "MDC-CP38-017"
+    CP38_RENDER_FAILED = "MDC-CP38-018"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1343,6 +1365,26 @@ class MidicoderErrorManager:
         ErrorCode.CP37_DUPLICATE_CONFIG_KEY: "Config key đã tồn tại: {config_key}",
         ErrorCode.CP37_TEMPLATE_NOT_FOUND: "Jinja2 template không tìm thấy: {template}",
         ErrorCode.CP37_RENDER_FAILED: "Render template thất bại {template}: {reason}",
+
+        # CP38: Data Import/Export/ETL Error Templates
+        ErrorCode.CP38_INVALID_IMPORT_FILE: "Import file không hợp lệ: {file_path}",
+        ErrorCode.CP38_UNSUPPORTED_FORMAT: "Format file không được hỗ trợ: {format}",
+        ErrorCode.CP38_FILE_SIZE_EXCEEDED: "File size vượt quá giới hạn: {file_size} > {max_size}",
+        ErrorCode.CP38_INVALID_COLUMN_MAPPING: "Column mapping không hợp lệ: {detail}",
+        ErrorCode.CP38_DUPLICATE_JOB_KEY: "Job key đã tồn tại: {job_key}",
+        ErrorCode.CP38_JOB_NOT_FOUND: "Không tìm thấy job: {job_key}",
+        ErrorCode.CP38_JOB_ALREADY_RUNNING: "Job đang chạy, không thể cancel: {job_key}",
+        ErrorCode.CP38_INVALID_ETL_STEP_TYPE: "ETL step type không hợp lệ: {step_type}",
+        ErrorCode.CP38_ETL_MISSING_EXTRACT_STEP: "ETL pipeline phải có ít nhất 1 extract step",
+        ErrorCode.CP38_ETL_MISSING_LOAD_STEP: "ETL pipeline phải có ít nhất 1 load step",
+        ErrorCode.CP38_INVALID_BULK_CHUNK_SIZE: "Bulk chunk size phải > 0, nhận được: {chunk_size}",
+        ErrorCode.CP38_INVALID_TRANSFORM_CONFIG: "Transform config không hợp lệ: {detail}",
+        ErrorCode.CP38_INVALID_EXPORT_FORMAT: "Export format không hợp lệ: {format}",
+        ErrorCode.CP38_TARGET_ENTITY_NOT_FOUND: "Target entity không tồn tại: {entity}",
+        ErrorCode.CP38_CSV_PARSE_FAILED: "CSV parse thất bại: {reason}",
+        ErrorCode.CP38_JSON_PARSE_FAILED: "JSON parse thất bại: {reason}",
+        ErrorCode.CP38_TEMPLATE_NOT_FOUND: "Jinja2 template không tìm thấy: {template}",
+        ErrorCode.CP38_RENDER_FAILED: "Render template thất bại {template}: {reason}",
 
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",

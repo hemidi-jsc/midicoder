@@ -1,0 +1,527 @@
+/**
+* ImportService — CP38: Data Import/Export/ETL.
+*
+* Lớp dịch vụ API cho các thao tác import dữ liệu.
+* Sử dụng Fetch API, trả về phản hồi đã phân tích kiểu TypeScript.
+*/
+
+/* ===== Giao diện loại yêu cầu ===== */
+
+/**
+* Cấu hình để tạo import job mới.
+*/
+export interface CreateImportJobRequest {
+/** Tên thực thể mục tiêu (ví dụ: "products", "customers"). */
+targetEntity: string;
+/** Định dạng file (csv | json). */
+format: 'csv' | 'json';
+/** Bản đồ cột: { cột_tệp → trường_mục_tiêu }. */
+columnMapping: Record<string, string>;
+    /** Chế độ tải: 'insert' | 'update' | 'upsert' | 'truncate'. */
+    loadMode: 'insert' | 'update' | 'upsert' | 'truncate';
+    /** Bỏ qua dòng tiêu đề (csv). */
+    skipHeader?: boolean;
+    /** Số dòng tối đa trước khi giao dịch. */
+    batchSize?: number;
+    /** Loại transform áp dụng (tùy chọn). */
+    transformType?: string;
+    }
+
+    /**
+    * Bộ lọc khi liệt kê import jobs.
+    */
+    export interface ImportJobFilters {
+    /** Lọc theo trạng thái. */
+    status?: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+    /** Lọc theo thực thể mục tiêu. */
+    targetEntity?: string;
+    /** Giới hạn số lượng kết quả. */
+    limit?: number;
+    /** Dời trang. */
+    offset?: number;
+    }
+
+    /* ===== Giao diện loại phản hồi ===== */
+
+    /**
+    * Thông tin một import job.
+    */
+    export interface ImportJob {
+    /** Định danh job. */
+    jobKey: string;
+    /** Tên thực thể mục tiêu. */
+    targetEntity: string;
+    /** Trạng thái hiện tại. */
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+    /** Tên file đã tải lên. */
+    fileName: string;
+    /** Kích thước file (byte). */
+    fileSize: number;
+    /** Định dạng file. */
+    format: string;
+    /** Bản đồ cột. */
+    columnMapping: Record<string, string>;
+        /** Chế độ tải. */
+        loadMode: string;
+        /** Tiến trình phần trăm (0–100). */
+        progress: number;
+        /** Tổng số hàng xử lý. */
+        totalRows: number;
+        /** Số hàng thành công. */
+        successRows: number;
+        /** Số hàng thất bại. */
+        failedRows: number;
+        /** Số hàng bị bỏ qua. */
+        skippedRows: number;
+        /** Thời gian bắt đầu (ISO 8601). */
+        startedAt?: string;
+        /** Thời gian hoàn thành (ISO 8601). */
+        completedAt?: string;
+        /** Tin nhắn lỗi (nếu thất bại). */
+        errorMessage?: string;
+        }
+
+        /**
+        * Chi tiết lỗi theo từng dòng.
+        */
+        export interface RowError {
+        /** Số dòng trong file. */
+        rowNumber: number;
+        /** Tin nhắn lỗi. */
+        message: string;
+        /** Dữ liệu dòng (JSON object). */
+        rowData?: Record<string, unknown>;
+            }
+
+            /**
+            * Phản hồi từ API upload file.
+            */
+            export interface UploadResponse {
+            /** Khóa lưu trữ của file đã tải lên. */
+            fileKey: string;
+            /** Tên file. */
+            fileName: string;
+            /** Kích thước file. */
+            fileSize: number;
+            /** Loại MIME đã phát hiện. */
+            mimeType: string;
+            }
+
+            /**
+            * Phản hồi khi liệt kê jobs.
+            */
+            export interface JobListResponse {
+            /** Danh sách jobs. */
+            jobs: ImportJob[];
+            /** Tổng số jobs (cho phân trang). */
+            total: number;
+            }
+
+            /* ===== Dịch vụ API ===== */
+
+            /**
+            * Lớp dịch vụ Import — nhóm tất cả phương thức API liên quan import.
+            */
+            export class ImportService {
+            /** Cơ sở URL API (có thể ghi đè khi khởi tạo). */
+            private static baseUrl = '/api/data/import';
+
+            /**
+            * Cài đặt cơ sở URL cho tất cả yêu cầu.
+            */
+            public static setBaseUrl(url: string): void {
+            ImportService.baseUrl = url.replace(/\/$/, '');
+            }
+
+            /**
+            * Xây dựng Headers chung cho tất cả yêu cầu.
+            */
+            private static buildHeaders(contentType?: string): Headers {
+            const headers = new Headers();
+            if (contentType) {
+            headers.set('Content-Type', contentType);
+            } else {
+            headers.set('Content-Type', 'application/json');
+            }
+            // Token xác thực sẽ được thêm bởi HTTP interceptor của trình duyệt
+            return headers;
+            }
+
+            /**
+            * Xử lý phản hồi API — giải JSON hoặc ném lỗi.
+            */
+            private static async handleResponse<T>(response: Response): Promise<T> {
+                    if (!response.ok) {
+                    let errorBody = response.statusText;
+                    try {
+                    const body = await response.json();
+                    errorBody = body.message || body.error || response.statusText;
+                    } catch {
+                    // Giữ tin nhắn lỗi mặc định
+                    }
+                    throw new Error(`Import API error (${response.status}): ${errorBody}`);
+                    }
+                    return response.json();
+                    }
+
+                    /**
+                    * Tải lên file import (CSV/JSON) qua FormData.
+                    *
+                    * @param file - File đối tượng từ input hoặc drag-drop.
+                    * @param formData - FormData bổ sung (có thể chứa metadata).
+                    * @returns Thông tin file đã tải lên.
+                    */
+                    public static async uploadFile(
+                    file: File,
+                    formData?: Record<string, string>,
+                        ): Promise<UploadResponse> {
+                            const form = new FormData();
+                            form.append('file', file);
+
+                            // Thêm các trường bổ sung từ formData
+                            if (formData) {
+                            Object.entries(formData).forEach(([key, value]) => {
+                            form.append(key, value);
+                            });
+                            }
+
+                            const response = await fetch(`${ImportService.baseUrl}/upload`, {
+                            method: 'POST',
+                            headers: ImportService.buildHeaders('multipart/form-data'),
+                            body: form,
+                            });
+
+                            return ImportService.handleResponse<UploadResponse>(response);
+                                }
+
+                                /**
+                                * Tạo import job mới từ cấu hình.
+                                *
+                                * @param config - Cấu hình import (thực thể, bản đồ cột, chế độ tải).
+                                * @returns ImportJob mới được tạo.
+                                */
+                                public static async createImportJob(config: CreateImportJobRequest): Promise<ImportJob>
+                                    {
+                                    const response = await fetch(`${ImportService.baseUrl}/jobs`, {
+                                    method: 'POST',
+                                    headers: ImportService.buildHeaders(),
+                                    body: JSON.stringify(config),
+                                    });
+
+                                    return ImportService.handleResponse<ImportJob>(response);
+                                        }
+
+                                        /**
+                                        * Lấy trạng thái hiện tại của một import job.
+                                        *
+                                        * @param jobKey - Định danh job.
+                                        * @returns Thông tin job đã cập nhật.
+                                        */
+                                        public static async getJobStatus(jobKey: string): Promise<ImportJob> {
+                                            const response = await fetch(
+                                            `${ImportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}/status`,
+                                            { method: 'GET', headers: ImportService.buildHeaders() },
+                                            );
+
+                                            return ImportService.handleResponse<ImportJob>(response);
+                                                }
+
+                                                /**
+                                                * Liệt kê import jobs với bộ lọc.
+                                                *
+                                                * @param filters - Bộ lọc (trạng thái, thực thể, phân trang).
+                                                * @returns Danh sách jobs và tổng số.
+                                                */
+                                                public static async listJobs(filters?: ImportJobFilters): Promise
+                                                <JobListResponse> {
+                                                    const params = new URLSearchParams();
+                                                    if (filters) {
+                                                    if (filters.status) params.set('status', filters.status);
+                                                    if (filters.targetEntity) params.set('targetEntity',
+                                                    filters.targetEntity);
+                                                    if (filters.limit) params.set('limit', String(filters.limit));
+                                                    if (filters.offset) params.set('offset', String(filters.offset));
+                                                    }
+
+                                                    const response = await fetch(
+                                                    `${ImportService.baseUrl}/jobs?${params.toString()}`,
+                                                    { method: 'GET', headers: ImportService.buildHeaders() },
+                                                    );
+
+                                                    return ImportService.handleResponse<JobListResponse>(response);
+                                                        }
+
+                                                        /**
+                                                        * Hủy một import job đang chạy.
+                                                        *
+                                                        * @param jobKey - Định danh job cần hủy.
+                                                        * @returns ImportJob đã được hủy.
+                                                        */
+                                                        public static async cancelJob(jobKey: string): Promise
+                                                        <ImportJob> {
+                                                            const response = await fetch(
+                                                            `${ImportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}/cancel`,
+                                                            { method: 'POST', headers: ImportService.buildHeaders() },
+                                                            );
+
+                                                            return ImportService.handleResponse<ImportJob>(response);
+                                                                }
+
+                                                                /**
+                                                                * Thực thi import job (bắt đầu xử lý).
+                                                                *
+                                                                * @param jobKey - Định danh job cần thực thi.
+                                                                * @returns ImportJob đã bắt đầu chạy.
+                                                                */
+                                                                public static async executeJob(jobKey: string): Promise
+                                                                <ImportJob> {
+                                                                    const response = await fetch(
+                                                                    `${ImportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}/execute`,
+                                                                    { method: 'POST', headers:
+                                                                    ImportService.buildHeaders() },
+                                                                    );
+
+                                                                    return ImportService.handleResponse<ImportJob>
+                                                                        (response);
+                                                                        }
+
+                                                                        /**
+                                                                        * Lấy danh sách lỗi theo từng dòng cho một job
+                                                                        thất bại.
+                                                                        *
+                                                                        * @param jobKey - Định danh job.
+                                                                        * @returns Danh sách lỗi theo dòng.
+                                                                        */
+                                                                        public static async getRowErrors(jobKey:
+                                                                        string): Promise<RowError[]> {
+                                                                            const response = await fetch(
+                                                                            `${ImportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}/errors`,
+                                                                            { method: 'GET', headers:
+                                                                            ImportService.buildHeaders() },
+                                                                            );
+
+                                                                            return ImportService.handleResponse
+                                                                            <RowError[]>(response);
+                                                                                }
+
+                                                                                /**
+                                                                                * Lấy bản xem trước dữ liệu đã ánh xạ
+                                                                                (10 dòng đầu).
+                                                                                *
+                                                                                * @param jobKey - Định danh job.
+                                                                                * @returns Mảng các dòng dữ liệu đã ánh
+                                                                                xạ.
+                                                                                */
+                                                                                public static async getPreview(jobKey:
+                                                                                string): Promise<Record<string, unknown>
+                                                                                    []> {
+                                                                                    const response = await fetch(
+                                                                                    `${ImportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}/preview`,
+                                                                                    { method: 'GET', headers:
+                                                                                    ImportService.buildHeaders() },
+                                                                                    );
+
+                                                                                    return ImportService.handleResponse
+                                                                                    <Record<string, unknown>
+                                                                                        []>(response);
+                                                                                        }
+
+                                                                                        /**
+                                                                                        * Xác thực file trước khi tạo
+                                                                                        job — kiểm tra định dạng, kích
+                                                                                        thước.
+                                                                                        *
+                                                                                        * @param file - File đối tượng
+                                                                                        cần xác thực.
+                                                                                        * @param maxFileSize - Kích
+                                                                                        thước tối đa (byte), mặc định
+                                                                                        50MB.
+                                                                                        * @param allowedFormats - Định
+                                                                                        dạng cho phép, mặc định ['csv',
+                                                                                        'json'].
+                                                                                        * @returns Object { valid,
+                                                                                        errors }.
+                                                                                        */
+                                                                                        public static validateFile(
+                                                                                        file: File,
+                                                                                        maxFileSize: number = 50 * 1024
+                                                                                        * 1024,
+                                                                                        allowedFormats: string[] =
+                                                                                        ['csv', 'json'],
+                                                                                        ): { valid: boolean; errors:
+                                                                                        string[] } {
+                                                                                        const errors: string[] = [];
+                                                                                        const ext =
+                                                                                        file.name.split('.').pop()?.toLowerCase()
+                                                                                        || '';
+
+                                                                                        // Kiểm tra định dạng
+                                                                                        if
+                                                                                        (!allowedFormats.includes(ext))
+                                                                                        {
+                                                                                        errors.push(
+                                                                                        `Định dạng file không được hỗ
+                                                                                        trợ: .${ext}. ` +
+                                                                                        `Định dạng cho phép:
+                                                                                        ${allowedFormats.map((f) =>
+                                                                                        `.${f}`).join(', ')}`,
+                                                                                        );
+                                                                                        }
+
+                                                                                        // Kiểm tra kích thước
+                                                                                        if (file.size > maxFileSize) {
+                                                                                        const maxMB = (maxFileSize /
+                                                                                        (1024 * 1024)).toFixed(0);
+                                                                                        errors.push(`File quá lớn:
+                                                                                        ${file.name} (${(file.size /
+                                                                                        (1024 * 1024)).toFixed(1)} MB),
+                                                                                        tối đa ${maxMB} MB`);
+                                                                                        }
+
+                                                                                        // Kiểm tra file rỗng
+                                                                                        if (file.size === 0) {
+                                                                                        errors.push('File rỗng, không có
+                                                                                        dữ liệu để import');
+                                                                                        }
+
+                                                                                        return { valid: errors.length
+                                                                                        === 0, errors };
+                                                                                        }
+
+                                                                                        /**
+                                                                                        * Đọc và phân tích file CSV/JSON
+                                                                                        để lấy các cột tiêu đề.
+                                                                                        *
+                                                                                        * @param file - File đối tượng
+                                                                                        cần đọc.
+                                                                                        * @returns Mảng tên cột (keys
+                                                                                        của đối tượng đầu tiên).
+                                                                                        */
+                                                                                        public static async
+                                                                                        extractColumns(file: File):
+                                                                                        Promise<string[]> {
+                                                                                            const text = await
+                                                                                            file.text();
+                                                                                            const ext =
+                                                                                            file.name.split('.').pop()?.toLowerCase()
+                                                                                            || '';
+
+                                                                                            if (ext === 'json') {
+                                                                                            let parsed: unknown;
+                                                                                            try {
+                                                                                            parsed = JSON.parse(text);
+                                                                                            } catch {
+                                                                                            throw new Error('Không thể
+                                                                                            phân tích file JSON: định
+                                                                                            dạng không hợp lệ');
+                                                                                            }
+                                                                                            const first =
+                                                                                            Array.isArray(parsed)
+                                                                                            ? (parsed[0] as Record
+                                                                                            <string, unknown>)
+                                                                                                : (parsed as Record
+                                                                                                <string, unknown>);
+                                                                                                    return first ?
+                                                                                                    Object.keys(first) :
+                                                                                                    [];
+                                                                                                    }
+
+                                                                                                    // Mặc định: xử lý
+                                                                                                    CSV
+                                                                                                    const lines =
+                                                                                                    text.split(/\r?\n/).filter((l)
+                                                                                                    => l.trim());
+                                                                                                    if (!lines.length)
+                                                                                                    return [];
+
+                                                                                                    // Phân tách dòng
+                                                                                                    tiêu đề CSV (xử lý
+                                                                                                    dấu ngoặc kép đơn
+                                                                                                    giản)
+                                                                                                    const headers =
+                                                                                                    lines[0].split(',').map((h)
+                                                                                                    =>
+                                                                                                    h.trim().replace(/^"|"$/g,
+                                                                                                    ''));
+                                                                                                    return headers;
+                                                                                                    }
+
+                                                                                                    /**
+                                                                                                    * Đọc trước N dòng
+                                                                                                    đầu tiên của file để
+                                                                                                    xem trước.
+                                                                                                    *
+                                                                                                    * @param file - File
+                                                                                                    đối tượng.
+                                                                                                    * @param limit - Số
+                                                                                                    dòng tối đa, mặc
+                                                                                                    định 10.
+                                                                                                    * @returns Mảng các
+                                                                                                    đối tượng dòng.
+                                                                                                    */
+                                                                                                    public static async
+                                                                                                    previewFile(file:
+                                                                                                    File, limit: number
+                                                                                                    = 10): Promise
+                                                                                                    <Record<string,
+                                                                                                        unknown>[]> {
+                                                                                                        const text =
+                                                                                                        await
+                                                                                                        file.text();
+                                                                                                        const ext =
+                                                                                                        file.name.split('.').pop()?.toLowerCase()
+                                                                                                        || '';
+
+                                                                                                        if (ext ===
+                                                                                                        'json') {
+                                                                                                        const parsed:
+                                                                                                        unknown[] =
+                                                                                                        JSON.parse(text);
+                                                                                                        return
+                                                                                                        Array.isArray(parsed)
+                                                                                                        ?
+                                                                                                        parsed.slice(0,
+                                                                                                        limit) : [];
+                                                                                                        }
+
+                                                                                                        // CSV
+                                                                                                        const lines =
+                                                                                                        text.split(/\r?\n/).filter((l)
+                                                                                                        =>
+                                                                                                        l.trim()).slice(1,
+                                                                                                        limit + 1);
+                                                                                                        if
+                                                                                                        (!lines.length)
+                                                                                                        return [];
+
+                                                                                                        const headers =
+                                                                                                        lines[0]
+                                                                                                        ?
+                                                                                                        lines[0].split(',').map((h)
+                                                                                                        =>
+                                                                                                        h.trim().replace(/^"|"$/g,
+                                                                                                        ''))
+                                                                                                        : [];
+
+                                                                                                        return
+                                                                                                        lines.slice(1).map((line)
+                                                                                                        => {
+                                                                                                        const values =
+                                                                                                        line.split(',').map((v)
+                                                                                                        =>
+                                                                                                        v.trim().replace(/^"|"$/g,
+                                                                                                        ''));
+                                                                                                        const row:
+                                                                                                        Record<string,
+                                                                                                            unknown> =
+                                                                                                            {};
+                                                                                                            headers.forEach((h,
+                                                                                                            i) => {
+                                                                                                            row[h] =
+                                                                                                            values[i] ??
+                                                                                                            '';
+                                                                                                            });
+                                                                                                            return row;
+                                                                                                            });
+                                                                                                            }
+                                                                                                            }

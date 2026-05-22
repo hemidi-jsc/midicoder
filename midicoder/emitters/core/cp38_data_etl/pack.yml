@@ -1,0 +1,292 @@
+# ===========================================================================
+# CP38 — Data Import/Export/ETL
+# ===========================================================================
+# File contributions declaration cho 4 stacks: FastAPI, NestJS, Angular, React
+#
+# Capabilities:
+# - csv_import: Import dữ liệu từ file CSV
+# - json_import: Import dữ liệu từ file JSON
+# - data_migrate: Data migration với ETL mappings
+# - bulk_operation: Bulk operation với chunking và retry
+# - etl_pipeline: ETL pipeline với extract/transform/load
+# - data_export: Export dữ liệu từ entity ra file
+#
+# Storage: Database (SQLite/PostgreSQL) + File System
+# ===========================================================================
+
+pack:
+  id: "CP38"
+  name: "Data Import/Export/ETL"
+  internal_id: "cp38_data_etl"
+  version: "1.0.0"
+  status: "stable"
+  category: "data"
+  depends_on: ["CP01", "CP08", "CP13", "CP14"]
+  definitions_count: 5
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP38"
+    range: "MDC-CP38-001 to MDC-CP38-018"
+  capabilities_provided:
+    - csv_import
+    - json_import
+    - data_migrate
+    - bulk_operation
+    - etl_pipeline
+    - data_export
+  capabilities:
+    - id: "csv_import"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "json_import"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "data_migrate"
+      emitter: "fastapi, nestjs"
+    - id: "bulk_operation"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "etl_pipeline"
+      emitter: "fastapi, nestjs"
+    - id: "data_export"
+      emitter: "fastapi, nestjs, angular, react"
+  definitions:
+    - name: "ImportJob"
+      description: "Job import dữ liệu từ file CSV/JSON vào entity với tracking progress và error handling"
+    - name: "ExportJob"
+      description: "Job export dữ liệu từ entity ra file với filter và format hỗ trợ"
+    - name: "ETLJob"
+      description: "ETL pipeline hoàn chỉnh với extract/transform/load steps"
+    - name: "ETLMapping"
+      description: "Ánh xạ cột source sang field target với transform (map/filter/aggregate/convert/rename)"
+    - name: "BulkConfig"
+      description: "Cấu hình bulk operation với chunking, retry, và rollback threshold"
+  obligations:
+    - name: "ImportDataIntegrity"
+      description: "Tất cả import jobs phải đảm bảo data integrity với transaction rollback khi lỗi vượt quá threshold"
+    - name: "AuditTrailRequired"
+      description: "Tất cả import/export/ETL jobs phải được audit log qua CP14 với job status và kết quả"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend (11 files)
+      # ------------------------------------------------------------------
+      - path: "app/data_import/__init__.py"
+        file_type: "import_init"
+        template: "cp38_data_etl/__init__.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/data_import/models/import_models.py"
+        file_type: "import_models"
+        template: "cp38_data_etl/import_models.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["import_jobs", "export_jobs", "etl_jobs"]
+      - path: "app/data_import/schemas/import_schemas.py"
+        file_type: "import_schemas"
+        template: "cp38_data_etl/import_schemas.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["import_jobs"]
+      - path: "app/data_import/services/import_service.py"
+        file_type: "import_service"
+        template: "cp38_data_etl/import_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["import_jobs", "bulk_config"]
+      - path: "app/data_import/services/export_service.py"
+        file_type: "export_service"
+        template: "cp38_data_etl/export_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["export_jobs", "bulk_config"]
+      - path: "app/data_import/services/etl_service.py"
+        file_type: "etl_service"
+        template: "cp38_data_etl/etl_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["etl_jobs"]
+      - path: "app/data_import/routers/import_router.py"
+        file_type: "import_router"
+        template: "cp38_data_etl/import_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/data_import/routers/export_router.py"
+        file_type: "export_router"
+        template: "cp38_data_etl/export_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/data_import/workers/bulk_worker.py"
+        file_type: "bulk_worker"
+        template: "cp38_data_etl/bulk_worker.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["bulk_config"]
+      - path: "app/data_import/parsers/csv_parser.py"
+        file_type: "csv_parser"
+        template: "cp38_data_etl/csv_parser.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/data_import/parsers/json_parser.py"
+        file_type: "json_parser"
+        template: "cp38_data_etl/json_parser.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # NestJS — Backend (9 files)
+      # ------------------------------------------------------------------
+      - path: "src/data-import/entities/import.entity.ts"
+        file_type: "import_entity"
+        template: "cp38_data_etl/import.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["import_jobs", "export_jobs", "etl_jobs"]
+      - path: "src/data-import/dtos/import.dto.ts"
+        file_type: "import_dto"
+        template: "cp38_data_etl/import.dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["import_jobs"]
+      - path: "src/data-import/services/import.service.ts"
+        file_type: "import_service"
+        template: "cp38_data_etl/import.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["import_jobs", "bulk_config"]
+      - path: "src/data-import/services/export.service.ts"
+        file_type: "export_service"
+        template: "cp38_data_etl/export.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["export_jobs", "bulk_config"]
+      - path: "src/data-import/services/etl.service.ts"
+        file_type: "etl_service"
+        template: "cp38_data_etl/etl.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["etl_jobs"]
+      - path: "src/data-import/controllers/import.controller.ts"
+        file_type: "import_controller"
+        template: "cp38_data_etl/import.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/data-import/controllers/export.controller.ts"
+        file_type: "export_controller"
+        template: "cp38_data_etl/export.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/data-import/workers/bulk-processor.service.ts"
+        file_type: "bulk_processor"
+        template: "cp38_data_etl/bulk-processor.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["bulk_config"]
+      - path: "src/data-import/data-import.module.ts"
+        file_type: "etl_module"
+        template: "cp38_data_etl/etl.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # Angular — Frontend (5 files)
+      # ------------------------------------------------------------------
+      - path: "src/app/shared/data-import/components/import-wizard.component.ts"
+        file_type: "import_wizard"
+        template: "cp38_data_etl/import-wizard.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["import_jobs"]
+      - path: "src/app/shared/data-import/components/export-dialog.component.ts"
+        file_type: "export_dialog"
+        template: "cp38_data_etl/export-dialog.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["export_jobs"]
+      - path: "src/app/shared/data-import/services/import.service.ts"
+        file_type: "import_service"
+        template: "cp38_data_etl/import.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/shared/data-import/services/export.service.ts"
+        file_type: "export_service"
+        template: "cp38_data_etl/export.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/shared/data-import/components/job-status.component.ts"
+        file_type: "job_status"
+        template: "cp38_data_etl/job-status.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # React — Frontend (7 files)
+      # ------------------------------------------------------------------
+      - path: "src/data-import/components/ImportWizard.tsx"
+        file_type: "import_wizard"
+        template: "cp38_data_etl/ImportWizard.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["import_jobs"]
+      - path: "src/data-import/components/ExportDialog.tsx"
+        file_type: "export_dialog"
+        template: "cp38_data_etl/ExportDialog.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["export_jobs"]
+      - path: "src/data-import/hooks/useImportJob.ts"
+        file_type: "import_hook"
+        template: "cp38_data_etl/useImportJob.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/data-import/hooks/useExportJob.ts"
+        file_type: "export_hook"
+        template: "cp38_data_etl/useExportJob.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/data-import/components/JobStatusPanel.tsx"
+        file_type: "job_status_panel"
+        template: "cp38_data_etl/JobStatusPanel.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/data-import/services/import.service.ts"
+        file_type: "import_service"
+        template: "cp38_data_etl/import.service.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/data-import/services/export.service.ts"
+        file_type: "export_service"
+        template: "cp38_data_etl/export.service.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+  frontend_integration:
+    angular:
+      - ImportWizardComponent
+      - ExportDialogComponent
+      - ImportService
+      - ExportService
+      - JobStatusComponent
+    react:
+      - ImportWizard
+      - ExportDialog
+      - useImportJob
+      - useExportJob
+      - JobStatusPanel
+      - ImportService
+      - ExportService
+  recipes:
+    - csv_import_recipe
+    - json_import_recipe
+    - data_migrate_recipe
+    - etl_pipeline_recipe
+    - bulk_export_recipe

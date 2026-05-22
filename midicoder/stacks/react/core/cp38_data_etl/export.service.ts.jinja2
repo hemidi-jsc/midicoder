@@ -1,0 +1,361 @@
+/**
+ * ExportService — CP38: Data Import/Export/ETL.
+ *
+ * Lớp dịch vụ API cho các thao tác export dữ liệu.
+ * Sử dụng Fetch API, trả về phản hồi đã phân tích kiểu TypeScript.
+ */
+
+/* ===== Giao diện loại yêu cầu ===== */
+
+/**
+ * Cấu hình để tạo export job mới.
+ */
+export interface CreateExportJobRequest {
+  /** Tên thực thể cần export (ví dụ: "products", "orders"). */
+  entity: string;
+  /** Định dạng export (csv | json). */
+  format: 'csv' | 'json';
+  /** Danh sách các cột cần export. Để trống = export tất cả. */
+  columns?: string[];
+  /** Bộ lọc query (SQL-like WHERE clause). */
+  filter?: Record<string, unknown>;
+  /** Ngày bắt đầu (ISO 8601, tùy chọn). */
+  startDate?: string;
+  /** Ngày kết thúc (ISO 8601, tùy chọn). */
+  endDate?: string;
+  /** Lọc theo trạng thái (tùy chọn). */
+  statusFilter?: string;
+  /** Số lượng dòng tối đa (0 = không giới hạn). */
+  limit?: number;
+}
+
+/**
+ * Bộ lọc khi liệt kê export jobs.
+ */
+export interface ExportJobFilters {
+  /** Lọc theo trạng thái. */
+  status?: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  /** Lọc theo thực thể. */
+  entity?: string;
+  /** Giới hạn kết quả. */
+  limit?: number;
+  /** Dời trang. */
+  offset?: number;
+}
+
+/* ===== Giao diện loại phản hồi ===== */
+
+/**
+ * Thông tin một export job.
+ */
+export interface ExportJob {
+  /** Định danh job. */
+  jobKey: string;
+  /** Tên thực thể. */
+  entity: string;
+  /** Trạng thái hiện tại. */
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  /** Định dạng file. */
+  format: string;
+  /** Danh sách cột đã chọn. */
+  columns: string[];
+  /** Bộ lọc đã áp dụng. */
+  filter?: Record<string, unknown>;
+  /** Tiến trình phần trăm (0–100). */
+  progress: number;
+  /** Tổng số hàng sẽ export. */
+  totalRows: number;
+  /** Số hàng đã xử lý. */
+  processedRows: number;
+  /** URL để tải file (có sau khi hoàn thành). */
+  downloadUrl?: string;
+  /** Kích thước file export (byte, sau khi hoàn thành). */
+  fileSize?: number;
+  /** Thời gian bắt đầu (ISO 8601). */
+  startedAt?: string;
+  /** Thời gian hoàn thành (ISO 8601). */
+  completedAt?: string;
+  /** Tin nhắn lỗi (nếu thất bại). */
+  errorMessage?: string;
+}
+
+/**
+ * Một dòng dữ liệu xem trước.
+ */
+export interface PreviewRow {
+  /** Số thứ tự dòng. */
+  rowIndex: number;
+  /** Dữ liệu dòng (key-value). */
+  data: Record<string, unknown>;
+}
+
+/**
+ * Phản hồi từ API xem trước export.
+ */
+export interface PreviewResponse {
+  /** Danh sách dòng xem trước. */
+  rows: PreviewRow[];
+  /** Tổng số dòng phù hợp với bộ lọc. */
+  totalCount: number;
+  /** Danh sách các cột. */
+  columns: string[];
+}
+
+/**
+ * Phản hồi khi liệt kê export jobs.
+ */
+export interface ExportJobListResponse {
+  /** Danh sách jobs. */
+  jobs: ExportJob[];
+  /** Tổng số jobs (cho phân trang). */
+  total: number;
+}
+
+/* ===== Dịch vụ API ===== */
+
+/**
+ * Lớp dịch vụ Export — nhóm tất cả phương thức API liên quan export.
+ */
+export class ExportService {
+  /** Cơ sở URL API (có thể ghi đè khi khởi tạo). */
+  private static baseUrl = '/api/data/export';
+
+  /**
+   * Cài đặt cơ sở URL cho tất cả yêu cầu.
+   */
+  public static setBaseUrl(url: string): void {
+    ExportService.baseUrl = url.replace(/\/$/, '');
+  }
+
+  /**
+   * Xây dựng Headers chung cho tất cả yêu cầu.
+   */
+  private static buildHeaders(contentType: string = 'application/json'): Headers {
+    const headers = new Headers();
+    headers.set('Content-Type', contentType);
+    // Token xác thực sẽ được thêm bởi HTTP interceptor
+    return headers;
+  }
+
+  /**
+   * Xử lý phản hồi API — giải JSON hoặc ném lỗi.
+   */
+  private static async handleResponse<T>(response: Response): Promise<T> {
+    if (!response.ok) {
+      let errorBody = response.statusText;
+      try {
+        const body = await response.json();
+        errorBody = body.message || body.error || response.statusText;
+      } catch {
+        // Giữ tin nhắn lỗi mặc định
+      }
+      throw new Error(`Export API error (${response.status}): ${errorBody}`);
+    }
+    return response.json();
+  }
+
+  /**
+   * Xử lý phản hồi Blob cho tải file.
+   */
+  private static async handleBlobResponse(response: Response): Promise<Blob> {
+    if (!response.ok) {
+      throw new Error(`Export API error (${response.status}): ${response.statusText}`);
+    }
+    return response.blob();
+  }
+
+  /**
+   * Tạo export job mới từ cấu hình.
+   *
+   * @param config - Cấu hình export (thực thể, định dạng, bộ lọc).
+   * @returns ExportJob mới được tạo.
+   */
+  public static async createExportJob(config: CreateExportJobRequest): Promise<ExportJob> {
+    const response = await fetch(`${ExportService.baseUrl}/jobs`, {
+      method: 'POST',
+      headers: ExportService.buildHeaders(),
+      body: JSON.stringify(config),
+    });
+
+    return ExportService.handleResponse<ExportJob>(response);
+  }
+
+  /**
+   * Tải file export về máy.
+   *
+   * @param jobKey - Định danh export job đã hoàn thành.
+   * @returns Blob chứa nội dung file export.
+   */
+  public static async downloadExport(jobKey: string): Promise<Blob> {
+    const response = await fetch(
+      `${ExportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}/download`,
+      { method: 'GET', headers: ExportService.buildHeaders() },
+    );
+
+    return ExportService.handleBlobResponse(response);
+  }
+
+  /**
+   * Tải file export về máy và kích hoạt tải xuống trình duyệt.
+   *
+   * @param jobKey - Định danh export job.
+   * @param fileName - Tên file tải xuống (tùy chọn).
+   */
+  public static async triggerDownload(jobKey: string, fileName?: string): Promise<void> {
+    const blob = await ExportService.downloadExport(jobKey);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName || `export-${jobKey}.${fileName ? '' : 'csv'}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Xem trước dữ liệu export (giới hạn số dòng).
+   *
+   * @param jobKey - Định danh export job.
+   * @param limit - Số dòng tối đa (mặc định 10).
+   * @returns Dữ liệu xem trước.
+   */
+  public static async previewExport(
+    jobKey: string,
+    limit: number = 10,
+  ): Promise<PreviewResponse> {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+
+    const response = await fetch(
+      `${ExportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}/preview?${params.toString()}`,
+      { method: 'GET', headers: ExportService.buildHeaders() },
+    );
+
+    return ExportService.handleResponse<PreviewResponse>(response);
+  }
+
+  /**
+   * Xem trước dữ liệu export từ cấu hình (trước khi tạo job).
+   *
+   * @param config - Cấu hình export.
+   * @param limit - Số dòng tối đa (mặc định 10).
+   * @returns Dữ liệu xem trước.
+   */
+  public static async previewFromConfig(
+    config: CreateExportJobRequest,
+    limit: number = 10,
+  ): Promise<PreviewResponse> {
+    const response = await fetch(`${ExportService.baseUrl}/preview`, {
+      method: 'POST',
+      headers: ExportService.buildHeaders(),
+      body: JSON.stringify({ ...config, limit }),
+    });
+
+    return ExportService.handleResponse<PreviewResponse>(response);
+  }
+
+  /**
+   * Lấy trạng thái hiện tại của một export job.
+   *
+   * @param jobKey - Định danh job.
+   * @returns Thông tin job đã cập nhật.
+   */
+  public static async getExportStatus(jobKey: string): Promise<ExportJob> {
+    const response = await fetch(
+      `${ExportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}/status`,
+      { method: 'GET', headers: ExportService.buildHeaders() },
+    );
+
+    return ExportService.handleResponse<ExportJob>(response);
+  }
+
+  /**
+   * Liệt kê tất cả export jobs với bộ lọc.
+   *
+   * @param filters - Bộ lọc (trạng thái, thực thể, phân trang).
+   * @returns Danh sách jobs và tổng số.
+   */
+  public static async listExportJobs(filters?: ExportJobFilters): Promise<ExportJobListResponse> {
+    const params = new URLSearchParams();
+    if (filters) {
+      if (filters.status) params.set('status', filters.status);
+      if (filters.entity) params.set('entity', filters.entity);
+      if (filters.limit) params.set('limit', String(filters.limit));
+      if (filters.offset) params.set('offset', String(filters.offset));
+    }
+
+    const response = await fetch(
+      `${ExportService.baseUrl}/jobs?${params.toString()}`,
+      { method: 'GET', headers: ExportService.buildHeaders() },
+    );
+
+    return ExportService.handleResponse<ExportJobListResponse>(response);
+  }
+
+  /**
+   * Hủy một export job đang chạy.
+   *
+   * @param jobKey - Định danh job cần hủy.
+   * @returns ExportJob đã được hủy.
+   */
+  public static async cancelJob(jobKey: string): Promise<ExportJob> {
+    const response = await fetch(
+      `${ExportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}/cancel`,
+      { method: 'POST', headers: ExportService.buildHeaders() },
+    );
+
+    return ExportService.handleResponse<ExportJob>(response);
+  }
+
+  /**
+   * Xóa export job và file liên quan.
+   *
+   * @param jobKey - Định danh job cần xóa.
+   * @returns true nếu xóa thành công.
+   */
+  public static async deleteJob(jobKey: string): Promise<{ deleted: boolean }> {
+    const response = await fetch(
+      `${ExportService.baseUrl}/jobs/${encodeURIComponent(jobKey)}`,
+      { method: 'DELETE', headers: ExportService.buildHeaders() },
+    );
+
+    return ExportService.handleResponse<{ deleted: boolean }>(response);
+  }
+
+  /**
+   * Định dạng kích thước file thành chuỗi dễ đọc.
+   *
+   * @param bytes - Kích thước byte.
+   * @returns Chuỗi kích thước (ví dụ: "1.5 MB").
+   */
+  public static formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+  }
+
+  /**
+   * Định dạng ngày giờ thành chuỗi dễ đọc.
+   *
+   * @param isoString - Chuỗi ISO 8601.
+   * @returns Chuỗi ngày giờ đã định dạng.
+   */
+  public static formatDateTime(isoString?: string): string {
+    if (!isoString) return '—';
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    } catch {
+      return isoString;
+    }
+  }
+}

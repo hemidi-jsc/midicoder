@@ -1,0 +1,769 @@
+# coding: utf-8
+"""
+Import Service cho Data Import.
+
+Cung cấp các phương thức:
+- upload_csv: Upload và parse file CSV
+- upload_json: Upload và parse file JSON
+- parse_and_validate: Parse và validate dữ liệu từ file
+- create_import_job: Tạo import job mới
+- execute_import: Thực thi import job (với chunking và retry)
+- get_job_status: Lấy trạng thái job
+- cancel_job: Hủy job đang chạy
+
+CP38: Data Import/Export/ETL
+"""
+
+import asyncio
+import logging
+import time
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID, uuid4
+
+from fastapi import UploadFile
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .import_models import ImportJob, ImportError, JobStatus, BulkConfig
+from .csv_parser import CSVParser
+from .json_parser import JSONParser
+from .bulk_worker import BulkWorker
+
+# Logger cho module
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Exception: ImportServiceError
+# ============================================================================
+
+class ImportServiceError(Exception):
+    """Exception base cho ImportService."""
+
+    def __init__(self, message: str, error_code: str = "IMPORT_ERROR") -> None:
+        self.message = message
+        self.error_code = error_code
+        super().__init__(self.message)
+
+
+class FileFormatError(ImportServiceError):
+    """Lỗi định dạng file không hợp lệ."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="FILE_FORMAT_ERROR")
+
+
+class ValidationError(ImportServiceError):
+    """Lỗi validate dữ liệu."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="VALIDATION_ERROR")
+
+
+class JobNotFoundError(ImportServiceError):
+    """Lỗi job không tìm thấy."""
+
+    def __init__(self, job_key: str) -> None:
+        super().__init__(
+            f"Import job không tìm thấy với key: {job_key}",
+            error_code="JOB_NOT_FOUND",
+        )
+
+
+class JobAlreadyRunningError(ImportServiceError):
+    """Lỗi job đã đang chạy."""
+
+    def __init__(self, job_key: str) -> None:
+        super().__init__(
+            f"Import job đang chạy, không thể execute lại: {job_key}",
+            error_code="JOB_ALREADY_RUNNING",
+        )
+
+
+# ============================================================================
+# ImportService
+# ============================================================================
+
+class ImportService:
+    """
+    Service chính cho import operations.
+
+    Quản lý toàn bộ vòng đời của import job:
+    1. Upload file (CSV/JSON)
+    2. Parse và validate dữ liệu
+    3. Tạo import job với cấu hình
+    4. Thực thi job với chunking và retry
+    5. Theo dõi trạng thái và lỗi
+
+    Usage:
+        service = ImportService(db_session)
+
+        # Upload file CSV
+        result = await service.upload_csv(file, target_table="users")
+
+        # Execute job
+        await service.execute_import(result.job_key)
+
+        # Check status
+        status = await service.get_job_status(result.job_key)
+    """
+
+    def __init__(self, db: AsyncSession) -> None:
+        """
+        Khởi tạo ImportService.
+
+        Args:
+            db: AsyncSession cho database
+        """
+        self.db = db
+        self._running_jobs: Dict[str, asyncio.Task] = {}
+
+    async def upload_csv(
+        self,
+        file: UploadFile,
+        target_table: Optional[str] = None,
+        created_by: Optional[str] = None,
+        chunk_size: int = 1000,
+        continue_on_error: bool = True,
+    ) -> ImportJob:
+        """
+        Upload và tạo import job cho file CSV.
+
+        Đọc nội dung file, parse CSV để đếm số hàng, và tạo import job.
+        Không thực thi import ngay — job sẽ ở trạng thái pending.
+
+        Args:
+            file: UploadFile từ FastAPI (file CSV)
+            target_table: Bảng đích (optional)
+            created_by: Người tạo job (optional)
+            chunk_size: Số hàng mỗi chunk (default 1000)
+            continue_on_error: Tiếp tục khi gặp lỗi (default True)
+
+        Returns:
+            ImportJob mới tạo
+
+        Raises:
+            FileFormatError: Nếu file không phải CSV
+            ValidationError: Nếu file rỗng hoặc không parse được
+        """
+        # Validate file extension
+        if not file.filename or not file.filename.endswith(".csv"):
+            raise FileFormatError(
+                f"Tên file '{file.filename}' không phải CSV. Hãy dùng đuôi .csv"
+            )
+
+        # Đọc nội dung file
+        content = await file.read()
+        if not content or len(content.strip()) == 0:
+            raise ValidationError("File CSV rỗng, không có dữ liệu để nhập")
+
+        # Parse CSV để đếm số hàng và lấy headers
+        parser = CSVParser()
+        rows, headers = parser.parse_sync(content)
+
+        if not rows:
+            raise ValidationError("File CSV không có hàng dữ liệu (chỉ có header hoặc rỗng)")
+
+        # Tạo import job
+        job = await self.create_import_job(
+            filename=file.filename,
+            file_format="csv",
+            total_rows=len(rows),
+            file_size_bytes=len(content),
+            target_table=target_table,
+            created_by=created_by,
+            chunk_size=chunk_size,
+            continue_on_error=continue_on_error,
+            raw_data=rows,
+            headers=headers,
+        )
+
+        logger.info(
+            "Upload CSV thành công: job_key=%s, filename=%s, rows=%d",
+            job.job_key,
+            file.filename,
+            len(rows),
+        )
+
+        return job
+
+    async def upload_json(
+        self,
+        file: UploadFile,
+        target_table: Optional[str] = None,
+        created_by: Optional[str] = None,
+        chunk_size: int = 1000,
+        continue_on_error: bool = True,
+    ) -> ImportJob:
+        """
+        Upload và tạo import job cho file JSON.
+
+        Đọc nội dung file, parse JSON array để đếm số hàng, và tạo import job.
+        Hỗ trợ cả JSON array và JSON Lines.
+
+        Args:
+            file: UploadFile từ FastAPI (file JSON)
+            target_table: Bảng đích (optional)
+            created_by: Người tạo job (optional)
+            chunk_size: Số hàng mỗi chunk (default 1000)
+            continue_on_error: Tiếp tục khi gặp lỗi (default True)
+
+        Returns:
+            ImportJob mới tạo
+
+        Raises:
+            FileFormatError: Nếu file không phải JSON
+            ValidationError: Nếu JSON không hợp lệ
+        """
+        # Validate file extension
+        if not file.filename or not file.filename.endswith(".json"):
+            raise FileFormatError(
+                f"Tên file '{file.filename}' không phải JSON. Hãy dùng đuôi .json"
+            )
+
+        # Đọc nội dung file
+        content = await file.read()
+        if not content or len(content.strip()) == 0:
+            raise ValidationError("File JSON rỗng, không có dữ liệu để nhập")
+
+        # Parse JSON để đếm số hàng
+        parser = JSONParser()
+        rows = parser.parse_sync(content)
+
+        if not rows:
+            raise ValidationError("File JSON không chứa array dữ liệu hợp lệ")
+
+        # Lấy headers từ hàng đầu tiên
+        headers = list(rows[0].keys()) if rows else []
+
+        # Tạo import job
+        job = await self.create_import_job(
+            filename=file.filename,
+            file_format="json",
+            total_rows=len(rows),
+            file_size_bytes=len(content),
+            target_table=target_table,
+            created_by=created_by,
+            chunk_size=chunk_size,
+            continue_on_error=continue_on_error,
+            raw_data=rows,
+            headers=headers,
+        )
+
+        logger.info(
+            "Upload JSON thành công: job_key=%s, filename=%s, rows=%d",
+            job.job_key,
+            file.filename,
+            len(rows),
+        )
+
+        return job
+
+    async def parse_and_validate(
+        self,
+        content: bytes,
+        file_format: str,
+        schema: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[List[Dict[str, Any]], List[str], int]:
+        """
+        Parse và validate dữ liệu từ raw content.
+
+        Dùng khi cần parse và validate dữ liệu trước khi tạo job.
+        Trả về danh sách rows, headers, và số lỗi validate.
+
+        Args:
+            content: Nội dung file (bytes)
+            file_format: Định dạng file ("csv" hoặc "json")
+            schema: Schema validate (optional) — dict với keys là column names,
+                    values là dict với "type", "required", "default"
+
+        Returns:
+            Tuple: (rows, headers, error_count)
+
+        Raises:
+            FileFormatError: Nếu format không hỗ trợ
+        """
+        text = content.decode("utf-8")
+
+        if file_format == "csv":
+            parser = CSVParser()
+            rows, headers = parser.parse_sync(content)
+        elif file_format == "json":
+            parser = JSONParser()
+            rows = parser.parse_sync(content)
+            headers = list(rows[0].keys()) if rows else []
+        else:
+            raise FileFormatError(f"Định dạng '{file_format}' không được hỗ trợ")
+
+        # Validate từng hàng nếu có schema
+        error_count = 0
+        if schema:
+            for row in rows:
+                if not parser.validate_row(row, schema):
+                    error_count += 1
+
+        return rows, headers, error_count
+
+    async def create_import_job(
+        self,
+        filename: str,
+        file_format: str,
+        total_rows: int,
+        file_size_bytes: int,
+        target_table: Optional[str] = None,
+        created_by: Optional[str] = None,
+        chunk_size: int = 1000,
+        continue_on_error: bool = True,
+        raw_data: Optional[List[Dict[str, Any]]] = None,
+        headers: Optional[List[str]] = None,
+    ) -> ImportJob:
+        """
+        Tạo import job mới trong database.
+
+        Job sẽ ở trạng thái pending, chưa thực thi.
+
+        Args:
+            filename: Tên file gốc
+            file_format: Định dạng file (csv, json)
+            total_rows: Tổng số hàng trong file
+            file_size_bytes: Kích thước file (byte)
+            target_table: Bảng đích (optional)
+            created_by: Người tạo (optional)
+            chunk_size: Số hàng mỗi chunk (default 1000)
+            continue_on_error: Tiếp tục khi lỗi (default True)
+            raw_data: Dữ liệu đã parse (optional)
+            headers: Danh sách headers (optional)
+
+        Returns:
+            ImportJob mới tạo trong database
+        """
+        job = ImportJob(
+            job_key=str(uuid4()),
+            filename=filename,
+            file_format=file_format,
+            status=JobStatus.pending.value,
+            total_rows=total_rows,
+            processed_rows=0,
+            error_count=0,
+            file_size_bytes=file_size_bytes,
+            target_table=target_table,
+            created_by=created_by,
+        )
+
+        self.db.add(job)
+        await self.db.flush()
+
+        # Lưu raw data vào metadata (nếu cần dùng lại)
+        # Trong production, có thể lưu vào file storage thay vì database
+        if raw_data is not None:
+            job._raw_data = raw_data  # type: ignore[attr-defined]
+        if headers is not None:
+            job._headers = headers  # type: ignore[attr-defined]
+
+        # Lưu chunk config
+        job._chunk_size = chunk_size  # type: ignore[attr-defined]
+        job._continue_on_error = continue_on_error  # type: ignore[attr-defined]
+
+        logger.info("Tạo import job: job_key=%s, filename=%s, rows=%d", job.job_key, filename, total_rows)
+
+        return job
+
+    async def execute_import(self, job_key: str) -> ImportJob:
+        """
+        Thực thi import job với chunking và retry.
+
+        Lấy import job từ database, chia dữ liệu thành các chunk,
+        và xử lý từng chunk với retry mechanism.
+
+        Flow:
+        1. Validate job ở trạng thái pending
+        2. Lấy bulk config từ database
+        3. Tạo BulkWorker
+        4. Chia raw data thành chunks
+        5. Xử lý từng chunk (insert vào database)
+        6. Theo dõi progress và errors
+        7. Cập nhật trạng thái cuối cùng
+
+        Args:
+            job_key: Khóa của import job
+
+        Returns:
+            ImportJob đã cập nhật trạng thái
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+            JobAlreadyRunningError: Nếu job đang chạy
+        """
+        # Tìm job trong database
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        # Kiểm tra job đã đang chạy chưa
+        if job.status == JobStatus.running.value:
+            raise JobAlreadyRunningError(job_key)
+
+        # Kiểm tra job đã ở trạng thái cuối chưa
+        if job.is_terminal():
+            raise ImportServiceError(
+                f"Job đã ở trạng thái '{job.status}', không thể execute lại",
+                error_code="JOB_TERMINAL_STATE",
+            )
+
+        # Cập nhật trạng thái thành running
+        job.status = JobStatus.running.value
+        job.started_at = datetime.utcnow()
+        await self.db.flush()
+
+        logger.info("Bắt đầu execute import job: job_key=%s", job_key)
+
+        # Lấy bulk config
+        bulk_config = await self._get_active_bulk_config()
+
+        # Lấy chunk size từ job hoặc config
+        chunk_size = getattr(job, "_chunk_size", 1000)
+        continue_on_error = getattr(job, "_continue_on_error", True)
+
+        # Lấy raw data
+        raw_data = getattr(job, "_raw_data", [])
+
+        if not raw_data:
+            job.status = JobStatus.failed.value
+            job.error_message = "Không có dữ liệu để import (raw_data rỗng)"
+            job.completed_at = datetime.utcnow()
+            await self.db.flush()
+            return job
+
+        # Tạo BulkWorker để xử lý
+        worker = BulkWorker(
+            db=self.db,
+            chunk_size=chunk_size,
+            max_retries=bulk_config.max_retries if bulk_config else 3,
+            retry_delay=bulk_config.retry_delay_seconds if bulk_config else 1.0,
+            continue_on_error=continue_on_error,
+        )
+
+        try:
+            # Thực thi import với chunking
+            start_time = time.time()
+
+            # Chia thành chunks
+            chunks = [
+                raw_data[i:i + chunk_size]
+                for i in range(0, len(raw_data), chunk_size)
+            ]
+
+            total_errors = 0
+            total_processed = 0
+
+            for chunk_index, chunk in enumerate(chunks):
+                # Kiểm tra job có bị cancel không
+                if job.status == JobStatus.cancelled.value:
+                    logger.info("Import job bị cancel tại chunk %d", chunk_index)
+                    break
+
+                logger.info(
+                    "Xử lý chunk %d/%d (size=%d)",
+                    chunk_index + 1,
+                    len(chunks),
+                    len(chunk),
+                )
+
+                # Xử lý chunk
+                result = await worker.process_chunk(
+                    chunk=chunk,
+                    target_table=job.target_table,
+                    headers=getattr(job, "_headers", []),
+                )
+
+                total_processed += result["success_count"]
+                total_errors += result["error_count"]
+
+                # Lưu errors vào database
+                for error_info in result["errors"]:
+                    await self._save_row_error(job, error_info)
+
+                # Cập nhật tiến trình
+                job.processed_rows = total_processed
+                job.error_count = total_errors
+                await self.db.flush()
+
+            # Tính thời gian xử lý
+            duration = time.time() - start_time
+
+            # Cập nhật trạng thái cuối
+            if job.status == JobStatus.cancelled.value:
+                job.status = JobStatus.cancelled.value
+                job.error_message = "Job bị hủy bởi người dùng"
+            elif total_errors > 0 and not continue_on_error:
+                job.status = JobStatus.failed.value
+                job.error_message = f"Import thất bại: {total_errors} lỗi hàng"
+            else:
+                job.status = JobStatus.completed.value
+
+            job.completed_at = datetime.utcnow()
+            await self.db.flush()
+
+            logger.info(
+                "Import hoàn thành: job_key=%s, status=%s, processed=%d, errors=%d, duration=%.2fs",
+                job_key,
+                job.status,
+                total_processed,
+                total_errors,
+                duration,
+            )
+
+        except Exception as e:
+            job.status = JobStatus.failed.value
+            job.error_message = f"Lỗi hệ thống: {str(e)}"
+            job.completed_at = datetime.utcnow()
+            await self.db.flush()
+
+            logger.error("Import thất bại: job_key=%s, error=%s", job_key, str(e), exc_info=True)
+
+        return job
+
+    async def get_job_status(self, job_key: str) -> Dict[str, Any]:
+        """
+        Lấy trạng thái hiện tại của import job.
+
+        Trả về dictionary với thông tin job đầy đủ.
+
+        Args:
+            job_key: Khóa của import job
+
+        Returns:
+            Dictionary với thông tin job
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+        """
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        return {
+            "job_key": job.job_key,
+            "job_type": "import",
+            "filename": job.filename,
+            "file_format": job.file_format,
+            "status": job.status,
+            "total_rows": job.total_rows,
+            "processed_rows": job.processed_rows,
+            "error_count": job.error_count,
+            "progress_percentage": job.progress_percentage(),
+            "file_size_bytes": job.file_size_bytes,
+            "target_table": job.target_table,
+            "is_terminal": job.is_terminal(),
+            "error_message": job.error_message,
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+            "created_at": job.created_at.isoformat(),
+            "updated_at": job.updated_at.isoformat(),
+        }
+
+    async def cancel_job(self, job_key: str) -> ImportJob:
+        """
+        Hủy import job đang chạy.
+
+        Chỉ có thể cancel job ở trạng thái pending hoặc running.
+
+        Args:
+            job_key: Khóa của import job
+
+        Returns:
+            ImportJob đã cập nhật trạng thái
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+            ImportServiceError: Nếu job đã ở trạng thái cuối
+        """
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        # Chỉ có thể cancel job chưa hoàn thành
+        if job.is_terminal():
+            raise ImportServiceError(
+                f"Không thể cancel job đã ở trạng thái '{job.status}'",
+                error_code="CANNOT_CANCEL_TERMINAL_JOB",
+            )
+
+        # Cập nhật trạng thái
+        job.status = JobStatus.cancelled.value
+        job.completed_at = datetime.utcnow()
+        await self.db.flush()
+
+        # Hủy task nếu đang chạy
+        if job_key in self._running_jobs:
+            task = self._running_jobs.pop(job_key)
+            if not task.done():
+                task.cancel()
+
+        logger.info("Import job bị hủy: job_key=%s", job_key)
+
+        return job
+
+    async def get_row_errors(
+        self,
+        job_key: str,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> Dict[str, Any]:
+        """
+        Lấy danh sách lỗi hàng của import job.
+
+        Hỗ trợ pagination.
+
+        Args:
+            job_key: Khóa của import job
+            page: Số trang (bắt đầu từ 1)
+            page_size: Số lỗi mỗi trang
+
+        Returns:
+            Dictionary với danh sách lỗi và pagination info
+
+        Raises:
+            JobNotFoundError: Nếu job không tồn tại
+        """
+        job = await self._get_job_by_key(job_key)
+        if not job:
+            raise JobNotFoundError(job_key)
+
+        # Query errors
+        offset = (page - 1) * page_size
+
+        stmt = (
+            select(ImportError)
+            .where(ImportError.import_job_key == job_key)
+            .order_by(ImportError.row_number.asc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        result = await self.db.execute(stmt)
+        errors = list(result.scalars().all())
+
+        # Đếm tổng số lỗi
+        count_stmt = (
+            select(func.count())
+            .select_from(ImportError)
+            .where(ImportError.import_job_key == job_key)
+        )
+        count_result = await self.db.execute(count_stmt)
+        total_errors = count_result.scalar() or 0
+
+        return {
+            "job_key": job_key,
+            "errors": [e.to_dict() for e in errors],
+            "total_errors": total_errors,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total_errors + page_size - 1) // page_size if page_size > 0 else 0,
+        }
+
+    async def list_import_jobs(
+        self,
+        status: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+        order_by: str = "created_at_desc",
+    ) -> Dict[str, Any]:
+        """
+        Lấy danh sách import jobs với filter và pagination.
+
+        Args:
+            status: Filter theo trạng thái (optional)
+            page: Số trang (bắt đầu từ 1)
+            page_size: Số jobs mỗi trang
+            order_by: Sắp xếp ("created_at_desc", "created_at_asc", "status")
+
+        Returns:
+            Dictionary với danh sách jobs và pagination
+        """
+        stmt = select(ImportJob)
+
+        # Filter theo status
+        if status:
+            stmt = stmt.where(ImportJob.status == status)
+
+        # Sắp xếp
+        if order_by == "created_at_asc":
+            stmt = stmt.order_by(ImportJob.created_at.asc())
+        elif order_by == "status":
+            stmt = stmt.order_by(ImportJob.status.asc(), ImportJob.created_at.desc())
+        else:
+            stmt = stmt.order_by(ImportJob.created_at.desc())
+
+        # Đếm total
+        count_stmt = select(func.count()).select_from(ImportJob)
+        if status:
+            count_stmt = count_stmt.where(ImportJob.status == status)
+        count_result = await self.db.execute(count_stmt)
+        total = count_result.scalar() or 0
+
+        # Pagination
+        offset = (page - 1) * page_size
+        stmt = stmt.offset(offset).limit(page_size)
+
+        result = await self.db.execute(stmt)
+        jobs = list(result.scalars().all())
+
+        return {
+            "items": [j.to_dict() for j in jobs],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 0,
+        }
+
+    # ========================================================================
+    # Internal methods
+    # ========================================================================
+
+    async def _get_job_by_key(self, job_key: str) -> Optional[ImportJob]:
+        """Tìm import job theo job_key."""
+        stmt = select(ImportJob).where(ImportJob.job_key == job_key)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _get_active_bulk_config(self) -> Optional[BulkConfig]:
+        """Lấy bulk config đang active."""
+        stmt = (
+            select(BulkConfig)
+            .where(BulkConfig.is_active.is_(True))
+            .order_by(BulkConfig.id.asc())
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _save_row_error(
+        self,
+        job: ImportJob,
+        error_info: Dict[str, Any],
+    ) -> ImportError:
+        """
+        Lưu lỗi hàng vào database.
+
+        Args:
+            job: ImportJob liên kết
+            error_info: Dictionary với thông tin lỗi
+
+        Returns:
+            ImportError mới tạo
+        """
+        row_error = ImportError(
+            import_job_key=job.job_key,
+            row_number=error_info.get("row_number", 0),
+            row_data=error_info.get("row_data"),
+            error_type=error_info.get("error_type", "unknown"),
+            error_message=error_info.get("error_message", "Lỗi không xác định"),
+            column_name=error_info.get("column_name"),
+            can_retry=error_info.get("can_retry", True),
+        )
+
+        self.db.add(row_error)
+        await self.db.flush()
+
+        return row_error

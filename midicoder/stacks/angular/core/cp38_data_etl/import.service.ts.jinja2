@@ -1,0 +1,351 @@
+﻿/**
+ * Import Service — CP38: Data Import/Export/ETL.
+ *
+ * Angular service cho các thao tác import dữ liệu:
+ * - Tải lên file (CSV/JSON)
+ * - Tạo import job
+ * - Kiểm tra trạng thái job
+ * - Lấy danh sách jobs
+ * - Hủy job
+ * - Polling trạng thái job
+ *
+ * Sử dụng @angular/common/http để giao tiếp với backend API.
+ * providedIn: 'root' để đăng ký singleton.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, interval, throwError } from 'rxjs';
+import {
+  switchMap,
+  take,
+  takeWhile,
+  catchError,
+  tap,
+} from 'rxjs/operators';
+
+// =========================================================================
+// Giao diện dữ liệu
+// =========================================================================
+
+/**
+ * Cấu hình cho import job.
+ */
+export interface ImportJobConfig {
+  fileName: string;
+  format: string;
+  targetEntity: string;
+  columnMappings: Array<{ sourceColumn: string; targetColumn: string }>;
+  totalRows: number;
+  options?: {
+    overwriteExisting: boolean;
+    validateBeforeImport: boolean;
+    continueOnError: boolean;
+  };
+}
+
+/**
+ * Kết quả từ upload file.
+ */
+export interface UploadResult {
+  fileKey: string;
+  url?: string;
+  fileName: string;
+  size: number;
+  mimeType: string;
+}
+
+/**
+ * Kết quả sau khi tạo import job.
+ */
+export interface ImportJobResult {
+  jobKey: string;
+  status: string;
+  message?: string;
+  createdAt?: string;
+}
+
+/**
+ * Thông tin trạng thái của một job.
+ */
+export interface JobStatusInfo {
+  jobKey: string;
+  status: string;
+  progress?: number;
+  processedRows?: number;
+  successRows?: number;
+  failedRows?: number;
+  totalRows?: number;
+  errors?: Array<{
+    rowNumber: number;
+    message: string;
+    rowData?: Record<string, any>;
+  }>;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+/**
+ * Bộ lọc cho danh sách jobs.
+ */
+export interface JobFilters {
+  status?: string;
+  targetEntity?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Kết quả phân trang cho danh sách jobs.
+ */
+export interface PagedJobList {
+  items: ImportJobSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * Tóm tắt một import job.
+ */
+export interface ImportJobSummary {
+  jobKey: string;
+  fileName: string;
+  format: string;
+  targetEntity: string;
+  status: string;
+  totalRows?: number;
+  successRows?: number;
+  failedRows?: number;
+  createdAt: string;
+  completedAt?: string;
+}
+
+// =========================================================================
+// Service
+// =========================================================================
+
+@Injectable({
+  providedIn: 'root',
+})
+export class ImportService {
+  /** URL cơ sở cho API import */
+  private readonly baseUrl = '/api/import';
+
+  // =========================================================================
+  // Context variables từ Jinja2
+  // =========================================================================
+
+  /** Danh sách các job import (từ context) */
+  private importJobs: Readonly<ImportJobSummary[]> = {{ import_jobs | tojson if import_jobs else [] | tojson }};
+
+  /** Số lượng job import (từ context) */
+  private importJobCount: number = {{ import_job_count | tojson if import_job_count is defined else 0 }};
+
+  /** Các định dạng import được hỗ trợ (từ context) */
+  supportedFormats: Readonly<string[]> = {{ import_formats | tojson if import_formats else ['csv', 'json'] | tojson }};
+
+  /** Các trạng thái job (từ context) */
+  jobStatuses: Readonly<string[]> = {{ job_statuses | tojson if job_statuses else ['pending', 'running', 'completed', 'failed', 'cancelled'] | tojson }};
+
+  /** Các loại transform (từ context) */
+  transformTypes: Readonly<string[]> = {{ transform_types | tojson if transform_types else [] | tojson }};
+
+  /** Các nguồn extract (từ context) */
+  extractSources: Readonly<string[]> = {{ extract_sources | tojson if extract_sources else [] | tojson }};
+
+  /** Các chế độ load (từ context) */
+  loadModes: Readonly<string[]> = {{ load_modes | tojson if load_modes else ['insert', 'update', 'upsert'] | tojson }};
+
+  /** Cấu hình bulk (từ context) */
+  bulkConfig: Readonly<Record<string, any>> = {{ bulk_config | tojson if bulk_config is defined else {} | tojson }};
+
+  // =========================================================================
+  // Constructor
+  // =========================================================================
+
+  constructor(private http: HttpClient) {}
+
+  // =========================================================================
+  // Upload file
+  // =========================================================================
+
+  /**
+   * Tải lên file (CSV/JSON) đến server.
+   *
+   * @param file — File object từ trình duyệt
+   * @param format — Định dạng file ('csv' hoặc 'json')
+   * @returns Observable chứa UploadResult
+   */
+  uploadFile(file: File, format: string): Observable<UploadResult> {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    formData.append('format', format);
+
+    return this.http.post<UploadResult>(`${this.baseUrl}/upload`, formData).pipe(
+      tap((result) => {
+        console.log(`[ImportService] Upload thành công: ${result.fileName}`);
+      }),
+      catchError((error) => {
+        console.error('[ImportService] Lỗi upload file:', error);
+        return throwError(() => new Error(`Upload thất bại: ${error.message || error}`));
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Tạo Import Job
+  // =========================================================================
+
+  /**
+   * Tạo import job mới với cấu hình đã cho.
+   *
+   * @param config — Cấu hình import job
+   * @returns Observable chứa ImportJobResult
+   */
+  createImportJob(config: ImportJobConfig): Observable<ImportJobResult> {
+    return this.http.post<ImportJobResult>(`${this.baseUrl}/jobs`, config).pipe(
+      tap((result) => {
+        console.log(`[ImportService] Tạo job thành công: ${result.jobKey}`);
+      }),
+      catchError((error) => {
+        console.error('[ImportService] Lỗi tạo job:', error);
+        return throwError(() => new Error(`Không thể tạo job: ${error.message || error}`));
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Trạng thái Job
+  // =========================================================================
+
+  /**
+   * Kiểm tra trạng thái của một job cụ thể.
+   *
+   * @param jobKey — Khóa của job
+   * @returns Observable chứa JobStatusInfo
+   */
+  getJobStatus(jobKey: string): Observable<JobStatusInfo> {
+    return this.http.get<JobStatusInfo>(`${this.baseUrl}/jobs/${jobKey}/status`).pipe(
+      catchError((error) => {
+        console.error(`[ImportService] Lỗi kiểm tra trạng thái job ${jobKey}:`, error);
+        return throwError(() => new Error(`Không thể lấy trạng thái: ${error.message || error}`));
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Danh sách Jobs
+  // =========================================================================
+
+  /**
+   * Lấy danh sách jobs với bộ lọc.
+   *
+   * @param filters — Bộ lọc cho danh sách jobs
+   * @returns Observable chứa PagedJobList
+   */
+  listJobs(filters?: JobFilters): Observable<PagedJobList> {
+    let params = new HttpParams();
+
+    if (filters) {
+      if (filters.status) {
+        params = params.set('status', filters.status);
+      }
+      if (filters.targetEntity) {
+        params = params.set('targetEntity', filters.targetEntity);
+      }
+      if (filters.dateFrom) {
+        params = params.set('dateFrom', filters.dateFrom);
+      }
+      if (filters.dateTo) {
+        params = params.set('dateTo', filters.dateTo);
+      }
+      if (filters.limit) {
+        params = params.set('limit', filters.limit.toString());
+      }
+      if (filters.offset) {
+        params = params.set('offset', filters.offset.toString());
+      }
+    }
+
+    return this.http.get<PagedJobList>(`${this.baseUrl}/jobs`, { params }).pipe(
+      catchError((error) => {
+        console.error('[ImportService] Lỗi lấy danh sách jobs:', error);
+        return throwError(() => new Error(`Không thể lấy danh sách: ${error.message || error}`));
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Hủy Job
+  // =========================================================================
+
+  /**
+   * Hủy một job đang chạy hoặc chờ xử lý.
+   *
+   * @param jobKey — Khóa của job cần hủy
+   * @returns Observable chứa kết quả hủy
+   */
+  cancelJob(jobKey: string): Observable<{ success: boolean; message: string }> {
+    return this.http.post<{ success: boolean; message: string }>(
+      `${this.baseUrl}/jobs/${jobKey}/cancel`,
+      {},
+    ).pipe(
+      tap((result) => {
+        console.log(`[ImportService] Đã hủy job ${jobKey}: ${result.message}`);
+      }),
+      catchError((error) => {
+        console.error(`[ImportService] Lỗi hủy job ${jobKey}:`, error);
+        return throwError(() => new Error(`Không thể hủy job: ${error.message || error}`));
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Polling trạng thái Job
+  // =========================================================================
+
+  /**
+   * Polling trạng thái job với khoảng thời gian cố định.
+   *
+   * Tiếp tục polling cho đến khi job đạt trạng thái cuối cùng
+   * (completed, failed, cancelled) hoặc đạt số lần polling tối đa.
+   *
+   * @param jobKey — Khóa của job
+   * @param intervalMs — Khoảng thời gian giữa các lần polling (ms), mặc định 2000
+   * @param maxAttempts — Số lần polling tối đa, mặc định 60 (2 phút với 2s interval)
+   * @returns Observable phát mỗi lần cập nhật trạng thái, kết thúc khi job hoàn thành
+   */
+  pollJobStatus(
+    jobKey: string,
+    intervalMs: number = 2000,
+    maxAttempts: number = 60,
+  ): Observable<JobStatusInfo> {
+    // Các trạng thái cuối cùng — dừng polling khi đạt
+    const terminalStates: string[] = ['completed', 'failed', 'cancelled', 'error'];
+
+    return interval(intervalMs).pipe(
+      take(maxAttempts),
+      switchMap(() =>
+        this.http.get<JobStatusInfo>(`${this.baseUrl}/jobs/${jobKey}/status`).pipe(
+          tap((status) => {
+            console.log(
+              `[ImportService] Job ${jobKey}: ${status.status} ` +
+              `(${status.progress || 0}%, ${status.processedRows || 0}/${status.totalRows || 0} hàng)`,
+            );
+          }),
+          catchError((error) => {
+            console.error(`[ImportService] Lỗi polling job ${jobKey}:`, error);
+            return throwError(() => error);
+          }),
+        ),
+      ),
+      takeWhile(
+        (status) => !terminalStates.includes(status.status),
+        true, // include: true để emit luôn cả giá trị terminal state cuối cùng
+      ),
+    );
+  }
+}

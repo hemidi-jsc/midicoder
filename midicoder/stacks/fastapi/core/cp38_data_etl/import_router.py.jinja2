@@ -1,0 +1,439 @@
+# coding: utf-8
+"""
+Import Router cho FastAPI - Data Import/Export/ETL.
+
+Cung cấp các endpoint:
+- POST   /data/import/upload/csv        — Upload CSV file
+- POST   /data/import/upload/json       — Upload JSON file
+- POST   /data/import/jobs/import       — Tạo import job mới
+- GET    /data/import/jobs/import       — Danh sách import jobs
+- GET    /data/import/jobs/import/{job_key} — Trạng thái job
+- POST   /data/import/jobs/import/{job_key}/execute — Thực thi job
+- POST   /data/import/jobs/import/{job_key}/cancel  — Hủy job
+- GET    /data/import/jobs/import/{job_key}/errors  — Lỗi từng hàng
+
+Số lượng import jobs hiện có: {{ import_job_count }}
+Các trạng thái job: {{ ', '.join(job_statuses) }}
+Định dạng hỗ trợ: {{ ', '.join(import_formats) }}
+
+CP38: Data Import/Export/ETL
+"""
+
+from typing import Optional
+
+from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .import_service import ImportService, ImportServiceError
+from .import_schemas import (
+    ImportJobCreate,
+    ImportJobRead,
+    JobStatusResponse,
+    ImportResult,
+    JobListResponse,
+)
+
+# Khởi tạo router với prefix và tags
+router = APIRouter(prefix="/data/import", tags=["data-import"])
+
+
+# ============================================================================
+# Dependency: Lấy ImportService
+# ============================================================================
+
+def get_import_service(db: AsyncSession) -> ImportService:
+    """
+    Dependency factory cho ImportService.
+
+    Args:
+        db: AsyncSession từ FastAPI dependency injection
+
+    Returns:
+        ImportService instance
+    """
+    return ImportService(db)
+
+
+# ============================================================================
+# Upload Endpoints
+# ============================================================================
+
+@router.post("/upload/csv", summary="Upload CSV file", response_model=ImportJobRead)
+async def upload_csv(
+    file: UploadFile = File(..., description="File CSV cần upload"),
+    target_table: Optional[str] = Query(None, description="Bảng đích trong database"),
+    created_by: Optional[str] = Query(None, description="Người tạo job"),
+    chunk_size: int = Query(1000, ge=100, le=50000, description="Số hàng mỗi chunk"),
+    continue_on_error: bool = Query(True, description="Tiếp tục khi gặp lỗi"),
+    service: ImportService = Depends(get_import_service),
+) -> ImportJobRead:
+    """
+    Upload file CSV và tạo import job.
+
+    Đọc nội dung file CSV, parse để đếm số hàng, và tạo import job
+    ở trạng thái pending. Job chưa được thực thi — cần gọi /execute.
+
+    **Yêu cầu:**
+    - File phải có đuôi .csv
+    - File không được rỗng
+    - Encoding: UTF-8 (hỗ trợ BOM)
+
+    **Response:**
+    - 200: Import job đã tạo thành công
+    - 400: Lỗi validate file (định dạng, rỗng)
+    - 422: Lỗi validate request body
+
+    Args:
+        file: File CSV upload
+        target_table: Tên bảng đích (optional)
+        created_by: Người tạo job (optional)
+        chunk_size: Số hàng mỗi chunk (100-50000)
+        continue_on_error: Có tiếp tục khi gặp lỗi không
+
+    Returns:
+        ImportJobRead với thông tin job
+
+    Raises:
+        HTTPException 400: Nếu file không hợp lệ
+        HTTPException 422: Nếu validate request thất bại
+    """
+    try:
+        job = await service.upload_csv(
+            file=file,
+            target_table=target_table,
+            created_by=created_by,
+            chunk_size=chunk_size,
+            continue_on_error=continue_on_error,
+        )
+        return job
+
+    except ImportServiceError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=e.message,
+        )
+
+
+@router.post("/upload/json", summary="Upload JSON file", response_model=ImportJobRead)
+async def upload_json(
+    file: UploadFile = File(..., description="File JSON cần upload"),
+    target_table: Optional[str] = Query(None, description="Bảng đích trong database"),
+    created_by: Optional[str] = Query(None, description="Người tạo job"),
+    chunk_size: int = Query(1000, ge=100, le=50000, description="Số hàng mỗi chunk"),
+    continue_on_error: bool = Query(True, description="Tiếp tục khi gặp lỗi"),
+    service: ImportService = Depends(get_import_service),
+) -> ImportJobRead:
+    """
+    Upload file JSON và tạo import job.
+
+    Đọc nội dung file JSON (array hoặc JSON Lines), parse để đếm số hàng,
+    và tạo import job ở trạng thái pending.
+
+    **Yêu cầu:**
+    - File phải có đuôi .json
+    - JSON phải là array đối tượng: [{"key": "value"}, ...]
+    - Hoặc JSON Lines: mỗi dòng là một JSON object
+
+    **Response:**
+    - 200: Import job đã tạo thành công
+    - 400: Lỗi validate file
+    - 422: Lỗi validate request body
+
+    Args:
+        file: File JSON upload
+        target_table: Tên bảng đích (optional)
+        created_by: Người tạo job (optional)
+        chunk_size: Số hàng mỗi chunk (100-50000)
+        continue_on_error: Có tiếp tục khi gặp lỗi không
+
+    Returns:
+        ImportJobRead với thông tin job
+
+    Raises:
+        HTTPException 400: Nếu file không hợp lệ
+    """
+    try:
+        job = await service.upload_json(
+            file=file,
+            target_table=target_table,
+            created_by=created_by,
+            chunk_size=chunk_size,
+            continue_on_error=continue_on_error,
+        )
+        return job
+
+    except ImportServiceError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=e.message,
+        )
+
+
+# ============================================================================
+# Import Job CRUD Endpoints
+# ============================================================================
+
+@router.post("/jobs/import", summary="Tạo import job", response_model=ImportJobRead)
+async def create_import_job(
+    body: ImportJobCreate,
+    service: ImportService = Depends(get_import_service),
+) -> ImportJobRead:
+    """
+    Tạo import job mới từ dữ liệu đã có.
+
+    Dùng khi client đã có dữ liệu và muốn tạo job import với cấu hình
+    tùy chỉnh (không cần upload file).
+
+    **Response:**
+    - 200: Import job đã tạo thành công (trạng thái pending)
+    - 422: Lỗi validate request body
+
+    Args:
+        body: ImportJobCreate với thông tin job
+
+    Returns:
+        ImportJobRead với thông tin job mới
+
+    Raises:
+        HTTPException 422: Nếu validate request thất bại
+    """
+    try:
+        # Lưu ý: create_import_job trong service cần raw_data
+        # Endpoint này dùng khi dữ liệu đã được upload riêng
+        job = await service.create_import_job(
+            filename=body.filename,
+            file_format=body.file_format.value,
+            total_rows=0,  # Sẽ được cập nhật khi upload data
+            file_size_bytes=0,
+            target_table=body.target_table,
+            created_by=body.created_by,
+            chunk_size=body.chunk_size,
+            continue_on_error=body.continue_on_error,
+        )
+        return job
+
+    except ImportServiceError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=e.message,
+        )
+
+
+@router.get("/jobs/import", summary="Danh sách import jobs")
+async def list_import_jobs(
+    status: Optional[str] = Query(
+        None,
+        description="Filter theo trạng thái",
+        choices=[s for s in ["pending", "running", "completed", "failed", "cancelled"]],
+    ),
+    page: int = Query(1, ge=1, description="Số trang (bắt đầu từ 1)"),
+    page_size: int = Query(20, ge=1, le=100, description="Số jobs mỗi trang"),
+    order_by: str = Query(
+        "created_at_desc",
+        description="Sắp xếp: created_at_desc, created_at_asc, status",
+    ),
+    service: ImportService = Depends(get_import_service),
+) -> dict:
+    """
+    Lấy danh sách import jobs với filter và pagination.
+
+    **Query Parameters:**
+    - status: Filter theo trạng thái job (optional)
+    - page: Số trang, bắt đầu từ 1 (default: 1)
+    - page_size: Số jobs mỗi trang (default: 20, max: 100)
+    - order_by: Sắp xếp (default: created_at_desc)
+
+    **Response:**
+    - 200: Dictionary với items, total, page, page_size, total_pages
+
+    Args:
+        status: Trạng thái filter (optional)
+        page: Số trang
+        page_size: Số items mỗi trang
+        order_by: Trường sắp xếp
+
+    Returns:
+        Dictionary với danh sách jobs và pagination info
+    """
+    return await service.list_import_jobs(
+        status=status,
+        page=page,
+        page_size=page_size,
+        order_by=order_by,
+    )
+
+
+@router.get("/jobs/import/{job_key}", summary="Trạng thái import job", response_model=JobStatusResponse)
+async def get_import_job_status(
+    job_key: str,
+    service: ImportService = Depends(get_import_service),
+) -> JobStatusResponse:
+    """
+    Lấy trạng thái chi tiết của import job.
+
+    Trả về thông tin đầy đủ của job bao gồm tiến trình, số lỗi, thời gian.
+
+    **Response:**
+    - 200: JobStatusResponse với thông tin job
+    - 404: Job không tìm thấy
+
+    Args:
+        job_key: Khóa duy nhất của import job
+
+    Returns:
+        JobStatusResponse
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+    """
+    try:
+        status_info = await service.get_job_status(job_key)
+        return JobStatusResponse(**status_info)
+
+    except ImportServiceError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=e.message,
+        )
+
+
+# ============================================================================
+# Job Action Endpoints
+# ============================================================================
+
+@router.post("/jobs/import/{job_key}/execute", summary="Thực thi import job", response_model=ImportResult)
+async def execute_import_job(
+    job_key: str,
+    service: ImportService = Depends(get_import_service),
+) -> ImportResult:
+    """
+    Thực thi import job.
+
+    Bắt đầu xử lý import job với chunking và retry.
+    Job phải ở trạng thái pending.
+
+    **Response:**
+    - 200: ImportResult với kết quả import
+    - 404: Job không tìm thấy
+    - 409: Job đang chạy hoặc đã ở trạng thái cuối
+
+    Args:
+        job_key: Khóa duy nhất của import job
+
+    Returns:
+        ImportResult với thông tin kết quả
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+        HTTPException 409: Nếu job đang chạy hoặc đã hoàn thành
+    """
+    try:
+        job = await service.execute_import(job_key)
+
+        return ImportResult(
+            job_key=job.job_key,
+            status=job.status,
+            total_rows=job.total_rows or 0,
+            imported_rows=job.processed_rows,
+            error_count=job.error_count,
+            errors=[],  # Chi tiết errors lấy từ /errors endpoint
+            file_size_bytes=job.file_size_bytes,
+        )
+
+    except ImportServiceError as e:
+        status_code = 404 if e.error_code == "JOB_NOT_FOUND" else 409
+        raise HTTPException(
+            status_code=status_code,
+            detail=e.message,
+        )
+
+
+@router.post("/jobs/import/{job_key}/cancel", summary="Hủy import job")
+async def cancel_import_job(
+    job_key: str,
+    service: ImportService = Depends(get_import_service),
+) -> dict:
+    """
+    Hủy import job đang chạy hoặc pending.
+
+    Chỉ có thể hủy job chưa ở trạng thái cuối (completed/failed/cancelled).
+
+    **Response:**
+    - 200: Thông báo hủy thành công
+    - 404: Job không tìm thấy
+    - 409: Job đã ở trạng thái cuối
+
+    Args:
+        job_key: Khóa duy nhất của import job
+
+    Returns:
+        Dictionary với thông tin job đã cancel
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+        HTTPException 409: Nếu không thể cancel
+    """
+    try:
+        job = await service.cancel_job(job_key)
+        return {
+            "job_key": job.job_key,
+            "status": job.status,
+            "message": "Job đã được hủy thành công",
+        }
+
+    except ImportServiceError as e:
+        status_code = 404 if e.error_code == "JOB_NOT_FOUND" else 409
+        raise HTTPException(
+            status_code=status_code,
+            detail=e.message,
+        )
+
+
+# ============================================================================
+# Error Details Endpoint
+# ============================================================================
+
+@router.get("/jobs/import/{job_key}/errors", summary="Lỗi hàng của import job")
+async def get_import_errors(
+    job_key: str,
+    page: int = Query(1, ge=1, description="Số trang (bắt đầu từ 1)"),
+    page_size: int = Query(50, ge=1, le=200, description="Số lỗi mỗi trang"),
+    service: ImportService = Depends(get_import_service),
+) -> dict:
+    """
+    Lấy danh sách lỗi hàng của import job.
+
+    Trả về chi tiết từng hàng có lỗi: số hàng, loại lỗi, thông báo, cột gây lỗi.
+    Hỗ trợ pagination.
+
+    **Query Parameters:**
+    - page: Số trang (default: 1)
+    - page_size: Số lỗi mỗi trang (default: 50, max: 200)
+
+    **Response:**
+    - 200: Dictionary với errors, total_errors, pagination
+    - 404: Job không tìm thấy
+
+    Args:
+        job_key: Khóa duy nhất của import job
+        page: Số trang
+        page_size: Số lỗi mỗi trang
+
+    Returns:
+        Dictionary với danh sách lỗi và pagination
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+    """
+    try:
+        return await service.get_row_errors(
+            job_key=job_key,
+            page=page,
+            page_size=page_size,
+        )
+
+    except ImportServiceError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=e.message,
+        )

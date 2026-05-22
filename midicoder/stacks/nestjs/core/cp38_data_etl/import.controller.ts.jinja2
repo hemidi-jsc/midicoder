@@ -1,0 +1,326 @@
+/**
+ * Import Controller cho Data Import/Export/ETL.
+ *
+ * Cung cấp các REST endpoints prefix 'data/import':
+ * - POST   /data/import/upload/csv       - Upload file CSV
+ * - POST   /data/import/upload/json      - Upload file JSON
+ * - POST   /data/import/jobs/import      - Tạo job import mới
+ * - GET    /data/import/jobs/import      - Liệt kê jobs import
+ * - GET    /data/import/jobs/import/:jobKey - Chi tiết job
+ * - GET    /data/import/jobs/import/:jobKey/errors - Lỗi hàng của job
+ * - POST   /data/import/jobs/import/:jobKey/execute - Thực thi job
+ * - POST   /data/import/jobs/import/:jobKey/cancel  - Hủy job
+ *
+ * CP38: Data Import/Export/ETL
+ */
+
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ImportService } from './import.service';
+import {
+  ImportJobCreateDto,
+  JobQueryDto,
+  ImportJobResponseDto,
+  PaginatedJobsDto,
+} from './import.dto';
+
+/**
+ * Controller cho các thao tác import dữ liệu.
+ *
+ * Prefix: 'data/import'
+ *
+ * Các endpoint:
+ * 1. Upload file (CSV/JSON) - tạo job + parse file
+ * 2. Tạo job import từ cấu hình
+ * 3. Truy vấn/liệt kê jobs
+ * 4. Thực thi/hủy job
+ * 5. Xem lỗi từng hàng
+ */
+@Controller('data/import')
+export class ImportController {
+  private readonly logger = new Logger(ImportController.name);
+
+  constructor(
+    private readonly importService: ImportService,
+  ) {}
+
+  // =========================================================================
+  // Upload Endpoints
+  // =========================================================================
+
+  /**
+   * POST /data/import/upload/csv
+   *
+   * Upload file CSV để import.
+   *
+   * Request:
+   * - file (multipart/form-data): File CSV cần upload
+   * - format (query): 'csv' (mặc định)
+   * - chunkSize (query): Kích thước chunk tùy chỉnh
+   * - maxRetries (query): Số lần thử lại tối đa
+   * - bulkConfigKey (query): Khóa cấu hình hàng loạt
+   *
+   * Response:
+   * - ImportJobResponseDto với thông tin job mới tạo
+   *
+   * @param file - File CSV từ multipart/form-data
+   * @param dto - DTO cấu hình import từ query params
+   * @returns Thông tin ImportJob mới tạo
+   */
+  @Post('upload/csv')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadCsv(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: ImportJobCreateDto,
+  ): Promise<ImportJobResponseDto> {
+    if (!file) {
+      throw new BadRequestException('Không có file CSV được upload');
+    }
+
+    this.logger.log(`Upload CSV: ${file.originalname}, ${file.size} bytes`);
+
+    return this.importService.uploadCsv(file, dto);
+  }
+
+  /**
+   * POST /data/import/upload/json
+   *
+   * Upload file JSON để import.
+   *
+   * Request:
+   * - file (multipart/form-data): File JSON cần upload
+   * - format (query): 'json' (mặc định)
+   * - chunkSize (query): Kích thước chunk tùy chỉnh
+   * - maxRetries (query): Số lần thử lại tối đa
+   * - bulkConfigKey (query): Khóa cấu hình hàng loạt
+   *
+   * Response:
+   * - ImportJobResponseDto với thông tin job mới tạo
+   *
+   * @param file - File JSON từ multipart/form-data
+   * @param dto - DTO cấu hình import từ query params
+   * @returns Thông tin ImportJob mới tạo
+   */
+  @Post('upload/json')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadJson(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: ImportJobCreateDto,
+  ): Promise<ImportJobResponseDto> {
+    if (!file) {
+      throw new BadRequestException('Không có file JSON được upload');
+    }
+
+    this.logger.log(`Upload JSON: ${file.originalname}, ${file.size} bytes`);
+
+    return this.importService.uploadJson(file, dto);
+  }
+
+  // =========================================================================
+  // Job Management Endpoints
+  // =========================================================================
+
+  /**
+   * POST /data/import/jobs/import
+   *
+   * Tạo công việc import mới từ cấu hình.
+   *
+   * Request body:
+   * ```json
+   * {
+   *   "fileName": "customers.csv",
+   *   "format": "csv",
+   *   "chunkSize": 500,
+   *   "maxRetries": 3,
+   *   "bulkConfigKey": "default"
+   * }
+   * ```
+   *
+   * Response:
+   * - ImportJobResponseDto với jobKey mới
+   *
+   * @param dto - DTO chứa cấu hình tạo job
+   * @returns Thông tin ImportJob mới
+   */
+  @Post('jobs/import')
+  async createImportJob(
+    @Body() dto: ImportJobCreateDto,
+  ): Promise<ImportJobResponseDto> {
+    this.logger.log(`Tạo ImportJob mới: ${dto.fileName}`);
+
+    const job = await this.importService.createImportJob(dto);
+    return new ImportJobResponseDto(job);
+  }
+
+  /**
+   * GET /data/import/jobs/import
+   *
+   * Liệt kê tất cả công việc import với bộ lọc và phân trang.
+   *
+   * Query params:
+   * - status (optional): Trạng thái để lọc (pending, running, completed, failed, cancelled)
+   * - format (optional): Định dạng để lọc (csv, json)
+   * - search (optional): Từ khóa tìm kiếm trong tên file
+   * - page (optional): Số trang, mặc định 1
+   * - pageSize (optional): Số lượng mỗi trang, mặc định 50
+   * - sortBy (optional): Trường sắp xếp, mặc định 'createdAt'
+   * - sortOrder (optional): Hướng sắp xếp 'asc' hoặc 'desc', mặc định 'desc'
+   *
+   * Response:
+   * - PaginatedJobsDto<ImportJobResponseDto>
+   *
+   * @param query - DTO chứa tham số lọc và phân trang
+   * @returns Danh sách jobs với phân trang
+   */
+  @Get('jobs/import')
+  async listImportJobs(
+    @Query() query: JobQueryDto,
+  ): Promise<PaginatedJobsDto<ImportJobResponseDto>> {
+    return this.importService.listImportJobs(query);
+  }
+
+  /**
+   * GET /data/import/jobs/import/:jobKey
+   *
+   * Lấy thông tin chi tiết của một công việc import.
+   *
+   * Path params:
+   * - jobKey: Mã định danh của job
+   *
+   * Response:
+   * - ImportJobResponseDto với đầy đủ thông tin và tiến độ
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns Thông tin chi tiết job
+   */
+  @Get('jobs/import/:jobKey')
+  async getJobStatus(
+    @Param('jobKey') jobKey: string,
+  ): Promise<ImportJobResponseDto> {
+    return this.importService.getJobStatus(jobKey);
+  }
+
+  /**
+   * GET /data/import/jobs/import/:jobKey/errors
+   *
+   * Lấy danh sách lỗi từng hàng cho công việc import.
+   *
+   * Path params:
+   * - jobKey: Mã định danh của job
+   *
+   * Query params:
+   * - page (optional): Số trang, mặc định 1
+   * - pageSize (optional): Số lượng mỗi trang, mặc định 50
+   *
+   * Response:
+   * ```json
+   * {
+   *   "errors": [
+   *     {
+   *       "id": "uuid",
+   *       "rowNumber": 42,
+   *       "rowData": { "name": "", "email": "invalid" },
+   *       "errorMessage": "Trường name không được để trống",
+   *       "errorType": "validation",
+   *       "fieldName": "name",
+   *       "createdAt": "2024-01-01T00:00:00.000Z"
+   *     }
+   *   ],
+   *   "total": 15,
+   *   "page": 1,
+   *   "pageSize": 50
+   * }
+   * ```
+   *
+   * @param jobKey - Mã định danh của job
+   * @param page - Số trang
+   * @param pageSize - Số lượng mỗi trang
+   * @returns Danh sách lỗi hàng với phân trang
+   */
+  @Get('jobs/import/:jobKey/errors')
+  async getRowErrors(
+    @Param('jobKey') jobKey: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ): Promise<{
+    errors: any[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const p = page ? parseInt(page, 10) : 1;
+    const ps = pageSize ? parseInt(pageSize, 10) : 50;
+    return this.importService.getRowErrors(jobKey, p, ps);
+  }
+
+  // =========================================================================
+  // Job Action Endpoints
+  // =========================================================================
+
+  /**
+   * POST /data/import/jobs/import/:jobKey/execute
+   *
+   * Thực thi công việc import (chạy với chunking + retry).
+   *
+   * Path params:
+   * - jobKey: Mã định danh của job
+   *
+   * Job phải có trạng thái PENDING, FAILED (để chạy lại), hoặc CANCELLED.
+   * Job đang RUNNING hoặc COMPLETED sẽ bị từ chối.
+   *
+   * Response:
+   * - ImportJobResponseDto với trạng thái mới
+   *
+   * Lưu ý: Endpoint này có thể mất thời gian nếu dataset lớn.
+   * Trong sản xuất nên dùng queue worker (BullMQ, Kafka) để xử lý background.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns Kết quả thực thi job
+   */
+  @Post('jobs/import/:jobKey/execute')
+  async executeImport(
+    @Param('jobKey') jobKey: string,
+  ): Promise<ImportJobResponseDto> {
+    this.logger.log(`Thực thi ImportJob: ${jobKey}`);
+
+    const job = await this.importService.executeImport(jobKey);
+    return new ImportJobResponseDto(job);
+  }
+
+  /**
+   * POST /data/import/jobs/import/:jobKey/cancel
+   *
+   * Hủy công việc import đang chạy hoặc chờ chạy.
+   *
+   * Path params:
+   * - jobKey: Mã định danh của job
+   *
+   * Chỉ có thể hủy job có trạng thái PENDING hoặc RUNNING.
+   * Job COMPLETED hoặc CANCELLED sẽ bị từ chối.
+   *
+   * Response:
+   * - ImportJobResponseDto với trạng thái CANCELLED
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns Job đã bị hủy
+   */
+  @Post('jobs/import/:jobKey/cancel')
+  async cancelJob(
+    @Param('jobKey') jobKey: string,
+  ): Promise<ImportJobResponseDto> {
+    this.logger.log(`Hủy ImportJob: ${jobKey}`);
+
+    return this.importService.cancelJob(jobKey);
+  }
+}

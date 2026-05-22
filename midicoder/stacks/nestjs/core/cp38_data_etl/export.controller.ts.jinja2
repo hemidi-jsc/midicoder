@@ -1,0 +1,252 @@
+/**
+ * Export Controller cho Data Import/Export/ETL.
+ *
+ * Cung cấp các REST endpoints prefix 'data/export':
+ * - POST /data/export/export            - Tạo job export mới
+ * - GET  /data/export/export            - Liệt kê jobs export
+ * - GET  /data/export/export/:jobKey    - Chi tiết job export
+ * - GET  /data/export/export/:jobKey/download - Tải file export
+ * - GET  /data/export/export/:jobKey/preview  - Xem trước dữ liệu
+ *
+ * CP38: Data Import/Export/ETL
+ */
+
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Query,
+  Logger,
+  StreamableFile,
+} from '@nestjs/common';
+import { ExportService } from './export.service';
+import {
+  ExportJobCreateDto,
+  JobQueryDto,
+  PaginatedJobsDto,
+} from './import.dto';
+
+/**
+ * Controller cho các thao tác export dữ liệu.
+ *
+ * Prefix: 'data/export'
+ *
+ * Các endpoint:
+ * 1. Tạo job export từ cấu hình (sourceTable, queryFilter, format)
+ * 2. Liệt kê jobs export với phân trang
+ * 3. Xem chi tiết job (trạng thái, tiến độ)
+ * 4. Download file export đã hoàn thành
+ * 5. Preview dữ liệu trước khi export
+ */
+@Controller('data/export')
+export class ExportController {
+  private readonly logger = new Logger(ExportController.name);
+
+  constructor(
+    private readonly exportService: ExportService,
+  ) {}
+
+  // =========================================================================
+  // Export Job Endpoints
+  // =========================================================================
+
+  /**
+   * POST /data/export/export
+   *
+   * Tạo công việc export mới.
+   *
+   * Request body:
+   * ```json
+   * {
+   *   "sourceTable": "users",
+   *   "format": "csv",
+   *   "fileName": "active_users.csv",
+   *   "queryFilter": { "status": "active" },
+   *   "selectedColumns": ["id", "name", "email"],
+   *   "chunkSize": 2000
+   * }
+   * ```
+   *
+   * Sau khi tạo, job có trạng thái PENDING.
+   * Để thực thi export, gọi method executeExport trong ExportService
+   * (hoặc qua queue worker trong môi trường sản xuất).
+   *
+   * Response:
+   * ```json
+   * {
+   *   "id": "uuid",
+   *   "jobKey": "exp-abc123-def456",
+   *   "fileName": "active_users.csv",
+   *   "format": "csv",
+   *   "status": "pending",
+   *   "sourceTable": "users",
+   *   "totalRows": 0,
+   *   "exportedRows": 0,
+   *   "progress": 0,
+   *   "createdAt": "2024-01-01T00:00:00.000Z"
+   * }
+   * ```
+   *
+   * @param dto - DTO chứa cấu hình export
+   * @returns Thông tin ExportJob mới tạo
+   */
+  @Post('export')
+  async createExportJob(
+    @Body() dto: ExportJobCreateDto,
+  ): Promise<any> {
+    this.logger.log(
+      `Tạo ExportJob: table=${dto.sourceTable}, format=${dto.format}`,
+    );
+
+    const job = await this.exportService.createExportJob(dto);
+
+    return {
+      id: job.id,
+      jobKey: job.jobKey,
+      fileName: job.fileName,
+      format: job.format,
+      status: job.status,
+      sourceTable: job.sourceTable,
+      totalRows: job.totalRows,
+      exportedRows: job.exportedRows,
+      progress: job.progress,
+      createdAt: job.createdAt,
+    };
+  }
+
+  /**
+   * GET /data/export/export
+   *
+   * Liệt kê tất cả công việc export với bộ lọc và phân trang.
+   *
+   * Query params:
+   * - status (optional): Lọc theo trạng thái (pending, running, completed, failed, cancelled)
+   * - format (optional): Lọc theo định dạng (csv, json)
+   * - search (optional): Từ khóa tìm kiếm trong tên file
+   * - page (optional): Số trang, mặc định 1
+   * - pageSize (optional): Số lượng mỗi trang, mặc định 50
+   * - sortBy (optional): Trường sắp xếp, mặc định 'createdAt'
+   * - sortOrder (optional): Hướng sắp xếp 'asc' hoặc 'desc', mặc định 'desc'
+   *
+   * Response:
+   * ```json
+   * {
+   *   "items": [ ... ],
+   *   "total": 150,
+   *   "page": 1,
+   *   "pageSize": 50,
+   *   "totalPages": 3
+   * }
+   * ```
+   *
+   * @param query - DTO chứa tham số lọc và phân trang
+   * @returns Danh sách jobs export với phân trang
+   */
+  @Get('export')
+  async listExportJobs(
+    @Query() query: JobQueryDto,
+  ): Promise<PaginatedJobsDto<any>> {
+    return this.exportService.listExportJobs(query);
+  }
+
+  /**
+   * GET /data/export/export/:jobKey
+   *
+   * Lấy thông tin chi tiết của một công việc export.
+   *
+   * Path params:
+   * - jobKey: Mã định danh của job
+   *
+   * Response bao gồm:
+   * - Trạng thái hiện tại (pending, running, completed, failed)
+   * - Phần trăm tiến độ
+   * - Số hàng đã export / tổng số hàng
+   * - Kích thước file (nếu đã hoàn thành)
+   * - Thông báo lỗi (nếu có)
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns Thông tin chi tiết job export
+   */
+  @Get('export/:jobKey')
+  async getExportStatus(
+    @Param('jobKey') jobKey: string,
+  ): Promise<any> {
+    return this.exportService.getExportStatus(jobKey);
+  }
+
+  // =========================================================================
+  // Download & Preview Endpoints
+  // =========================================================================
+
+  /**
+   * GET /data/export/export/:jobKey/download
+   *
+   * Tải file export đã hoàn thành về.
+   *
+   * Path params:
+   * - jobKey: Mã định danh của job
+   *
+   * Response:
+   * - File binary với Content-Disposition: attachment
+   * - Content-Type: text/csv hoặc application/json
+   *
+   * Lưu ý:
+   * - Job phải có trạng thái COMPLETED mới có thể download
+   * - File sẽ được stream trực tiếp từ disk (không load vào memory)
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns StreamableFile để download
+   */
+  @Get('export/:jobKey/download')
+  async downloadExport(
+    @Param('jobKey') jobKey: string,
+  ): Promise<StreamableFile> {
+    this.logger.log(`Download export: ${jobKey}`);
+    return this.exportService.downloadExport(jobKey);
+  }
+
+  /**
+   * GET /data/export/export/:jobKey/preview
+   *
+   * Xem trước dữ liệu sẽ được export.
+   *
+   * Path params:
+   * - jobKey: Mã định danh của job
+   *
+   * Query params:
+   * - limit (optional): Số hàng xem trước, mặc định 10, tối đa 100
+   *
+   * Response:
+   * ```json
+   * {
+   *   "jobKey": "exp-abc123",
+   *   "fileName": "users.csv",
+   *   "format": "csv",
+   *   "sourceTable": "users",
+   *   "totalRows": 50000,
+   *   "columns": ["id", "name", "email", "status"],
+   *   "previewData": [
+   *     { "id": "1", "name": "John", "email": "john@example.com", "status": "active" },
+   *     { "id": "2", "name": "Jane", "email": "jane@example.com", "status": "active" }
+   *   ]
+   * }
+   * ```
+   *
+   * Endpoint này hữu ích để người dùng xác nhận cấu trúc dữ liệu
+   * trước khi chạy export toàn bộ.
+   *
+   * @param jobKey - Mã định danh của job
+   * @param limit - Số hàng xem trước
+   * @returns Dữ liệu xem trước với metadata
+   */
+  @Get('export/:jobKey/preview')
+  async previewExport(
+    @Param('jobKey') jobKey: string,
+    @Query('limit') limit?: string,
+  ): Promise<any> {
+    const l = limit ? parseInt(limit, 10) : 10;
+    return this.exportService.previewExport(jobKey, l);
+  }
+}

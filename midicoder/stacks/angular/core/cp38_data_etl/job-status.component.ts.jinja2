@@ -1,0 +1,1270 @@
+/**
+ * Job Status Component — CP38: Data Import/Export/ETL.
+ *
+ * Component standalone hiển thị tiến trình của job (import/export/ETL):
+ * - Thanh tiến trình với phần trăm
+ * - Badge trạng thái (pending/running/completed/failed/cancelled)
+ * - Đếm hàng (tổng/thành công/thất bại)
+ * - Danh sách lỗi với chi tiết từng hàng
+ * - Nút hủy (nếu job đang chạy)
+ * - Tự động làm mới với polling
+ *
+ * Sử dụng @angular/material cho progress bar, badge, bảng, nút bấm.
+ */
+
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  Input,
+  Output,
+  EventEmitter,
+  ChangeDetectorRef,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatIconModule } from '@angular/material/icon';
+import { MatCardModule } from '@angular/material/card';
+import { MatChipModule } from '@angular/material/chips';
+import { MatTableModule } from '@angular/material/table';
+import { MatDividerModule } from '@angular/material/divider';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatListModule } from '@angular/material/list';
+import { MatExpansionModule } from '@angular/material/expansion';
+import { interval, Subscription } from 'rxjs';
+import {
+  ImportService,
+  JobStatusInfo,
+} from './import.service';
+import {
+  ExportService,
+  ExportStatusInfo,
+} from './export.service';
+
+// =========================================================================
+// Giao diện dữ liệu
+// =========================================================================
+
+/**
+ * Các trạng thái job có thể có.
+ */
+export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+/**
+ * Một lỗi chi tiết từ hàng dữ liệu.
+ */
+export interface RowError {
+  /** Số hàng (1-indexed) */
+  rowNumber: number;
+  /** Nội dung lỗi */
+  message: string;
+  /** Dữ liệu hàng gây lỗi */
+  rowData?: Record<string, any>;
+}
+
+/**
+ * Loại job (import, export, etl).
+ */
+export type JobType = 'import' | 'export' | 'etl';
+
+/**
+ * Cấu hình hiển thị trạng thái job.
+ */
+interface StatusDisplayConfig {
+  /** Mã trạng thái */
+  status: JobStatus;
+  /** Nhãn hiển thị (tiếng Việt) */
+  label: string;
+  /** Màu badge */
+  color: 'primary' | 'accent' | 'warn' | '';
+  /** Icon Material */
+  icon: string;
+  /** Có phải trạng thái cuối cùng không */
+  isTerminal: boolean;
+}
+
+// =========================================================================
+// Cấu hình hiển thị cho từng trạng thái
+// =========================================================================
+
+const STATUS_CONFIG: Record<JobStatus, StatusDisplayConfig> = {
+  pending: {
+    status: 'pending',
+    label: 'Đang chờ',
+    color: '',
+    icon: 'schedule',
+    isTerminal: false,
+  },
+  running: {
+    status: 'running',
+    label: 'Đang xử lý',
+    color: 'primary',
+    icon: 'download',
+    isTerminal: false,
+  },
+  completed: {
+    status: 'completed',
+    label: 'Hoàn thành',
+    color: 'accent',
+    icon: 'check_circle',
+    isTerminal: true,
+  },
+  failed: {
+    status: 'failed',
+    label: 'Thất bại',
+    color: 'warn',
+    icon: 'error',
+    isTerminal: true,
+  },
+  cancelled: {
+    status: 'cancelled',
+    label: 'Đã hủy',
+    color: '',
+    icon: 'cancel',
+    isTerminal: true,
+  },
+};
+
+// =========================================================================
+// Component
+// =========================================================================
+
+@Component({
+  selector: 'mc-job-status',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatButtonModule,
+    MatProgressBarModule,
+    MatProgressSpinnerModule,
+    MatIconModule,
+    MatCardModule,
+    MatChipModule,
+    MatTableModule,
+    MatDividerModule,
+    MatTooltipModule,
+    MatSnackBarModule,
+    MatListModule,
+    MatExpansionModule,
+  ],
+  template: `
+    <div class="mc-job-status" [class.mc-terminal]="isTerminal">
+      <!-- =================================================================
+           Header: Trạng thái và phần trăm
+           ================================================================= -->
+      <mat-card class="mc-status-card">
+        <mat-card-content>
+          <!-- Hàng tiêu đề: icon + trạng thái + phần trăm -->
+          <div class="mc-header">
+            <div class="mc-status-left">
+              <!-- Spinner khi đang chạy -->
+              <mat-progress-spinner
+                *ngIf="status === 'running'"
+                [diameter]="24"
+                mode="indeterminate"
+                color="primary"
+                class="mc-running-spinner"
+              >
+              </mat-progress-spinner>
+
+              <!-- Icon trạng thái -->
+              <mat-icon class="mc-status-icon" [color]="statusConfig?.color || ''">
+                {{ statusConfig?.icon || 'help' }}
+              </mat-icon>
+
+              <div class="mc-status-text">
+                <span class="mc-status-label">
+                  {{ statusConfig?.label || status }}
+                </span>
+                <span class="mc-job-type-badge">
+                  {{ jobType | uppercase }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Phần trăm và badge trạng thái -->
+            <div class="mc-status-right">
+              <span class="mc-percentage">
+                {{ progress }}%
+              </span>
+              <mat-chip
+                [color]="statusConfig?.color || ''"
+                [disabled]="status === 'running'"
+                class="mc-status-chip"
+              >
+                {{ statusConfig?.label || status }}
+              </mat-chip>
+            </div>
+          </div>
+
+          <!-- =================================================================
+               Thanh tiến trình
+               ================================================================= -->
+          <div class="mc-progress-section">
+            <mat-progress-bar
+              mode="determinate"
+              [value]="progress"
+              [color]="status === 'failed' ? 'warn' : 'primary'"
+            >
+            </mat-progress-bar>
+
+            <!-- Hiển thị thời gian -->
+            <div class="mc-time-info">
+              <span *ngIf="startedAt" class="mc-started">
+                Bắt đầu: {{ startedAt | date:'HH:mm:ss dd/MM/yyyy' }}
+              </span>
+              <span *ngIf="completedAt" class="mc-completed">
+                Hoàn thành: {{ completedAt | date:'HH:mm:ss dd/MM/yyyy' }}
+              </span>
+              <span *ngIf="elapsedSeconds > 0 && !completedAt" class="mc-elapsed">
+                Đã chạy: {{ elapsedSeconds }}s
+              </span>
+            </div>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <!-- =================================================================
+           Thống kê hàng (row counts)
+           ================================================================= -->
+      <mat-card class="mc-stats-card">
+        <mat-card-content>
+          <div class="mc-stats-grid">
+            <!-- Tổng số hàng -->
+            <div class="mc-stat-item">
+              <div class="mc-stat-value mc-stat-total">{{ totalRows || 0 }}</div>
+              <div class="mc-stat-label">Tổng số hàng</div>
+            </div>
+
+            <!-- Thành công -->
+            <div class="mc-stat-item mc-stat-success">
+              <div class="mc-stat-value">{{ successRows || 0 }}</div>
+              <div class="mc-stat-label">Thành công</div>
+              <mat-icon>check</mat-icon>
+            </div>
+
+            <!-- Thất bại -->
+            <div class="mc-stat-item mc-stat-failed" [class.mc-has-errors]="!!(failedRows && failedRows > 0)">
+              <div class="mc-stat-value">{{ failedRows || 0 }}</div>
+              <div class="mc-stat-label">Thất bại</div>
+              <mat-icon *ngIf="failedRows && failedRows > 0">error</mat-icon>
+            </div>
+
+            <!-- Đã xử lý (tổng cộng) -->
+            <div class="mc-stat-item mc-stat-processed">
+              <div class="mc-stat-value">{{ processedRows || 0 }}</div>
+              <div class="mc-stat-label">Đã xử lý</div>
+              <mat-icon>done_all</mat-icon>
+            </div>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <!-- =================================================================
+           Danh sách lỗi (nếu có)
+           ================================================================= -->
+      <mat-card
+        *ngIf="errors.length > 0"
+        class="mc-errors-card"
+      >
+        <mat-card-header>
+          <mat-card-title>
+            <mat-icon color="warn">warning</mat-icon>
+            Chi tiết lỗi ({{ errors.length }} hàng)
+          </mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          <!-- Bảng hiển thị các lỗi -->
+          <div class="mc-errors-table-wrapper">
+            <table
+              mat-table
+              [dataSource]="errors"
+              class="mc-errors-table"
+            >
+              <!-- Cột số hàng -->
+              <ng-container matColumnDef="rowNumber">
+                <th mat-header-cell *matHeaderCellDef>
+                  Số hàng
+                </th>
+                <td mat-cell *matCellDef="let error">
+                  {{ error.rowNumber }}
+                </td>
+              </ng-container>
+
+              <!-- Cột thông báo lỗi -->
+              <ng-container matColumnDef="message">
+                <th mat-header-cell *matHeaderCellDef>
+                  Lỗi
+                </th>
+                <td mat-cell *matCellDef="let error">
+                  <span
+                    class="mc-error-message"
+                    [matTooltip]="error.message"
+                  >
+                    {{ error.message }}
+                  </span>
+                </td>
+              </ng-container>
+
+              <!-- Cột dữ liệu hàng (accordion để mở rộng) -->
+              <ng-container matColumnDef="data">
+                <th mat-header-cell *matHeaderCellDef>
+                  Dữ liệu
+                </th>
+                <td mat-cell *matCellDef="let error">
+                  <button
+                    mat-icon-button
+                    (click)="toggleErrorDetail(error)"
+                    [matTooltip]="error.rowData ? 'Xem chi tiết dữ liệu' : 'Không có dữ liệu'"
+                  >
+                    <mat-icon>
+                      {{ expandedErrors.has(error) ? 'expand_less' : 'expand_more' }}
+                    </mat-icon>
+                  </button>
+                  <div
+                    *ngIf="expandedErrors.has(error) && error.rowData"
+                    class="mc-error-detail"
+                  >
+                    <pre>{{ error.rowData | json }}</pre>
+                  </div>
+                </td>
+              </ng-container>
+
+              <tr mat-header-row *matHeaderRowDef="errorDisplayColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: errorDisplayColumns;"></tr>
+            </table>
+          </div>
+
+          <!-- Hiển thị thêm các lỗi vượt quá giới hạn -->
+          <div *ngIf="errors.length > maxDisplayedErrors" class="mc-more-errors">
+            <button mat-stroked-button (click)="showAllErrors = !showAllErrors">
+              {{ showAllErrors ? 'Thu gọn' : 'Xem tất cả ' + errors.length + ' lỗi' }}
+            </button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <!-- =================================================================
+           Các hành động
+           ================================================================= -->
+      <div class="mc-actions">
+        <!-- Nút hủy (chỉ hiển thị nếu job đang chạy hoặc chờ) -->
+        <button
+          *ngIf="canCancel"
+          mat-raised-button
+          color="warn"
+          (click)="onCancel()"
+          [disabled]="cancelling"
+        >
+          <mat-icon>stop</mat-icon>
+          {{ cancelling ? 'Đang hủy...' : 'Hủy job' }}
+        </button>
+
+        <!-- Nút thử lại (chỉ hiển thị nếu job thất bại) -->
+        <button
+          *ngIf="status === 'failed'"
+          mat-raised-button
+          color="primary"
+          (click)="onRetry()"
+        >
+          <mat-icon>replay</mat-icon>
+          Thử lại
+        </button>
+
+        <!-- Nút đóng (khi job hoàn thành) -->
+        <button
+          *ngIf="isTerminal"
+          mat-button
+          (click)="onClose()"
+        >
+          Đóng
+        </button>
+      </div>
+
+      <!-- Nút tắt/mở tự động làm mới -->
+      <div class="mc-auto-refresh">
+        <span class="mc-refresh-label">
+          Tự động làm mới: {{ autoRefresh ? 'Bật' : 'Tắt' }}
+        </span>
+        <button
+          mat-icon-button
+          (click)="toggleAutoRefresh()"
+          [matTooltip]="autoRefresh ? 'Tắt tự động làm mới' : 'Bật tự động làm mới'"
+        >
+          <mat-icon [class.mc-spinning]="autoRefresh && status === 'running'">
+            refresh
+          </mat-icon>
+        </button>
+      </div>
+    </div>
+  `,
+  styles: [
+    `
+      :host {
+        display: block;
+      }
+
+      .mc-job-status {
+        padding: 16px;
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      .mc-job-status.mc-terminal {
+        opacity: 0.95;
+      }
+
+      /* ==========================================================================
+         Header trạng thái
+         ========================================================================== */
+      .mc-status-card {
+        margin-bottom: 16px;
+      }
+
+      .mc-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .mc-status-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .mc-running-spinner {
+        margin-right: -4px;
+      }
+
+      .mc-status-icon {
+        font-size: 28px;
+        width: 28px;
+        height: 28px;
+      }
+
+      .mc-status-text {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .mc-status-label {
+        font-size: 1.1rem;
+        font-weight: 500;
+        color: #333;
+      }
+
+      .mc-job-type-badge {
+        font-size: 0.75rem;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .mc-status-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .mc-percentage {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #1565c0;
+        min-width: 60px;
+        text-align: right;
+      }
+
+      .mc-status-chip {
+        font-weight: 500;
+      }
+
+      /* ==========================================================================
+         Thanh tiến trình
+         ========================================================================== */
+      .mc-progress-section {
+        margin-top: 8px;
+      }
+
+      .mc-time-info {
+        display: flex;
+        gap: 16px;
+        margin-top: 6px;
+        font-size: 0.8rem;
+        color: #888;
+      }
+
+      .mc-started,
+      .mc-completed,
+      .mc-elapsed {
+        white-space: nowrap;
+      }
+
+      /* ==========================================================================
+         Thống kê hàng
+         ========================================================================== */
+      .mc-stats-card {
+        margin-bottom: 16px;
+      }
+
+      .mc-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+      }
+
+      .mc-stat-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #f5f5f5;
+        position: relative;
+      }
+
+      .mc-stat-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #333;
+      }
+
+      .mc-stat-label {
+        font-size: 0.8rem;
+        color: #666;
+      }
+
+      .mc-stat-item mat-icon {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+      }
+
+      .mc-stat-success {
+        background: #e8f5e9;
+      }
+
+      .mc-stat-success .mc-stat-value {
+        color: #2e7d32;
+      }
+
+      .mc-stat-failed {
+        background: #fff3e0;
+      }
+
+      .mc-stat-failed.mc-has-errors {
+        background: #ffebee;
+      }
+
+      .mc-stat-failed.mc-has-errors .mc-stat-value {
+        color: #c62828;
+      }
+
+      .mc-stat-processed {
+        background: #e3f2fd;
+      }
+
+      .mc-stat-processed .mc-stat-value {
+        color: #1565c0;
+      }
+
+      /* ==========================================================================
+         Danh sách lỗi
+         ========================================================================== */
+      .mc-errors-card {
+        margin-bottom: 16px;
+      }
+
+      .mc-errors-card mat-card-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .mc-errors-table-wrapper {
+        max-height: 320px;
+        overflow: auto;
+        margin-top: 8px;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+      }
+
+      .mc-errors-table {
+        width: 100%;
+        font-size: 0.85rem;
+      }
+
+      .mc-error-message {
+        max-width: 400px;
+        display: inline-block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: top;
+      }
+
+      .mc-error-detail {
+        background: #fafafa;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        padding: 8px;
+        margin: 4px 0;
+        font-size: 0.8rem;
+      }
+
+      .mc-error-detail pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      .mc-more-errors {
+        text-align: center;
+        margin-top: 8px;
+      }
+
+      /* ==========================================================================
+         Các hành động
+         ========================================================================== */
+      .mc-actions {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      /* ==========================================================================
+         Tự động làm mới
+         ========================================================================== */
+      .mc-auto-refresh {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+      }
+
+      .mc-refresh-label {
+        font-size: 0.8rem;
+        color: #888;
+      }
+
+      .mc-spinning {
+        animation: mc-rotate 1.5s linear infinite;
+      }
+
+      @keyframes mc-rotate {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* ==========================================================================
+         Responsive
+         ========================================================================== */
+      @media (max-width: 600px) {
+        .mc-stats-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .mc-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 8px;
+        }
+
+        .mc-status-right {
+          margin-left: 40px;
+        }
+      }
+    `,
+  ],
+})
+export class JobStatusComponent implements OnInit, OnDestroy {
+  // =========================================================================
+  // Inputs
+  // =========================================================================
+
+  /**
+   * Khóa của job cần theo dõi.
+   */
+  @Input() jobKey: string = '';
+
+  /**
+   * Loại job (import, export, etl) — dùng để chọn service phù hợp.
+   */
+  @Input() jobType: JobType = 'import';
+
+  /**
+   * Khoảng thời gian polling (ms) — mặc định 2000ms (2 giây).
+   */
+  @Input() pollingInterval: number = 2000;
+
+  /**
+   * Số lần polling tối đa — mặc định 300 (10 phút với 2s interval).
+   */
+  @Input() maxPollAttempts: number = 300;
+
+  /**
+   * Bật tự động làm mới ngay khi khởi tạo — mặc định true.
+   */
+  @Input() autoRefresh: boolean = true;
+
+  /**
+   * Số lỗi tối đa hiển thị trong bảng (tránh render quá nhiều).
+   */
+  @Input() maxDisplayedErrors: number = 100;
+
+  // =========================================================================
+  // Outputs
+  // =========================================================================
+
+  /**
+   * Phát ra khi trạng thái job thay đổi.
+   */
+  @Output() statusChanged = new EventEmitter<JobStatus>();
+
+  /**
+   * Phát ra khi job hoàn thành (thành công hoặc thất bại).
+   */
+  @Output() jobCompleted = new EventEmitter<{
+    status: JobStatus;
+    successRows: number;
+    failedRows: number;
+    totalRows: number;
+  }>();
+
+  /**
+   * Phát ra khi người dùng yêu cầu hủy job.
+   */
+  @Output() jobCancelled = new EventEmitter<string>();
+
+  /**
+   * Phát ra khi người dùng yêu cầu thử lại.
+   */
+  @Output() jobRetry = new EventEmitter<string>();
+
+  /**
+   * Phát ra khi người dùng đóng component.
+   */
+  @Output() closed = new EventEmitter<void>();
+
+  // =========================================================================
+  // Trạng thái nội bộ
+  // =========================================================================
+
+  /**
+   * Trạng thái hiện tại của job.
+   */
+  status: JobStatus = 'pending';
+
+  /**
+   * Phần trăm hoàn thành (0-100).
+   */
+  progress: number = 0;
+
+  /**
+   * Tổng số hàng.
+   */
+  totalRows: number = 0;
+
+  /**
+   * Số hàng thành công.
+   */
+  successRows: number = 0;
+
+  /**
+   * Số hàng thất bại.
+   */
+  failedRows: number = 0;
+
+  /**
+   * Số hàng đã xử lý (thành công + thất bại).
+   */
+  processedRows: number = 0;
+
+  /**
+   * Danh sách lỗi chi tiết.
+   */
+  errors: RowError[] = [];
+
+  /**
+   * Thời gian bắt đầu job.
+   */
+  startedAt: string | null = null;
+
+  /**
+   * Thời gian hoàn thành job.
+   */
+  completedAt: string | null = null;
+
+  /**
+   * Số giây đã chạy (chỉ hiển thị khi job đang chạy).
+   */
+  elapsedSeconds: number = 0;
+
+  /**
+   * Cấu hình hiển thị cho trạng thái hiện tại.
+   */
+  statusConfig: StatusDisplayConfig = STATUS_CONFIG['pending'];
+
+  /**
+   * Kiểm tra có phải là trạng thái cuối cùng không.
+   */
+  get isTerminal(): boolean {
+    return this.statusConfig?.isTerminal || false;
+  }
+
+  /**
+   * Kiểm tra có thể hủy job không (chỉ khi pending hoặc running).
+   */
+  get canCancel(): boolean {
+    return this.status === 'pending' || this.status === 'running';
+  }
+
+  /**
+   * Đang thực hiện hủy job chưa.
+   */
+  cancelling: boolean = false;
+
+  /**
+   * Hiển thị tất cả lỗi (hay chỉ hiển thị giới hạn).
+   */
+  showAllErrors: boolean = false;
+
+  /**
+   * Các lỗi đang được mở rộng để xem chi tiết.
+   */
+  expandedErrors: Set<RowError> = new Set();
+
+  /**
+   * Các cột hiển thị trong bảng lỗi.
+   */
+  errorDisplayColumns: string[] = ['rowNumber', 'message', 'data'];
+
+  // =========================================================================
+  // Subscription
+  // =========================================================================
+
+  /**
+   * Collection subscriptions để hủy khi destroy.
+   */
+  private subscriptions: Subscription = new Subscription();
+
+  /**
+   * Timer tính thời gian đã chạy.
+   */
+  private elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Đếm số lần polling hiện tại.
+   */
+  private pollCount: number = 0;
+
+  // =========================================================================
+  // Context variables từ Jinja2
+  // =========================================================================
+
+  /** Danh sách job import (từ context) */
+  private importJobs: Readonly<any[]> = {{ import_jobs | tojson if import_jobs else [] | tojson }};
+
+  /** Danh sách job export (từ context) */
+  private exportJobs: Readonly<any[]> = {{ export_jobs | tojson if export_jobs else [] | tojson }};
+
+  /** Danh sách job ETL (từ context) */
+  private etlJobs: Readonly<any[]> = {{ etl_jobs | tojson if etl_jobs else [] | tojson }};
+
+  /** Các trạng thái job (từ context) */
+  jobStatuses: Readonly<string[]> = {{ job_statuses | tojson if job_statuses else ['pending', 'running', 'completed', 'failed', 'cancelled'] | tojson }};
+
+  /** Các loại transform (từ context) */
+  transformTypes: Readonly<string[]> = {{ transform_types | tojson if transform_types else [] | tojson }};
+
+  /** Các nguồn extract (từ context) */
+  extractSources: Readonly<string[]> = {{ extract_sources | tojson if extract_sources else [] | tojson }};
+
+  /** Các chế độ load (từ context) */
+  loadModes: Readonly<string[]> = {{ load_modes | tojson if load_modes else ['insert', 'update', 'upsert'] | tojson }};
+
+  // =========================================================================
+  // Lifecycle
+  // =========================================================================
+
+  constructor(
+    private importService: ImportService,
+    private exportService: ExportService,
+    private snackBar: MatSnackBar,
+    private cdr: ChangeDetectorRef,
+  ) {}
+
+  /**
+   * OnInit — bắt đầu theo dõi job.
+   */
+  ngOnInit(): void {
+    if (this.jobKey) {
+      this.startPolling();
+    }
+  }
+
+  /**
+   * OnDestroy — dừng polling và cleanup.
+   */
+  ngOnDestroy(): void {
+    this.subscriptions.unsubscribe();
+    this.stopElapsedTimer();
+  }
+
+  // =========================================================================
+  // Polling
+  // =========================================================================
+
+  /**
+   * Bắt đầu polling trạng thái job.
+   */
+  private startPolling(): void {
+    if (!this.jobKey) {
+      console.warn('[JobStatusComponent] jobKey không được cung cấp, không thể polling');
+      return;
+    }
+
+    // Sử dụng ImportService.pollJobStatus cho cả import và export
+    // (ETL có thể dùng service riêng nếu có)
+    const pollSub = this.getJobStatusObservable(this.jobKey).subscribe({
+      next: (statusInfo: any) => {
+        this.pollCount++;
+        this.updateState(statusInfo);
+
+        // Kiểm tra nếu đã đạt trạng thái cuối cùng
+        if (this.isTerminal) {
+          this.stopElapsedTimer();
+          this.subscriptions.unsubscribe();
+          this.showJobCompletedNotification();
+          return;
+        }
+
+        // Kiểm tra nếu đạt số lần polling tối đa
+        if (this.pollCount >= this.maxPollAttempts) {
+          console.warn(
+            `[JobStatusComponent] Đã đạt số lần polling tối đa ${this.maxPollAttempts}`,
+          );
+          this.status = 'failed';
+          this.statusConfig = STATUS_CONFIG['failed'];
+          this.statusChanged.emit(this.status);
+          this.subscriptions.unsubscribe();
+        }
+      },
+      error: (err: any) => {
+        console.error('[JobStatusComponent] Lỗi polling:', err);
+        this.status = 'failed';
+        this.statusConfig = STATUS_CONFIG['failed'];
+        this.progress = 0;
+        this.subscriptions.unsubscribe();
+        this.showSnackBar('Lỗi khi kiểm tra trạng thái job', 'error');
+      },
+    });
+
+    this.subscriptions.add(pollSub);
+
+    // Bắt đầu timer tính thời gian đã chạy
+    this.startElapsedTimer();
+  }
+
+  /**
+   * Lấy Observable trạng thái job phù hợp với loại job.
+   *
+   * @param jobKey — Khóa job
+   * @returns Observable chứa thông tin trạng thái
+   */
+  private getJobStatusObservable(jobKey: string): any {
+    if (this.jobType === 'export') {
+      return this.exportService.getExportStatus(jobKey);
+    } else {
+      // Import và ETL đều dùng polling qua ImportService
+      // (ETL có thể dùng service riêng nếu triển khai)
+      return this.importService.pollJobStatus(
+        jobKey,
+        this.pollingInterval,
+        this.maxPollAttempts,
+      );
+    }
+  }
+
+  /**
+   * Lấy trạng thái job một lần (không polling).
+   *
+   * @param jobKey — Khóa job
+   * @returns Observable chứa thông tin trạng thái
+   */
+  private getJobStatusOnce(jobKey: string): any {
+    if (this.jobType === 'export') {
+      return this.exportService.getExportStatus(jobKey);
+    }
+    return this.importService.getJobStatus(jobKey);
+  }
+
+  /**
+   * Cập nhật trạng thái nội bộ từ thông tin job.
+   *
+   * @param statusInfo — Thông tin trạng thái từ backend
+   */
+  private updateState(statusInfo: JobStatusInfo | ExportStatusInfo): void {
+    const rawStatus = (statusInfo as any).status as string;
+
+    // Ánh xạ trạng thái từ backend sang JobStatus
+    let normalizedStatus: JobStatus;
+    if (rawStatus === 'done' || rawStatus === 'completed') {
+      normalizedStatus = 'completed';
+    } else if (rawStatus === 'error' || rawStatus === 'failed') {
+      normalizedStatus = 'failed';
+    } else if (rawStatus === 'cancelled' || rawStatus === 'canceled') {
+      normalizedStatus = 'cancelled';
+    } else if (rawStatus === 'running' || rawStatus === 'processing') {
+      normalizedStatus = 'running';
+    } else {
+      normalizedStatus = 'pending';
+    }
+
+    this.status = normalizedStatus;
+    this.statusConfig = STATUS_CONFIG[normalizedStatus] || STATUS_CONFIG['pending'];
+    this.progress = (statusInfo as any).progress || 0;
+    this.totalRows = (statusInfo as any).totalRows || 0;
+    this.successRows = (statusInfo as any).successRows || (statusInfo as any).exportedRows || 0;
+    this.failedRows = (statusInfo as any).failedRows || 0;
+    this.processedRows = (statusInfo as any).processedRows ||
+      (statusInfo as any).exportedRows ||
+      (this.successRows + this.failedRows);
+    this.startedAt = (statusInfo as any).startedAt || null;
+    this.completedAt = (statusInfo as any).completedAt || null;
+
+    // Cập nhật danh sách lỗi
+    const rawErrors = (statusInfo as any).errors;
+    if (Array.isArray(rawErrors) && rawErrors.length > 0) {
+      this.errors = rawErrors.map((e: any) => ({
+        rowNumber: e.rowNumber || 0,
+        message: e.message || 'Lỗi không xác định',
+        rowData: e.rowData || undefined,
+      }));
+    }
+
+    // Phát sự kiện thay đổi trạng thái
+    this.statusChanged.emit(this.status);
+
+    // Nếu là terminal state, phát sự kiện hoàn thành
+    if (this.isTerminal) {
+      this.jobCompleted.emit({
+        status: this.status,
+        successRows: this.successRows,
+        failedRows: this.failedRows,
+        totalRows: this.totalRows,
+      });
+    }
+
+    // Trigger change detection
+    this.cdr.detectChanges();
+  }
+
+  // =========================================================================
+  // Timer tính thời gian đã chạy
+  // =========================================================================
+
+  /**
+   * Bắt đầu timer đếm giây đã chạy.
+   */
+  private startElapsedTimer(): void {
+    this.stopElapsedTimer();
+    this.elapsedSeconds = 0;
+    this.elapsedTimer = setInterval(() => {
+      if (this.status === 'running' || this.status === 'pending') {
+        this.elapsedSeconds++;
+        this.cdr.detectChanges();
+      } else {
+        this.stopElapsedTimer();
+      }
+    }, 1000);
+  }
+
+  /**
+   * Dừng timer đếm giây đã chạy.
+   */
+  private stopElapsedTimer(): void {
+    if (this.elapsedTimer) {
+      clearInterval(this.elapsedTimer);
+      this.elapsedTimer = null;
+    }
+  }
+
+  // =========================================================================
+  // Tự động làm mới
+  // =========================================================================
+
+  /**
+   * Bật/tắt tự động làm mới.
+   */
+  toggleAutoRefresh(): void {
+    this.autoRefresh = !this.autoRefresh;
+
+    if (this.autoRefresh && this.canCancel && this.jobKey) {
+      // Bắt đầu polling lại
+      this.pollCount = 0;
+      this.startPolling();
+    } else if (!this.autoRefresh) {
+      // Dừng polling
+      this.subscriptions.unsubscribe();
+    }
+  }
+
+  // =========================================================================
+  // Hủy job
+  // =========================================================================
+
+  /**
+   * Xử lý khi người dùng nhấn nút hủy.
+   */
+  onCancel(): void {
+    if (!this.jobKey || !this.canCancel) return;
+
+    this.cancelling = true;
+
+    let cancelSub: Subscription;
+
+    if (this.jobType === 'export') {
+      // ExportService chưa có cancelJob, dùng ImportService tạm thời
+      // hoặc tùy thuộc vào backend implementation
+      cancelSub = this.importService.cancelJob(this.jobKey).subscribe({
+        next: (result) => {
+          this.cancelling = false;
+          this.status = 'cancelled';
+          this.statusConfig = STATUS_CONFIG['cancelled'];
+          this.statusChanged.emit(this.status);
+          this.stopElapsedTimer();
+          this.subscriptions.unsubscribe();
+          this.jobCancelled.emit(this.jobKey);
+          this.showSnackBar(result.message || 'Job đã được hủy', 'success');
+        },
+        error: (err: any) => {
+          this.cancelling = false;
+          this.showSnackBar(`Không thể hủy job: ${err.message || err}`, 'error');
+        },
+      });
+    } else {
+      cancelSub = this.importService.cancelJob(this.jobKey).subscribe({
+        next: (result) => {
+          this.cancelling = false;
+          this.status = 'cancelled';
+          this.statusConfig = STATUS_CONFIG['cancelled'];
+          this.statusChanged.emit(this.status);
+          this.stopElapsedTimer();
+          this.subscriptions.unsubscribe();
+          this.jobCancelled.emit(this.jobKey);
+          this.showSnackBar(result.message || 'Job đã được hủy', 'success');
+        },
+        error: (err: any) => {
+          this.cancelling = false;
+          this.showSnackBar(`Không thể hủy job: ${err.message || err}`, 'error');
+        },
+      });
+    }
+
+    this.subscriptions.add(cancelSub);
+  }
+
+  // =========================================================================
+  // Thử lại job
+  // =========================================================================
+
+  /**
+   * Xử lý khi người dùng nhấn nút thử lại.
+   */
+  onRetry(): void {
+    this.jobRetry.emit(this.jobKey);
+    this.showSnackBar('Đang yêu cầu thử lại job...', 'info');
+  }
+
+  // =========================================================================
+  // Đóng component
+  // =========================================================================
+
+  /**
+   * Xử lý khi người dùng nhấn nút đóng.
+   */
+  onClose(): void {
+    this.subscriptions.unsubscribe();
+    this.stopElapsedTimer();
+    this.closed.emit();
+  }
+
+  // =========================================================================
+  // Hiển thị chi tiết lỗi
+  // =========================================================================
+
+  /**
+   * Chuyển đổi mở/đóng chi tiết dữ liệu của một lỗi.
+   *
+   * @param error — Đối tượng lỗi cần toggle
+   */
+  toggleErrorDetail(error: RowError): void {
+    if (this.expandedErrors.has(error)) {
+      this.expandedErrors.delete(error);
+    } else {
+      this.expandedErrors.add(error);
+    }
+  }
+
+  /**
+   * Lấy danh sách lỗi cần hiển thị (có giới hạn nếu chưa xem tất cả).
+   *
+   * @returns Mảng lỗi cần render
+   */
+  get errorsToDisplay(): RowError[] {
+    if (this.showAllErrors) {
+      return this.errors;
+    }
+    return this.errors.slice(0, this.maxDisplayedErrors);
+  }
+
+  // =========================================================================
+  // Thông báo
+  // =========================================================================
+
+  /**
+   * Hiển thị thông báo khi job hoàn thành.
+   */
+  private showJobCompletedNotification(): void {
+    if (this.status === 'completed') {
+      this.showSnackBar(
+        `Job hoàn thành: ${this.successRows} hàng thành công` +
+        (this.failedRows > 0 ? `, ${this.failedRows} hàng lỗi` : ''),
+        'success',
+      );
+    } else if (this.status === 'failed') {
+      this.showSnackBar(
+        `Job thất bại: ${this.failedRows} hàng lỗi trong ${this.totalRows} hàng`,
+        'error',
+      );
+    }
+  }
+
+  /**
+   * Hiển thị thông báo snackbar.
+   *
+   * @param message — Nội dung thông báo
+   * @param type — Loại thông báo (success/error/info)
+   */
+  private showSnackBar(message: string, type: 'success' | 'error' | 'info'): void {
+    const duration = type === 'error' ? 8000 : type === 'success' ? 5000 : 3000;
+    this.snackBar.open(message, 'Đóng', {
+      duration,
+      horizontalPosition: 'center',
+      verticalPosition: 'bottom',
+    });
+  }
+}

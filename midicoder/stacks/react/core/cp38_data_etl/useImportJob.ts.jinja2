@@ -1,0 +1,383 @@
+/**
+ * useImportJob Hook — CP38: Data Import/Export/ETL.
+ *
+ * Custom hook để quản lý vòng đời của một import job.
+ * Hỗ trợ tải lên file, tạo job, thực thi, hủy, và theo dõi trạng thái
+ * qua cơ chế polling tự động khi job đang chạy.
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ImportService, ImportJob, UploadResponse, RowError } from './import.service';
+
+/* ===== Loại dữ liệu trả về ===== */
+
+/**
+ * Kết quả trả về của hook useImportJob.
+ */
+export interface UseImportJobReturn {
+  /** Dữ liệu job hiện tại (null nếu chưa tạo). */
+  job: ImportJob | null;
+  /** Đang tải (cho thao tác thủ công). */
+  loading: boolean;
+  /** Lỗi từ lần gọi API gần nhất. */
+  error: string | null;
+  /** File đã chọn để import. */
+  selectedFile: File | null;
+  /** Phản hồi upload (chứa fileKey). */
+  uploadResult: UploadResponse | null;
+  /** Danh sách lỗi theo dòng (nếu job thất bại). */
+  rowErrors: RowError[];
+  /**
+   * Chọn file từ input hoặc drag-drop.
+   * Tự động xác thực kích thước và định dạng.
+   */
+  selectFile: (file: File) => { valid: boolean; errors: string[] };
+  /**
+   * Tải file lên máy chủ.
+   * @param formData - Dữ liệu bổ sung (tùy chọn).
+   */
+  uploadFile: (formData?: Record<string, string>) => Promise<UploadResponse>;
+  /**
+   * Tạo import job từ cấu hình.
+   */
+  createJob: (config: Omit<Parameters<typeof ImportService.createImportJob>[0], 'format'> & { format: 'csv' | 'json' }) => Promise<ImportJob>;
+  /**
+   * Thực thi import job (bắt đầu xử lý).
+   */
+  executeJob: () => Promise<ImportJob>;
+  /**
+   * Hủy import job đang chạy.
+   */
+  cancelJob: () => Promise<ImportJob>;
+  /**
+   * Lấy trạng thái job (không dùng polling — gọi một lần).
+   */
+  getStatus: () => Promise<ImportJob>;
+  /**
+   * Làm mới dữ liệu job thủ công.
+   */
+  refresh: () => Promise<void>;
+  /**
+   * Lấy danh sách lỗi theo dòng.
+   */
+  fetchRowErrors: () => Promise<RowError[]>;
+  /**
+   * Xóa toàn bộ trạng thái — reset hook về trạng thái ban đầu.
+   */
+  reset: () => void;
+}
+
+/**
+ * Khoảng thời gian polling khi job đang chạy (ms).
+ */
+const POLLING_INTERVAL = 3_000;
+
+/**
+ * Custom hook để quản lý vòng đời của một import job.
+ *
+ * Tự động polling trạng thái khi job đang chạy. Dừng polling khi
+ * job đạt trạng thái cuối (completed, failed, cancelled).
+ *
+ * @param jobKey - Định danh job có sẵn (tùy chọn). Nếu có, hook sẽ
+ *                 tự động fetch trạng thái ban đầu.
+ *
+ * @example
+ * ```tsx
+ * function ImportPage() {
+ *   const { job, loading, selectFile, uploadFile, createJob, executeJob } = useImportJob();
+ *
+ *   const handleStart = async () => {
+ *     const file = /* từ input */;
+ *     selectFile(file);
+ *     await uploadFile();
+ *     const job = await createJob({ targetEntity: 'products', loadMode: 'insert' });
+ *     await executeJob();
+ *   };
+ *
+ *   return (
+ *     <div>
+ *       {job && <p>Tiến trình: {job.progress}%</p>}
+ *       {loading && <p>Đang tải...</p>}
+ *     </div>
+ *   );
+ * }
+ * ```
+ */
+export function useImportJob(jobKey?: string): UseImportJobReturn {
+  const [job, setJob] = useState<ImportJob | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
+  const [rowErrors, setRowErrors] = useState<RowError[]>([]);
+
+  // Ref để theo dõi key job hiện tại — dùng cho cleanup polling
+  const currentJobKeyRef = useRef<string | undefined>(jobKey);
+
+  /**
+   * Fetch trạng thái job từ API.
+   * @param isPolling - True nếu gọi từ polling (không set loading).
+   */
+  const fetchJobStatus = useCallback(
+    async (isPolling: boolean = false): Promise<ImportJob | null> => {
+      const key = currentJobKeyRef.current;
+      if (!key) return null;
+
+      if (!isPolling) {
+        setLoading(true);
+        setError(null);
+      }
+
+      try {
+        const data = await ImportService.getJobStatus(key);
+        setJob(data);
+
+        // Tự động lấy lỗi nếu job thất bại
+        if (data.status === 'failed') {
+          try {
+            const errors = await ImportService.getRowErrors(key);
+            setRowErrors(errors);
+          } catch {
+            // Không có lỗi dòng — giữ mảng rỗng
+            setRowErrors([]);
+          }
+        }
+
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Không thể lấy trạng thái job';
+        if (!isPolling) {
+          setError(message);
+        }
+        return null;
+      } finally {
+        if (!isPolling) {
+          setLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  /**
+   * Chọn file để import — xác thực và lưu vào state.
+   */
+  const selectFile = useCallback((file: File): { valid: boolean; errors: string[] } => {
+    const result = ImportService.validateFile(file);
+    if (result.valid) {
+      setSelectedFile(file);
+      setUploadResult(null);
+      setRowErrors([]);
+    } else {
+      setError(result.errors.join('; '));
+    }
+    return result;
+  }, []);
+
+  /**
+   * Tải file lên máy chủ.
+   */
+  const uploadFile = useCallback(
+    async (formData?: Record<string, string>): Promise<UploadResponse> => {
+      if (!selectedFile) {
+        throw new Error('Chưa chọn file để tải lên');
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const result = await ImportService.uploadFile(selectedFile, formData);
+        setUploadResult(result);
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Tải file thất bại';
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [selectedFile],
+  );
+
+  /**
+   * Tạo import job mới.
+   */
+  const createJob = useCallback(
+    async (config: Parameters<typeof ImportService.createImportJob>[0]): Promise<ImportJob> => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const newJob = await ImportService.createImportJob(config);
+        currentJobKeyRef.current = newJob.jobKey;
+        setJob(newJob);
+        setRowErrors([]);
+        return newJob;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Tạo job thất bại';
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  /**
+   * Thực thi import job — bắt đầu xử lý dữ liệu.
+   */
+  const executeJob = useCallback(async (): Promise<ImportJob> => {
+    const key = currentJobKeyRef.current;
+    if (!key) {
+      throw new Error('Chưa có job để thực thi');
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const updatedJob = await ImportService.executeJob(key);
+      setJob(updatedJob);
+      return updatedJob;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Thực thi job thất bại';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /**
+   * Hủy import job đang chạy.
+   */
+  const cancelJob = useCallback(async (): Promise<ImportJob> => {
+    const key = currentJobKeyRef.current;
+    if (!key) {
+      throw new Error('Chưa có job để hủy');
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const cancelledJob = await ImportService.cancelJob(key);
+      setJob(cancelledJob);
+      return cancelledJob;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Hủy job thất bại';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /**
+   * Lấy trạng thái job một lần (không polling).
+   */
+  const getStatus = useCallback(async (): Promise<ImportJob> => {
+    const key = currentJobKeyRef.current;
+    if (!key) {
+      throw new Error('Chưa có job để lấy trạng thái');
+    }
+
+    const data = await ImportService.getJobStatus(key);
+    setJob(data);
+    return data;
+  }, []);
+
+  /**
+   * Làm mới dữ liệu job thủ công.
+   */
+  const refresh = useCallback(async (): Promise<void> => {
+    await fetchJobStatus(false);
+  }, [fetchJobStatus]);
+
+  /**
+   * Lấy danh sách lỗi theo dòng.
+   */
+  const fetchRowErrors = useCallback(async (): Promise<RowError[]> => {
+    const key = currentJobKeyRef.current;
+    if (!key) {
+      throw new Error('Chưa có job để lấy lỗi');
+    }
+
+    setError(null);
+    try {
+      const errors = await ImportService.getRowErrors(key);
+      setRowErrors(errors);
+      return errors;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Không thể lấy danh sách lỗi';
+      setError(message);
+      return [];
+    }
+  }, []);
+
+  /**
+   * Reset toàn bộ trạng thái hook về ban đầu.
+   */
+  const reset = useCallback(() => {
+    setJob(null);
+    setLoading(false);
+    setError(null);
+    setSelectedFile(null);
+    setUploadResult(null);
+    setRowErrors([]);
+    currentJobKeyRef.current = undefined;
+  }, []);
+
+  /**
+   * Fetch trạng thái ban đầu nếu jobKey được cung cấp.
+   */
+  useEffect(() => {
+    if (jobKey) {
+      currentJobKeyRef.current = jobKey;
+      fetchJobStatus(false);
+    }
+  }, [jobKey, fetchJobStatus]);
+
+  /**
+   * Tự động polling khi job đang chạy.
+   * Dừng khi job đạt trạng thái cuối (completed, failed, cancelled).
+   */
+  useEffect(() => {
+    // Chỉ polling nếu job đang chạy
+    if (!job || job.status !== 'running') {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      fetchJobStatus(true).then((updatedJob) => {
+        // Dừng polling nếu job đã kết thúc
+        if (updatedJob && updatedJob.status !== 'running') {
+          // clearInterval sẽ được gọi bởi dependency cleanup
+        }
+      });
+    }, POLLING_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [job?.status, fetchJobStatus]);
+
+  return {
+    job,
+    loading,
+    error,
+    selectedFile,
+    uploadResult,
+    rowErrors,
+    selectFile,
+    uploadFile,
+    createJob,
+    executeJob,
+    cancelJob,
+    getStatus,
+    refresh,
+    fetchRowErrors,
+    reset,
+  };
+}

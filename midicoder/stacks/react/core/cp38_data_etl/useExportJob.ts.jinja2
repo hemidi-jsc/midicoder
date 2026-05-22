@@ -1,0 +1,383 @@
+/**
+ * useExportJob Hook — CP38: Data Import/Export/ETL.
+ *
+ * Custom hook để quản lý vòng đời của một export job.
+ * Hỗ trợ tạo job, xem trước dữ liệu, theo dõi tiến trình qua polling,
+ * và tải file export về máy (Blob URL).
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ExportService, ExportJob, PreviewResponse, PreviewRow } from './export.service';
+
+/* ===== Loại dữ liệu trả về ===== */
+
+/**
+ * Kết quả trả về của hook useExportJob.
+ */
+export interface UseExportJobReturn {
+  /** Dữ liệu job hiện tại (null nếu chưa tạo). */
+  job: ExportJob | null;
+  /** Đang tải (cho thao tác thủ công). */
+  loading: boolean;
+  /** Lỗi từ lần gọi API gần nhất. */
+  error: string | null;
+  /** Dữ liệu xem trước (nếu đã gọi previewExport). */
+  previewData: PreviewRow[];
+  /** Tổng số dòng trong preview. */
+  previewTotal: number;
+  /** Danh sách cột trong preview. */
+  previewColumns: string[];
+  /**
+   * Tạo export job mới từ cấu hình.
+   */
+  createJob: (config: Parameters<typeof ExportService.createExportJob>[0]) => Promise<ExportJob>;
+  /**
+   * Tải file export về máy (trigger download trình duyệt).
+   * @param fileName - Tên file tùy chọn.
+   */
+  downloadExport: (fileName?: string) => Promise<void>;
+  /**
+   * Xem trước dữ liệu export (10 dòng đầu).
+   * @param limit - Số dòng tối đa, mặc định 10.
+   */
+  previewExport: (limit?: number) => Promise<PreviewResponse>;
+  /**
+   * Xem trước từ cấu hình (trước khi tạo job).
+   */
+  previewFromConfig: (
+    config: Parameters<typeof ExportService.createExportJob>[0],
+    limit?: number,
+  ) => Promise<PreviewResponse>;
+  /**
+   * Lấy trạng thái job (không dùng polling — gọi một lần).
+   */
+  getStatus: () => Promise<ExportJob>;
+  /**
+   * Hủy export job đang chạy.
+   */
+  cancelJob: () => Promise<ExportJob>;
+  /**
+   * Làm mới dữ liệu job thủ công.
+   */
+  refresh: () => Promise<void>;
+  /**
+   * Xóa toàn bộ trạng thái — reset hook về trạng thái ban đầu.
+   */
+  reset: () => void;
+}
+
+/**
+ * Khoảng thời gian polling khi job đang chạy (ms).
+ */
+const POLLING_INTERVAL = 3_000;
+
+/**
+ * Custom hook để quản lý vòng đời của một export job.
+ *
+ * Tự động polling trạng thái khi job đang chạy. Hỗ trợ xem trước
+ * dữ liệu và tải file về máy qua Blob URL.
+ *
+ * @param jobKey - Định danh job có sẵn (tùy chọn). Nếu có, hook sẽ
+ *                 tự động fetch trạng thái ban đầu.
+ *
+ * @example
+ * ```tsx
+ * function ExportButton() {
+ *   const { job, loading, createJob, downloadExport } = useExportJob();
+ *
+ *   const handleExport = async () => {
+ *     const job = await createJob({ entity: 'products', format: 'csv' });
+ *     // Chờ job hoàn thành rồi tải về
+ *   };
+ *
+ *   return (
+ *     <div>
+ *       <button onClick={handleExport} disabled={loading}>Export</button>
+ *       {job && job.status === 'completed' && (
+ *         <button onClick={() => downloadExport()}>Tải về</button>
+ *       )}
+ *     </div>
+ *   );
+ * }
+ * ```
+ */
+export function useExportJob(jobKey?: string): UseExportJobReturn {
+  const [job, setJob] = useState<ExportJob | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
+  const [previewTotal, setPreviewTotal] = useState(0);
+  const [previewColumns, setPreviewColumns] = useState<string[]>([]);
+
+  // Ref để theo dõi key job hiện tại — dùng cho cleanup polling
+  const currentJobKeyRef = useRef<string | undefined>(jobKey);
+
+  /**
+   * Fetch trạng thái job từ API.
+   * @param isPolling - True nếu gọi từ polling (không set loading).
+   */
+  const fetchJobStatus = useCallback(
+    async (isPolling: boolean = false): Promise<ExportJob | null> => {
+      const key = currentJobKeyRef.current;
+      if (!key) return null;
+
+      if (!isPolling) {
+        setLoading(true);
+        setError(null);
+      }
+
+      try {
+        const data = await ExportService.getExportStatus(key);
+        setJob(data);
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Không thể lấy trạng thái job';
+        if (!isPolling) {
+          setError(message);
+        }
+        return null;
+      } finally {
+        if (!isPolling) {
+          setLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  /**
+   * Tạo export job mới.
+   */
+  const createJob = useCallback(
+    async (config: Parameters<typeof ExportService.createExportJob>[0]): Promise<ExportJob> => {
+      setLoading(true);
+      setError(null);
+      setPreviewData([]);
+      setPreviewTotal(0);
+      setPreviewColumns([]);
+
+      try {
+        const newJob = await ExportService.createExportJob(config);
+        currentJobKeyRef.current = newJob.jobKey;
+        setJob(newJob);
+        return newJob;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Tạo export job thất bại';
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  /**
+   * Tải file export về máy — trigger download trong trình duyệt.
+   */
+  const downloadExport = useCallback(
+    async (fileName?: string): Promise<void> => {
+      const key = currentJobKeyRef.current;
+      if (!key) {
+        throw new Error('Chưa có job để tải file');
+      }
+
+      if (job?.status !== 'completed') {
+        throw new Error('Job chưa hoàn thành, không thể tải file');
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        // Lấy blob từ API
+        const blob = await ExportService.downloadExport(key);
+
+        // Tạo Blob URL và kích hoạt download
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+
+        // Xác định đuôi file từ định dạng
+        const ext = job?.format || 'csv';
+        const baseName = fileName || `export-${key}.${ext}`;
+        link.download = baseName;
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Giải phóng Blob URL sau khi download
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Tải file export thất bại';
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [job],
+  );
+
+  /**
+   * Xem trước dữ liệu export (từ job đã tạo).
+   */
+  const previewExport = useCallback(
+    async (limit: number = 10): Promise<PreviewResponse> => {
+      const key = currentJobKeyRef.current;
+      if (!key) {
+        throw new Error('Chưa có job để xem trước');
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await ExportService.previewExport(key, limit);
+        setPreviewData(response.rows);
+        setPreviewTotal(response.totalCount);
+        setPreviewColumns(response.columns);
+        return response;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Xem trước thất bại';
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  /**
+   * Xem trước dữ liệu export từ cấu hình (trước khi tạo job).
+   */
+  const previewFromConfig = useCallback(
+    async (
+      config: Parameters<typeof ExportService.createExportJob>[0],
+      limit: number = 10,
+    ): Promise<PreviewResponse> => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await ExportService.previewFromConfig(config, limit);
+        setPreviewData(response.rows);
+        setPreviewTotal(response.totalCount);
+        setPreviewColumns(response.columns);
+        return response;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Xem trước thất bại';
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  /**
+   * Lấy trạng thái job một lần (không polling).
+   */
+  const getStatus = useCallback(async (): Promise<ExportJob> => {
+    const key = currentJobKeyRef.current;
+    if (!key) {
+      throw new Error('Chưa có job để lấy trạng thái');
+    }
+
+    const data = await ExportService.getExportStatus(key);
+    setJob(data);
+    return data;
+  }, []);
+
+  /**
+   * Hủy export job đang chạy.
+   */
+  const cancelJob = useCallback(async (): Promise<ExportJob> => {
+    const key = currentJobKeyRef.current;
+    if (!key) {
+      throw new Error('Chưa có job để hủy');
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const cancelledJob = await ExportService.cancelJob(key);
+      setJob(cancelledJob);
+      return cancelledJob;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Hủy job thất bại';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /**
+   * Làm mới dữ liệu job thủ công.
+   */
+  const refresh = useCallback(async (): Promise<void> => {
+    await fetchJobStatus(false);
+  }, [fetchJobStatus]);
+
+  /**
+   * Reset toàn bộ trạng thái hook về ban đầu.
+   */
+  const reset = useCallback(() => {
+    setJob(null);
+    setLoading(false);
+    setError(null);
+    setPreviewData([]);
+    setPreviewTotal(0);
+    setPreviewColumns([]);
+    currentJobKeyRef.current = undefined;
+  }, []);
+
+  /**
+   * Fetch trạng thái ban đầu nếu jobKey được cung cấp.
+   */
+  useEffect(() => {
+    if (jobKey) {
+      currentJobKeyRef.current = jobKey;
+      fetchJobStatus(false);
+    }
+  }, [jobKey, fetchJobStatus]);
+
+  /**
+   * Tự động polling khi job đang chạy.
+   * Dừng khi job đạt trạng thái cuối (completed, failed, cancelled).
+   */
+  useEffect(() => {
+    // Chỉ polling nếu job đang chạy
+    if (!job || job.status !== 'running') {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      fetchJobStatus(true);
+    }, POLLING_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [job?.status, fetchJobStatus]);
+
+  return {
+    job,
+    loading,
+    error,
+    previewData,
+    previewTotal,
+    previewColumns,
+    createJob,
+    downloadExport,
+    previewExport,
+    previewFromConfig,
+    getStatus,
+    cancelJob,
+    refresh,
+    reset,
+  };
+}
