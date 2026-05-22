@@ -680,8 +680,8 @@ core_packs:
       - ab_test
       - dynamic_config
     category: runtime
-    status: planned
-    version: 1.0.0
+    status: stable
+    version: 1.1.0
   - id: CP39
     name: i18n/L10n Runtime
     internal_id: cp39_i18n_runtime

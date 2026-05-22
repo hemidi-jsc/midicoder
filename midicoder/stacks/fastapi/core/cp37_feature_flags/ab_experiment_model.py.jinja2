@@ -1,0 +1,22 @@
+"""
+SQLAlchemy models cho A/B Experiment.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+
+Lưu ý: Các model ABExperiment, ABVariant, ABExperimentAssignment
+nằm trong flag_model.py — file này là re-export cho convenience.
+"""
+
+from __future__ import annotations
+
+from app.feature_flags.models.flag_model import (
+    ABExperiment,
+    ABVariant,
+    ABExperimentAssignment,
+)
+
+__all__ = [
+    "ABExperiment",
+    "ABVariant",
+    "ABExperimentAssignment",
+]

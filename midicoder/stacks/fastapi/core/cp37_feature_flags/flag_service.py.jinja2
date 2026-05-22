@@ -1,0 +1,112 @@
+"""
+Feature Flag Service — CRUD cho Feature Flags.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.feature_flags.models.flag_model import FeatureFlag
+from app.feature_flags.schemas.flag_schema import (
+    FeatureFlagCreate,
+    FeatureFlagUpdate,
+    FeatureFlagResponse,
+)
+
+
+class FlagService:
+    """Service quản lý Feature Flags."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def create(self, data: FeatureFlagCreate) -> FeatureFlagResponse:
+        """Tạo flag mới.
+
+        Args:
+            data: Dữ liệu flag mới.
+
+        Returns:
+            Flag đã tạo.
+        """
+        flag = FeatureFlag(
+            flag_key=data.flag_key,
+            name=data.name,
+            description=data.description,
+            variant_type=data.variant_type,
+            default_enabled=data.default_enabled,
+            percentage=data.percentage,
+            targeting_rules=data.targeting_rules,
+            environments=data.environments,
+            tenant_overrides=data.tenant_overrides,
+            is_active=data.is_active,
+        )
+        self.db.add(flag)
+        await self.db.flush()
+        await self.db.refresh(flag)
+        return FeatureFlagResponse.model_validate(flag)
+
+    async def get_by_key(self, flag_key: str) -> FeatureFlagResponse | None:
+        """Lấy flag theo key."""
+        stmt = select(FeatureFlag).where(FeatureFlag.flag_key == flag_key)
+        flag = (await self.db.execute(stmt)).scalar_one_or_none()
+        if flag is None:
+            return None
+        return FeatureFlagResponse.model_validate(flag)
+
+    async def list_all(
+        self, skip: int = 0, limit: int = 100
+    ) -> tuple[int, list[FeatureFlagResponse]]:
+        """Lấy danh sách flags với pagination."""
+        total_stmt = select(func.count()).select_from(FeatureFlag)
+        total = (await self.db.execute(total_stmt)).scalar_one()
+
+        stmt = (
+            select(FeatureFlag)
+            .order_by(FeatureFlag.flag_key)
+            .offset(skip)
+            .limit(limit)
+        )
+        flags = (await self.db.execute(stmt)).scalars().all()
+        return total, [FeatureFlagResponse.model_validate(f) for f in flags]
+
+    async def update(
+        self, flag_key: str, data: FeatureFlagUpdate
+    ) -> FeatureFlagResponse | None:
+        """Cập nhật flag."""
+        flag = await self.get_by_key(flag_key)
+        if flag is None:
+            return None
+
+        update_data = data.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(flag, key, value)
+
+        await self.db.flush()
+        await self.db.refresh(flag)
+        return FeatureFlagResponse.model_validate(flag)
+
+    async def delete(self, flag_key: str) -> bool:
+        """Xóa flag."""
+        stmt = select(FeatureFlag).where(FeatureFlag.flag_key == flag_key)
+        flag = (await self.db.execute(stmt)).scalar_one_or_none()
+        if flag is None:
+            return False
+        await self.db.delete(flag)
+        await self.db.flush()
+        return True
+
+    async def toggle(self, flag_key: str, is_active: bool) -> FeatureFlagResponse | None:
+        """Bật/tắt flag."""
+        flag = await self.get_by_key(flag_key)
+        if flag is None:
+            return None
+        flag.is_active = is_active
+        await self.db.flush()
+        await self.db.refresh(flag)
+        return FeatureFlagResponse.model_validate(flag)

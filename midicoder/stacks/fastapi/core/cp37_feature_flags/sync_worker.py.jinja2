@@ -1,0 +1,151 @@
+"""
+Sync Worker — polling + WebSocket sync từ remote server.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
+import httpx
+
+from app.feature_flags.stores.db_store import DatabaseFlagStore
+from app.feature_flags.stores.redis_store import RedisFlagStore
+from app.feature_flags.websocket_handler import notify_flag_changed, notify_config_changed
+
+logger = logging.getLogger(__name__)
+
+
+class ConfigSyncWorker:
+    """Background worker để sync flags/configs từ remote server.
+
+    Cơ chế:
+    1. Polling: fetch từ remote API với configurable interval (default 30s)
+    2. WebSocket: kết nối đến remote server để nhận real-time updates
+    3. Fallback: khi WebSocket disconnect, fallback về polling
+
+    Usage:
+        worker = ConfigSyncWorker(remote_url="https://config-server.example.com")
+        await worker.start()
+    """
+
+    def __init__(
+        self,
+        remote_url: str,
+        polling_interval: int = 30,
+        redis_url: str = "redis://localhost:6379/0",
+        api_key: str = "",
+    ) -> None:
+        """Khởi tạo sync worker.
+
+        Args:
+            remote_url: URL của remote config server.
+            polling_interval: Interval polling (giây).
+            redis_url: Redis connection URL.
+            api_key: API key cho remote server.
+        """
+        self.remote_url = remote_url.rstrip("/")
+        self.polling_interval = polling_interval
+        self.api_key = api_key
+        self.redis_store: RedisFlagStore | None = None
+        self._running = False
+        self._last_etag: dict[str, str] = {}
+
+    async def start(self, db_store: DatabaseFlagStore) -> None:
+        """Bắt đầu sync worker.
+
+        Args:
+            db_store: Database store để sync data.
+        """
+        self._running = True
+        try:
+            self.redis_store = RedisFlagStore()
+        except ImportError:
+            logger.warning("Redis không available, chỉ sync vào database")
+
+        # Chạy polling loop
+        asyncio.create_task(self._polling_loop(db_store))
+        logger.info("ConfigSyncWorker started (polling interval=%ds)", self.polling_interval)
+
+    async def stop(self) -> None:
+        """Dừng sync worker."""
+        self._running = False
+        if self.redis_store:
+            await self.redis_store.close()
+        logger.info("ConfigSyncWorker stopped")
+
+    async def _polling_loop(self, db_store: DatabaseFlagStore) -> None:
+        """Loop polling để sync data từ remote server."""
+        while self._running:
+            try:
+                await self._sync_flags(db_store)
+                await self._sync_configs(db_store)
+            except Exception as e:
+                logger.error("Sync error: %s", e)
+            await asyncio.sleep(self.polling_interval)
+
+    async def _sync_flags(self, db_store: DatabaseFlagStore) -> None:
+        """Sync flags từ remote server."""
+        async with httpx.AsyncClient() as client:
+            headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+            etag = self._last_etag.get("flags", "")
+            if etag:
+                headers["If-None-Match"] = etag
+
+            response = await client.get(
+                f"{self.remote_url}/api/flags",
+                headers=headers,
+                timeout=10.0,
+            )
+
+            if response.status_code == 304:
+                return  # Not modified
+
+            if response.status_code != 200:
+                logger.warning("Sync flags failed: HTTP %d", response.status_code)
+                return
+
+            flags = response.json()
+            self._last_etag["flags"] = response.headers.get("ETag", "")
+
+            for flag_data in flags:
+                await db_store.save_flag(flag_data)
+                if self.redis_store:
+                    await self.redis_store.save_flag(flag_data)
+
+            logger.info("Synced %d flags from remote", len(flags))
+
+    async def _sync_configs(self, db_store: DatabaseFlagStore) -> None:
+        """Sync configs từ remote server."""
+        async with httpx.AsyncClient() as client:
+            headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+            etag = self._last_etag.get("configs", "")
+            if etag:
+                headers["If-None-Match"] = etag
+
+            response = await client.get(
+                f"{self.remote_url}/api/configs",
+                headers=headers,
+                timeout=10.0,
+            )
+
+            if response.status_code == 304:
+                return
+
+            if response.status_code != 200:
+                logger.warning("Sync configs failed: HTTP %d", response.status_code)
+                return
+
+            configs = response.json()
+            self._last_etag["configs"] = response.headers.get("ETag", "")
+
+            for config_data in configs:
+                await db_store.save_config(config_data)
+                if self.redis_store:
+                    await self.redis_store.save_config(config_data)
+
+            logger.info("Synced %d configs from remote", len(configs))

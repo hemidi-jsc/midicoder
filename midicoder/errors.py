@@ -857,6 +857,32 @@ class ErrorCode(str, Enum):
     CP36_RENDER_FAILED = "MDC-CP36-022"
 
     # =========================================================================
+    # CP37: Feature Flags & Dynamic Config Errors
+    # =========================================================================
+    CP37_EMPTY_FLAG_KEY = "MDC-CP37-001"
+    CP37_INVALID_VARIANT_TYPE = "MDC-CP37-002"
+    CP37_INVALID_PERCENTAGE = "MDC-CP37-003"
+    CP37_FLAG_NOT_FOUND = "MDC-CP37-004"
+    CP37_DUPLICATE_FLAG_KEY = "MDC-CP37-005"
+    CP37_INVALID_TARGETING_RULE = "MDC-CP37-006"
+    CP37_FLAG_EVALUATION_FAILED = "MDC-CP37-007"
+    CP37_EMPTY_EXPERIMENT_KEY = "MDC-CP37-008"
+    CP37_EXPERIMENT_NOT_FOUND = "MDC-CP37-009"
+    CP37_INVALID_VARIANT_WEIGHT = "MDC-CP37-010"
+    CP37_TOO_FEW_VARIANTS = "MDC-CP37-011"
+    CP37_EXPERIMENT_ASSIGNMENT_FAILED = "MDC-CP37-012"
+    CP37_EMPTY_CONFIG_KEY = "MDC-CP37-013"
+    CP37_CONFIG_NOT_FOUND = "MDC-CP37-014"
+    CP37_INVALID_CONFIG_VALUE_TYPE = "MDC-CP37-015"
+    CP37_INVALID_CONFIG_SCOPE = "MDC-CP37-016"
+    CP37_STORE_NOT_INITIALIZED = "MDC-CP37-017"
+    CP37_REDIS_CONNECTION_FAILED = "MDC-CP37-018"
+    CP37_DUPLICATE_EXPERIMENT_KEY = "MDC-CP37-019"
+    CP37_DUPLICATE_CONFIG_KEY = "MDC-CP37-020"
+    CP37_TEMPLATE_NOT_FOUND = "MDC-CP37-021"
+    CP37_RENDER_FAILED = "MDC-CP37-022"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1294,6 +1320,30 @@ class MidicoderErrorManager:
         ErrorCode.CP35_DISTANCE_UNIT_INVALID: "Đơn vị khoảng cách không hợp lệ: {unit}",
         ErrorCode.CP35_PARSER_ERROR: "Lỗi parse geospatial DSL: {error}",
 
+        # CP37: Feature Flags & Dynamic Config Error Templates
+        ErrorCode.CP37_EMPTY_FLAG_KEY: "Flag key không được để trống.",
+        ErrorCode.CP37_INVALID_VARIANT_TYPE: "Flag variant type không hợp lệ: {variant_type}. Chọn trong boolean, percentage, targeted.",
+        ErrorCode.CP37_INVALID_PERCENTAGE: "Percentage phải trong khoảng 0-100, nhận được: {percentage}",
+        ErrorCode.CP37_FLAG_NOT_FOUND: "Không tìm thấy feature flag: {flag_key}",
+        ErrorCode.CP37_DUPLICATE_FLAG_KEY: "Flag key đã tồn tại: {flag_key}",
+        ErrorCode.CP37_INVALID_TARGETING_RULE: "Targeting rule không hợp lệ: {reason}",
+        ErrorCode.CP37_FLAG_EVALUATION_FAILED: "Evaluate flag thất bại: {flag_key} — {error}",
+        ErrorCode.CP37_EMPTY_EXPERIMENT_KEY: "Experiment key không được để trống.",
+        ErrorCode.CP37_EXPERIMENT_NOT_FOUND: "Không tìm thấy experiment: {experiment_key}",
+        ErrorCode.CP37_INVALID_VARIANT_WEIGHT: "Tổng weight của variants phải bằng 100, nhận được: {total_weight}",
+        ErrorCode.CP37_TOO_FEW_VARIANTS: "Experiment cần ít nhất 2 variants, nhận được: {count}",
+        ErrorCode.CP37_EXPERIMENT_ASSIGNMENT_FAILED: "Assign experiment thất bại: {experiment_key} — {error}",
+        ErrorCode.CP37_EMPTY_CONFIG_KEY: "Config key không được để trống.",
+        ErrorCode.CP37_CONFIG_NOT_FOUND: "Không tìm thấy config: {config_key}",
+        ErrorCode.CP37_INVALID_CONFIG_VALUE_TYPE: "Config value type không hợp lệ: {value_type}. Chọn trong string, number, boolean, json, array.",
+        ErrorCode.CP37_INVALID_CONFIG_SCOPE: "Config scope không hợp lệ: {scope}. Chọn trong global, tenant, environment.",
+        ErrorCode.CP37_STORE_NOT_INITIALIZED: "Flag store chưa được khởi tạo.",
+        ErrorCode.CP37_REDIS_CONNECTION_FAILED: "Kết nối Redis thất bại: {error}",
+        ErrorCode.CP37_DUPLICATE_EXPERIMENT_KEY: "Experiment key đã tồn tại: {experiment_key}",
+        ErrorCode.CP37_DUPLICATE_CONFIG_KEY: "Config key đã tồn tại: {config_key}",
+        ErrorCode.CP37_TEMPLATE_NOT_FOUND: "Jinja2 template không tìm thấy: {template}",
+        ErrorCode.CP37_RENDER_FAILED: "Render template thất bại {template}: {reason}",
+
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",
         ErrorCode.CP53_DUPLICATE_DP_ID: "Domain pack ID trung lap.",
@@ -1726,6 +1776,30 @@ class MidicoderErrorManager:
         ErrorCode.CP35_REVERSE_GEO_FAILED: "Kiểm tra kết nối đến Nominatim/GeoPy API",
         ErrorCode.CP35_DISTANCE_UNIT_INVALID: "Đơn vị phải là 'meter', 'kilometer' hoặc 'mile'",
         ErrorCode.CP35_PARSER_ERROR: "Kiểm tra cú pháp YAML geospatial DSL và cấu trúc geospatial_specs",
+
+        # CP37: Feature Flags & Dynamic Config Suggestions
+        ErrorCode.CP37_EMPTY_FLAG_KEY: "Cung cấp flag key hợp lệ (snake_case, không để trống)",
+        ErrorCode.CP37_INVALID_VARIANT_TYPE: "Variant type phải là 'boolean', 'percentage' hoặc 'targeted'",
+        ErrorCode.CP37_INVALID_PERCENTAGE: "Percentage phải là số nguyên trong khoảng 0 đến 100",
+        ErrorCode.CP37_FLAG_NOT_FOUND: "Kiểm tra flag_key hoặc tạo flag trước khi evaluate",
+        ErrorCode.CP37_DUPLICATE_FLAG_KEY: "Dùng flag key khác hoặc update flag đã tồn tại",
+        ErrorCode.CP37_INVALID_TARGETING_RULE: "Kiểm tra cấu trúc targeting rule: condition_type, condition, value, priority",
+        ErrorCode.CP37_FLAG_EVALUATION_FAILED: "Kiểm tra flag store đã được khởi tạo và context hợp lệ",
+        ErrorCode.CP37_EMPTY_EXPERIMENT_KEY: "Cung cấp experiment key hợp lệ (snake_case)",
+        ErrorCode.CP37_EXPERIMENT_NOT_FOUND: "Kiểm tra experiment_key hoặc tạo experiment trước khi assign",
+        ErrorCode.CP37_INVALID_VARIANT_WEIGHT: "Điều chỉnh weight của variants sao cho tổng bằng 100",
+        ErrorCode.CP37_TOO_FEW_VARIANTS: "Thêm ít nhất 1 variant nữa vào experiment (tối thiểu 2)",
+        ErrorCode.CP37_EXPERIMENT_ASSIGNMENT_FAILED: "Kiểm tra experiment đã active và user_id hợp lệ",
+        ErrorCode.CP37_EMPTY_CONFIG_KEY: "Cung cấp config key hợp lệ (hierarchical: section.subsection.key)",
+        ErrorCode.CP37_CONFIG_NOT_FOUND: "Kiểm tra config_key hoặc tạo config trước khi đọc",
+        ErrorCode.CP37_INVALID_CONFIG_VALUE_TYPE: "Value type phải là 'string', 'number', 'boolean', 'json' hoặc 'array'",
+        ErrorCode.CP37_INVALID_CONFIG_SCOPE: "Scope phải là 'global', 'tenant' hoặc 'environment'",
+        ErrorCode.CP37_STORE_NOT_INITIALIZED: "Khởi tạo FlagStore (Redis hoặc Database) trước khi sử dụng",
+        ErrorCode.CP37_REDIS_CONNECTION_FAILED: "Kiểm tra Redis server đang chạy và cấu hình kết nối",
+        ErrorCode.CP37_DUPLICATE_EXPERIMENT_KEY: "Dùng experiment key khác hoặc update experiment đã tồn tại",
+        ErrorCode.CP37_DUPLICATE_CONFIG_KEY: "Dùng config key khác hoặc update config đã tồn tại",
+        ErrorCode.CP37_TEMPLATE_NOT_FOUND: "Kiểm tra template file tồn tại trong template directory",
+        ErrorCode.CP37_RENDER_FAILED: "Kiểm tra template context hợp lệ và template syntax đúng",
     }
 
     @classmethod

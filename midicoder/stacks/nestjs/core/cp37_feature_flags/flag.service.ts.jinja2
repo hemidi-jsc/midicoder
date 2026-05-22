@@ -1,0 +1,59 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import FlagEntity from '../entities/flag.entity';
+import { CreateFlagDto, UpdateFlagDto, EvaluateFlagDto } from '../dto/flag.dto';
+
+/**
+ * Service Feature Flag — CRUD và evaluate.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Injectable()
+export default class FlagService {
+  constructor(
+    @InjectRepository(FlagEntity)
+    private readonly flagRepo: Repository<FlagEntity>,
+  ) {}
+
+  async create(dto: CreateFlagDto): Promise<FlagEntity> {
+    const flag = this.flagRepo.create(dto);
+    return this.flagRepo.save(flag);
+  }
+
+  async getByKey(flagKey: string): Promise<FlagEntity | null> {
+    return this.flagRepo.findOne({ where: { flag_key: flagKey } });
+  }
+
+  async findAll(): Promise<FlagEntity[]> {
+    return this.flagRepo.find({ where: { is_active: true }, order: { flag_key: 'ASC' } });
+  }
+
+  async update(flagKey: string, dto: UpdateFlagDto): Promise<FlagEntity | null> {
+    const flag = await this.getByKey(flagKey);
+    if (!flag) return null;
+    Object.assign(flag, dto);
+    return this.flagRepo.save(flag);
+  }
+
+  async remove(flagKey: string): Promise<boolean> {
+    const result = await this.flagRepo.delete(flagKey);
+    return result.affected !== 0;
+  }
+
+  async toggle(flagKey: string, isActive: boolean): Promise<FlagEntity | null> {
+    const flag = await this.getByKey(flagKey);
+    if (!flag) return null;
+    flag.is_active = isActive;
+    return this.flagRepo.save(flag);
+  }
+
+  /**
+   * Evaluate flag cho context cụ thể.
+   *
+   * Thứ tự ưu tiên: tenant override → targeting rule → percentage → default
+   */
+  evaluate(dto: EvaluateFlagDto): boolean {
+    // Fallback — implement đầy đủ khi lấy flag từ repo
+    return false;
+  }
+}

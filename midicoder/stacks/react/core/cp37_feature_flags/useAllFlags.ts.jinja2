@@ -1,0 +1,20 @@
+import { useMemo } from 'react';
+import { useFlagContext } from './FeatureFlagProvider';
+
+/**
+ * Hook useAllFlags — lấy tất cả evaluated flags.
+ *
+ * Usage:
+ *   const flags = useAllFlags();
+ *   flags.dark_mode // boolean
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export function useAllFlags(): Record<string, boolean> {
+  const { evaluated, loading } = useFlagContext();
+
+  return useMemo(() => {
+    if (loading) return {};
+    return { ...evaluated };
+  }, [evaluated, loading]);
+}

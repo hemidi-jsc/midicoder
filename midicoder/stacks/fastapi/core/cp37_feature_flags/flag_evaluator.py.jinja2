@@ -1,0 +1,147 @@
+"""
+Feature Flag Evaluator — engine evaluate flags.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.feature_flags.models.flag_model import FeatureFlag, FlagEvaluation
+
+
+class FlagEvaluator:
+    """Engine evaluate feature flags.
+
+    Evaluation order (ưu tiên giảm dần):
+    1. Tenant override
+    2. Targeting rule (theo priority)
+    3. Percentage rollout
+    4. Default value
+    """
+
+    def __init__(self, db: AsyncSession) -> None:
+        """Khởi tạo evaluator.
+
+        Args:
+            db: SQLAlchemy async session.
+        """
+        self.db = db
+
+    async def evaluate(self, flag_key: str, context: dict[str, Any]) -> dict[str, Any]:
+        """Evaluate một flag cho context cụ thể.
+
+        Args:
+            flag_key: Flag key để evaluate.
+            context: Context dict (user_id, tenant_id, role, attributes, segments, environment).
+
+        Returns:
+            Dict với evaluated_value và reason.
+        """
+        flag = await self._get_flag(flag_key)
+        if flag is None:
+            return {
+                "flag_key": flag_key,
+                "evaluated_value": False,
+                "reason": f"flag_not_found: {flag_key}",
+            }
+
+        # 1. Kiểm tra flag active
+        if not flag.is_active:
+            return {"flag_key": flag_key, "evaluated_value": False, "reason": "flag_inactive"}
+
+        # 2. Environment scope
+        environment = context.get("environment", "")
+        if flag.environments and environment and environment not in flag.environments:
+            return {"flag_key": flag_key, "evaluated_value": False, "reason": "environment_not_matched"}
+
+        # 3. Tenant override (ưu tiên cao nhất)
+        tenant_id = context.get("tenant_id", "")
+        if tenant_id and flag.tenant_overrides and tenant_id in flag.tenant_overrides:
+            override_value = flag.tenant_overrides[tenant_id]
+            await self._record_evaluation(flag_key, context, override_value, f"tenant_override: {tenant_id}")
+            return {"flag_key": flag_key, "evaluated_value": override_value, "reason": f"tenant_override: {tenant_id}"}
+
+        # 4. Targeting rules (theo priority)
+        if flag.variant_type == "targeted" and flag.targeting_rules:
+            sorted_rules = sorted(flag.targeting_rules, key=lambda r: r.get("priority", 0))
+            for rule in sorted_rules:
+                if self._rule_matches(rule, context):
+                    await self._record_evaluation(flag_key, context, rule["value"], f"targeting_rule: {rule['rule_id']}")
+                    return {"flag_key": flag_key, "evaluated_value": rule["value"], "reason": f"targeting_rule: {rule['rule_id']}"}
+
+        # 5. Percentage rollout
+        if flag.variant_type == "percentage":
+            user_id = context.get("user_id", "")
+            if user_id:
+                bucket = int(hashlib.sha256(user_id.encode()).hexdigest(), 16) % 100
+                matched = bucket < flag.percentage
+                await self._record_evaluation(flag_key, context, matched, f"percentage_rollout: {flag.percentage}%")
+                return {"flag_key": flag_key, "evaluated_value": matched, "reason": f"percentage_rollout: {flag.percentage}%"}
+
+        # 6. Default value
+        await self._record_evaluation(flag_key, context, flag.default_enabled, "default_value")
+        return {"flag_key": flag_key, "evaluated_value": flag.default_enabled, "reason": "default_value"}
+
+    async def evaluate_all(self, context: dict[str, Any]) -> dict[str, bool]:
+        """Evaluate tất cả flags cho context.
+
+        Args:
+            context: Context dict.
+
+        Returns:
+            Dict flag_key -> boolean.
+        """
+        result = {}
+        stmt = select(FeatureFlag).where(FeatureFlag.is_active.is_(True))
+        flags = (await self.db.execute(stmt)).scalars().all()
+
+        for flag in flags:
+            eval_result = await self.evaluate(flag.flag_key, context)
+            result[flag.flag_key] = eval_result["evaluated_value"]
+
+        return result
+
+    def _rule_matches(self, rule: dict[str, Any], context: dict[str, Any]) -> bool:
+        """Kiểm tra context có match với targeting rule không."""
+        condition_type = rule.get("condition_type", "")
+        condition = rule.get("condition", {})
+
+        match condition_type:
+            case "role":
+                return context.get("role") == condition.get("role")
+            case "tenant":
+                return context.get("tenant_id") == condition.get("tenant_id")
+            case "attribute":
+                user_attrs = context.get("attributes", {})
+                return all(user_attrs.get(k) == v for k, v in condition.items())
+            case "segment":
+                return condition.get("segment") in context.get("segments", [])
+            case _:
+                return False
+
+    async def _get_flag(self, flag_key: str) -> FeatureFlag | None:
+        """Lấy flag theo key từ database."""
+        stmt = select(FeatureFlag).where(FeatureFlag.flag_key == flag_key)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def _record_evaluation(
+        self, flag_key: str, context: dict[str, Any], value: bool, reason: str
+    ) -> None:
+        """Ghi audit trail cho flag evaluation."""
+        evaluation = FlagEvaluation(
+            flag_id=flag_key,
+            user_id=context.get("user_id", ""),
+            tenant_id=context.get("tenant_id", ""),
+            evaluated_value=value,
+            reason=reason,
+            evaluated_at=datetime.now(timezone.utc),
+        )
+        self.db.add(evaluation)
+        await self.db.flush()

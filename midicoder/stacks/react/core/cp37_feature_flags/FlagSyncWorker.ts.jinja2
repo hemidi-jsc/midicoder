@@ -1,0 +1,110 @@
+/**
+ * FlagSyncWorker — Web Worker để sync flags/configs từ backend.
+ *
+ * Chạy polling interval + lắng nghe WebSocket events để cập nhật
+ * flags/configs realtime mà không block main thread.
+ *
+ * Usage (in React app):
+ *   import FlagSyncWorker from './workers/FlagSyncWorker';
+ *   const worker = new FlagSyncWorker();
+ *   worker.postMessage({ type: 'start', interval: 30000 });
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+
+interface Message {
+  type: 'start' | 'stop' | 'context_change' | 'flag_update' | 'config_update';
+  interval?: number;
+  context?: Record<string, any>;
+  payload?: any;
+}
+
+let pollingTimer: number | null = null;
+let flagsCache: Record<string, any> = {};
+let configsCache: Record<string, any> = {};
+
+self.onmessage = async (e: MessageEvent<Message>) => {
+  const msg = e.data;
+
+  switch (msg.type) {
+    case 'start':
+      startPolling(msg.interval || 30000);
+      break;
+    case 'stop':
+      stopPolling();
+      break;
+    case 'context_change':
+      // Notify main thread khi context thay đổi
+      self.postMessage({
+        type: 'context_updated',
+        payload: msg.context,
+      });
+      break;
+    case 'flag_update':
+      flagsCache[msg.payload.flag_key] = msg.payload;
+      self.postMessage({
+        type: 'flags_synced',
+        payload: { ...flagsCache },
+      });
+      break;
+    case 'config_update':
+      configsCache[msg.payload.config_key] = msg.payload;
+      self.postMessage({
+        type: 'configs_synced',
+        payload: { ...configsCache },
+      });
+      break;
+  }
+};
+
+function startPolling(intervalMs: number) {
+  stopPolling();
+  pollFlags();
+  pollConfigs();
+  pollingTimer = window.setInterval(() => {
+    pollFlags();
+    pollConfigs();
+  }, intervalMs);
+}
+
+function stopPolling() {
+  if (pollingTimer !== null) {
+    clearInterval(pollingTimer);
+    pollingTimer = null;
+  }
+}
+
+async function pollFlags() {
+  try {
+    const resp = await fetch('/api/feature-flags');
+    if (resp.ok) {
+      const data = await resp.json();
+      const items = Array.isArray(data) ? data : data.items || [];
+      const map: Record<string, any> = {};
+      for (const f of items) {
+        map[f.flag_key] = f;
+      }
+      flagsCache = map;
+      self.postMessage({ type: 'flags_synced', payload: map });
+    }
+  } catch (err) {
+    console.warn('[FlagSyncWorker] Poll flags failed', err);
+  }
+}
+
+async function pollConfigs() {
+  try {
+    const resp = await fetch('/api/configs?scope=global');
+    if (resp.ok) {
+      const data = await resp.json();
+      const map: Record<string, any> = {};
+      for (const c of data) {
+        map[c.config_key] = c.value;
+      }
+      configsCache = map;
+      self.postMessage({ type: 'configs_synced', payload: map });
+    }
+  } catch (err) {
+    console.warn('[FlagSyncWorker] Poll configs failed', err);
+  }
+}

@@ -1,0 +1,19 @@
+import { useMemo } from 'react';
+import { useFlagContext } from './FeatureFlagProvider';
+
+/**
+ * Hook useFeatureFlag — kiểm tra flag có enabled không.
+ *
+ * Usage:
+ *   const isDarkMode = useFeatureFlag('dark_mode');
+ *   if (isDarkMode) { /* render dark mode *\/ }
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export function useFeatureFlag(flagKey: string): boolean {
+  const { evaluated } = useFlagContext();
+
+  return useMemo(() => {
+    return evaluated[flagKey] ?? false;
+  }, [evaluated, flagKey]);
+}

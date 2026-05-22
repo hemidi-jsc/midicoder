@@ -1,0 +1,63 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import ExperimentEntity, { VariantEntity } from '../entities/experiment.entity';
+import { CreateExperimentDto, AssignUserDto } from '../dto/experiment.dto';
+
+/**
+ * Service Experiment — CRUD và assign.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Injectable()
+export default class ExperimentService {
+  constructor(
+    @InjectRepository(ExperimentEntity)
+    private readonly expRepo: Repository<ExperimentEntity>,
+    @InjectRepository(VariantEntity)
+    private readonly variantRepo: Repository<VariantEntity>,
+  ) {}
+
+  async create(dto: CreateExperimentDto): Promise<ExperimentEntity> {
+    const exp = this.expRepo.create(dto);
+    return this.expRepo.save(exp);
+  }
+
+  async getByKey(key: string): Promise<ExperimentEntity | null> {
+    return this.expRepo.findOne({ where: { experiment_key: key } });
+  }
+
+  async findActive(): Promise<ExperimentEntity[]> {
+    return this.expRepo.find({ where: { is_active: true } });
+  }
+
+  /**
+   * Assign user vào variant (deterministic).
+   */
+  async assign(dto: AssignUserDto): Promise<string | null> {
+    const exp = await this.getByKey(dto.experiment_key);
+    if (!exp || !exp.is_active) return null;
+
+    const variants = await this.variantRepo.find({ where: { experiment_id: exp.id } });
+    if (!variants.length) return null;
+
+    // Deterministic hash
+    const hash = this._hash(`${dto.experiment_key}:${dto.user_id}`);
+    const bucket = hash % 100;
+    let cumulative = 0;
+    for (const v of variants) {
+      cumulative += v.weight;
+      if (bucket < cumulative) return v.variant_key;
+    }
+    return variants[variants.length - 1].variant_key;
+  }
+
+  private _hash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash);
+  }
+}

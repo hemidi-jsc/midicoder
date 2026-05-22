@@ -1,0 +1,45 @@
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { FlagProviderService } from './flag-provider.service';
+
+/**
+ * Service sync flags/configs từ backend — polling + WebSocket fallback.
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Injectable({ providedIn: 'root' })
+export class FlagSyncService {
+  private pollingInterval: number = 30000; // 30s
+  private pollingTimer: any = null;
+
+  constructor(
+    private readonly http: HttpClient,
+    private readonly flagProvider: FlagProviderService,
+  ) {}
+
+  /**
+   * Bắt đầu polling để sync flags.
+   */
+  startPolling(intervalMs: number = this.pollingInterval): void {
+    this.stopPolling();
+    this._poll();
+    this.pollingTimer = setInterval(() => this._poll(), intervalMs);
+  }
+
+  /**
+   * Dừng polling.
+   */
+  stopPolling(): void {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
+  }
+
+  /**
+   * Poll một lần từ backend.
+   */
+  private _poll(): void {
+    this.flagProvider.loadAll();
+  }
+}

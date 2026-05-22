@@ -1,0 +1,78 @@
+"""
+Pydantic schemas cho A/B Experiment CRUD.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field, ConfigDict
+
+
+class ABVariantCreate(BaseModel):
+    """Schema tạo variant mới."""
+    variant_key: str = Field(..., min_length=1, max_length=255)
+    name: str = Field(default="", max_length=500)
+    weight: float = Field(default=50.0, ge=0, le=100)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class ABExperimentCreate(BaseModel):
+    """Schema tạo experiment mới."""
+    model_config = ConfigDict(strict=True)
+
+    experiment_key: str = Field(..., min_length=1, max_length=255)
+    name: str = Field(default="", max_length=500)
+    description: str = Field(default="")
+    variants: list[ABVariantCreate] = Field(..., min_length=2, description="Ít nhất 2 variants")
+    is_active: bool = Field(default=True)
+    traffic_percentage: float = Field(default=100.0, ge=0, le=100)
+    success_metric: str = Field(default="conversion_rate")
+
+
+class ABExperimentUpdate(BaseModel):
+    """Schema cập nhật experiment."""
+    is_active: bool | None = None
+    traffic_percentage: float | None = Field(default=None, ge=0, le=100)
+    end_date: datetime | None = None
+
+
+class ABExperimentResponse(BaseModel):
+    """Schema trả về experiment."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    experiment_key: str
+    name: str
+    description: str
+    is_active: bool
+    traffic_percentage: float
+    success_metric: str
+    start_date: datetime | None
+    end_date: datetime | None
+    variants: list[ABVariantCreate]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ABExperimentAssignRequest(BaseModel):
+    """Schema assign user vào experiment."""
+    model_config = ConfigDict(strict=True)
+
+    experiment_key: str
+    user_id: str
+    tenant_id: str = Field(default="")
+
+
+class ABExperimentAssignResponse(BaseModel):
+    """Schema trả về kết quả assignment."""
+    model_config = ConfigDict(strict=True)
+
+    experiment_key: str
+    user_id: str
+    tenant_id: str
+    assigned_variant: str
+    assigned_at: datetime

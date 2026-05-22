@@ -1,0 +1,36 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+{% for entity in ['Flag', 'Experiment', 'Config'] %}
+import {{ entity }}Entity from '../entities/{{ entity | lower }}.entity';
+{% endfor %}
+import FlagService from '../services/flag.service';
+import ExperimentService from '../services/experiment.service';
+import ConfigService from '../services/config.service';
+import FlagController from '../controllers/flag.controller';
+import ExperimentController from '../controllers/experiment.controller';
+import ConfigController from '../controllers/config.controller';
+import FlagSyncGateway from '../gateways/flag-sync.gateway';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([
+{% for entity in ['Flag', 'Experiment', 'Config'] %}
+      {{ entity }}Entity,
+{% endfor %}
+    ]),
+  ],
+  providers: [
+    FlagService,
+    ExperimentService,
+    ConfigService,
+    FlagSyncGateway,
+  ],
+  controllers: [
+    FlagController,
+    ExperimentController,
+    ConfigController,
+  ],
+  exports: [FlagService, ExperimentService, ConfigService],
+})
+export default class FeatureFlagsModule {}

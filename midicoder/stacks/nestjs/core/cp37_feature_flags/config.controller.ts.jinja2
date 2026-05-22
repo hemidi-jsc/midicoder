@@ -1,0 +1,31 @@
+import { Controller, Get, Put, Body, Param, Query } from '@nestjs/common';
+import ConfigService from '../services/config.service';
+import { CreateConfigDto, UpdateConfigDto } from '../dto/config.dto';
+
+/**
+ * Controller Config — REST API.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Controller('api/configs')
+export default class ConfigController {
+  constructor(private readonly configService: ConfigService) {}
+
+  @Post()
+  create(@Body() dto: CreateConfigDto) {
+    return this.configService.create(dto);
+  }
+
+  @Get(':configKey')
+  getWithFallback(
+    @Param('configKey') key: string,
+    @Query('tenantId') tenantId?: string,
+    @Query('environment') environment?: string,
+  ) {
+    return this.configService.getWithFallback(key, tenantId, environment);
+  }
+
+  @Put(':configKey')
+  update(@Param('configKey') key: string, @Body() dto: UpdateConfigDto) {
+    return this.configService.update(key, dto);
+  }
+}

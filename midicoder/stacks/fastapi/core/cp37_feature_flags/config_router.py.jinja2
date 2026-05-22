@@ -1,0 +1,66 @@
+"""
+Config Router — REST API cho Dynamic Configs.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.feature_flags.services.config_service import ConfigService
+from app.feature_flags.schemas.config_schema import (
+    DynamicConfigCreate,
+    DynamicConfigUpdate,
+    DynamicConfigResponse,
+)
+
+router = APIRouter(prefix="/api/configs", tags=["Dynamic Config"])
+
+
+@router.post("", response_model=DynamicConfigResponse, status_code=201)
+async def create_config(
+    data: DynamicConfigCreate,
+    changed_by: str = Query("system", description="Người tạo config"),
+    db: AsyncSession = Depends(get_db),
+) -> DynamicConfigResponse:
+    """Tạo dynamic config mới."""
+    service = ConfigService(db)
+    return await service.create(data, changed_by=changed_by)
+
+
+@router.get("/{config_key}")
+async def get_config(
+    config_key: str,
+    tenant_id: str | None = Query(None),
+    environment: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Lấy config value với fallback chain (tenant → environment → global)."""
+    service = ConfigService(db)
+    value = await service.get_with_fallback(
+        config_key, tenant_id=tenant_id, environment=environment
+    )
+    if value is None:
+        raise HTTPException(status_code=404, detail=f"Config không tìm thấy: {config_key}")
+    return {"config_key": config_key, "value": value}
+
+
+@router.put("/{config_key}", response_model=DynamicConfigResponse)
+async def update_config(
+    config_key: str,
+    data: DynamicConfigUpdate,
+    changed_by: str = Query("system", description="Người thay đổi"),
+    db: AsyncSession = Depends(get_db),
+) -> DynamicConfigResponse:
+    """Cập nhật config value và ghi audit trail."""
+    service = ConfigService(db)
+    config = await service.update(config_key, data, changed_by=changed_by)
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"Config không tìm thấy: {config_key}")
+    return config

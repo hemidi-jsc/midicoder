@@ -1,0 +1,57 @@
+"""
+Flag Store — Abstract interface cho storage backend.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import Any
+
+
+class FlagStore(ABC):
+    """Abstract interface cho storage backend của flag/experiment/config.
+
+    Các implement: RedisFlagStore, DatabaseFlagStore
+    """
+
+    @abstractmethod
+    async def get_flag(self, flag_key: str) -> dict[str, Any] | None:
+        """Lấy flag theo key."""
+        ...
+
+    @abstractmethod
+    async def get_all_flags(self) -> list[dict[str, Any]]:
+        """Lấy tất cả flags."""
+        ...
+
+    @abstractmethod
+    async def save_flag(self, flag: dict[str, Any]) -> None:
+        """Lưu flag."""
+        ...
+
+    @abstractmethod
+    async def delete_flag(self, flag_key: str) -> None:
+        """Xóa flag."""
+        ...
+
+    @abstractmethod
+    async def get_config(self, config_key: str) -> dict[str, Any] | None:
+        """Lấy config theo key."""
+        ...
+
+    @abstractmethod
+    async def save_config(self, config: dict[str, Any]) -> None:
+        """Lưu config."""
+        ...
+
+    @abstractmethod
+    async def invalidate(self, flag_key: str | None = None) -> None:
+        """Invalidate cache cho flag (hoặc toàn bộ nếu None)."""
+        ...
+
+    @abstractmethod
+    async def close(self) -> None:
+        """Đóng kết nối."""
+        ...

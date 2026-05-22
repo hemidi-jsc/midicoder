@@ -1,0 +1,133 @@
+"""
+WebSocket Handler — real-time config/flag sync.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Set
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_async_session
+
+router = APIRouter(tags=["WebSocket"])
+
+
+class ConnectionManager:
+    """Quản lý WebSocket connections."""
+
+    def __init__(self) -> None:
+        self.active_connections: list[WebSocket] = []
+        self.tenant_subscriptions: dict[str, list[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, tenant_id: str = "") -> None:
+        """Accept connection và subscribe theo tenant."""
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        if tenant_id:
+            if tenant_id not in self.tenant_subscriptions:
+                self.tenant_subscriptions[tenant_id] = []
+            self.tenant_subscriptions[tenant_id].append(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        """Remove connection."""
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        for tenant_id, conns in self.tenant_subscriptions.items():
+            if websocket in conns:
+                conns.remove(websocket)
+
+    async def broadcast(self, message: dict[str, Any]) -> None:
+        """Gửi message đến tất cả connections."""
+        disconnected = []
+        for conn in self.active_connections:
+            try:
+                await conn.send_json(message)
+            except Exception:
+                disconnected.append(conn)
+        for conn in disconnected:
+            self.disconnect(conn)
+
+    async def broadcast_to_tenant(self, tenant_id: str, message: dict[str, Any]) -> None:
+        """Gửi message đến tenant cụ thể."""
+        conns = self.tenant_subscriptions.get(tenant_id, [])
+        disconnected = []
+        for conn in conns:
+            try:
+                await conn.send_json(message)
+            except Exception:
+                disconnected.append(conn)
+        for conn in disconnected:
+            self.disconnect(conn)
+
+
+# Singleton manager
+manager = ConnectionManager()
+
+
+@router.websocket("/ws/feature-flags")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    tenant_id: str = "",
+) -> None:
+    """WebSocket endpoint cho real-time flag/config updates.
+
+    Message format nhận vào:
+    - {"type": "subscribe", "event": "flag_changed" | "config_changed"}
+    - {"type": "unsubscribe", "event": "..."}
+
+    Message format gửi ra:
+    - {"type": "flag_changed", "flag_key": "...", "value": true/false}
+    - {"type": "config_changed", "config_key": "...", "value": "..."}
+    - {"type": "experiment_changed", "experiment_key": "..."}
+    """
+    await manager.connect(websocket, tenant_id)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+
+            if data.get("type") == "subscribe":
+                await websocket.send_json({"type": "subscribed", "event": data.get("event")})
+            elif data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+
+@router.post("/internal/notify-flag-changed")
+async def notify_flag_changed(
+    flag_key: str,
+    value: bool,
+    tenant_id: str = "",
+) -> dict[str, str]:
+    """Internal endpoint để notify flag change qua WebSocket.
+
+    Được gọi từ flag service sau khi flag được update.
+    """
+    message = {"type": "flag_changed", "flag_key": flag_key, "value": value}
+    if tenant_id:
+        await manager.broadcast_to_tenant(tenant_id, message)
+    else:
+        await manager.broadcast(message)
+    return {"status": "sent"}
+
+
+@router.post("/internal/notify-config-changed")
+async def notify_config_changed(
+    config_key: str,
+    value: Any,
+    tenant_id: str = "",
+) -> dict[str, str]:
+    """Internal endpoint để notify config change qua WebSocket."""
+    message = {"type": "config_changed", "config_key": config_key, "value": value}
+    if tenant_id:
+        await manager.broadcast_to_tenant(tenant_id, message)
+    else:
+        await manager.broadcast(message)
+    return {"status": "sent"}

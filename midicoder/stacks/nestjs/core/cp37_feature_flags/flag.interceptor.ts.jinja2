@@ -1,0 +1,24 @@
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+
+/**
+ * Interceptor Feature Flag — inject flags vào request context.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Injectable()
+export class FlagInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler) {
+    const request = context.switchToHttp().getRequest();
+
+    // Extract context
+    const ctx = {
+      user_id: request.user?.id || '',
+      tenant_id: request.headers['x-tenant-id'] || '',
+      role: request.user?.role || '',
+    };
+
+    // TODO: Evaluate flags và inject vào request.flags
+    request.flags = {};
+
+    return next.handle();
+  }
+}

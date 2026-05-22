@@ -1,0 +1,172 @@
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+
+/**
+ * Feature flag info.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export interface FeatureFlag {
+  flag_key: string;
+  name: string;
+  variant_type: string;
+  default_enabled: boolean;
+  percentage: number;
+  is_active: boolean;
+  environments: string[];
+  targeting_rules: any[];
+  tenant_overrides: Record<string, boolean>;
+}
+
+/**
+ * Context cho flag evaluation.
+ */
+export interface FlagContext {
+  user_id?: string;
+  tenant_id?: string;
+  role?: string;
+  attributes?: Record<string, any>;
+  segments?: string[];
+  environment?: string;
+}
+
+/**
+ * Provider value.
+ */
+interface FlagProviderValue {
+  flags: Record<string, FeatureFlag>;
+  evaluated: Record<string, boolean>;
+  loading: boolean;
+  setContext: (ctx: FlagContext) => void;
+  evaluate: (flagKey: string) => boolean;
+}
+
+const FlagContext = createContext<FlagProviderValue>({
+  flags: {},
+  evaluated: {},
+  loading: true,
+  setContext: () => {},
+  evaluate: () => false,
+});
+
+/**
+ * Provider Feature Flag — quản lý state flags và evaluate.
+ *
+ * Usage:
+ *   <FeatureFlagProvider context={{ user_id: 'u1', tenant_id: 't1' }}>
+ *     <App />
+ *   </FeatureFlagProvider>
+ */
+export const FeatureFlagProvider: React.FC<{
+  context?: FlagContext;
+  children: React.ReactNode;
+  baseUrl?: string;
+}> = ({ context: initialContext, children, baseUrl = '/api/feature-flags' }) => {
+  const [flags, setFlags] = useState<Record<string, FeatureFlag>>({});
+  const [evaluated, setEvaluated] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+  const [flagContext, setFlagContext] = useState<FlagContext>(initialContext || {});
+
+  /** Load flags từ backend */
+  useEffect(() => {
+    fetch(`${baseUrl}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const map: Record<string, FeatureFlag> = {};
+        const items = Array.isArray(data) ? data : data.items || [];
+        for (const f of items) {
+          map[f.flag_key] = f;
+        }
+        setFlags(map);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('[FeatureFlagProvider] Load flags failed', err);
+        setLoading(false);
+      });
+  }, [baseUrl]);
+
+  /** Re-evaluate khi context hoặc flags thay đổi */
+  useEffect(() => {
+    const result: Record<string, boolean> = {};
+    for (const [key, flag] of Object.entries(flags)) {
+      result[key] = evaluateSingle(flag, flagContext);
+    }
+    setEvaluated(result);
+  }, [flags, flagContext]);
+
+  const evaluate = useCallback(
+    (flagKey: string): boolean => {
+      const flag = flags[flagKey];
+      if (!flag) return false;
+      return evaluateSingle(flag, flagContext);
+    },
+    [flags, flagContext],
+  );
+
+  const setContext = useCallback((ctx: FlagContext) => {
+    setFlagContext((prev) => ({ ...prev, ...ctx }));
+  }, []);
+
+  return (
+    <FlagContext.Provider value={{ flags, evaluated, loading, setContext, evaluate }}>
+      {children}
+    </FlagContext.Provider>
+  );
+};
+
+/**
+ * Evaluate một flag đơn.
+ * Thứ tự: tenant override → targeting → percentage → default
+ */
+function evaluateSingle(flag: FeatureFlag, ctx: FlagContext): boolean {
+  if (!flag.is_active) return false;
+
+  // 1. Tenant override
+  const tenantId = ctx.tenant_id;
+  if (tenantId && flag.tenant_overrides && tenantId in flag.tenant_overrides) {
+    return flag.tenant_overrides[tenantId];
+  }
+
+  // 2. Targeting rules
+  if (flag.variant_type === 'targeted' && flag.targeting_rules?.length) {
+    const sorted = [...flag.targeting_rules].sort((a, b) => a.priority - b.priority);
+    for (const rule of sorted) {
+      if (ruleMatches(rule, ctx)) return rule.value;
+    }
+  }
+
+  // 3. Percentage
+  if (flag.variant_type === 'percentage' && ctx.user_id) {
+    const bucket = hashCode(ctx.user_id) % 100;
+    return bucket < flag.percentage;
+  }
+
+  // 4. Default
+  return flag.default_enabled;
+}
+
+function ruleMatches(rule: any, ctx: FlagContext): boolean {
+  switch (rule.condition_type) {
+    case 'role': return ctx.role === rule.condition?.role;
+    case 'tenant': return ctx.tenant_id === rule.condition?.tenant_id;
+    case 'attribute':
+      const attrs = ctx.attributes || {};
+      return Object.entries(rule.condition).every(([k, v]) => attrs[k] === v);
+    case 'segment':
+      return (ctx.segments || []).includes(rule.condition?.segment);
+    default: return false;
+  }
+}
+
+function hashCode(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h) + str.charCodeAt(i);
+    h = h & h;
+  }
+  return Math.abs(h);
+}
+
+/**
+ * Hook để lấy FeatureFlag context.
+ */
+export const useFlagContext = () => useContext(FlagContext);

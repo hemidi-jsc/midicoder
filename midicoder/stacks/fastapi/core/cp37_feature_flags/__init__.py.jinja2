@@ -1,0 +1,71 @@
+"""
+Mô-đun Feature Flags & Dynamic Config.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from app.feature_flags.models.flag_model import FeatureFlag
+from app.feature_flags.models.ab_experiment_model import ABExperiment
+from app.feature_flags.models.config_model import DynamicConfig, FlagVariantType, ConfigScope, ConfigValueType
+
+# Feature flags từ DSL
+FLAGS: list[dict] = [
+{% for flag in flags %}
+    {
+        "flag_key": "{{ flag.flag_key }}",
+        "name": "{{ flag.name }}",
+        "description": "{{ flag.description }}",
+        "variant_type": "{{ flag.variant_type }}",
+        "default_enabled": {{ flag.default_enabled|lower }},
+        "percentage": {{ flag.percentage }},
+        "is_active": {{ flag.is_active|lower }},
+        "environments": {{ flag.environments|tojson }},
+        "targeting_rules": {{ flag.targeting_rules|tojson }},
+        "tenant_overrides": {{ flag.tenant_overrides|tojson }},
+    },
+{% endfor %}
+]
+
+# A/B Experiments từ DSL
+EXPERIMENTS: list[dict] = [
+{% for exp in experiments %}
+    {
+        "experiment_key": "{{ exp.experiment_key }}",
+        "name": "{{ exp.name }}",
+        "description": "{{ exp.description }}",
+        "variants": {{ exp.variants|tojson }},
+        "is_active": {{ exp.is_active|lower }},
+        "traffic_percentage": {{ exp.traffic_percentage }},
+        "success_metric": "{{ exp.success_metric }}",
+    },
+{% endfor %}
+]
+
+# Dynamic Configs từ DSL
+CONFIGS: list[dict] = [
+{% for config in configs %}
+    {
+        "config_key": "{{ config.config_key }}",
+        "value": {{ config.value|tojson }},
+        "value_type": "{{ config.value_type }}",
+        "scope": "{{ config.scope }}",
+        "tenant_id": {{ config.tenant_id|tojson }},
+        "environment": {{ config.environment|tojson }},
+        "is_encrypted": {{ config.is_encrypted|lower }},
+    },
+{% endfor %}
+]
+
+__all__ = [
+    "FLAGS",
+    "EXPERIMENTS",
+    "CONFIGS",
+    "FeatureFlag",
+    "ABExperiment",
+    "DynamicConfig",
+    "FlagVariantType",
+    "ConfigScope",
+    "ConfigValueType",
+]

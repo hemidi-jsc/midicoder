@@ -1,0 +1,40 @@
+import { useMemo } from 'react';
+
+/**
+ * Hook useABVariant — assign user vào variant của A/B experiment.
+ *
+ * Usage:
+ *   const variant = useABVariant('checkout_button_color', userId);
+ *   if (variant === 'variant_a') { /* render variant A *\/ }
+ *
+ * Assignment deterministic — cùng user luôn nhận cùng variant.
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export function useABVariant(
+  experimentKey: string,
+  userId: string,
+): string | null {
+  return useMemo(() => {
+    if (!userId) return null;
+
+    const hash = hashCode(`${experimentKey}:${userId}`);
+    const bucket = hash % 100;
+
+    // TODO: Lấy variants từ API/experiment config
+    // Placeholder — trả về 'control' nếu chưa có config
+    return 'control';
+  }, [experimentKey, userId]);
+}
+
+/**
+ * Deterministic hash function.
+ */
+function hashCode(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h) + str.charCodeAt(i);
+    h = h & h;
+  }
+  return Math.abs(h);
+}

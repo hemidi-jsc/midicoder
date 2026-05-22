@@ -1,0 +1,81 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+} from 'typeorm';
+
+import FlagEntity from './flag.entity';
+
+/**
+ * Entity A/B Experiment.
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Entity('ab_experiments')
+export default class ExperimentEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 255, unique: true })
+  experiment_key: string;
+
+  @Column({ length: 500, nullable: true })
+  name: string;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({ default: true })
+  is_active: boolean;
+
+  @Column({ type: 'float', default: 100.0 })
+  traffic_percentage: number;
+
+  @Column('jsonb', { nullable: true })
+  targeting_rules: Record<string, any> | null;
+
+  @Column({ length: 255, default: 'conversion_rate' })
+  success_metric: string;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  start_date: Date | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  end_date: Date | null;
+
+  @CreateDateColumn()
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
+}
+
+/**
+ * Entity Variant trong A/B Experiment.
+ */
+@Entity('ab_variants')
+export class VariantEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  experiment_id: string;
+
+  @Column({ length: 255 })
+  variant_key: string;
+
+  @Column({ length: 500, nullable: true })
+  name: string;
+
+  @Column({ type: 'float', default: 50.0 })
+  weight: number;
+
+  @Column('jsonb', { nullable: true, default: '{}' })
+  metadata_json: Record<string, any>;
+
+  @CreateDateColumn()
+  created_at: Date;
+}

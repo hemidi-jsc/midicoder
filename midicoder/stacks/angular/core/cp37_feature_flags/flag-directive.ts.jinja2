@@ -1,0 +1,46 @@
+import { Directive, Input, TemplateRef, ViewContainerRef } from '@angular/core';
+import { FlagProviderService } from './flag-provider.service';
+
+/**
+ * Structural directive *featureFlag — conditional rendering theo flag.
+ *
+ * Usage:
+ *   <div *featureFlag="'dark_mode'">Dark mode content</div>
+ *   <div *featureFlag="'new_checkout'; context: userContext">Checkout</div>
+ *   <div *featureFlag="'beta_feature'; else: fallback">Beta</div>
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Directive({
+  selector: '[featureFlag]',
+})
+export class FlagDirective {
+  private hasView = false;
+
+  constructor(
+    private readonly directiveTemplate: TemplateRef<any>,
+    private readonly viewContainer: ViewContainerRef,
+    private readonly flagService: FlagProviderService,
+  ) {}
+
+  @Input()
+  set featureFlag(flagKey: string) {
+    if (!flagKey) return;
+
+    const enabled = this.flagService.isEnabled(flagKey);
+    if (enabled && !this.hasView) {
+      this.viewContainer.createEmbeddedView(this.directiveTemplate);
+      this.hasView = true;
+    } else if (!enabled && this.hasView) {
+      this.viewContainer.clear();
+      this.hasView = false;
+    }
+  }
+
+  @Input()
+  set featureFlagContext(ctx: any) {
+    if (ctx) {
+      this.flagService.setContext(ctx);
+    }
+  }
+}

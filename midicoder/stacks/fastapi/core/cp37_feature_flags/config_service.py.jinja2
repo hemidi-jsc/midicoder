@@ -1,0 +1,159 @@
+"""
+Config Service — CRUD cho Dynamic Configs.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.feature_flags.models.flag_model import DynamicConfig, ConfigChange
+from app.feature_flags.schemas.config_schema import (
+    DynamicConfigCreate,
+    DynamicConfigUpdate,
+    DynamicConfigResponse,
+)
+
+
+class ConfigService:
+    """Service quản lý Dynamic Configs."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def create(self, data: DynamicConfigCreate, changed_by: str = "system") -> DynamicConfigResponse:
+        """Tạo config mới.
+
+        Args:
+            data: Dữ liệu config mới.
+            changed_by: Người tạo config.
+
+        Returns:
+            Config đã tạo.
+        """
+        config = DynamicConfig(
+            config_key=data.config_key,
+            value=data.value,
+            value_type=data.value_type,
+            scope=data.scope,
+            tenant_id=data.tenant_id,
+            environment=data.environment,
+            is_encrypted=data.is_encrypted,
+        )
+        self.db.add(config)
+        await self.db.flush()
+        await self.db.refresh(config)
+        return DynamicConfigResponse.model_validate(config)
+
+    async def get(self, config_key: str) -> DynamicConfigResponse | None:
+        """Lấy config theo key với fallback chain: tenant → environment → global."""
+        stmt = select(DynamicConfig).where(DynamicConfig.config_key == config_key).order_by(
+            DynamicConfig.scope
+        )
+        configs = (await self.db.execute(stmt)).scalars().all()
+        if not configs:
+            return None
+        return DynamicConfigResponse.model_validate(configs[0])
+
+    async def update(
+        self, config_key: str, data: DynamicConfigUpdate, changed_by: str = "system"
+    ) -> DynamicConfigResponse | None:
+        """Cập nhật config value và ghi audit trail.
+
+        Args:
+            config_key: Key của config.
+            data: Dữ liệu cập nhật.
+            changed_by: Người thay đổi.
+
+        Returns:
+            Config đã cập nhật.
+        """
+        stmt = select(DynamicConfig).where(DynamicConfig.config_key == config_key)
+        config = (await self.db.execute(stmt)).scalar_one_or_none()
+        if config is None:
+            return None
+
+        old_value = config.value
+        if data.value is not None:
+            config.value = data.value
+
+        # Ghi audit trail
+        change = ConfigChange(
+            config_id=config.id,
+            old_value=old_value,
+            new_value=config.value,
+            changed_by=changed_by,
+            reason=data.reason,
+        )
+        self.db.add(change)
+        await self.db.flush()
+        await self.db.refresh(config)
+        return DynamicConfigResponse.model_validate(config)
+
+    async def get_with_fallback(
+        self,
+        config_key: str,
+        tenant_id: str | None = None,
+        environment: str | None = None,
+        default_value: Any = None,
+    ) -> Any:
+        """Đọc config với fallback chain.
+
+        Thứ tự ưu tiên: tenant > environment > global > default.
+
+        Args:
+            config_key: Key của config.
+            tenant_id: Tenant ID (optional).
+            environment: Environment (optional).
+            default_value: Giá trị fallback nếu không tìm thấy.
+
+        Returns:
+            Giá trị config.
+        """
+        # 1. Tenant-scoped
+        if tenant_id:
+            stmt = select(DynamicConfig).where(
+                DynamicConfig.config_key == config_key,
+                DynamicConfig.scope == "tenant",
+                DynamicConfig.tenant_id == tenant_id,
+            )
+            config = (await self.db.execute(stmt)).scalar_one_or_none()
+            if config:
+                return config.value
+
+        # 2. Environment-scoped
+        if environment:
+            stmt = select(DynamicConfig).where(
+                DynamicConfig.config_key == config_key,
+                DynamicConfig.scope == "environment",
+                DynamicConfig.environment == environment,
+            )
+            config = (await self.db.execute(stmt)).scalar_one_or_none()
+            if config:
+                return config.value
+
+        # 3. Global
+        stmt = select(DynamicConfig).where(
+            DynamicConfig.config_key == config_key,
+            DynamicConfig.scope == "global",
+        )
+        config = (await self.db.execute(stmt)).scalar_one_or_none()
+        if config:
+            return config.value
+
+        # 4. Default
+        return default_value
+
+    async def list_by_scope(
+        self, scope: str, tenant_id: str | None = None
+    ) -> list[DynamicConfigResponse]:
+        """Lấy danh sách configs theo scope."""
+        stmt = select(DynamicConfig).where(DynamicConfig.scope == scope)
+        if tenant_id:
+            stmt = stmt.where(DynamicConfig.tenant_id == tenant_id)
+        configs = (await self.db.execute(stmt)).scalars().all()
+        return [DynamicConfigResponse.model_validate(c) for c in configs]

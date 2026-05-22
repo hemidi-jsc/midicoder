@@ -1,0 +1,45 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+
+/**
+ * Entity Dynamic Config.
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Entity('dynamic_configs')
+export default class ConfigEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 500, unique: true })
+  config_key: string;
+
+  @Column('jsonb', { nullable: true })
+  value: any;
+
+  @Column({ length: 50, default: 'string' })
+  value_type: string;
+
+  @Column({ length: 50, default: 'global' })
+  scope: string;
+
+  @Column({ length: 255, nullable: true })
+  tenant_id: string | null;
+
+  @Column({ length: 100, nullable: true })
+  environment: string | null;
+
+  @Column({ default: false })
+  is_encrypted: boolean;
+
+  @CreateDateColumn()
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
+}

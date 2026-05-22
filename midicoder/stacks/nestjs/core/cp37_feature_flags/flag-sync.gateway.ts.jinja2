@@ -1,0 +1,52 @@
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+
+/**
+ * WebSocket Gateway — real-time flag/config sync.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@WebSocketGateway({ cors: { origin: '*' } })
+export default class FlagSyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer() server: Server;
+
+  handleConnection(client: Socket) {
+    const tenantId = client.handshake.query.tenant_id as string;
+    if (tenantId) {
+      client.join(`tenant:${tenantId}`);
+    }
+  }
+
+  handleDisconnect(client: Socket) {
+    client.disconnect();
+  }
+
+  /**
+   * Notify flag đã thay đổi.
+   */
+  notifyFlagChanged(flagKey: string, value: boolean, tenantId?: string) {
+    const payload = { type: 'flag_changed', flag_key: flagKey, value };
+    if (tenantId) {
+      this.server.to(`tenant:${tenantId}`).emit('update', payload);
+    } else {
+      this.server.emit('update', payload);
+    }
+  }
+
+  /**
+   * Notify config đã thay đổi.
+   */
+  notifyConfigChanged(configKey: string, value: any, tenantId?: string) {
+    const payload = { type: 'config_changed', config_key: configKey, value };
+    if (tenantId) {
+      this.server.to(`tenant:${tenantId}`).emit('update', payload);
+    } else {
+      this.server.emit('update', payload);
+    }
+  }
+}

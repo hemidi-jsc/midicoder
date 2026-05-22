@@ -1,0 +1,32 @@
+import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import ExperimentService from '../services/experiment.service';
+import { CreateExperimentDto, AssignUserDto } from '../dto/experiment.dto';
+
+/**
+ * Controller Experiment — REST API.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Controller('api/experiments')
+export default class ExperimentController {
+  constructor(private readonly expService: ExperimentService) {}
+
+  @Post()
+  create(@Body() dto: CreateExperimentDto) {
+    return this.expService.create(dto);
+  }
+
+  @Get(':experimentKey')
+  getByKey(@Param('experimentKey') key: string) {
+    return this.expService.getByKey(key);
+  }
+
+  @Get('active')
+  findActive() {
+    return this.expService.findActive();
+  }
+
+  @Post('assign')
+  assign(@Body() dto: AssignUserDto) {
+    return this.expService.assign(dto);
+  }
+}

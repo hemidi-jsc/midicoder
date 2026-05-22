@@ -1,0 +1,106 @@
+"""
+Redis Flag Store — implement FlagStore qua Redis cache.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+try:
+    import redis.asyncio as aioredis
+except ImportError:
+    aioredis = None  # type: ignore
+
+from app.feature_flags.stores.flag_store import FlagStore
+
+
+class RedisFlagStore(FlagStore):
+    """Implement FlagStore qua Redis cache layer.
+
+    Dùng Redis làm L1 cache, fallback vào DatabaseFlagStore khi miss.
+
+    Key structure:
+    - flag:{flag_key} — flag data
+    - config:{config_key} — config data
+    - flags:all — serialized list of all flags
+    """
+
+    PREFIX_FLAG = "flag:"
+    PREFIX_CONFIG = "config:"
+    KEY_ALL_FLAGS = "flags:all"
+    DEFAULT_TTL = 300  # 5 phút
+
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379/0",
+        ttl: int = DEFAULT_TTL,
+    ) -> None:
+        """Khởi tạo Redis store.
+
+        Args:
+            redis_url: Redis connection URL.
+            ttl: Cache TTL trong giây.
+        """
+        if aioredis is None:
+            raise ImportError("redis[async] package is required for RedisFlagStore")
+        self.redis = aioredis.from_url(redis_url, decode_responses=True)
+        self.ttl = ttl
+
+    async def get_flag(self, flag_key: str) -> dict[str, Any] | None:
+        """Lấy flag từ Redis cache."""
+        data = await self.redis.get(f"{self.PREFIX_FLAG}{flag_key}")
+        if data is None:
+            return None
+        return json.loads(data)
+
+    async def get_all_flags(self) -> list[dict[str, Any]]:
+        """Lấy tất cả flags từ cache."""
+        data = await self.redis.get(self.KEY_ALL_FLAGS)
+        if data is None:
+            return []
+        return json.loads(data)
+
+    async def save_flag(self, flag: dict[str, Any]) -> None:
+        """Lưu flag vào Redis cache."""
+        await self.redis.set(
+            f"{self.PREFIX_FLAG}{flag['flag_key']}",
+            json.dumps(flag),
+            ex=self.ttl,
+        )
+
+    async def delete_flag(self, flag_key: str) -> None:
+        """Xóa flag khỏi cache."""
+        await self.redis.delete(f"{self.PREFIX_FLAG}{flag_key}")
+
+    async def get_config(self, config_key: str) -> dict[str, Any] | None:
+        """Lấy config từ cache."""
+        data = await self.redis.get(f"{self.PREFIX_CONFIG}{config_key}")
+        if data is None:
+            return None
+        return json.loads(data)
+
+    async def save_config(self, config: dict[str, Any]) -> None:
+        """Lưu config vào cache."""
+        await self.redis.set(
+            f"{self.PREFIX_CONFIG}{config['config_key']}",
+            json.dumps(config),
+            ex=self.ttl,
+        )
+
+    async def invalidate(self, flag_key: str | None = None) -> None:
+        """Invalidate cache.
+
+        Args:
+            flag_key: Invalidate flag cụ thể, hoặc None để invalidate all.
+        """
+        if flag_key:
+            await self.redis.delete(f"{self.PREFIX_FLAG}{flag_key}")
+        else:
+            await self.redis.delete(self.KEY_ALL_FLAGS)
+
+    async def close(self) -> None:
+        """Đóng Redis connection."""
+        await self.redis.close()

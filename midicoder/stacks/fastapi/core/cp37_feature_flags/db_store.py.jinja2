@@ -1,0 +1,117 @@
+"""
+Database Flag Store — implement FlagStore qua SQLAlchemy.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.feature_flags.models.flag_model import FeatureFlag, DynamicConfig
+from app.feature_flags.stores.flag_store import FlagStore
+
+
+class DatabaseFlagStore(FlagStore):
+    """Implement FlagStore qua SQLAlchemy async session."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        """Khởi tạo store.
+
+        Args:
+            db: SQLAlchemy async session.
+        """
+        self.db = db
+
+    async def get_flag(self, flag_key: str) -> dict[str, Any] | None:
+        """Lấy flag theo key từ database."""
+        stmt = select(FeatureFlag).where(FeatureFlag.flag_key == flag_key)
+        flag = (await self.db.execute(stmt)).scalar_one_or_none()
+        if flag is None:
+            return None
+        return {
+            "flag_key": flag.flag_key,
+            "name": flag.name,
+            "variant_type": flag.variant_type,
+            "default_enabled": flag.default_enabled,
+            "percentage": flag.percentage,
+            "targeting_rules": flag.targeting_rules or [],
+            "tenant_overrides": flag.tenant_overrides or {},
+            "environments": flag.environments or [],
+            "is_active": flag.is_active,
+        }
+
+    async def get_all_flags(self) -> list[dict[str, Any]]:
+        """Lấy tất cả flags từ database."""
+        stmt = select(FeatureFlag).where(FeatureFlag.is_active.is_(True))
+        flags = (await self.db.execute(stmt)).scalars().all()
+        return [
+            {
+                "flag_key": f.flag_key,
+                "name": f.name,
+                "variant_type": f.variant_type,
+                "default_enabled": f.default_enabled,
+                "percentage": f.percentage,
+                "targeting_rules": f.targeting_rules or [],
+                "tenant_overrides": f.tenant_overrides or {},
+                "environments": f.environments or [],
+                "is_active": f.is_active,
+            }
+            for f in flags
+        ]
+
+    async def save_flag(self, flag: dict[str, Any]) -> None:
+        """Lưu flag vào database (upsert)."""
+        stmt = select(FeatureFlag).where(FeatureFlag.flag_key == flag["flag_key"])
+        existing = (await self.db.execute(stmt)).scalar_one_or_none()
+        if existing:
+            for key, value in flag.items():
+                if hasattr(existing, key):
+                    setattr(existing, key, value)
+        else:
+            self.db.add(FeatureFlag(**flag))
+        await self.db.flush()
+
+    async def delete_flag(self, flag_key: str) -> None:
+        """Xóa flag khỏi database."""
+        stmt = select(FeatureFlag).where(FeatureFlag.flag_key == flag_key)
+        flag = (await self.db.execute(stmt)).scalar_one_or_none()
+        if flag:
+            await self.db.delete(flag)
+            await self.db.flush()
+
+    async def get_config(self, config_key: str) -> dict[str, Any] | None:
+        """Lấy config theo key."""
+        stmt = select(DynamicConfig).where(DynamicConfig.config_key == config_key)
+        config = (await self.db.execute(stmt)).scalar_one_or_none()
+        if config is None:
+            return None
+        return {
+            "config_key": config.config_key,
+            "value": config.value,
+            "value_type": config.value_type,
+            "scope": config.scope,
+        }
+
+    async def save_config(self, config: dict[str, Any]) -> None:
+        """Lưu config (upsert)."""
+        stmt = select(DynamicConfig).where(DynamicConfig.config_key == config["config_key"])
+        existing = (await self.db.execute(stmt)).scalar_one_or_none()
+        if existing:
+            for key, value in config.items():
+                if hasattr(existing, key):
+                    setattr(existing, key, value)
+        else:
+            self.db.add(DynamicConfig(**config))
+        await self.db.flush()
+
+    async def invalidate(self, flag_key: str | None = None) -> None:
+        """Invalidate — database store không cần invalidate."""
+        pass
+
+    async def close(self) -> None:
+        """Đóng connection — database store dùng session share."""
+        pass

@@ -1,0 +1,188 @@
+import { Injectable, Inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
+
+/**
+ * Feature Flag info.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export interface FeatureFlag {
+  flag_key: string;
+  name: string;
+  variant_type: string;
+  default_enabled: boolean;
+  percentage: number;
+  is_active: boolean;
+  environments: string[];
+  targeting_rules: any[];
+  tenant_overrides: Record<string, boolean>;
+}
+
+/**
+ * Kết quả evaluate flag.
+ */
+export interface FlagEvaluation {
+  flag_key: string;
+  evaluated_value: boolean;
+  reason: string;
+}
+
+/**
+ * Service Feature Flag — quản lý flags và evaluate.
+ *
+ * Cung cấp:
+ * - Load flags từ backend API
+ * - Evaluate flag theo context (role, tenant, attribute, segment)
+ * - Cache local flags để tránh API call lặp
+ * - Real-time update qua WebSocket/SSE
+ */
+@Injectable({ providedIn: 'root' })
+export class FlagProviderService {
+  private readonly baseUrl = '/api/feature-flags';
+
+  /** Cache flags đã load */
+  private flagsCache$ = new BehaviorSubject<Record<string, FeatureFlag>>({});
+
+  /** Kết quả evaluate cho current context */
+  private evaluatedCache$ = new BehaviorSubject<Record<string, boolean>>({});
+
+  /** Context hiện tại */
+  private currentContext: FlagContext = {};
+
+  constructor(private readonly http: HttpClient) {}
+
+  /**
+   * Load tất cả flags từ backend.
+   */
+  loadAll(): Observable<FeatureFlag[]> {
+    return this.http.get<FeatureFlag[]>(this.baseUrl).pipe(
+      catchError((err) => {
+        console.error('[FlagProvider] Load flags failed', err);
+        return of([]);
+      })
+    ).subscribe((flags) => {
+      const map: Record<string, FeatureFlag> = {};
+      for (const f of flags) {
+        map[f.flag_key] = f;
+      }
+      this.flagsCache$.next(map);
+    });
+  }
+
+  /**
+   * Set context để evaluate flags.
+   */
+  setContext(ctx: FlagContext): void {
+    this.currentContext = { ...this.currentContext, ...ctx };
+    this._reEvaluate();
+  }
+
+  /**
+   * Kiểm tra flag có enabled không.
+   */
+  isEnabled(flagKey: string): boolean {
+    return this.evaluatedCache$.getValue()[flagKey] ?? false;
+  }
+
+  /**
+   * Lấy giá trị flag dưới dạng Observable.
+   */
+  watchFlag(flagKey: string): Observable<boolean> {
+    return this.evaluatedCache$.pipe(
+      // map, takeUntil — reactive
+    ) as any;
+  }
+
+  /**
+   * Evaluate một flag cho context hiện tại.
+   *
+   * Thứ tự ưu tiên:
+   * 1. Tenant override
+   * 2. Targeting rule (theo priority)
+   * 3. Percentage rollout
+   * 4. Default value
+   */
+  private evaluateFlag(flag: FeatureFlag): boolean {
+    if (!flag.is_active) return false;
+
+    // 1. Tenant override
+    const tenantId = this.currentContext.tenant_id;
+    if (tenantId && flag.tenant_overrides && tenantId in flag.tenant_overrides) {
+      return flag.tenant_overrides[tenantId];
+    }
+
+    // 2. Targeting rules
+    if (flag.variant_type === 'targeted' && flag.targeting_rules?.length) {
+      const sorted = [...flag.targeting_rules].sort((a, b) => a.priority - b.priority);
+      for (const rule of sorted) {
+        if (this._ruleMatches(rule)) {
+          return rule.value;
+        }
+      }
+    }
+
+    // 3. Percentage rollout
+    if (flag.variant_type === 'percentage' && this.currentContext.user_id) {
+      const bucket = this._hash(this.currentContext.user_id) % 100;
+      return bucket < flag.percentage;
+    }
+
+    // 4. Default
+    return flag.default_enabled;
+  }
+
+  /**
+   * Re-evaluate tất cả flags khi context thay đổi.
+   */
+  private _reEvaluate(): void {
+    const flags = this.flagsCache$.getValue();
+    const result: Record<string, boolean> = {};
+    for (const key of Object.keys(flags)) {
+      result[key] = this.evaluateFlag(flags[key]);
+    }
+    this.evaluatedCache$.next(result);
+  }
+
+  /**
+   * Kiểm tra targeting rule có match context không.
+   */
+  private _ruleMatches(rule: any): boolean {
+    switch (rule.condition_type) {
+      case 'role':
+        return this.currentContext.role === rule.condition?.role;
+      case 'tenant':
+        return this.currentContext.tenant_id === rule.condition?.tenant_id;
+      case 'attribute':
+        const attrs = this.currentContext.attributes || {};
+        return Object.entries(rule.condition).every(([k, v]) => attrs[k] === v);
+      case 'segment':
+        return (this.currentContext.segments || []).includes(rule.condition?.segment);
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Simple hash để percentage rollout.
+   */
+  private _hash(str: string): number {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+      h = ((h << 5) - h) + str.charCodeAt(i);
+      h = h & h;
+    }
+    return Math.abs(h);
+  }
+}
+
+/**
+ * Context cho flag evaluation.
+ */
+export interface FlagContext {
+  user_id?: string;
+  tenant_id?: string;
+  role?: string;
+  attributes?: Record<string, any>;
+  segments?: string[];
+  environment?: string;
+}

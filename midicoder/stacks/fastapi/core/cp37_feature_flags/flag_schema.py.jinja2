@@ -1,0 +1,102 @@
+"""
+Pydantic schemas cho Feature Flag CRUD.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field, ConfigDict
+
+
+class TargetingRuleSchema(BaseModel):
+    """Schema cho targeting rule."""
+    rule_id: str = Field(..., description="ID duy nhất của rule")
+    condition_type: str = Field(..., description="Loại condition: role, attribute, tenant, segment")
+    condition: dict[str, Any] = Field(default_factory=dict, description="Dict key-value condition")
+    value: bool = Field(default=True, description="Flag value khi rule match")
+    priority: int = Field(default=0, description="Order of evaluation (thấp = ưu tiên cao)")
+
+
+class FeatureFlagCreate(BaseModel):
+    """Schema tạo flag mới."""
+    model_config = ConfigDict(strict=True)
+
+    flag_key: str = Field(..., min_length=1, max_length=255, pattern=r"^[a-z][a-z0-9_]*$",
+                          description="Identifier duy nhất (snake_case)")
+    name: str = Field(default="", max_length=500, description="Tên hiển thị")
+    description: str = Field(default="", description="Mô tả flag")
+    variant_type: str = Field(default="boolean", description="Loại flag: boolean, percentage, targeted")
+    default_enabled: bool = Field(default=False, description="Giá trị mặc định")
+    percentage: int = Field(default=0, ge=0, le=100, description="Tỷ lệ % traffic")
+    targeting_rules: list[TargetingRuleSchema] = Field(default_factory=list, description="Targeting rules")
+    environments: list[str] = Field(default_factory=list, description="Danh sách environments")
+    tenant_overrides: dict[str, bool] = Field(default_factory=dict, description="Override per tenant")
+    is_active: bool = Field(default=True, description="Flag có đang active không")
+
+
+class FeatureFlagUpdate(BaseModel):
+    """Schema cập nhật flag."""
+    model_config = ConfigDict(strict=True)
+
+    name: str | None = Field(default=None, max_length=500)
+    description: str | None = None
+    default_enabled: bool | None = None
+    percentage: int | None = Field(default=None, ge=0, le=100)
+    targeting_rules: list[TargetingRuleSchema] | None = None
+    environments: list[str] | None = None
+    tenant_overrides: dict[str, bool] | None = None
+    is_active: bool | None = None
+
+
+class FeatureFlagResponse(BaseModel):
+    """Schema trả về flag."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    flag_key: str
+    name: str
+    description: str
+    variant_type: str
+    default_enabled: bool
+    percentage: int
+    targeting_rules: list[dict[str, Any]]
+    environments: list[str]
+    tenant_overrides: dict[str, bool]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class FlagEvaluateRequest(BaseModel):
+    """Schema evaluate flag."""
+    model_config = ConfigDict(strict=True)
+
+    flag_key: str = Field(..., description="Flag key để evaluate")
+    user_id: str = Field(default="", description="User ID")
+    tenant_id: str = Field(default="", description="Tenant ID")
+    role: str = Field(default="", description="User role")
+    attributes: dict[str, Any] = Field(default_factory=dict, description="Custom attributes")
+    segments: list[str] = Field(default_factory=list, description="User segments")
+    environment: str = Field(default="", description="Environment")
+
+
+class FlagEvaluateResponse(BaseModel):
+    """Schema trả về kết quả evaluation."""
+    model_config = ConfigDict(strict=True)
+
+    flag_key: str
+    evaluated_value: bool
+    reason: str
+    evaluated_at: datetime
+
+
+class FlagListResponse(BaseModel):
+    """Schema trả về danh sách flags."""
+    model_config = ConfigDict(strict=True)
+
+    total: int
+    items: list[FeatureFlagResponse]

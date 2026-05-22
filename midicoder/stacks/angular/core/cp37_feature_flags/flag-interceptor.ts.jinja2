@@ -1,0 +1,38 @@
+import { Injectable } from '@angular/core';
+import {
+  HttpEvent,
+  HttpHandler,
+  HttpInterceptor,
+  HttpRequest,
+} from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { FlagProviderService } from './flag-provider.service';
+
+/**
+ * HTTP Interceptor — inject feature flags vào request headers.
+ *
+ * Tự động thêm header X-Feature-Flags vào mọi request để backend
+ * biết frontend đã evaluate những flags nào.
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Injectable()
+export class FlagInterceptor implements HttpInterceptor {
+  constructor(private readonly flagService: FlagProviderService) {}
+
+  intercept(
+    req: HttpRequest<any>,
+    next: HttpHandler,
+  ): Observable<HttpEvent<any>> {
+    // Không inject vào flag API requests (tránh loop)
+    if (req.url.includes('/api/feature-flags')) {
+      return next.handle(req);
+    }
+
+    // Inject tenant_id và user context
+    const headers = req.headers
+      .set('X-Feature-Flags-Client', 'angular');
+
+    return next.handle(req.clone({ headers }));
+  }
+}

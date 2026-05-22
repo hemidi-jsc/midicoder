@@ -1,0 +1,114 @@
+"""
+Feature Flag Middleware — auto-evaluate flags ở request boundary.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any, Awaitable, Callable
+
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.database import get_async_session
+from app.feature_flags.services.flag_evaluator import FlagEvaluator
+
+
+class FeatureFlagMiddleware(BaseHTTPMiddleware):
+    """Middleware tự động evaluate tất cả active flags và inject vào request state.
+
+    Evaluation order:
+    1. Extract context từ request (user_id, tenant_id, role, environment)
+    2. Evaluate all flags từ cache, fallback database
+    3. Inject results vào request.state.flags
+
+    Usage:
+        app.add_middleware(FeatureFlagMiddleware)
+    """
+
+    def __init__(
+        self,
+        app,
+        skip_paths: list[str] | None = None,
+    ) -> None:
+        """Khởi tạo middleware.
+
+        Args:
+            app: FastAPI app.
+            skip_paths: Danh sách paths bỏ qua middleware.
+        """
+        super().__init__(app)
+        self.skip_paths = skip_paths or ["/docs", "/openapi.json", "/health"]
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        """Dispatch request với flag evaluation.
+
+        Args:
+            request: Incoming request.
+            call_next: Next middleware/handler.
+
+        Returns:
+            Response.
+        """
+        # Skip nếu path không cần evaluate
+        if any(request.url.path.startswith(p) for p in self.skip_paths):
+            response = await call_next(request)
+            return response
+
+        # Extract context từ request
+        context: dict[str, Any] = {
+            "user_id": self._extract_user_id(request),
+            "tenant_id": self._extract_tenant_id(request),
+            "role": self._extract_role(request),
+            "environment": self._extract_environment(request),
+        }
+
+        # Evaluate flags
+        flags: dict[str, bool] = {}
+        try:
+            async with get_async_session() as db:
+                evaluator = FlagEvaluator(db)
+                flags = await evaluator.evaluate_all(context)
+        except Exception:
+            # Fail silent — flags không nên crash request
+            pass
+
+        # Inject vào request state
+        request.state.flags = flags
+
+        # Process request
+        response = await call_next(request)
+
+        # Add header để debug
+        if flags:
+            response.headers["X-Feature-Flags"] = ",".join(
+                k for k, v in flags.items() if v
+            )
+
+        return response
+
+    def _extract_user_id(self, request: Request) -> str:
+        """Extract user_id từ request."""
+        # Từ auth middleware (nếu có)
+        if hasattr(request.state, "current_user"):
+            user = request.state.current_user
+            return str(user.id) if user else ""
+        return ""
+
+    def _extract_tenant_id(self, request: Request) -> str:
+        """Extract tenant_id từ request headers."""
+        return request.headers.get("X-Tenant-ID", "")
+
+    def _extract_role(self, request: Request) -> str:
+        """Extract role từ request state."""
+        if hasattr(request.state, "current_user"):
+            user = request.state.current_user
+            if user and hasattr(user, "role"):
+                return user.role
+        return ""
+
+    def _extract_environment(self, request: Request) -> str:
+        """Extract environment từ app config."""
+        return request.app.state.get("environment", "production")

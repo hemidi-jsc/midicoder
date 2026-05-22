@@ -1,0 +1,36 @@
+import { IsString, IsOptional } from 'class-validator';
+
+/**
+ * DTO cho Config.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export class CreateConfigDto {
+  @IsString()
+  config_key: string;
+
+  value: any;
+
+  @IsString()
+  @IsOptional()
+  value_type?: string;
+
+  @IsString()
+  @IsOptional()
+  scope?: string;
+
+  @IsString()
+  @IsOptional()
+  tenant_id?: string;
+
+  @IsString()
+  @IsOptional()
+  environment?: string;
+}
+
+export class UpdateConfigDto {
+  value: any;
+
+  @IsString()
+  @IsOptional()
+  reason?: string;
+}

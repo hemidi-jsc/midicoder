@@ -1,0 +1,50 @@
+import { useState, useEffect, useCallback } from 'react';
+
+/**
+ * Hook useConfig — đọc dynamic config value với fallback chain.
+ *
+ * Usage:
+ *   const rateLimit = useConfig('app.rate_limit.requests_per_minute', 1000);
+ *   const debugMode = useConfig('env.debug.enabled', false, tenantId);
+ *
+ * Fallback chain: tenant → environment → global → default
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export function useConfig(
+  configKey: string,
+  defaultValue: any = null,
+  tenantId?: string,
+  environment?: string,
+): any {
+  const [value, setValue] = useState<any>(defaultValue);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    const params = new URLSearchParams();
+    if (tenantId) params.set('tenant_id', tenantId);
+    if (environment) params.set('environment', environment);
+
+    fetch(`/api/configs/${encodeURIComponent(configKey)}?${params.toString()}`)
+      .then((r) => {
+        if (!r.ok) throw new Error('Not found');
+        return r.json();
+      })
+      .then((data) => {
+        if (!cancelled) setValue(data.value);
+      })
+      .catch(() => {
+        if (!cancelled) setValue(defaultValue);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [configKey, tenantId, environment]);
+
+  return { value, loading };
+}

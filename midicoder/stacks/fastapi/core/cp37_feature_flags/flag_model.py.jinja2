@@ -1,0 +1,201 @@
+"""
+SQLAlchemy models cho Feature Flags và A/B Experiments.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+import enum
+from typing import Any
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+    ForeignKey,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
+
+from app.models.base_model import BaseModel
+
+
+class FlagVariantType(str, enum.Enum):
+    """Loại flag variant."""
+    BOOLEAN = "boolean"
+    PERCENTAGE = "percentage"
+    TARGETED = "targeted"
+
+
+class ConditionType(str, enum.Enum):
+    """Loại condition cho targeting rule."""
+    ROLE = "role"
+    ATTRIBUTE = "attribute"
+    TENANT = "tenant"
+    SEGMENT = "segment"
+
+
+class ConfigScope(str, enum.Enum):
+    """Scope của dynamic config."""
+    GLOBAL = "global"
+    TENANT = "tenant"
+    ENVIRONMENT = "environment"
+
+
+class ConfigValueType(str, enum.Enum):
+    """Loại giá trị của config."""
+    STRING = "string"
+    NUMBER = "number"
+    BOOLEAN = "boolean"
+    JSON = "json"
+    ARRAY = "array"
+
+
+class FeatureFlag(BaseModel):
+    """Model feature flag — lưu trữ flag config trong database."""
+
+    __tablename__ = "feature_flags"
+
+    flag_key = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(500), nullable=True)
+    description = Column(Text, nullable=True)
+    variant_type = Column(String(50), nullable=False, default=FlagVariantType.BOOLEAN.value)
+    default_enabled = Column(Boolean, nullable=False, default=False)
+    percentage = Column(Integer, nullable=False, default=0)
+    targeting_rules = Column(JSONB, nullable=True, default=list)
+    environments = Column(JSONB, nullable=True, default=list)
+    tenant_overrides = Column(JSONB, nullable=True, default=dict)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    # Relationships
+    evaluations = relationship("FlagEvaluation", back_populates="flag", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<FeatureFlag(flag_key='{self.flag_key}', active={self.is_active})>"
+
+
+class FlagEvaluation(BaseModel):
+    """Model flag evaluation record."""
+
+    __tablename__ = "flag_evaluations"
+
+    flag_id = Column(String(36), ForeignKey("feature_flags.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(255), nullable=True, index=True)
+    tenant_id = Column(String(255), nullable=True, index=True)
+    evaluated_value = Column(Boolean, nullable=False)
+    reason = Column(Text, nullable=True)
+    evaluated_at = Column(DateTime(timezone=True), nullable=False)
+
+    # Relationships
+    flag = relationship("FeatureFlag", back_populates="evaluations")
+
+    def __repr__(self) -> str:
+        return f"<FlagEvaluation(flag_id='{self.flag_id}', value={self.evaluated_value})>"
+
+
+class ABExperiment(BaseModel):
+    """Model A/B experiment."""
+
+    __tablename__ = "ab_experiments"
+
+    experiment_key = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(500), nullable=True)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    traffic_percentage = Column(Float, nullable=False, default=100.0)
+    targeting_rules = Column(JSONB, nullable=True)
+    success_metric = Column(String(255), nullable=True, default="conversion_rate")
+    start_date = Column(DateTime(timezone=True), nullable=True)
+    end_date = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    variants = relationship("ABVariant", back_populates="experiment", cascade="all, delete-orphan")
+    assignments = relationship("ABExperimentAssignment", back_populates="experiment", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<ABExperiment(key='{self.experiment_key}', active={self.is_active})>"
+
+
+class ABVariant(BaseModel):
+    """Model variant trong A/B experiment."""
+
+    __tablename__ = "ab_variants"
+
+    experiment_id = Column(String(36), ForeignKey("ab_experiments.id", ondelete="CASCADE"), nullable=False)
+    variant_key = Column(String(255), nullable=False)
+    name = Column(String(500), nullable=True)
+    weight = Column(Float, nullable=False, default=50.0)
+    metadata_json = Column(JSONB, nullable=True, default=dict)
+
+    # Relationships
+    experiment = relationship("ABExperiment", back_populates="variants")
+
+    def __repr__(self) -> str:
+        return f"<ABVariant(key='{self.variant_key}', weight={self.weight})>"
+
+
+class ABExperimentAssignment(BaseModel):
+    """Model assignment record — user được assign vào variant nào."""
+
+    __tablename__ = "ab_experiment_assignments"
+
+    experiment_id = Column(String(36), ForeignKey("ab_experiments.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(255), nullable=False, index=True)
+    tenant_id = Column(String(255), nullable=True, index=True)
+    assigned_variant = Column(String(255), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), nullable=False)
+
+    # Relationships
+    experiment = relationship("ABExperiment", back_populates="assignments")
+
+    # Unique: mỗi user chỉ được assign 1 variant per experiment
+    __table_args__ = (
+        # Unique constraint handled in migration
+    )
+
+    def __repr__(self) -> str:
+        return f"<Assignment(experiment_id='{self.experiment_id}', user='{self.user_id}', variant='{self.assigned_variant}')>"
+
+
+class DynamicConfig(BaseModel):
+    """Model dynamic configuration."""
+
+    __tablename__ = "dynamic_configs"
+
+    config_key = Column(String(500), unique=True, nullable=False, index=True)
+    value = Column(JSONB, nullable=True)
+    value_type = Column(String(50), nullable=False, default=ConfigValueType.STRING.value)
+    scope = Column(String(50), nullable=False, default=ConfigScope.GLOBAL.value)
+    tenant_id = Column(String(255), nullable=True, index=True)
+    environment = Column(String(100), nullable=True, index=True)
+    is_encrypted = Column(Boolean, nullable=False, default=False)
+
+    # Relationships
+    changes = relationship("ConfigChange", back_populates="config", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<DynamicConfig(key='{self.config_key}', scope={self.scope})>"
+
+
+class ConfigChange(BaseModel):
+    """Model audit trail cho config change."""
+
+    __tablename__ = "config_changes"
+
+    config_id = Column(String(36), ForeignKey("dynamic_configs.id", ondelete="CASCADE"), nullable=False)
+    old_value = Column(JSONB, nullable=True)
+    new_value = Column(JSONB, nullable=True)
+    changed_by = Column(String(255), nullable=True)
+    reason = Column(Text, nullable=True)
+    changed_at = Column(DateTime(timezone=True), nullable=False)
+
+    # Relationships
+    config = relationship("DynamicConfig", back_populates="changes")
+
+    def __repr__(self) -> str:
+        return f"<ConfigChange(config_id='{self.config_id}', by='{self.changed_by}')>"

@@ -1,0 +1,73 @@
+"""
+Pydantic schemas cho Dynamic Config CRUD.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field, ConfigDict
+
+
+class DynamicConfigCreate(BaseModel):
+    """Schema tạo config mới."""
+    model_config = ConfigDict(strict=True)
+
+    config_key: str = Field(..., min_length=1, max_length=500,
+                            description="Key hierarchical (section.subsection.key)")
+    value: Any = Field(default=None, description="Giá trị config")
+    value_type: str = Field(default="string", description="string, number, boolean, json, array")
+    scope: str = Field(default="global", description="global, tenant, environment")
+    tenant_id: str | None = Field(default=None, description="Tenant ID (scope=tenant)")
+    environment: str | None = Field(default=None, description="Environment (scope=environment)")
+    is_encrypted: bool = Field(default=False, description="Có encrypt value không")
+
+
+class DynamicConfigUpdate(BaseModel):
+    """Schema cập nhật config."""
+    model_config = ConfigDict(strict=True)
+
+    value: Any = Field(default=None, description="Giá trị mới")
+    reason: str = Field(default="", description="Lý do thay đổi")
+
+
+class DynamicConfigResponse(BaseModel):
+    """Schema trả về config."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    config_key: str
+    value: Any
+    value_type: str
+    scope: str
+    tenant_id: str | None
+    environment: str | None
+    is_encrypted: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConfigChangeResponse(BaseModel):
+    """Schema trả về config change audit trail."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    config_id: str
+    old_value: Any
+    new_value: Any
+    changed_by: str
+    reason: str
+    changed_at: datetime
+
+
+class ConfigGetRequest(BaseModel):
+    """Schema đọc config với fallback."""
+    model_config = ConfigDict(strict=True)
+
+    config_key: str
+    tenant_id: str | None = Field(default=None)
+    environment: str | None = Field(default=None)
+    default_value: Any = Field(default=None, description="Giá trị fallback")

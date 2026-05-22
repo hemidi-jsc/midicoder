@@ -1,0 +1,76 @@
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
+
+/**
+ * Dynamic Config value.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export interface DynamicConfig {
+  config_key: string;
+  value: any;
+  value_type: string;
+  scope: string;
+  tenant_id?: string;
+  environment?: string;
+}
+
+/**
+ * Service Dynamic Config — quản lý và đọc dynamic configs.
+ *
+ * Fallback chain: tenant → environment → global → default
+ */
+@Injectable({ providedIn: 'root' })
+export class ConfigService {
+  private readonly baseUrl = '/api/configs';
+
+  /** Cache configs */
+  private configsCache = new BehaviorSubject<Record<string, any>>({});
+
+  constructor(private readonly http: HttpClient) {}
+
+  /**
+   * Load tất cả configs từ backend.
+   */
+  loadAll(scope: string = 'global'): void {
+    this.http.get<DynamicConfig[]>(this.baseUrl, { params: { scope } }).subscribe((configs) => {
+      const map: Record<string, any> = {};
+      for (const c of configs) {
+        map[c.config_key] = c.value;
+      }
+      this.configsCache.next(map);
+    });
+  }
+
+  /**
+   * Đọc config value với fallback chain.
+   */
+  get(key: string, tenantId?: string, env?: string): Observable<any> {
+    const params: any = { config_key: key };
+    if (tenantId) params.tenant_id = tenantId;
+    if (env) params.environment = env;
+
+    return this.http.get<{ value: any }>(`${this.baseUrl}/${key}`, { params }).pipe(
+      catchError((err) => {
+        console.warn(`[ConfigService] Key not found: ${key}`, err);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * Lấy giá trị từ cache local.
+   */
+  getFromCache(key: string): any {
+    return this.configsCache.getValue()[key];
+  }
+
+  /**
+   * Watch config key (reactive).
+   */
+  watch(key: string): Observable<any> {
+    return this.configsCache.pipe(
+      // map, filter — reactive
+    ) as any;
+  }
+}

@@ -1,0 +1,82 @@
+"""
+Experiment Router — REST API cho A/B Experiments.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.feature_flags.services.experiment_service import ExperimentService
+from app.feature_flags.schemas.experiment_schema import (
+    ABExperimentCreate,
+    ABExperimentUpdate,
+    ABExperimentResponse,
+    ABExperimentAssignRequest,
+    ABExperimentAssignResponse,
+)
+
+router = APIRouter(prefix="/api/experiments", tags=["A/B Experiments"])
+
+
+@router.post("", response_model=ABExperimentResponse, status_code=201)
+async def create_experiment(
+    data: ABExperimentCreate,
+    db: AsyncSession = Depends(get_db),
+) -> ABExperimentResponse:
+    """Tạo A/B experiment mới."""
+    service = ExperimentService(db)
+    return await service.create(data)
+
+
+@router.get("/{experiment_key}", response_model=ABExperimentResponse)
+async def get_experiment(
+    experiment_key: str,
+    db: AsyncSession = Depends(get_db),
+) -> ABExperimentResponse:
+    """Lấy experiment theo key."""
+    service = ExperimentService(db)
+    exp = await service.get_by_key(experiment_key)
+    if exp is None:
+        raise HTTPException(status_code=404, detail=f"Experiment không tìm thấy: {experiment_key}")
+    return exp
+
+
+@router.get("/active", response_model=list[ABExperimentResponse])
+async def list_active_experiments(
+    db: AsyncSession = Depends(get_db),
+) -> list[ABExperimentResponse]:
+    """Lấy danh sách experiments đang chạy."""
+    service = ExperimentService(db)
+    return await service.list_active()
+
+
+@router.post("/assign", response_model=ABExperimentAssignResponse)
+async def assign_user(
+    data: ABExperimentAssignRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ABExperimentAssignResponse:
+    """Assign user vào variant (deterministic)."""
+    service = ExperimentService(db)
+    result = await service.assign(data)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Experiment không tìm thấy: {data.experiment_key}")
+    return result
+
+
+@router.patch("/{experiment_key}", response_model=ABExperimentResponse)
+async def update_experiment(
+    experiment_key: str,
+    data: ABExperimentUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> ABExperimentResponse:
+    """Cập nhật experiment."""
+    service = ExperimentService(db)
+    exp = await service.update(experiment_key, data)
+    if exp is None:
+        raise HTTPException(status_code=404, detail=f"Experiment không tìm thấy: {experiment_key}")
+    return exp

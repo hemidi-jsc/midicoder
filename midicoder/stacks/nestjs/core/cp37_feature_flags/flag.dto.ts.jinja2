@@ -1,0 +1,82 @@
+import { IsString, IsBoolean, IsInt, IsOptional, IsArray, Min, Max, IsNumber } from 'class-validator';
+
+/**
+ * DTO tạo flag mới.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export class CreateFlagDto {
+  @IsString()
+  flag_key: string;
+
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
+  variant_type?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  default_enabled?: boolean;
+
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  percentage?: number;
+
+  @IsArray()
+  @IsOptional()
+  targeting_rules?: Record<string, any>[];
+
+  @IsArray()
+  @IsOptional()
+  environments?: string[];
+
+  @IsOptional()
+  tenant_overrides?: Record<string, boolean>;
+
+  @IsBoolean()
+  @IsOptional()
+  is_active?: boolean;
+}
+
+export class UpdateFlagDto {
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  default_enabled?: boolean;
+
+  @IsInt()
+  @IsOptional()
+  percentage?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  is_active?: boolean;
+}
+
+export class EvaluateFlagDto {
+  @IsString()
+  flag_key: string;
+
+  @IsString()
+  @IsOptional()
+  user_id?: string;
+
+  @IsString()
+  @IsOptional()
+  tenant_id?: string;
+
+  @IsString()
+  @IsOptional()
+  role?: string;
+}

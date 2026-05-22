@@ -1,0 +1,125 @@
+"""
+Feature Flag Router — REST API cho Feature Flags.
+
+Tạo tự động bởi CP37 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.feature_flags.services.flag_service import FlagService
+from app.feature_flags.services.flag_evaluator import FlagEvaluator
+from app.feature_flags.schemas.flag_schema import (
+    FeatureFlagCreate,
+    FeatureFlagUpdate,
+    FeatureFlagResponse,
+    FlagEvaluateRequest,
+    FlagEvaluateResponse,
+    FlagListResponse,
+)
+
+router = APIRouter(prefix="/api/feature-flags", tags=["Feature Flags"])
+
+
+@router.post("", response_model=FeatureFlagResponse, status_code=201)
+async def create_flag(
+    data: FeatureFlagCreate,
+    db: AsyncSession = Depends(get_db),
+) -> FeatureFlagResponse:
+    """Tạo feature flag mới."""
+    service = FlagService(db)
+    return await service.create(data)
+
+
+@router.get("", response_model=FlagListResponse)
+async def list_flags(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+) -> FlagListResponse:
+    """Lấy danh sách feature flags."""
+    service = FlagService(db)
+    total, items = await service.list_all(skip=skip, limit=limit)
+    return FlagListResponse(total=total, items=items)
+
+
+@router.get("/{flag_key}", response_model=FeatureFlagResponse)
+async def get_flag(
+    flag_key: str,
+    db: AsyncSession = Depends(get_db),
+) -> FeatureFlagResponse:
+    """Lấy thông tin flag theo key."""
+    service = FlagService(db)
+    flag = await service.get_by_key(flag_key)
+    if flag is None:
+        raise HTTPException(status_code=404, detail=f"Flag không tìm thấy: {flag_key}")
+    return flag
+
+
+@router.put("/{flag_key}", response_model=FeatureFlagResponse)
+async def update_flag(
+    flag_key: str,
+    data: FeatureFlagUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> FeatureFlagResponse:
+    """Cập nhật flag."""
+    service = FlagService(db)
+    flag = await service.update(flag_key, data)
+    if flag is None:
+        raise HTTPException(status_code=404, detail=f"Flag không tìm thấy: {flag_key}")
+    return flag
+
+
+@router.delete("/{flag_key}", status_code=204)
+async def delete_flag(
+    flag_key: str,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Xóa flag."""
+    service = FlagService(db)
+    deleted = await service.delete(flag_key)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Flag không tìm thấy: {flag_key}")
+
+
+@router.patch("/{flag_key}/toggle", response_model=FeatureFlagResponse)
+async def toggle_flag(
+    flag_key: str,
+    is_active: bool = Query(..., description="Bật/tắt flag"),
+    db: AsyncSession = Depends(get_db),
+) -> FeatureFlagResponse:
+    """Bật/tắt flag."""
+    service = FlagService(db)
+    flag = await service.toggle(flag_key, is_active)
+    if flag is None:
+        raise HTTPException(status_code=404, detail=f"Flag không tìm thấy: {flag_key}")
+    return flag
+
+
+@router.post("/evaluate", response_model=FlagEvaluateResponse)
+async def evaluate_flag(
+    data: FlagEvaluateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> FlagEvaluateResponse:
+    """Evaluate một flag cho context cụ thể."""
+    evaluator = FlagEvaluator(db)
+    context = {
+        "user_id": data.user_id,
+        "tenant_id": data.tenant_id,
+        "role": data.role,
+        "attributes": data.attributes,
+        "segments": data.segments,
+        "environment": data.environment,
+    }
+    result = await evaluator.evaluate(data.flag_key, context)
+    from datetime import datetime, timezone
+    return FlagEvaluateResponse(
+        flag_key=result["flag_key"],
+        evaluated_value=result["evaluated_value"],
+        reason=result["reason"],
+        evaluated_at=datetime.now(timezone.utc),
+    )

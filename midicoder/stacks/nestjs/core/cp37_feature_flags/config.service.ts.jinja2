@@ -1,0 +1,63 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import ConfigEntity from '../entities/config.entity';
+import { CreateConfigDto, UpdateConfigDto } from '../dto/config.dto';
+
+/**
+ * Service Config — CRUD và fallback chain.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Injectable()
+export default class ConfigService {
+  constructor(
+    @InjectRepository(ConfigEntity)
+    private readonly configRepo: Repository<ConfigEntity>,
+  ) {}
+
+  async create(dto: CreateConfigDto): Promise<ConfigEntity> {
+    const config = this.configRepo.create(dto);
+    return this.configRepo.save(config);
+  }
+
+  async getByKey(key: string): Promise<ConfigEntity | null> {
+    return this.configRepo.findOne({ where: { config_key: key } });
+  }
+
+  async update(key: string, dto: UpdateConfigDto): Promise<ConfigEntity | null> {
+    const config = await this.getByKey(key);
+    if (!config) return null;
+    config.value = dto.value;
+    return this.configRepo.save(config);
+  }
+
+  /**
+   * Đọc config với fallback chain: tenant → environment → global.
+   */
+  async getWithFallback(
+    key: string,
+    tenantId?: string,
+    environment?: string,
+  ): Promise<any> {
+    // 1. Tenant-scoped
+    if (tenantId) {
+      const tenant = await this.configRepo.findOne({
+        where: { config_key: key, scope: 'tenant', tenant_id: tenantId },
+      });
+      if (tenant) return tenant.value;
+    }
+    // 2. Environment-scoped
+    if (environment) {
+      const env = await this.configRepo.findOne({
+        where: { config_key: key, scope: 'environment', environment },
+      });
+      if (env) return env.value;
+    }
+    // 3. Global
+    const global = await this.configRepo.findOne({
+      where: { config_key: key, scope: 'global' },
+    });
+    if (global) return global.value;
+    return undefined;
+  }
+}

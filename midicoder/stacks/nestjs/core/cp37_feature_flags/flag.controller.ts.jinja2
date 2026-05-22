@@ -1,0 +1,58 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Patch,
+  Body,
+  Param,
+  Query,
+} from '@nestjs/common';
+import FlagService from '../services/flag.service';
+import { CreateFlagDto, UpdateFlagDto, EvaluateFlagDto } from '../dto/flag.dto';
+
+/**
+ * Controller Feature Flag — REST API.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Controller('api/feature-flags')
+export default class FlagController {
+  constructor(private readonly flagService: FlagService) {}
+
+  @Post()
+  create(@Body() dto: CreateFlagDto) {
+    return this.flagService.create(dto);
+  }
+
+  @Get()
+  findAll() {
+    return this.flagService.findAll();
+  }
+
+  @Get(':flagKey')
+  getByKey(@Param('flagKey') flagKey: string) {
+    return this.flagService.getByKey(flagKey);
+  }
+
+  @Put(':flagKey')
+  update(@Param('flagKey') flagKey: string, @Body() dto: UpdateFlagDto) {
+    return this.flagService.update(flagKey, dto);
+  }
+
+  @Delete(':flagKey')
+  remove(@Param('flagKey') flagKey: string) {
+    return this.flagService.remove(flagKey);
+  }
+
+  @Patch(':flagKey/toggle')
+  toggle(@Param('flagKey') flagKey: string, @Query('isActive') isActive: boolean) {
+    return this.flagService.toggle(flagKey, isActive);
+  }
+
+  @Post('evaluate')
+  evaluate(@Body() dto: EvaluateFlagDto) {
+    const value = this.flagService.evaluate(dto);
+    return { flag_key: dto.flag_key, evaluated_value: value, reason: 'default' };
+  }
+}

@@ -1,0 +1,40 @@
+import { IsString, IsOptional, IsNumber, IsBoolean, Min, Max } from 'class-validator';
+
+/**
+ * DTO cho Experiment.
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+export class CreateExperimentDto {
+  @IsString()
+  experiment_key: string;
+
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  traffic_percentage?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  is_active?: boolean;
+}
+
+export class AssignUserDto {
+  @IsString()
+  experiment_key: string;
+
+  @IsString()
+  user_id: string;
+
+  @IsString()
+  @IsOptional()
+  tenant_id?: string;
+}

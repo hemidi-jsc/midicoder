@@ -1,0 +1,55 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
+} from 'typeorm';
+
+/**
+ * Entity Feature Flag — lưu trữ flag config.
+ *
+ * Tạo tự động bởi CP37 — không sửa thủ công.
+ */
+@Entity('feature_flags')
+export default class FlagEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 255, unique: true })
+  flag_key: string;
+
+  @Column({ length: 500, nullable: true })
+  name: string;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({ length: 50, default: 'boolean' })
+  variant_type: string;
+
+  @Column({ default: false })
+  default_enabled: boolean;
+
+  @Column({ default: 0 })
+  percentage: number;
+
+  @Column('jsonb', { nullable: true, default: '[]' })
+  targeting_rules: Record<string, any>[];
+
+  @Column('jsonb', { nullable: true, default: '[]' })
+  environments: string[];
+
+  @Column('jsonb', { nullable: true, default: '{}' })
+  tenant_overrides: Record<string, boolean>;
+
+  @Column({ default: true })
+  is_active: boolean;
+
+  @CreateDateColumn()
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
+}
