@@ -1,0 +1,431 @@
+/**
+ * WebhookDispatcherService - dịch vụ gửi webhook events.
+ *
+ * Chịu trách nhiệm gửi HTTP request đến webhook endpoint:
+ * - dispatchEvent(): gửi event đến một subscription cụ thể
+ * - computeHmacSignature(): tính toán HMAC signature
+ * - renderPayload(): render payload theo template
+ * - buildHeaders(): xây dựng headers cho request
+ *
+ * Sử dụng HttpService từ @nestjs/axios để gửi HTTP request.
+ *
+ * CP40: Webhook
+ */
+
+import { Injectable, Logger } from "@nestjs/common";
+import { HttpService } from "@nestjs/axios";
+import { firstValueFrom } from "rxjs";
+import * as crypto from "crypto";
+import { WebhookSubscription } from "./webhook.entity";
+
+const logger = new Logger("WebhookDispatcherService");
+
+/**
+ * Kết quả gửi webhook.
+ */
+export interface WebhookDispatchResult {
+  /** Subscription ID */
+  subscriptionId: string;
+  /** Có thành công không */
+  success: boolean;
+  /** HTTP status code (nếu có phản hồi) */
+  statusCode?: number;
+  /** Thông báo lỗi (nếu thất bại) */
+  error?: string;
+  /** Thời gian gửi (ms) */
+  durationMs: number;
+  /** Số lần retry */
+  retryCount: number;
+}
+
+/**
+ * Webhook payload envelope.
+ *
+ * Cấu trúc mặc định khi wrapInEnvelope = true.
+ */
+export interface WebhookPayload {
+  /** Event type */
+  event: string;
+  /** ID duy nhất của webhook delivery */
+  webhook_id: string;
+  /** Thời điểm gửi */
+  delivered_at: string;
+  /** Dữ liệu chính của event */
+  data: Record<string, any>;
+  /** Metadata bổ sung */
+  metadata?: Record<string, any>;
+}
+
+/**
+ * WebhookDispatcherService - gửi webhook events.
+ *
+ * Phương thức chính:
+ * - dispatchEvent: gửi event đến webhook endpoint với retry
+ * - computeHmacSignature: tính HMAC signature cho payload
+ * - renderPayload: render payload theo template cấu hình
+ * - buildHeaders: xây dựng headers với auth config
+ *
+ * Retry strategy:
+ * - Sử dụng exponential backoff
+ * - delay = min(base_delay * 2^attempt, max_delay)
+ * - Retry khi nhận được status code >= 500 hoặc network error
+ * - Không retry khi status code 4xx (client error)
+ */
+@Injectable()
+export class WebhookDispatcherService {
+  /**
+   * Timeout mặc định cho HTTP request (ms).
+   */
+  private readonly DEFAULT_TIMEOUT = 5000;
+
+  /**
+   * Constructor.
+   *
+   * @param httpService - HttpService instance từ @nestjs/axios
+   */
+  constructor(
+    private readonly httpService: HttpService,
+  ) {}
+
+  // ========================================================================
+  // Dispatch Methods
+  // ========================================================================
+
+  /**
+   * Gửi webhook event đến subscription.
+   *
+   * Quy trình:
+   * 1. Render payload theo template
+   * 2. Xây dựng headers với auth config
+   * 3. Gửi HTTP request đến webhook URL
+   * 4. Retry nếu thất bại (theo retry policy)
+   *
+   * @param subscription - WebhookSubscription cần gửi
+   * @param eventPayload - Dữ liệu event cần gửi
+   * @returns WebhookDispatchResult
+   */
+  async dispatchEvent(
+    subscription: WebhookSubscription,
+    eventPayload: Record<string, any>,
+  ): Promise<WebhookDispatchResult> {
+    const startTime = Date.now();
+    logger.log(
+      "Bắt đầu gửi webhook: " +
+        subscription.subscriptionId +
+        " (event: " +
+        subscription.eventType +
+        ")",
+    );
+
+    // Render payload theo template
+    const payload = this.renderPayload(subscription, eventPayload);
+
+    // Xây dựng headers
+    const headers = this.buildHeaders(subscription, payload);
+
+    // Retry logic
+    const maxRetries = subscription.getMaxRetries();
+    const baseDelay =
+      (subscription.retryPolicy && subscription.retryPolicy.base_delay) ?? 1;
+    const maxDelay =
+      (subscription.retryPolicy && subscription.retryPolicy.max_delay) ?? 60;
+
+    let lastError: string | undefined;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Delay trước retry (không delay cho attempt đầu tiên)
+        if (attempt > 0) {
+          const delayMs = this.calculateBackoff(attempt, baseDelay, maxDelay);
+          logger.log(
+            "Retry lần " +
+              attempt +
+              " sau " +
+              delayMs +
+              "ms cho subscription: " +
+              subscription.subscriptionId,
+          );
+          await this.delay(delayMs);
+        }
+
+        // Gửi HTTP request
+        const response = await firstValueFrom(
+          this.httpService[subscription.httpMethod.toLowerCase()](
+            subscription.url,
+            payload,
+            {
+              headers,
+              timeout: this.DEFAULT_TIMEOUT,
+              validateStatus: function () {
+                // Accept all status codes - xử lý lỗi bên dưới
+                return true;
+              },
+            },
+          ),
+        );
+
+        const durationMs = Date.now() - startTime;
+
+        // Thành công: status code 2xx
+        if (response.status >= 200 && response.status < 300) {
+          logger.log(
+            "Gửi webhook thành công: " +
+              subscription.subscriptionId +
+              " (status: " +
+              response.status +
+              ", duration: " +
+              durationMs +
+              "ms)",
+          );
+          return {
+            subscriptionId: subscription.subscriptionId,
+            success: true,
+            statusCode: response.status,
+            durationMs,
+            retryCount: attempt,
+          };
+        }
+
+        // Client error (4xx) - không retry
+        if (response.status >= 400 && response.status < 500) {
+          lastError =
+            "Client error: " +
+            response.status +
+            " " +
+            JSON.stringify(response.data);
+          logger.warn(
+            "Webhook client error (không retry): " +
+              subscription.subscriptionId +
+              " - " +
+              lastError,
+          );
+          break;
+        }
+
+        // Server error (5xx) - tiếp tục retry
+        lastError =
+          "Server error: " +
+          response.status +
+          " " +
+          JSON.stringify(response.data);
+        logger.warn(
+          "Webhook server error (sẽ retry): " +
+            subscription.subscriptionId +
+            " - " +
+            lastError,
+        );
+
+      } catch (error) {
+        lastError = error.message || "Network error";
+        logger.error(
+          "Webhook dispatch error: " +
+            subscription.subscriptionId +
+            " - " +
+            lastError,
+        );
+
+        // Nếu đã retry hết lần, break
+        if (attempt >= maxRetries) {
+          break;
+        }
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    return {
+      subscriptionId: subscription.subscriptionId,
+      success: false,
+      error: lastError,
+      durationMs,
+      retryCount: maxRetries,
+    };
+  }
+
+  // ========================================================================
+  // HMAC & Signature Methods
+  // ========================================================================
+
+  /**
+   * Tính toán HMAC signature cho webhook payload.
+   *
+   * Ký payload bằng thuật toán HMAC được cấu hình trong subscription.
+   *
+   * @param subscription - WebhookSubscription
+   * @param payloadBody - Payload body cần ký
+   * @returns HMAC signature dạng hex string
+   */
+  computeHmacSignature(
+    subscription: WebhookSubscription,
+    payloadBody: string,
+  ): string {
+    const authConfig = subscription.authConfig || {};
+    const algorithm = (authConfig.algorithm || "sha256").toLowerCase();
+    const secret = authConfig.secret || "";
+
+    if (!secret) {
+      logger.warn(
+        "Không có secret để tính HMAC cho subscription: " +
+          subscription.subscriptionId,
+      );
+      return "";
+    }
+
+    // Kiểm tra algorithm được hỗ trợ
+    const supportedAlgorithms = ["sha256", "sha512", "sha1"];
+    const algo = supportedAlgorithms.includes(algorithm) ? algorithm : "sha256";
+
+    const hmac = crypto.createHmac(algo, secret);
+    hmac.update(payloadBody);
+
+    return hmac.digest("hex");
+  }
+
+  // ========================================================================
+  // Payload Rendering Methods
+  // ========================================================================
+
+  /**
+   * Render payload theo template cấu hình của subscription.
+   *
+   * Hỗ trợ:
+   * - Wrap trong envelope (mặc định)
+   * - Chỉ lấy các trường cụ thể (customFields)
+   * - Bao gồm headers và request body
+   *
+   * @param subscription - WebhookSubscription
+   * @param eventPayload - Dữ liệu event gốc
+   * @returns Rendered payload object
+   */
+  renderPayload(
+    subscription: WebhookSubscription,
+    eventPayload: Record<string, any>,
+  ): Record<string, any> | WebhookPayload {
+    const template = subscription.payloadTemplate || {};
+    const wrapInEnvelope = template.wrapInEnvelope !== false;
+
+    if (wrapInEnvelope) {
+      // Wrap payload trong envelope
+      const payload: WebhookPayload = {
+        event: subscription.eventType,
+        webhook_id: subscription.subscriptionId,
+        delivered_at: new Date().toISOString(),
+        data: eventPayload,
+      };
+
+      // Chỉ lấy các trường cụ thể nếu cấu hình
+      if (template.customFields && template.customFields.length > 0) {
+        const filteredData: Record<string, any> = {};
+        for (const field of template.customFields) {
+          if (eventPayload.hasOwnProperty(field)) {
+            filteredData[field] = eventPayload[field];
+          }
+        }
+        payload.data = filteredData;
+      }
+
+      return payload;
+    }
+
+    // Không wrap - trả về dữ liệu gốc
+    // Nếu có customFields, chỉ lấy các trường được chỉ định
+    if (template.customFields && template.customFields.length > 0) {
+      const filteredData: Record<string, any> = {};
+      for (const field of template.customFields) {
+        if (eventPayload.hasOwnProperty(field)) {
+          filteredData[field] = eventPayload[field];
+        }
+      }
+      return filteredData;
+    }
+
+    return eventPayload;
+  }
+
+  // ========================================================================
+  // Header Building Methods
+  // ========================================================================
+
+  /**
+   * Xây dựng headers cho webhook request.
+   *
+   * Tự động thêm:
+   * - Content-Type: application/json
+   * - X-Webhook-ID: subscription ID
+   * - X-Webhook-Event: event type
+   * - Signature header (nếu auth_type = hmac)
+   * - Authorization header (nếu auth_type = bearer hoặc basic)
+   *
+   * @param subscription - WebhookSubscription
+   * @param payload - Payload đã render
+   * @returns Headers object
+   */
+  buildHeaders(
+    subscription: WebhookSubscription,
+    payload: Record<string, any>,
+  ): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Webhook-ID": subscription.subscriptionId,
+      "X-Webhook-Event": subscription.eventType,
+    };
+
+    const authConfig = subscription.authConfig || {};
+    const authType = (authConfig.auth_type || "none").toLowerCase();
+    const headerName = authConfig.header_name || "X-Webhook-Signature";
+
+    const payloadBody = JSON.stringify(payload);
+
+    if (authType === "hmac") {
+      // HMAC signature
+      const signature = this.computeHmacSignature(subscription, payloadBody);
+      headers[headerName] = "sha256=" + signature;
+    } else if (authType === "bearer") {
+      // Bearer token
+      headers["Authorization"] = "Bearer " + (authConfig.secret || "");
+    } else if (authType === "basic") {
+      // Basic auth - encode secret thành base64
+      headers["Authorization"] =
+        "Basic " + Buffer.from(authConfig.secret || "").toString("base64");
+    }
+
+    return headers;
+  }
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Tính toán delay theo exponential backoff.
+   *
+   * delay = min(base_delay * 2^attempt, max_delay)
+   *
+   * @param attempt - Số lần retry hiện tại (bắt đầu từ 1)
+   * @param baseDelay - Delay ban đầu (giây)
+   * @param maxDelay - Delay tối đa (giây)
+   * @returns Delay tính bằng milliseconds
+   */
+  private calculateBackoff(
+    attempt: number,
+    baseDelay: number,
+    maxDelay: number,
+  ): number {
+    const delaySeconds = Math.min(
+      baseDelay * Math.pow(2, attempt - 1),
+      maxDelay,
+    );
+    return delaySeconds * 1000;
+  }
+
+  /**
+   * Delay không block (async sleep).
+   *
+   * @param ms - Số milliseconds cần delay
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+}

@@ -1,0 +1,331 @@
+/**
+ * WebhookService - dịch vụ quản lý webhook subscription.
+ *
+ * Cung cấp các phương thức CRUD cho WebhookSubscription entity:
+ * - findAll(): lấy tất cả subscriptions
+ * - findById(): tìm theo subscription ID
+ * - findByEventType(): tìm theo event type
+ * - create(): tạo mới subscription
+ * - update(): cập nhật subscription
+ * - remove(): xóa subscription
+ *
+ * CP40: Webhook
+ */
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { WebhookSubscription } from "./webhook.entity";
+import {
+  CreateWebhookDto,
+  UpdateWebhookDto,
+  WebhookResponseDto,
+  EVENT_TYPES,
+} from "./webhook.dto";
+
+const logger = new Logger("WebhookService");
+
+/**
+ * Kết quả phân trang webhook subscriptions.
+ */
+export interface PaginatedWebhooks {
+  /** Danh sách subscriptions */
+  data: WebhookSubscription[];
+  /** Tổng số subscriptions */
+  total: number;
+  /** Số lượng mỗi trang */
+  limit: number;
+  /** Số trang hiện tại (0-indexed) */
+  offset: number;
+}
+
+/**
+ * Tùy chọn tìm kiếm webhook subscriptions.
+ */
+export interface WebhookQueryOptions {
+  /** Lọc theo event type */
+  eventType?: string;
+  /** Lọc theo tenant ID */
+  tenantId?: string;
+  /** Lọc theo trạng thái */
+  status?: string;
+  /** Từ khóa tìm trong tags */
+  tag?: string;
+  /** Số lượng mỗi trang */
+  limit?: number;
+  /** Offset phân trang */
+  offset?: number;
+}
+
+/**
+ * WebhookService - quản lý webhook subscription.
+ *
+ * Phương thức chính:
+ * - findAll: lấy tất cả subscriptions (có phân trang, lọc)
+ * - findById: tìm theo subscription ID
+ * - findByEventType: tìm tất cả subscriptions cho một event type
+ * - create: tạo mới subscription với xác thực đầy đủ
+ * - update: cập nhật subscription (partial update)
+ * - remove: xóa subscription
+ */
+@Injectable()
+export class WebhookService {
+  /**
+   * Constructor.
+   *
+   * @param webhookRepository - Repository cho WebhookSubscription entity
+   */
+  constructor(
+    @InjectRepository(WebhookSubscription)
+    private readonly webhookRepository: Repository<WebhookSubscription>,
+  ) {}
+
+  // ========================================================================
+  // Query Methods
+  // ========================================================================
+
+  /**
+   * Lấy tất cả webhook subscriptions với phân trang và lọc.
+   *
+   * Hỗ trợ lọc theo event type, tenant, status, tag.
+   *
+   * @param options - Tùy chọn tìm kiếm
+   * @returns Object chứa data và pagination info
+   */
+  async findAll(options?: WebhookQueryOptions): Promise<PaginatedWebhooks> {
+    const limit = options?.limit ?? 20;
+    const offset = options?.offset ?? 0;
+
+    // Xây dựng where clause động
+    const where: any = {};
+
+    if (options?.eventType) {
+      where.eventType = options.eventType;
+    }
+    if (options?.tenantId) {
+      where.tenantId = options.tenantId;
+    }
+    if (options?.status) {
+      where.status = options.status;
+    }
+    // Lọc theo tag (chứa tag trong mảng)
+    if (options?.tag) {
+      where.tags = options.tag;
+    }
+
+    const [data, total] = await this.webhookRepository.findAndCount({
+      where,
+      take: limit,
+      skip: offset,
+      order: { createdAt: "DESC" },
+    });
+
+    return { data, total, limit, offset };
+  }
+
+  /**
+   * Tìm webhook subscription theo ID.
+   *
+   * @param subscriptionId - Subscription ID (UUID)
+   * @returns WebhookSubscription entity hoặc null
+   */
+  async findById(subscriptionId: string): Promise<WebhookSubscription | null> {
+    return this.webhookRepository.findOne({
+      where: { subscriptionId },
+    });
+  }
+
+  /**
+   * Tìm tất cả subscriptions cho một event type.
+   *
+   * Chỉ trả về subscriptions đang active.
+   * Hỗ trợ lọc theo tenant - nếu có tenantId thì trả về
+   * cả global (tenantId = null) và tenant-specific.
+   *
+   * @param eventType - Event type
+   * @param tenantId - Tenant ID (optional)
+   * @returns List WebhookSubscription
+   */
+  async findByEventType(
+    eventType: string,
+    tenantId?: string,
+  ): Promise<WebhookSubscription[]> {
+    const where: any = { eventType, status: "active" };
+
+    // Nếu có tenantId, lấy cả global và tenant-specific
+    if (tenantId) {
+      where.tenantId = [tenantId, null];
+    } else {
+      // Không có tenantId, chỉ lấy global
+      where.tenantId = null;
+    }
+
+    return this.webhookRepository.find({
+      where,
+      order: { createdAt: "ASC" },
+    });
+  }
+
+  // ========================================================================
+  // CRUD Methods
+  // ========================================================================
+
+  /**
+   * Tạo mới webhook subscription.
+   *
+   * Xác thực:
+   * - event type phải hợp lệ
+   * - URL phải hợp lệ
+   * - HTTP method phải hợp lệ
+   *
+   * @param createDto - CreateWebhookDto
+   * @returns WebhookSubscription entity vừa tạo
+   */
+  async create(createDto: CreateWebhookDto): Promise<WebhookSubscription> {
+    // Xác thực event type
+    if (!EVENT_TYPES.includes(createDto.eventType)) {
+      throw new BadRequestException(
+        "Event type không hợp lệ: " + createDto.eventType,
+      );
+    }
+
+    // Tạo subscription mới
+    const webhook = this.webhookRepository.create({
+      eventType: createDto.eventType,
+      url: createDto.url,
+      httpMethod: createDto.httpMethod || "POST",
+      authConfig: createDto.authConfig || {},
+      payloadTemplate: createDto.payloadTemplate || {},
+      retryPolicy: createDto.retryPolicy || {
+        max_retries: 3,
+        base_delay: 1,
+        max_delay: 60,
+      },
+      rateLimitRpm: createDto.rateLimitRpm ?? 60,
+      status: "active",
+      tenantId: createDto.tenantId || null,
+      tags: createDto.tags || [],
+    });
+
+    const saved = await this.webhookRepository.save(webhook);
+
+    logger.log(
+      "Tạo webhook subscription mới: " +
+        saved.subscriptionId +
+        " (event: " +
+        saved.eventType +
+        ")",
+    );
+
+    return saved;
+  }
+
+  /**
+   * Cập nhật webhook subscription.
+   *
+   * Partial update - chỉ cập nhật các field được truyền.
+   *
+   * @param subscriptionId - Subscription ID
+   * @param updateDto - UpdateWebhookDto
+   * @returns WebhookSubscription entity đã cập nhật
+   */
+  async update(
+    subscriptionId: string,
+    updateDto: UpdateWebhookDto,
+  ): Promise<WebhookSubscription> {
+    // Tìm subscription hiện tại
+    const webhook = await this.webhookRepository.findOne({
+      where: { subscriptionId },
+    });
+
+    if (!webhook) {
+      throw new NotFoundException(
+        "Không tìm thấy webhook subscription: " + subscriptionId,
+      );
+    }
+
+    // Xác thực event type nếu có thay đổi
+    if (updateDto.eventType && !EVENT_TYPES.includes(updateDto.eventType)) {
+      throw new BadRequestException(
+        "Event type không hợp lệ: " + updateDto.eventType,
+      );
+    }
+
+    // Merge updateDto vào webhook entity
+    // Chỉ merge các field có giá trị
+    if (updateDto.eventType !== undefined) webhook.eventType = updateDto.eventType;
+    if (updateDto.url !== undefined) webhook.url = updateDto.url;
+    if (updateDto.httpMethod !== undefined) webhook.httpMethod = updateDto.httpMethod;
+    if (updateDto.authConfig !== undefined) webhook.authConfig = updateDto.authConfig;
+    if (updateDto.payloadTemplate !== undefined) webhook.payloadTemplate = updateDto.payloadTemplate;
+    if (updateDto.retryPolicy !== undefined) webhook.retryPolicy = updateDto.retryPolicy;
+    if (updateDto.rateLimitRpm !== undefined) webhook.rateLimitRpm = updateDto.rateLimitRpm;
+    if (updateDto.status !== undefined) webhook.status = updateDto.status;
+    if (updateDto.tags !== undefined) webhook.tags = updateDto.tags;
+
+    const saved = await this.webhookRepository.save(webhook);
+
+    logger.log(
+      "Cập nhật webhook subscription: " + subscriptionId,
+    );
+
+    return saved;
+  }
+
+  /**
+   * Xóa webhook subscription.
+   *
+   * @param subscriptionId - Subscription ID
+   * @returns True nếu xóa thành công, false nếu không tìm thấy
+   */
+  async remove(subscriptionId: string): Promise<boolean> {
+    const webhook = await this.webhookRepository.findOne({
+      where: { subscriptionId },
+    });
+
+    if (!webhook) {
+      return false;
+    }
+
+    await this.webhookRepository.remove(webhook);
+
+    logger.log(
+      "Xóa webhook subscription: " + subscriptionId,
+    );
+
+    return true;
+  }
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Chuyển đổi entity sang response DTO.
+   *
+   * @param entity - WebhookSubscription entity
+   * @returns WebhookResponseDto
+   */
+  toResponseDto(entity: WebhookSubscription): WebhookResponseDto {
+    return {
+      subscriptionId: entity.subscriptionId,
+      eventType: entity.eventType,
+      url: entity.url,
+      httpMethod: entity.httpMethod,
+      authConfig: entity.authConfig,
+      payloadTemplate: entity.payloadTemplate,
+      retryPolicy: entity.retryPolicy,
+      rateLimitRpm: entity.rateLimitRpm,
+      status: entity.status,
+      tenantId: entity.tenantId,
+      tags: entity.tags,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    };
+  }
+}

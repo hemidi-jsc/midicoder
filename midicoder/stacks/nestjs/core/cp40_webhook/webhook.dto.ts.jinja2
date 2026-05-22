@@ -1,0 +1,633 @@
+/**
+ * DTOs cho Webhook Subscription.
+ *
+ * Định nghĩa các Data Transfer Objects cho việc tạo, cập nhật,
+ * tìm kiếm và phản hồi webhook subscription.
+ *
+ * CP40: Webhook
+ */
+
+import {
+  IsString,
+  IsOptional,
+  IsNotEmpty,
+  IsURL,
+  IsIn,
+  IsInt,
+  Min,
+  Max,
+  IsUUID,
+  IsArray,
+  IsObject,
+  ValidateNested,
+  IsEnum,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { EVENT_TYPES, HTTP_METHODS, WEBHOOK_STATUSES } from "./webhook.entity";
+
+// ============================================================================
+// Hằng số xác thực
+// ============================================================================
+
+/** Độ dài tối đa cho webhook URL */
+export const MAX_WEBHOOK_URL_LENGTH = 1024;
+
+/** Độ dài tối đa cho event type */
+export const MAX_EVENT_TYPE_LENGTH = 128;
+
+/** Giới hạn rate limit tối đa (calls/phút) */
+export const MAX_RATE_LIMIT_RPM = 10000;
+
+/** Số tag tối đa cho mỗi subscription */
+export const MAX_TAGS_COUNT = 20;
+
+/** Độ dài tối đa cho mỗi tag */
+export const MAX_TAG_LENGTH = 64;
+
+// ============================================================================
+// AuthConfigDto
+// ============================================================================
+
+/**
+ * DTO cho cấu hình xác thực webhook.
+ *
+ * Hỗ trợ các loại xác thực:
+ * - hmac: ký payload bằng HMAC (sha256/sha512)
+ * - bearer: gửi token trong Authorization header
+ * - basic: HTTP Basic Authentication
+ * - none: không xác thực (chỉ cho development)
+ */
+export class AuthConfigDto {
+  /**
+   * Loại xác thực.
+   */
+  @ApiProperty({
+    description: "Loại xác thực",
+    enum: ["hmac", "bearer", "basic", "none"],
+    default: "hmac",
+  })
+  @IsOptional()
+  @IsIn(["hmac", "bearer", "basic", "none"])
+  auth_type?: "hmac" | "bearer" | "basic" | "none";
+
+  /**
+   * Tên header chứa thông tin xác thực.
+   *
+   * Ví dụ: "X-Webhook-Signature", "Authorization"
+   */
+  @ApiPropertyOptional({
+    description: "Tên header chứa thông tin xác thực",
+    example: "X-Webhook-Signature",
+  })
+  @IsOptional()
+  @IsString()
+  header_name?: string;
+
+  /**
+   * Bí mật dùng để ký payload hoặc token.
+   */
+  @ApiPropertyOptional({
+    description: "Bí mật dùng để ký payload",
+    example: "sk_wh_abc123",
+  })
+  @IsOptional()
+  @IsString()
+  secret?: string;
+
+  /**
+   * Thuật toán HMAC (chỉ dùng khi auth_type = "hmac").
+   *
+   * Hỗ trợ: sha256, sha512, sha1 (không khuyến nghị)
+   */
+  @ApiPropertyOptional({
+    description: "Thuật toán HMAC",
+    enum: ["sha256", "sha512", "sha1"],
+    default: "sha256",
+  })
+  @IsOptional()
+  @IsIn(["sha256", "sha512", "sha1"])
+  algorithm?: string;
+}
+
+// ============================================================================
+// PayloadTemplateDto
+// ============================================================================
+
+/**
+ * DTO cho cấu hình payload template.
+ *
+ * Cho phép tùy chỉnh cấu trúc dữ liệu gửi đi trong webhook.
+ */
+export class PayloadTemplateDto {
+  /**
+   * Có bao gồm headers của request gốc không.
+   */
+  @ApiPropertyOptional({
+    description: "Có bao gồm request headers không",
+    default: false,
+  })
+  @IsOptional()
+  includeHeaders?: boolean;
+
+  /**
+   * Có bao gồm request body không.
+   */
+  @ApiPropertyOptional({
+    description: "Có bao gồm request body không",
+    default: true,
+  })
+  @IsOptional()
+  includeRequestBody?: boolean;
+
+  /**
+   * Chỉ bao gồm các trường cụ thể.
+   *
+   * Ví dụ: ["orderId", "total", "status"]
+   */
+  @ApiPropertyOptional({
+    description: "Danh sách các trường cần bao gồm",
+    example: ["orderId", "total"],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  customFields?: string[];
+
+  /**
+   * Có wrap payload trong envelope không.
+   *
+   * Nếu true, payload sẽ được bọc trong:
+   * { "webhook": { "event": "...", "data": {...} } }
+   */
+  @ApiPropertyOptional({
+    description: "Có wrap payload trong envelope không",
+    default: true,
+  })
+  @IsOptional()
+  wrapInEnvelope?: boolean;
+}
+
+// ============================================================================
+// RetryPolicyDto
+// ============================================================================
+
+/**
+ * DTO cho chính sách retry.
+ *
+ * Cấu hình số lần retry và backoff strategy khi gửi webhook thất bại.
+ */
+export class RetryPolicyDto {
+  /**
+   * Số lần retry tối đa.
+   *
+   * Mặc định: 3
+   * Tối đa: 10
+   */
+  @ApiPropertyOptional({
+    description: "Số lần retry tối đa",
+    example: 3,
+    minimum: 0,
+    maximum: 10,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  max_retries?: number;
+
+  /**
+   * Delay ban đầu tính bằng giây.
+   *
+   * Sử dụng exponential backoff:
+   * delay = min(base_delay * 2^attempt, max_delay)
+   */
+  @ApiPropertyOptional({
+    description: "Delay ban đầu (giây)",
+    example: 1,
+    minimum: 1,
+    maximum: 30,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  base_delay?: number;
+
+  /**
+   * Delay tối đa tính bằng giây.
+   *
+   * Delay sẽ không vượt quá giá trị này.
+   */
+  @ApiPropertyOptional({
+    description: "Delay tối đa (giây)",
+    example: 60,
+    minimum: 1,
+    maximum: 3600,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(3600)
+  max_delay?: number;
+}
+
+// ============================================================================
+// CreateWebhookDto
+// ============================================================================
+
+/**
+ * DTO để tạo mới webhook subscription.
+ *
+ * Sử dụng khi POST /webhooks.
+ *
+ * Required fields:
+ * - eventType: loại event kích hoạt webhook
+ * - url: endpoint URL nhận webhook
+ *
+ * Optional fields:
+ * - httpMethod: phương thức HTTP (mặc định POST)
+ * - authConfig: cấu hình xác thực
+ * - payloadTemplate: cấu hình payload
+ * - retryPolicy: chính sách retry
+ * - rateLimitRpm: giới hạn rate
+ * - tenantId: tenant ID
+ * - tags: danh sách tag
+ */
+export class CreateWebhookDto {
+  /**
+   * Event type - loại event kích hoạt webhook.
+   *
+   * Phải thuộc danh sách event types được cấu hình.
+   */
+  @ApiProperty({
+    description: "Event type - loại event kích hoạt webhook",
+    enum: EVENT_TYPES,
+    example: "order.created",
+  })
+  @IsString()
+  @IsNotEmpty({ message: "Event type không được để trống" })
+  @IsIn(EVENT_TYPES, {
+    message: "Event type phải thuộc danh sách được cấu hình",
+  })
+  eventType: string;
+
+  /**
+   * URL endpoint nhận webhook.
+   *
+   * Phải là URL hợp lệ (http:// hoặc https://).
+   */
+  @ApiProperty({
+    description: "URL endpoint nhận webhook",
+    example: "https://example.com/api/webhooks/orders",
+    maxLength: MAX_WEBHOOK_URL_LENGTH,
+  })
+  @IsURL({
+    protocols: ["http", "https"],
+    require_protocol: true,
+  })
+  url: string;
+
+  /**
+   * Phương thức HTTP.
+   */
+  @ApiPropertyOptional({
+    description: "Phương thức HTTP",
+    enum: HTTP_METHODS,
+    default: "POST",
+  })
+  @IsOptional()
+  @IsIn(HTTP_METHODS)
+  httpMethod?: string;
+
+  /**
+   * Cấu hình xác thực.
+   */
+  @ApiPropertyOptional({
+    description: "Cấu hình xác thực webhook",
+    type: AuthConfigDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AuthConfigDto)
+  authConfig?: AuthConfigDto;
+
+  /**
+   * Cấu hình payload template.
+   */
+  @ApiPropertyOptional({
+    description: "Cấu hình payload template",
+    type: PayloadTemplateDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => PayloadTemplateDto)
+  payloadTemplate?: PayloadTemplateDto;
+
+  /**
+   * Chính sách retry.
+   */
+  @ApiPropertyOptional({
+    description: "Chính sách retry khi gửi thất bại",
+    type: RetryPolicyDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => RetryPolicyDto)
+  retryPolicy?: RetryPolicyDto;
+
+  /**
+   * Giới hạn số lần gọi mỗi phút.
+   */
+  @ApiPropertyOptional({
+    description: "Giới hạn số lần gọi mỗi phút",
+    example: 60,
+    minimum: 0,
+    maximum: MAX_RATE_LIMIT_RPM,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_RATE_LIMIT_RPM)
+  rateLimitRpm?: number;
+
+  /**
+   * Tenant ID.
+   */
+  @ApiPropertyOptional({
+    description: "Tenant ID - để trống cho webhook global",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  @IsOptional()
+  @IsUUID("4")
+  tenantId?: string;
+
+  /**
+   * Danh sách tag.
+   */
+  @ApiPropertyOptional({
+    description: "Danh sách tag để nhóm subscription",
+    example: ["production", "payments"],
+    maxItems: MAX_TAGS_COUNT,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+}
+
+// ============================================================================
+// UpdateWebhookDto
+// ============================================================================
+
+/**
+ * DTO để cập nhật webhook subscription.
+ *
+ * Sử dụng khi PUT /webhooks/:id.
+ * Tất cả fields đều optional - chỉ cập nhật những field được truyền.
+ */
+export class UpdateWebhookDto {
+  /**
+   * Event type mới.
+   */
+  @ApiPropertyOptional({
+    description: "Event type mới",
+    enum: EVENT_TYPES,
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(EVENT_TYPES)
+  eventType?: string;
+
+  /**
+   * URL endpoint mới.
+   */
+  @ApiPropertyOptional({
+    description: "URL endpoint mới",
+    example: "https://example.com/api/webhooks/v2/orders",
+  })
+  @IsOptional()
+  @IsURL({ protocols: ["http", "https"], require_protocol: true })
+  url?: string;
+
+  /**
+   * Phương thức HTTP mới.
+   */
+  @ApiPropertyOptional({
+    description: "Phương thức HTTP mới",
+    enum: HTTP_METHODS,
+  })
+  @IsOptional()
+  @IsIn(HTTP_METHODS)
+  httpMethod?: string;
+
+  /**
+   * Cấu hình xác thực mới.
+   */
+  @ApiPropertyOptional({
+    description: "Cấu hình xác thực mới",
+    type: AuthConfigDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AuthConfigDto)
+  authConfig?: AuthConfigDto;
+
+  /**
+   * Cấu hình payload template mới.
+   */
+  @ApiPropertyOptional({
+    description: "Cấu hình payload template mới",
+    type: PayloadTemplateDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => PayloadTemplateDto)
+  payloadTemplate?: PayloadTemplateDto;
+
+  /**
+   * Chính sách retry mới.
+   */
+  @ApiPropertyOptional({
+    description: "Chính sách retry mới",
+    type: RetryPolicyDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => RetryPolicyDto)
+  retryPolicy?: RetryPolicyDto;
+
+  /**
+   * Giới hạn rate mới.
+   */
+  @ApiPropertyOptional({
+    description: "Giới hạn rate mới",
+    minimum: 0,
+    maximum: MAX_RATE_LIMIT_RPM,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_RATE_LIMIT_RPM)
+  rateLimitRpm?: number;
+
+  /**
+   * Trạng thái mới.
+   */
+  @ApiPropertyOptional({
+    description: "Trạng thái mới",
+    enum: WEBHOOK_STATUSES,
+  })
+  @IsOptional()
+  @IsIn(WEBHOOK_STATUSES)
+  status?: string;
+
+  /**
+   * Danh sách tag mới.
+   */
+  @ApiPropertyOptional({
+    description: "Danh sách tag mới",
+    maxItems: MAX_TAGS_COUNT,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+}
+
+// ============================================================================
+// WebhookResponseDto
+// ============================================================================
+
+/**
+ * DTO cho phản hồi webhook subscription.
+ *
+ * Sử dụng khi trả về dữ liệu webhook từ API responses.
+ */
+export class WebhookResponseDto {
+  /**
+   * Subscription ID.
+   */
+  @ApiProperty({
+    description: "Subscription ID",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  subscriptionId: string;
+
+  /**
+   * Event type.
+   */
+  @ApiProperty({
+    description: "Event type",
+    example: "order.created",
+  })
+  eventType: string;
+
+  /**
+   * URL endpoint.
+   */
+  @ApiProperty({
+    description: "URL endpoint",
+    example: "https://example.com/api/webhooks/orders",
+  })
+  url: string;
+
+  /**
+   * Phương thức HTTP.
+   */
+  @ApiProperty({
+    description: "Phương thức HTTP",
+    example: "POST",
+  })
+  httpMethod: string;
+
+  /**
+   * Cấu hình xác thực.
+   */
+  @ApiProperty({
+    description: "Cấu hình xác thực",
+    type: "object",
+  })
+  authConfig: Record<string, any>;
+
+  /**
+   * Cấu hình payload template.
+   */
+  @ApiProperty({
+    description: "Cấu hình payload template",
+    type: "object",
+  })
+  payloadTemplate: Record<string, any>;
+
+  /**
+   * Chính sách retry.
+   */
+  @ApiProperty({
+    description: "Chính sách retry",
+    type: "object",
+  })
+  retryPolicy: Record<string, any>;
+
+  /**
+   * Giới hạn rate mỗi phút.
+   */
+  @ApiProperty({
+    description: "Giới hạn số lần gọi mỗi phút",
+    example: 60,
+  })
+  rateLimitRpm: number;
+
+  /**
+   * Trạng thái.
+   */
+  @ApiProperty({
+    description: "Trạng thái webhook",
+    enum: WEBHOOK_STATUSES,
+    example: "active",
+  })
+  status: string;
+
+  /**
+   * Tenant ID.
+   */
+  @ApiPropertyOptional({
+    description: "Tenant ID (null = global)",
+    nullable: true,
+  })
+  tenantId: string | null;
+
+  /**
+   * Danh sách tag.
+   */
+  @ApiProperty({
+    description: "Danh sách tag",
+    example: ["production", "payments"],
+  })
+  tags: string[];
+
+  /**
+   * Thời điểm tạo.
+   */
+  @ApiProperty({
+    description: "Thời điểm tạo",
+    type: "string",
+    format: "date-time",
+  })
+  createdAt: Date;
+
+  /**
+   * Thời điểm cập nhật.
+   */
+  @ApiProperty({
+    description: "Thời điểm cập nhật",
+    type: "string",
+    format: "date-time",
+  })
+  updatedAt: Date;
+}

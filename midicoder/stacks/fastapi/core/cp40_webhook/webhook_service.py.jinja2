@@ -1,0 +1,249 @@
+# ----------------------------------------------------------
+# CP40 Webhook — Dịch vụ thao tác đăng ký webhook
+# ----------------------------------------------------------
+# Sinh bởi CP40WebhookEmitter
+# Class: WebhookService với CRUD + tìm kiếm theo event_type
+# Tổng số đăng ký phát hiện: {{ subscription_count }}
+# ----------------------------------------------------------
+
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Sequence
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+
+class WebhookService:
+    """
+    Dịch vụ quản lý đăng ký webhook — thực hiện CRUD và truy vấn
+    trên bảng webhook_subscriptions thông qua phiên làm việc async.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        """
+        Khởi tạo dịch vụ với phiên làm việc SQLAlchemy async.
+
+        Tham số:
+            session: Phiên làm việc async để truy cập cơ sở dữ liệu.
+        """
+        self._session = session
+
+    # --------------------------------------------------------------
+    # Truy vấn
+    # --------------------------------------------------------------
+
+    async def list_subscriptions(
+        self,
+        offset: int = 0,
+        limit: int = 50,
+        status: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+    ) -> Sequence[Any]:
+        """
+        Liệt kê tất cả đăng ký webhook với phân trang và bộ lọc.
+
+        Tham số:
+            offset: Số bản ghi bỏ qua.
+            limit: Số bản ghi trả về tối đa.
+            status: Lọc theo trạng thái (active, paused, disabled).
+            tenant_id: Lọc theo định danh thuê trọ.
+            tags: Lọc theo danh sách nhãn.
+
+        Trả về:
+            Dãy các đối tượng WebhookSubscription.
+        """
+        query = select(self._subscription_model())
+        total_query = select(func.count()).select_from(self._subscription_model())
+
+        if status is not None:
+            query = query.where(self._subscription_model().status == status)
+            total_query = total_query.where(self._subscription_model().status == status)
+
+        if tenant_id is not None:
+            query = query.where(self._subscription_model().tenant_id == tenant_id)
+            total_query = total_query.where(self._subscription_model().tenant_id == tenant_id)
+
+        query = query.order_by(self._subscription_model().created_at.desc())
+        query = query.offset(offset).limit(limit)
+
+        result = await self._session.execute(query)
+        total_result = await self._session.execute(total_query)
+        total = total_result.scalar_one()
+
+        return result.scalars().all(), total
+
+    async def get_subscription(self, subscription_id: str) -> Optional[Any]:
+        """
+        Lấy chi tiết một đăng ký webhook theo định danh.
+
+        Tham số:
+            subscription_id: Định danh duy nhất của đăng ký.
+
+        Trả về:
+            Đối tượng WebhookSubscription hoặc None nếu không tìm thấy.
+        """
+        query = select(self._subscription_model()).where(
+            self._subscription_model().subscription_id == subscription_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def list_by_event_type(
+        self,
+        event_type: str,
+        status: Optional[str] = "active",
+    ) -> List[Any]:
+        """
+        Lấy danh sách đăng ký theo loại sự kiện.
+
+        Tham số:
+            event_type: Loại sự kiện cần tìm (ví dụ: user.created).
+            status: Trạng thái đăng ký, mặc định chỉ lấy đang hoạt động.
+
+        Trả về:
+            Danh sách các đăng ký phù hợp.
+        """
+        query = select(self._subscription_model()).where(
+            self._subscription_model().event_type == event_type,
+            self._subscription_model().status == status,
+        )
+        query = query.order_by(self._subscription_model().created_at.desc())
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Tạo mới
+    # --------------------------------------------------------------
+
+    async def create_subscription(self, data: Dict[str, Any]) -> Any:
+        """
+        Tạo mới một đăng ký webhook.
+
+        Tham số:
+            data: Từ điển chứa dữ liệu đăng ký theo schema WebhookSubscriptionCreate.
+
+        Trả về:
+            Đối tượng WebhookSubscription mới được tạo.
+
+        Ném ra:
+            ValueError: Nếu đăng ký trùng lặp cho cùng event_type và URL.
+        """
+        subscription_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        subscription = self._subscription_model()(
+            subscription_id=subscription_id,
+            event_type=data.get("event_type", ""),
+            url=data.get("url", ""),
+            http_method=data.get("http_method", "POST"),
+            tenant_id=data.get("tenant_id"),
+            auth_type=data.get("auth_type"),
+            auth_header_name=data.get("auth_header_name"),
+            auth_secret=data.get("auth_secret"),
+            auth_algorithm=data.get("auth_algorithm", "sha256"),
+            payload_template=data.get("payload_template"),
+            retry_max_retries=data.get("retry_max_retries", 3),
+            retry_base_delay=data.get("retry_base_delay", 1),
+            retry_max_delay=data.get("retry_max_delay", 60),
+            rate_limit_rpm=data.get("rate_limit_rpm"),
+            status="active",
+            tags=data.get("tags"),
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(subscription)
+        await self._session.commit()
+        await self._session.refresh(subscription)
+
+        logger.info(
+            "Tạo đăng ký webhook mới: id=%s, event=%s, url=%s",
+            subscription_id,
+            data.get("event_type"),
+            data.get("url"),
+        )
+
+        return subscription
+
+    # --------------------------------------------------------------
+    # Cập nhật
+    # --------------------------------------------------------------
+
+    async def update_subscription(
+        self, subscription_id: str, data: Dict[str, Any]
+    ) -> Optional[Any]:
+        """
+        Cập nhật thông tin đăng ký webhook.
+
+        Tham số:
+            subscription_id: Định danh đăng ký cần cập nhật.
+            data: Từ điển chứa các trường cần cập nhật (bắt chọn).
+
+        Trả về:
+            Đối tượng WebhookSubscription sau khi cập nhật, hoặc None.
+        """
+        subscription = await self.get_subscription(subscription_id)
+        if subscription is None:
+            logger.warning("Không tìm thấy đăng ký để cập nhật: id=%s", subscription_id)
+            return None
+
+        for key, value in data.items():
+            if value is not None:
+                setattr(subscription, key, value)
+
+        subscription.updated_at = datetime.now(timezone.utc)
+        await self._session.commit()
+        await self._session.refresh(subscription)
+
+        logger.info(
+            "Cập nhật đăng ký webhook: id=%s, trường=%s",
+            subscription_id,
+            list(data.keys()),
+        )
+
+        return subscription
+
+    # --------------------------------------------------------------
+    # Xóa
+    # --------------------------------------------------------------
+
+    async def delete_subscription(self, subscription_id: str) -> bool:
+        """
+        Xóa đăng ký webhook theo định danh.
+
+        Tham số:
+            subscription_id: Định danh đăng ký cần xóa.
+
+        Trả về:
+            True nếu xóa thành công, False nếu không tìm thấy.
+        """
+        subscription = await self.get_subscription(subscription_id)
+        if subscription is None:
+            logger.warning("Không tìm thấy đăng ký để xóa: id=%s", subscription_id)
+            return False
+
+        await self._session.delete(subscription)
+        await self._session.commit()
+
+        logger.info("Đã xóa đăng ký webhook: id=%s", subscription_id)
+        return True
+
+    # --------------------------------------------------------------
+    # Phương thức nội bộ
+    # --------------------------------------------------------------
+
+    def _subscription_model(self) -> type:
+        """
+        Lấy mô hình WebhookSubscription từ module models.
+        Phương thức này được ghi đè khi import động.
+        """
+        # Import động để tránh vòng lặp import
+        from webhook_models import WebhookSubscription
+        return WebhookSubscription
+{% endraw %}

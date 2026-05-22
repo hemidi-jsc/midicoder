@@ -1,0 +1,349 @@
+/**
+ * WebhookService — Dịch vụ giao tiếp REST API cho webhook.
+ *
+ * Cung cấp các phương thức CRUD cho subscriptions,
+ * kiểm thử webhook, và lấy lịch sử delivery.
+ *
+ * Tạo tự động bởi CP40 — không sửa thủ công.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, throwError } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+
+// --- Định nghĩa giao diện dữ liệu ---
+
+/** Dữ liệu subscription webhook — dùng cho cả đọc và ghi. */
+export interface WebhookSubscription {
+  id: string;
+  name: string;
+  url: string;
+  eventType: string;
+  secret: string;
+  active: boolean;
+  tenantId?: string;
+  headers?: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+  lastDeliveryStatus?: string;
+  failureCount: number;
+}
+
+/** Trạng thái dispatch — trả về từ API kiểm thử webhook. */
+export interface DispatchStatus {
+  id: string;
+  subscriptionId: string;
+  eventType: string;
+  status: 'delivered' | 'failed' | 'pending' | 'processing';
+  responseStatusCode?: number;
+  responseTime?: number;
+  error?: string;
+  createdAt: string;
+}
+
+/** Payload khi tạo subscription mới. */
+export interface CreateSubscriptionPayload {
+  name: string;
+  url: string;
+  eventType: string;
+  secret: string;
+  active?: boolean;
+  tenantId?: string;
+  headers?: Record<string, string>;
+}
+
+/** Payload khi cập nhật subscription. */
+export interface UpdateSubscriptionPayload {
+  name?: string;
+  url?: string;
+  eventType?: string;
+  secret?: string;
+  active?: boolean;
+  headers?: Record<string, string>;
+}
+
+/** Một lần thử giao trong lịch sử delivery. */
+export interface DeliveryAttempt {
+  id: string;
+  subscriptionId: string;
+  eventId: string;
+  eventType: string;
+  url: string;
+  status: 'delivered' | 'failed' | 'pending' | 'processing';
+  httpMethod: string;
+  requestPayload?: string;
+  responseStatusCode?: number;
+  responseBody?: string;
+  durationMs?: number;
+  error?: string;
+  createdAt: string;
+  deliveredAt?: string;
+}
+
+/** Response bao gồm phân trang. */
+interface PaginatedResponse<T> {
+  items: T[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+// --- Cấu hình từ template ---
+
+/** Endpoint API cơ bản cho webhook. */
+const WEBHOOK_API_BASE: string = '/api/webhooks';
+
+/** Các loại sự kiện được hỗ trợ — dùng để xác thực phía client. */
+const VALID_EVENT_TYPES: string[] = [
+{% for event in event_types %}
+  '{{ event }}'{% if not loop.last %},{% endif %}
+{% endfor %}
+];
+
+/** Cờ Redis queue. */
+const USES_REDIS_QUEUE: boolean = {{ 'true' if use_redis else 'false' }};
+
+/**
+ * Dịch vụ REST API cho hệ thống webhook.
+ *
+ * Cung cấp đầy đủ thao tác CRUD cho subscriptions,
+ * kiểm thử webhook, và truy vấn lịch sử delivery.
+ *
+ * Sử dụng:
+ *   const sub$ = this.webhookService.getSubscriptions({ page: 1 });
+ *   await this.webhookService.createSubscription(payload);
+ *   const status = await this.webhookService.testWebhook(subId);
+ */
+@Injectable({
+  providedIn: 'root'
+})
+export class WebhookService {
+  private readonly http = inject(HttpClient);
+
+  /** Đường dẫn cơ bản của API. */
+  private readonly baseUrl: string = WEBHOOK_API_BASE;
+
+  /** Cờ Redis queue — dùng để quyết định gửi header bổ sung. */
+  private readonly usesRedis: boolean = USES_REDIS_QUEUE;
+
+  // ========================
+  //  CRUD Subscriptions
+  // ========================
+
+  /**
+   * Lấy danh sách subscriptions với phân trang và bộ lọc.
+   *
+   * @param options - Các tham số: page, pageSize, eventType, search, active.
+   */
+  getSubscriptions(options?: {
+    page?: number;
+    pageSize?: number;
+    eventType?: string;
+    search?: string;
+    active?: boolean;
+    tenantId?: string;
+  }): Observable<PaginatedResponse<WebhookSubscription>> {
+    let params = new HttpParams();
+
+    if (options) {
+      params = this.applyParams(params, options);
+    }
+
+    return this.http.get<PaginatedResponse<WebhookSubscription>>(
+      this.baseUrl + '/subscriptions',
+      { params }
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  /**
+   * Lấy chi tiết một subscription theo ID.
+   *
+   * @param id - ID của subscription cần lấy.
+   */
+  getSubscription(id: string): Observable<WebhookSubscription> {
+    return this.http.get<WebhookSubscription>(
+      this.baseUrl + '/subscriptions/' + encodeURIComponent(id)
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  /**
+   * Tạo subscription mới.
+   *
+   * @param data - Dữ liệu subscription cần tạo.
+   */
+  createSubscription(data: CreateSubscriptionPayload): Observable<WebhookSubscription> {
+    // Xác thực loại sự kiện phía client trước khi gửi.
+    if (!VALID_EVENT_TYPES.includes(data.eventType)) {
+      return throwError(() => new Error(
+        'Loại sự kiện "' + data.eventType + '" không được hỗ trợ.'
+      ));
+    }
+
+    return this.http.post<WebhookSubscription>(
+      this.baseUrl + '/subscriptions',
+      data
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  /**
+   * Cập nhật subscription theo ID.
+   *
+   * @param id - ID của subscription cần cập nhật.
+   * @param data - Các trường cần cập nhật (toàn bộ là tùy chọn).
+   */
+  updateSubscription(id: string, data: UpdateSubscriptionPayload): Observable<WebhookSubscription> {
+    // Xác thực eventType nếu có thay đổi.
+    if (data.eventType && !VALID_EVENT_TYPES.includes(data.eventType)) {
+      return throwError(() => new Error(
+        'Loại sự kiện "' + data.eventType + '" không được hỗ trợ.'
+      ));
+    }
+
+    return this.http.put<WebhookSubscription>(
+      this.baseUrl + '/subscriptions/' + encodeURIComponent(id),
+      data
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  /**
+   * Xóa subscription theo ID.
+   *
+   * @param id - ID của subscription cần xóa.
+   */
+  deleteSubscription(id: string): Observable<void> {
+    return this.http.delete<void>(
+      this.baseUrl + '/subscriptions/' + encodeURIComponent(id)
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  // ========================
+  //  Kiểm thử Webhook
+  // ========================
+
+  /**
+   * Gửi thử một webhook — dùng để kiểm tra URL và cấu hình.
+   *
+   * @param id - ID subscription cần kiểm thử.
+   * @returns Trạng thái dispatch bao gồm mã HTTP, thời gian phản hồi.
+   */
+  testWebhook(id: string): Observable<DispatchStatus> {
+    return this.http.post<DispatchStatus>(
+      this.baseUrl + '/subscriptions/' + encodeURIComponent(id) + '/test',
+      {}
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  // ========================
+  //  Lịch sử Delivery
+  // ========================
+
+  /**
+   * Lấy lịch sử delivery của một subscription.
+   *
+   * @param subscriptionId - ID subscription cần tra cứu.
+   * @param options - Các tham số: limit, status, từ ngày.
+   */
+  getDeliveryHistory(
+    subscriptionId: string,
+    options?: {
+      limit?: number;
+      status?: string;
+      fromDate?: string;
+    }
+  ): Observable<DeliveryAttempt[]> {
+    let params = new HttpParams();
+    params = params.set('limit', String(options?.limit || 50));
+
+    if (options?.status) {
+      params = params.set('status', options.status);
+    }
+    if (options?.fromDate) {
+      params = params.set('fromDate', options.fromDate);
+    }
+
+    return this.http.get<{ attempts: DeliveryAttempt[] }>(
+      this.baseUrl + '/subscriptions/' + encodeURIComponent(subscriptionId) + '/deliveries',
+      { params }
+    ).pipe(
+      map(response => response.attempts),
+      catchError(this.handleError)
+    );
+  }
+
+  /**
+   * Thử lại một delivery thất bại.
+   *
+   * @param deliveryId - ID của delivery cần retry.
+   */
+  retryDelivery(deliveryId: string): Observable<DispatchStatus> {
+    return this.http.post<DispatchStatus>(
+      this.baseUrl + '/deliveries/' + encodeURIComponent(deliveryId) + '/retry',
+      {}
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  // ========================
+  //  Phương thức nội bộ
+  // ========================
+
+  /**
+   * Xử lý lỗi API — chuyển đổi về Error Observable.
+   */
+  private handleError(error: any): any {
+    const message = error?.error?.message || error?.message || 'Lỗi kết nối với server webhook.';
+    console.error('[WebhookService] Lỗi API:', message);
+    return throwError(() => new Error(message));
+  }
+
+  /**
+   * Áp dụng các tham số tìm kiếm vào HttpParams.
+   */
+  private applyParams(
+    params: HttpParams,
+    options: {
+      page?: number;
+      pageSize?: number;
+      eventType?: string;
+      search?: string;
+      active?: boolean;
+      tenantId?: string;
+    }
+  ): HttpParams {
+    let result = params;
+    if (options.page !== undefined) {
+      result = result.set('page', String(options.page));
+    }
+    if (options.pageSize !== undefined) {
+      result = result.set('pageSize', String(options.pageSize));
+    }
+    if (options.eventType) {
+      result = result.set('eventType', options.eventType);
+    }
+    if (options.search) {
+      result = result.set('search', options.search);
+    }
+    if (options.active !== undefined) {
+      result = result.set('active', String(options.active));
+    }
+    if (options.tenantId) {
+      result = result.set('tenantId', options.tenantId);
+    }
+    return result;
+  }
+}

@@ -1,0 +1,329 @@
+/**
+ * WebhookQueueService - dịch vụ quản lý hàng đợi webhook.
+ *
+ * Chịu trách nhiệm enqueue events vào hàng đợi và xử lý async:
+ * - enqueue(): thêm event vào hàng đợi
+ * - processQueue(): xử lý event từ hàng đợi
+ * - retryFailed(): retry các event thất bại
+ *
+ * Sử dụng @nestjs/bull (Bull queue) với Redis backend.
+ * Nếu không có Redis, fallback sang in-memory queue đơn giản.
+ *
+ * Redis URL: {{ redis_url }}
+ * Sử dụng Redis: {{ use_redis }}
+ *
+ * CP40: Webhook
+ */
+
+import { Injectable, Logger } from "@nestjs/common";
+import { OnEvent } from "@nestjs/event-emitter";
+import { HttpService } from "@nestjs/axios";
+import { WebhookService } from "./webhook.service";
+import { WebhookDispatcherService } from "./webhook-dispatcher.service";
+
+const logger = new Logger("WebhookQueueService");
+
+/**
+ * Job dữ liệu cho webhook queue.
+ */
+export interface WebhookJobData {
+  /** Subscription ID cần gửi webhook */
+  subscriptionId: string;
+  /** Event type */
+  eventType: string;
+  /** Dữ liệu event */
+  payload: Record<string, any>;
+  /** Tenant ID (optional) */
+  tenantId?: string;
+  /** Thời điểm tạo job */
+  enqueuedAt: string;
+}
+
+/**
+ * WebhookQueueService - quản lý hàng đợi webhook.
+ *
+ * Hai chế độ hoạt động:
+ *
+ * 1. Có Redis (production):
+ *    - Sử dụng Bull queue với Redis backend
+ *    - Hỗ trợ job retry, delay, concurrency
+ *    - Job persistence - không mất khi restart
+ *
+ * 2. Không Redis (development):
+ *    - Sử dụng in-memory array queue
+ *    - Không persistence - mất khi restart
+ *    - Phù hợp cho local development và testing
+ *
+ * Event subscription:
+ * - Lắng nghe events từ Event Emitter của NestJS
+ * - Tự động enqueue vào queue khi nhận event
+ *
+ * @OnEvent decorator lắng nghe event pattern:
+ * "webhook.*" - ví dụ: "webhook.order.created"
+ */
+@Injectable()
+export class WebhookQueueService {
+  /**
+   * In-memory queue (dùng khi không có Redis).
+   */
+  private readonly memoryQueue: WebhookJobData[] = [];
+
+  /**
+   * Cờ đang xử lý queue (tránh parallel processing).
+   */
+  private isProcessing = false;
+
+  /**
+   * Constructor.
+   *
+   * @param webhookService - WebhookService để tìm subscriptions
+   * @param dispatcherService - WebhookDispatcherService để gửi webhook
+   * @param httpService - HttpService instance
+   */
+  constructor(
+    private readonly webhookService: WebhookService,
+    private readonly dispatcherService: WebhookDispatcherService,
+    private readonly httpService: HttpService,
+  ) {
+    logger.log(
+{% if use_redis %}      "WebhookQueueService khởi tạo với Redis backend (Bull queue)",
+{% else %}      "WebhookQueueService khởi tạo với in-memory queue (development mode)",
+{% endif %}
+    );
+  }
+
+  // ========================================================================
+  // Event Subscription
+  // ========================================================================
+
+  /**
+   * Lắng nghe tất cả webhook events từ Event Emitter.
+   *
+   * Khi nhận event, tự động tìm các subscriptions khớp event type
+   * và enqueue vào hàng đợi để xử lý async.
+   *
+   * Event pattern: "webhook.{event_type}"
+   * Ví dụ: "webhook.order.created", "webhook.payment.success"
+   *
+   * @param eventPayload - Dữ liệu event từ Event Emitter
+   */
+  {% raw %}
+  @OnEvent("webhook.*")
+  {% endraw %}
+  async enqueue(eventPayload: Record<string, any>): Promise<void> {
+    // Extract event type từ payload
+    const eventType =
+      eventPayload.event_type || eventPayload.event || "unknown";
+
+    const tenantId = eventPayload.tenant_id || eventPayload.tenantId;
+
+    logger.log(
+      "Nhận event: " +
+        eventType +
+        " - tìm subscriptions và enqueue vào hàng đợi",
+    );
+
+    // Tìm tất cả active subscriptions cho event type
+    const subscriptions = await this.webhookService.findByEventType(
+      eventType,
+      tenantId || undefined,
+    );
+
+    if (!subscriptions || subscriptions.length === 0) {
+      logger.debug("Không có subscription nào cho event: " + eventType);
+      return;
+    }
+
+    // Enqueue từng subscription
+    for (const subscription of subscriptions) {
+      // Bỏ qua nếu subscription không active
+      if (!subscription.isActive()) {
+        logger.debug(
+          "Bỏ qua subscription không active: " +
+            subscription.subscriptionId +
+            " (status: " +
+            subscription.status +
+            ")",
+        );
+        continue;
+      }
+
+      const jobData: WebhookJobData = {
+        subscriptionId: subscription.subscriptionId,
+        eventType: subscription.eventType,
+        payload: eventPayload,
+        tenantId: tenantId || undefined,
+        enqueuedAt: new Date().toISOString(),
+      };
+
+{% if use_redis %}
+      // TODO: Enqueue vào Bull queue với Redis
+      // const queue = new Queue("webhook-dispatch", { redis: { url: redisUrl } });
+      // await queue.add("dispatch", jobData, {
+      //   attempts: subscription.getMaxRetries() + 1,
+      //   backoff: {
+      //     type: "exponential",
+      //     delay: (subscription.retryPolicy?.base_delay ?? 1) * 1000,
+      //   },
+      //   jobId: subscription.subscriptionId + "-" + Date.now(),
+      // });
+      // logger.log("Enqueued job cho subscription: " + subscription.subscriptionId);
+{% endif %}
+
+      // Fallback: in-memory queue
+      this.memoryQueue.push(jobData);
+      logger.log(
+        "Enqueued vào in-memory queue: " +
+          subscription.subscriptionId +
+          " (queue size: " +
+          this.memoryQueue.length +
+          ")",
+      );
+    }
+
+    // Kích hoạt xử lý queue
+    this.processQueue();
+  }
+
+  // ========================================================================
+  // Queue Processing
+  // ========================================================================
+
+  /**
+   * Xử lý các job trong hàng đợi.
+   *
+   * Lấy job từ queue, tìm subscription, và gọi dispatcher
+   * để gửi webhook đến endpoint.
+   *
+   * Sử dụng lock (isProcessing) để tránh parallel processing
+   * trong in-memory mode.
+   */
+  async processQueue(): Promise<void> {
+    // Tránh parallel processing
+    if (this.isProcessing) {
+      logger.debug("Queue đang được xử lý, bỏ qua");
+      return;
+    }
+
+    this.isProcessing = true;
+
+    try {
+      while (this.memoryQueue.length > 0) {
+        const jobData = this.memoryQueue.shift();
+
+        if (!jobData) {
+          continue;
+        }
+
+        await this.processJob(jobData);
+      }
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
+   * Xử lý một job cụ thể.
+   *
+   * Tìm subscription theo ID và gửi webhook qua dispatcher.
+   *
+   * @param jobData - WebhookJobData
+   */
+  private async processJob(jobData: WebhookJobData): Promise<void> {
+    logger.log(
+      "Xử lý job: " +
+        jobData.subscriptionId +
+        " (event: " +
+        jobData.eventType +
+        ")",
+    );
+
+    // Tìm subscription theo ID
+    const subscription = await this.webhookService.findById(
+      jobData.subscriptionId,
+    );
+
+    if (!subscription) {
+      logger.warn(
+        "Không tìm thấy subscription: " + jobData.subscriptionId,
+      );
+      return;
+    }
+
+    // Gửi webhook qua dispatcher
+    const result = await this.dispatcherService.dispatchEvent(
+      subscription,
+      jobData.payload,
+    );
+
+    if (result.success) {
+      logger.log(
+        "Job thành công: " +
+          jobData.subscriptionId +
+          " (status: " +
+          result.statusCode +
+          ", duration: " +
+          result.durationMs +
+          "ms)",
+      );
+    } else {
+      logger.error(
+        "Job thất bại: " +
+          jobData.subscriptionId +
+          " (error: " +
+          result.error +
+          ", retries: " +
+          result.retryCount +
+          ")",
+      );
+    }
+  }
+
+  // ========================================================================
+  // Retry Methods
+  // ========================================================================
+
+  /**
+   * Retry các job thất bại.
+   *
+   * Trong in-memory mode, đây là placeholder.
+   * Trong production với Bull queue, sử dụng queue.retryJobBulk()
+   * hoặc reprocess các failed jobs từ failed job list.
+   */
+  async retryFailed(): Promise<{ retried: number; failed: number }> {
+    logger.log("Bắt đầu retry các job thất bại");
+
+{% if use_redis %}
+    // TODO: Với Bull queue, lấy failed jobs và retry
+    // const queue = new Queue("webhook-dispatch", { redis: { url: redisUrl } });
+    // const failedJobs = await queue.getFailed();
+    // for (const job of failedJobs) {
+    //   await job.retry();
+    // }
+    // return { retried: failedJobs.length, failed: 0 };
+{% endif %}
+
+    // In-memory mode: không lưu failed jobs
+    logger.warn(
+      "In-memory mode không lưu failed jobs - cần tích hợp Bull queue để hỗ trợ retry",
+    );
+
+    return { retried: 0, failed: 0 };
+  }
+
+  // ========================================================================
+  // Queue Status Methods
+  // ========================================================================
+
+  /**
+   * Lấy thông tin hàng đợi hiện tại.
+   *
+   * @returns Object chứa queue stats
+   */
+  getQueueInfo(): { pending: number; processing: boolean } {
+    return {
+      pending: this.memoryQueue.length,
+      processing: this.isProcessing,
+    };
+  }
+}

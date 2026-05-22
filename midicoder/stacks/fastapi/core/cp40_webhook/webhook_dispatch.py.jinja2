@@ -1,0 +1,314 @@
+# ----------------------------------------------------------
+# CP40 Webhook — Engine phân phối sự kiện đến webhook
+# ----------------------------------------------------------
+# Sinh bởi CP40WebhookEmitter
+# Class: WebhookDispatchEngine — gửi HTTP request đến endpoint
+# Dùng httpx async client cho yêu cầu HTTP
+# Các sự kiện hỗ trợ: {{ ", ".join(event_types) }}
+# ----------------------------------------------------------
+
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import time
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+
+class WebhookDispatchEngine:
+    """
+    Engine phân phối sự kiện — chịu trách nhiệm gửi HTTP request
+    đến các webhook endpoint đã đăng ký khi sự kiện được kích hoạt.
+    """
+
+    def __init__(
+        self,
+        http_timeout: float = 10.0,
+        max_concurrent: int = 20,
+    ) -> None:
+        """
+        Khởi tạo engine phân phối webhook.
+
+        Tham số:
+            http_timeout: Thời gian chờ tối đa cho mỗi yêu cầu HTTP (giây).
+            max_concurrent: Số yêu cầu HTTP đồng thời tối đa.
+        """
+        self._timeout = http_timeout
+        self._transport = httpx.AsyncHTTPTransport(retries=0)
+        self._client = httpx.AsyncClient(
+            transport=self._transport,
+            timeout=http_timeout,
+            limits=httpx.Limits(max_connections=max_concurrent),
+        )
+        logger.info(
+            "Khởi tạo WebhookDispatchEngine: timeout=%.1f, concurrent=%d",
+            http_timeout,
+            max_concurrent,
+        )
+
+    async def close(self) -> None:
+        """Đóng kết nối HTTP async client."""
+        await self._client.aclose()
+        logger.info("Đã đóng WebhookDispatchEngine")
+
+    # --------------------------------------------------------------
+    # Phân phối sự kiện chính
+    # --------------------------------------------------------------
+
+    async def dispatch_event(
+        self,
+        event_type: str,
+        event_data: Dict[str, Any],
+        subscriptions: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """
+        Phân phối một sự kiện đến tất cả đăng ký phù hợp.
+
+        Tham số:
+            event_type: Loại sự kiện (ví dụ: user.created).
+            event_data: Dữ liệu sự kiện đầy đủ.
+            subscriptions: Danh sách đăng ký webhook cho event_type này.
+
+        Trả về:
+            Danh sách kết quả phân phối cho từng đăng ký.
+        """
+        if not subscriptions:
+            logger.debug("Không có đăng ký nào cho sự kiện: %s", event_type)
+            return []
+
+        results = []
+        tasks = []
+
+        for subscription in subscriptions:
+            task = self._dispatch_to_subscription(event_type, event_data, subscription)
+            tasks.append(task)
+
+        completed = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for i, result in enumerate(completed):
+            if isinstance(result, Exception):
+                results.append({
+                    "subscription_id": subscriptions[i].get("subscription_id", "unknown"),
+                    "success": False,
+                    "error": str(result),
+                })
+            else:
+                results.append(result)
+
+        logger.info(
+            "Phân phối sự kiện '%s': %d/%d thành công",
+            event_type,
+            sum(1 for r in results if r.get("success")),
+            len(results),
+        )
+
+        return results
+
+    async def _dispatch_to_subscription(
+        self,
+        event_type: str,
+        event_data: Dict[str, Any],
+        subscription: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Gửi sự kiện đến một đăng ký webhook cụ thể.
+
+        Tham số:
+            event_type: Loại sự kiện.
+            event_data: Dữ liệu sự kiện.
+            subscription: Thông tin đăng ký webhook.
+
+        Trả về:
+            Từ điển kết quả với success, status_code, duration_ms.
+        """
+        subscription_id = subscription.get("subscription_id", "unknown")
+        url = subscription.get("url", "")
+        method = subscription.get("http_method", "POST")
+
+        # Xây dựng payload
+        payload_template = subscription.get("payload_template") or {}
+        payload = self.render_payload(payload_template, event_data, event_type)
+
+        # Xây dựng headers
+        headers = self.build_headers(subscription, payload)
+
+        # Gửi request HTTP
+        start_time = time.monotonic()
+        try:
+            response = await self._client.request(
+                method=method,
+                url=url,
+                json=payload,
+                headers=headers,
+            )
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+
+            success = 200 <= response.status_code < 300
+
+            logger.info(
+                "Gửi webhook id=%s: status=%d, duration=%dms",
+                subscription_id,
+                response.status_code,
+                duration_ms,
+            )
+
+            return {
+                "subscription_id": subscription_id,
+                "success": success,
+                "status_code": response.status_code,
+                "response_body": response.text[:1024],
+                "duration_ms": duration_ms,
+            }
+
+        except httpx.ConnectError as exc:
+            logger.error("Lỗi kết nối webhook id=%s, url=%s: %s", subscription_id, url, exc)
+            return {
+                "subscription_id": subscription_id,
+                "success": False,
+                "error": "connect_error",
+                "error_message": str(exc),
+            }
+        except httpx.TimeoutException as exc:
+            logger.error("Time ra webhook id=%s, url=%s: %s", subscription_id, url, exc)
+            return {
+                "subscription_id": subscription_id,
+                "success": False,
+                "error": "timeout",
+                "error_message": str(exc),
+            }
+        except Exception as exc:
+            logger.exception("Lỗi bất ngờ khi gửi webhook id=%s: %s", subscription_id, exc)
+            return {
+                "subscription_id": subscription_id,
+                "success": False,
+                "error": "unexpected",
+                "error_message": str(exc),
+            }
+
+    # --------------------------------------------------------------
+    # Xác thực HMAC
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def compute_hmac_signature(
+        payload: bytes,
+        secret: str,
+        algorithm: str = "sha256",
+    ) -> str:
+        """
+        Tính toán chữ ký HMAC cho payload webhook.
+
+        Tham số:
+            payload: Dữ liệu payload dạng bytes.
+            secret: Bí mật dùng để ký.
+            algorithm: Thuật toán hash (sha256, sha1, sha512).
+
+        Trả về:
+            Chuỗi chữ ký HMAC dạng hex.
+        """
+        hash_func = getattr(hashlib, algorithm, hashlib.sha256)
+        signature = hmac.new(
+            secret.encode("utf-8"),
+            payload,
+            hash_func,
+        )
+        return signature.hexdigest()
+
+    # --------------------------------------------------------------
+    # Xây dựng headers
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def build_headers(
+        subscription: Dict[str, Any],
+        dispatch: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """
+        Xây dựng từ điển headers cho yêu cầu HTTP webhook.
+
+        Tham số:
+            subscription: Thông tin đăng ký webhook.
+            dispatch: Dữ liệu phân phối (chứa payload đã render).
+
+        Trả về:
+            Từ điển headers HTTP.
+        """
+        headers = {
+            "Content-Type": "application/json",
+            "X-Webhook-Signature-Algo": subscription.get("auth_algorithm", "sha256"),
+        }
+
+        # Thêm header xác thực
+        auth_type = subscription.get("auth_type")
+        if auth_type == "hmac":
+            payload_bytes = json.dumps(dispatch.get("payload", {})).encode("utf-8")
+            secret = subscription.get("auth_secret", "")
+            signature = WebhookDispatchEngine.compute_hmac_signature(
+                payload_bytes,
+                secret,
+                subscription.get("auth_algorithm", "sha256"),
+            )
+            header_name = subscription.get("auth_header_name", "X-Webhook-Signature")
+            headers[header_name] = signature
+
+        elif auth_type == "bearer":
+            headers["Authorization"] = "Bearer {}".format(subscription.get("auth_secret", ""))
+
+        elif auth_type == "basic":
+            import base64
+            credentials = "{}:{}".format(
+                subscription.get("auth_header_name", ""),
+                subscription.get("auth_secret", ""),
+            )
+            encoded = base64.b64encode(credentials.encode("utf-8")).decode("utf-8")
+            headers["Authorization"] = "Basic {}".format(encoded)
+
+        return headers
+
+    # --------------------------------------------------------------
+    # Render payload từ mẫu
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def render_payload(
+        template: Dict[str, Any],
+        event_data: Dict[str, Any],
+        event_type: str,
+    ) -> Dict[str, Any]:
+        """
+        Render payload từ mẫu JSON — thay thế biến bằng dữ kiện sự kiện.
+
+        Tham số:
+            template: Mẫu payload (dict). Nếu rỗng sẽ dùng sự kiện gốc.
+            event_data: Dữ liệu sự kiện đầy đủ.
+            event_type: Loại sự kiện.
+
+        Trả về:
+            Từ điển payload đã render.
+        """
+        if not template:
+            # Dùng dữ kiện sự kiện làm payload mặc định
+            return {
+                "event_type": event_type,
+                "data": event_data,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Deep merge template với event_data
+        rendered = dict(template)
+        rendered.setdefault("event_type", event_type)
+        rendered.setdefault("data", event_data)
+        rendered.setdefault(
+            "timestamp",
+            datetime.now(timezone.utc).isoformat(),
+        )
+
+        return rendered
+{% endraw %}

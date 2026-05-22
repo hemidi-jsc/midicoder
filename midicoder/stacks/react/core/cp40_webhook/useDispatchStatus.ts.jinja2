@@ -1,0 +1,167 @@
+/**
+* useDispatchStatus — theo dõi trạng thái gửi webhook theo thời gian thực.
+* Sinh bởi CP40 WebhookEmitter
+*/
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+// ============================================================
+// Kiểu dữ liệu
+// ============================================================
+
+export type AttemptStatus = 'in_progress' | 'delivered' | 'failed' | 'skipped';
+export type DispatchStatus = 'pending' | 'dispatching' | 'delivered' | 'failed' | 'retrying';
+
+export interface DeliveryAttempt {
+id: string;
+attemptNumber: number;
+callbackUrl: string;
+httpMethod: string;
+responseStatusCode: number | null;
+status: AttemptStatus;
+startedAt: string;
+completedAt: string | null;
+responseTimeMs: number | null;
+errorMessage: string | null;
+nextRetryAt: string | null;
+}
+
+export interface WebhookDispatch {
+id: string;
+subscriptionId: string;
+eventType: string;
+payloadSummary: string;
+status: DispatchStatus;
+attempts: DeliveryAttempt[];
+maxAttempts: number;
+createdAt: string;
+updatedAt: string;
+}
+
+export interface useDispatchStatusOptions {
+pollingInterval?: number;
+autoPoll?: boolean;
+limit?: number;
+subscriptionId?: string | null;
+}
+
+export interface UseDispatchStatusReturn {
+dispatches: WebhookDispatch[];
+deliveryAttempts: DeliveryAttempt[];
+loading: boolean;
+error: string | null;
+retryDispatch: (dispatchId: string) => Promise<void>;
+    pollStatus: () => void;
+    stopPolling: () => void;
+    isPolling: boolean;
+    refresh: () => Promise<void>;
+        }
+
+        // ============================================================
+        // Hàm gọi API
+        // ============================================================
+
+        async function fetchDispatches(subId: string | null, limit: number): Promise<WebhookDispatch[]> {
+            const url = subId
+            ? '/api/webhooks/' + subId + '/dispatches?limit=' + limit
+            : '/api/webhooks/dispatches?limit=' + limit;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Không thể lấy danh sách lần gửi');
+            return res.json();
+            }
+
+            async function retryDispatchApi(dispatchId: string): Promise<void> {
+                const res = await fetch('/api/webhooks/dispatches/' + dispatchId + '/retry', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                });
+                if (!res.ok) throw new Error('Không thể thử gửi lại');
+                }
+
+                // ============================================================
+                // useDispatchStatus hook
+                // ============================================================
+
+                export function useDispatchStatus(
+                subscriptionId?: string | null,
+                options?: useDispatchStatusOptions,
+                ): UseDispatchStatusReturn {
+                const subId = subscriptionId ?? null;
+                const interval = options?.pollingInterval ?? 3000;
+                const limit = options?.limit ?? 50;
+
+                const [dispatches, setDispatches] = useState<WebhookDispatch[]>([]);
+                    const [loading, setLoading] = useState(true);
+                    const [error, setError] = useState<string | null>(null);
+                        const [isPolling, setIsPolling] = useState(options?.autoPoll ?? true);
+
+                        const isPollingRef = useRef(isPolling);
+                        useEffect(() => { isPollingRef.current = isPolling; }, [isPolling]);
+
+                        /** Lấy dữ liệu từ API */
+                        const loadData = useCallback(async () => {
+                        try {
+                        const data = await fetchDispatches(subId, limit);
+                        setDispatches(data);
+                        setError(null);
+                        } catch (e) {
+                        setError(e instanceof Error ? e.message : 'Không thể tải trạng thái gửi');
+                        } finally {
+                        setLoading(false);
+                        }
+                        }, [subId, limit]);
+
+                        /** Làm mới thủ công */
+                        const refresh = useCallback(async () => {
+                        setLoading(true);
+                        await loadData();
+                        }, [loadData]);
+
+                        /** Bật polling */
+                        const pollStatus = useCallback(() => setIsPolling(true), []);
+
+                        /** Tắt polling */
+                        const stopPolling = useCallback(() => setIsPolling(false), []);
+
+                        /** Thiết lập và dọn dẹp polling */
+                        useEffect(() => {
+                        if (isPolling) {
+                        loadData();
+                        const timer = setInterval(() => {
+                        if (isPollingRef.current) loadData();
+                        }, interval);
+                        return () => clearInterval(timer);
+                        }
+                        }, [isPolling, interval, loadData]);
+
+                        /** Thử lại lần gửi */
+                        const retryDispatch = useCallback(
+                        async (dispatchId: string) => {
+                        try {
+                        await retryDispatchApi(dispatchId);
+                        await loadData();
+                        } catch (e) {
+                        setError(e instanceof Error ? e.message : 'Thử lại thất bại');
+                        throw e;
+                        }
+                        },
+                        [loadData],
+                        );
+
+                        /** Dàn flat tất cả attempts */
+                        const deliveryAttempts = dispatches.flatMap((d) => d.attempts);
+
+                        return {
+                        dispatches,
+                        deliveryAttempts,
+                        loading,
+                        error,
+                        retryDispatch,
+                        pollStatus,
+                        stopPolling,
+                        isPolling,
+                        refresh,
+                        };
+                        }
+
+                        export default useDispatchStatus;

@@ -1,0 +1,229 @@
+# ----------------------------------------------------------
+# CP40 Webhook — SQLAlchemy mô hình dữ liệu
+# ----------------------------------------------------------
+# Sinh bởi CP40WebhookEmitter
+# Mô hình: WebhookSubscription, WebhookDispatch, WebhookDeliveryAttempt
+# ----------------------------------------------------------
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import sqlalchemy as sa
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Cơ sở khai báo cho toàn bộ mô hình SQLAlchemy."""
+    pass
+
+
+{% for event_type in event_types %}
+# Kiểu sự kiện: {{ event_type }}
+{% endfor %}
+
+
+class WebhookSubscription(Base):
+    """
+    Mô hình đăng ký webhook — lưu trữ cấu hình endpoint
+    nhận sự kiện từ hệ thống.
+    Tổng số đăng ký được phát hiện: {{ subscription_count }}
+    """
+    __tablename__ = "webhook_subscriptions"
+
+    # Định danh
+    subscription_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    event_type: Mapped[str] = mapped_column(sa.String(128), index=True)
+    url: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    http_method: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="POST"
+    )
+
+    # Đa thuê trọ
+    tenant_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True, index=True
+    )
+
+    # Cấu hình xác thực
+    auth_type: Mapped[Optional[str]] = mapped_column(
+        sa.String(32), nullable=True
+    )
+    auth_header_name: Mapped[Optional[str]] = mapped_column(
+        sa.String(128), nullable=True
+    )
+    auth_secret: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+    auth_algorithm: Mapped[Optional[str]] = mapped_column(
+        sa.String(32), nullable=True, server_default="sha256"
+    )
+
+    # Mẫu payload
+    payload_template: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Chính sách thử lại
+    retry_max_retries: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="3"
+    )
+    retry_base_delay: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="1"
+    )
+    retry_max_delay: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="60"
+    )
+
+    # Giới hạn tốc độ
+    rate_limit_rpm: Mapped[Optional[int]] = mapped_column(
+        sa.Integer, nullable=True
+    )
+
+    # Trạng thái & nhãn
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="active", index=True
+    )
+    tags: Mapped[Optional[List[str]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Dấu thời gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+    )
+
+    # Mối quan hệ
+    dispatches: Mapped[List["WebhookDispatch"]] = relationship(
+        "WebhookDispatch",
+        back_populates="subscription",
+        lazy="selectin",
+    )
+
+
+class WebhookDispatch(Base):
+    """
+    Mô hình phân phối sự kiện — ghi nhận mỗi lần sự kiện
+    được kích hoạt và cần gửi đến các webhook.
+    """
+    __tablename__ = "webhook_dispatches"
+
+    # Định danh
+    dispatch_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    subscription_id: Mapped[str] = mapped_column(
+        sa.String(36),
+        sa.ForeignKey("webhook_subscriptions.subscription_id"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(sa.String(128), nullable=False)
+    event_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Trạng thái phân phối
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="pending", index=True
+    )
+    attempts: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="0"
+    )
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+
+    # Dấu thời gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    # Mối quan hệ
+    subscription: Mapped["WebhookSubscription"] = relationship(
+        "WebhookSubscription", back_populates="dispatches"
+    )
+    delivery_attempts: Mapped[List["WebhookDeliveryAttempt"]] = relationship(
+        "WebhookDeliveryAttempt",
+        back_populates="dispatch",
+        lazy="selectin",
+    )
+
+
+class WebhookDeliveryAttempt(Base):
+    """
+    Mô hình từng lần thử gửi webhook — lưu chi tiết HTTP request/response
+    cho mục đích theo dõi và gỡ lỗi.
+    """
+    __tablename__ = "webhook_delivery_attempts"
+
+    # Định danh
+    attempt_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    dispatch_id: Mapped[str] = mapped_column(
+        sa.String(36),
+        sa.ForeignKey("webhook_dispatches.dispatch_id"),
+        nullable=False,
+        index=True,
+    )
+
+    # Chi tiết request
+    request_url: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    request_method: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    request_headers: Mapped[Optional[Dict[str, str]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    request_body: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Chi tiết response
+    response_status_code: Mapped[Optional[int]] = mapped_column(
+        sa.Integer, nullable=True
+    )
+    response_headers: Mapped[Optional[Dict[str, str]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    response_body: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+
+    # Kết quả
+    success: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="0"
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+    duration_ms: Mapped[Optional[int]] = mapped_column(
+        sa.Integer, nullable=True
+    )
+
+    # Dấu thời gian
+    attempted_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Mối quan hệ
+    dispatch: Mapped["WebhookDispatch"] = relationship(
+        "WebhookDispatch", back_populates="delivery_attempts"
+    )

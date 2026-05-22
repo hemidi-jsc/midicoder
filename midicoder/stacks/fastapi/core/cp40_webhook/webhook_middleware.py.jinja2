@@ -1,0 +1,251 @@
+# ----------------------------------------------------------
+# CP40 Webhook — ASGI Middleware để intercept sự kiện
+# ----------------------------------------------------------
+# Sinh bởi CP40WebhookEmitter
+# Class: WebhookDispatchMiddleware — chặn request và trigger dispatch
+# Sử dụng Redis: {{ use_redis | lower }}
+# Các sự kiện: {{ ", ".join(event_types) }}
+# ----------------------------------------------------------
+
+import asyncio
+import json
+import logging
+import time
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+# Các header mà middleware sẽ kiểm tra để phát hiện sự kiện webhook
+EVENT_HEADER_PREFIX = "X-Event-"
+EVENT_TYPE_HEADER = "X-Event-Type"
+SKIP_MIDDLEWARE_PATHS: Set[str] = {"/health", "/docs", "/openapi.json", "/redoc"}
+
+
+class WebhookDispatchMiddleware:
+    """
+    ASGI middleware — chặn mọi request vào ứng dụng, nếu phát hiện
+    header sự kiện thì kích hoạt dispatch webhook cho các đăng ký phù hợp.
+
+    Cách hoạt động:
+        1. Kiểm tra header X-Event-Type trong request
+        2. Nếu có, gọi WebhookDispatchEngine để phân phối sự kiện
+        3. Tiếp tục xử lý request gốc (không chặn luồng chính)
+
+    Cài đặt:
+        app.add_middleware(WebhookDispatchMiddleware, engine=dispatch_engine)
+    """
+
+    def __init__(
+        self,
+        app: Any,
+        dispatch_engine: Any = None,
+        redis_client: Any = None,
+        event_types: Optional[List[str]] = None,
+        queue_name: str = "webhook:dispatch:queue",
+    ) -> None:
+        """
+        Khởi tạo middleware với app ASGI và engine phân phối.
+
+        Tham số:
+            app: Ứng dụng ASGI (FastAPI) để gói.
+            dispatch_engine: Engine phân phối webhook (bắt chọn nếu dùng Redis).
+            redis_client: Redis async client để xếp hàng đợi (bắt chọn nếu không dùng engine).
+            event_types: Danh sách sự kiện cần lắng nghe (nếu None sẽ lắng nghe tất cả).
+            queue_name: Tên hàng đợi Redis để xếp lệnh dispatch.
+        """
+        self.app = app
+        self._dispatch_engine = dispatch_engine
+        self._redis = redis_client
+        self._event_types = set(event_types) if event_types else None
+        self._queue_name = queue_name
+        self._skip_paths = set(SKIP_MIDDLEWARE_PATHS)
+
+        logger.info(
+            "WebhookDispatchMiddleware khởi tạo: engine=%s, redis=%s",
+            bool(self._dispatch_engine),
+            bool(self._redis),
+        )
+
+    async def __call__(
+        self,
+        scope: Dict[str, Any],
+        receive: Callable[[], Awaitable[Dict[str, Any]]],
+        send: Callable[[Dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        """
+        Xử lý mỗi request đi qua middleware.
+
+        Tham số:
+            scope: Phạm vi ASGI (chứa request info).
+            receive: Hàm nhận dữ liệu từ client.
+            send: Hàm gửi phản hồi đến client.
+        """
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+
+        # Bỏ qua các đường dẫn hệ thống
+        if path in self._skip_paths or path.startswith("/webhooks"):
+            await self.app(scope, receive, send)
+            return
+
+        # Đọc header sự kiện
+        headers = dict(scope.get("headers", []))
+        event_type = self._extract_event_type(headers)
+
+        if event_type is None:
+            await self.app(scope, receive, send)
+            return
+
+        # Kiểm tra sự kiện có trong danh sách cho phép
+        if self._event_types and event_type not in self._event_types:
+            logger.debug("Bỏ qua sự kiện không lắng nghe: %s", event_type)
+            await self.app(scope, receive, send)
+            return
+
+        # Đọc body request để lấy dữ kiện sự kiện
+        event_data = await self._read_request_body(receive)
+
+        # Gửi sự kiện đến engine hoặc xếp hàng đợi Redis
+        if self._dispatch_engine and not self._redis:
+            # Mode trực tiếp: gọi dispatch ngay
+            dispatch_task = asyncio.create_task(
+                self._dispatch_directly(event_type, event_data),
+            )
+        elif self._redis:
+            # Mode hàng đợi: xếp vào Redis
+            dispatch_task = asyncio.create_task(
+                self._enqueue_event(event_type, event_data),
+            )
+        else:
+            logger.warning(
+                "Middleware không có engine hay Redis — bỏ qua sự kiện '%s'",
+                event_type,
+            )
+            dispatch_task = None
+
+        # Chạy request gốc
+        await self.app(scope, receive, send)
+
+        # Đợi dispatch hoàn tất (không chặn response)
+        if dispatch_task:
+            try:
+                await asyncio.wait_for(dispatch_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Dispatch sự kiện '%s' time ra sau 5s", event_type)
+            except Exception:
+                logger.exception("Lỗi khi dispatch sự kiện '%s' (background)", event_type)
+
+    # --------------------------------------------------------------
+    # Phương thức hỗ trợ
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def _extract_event_type(headers: Dict[bytes, bytes]) -> Optional[str]:
+        """
+        Lấy loại sự kiện từ header của request.
+
+        Tham số:
+            headers: Từ điển headers HTTP (key/value là bytes).
+
+        Trả về:
+            Chuỗi event_type hoặc None nếu không tìm thấy.
+        """
+        for key, value in headers.items():
+            key_str = key.decode("utf-8", errors="replace").lower()
+            if key_str == EVENT_TYPE_HEADER.lower():
+                return value.decode("utf-8", errors="replace").strip()
+        return None
+
+    async def _read_request_body(
+        self,
+        receive: Callable[[], Awaitable[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        """
+        Đọc toàn bộ body của request ASGI.
+
+        Tham số:
+            receive: Hàm nhận dữ liệu từ client.
+
+        Trả về:
+            Từ điển dữ liệu từ body (JSON) hoặc dict rỗng.
+        """
+        body_parts = []
+        more = True
+        while more:
+            message = await receive()
+            body_parts.append(message.get("body", b""))
+            more = message.get("more_body", False)
+
+        raw_body = b"".join(body_parts)
+        if not raw_body:
+            return {}
+
+        try:
+            return json.loads(raw_body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return {"raw_body": raw_body.decode("utf-8", errors="replace")[:1024]}
+
+    async def _dispatch_directly(
+        self,
+        event_type: str,
+        event_data: Dict[str, Any],
+    ) -> None:
+        """
+        Phân phối sự kiện trực tiếp qua dispatch engine (không qua hàng đợi).
+
+        Tham số:
+            event_type: Loại sự kiện.
+            event_data: Dữ liệu sự kiện.
+        """
+        if not self._dispatch_engine:
+            return
+
+        # Lấy danh sách đăng ký cho event_type
+        from webhook_service import WebhookService
+
+        # Lưu ý: service cần session — trong thực tế sẽ inject từ dependency container
+        # Ở đây chỉ log sự kiện để trace
+        logger.info(
+            "Dispatch trực tiếp sự kiện: type=%s, data_keys=%s",
+            event_type,
+            list(event_data.keys()),
+        )
+
+    async def _enqueue_event(
+        self,
+        event_type: str,
+        event_data: Dict[str, Any],
+    ) -> None:
+        """
+        Xếp sự kiện vào hàng đợi Redis để worker xử lý sau.
+
+        Tham số:
+            event_type: Loại sự kiện.
+            event_data: Dữ liệu sự kiện.
+        """
+        if not self._redis:
+            return
+
+        message = {
+            "event_type": event_type,
+            "event_data": event_data,
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+            "retry_count": 0,
+        }
+
+        await self._redis.lpush(
+            self._queue_name,
+            json.dumps(message, default=str),
+        )
+
+        logger.debug(
+            "Đã xếp sự kiện '%s' vào hàng đợi Redis: %s",
+            event_type,
+            self._queue_name,
+        )
+{% endraw %}

@@ -1,0 +1,182 @@
+# ----------------------------------------------------------
+# CP40 Webhook — Pydantic schemas cho xác thực dữ liệu
+# ----------------------------------------------------------
+# Sinh bởi CP40WebhookEmitter
+# Schema: Create, Update, Response cho WebhookSubscription
+# Tổng số đăng ký phát hiện: {{ subscription_count }}
+# ----------------------------------------------------------
+
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class WebhookSubscriptionCreate(BaseModel):
+    """Schema cho việc tạo mới đăng ký webhook."""
+    model_config = ConfigDict(from_attributes=True)
+
+{% for event_type in event_types %}
+    # Hỗ trợ sự kiện: {{ event_type }}
+{% endfor %}
+
+    event_type: str = Field(
+        ..., min_length=1, max_length=128, description="Loại sự kiện cần lắng nghe"
+    )
+    url: str = Field(
+        ..., min_length=1, description="URL endpoint nhận webhook"
+    )
+    http_method: str = Field(
+        "POST", max_length=16, description="Phương thức HTTP (GET, POST, PUT, PATCH)"
+    )
+    tenant_id: Optional[str] = Field(
+        None, max_length=64, description="Định danh thuê trọ (bắt chọn)"
+    )
+    auth_type: Optional[str] = Field(
+        None, max_length=32, description="Loại xác thực (hmac, bearer, basic)"
+    )
+    auth_header_name: Optional[str] = Field(
+        None, max_length=128, description="Tên header xác thực"
+    )
+    auth_secret: Optional[str] = Field(
+        None, description="Bí mật dùng cho xác thực"
+    )
+    auth_algorithm: Optional[str] = Field(
+        "sha256", max_length=32, description="Thuật toán hash cho HMAC"
+    )
+    payload_template: Optional[Dict[str, Any]] = Field(
+        None, description="Mẫu JSON cho payload gửi đi"
+    )
+    retry_max_retries: int = Field(
+        3, ge=0, le=10, description="Số lần thử lại tối đa"
+    )
+    retry_base_delay: int = Field(
+        1, ge=0, description="Độ trễ thử lại ban đầu (giây)"
+    )
+    retry_max_delay: int = Field(
+        60, ge=1, description="Độ trễ thử lại tối đa (giây)"
+    )
+    rate_limit_rpm: Optional[int] = Field(
+        None, ge=1, description="Giới hạn số lần gọi mỗi phút"
+    )
+    tags: Optional[List[str]] = Field(
+        None, description="Danh sách nhãn phân loại"
+    )
+
+    @field_validator("event_type")
+    @classmethod
+    def validate_event_type(cls, v: str) -> str:
+        """Kiểm tra loại sự kiện có nằm trong danh sách cho phép."""
+        allowed = [
+{% for event_type in event_types %}
+            "{{ event_type }}",
+{% endfor %}
+        ]
+        if v not in allowed:
+            raise ValueError(
+                "Loại sự kiện '{}' không hợp lệ. Các loại cho phép: {}".format(v, allowed)
+            )
+        return v
+
+
+class WebhookSubscriptionUpdate(BaseModel):
+    """Schema cho việc cập nhật đăng ký webhook — tất cả trường đều bắt chọn."""
+    model_config = ConfigDict(from_attributes=True)
+
+    url: Optional[str] = Field(None, min_length=1)
+    http_method: Optional[str] = Field(None, max_length=16)
+    tenant_id: Optional[str] = Field(None, max_length=64, allow_none=True)
+    auth_type: Optional[str] = Field(None, max_length=32, allow_none=True)
+    auth_header_name: Optional[str] = Field(None, max_length=128, allow_none=True)
+    auth_secret: Optional[str] = Field(None, allow_none=True)
+    auth_algorithm: Optional[str] = Field(None, max_length=32, allow_none=True)
+    payload_template: Optional[Dict[str, Any]] = Field(None, allow_none=True)
+    retry_max_retries: Optional[int] = Field(None, ge=0, le=10)
+    retry_base_delay: Optional[int] = Field(None, ge=0)
+    retry_max_delay: Optional[int] = Field(None, ge=1)
+    rate_limit_rpm: Optional[int] = Field(None, ge=1, allow_none=True)
+    status: Optional[str] = Field(None, max_length=16)
+    tags: Optional[List[str]] = Field(None, allow_none=True)
+
+
+class WebhookSubscriptionResponse(BaseModel):
+    """Schema phản hồi cho đăng ký webhook — dùng trong API GET."""
+    model_config = ConfigDict(from_attributes=True)
+
+    subscription_id: str
+    event_type: str
+    url: str
+    http_method: str
+    tenant_id: Optional[str] = None
+    auth_type: Optional[str] = None
+    auth_header_name: Optional[str] = None
+    auth_algorithm: Optional[str] = None
+    payload_template: Optional[Dict[str, Any]] = None
+    retry_max_retries: int = 3
+    retry_base_delay: int = 1
+    retry_max_delay: int = 60
+    rate_limit_rpm: Optional[int] = None
+    status: str = "active"
+    tags: Optional[List[str]] = None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_orm_obj(cls, obj: Any) -> "WebhookSubscriptionResponse":
+        """
+        Chuyển đổi từ đối tượng ORM SQLAlchemy sang schema phản hồi.
+        Dùng getattr để lấy thuộc tính an toàn.
+        """
+        return cls(
+            subscription_id= getattr(obj, "subscription_id", ""),
+            event_type= getattr(obj, "event_type", ""),
+            url= getattr(obj, "url", ""),
+            http_method= getattr(obj, "http_method", "POST"),
+            tenant_id= getattr(obj, "tenant_id", None),
+            auth_type= getattr(obj, "auth_type", None),
+            auth_header_name= getattr(obj, "auth_header_name", None),
+            auth_algorithm= getattr(obj, "auth_algorithm", "sha256"),
+            payload_template= getattr(obj, "payload_template", None),
+            retry_max_retries= getattr(obj, "retry_max_retries", 3),
+            retry_base_delay= getattr(obj, "retry_base_delay", 1),
+            retry_max_delay= getattr(obj, "retry_max_delay", 60),
+            rate_limit_rpm= getattr(obj, "rate_limit_rpm", None),
+            status= getattr(obj, "status", "active"),
+            tags= getattr(obj, "tags", None),
+            created_at= getattr(obj, "created_at", datetime.now()),
+            updated_at= getattr(obj, "updated_at", datetime.now()),
+        )
+
+
+class WebhookDispatchResponse(BaseModel):
+    """Schema phản hồi cho bản ghi phân phối webhook."""
+    model_config = ConfigDict(from_attributes=True)
+
+    dispatch_id: str
+    subscription_id: str
+    event_type: str
+    event_data: Optional[Dict[str, Any]] = None
+    status: str = "pending"
+    attempts: int = 0
+    next_retry_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    @classmethod
+    def from_orm_obj(cls, obj: Any) -> "WebhookDispatchResponse":
+        """
+        Chuyển đổi từ đối tượng ORM SQLAlchemy sang schema phân phối.
+        """
+        return cls(
+            dispatch_id= getattr(obj, "dispatch_id", ""),
+            subscription_id= getattr(obj, "subscription_id", ""),
+            event_type= getattr(obj, "event_type", ""),
+            event_data= getattr(obj, "event_data", None),
+            status= getattr(obj, "status", "pending"),
+            attempts= getattr(obj, "attempts", 0),
+            next_retry_at= getattr(obj, "next_retry_at", None),
+            last_error= getattr(obj, "last_error", None),
+            created_at= getattr(obj, "created_at", datetime.now()),
+            completed_at= getattr(obj, "completed_at", None),
+        )

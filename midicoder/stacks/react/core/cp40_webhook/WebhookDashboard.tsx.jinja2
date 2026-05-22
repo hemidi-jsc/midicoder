@@ -1,0 +1,179 @@
+/**
+* WebhookDashboard — bang dieu khien tong quan webhook.
+* Sinh boi CP40 WebhookEmitter.
+*/
+
+import React, { useState, useEffect, useCallback } from 'react';
+
+export type WebhookStatus = 'active' | 'paused' | 'failed';
+export type DispatchStatus = 'pending' | 'delivered' | 'failed' | 'retrying';
+
+export interface RecentDispatch {
+id: string;
+subscriptionId: string;
+eventType: string;
+callbackUrl: string;
+statusCode: number | null;
+status: DispatchStatus;
+attempts: number;
+dispatchedAt: string;
+}
+
+interface DashboardStats {
+total: number;
+active: number;
+failed: number;
+totalDelivered: number;
+totalFailed: number;
+}
+
+const EVENT_TYPES: readonly string[] = [
+{% for event in event_types %} '{{ event }}',
+{% endfor %}];
+
+/* Style objects — extracted to avoid double-brace in JSX */
+const sCardBase = { padding: '16px', borderRadius: '8px', flex: '1', minWidth: '140px' };
+const sCardLabel = { fontSize: '13px', opacity: 0.85 };
+const sCardValue = { fontSize: '28px', fontWeight: 700, marginTop: '4px' };
+const sBadgeBase = { padding: '2px 8px', borderRadius: '9999px', fontSize: '11px', fontWeight: 600 };
+const sChip = { padding: '4px 10px', backgroundColor: '#e0e7ff', color: '#3730a3', borderRadius: '6px', fontSize:
+'12px', fontFamily: 'monospace' };
+const sPageWrap = { padding: '24px', fontFamily: 'system-ui, sans-serif' };
+const sSectionWrap = { marginTop: '24px', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '8px' };
+const sStatWrap = { display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' as const };
+const sErrorBox = { padding: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px',
+color: '#991b1b', marginBottom: '20px' };
+const sTable = { width: '100%', borderCollapse: 'collapse', fontSize: '13px' };
+const sThRow = { borderBottom: '2px solid #e5e7eb', textAlign: 'left' as const };
+const sTh = { padding: '8px' };
+const sTr = { borderBottom: '1px solid #f3f4f6' };
+const sTd = { padding: '8px' };
+const sTdMono = { padding: '8px', fontFamily: 'monospace' };
+const sTdEll = { padding: '8px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+as const };
+const sTdMuted = { padding: '8px', color: '#6b7280' };
+const sEmptyCell = { padding: '24px', textAlign: 'center' as const, color: '#9ca3af' };
+const sLoadingCell = { padding: '32px', textAlign: 'center' as const };
+const sBtn = { fontSize: '12px', padding: '4px 8px' };
+const sChipWrap = { display: 'flex', gap: '8px', flexWrap: 'wrap' as const };
+const sH2 = { margin: '0 0 20px' };
+const sH3 = { fontSize: '16px', marginBottom: '12px' };
+const sH4 = { margin: '0 0 8px', fontSize: '14px' };
+
+/* Helper functions tra ve style object — de tranh double-brace trong JSX */
+function cardStyle(color: string) { return { ...sCardBase, backgroundColor: color }; }
+function badgeStyle(status: DispatchStatus) {
+const c = ({ delivered: '#22c55e', failed: '#ef4444', retrying: '#f59e0b', pending: '#94a3b8' } as Record
+<DispatchStatus, string>)[status] || '#94a3b8';
+    return { ...sBadgeBase, backgroundColor: c + '22', color: c };
+    }
+
+    async function fetchStats(): Promise<DashboardStats> {
+        const res = await fetch('/api/webhooks/stats');
+        if (!res.ok) throw new Error('Khong the lay thong ke');
+        return res.json();
+        }
+        async function fetchDispatches(limit: number): Promise<RecentDispatch[]> {
+            const res = await fetch('/api/webhooks/dispatches?limit=' + limit);
+            if (!res.ok) throw new Error('Khong the lay lan gui');
+            return res.json();
+            }
+            async function executeAction(type: string, id: string): Promise<void> {
+                const res = await fetch('/api/webhooks/' + id + '/' + type, { method: 'POST', headers: { 'Content-Type':
+                'application/json' } });
+                if (!res.ok) throw new Error('Khong the thuc hien hanh dong');
+                }
+
+                function StatCard({ title, value, color }: { title: string; value: number; color: string }) {
+                return (
+                <div style={cardStyle(color)}>
+                    <div style={sCardLabel}>{title}</div>
+                    <div style={sCardValue}>{value}</div>
+                </div>
+                );
+                }
+
+                function relativeTime(iso: string): string {
+                const d = Date.now() - new Date(iso).getTime();
+                if (d < 60000) return 'vua xong' ; if (d < 3600000) return Math.round(d / 60000) + ' phut truoc' ; if (d
+                    < 86400000) return Math.round(d / 3600000) + ' gio truoc' ; return Math.round(d / 86400000)
+                    + ' ngay truoc' ; } export function WebhookDashboard() { const [stats,
+                    setStats]=useState<DashboardStats | null>(null);
+                    const [dispatches, setDispatches] = useState<RecentDispatch[]>([]);
+                        const [loading, setLoading] = useState(true);
+                        const [error, setError] = useState<string | null>(null);
+                            const [busyId, setBusyId] = useState<string | null>(null);
+
+                                const loadData = useCallback(async () => {
+                                try {
+                                setLoading(true);
+                                const [s, d] = await Promise.all([fetchStats(), fetchDispatches(10)]);
+                                setStats(s); setDispatches(d); setError(null);
+                                } catch (e) { setError(e instanceof Error ? e.message : 'Loi khong xac dinh'); }
+                                finally { setLoading(false); }
+                                }, []);
+
+                                useEffect(() => { loadData(); const t = setInterval(loadData, 30000); return () =>
+                                clearInterval(t); }, [loadData]);
+
+                                const doAction = useCallback(async (type: string, id: string) => {
+                                setBusyId(id);
+                                try { await executeAction(type, id); await loadData(); }
+                                catch (e) { setError(e instanceof Error ? e.message : 'Hanh dong that bai'); }
+                                finally { setBusyId(null); }
+                                }, [loadData]);
+
+                                if (loading && !stats) return <div style={sLoadingCell}>Dang tai...</div>;
+
+                                return (
+                                <div style={sPageWrap}>
+                                    <h2 style={sH2}>Bang dieu khien Webhook</h2>
+                                    {stats && (<div style={sStatWrap}>
+                                        <StatCard title="Tong" value={stats.total} color="#dbeafe" />
+                                        <StatCard title="Hoat dong" value={stats.active} color="#dcfce7" />
+                                        <StatCard title="Loi" value={stats.failed} color="#fee2e2" />
+                                        <StatCard title="Thanh cong" value={stats.totalDelivered} color="#e0e7ff" />
+                                        <StatCard title="That bai" value={stats.totalFailed} color="#fef3c7" />
+                                    </div>)}
+                                    {error && <div style={sErrorBox}>{error}</div>}
+                                    <h3 style={sH3}>Lan gui gan day</h3>
+                                    <table style={sTable}>
+                                        <thead>
+                                            <tr style={sThRow}>
+                                                <th style={sTh}>Su kien</th>
+                                                <th style={sTh}>URL</th>
+                                                <th style={sTh}>HTTP</th>
+                                                <th style={sTh}>Thu</th>
+                                                <th style={sTh}>Trang thai</th>
+                                                <th style={sTh}>Thoi gian</th>
+                                                <th style={sTh}>Hanh dong</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {dispatches.map((d) => (<tr key={d.id} style={sTr}>
+                                                <td style={sTdMono}>{d.eventType}</td>
+                                                <td style={sTdEll}>{d.callbackUrl}</td>
+                                                <td style={sTd}>{d.statusCode ?? '\u2014'}</td>
+                                                <td style={sTd}>{d.attempts}</td>
+                                                <td style={sTd}><span style={badgeStyle(d.status)}>{d.status}</span>
+                                                </td>
+                                                <td style={sTdMuted}>{relativeTime(d.dispatchedAt)}</td>
+                                                <td style={sTd}><button onClick={()=> doAction('test',
+                                                        d.subscriptionId)} disabled={busyId === d.subscriptionId}
+                                                        style={sBtn}>Gui thu</button></td>
+                                            </tr>))}
+                                            {dispatches.length === 0 && <tr>
+                                                <td colSpan={7} style={sEmptyCell}>Chua co lan gui</td>
+                                            </tr>}
+                                        </tbody>
+                                    </table>
+                                    <div style={sSectionWrap}>
+                                        <h4 style={sH4}>Kieu su kien duoc ho tro</h4>
+                                        <div style={sChipWrap}>
+                                            {EVENT_TYPES.map((et) => (<span key={et} style={sChip}>{et}</span>))}
+                                        </div>
+                                    </div>
+                                </div>
+                                );
+                                }
+                                export default WebhookDashboard;

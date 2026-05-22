@@ -924,6 +924,20 @@ class ErrorCode(str, Enum):
     CP39_DISCOVER_SCAN_FAILED = "MDC-CP39-015"
 
     # =========================================================================
+    # CP40: Webhook & Outbound Integration Hub Errors
+    # =========================================================================
+    CP40_WEBHOOK_SUBSCRIPTION_NOT_FOUND = "MDC-CP40-001"
+    CP40_WEBHOOK_DUPLICATE_SUBSCRIPTION = "MDC-CP40-002"
+    CP40_WEBHOOK_DISPATCH_FAILED = "MDC-CP40-003"
+    CP40_WEBHOOK_INVALID_URL = "MDC-CP40-004"
+    CP40_WEBHOOK_AUTH_CONFIG_INVALID = "MDC-CP40-005"
+    CP40_WEBHOOK_RATE_LIMIT_EXCEEDED = "MDC-CP40-006"
+    CP40_WEBHOOK_REDIS_CONNECTION_FAILED = "MDC-CP40-007"
+    CP40_WEBHOOK_SIGNATURE_GENERATION_FAILED = "MDC-CP40-008"
+    CP40_WEBHOOK_PAYLOAD_RENDER_FAILED = "MDC-CP40-009"
+    CP40_WEBHOOK_SUBSCRIPTION_INACTIVE = "MDC-CP40-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1421,6 +1435,18 @@ class MidicoderErrorManager:
         ErrorCode.CP39_INVALID_PLURAL_RULE: "Plural rule không hợp lệ: {rule}. Chọn trong 'singular', 'plural'.",
         ErrorCode.CP39_TENANT_TRANSLATION_CONFLICT: "Tenant translation conflict: {detail}",
         ErrorCode.CP39_DISCOVER_SCAN_FAILED: "Auto-discover scan thất bại: {reason}",
+
+        # CP40: Webhook & Outbound Integration Hub Error Templates
+        ErrorCode.CP40_WEBHOOK_SUBSCRIPTION_NOT_FOUND: "Webhook subscription không tồn tại: {subscription_id}",
+        ErrorCode.CP40_WEBHOOK_DUPLICATE_SUBSCRIPTION: "Webhook subscription đã tồn tại cho event_type '{event_type}' tại URL '{url}'.",
+        ErrorCode.CP40_WEBHOOK_DISPATCH_FAILED: "Dispatch webhook thất bại sau {attempts} attempts: {reason}",
+        ErrorCode.CP40_WEBHOOK_INVALID_URL: "URL webhook không hợp lệ: {url}",
+        ErrorCode.CP40_WEBHOOK_AUTH_CONFIG_INVALID: "Auth config webhook không hợp lệ: {reason}",
+        ErrorCode.CP40_WEBHOOK_RATE_LIMIT_EXCEEDED: "Vượt rate limit cho subscription: {subscription_id} ({requests} req/min)",
+        ErrorCode.CP40_WEBHOOK_REDIS_CONNECTION_FAILED: "Không kết nối được Redis: {reason}",
+        ErrorCode.CP40_WEBHOOK_SIGNATURE_GENERATION_FAILED: "Tạo HMAC signature thất bại: {reason}",
+        ErrorCode.CP40_WEBHOOK_PAYLOAD_RENDER_FAILED: "Render payload template thất bại: {reason}",
+        ErrorCode.CP40_WEBHOOK_SUBSCRIPTION_INACTIVE: "Webhook subscription không active: {subscription_id}",
 
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",

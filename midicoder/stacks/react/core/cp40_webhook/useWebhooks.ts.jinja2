@@ -1,0 +1,198 @@
+/**
+* useWebhooks — custom hook quản lý CRUD đăng ký webhook.
+* Sinh bởi CP40 WebhookEmitter
+*/
+
+import { useState, useEffect, useCallback } from 'react';
+
+// ============================================================
+// Kiểu dữ liệu
+// ============================================================
+
+export type SubscriptionStatus = 'active' | 'paused' | 'failed';
+
+export interface WebhookSubscription {
+id: string;
+name: string;
+callbackUrl: string;
+eventTypes: string[];
+status: SubscriptionStatus;
+signatureEnabled: boolean;
+customHeaders?: Record<string, string>;
+    createdAt: string;
+    updatedAt: string;
+    successCount: number;
+    failureCount: number;
+    }
+
+    export interface CreateSubscriptionPayload {
+    name: string;
+    callbackUrl: string;
+    eventTypes: string[];
+    signatureEnabled?: boolean;
+    customHeaders?: Record<string, string>;
+        }
+
+        export interface UpdateSubscriptionPayload {
+        name?: string;
+        callbackUrl?: string;
+        eventTypes?: string[];
+        status?: SubscriptionStatus;
+        signatureEnabled?: boolean;
+        customHeaders?: Record<string, string>;
+            }
+
+            export interface TestWebhookResult {
+            success: boolean;
+            statusCode: number | null;
+            responseTimeMs: number | null;
+            errorMessage: string | null;
+            }
+
+            export interface UseWebhooksReturn {
+            subscriptions: WebhookSubscription[];
+            loading: boolean;
+            error: string | null;
+            createSubscription: (p: CreateSubscriptionPayload) => Promise<WebhookSubscription>;
+                updateSubscription: (id: string, p: UpdateSubscriptionPayload) => Promise<WebhookSubscription>;
+                    deleteSubscription: (id: string) => Promise<void>;
+                        testWebhook: (id: string) => Promise<TestWebhookResult>;
+                            refresh: () => Promise<void>;
+                                pauseSubscription: (id: string) => Promise<WebhookSubscription>;
+                                    resumeSubscription: (id: string) => Promise<WebhookSubscription>;
+                                        }
+
+                                        // ============================================================
+                                        // Sự kiện hợp lệ — từ emitter context
+                                        // ============================================================
+
+                                        const validEvents: readonly string[] = [
+                                        {% for event in event_types %}
+                                        '{{ event }}',
+                                        {% endfor %}
+                                        ];
+
+                                        // ============================================================
+                                        // Xác thực
+                                        // ============================================================
+
+                                        function validateTypes(events: string[]): string | null {
+                                        const bad = events.filter((e) => !validEvents.includes(e));
+                                        return bad.length ? 'Kiểu sự kiện không hợp lệ: ' + bad.join(', ') : null;
+                                        }
+
+                                        function validateUrl(url: string): string | null {
+                                        try {
+                                        const u = new URL(url);
+                                        return ['http:', 'https:'].includes(u.protocol) ? null : 'URL chỉ hỗ trợ
+                                        HTTP/HTTPS';
+                                        } catch {
+                                        return 'URL không hợp lệ';
+                                        }
+                                        }
+
+                                        // ============================================================
+                                        // Hàm gọi API
+                                        // ============================================================
+
+                                        async function api(path: string, method = 'GET', body?: unknown) {
+                                        const res = await fetch('/api' + path, {
+                                        method,
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: body ? JSON.stringify(body) : undefined,
+                                        });
+                                        if (!res.ok) throw new Error('Yêu cầu API thất bại');
+                                        const text = await res.text();
+                                        return text ? JSON.parse(text) : undefined;
+                                        }
+
+                                        // ============================================================
+                                        // useWebhooks hook
+                                        // ============================================================
+
+                                        export function useWebhooks(): UseWebhooksReturn {
+                                        const [subscriptions, setSubs] = useState<WebhookSubscription[]>([]);
+                                            const [loading, setLoading] = useState(true);
+                                            const [error, setError] = useState<string | null>(null);
+
+                                                /** Làm mới danh sách */
+                                                const refresh = useCallback(async () => {
+                                                try {
+                                                setLoading(true);
+                                                const data = await api('/webhooks');
+                                                setSubs(data);
+                                                setError(null);
+                                                } catch (e) {
+                                                setError(e instanceof Error ? e.message : 'Không thể tải danh sách');
+                                                } finally {
+                                                setLoading(false);
+                                                }
+                                                }, []);
+
+                                                useEffect(() => { refresh(); }, [refresh]);
+
+                                                /** Tạo đăng ký mới */
+                                                const createSubscription = useCallback(async (p:
+                                                CreateSubscriptionPayload) => {
+                                                const uErr = validateUrl(p.callbackUrl);
+                                                if (uErr) throw new Error(uErr);
+                                                const eErr = validateTypes(p.eventTypes);
+                                                if (eErr) throw new Error(eErr);
+                                                const newSub = await api('/webhooks', 'POST', p);
+                                                setSubs((prev) => [newSub, ...prev]);
+                                                setError(null);
+                                                return newSub;
+                                                }, []);
+
+                                                /** Cập nhật đăng ký */
+                                                const updateSubscription = useCallback(async (id: string, p:
+                                                UpdateSubscriptionPayload) => {
+                                                if (p.eventTypes) { const e = validateTypes(p.eventTypes); if (e) throw
+                                                new Error(e); }
+                                                if (p.callbackUrl) { const u = validateUrl(p.callbackUrl); if (u) throw
+                                                new Error(u); }
+                                                const updated = await api('/webhooks/' + id, 'PATCH', p);
+                                                setSubs((prev) => prev.map((s) => (s.id === id ? updated : s)));
+                                                setError(null);
+                                                return updated;
+                                                }, []);
+
+                                                /** Xóa đăng ký */
+                                                const deleteSubscription = useCallback(async (id: string) => {
+                                                await api('/webhooks/' + id, 'DELETE');
+                                                setSubs((prev) => prev.filter((s) => s.id !== id));
+                                                setError(null);
+                                                }, []);
+
+                                                /** Gửi thử nghiệm */
+                                                const testWebhook = useCallback(async (id: string) => {
+                                                return api('/webhooks/' + id + '/test', 'POST');
+                                                }, []);
+
+                                                /** Tạm dừng */
+                                                const pauseSubscription = useCallback(
+                                                (id: string) => updateSubscription(id, { status: 'paused' }),
+                                                [updateSubscription],
+                                                );
+
+                                                /** Khôi phục */
+                                                const resumeSubscription = useCallback(
+                                                (id: string) => updateSubscription(id, { status: 'active' }),
+                                                [updateSubscription],
+                                                );
+
+                                                return {
+                                                subscriptions,
+                                                loading,
+                                                error,
+                                                createSubscription,
+                                                updateSubscription,
+                                                deleteSubscription,
+                                                testWebhook,
+                                                refresh,
+                                                pauseSubscription,
+                                                resumeSubscription,
+                                                };
+                                                }
+
+                                                export default useWebhooks;

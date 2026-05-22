@@ -1,0 +1,278 @@
+# ----------------------------------------------------------
+# CP40 Webhook — Worker xử lý hàng đợi webhook qua Redis
+# ----------------------------------------------------------
+# Sinh bởi CP40WebhookEmitter
+# Class: WebhookWorker — lắng nghe Redis queue, retry với exponential backoff
+# Dùng Redis async (redis.asyncio) để xử lý hàng đợi phân tán
+# Sử dụng Redis: {{ use_redis | lower }}
+# Redis URL: {{ redis_url }}
+# ----------------------------------------------------------
+
+import asyncio
+import json
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import redis.asyncio as aioredis
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+
+class WebhookWorker:
+    """
+    Worker xử lý hàng đợi webhook — lắng nghe lệnh từ Redis
+    và thực hiện gửi webhook đến các endpoint đã đăng ký.
+    Hỗ trợ exponential backoff khi thử lại.
+    """
+
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379/0",
+        queue_name: str = "webhook:dispatch:queue",
+        retry_queue: str = "webhook:retry:queue",
+        dispatch_engine: Optional[Any] = None,
+    ) -> None:
+        """
+        Khởi tạo worker với kết nối Redis và engine phân phối.
+
+        Tham số:
+            redis_url: URL kết nối Redis.
+            queue_name: Tên hàng đợi chính để nhận lệnh phân phối.
+            retry_queue: Tên hàng đợi thử lại.
+            dispatch_engine: Engine phân phối webhook (WebhookDispatchEngine).
+        """
+        self._redis_url = redis_url
+        self._queue_name = queue_name
+        self._retry_queue = retry_queue
+        self._dispatch_engine = dispatch_engine
+        self._redis: Optional[aioredis.Redis] = None
+        self._running = False
+        self._max_retries = 5
+        self._base_delay = 1  # giây
+        self._max_delay = 60  # giây
+        self._poll_interval = 0.5  # giây
+
+        logger.info(
+            "Khởi tạo WebhookWorker: redis=%s, queue=%s",
+            redis_url,
+            queue_name,
+        )
+
+    async def start(self) -> None:
+        """
+        Khởi động worker — kết nối Redis và bắt đầu lắng nghe hàng đợi.
+        """
+        if self._running:
+            logger.warning("Worker đang chạy — bỏ qua lệnh start")
+            return
+
+        # Kết nối Redis
+        self._redis = aioredis.from_url(
+            self._redis_url,
+            decode_responses=True,
+            socket_timeout=5,
+            socket_connect_timeout=5,
+            retry_on_timeout=True,
+        )
+
+        self._running = True
+        logger.info("Worker đã khởi động — lắng nghe hàng đợi: %s", self._queue_name)
+
+        # Chạy hai loop: chính và retry
+        try:
+            await asyncio.gather(
+                self._listen_queue(),
+                self._listen_retry_queue(),
+            )
+        except asyncio.CancelledError:
+            logger.info("Worker nhận tín hiệu hủy — đang dừng")
+        except Exception:
+            logger.exception("Lỗi bất ngờ trong worker loop")
+            raise
+        finally:
+            await self.stop()
+
+    async def stop(self) -> None:
+        """Dừng worker và đóng kết nối Redis."""
+        self._running = False
+        if self._redis is not None:
+            await self._redis.close()
+            self._redis = None
+        logger.info("Worker đã dừng")
+
+    async def _listen_queue(self) -> None:
+        """
+        Lắng nghe hàng đợi chính — lấy và xử lý lệnh phân phối webhook.
+        """
+        while self._running:
+            try:
+                if self._redis is None:
+                    await asyncio.sleep(self._poll_interval)
+                    continue
+
+                # BLPOP — chờ có dữ liệu, timeout = poll_interval
+                result = await self._redis.blpop(
+                    self._queue_name,
+                    timeout=self._poll_interval,
+                )
+
+                if result is None:
+                    continue
+
+                _, message = result
+                await self.process_queue(message)
+
+            except ConnectionError:
+                logger.error("Mất kết nối Redis — đang thử tái kết nối sau 3 giây")
+                await asyncio.sleep(3)
+                try:
+                    self._redis = aioredis.from_url(
+                        self._redis_url,
+                        decode_responses=True,
+                    )
+                except Exception:
+                    logger.exception("Không thể tái kết nối Redis")
+            except Exception:
+                logger.exception("Lỗi khi đọc hàng đợi chính")
+                await asyncio.sleep(1)
+
+    async def _listen_retry_queue(self) -> None:
+        """
+        Lắng nghe hàng đợi thử lại — xử lý các webhook gửi thất bại.
+        """
+        while self._running:
+            try:
+                if self._redis is None:
+                    await asyncio.sleep(self._poll_interval)
+                    continue
+
+                result = await self._redis.blpop(
+                    self._retry_queue,
+                    timeout=self._poll_interval,
+                )
+
+                if result is None:
+                    continue
+
+                _, message = result
+                await self.process_queue(message)
+
+            except Exception:
+                logger.exception("Lỗi khi đọc hàng đợi thử lại")
+                await asyncio.sleep(1)
+
+    async def process_queue(self, message: str) -> None:
+        """
+        Xử lý một lệnh phân phối từ hàng đợi.
+
+        Tham số:
+            message: Chuỗi JSON chứa thông tin sự kiện và đăng ký.
+        """
+        try:
+            payload = json.loads(message)
+        except json.JSONDecodeError:
+            logger.error("Không thể giải mã JSON từ hàng đợi: %s", message[:200])
+            return
+
+        event_type = payload.get("event_type", "")
+        event_data = payload.get("event_data", {})
+        subscriptions = payload.get("subscriptions", [])
+
+        logger.info(
+            "Xử lý sự kiện '%s': %d đăng ký",
+            event_type,
+            len(subscriptions),
+        )
+
+        if not self._dispatch_engine:
+            logger.error("Dispatch engine chưa được thiết lập — bỏ qua")
+            return
+
+        results = await self._dispatch_engine.dispatch_event(
+            event_type,
+            event_data,
+            subscriptions,
+        )
+
+        # Xử lý kết quả: đưa thất bại vào hàng đợi retry
+        for result in results:
+            if not result.get("success"):
+                await self._enqueue_retry(payload, result.get("subscription_id"))
+
+    async def _enqueue_retry(
+        self,
+        original_payload: Dict[str, Any],
+        subscription_id: Optional[str] = None,
+    ) -> None:
+        """
+        Đưa lệnh thất bại vào hàng đợi thử lại với exponential backoff.
+
+        Tham số:
+            original_payload: Payload gốc từ hàng đợi chính.
+            subscription_id: Định danh đăng ký thất bại.
+        """
+        attempt_count = original_payload.get("retry_count", 0)
+
+        if attempt_count >= self._max_retries:
+            logger.warning(
+                "Vượt quá số lần thử lại tối đa cho subscription=%s — bỏ qua",
+                subscription_id,
+            )
+            return
+
+        # Tính toán delay theo exponential backoff
+        delay = self._calculate_backoff(attempt_count)
+
+        retry_message = dict(original_payload)
+        retry_message["retry_count"] = attempt_count + 1
+        retry_message["retry_scheduled_at"] = datetime.now(timezone.utc).isoformat()
+
+        # Xếp hàng đợi thử lại sau thời gian delay
+        if self._redis:
+            await self._redis.xadd(
+                self._retry_queue,
+                {"data": json.dumps(retry_message)},
+                maxlen=10000,
+            )
+
+        logger.info(
+            "Đã xếp hàng đợi retry: subscription=%s, attempt=%d, delay=%.1fs",
+            subscription_id,
+            attempt_count + 1,
+            delay,
+        )
+
+    async def retry_failed(self) -> int:
+        """
+        Phương thức gọi thủ công để kích hoạt thử lại tất cả webhook thất bại.
+
+        Trả về:
+            Số lượng lệnh đã được xếp lại vào hàng đợi.
+        """
+        count = 0
+        if self._redis:
+            # Lấy số lượng tin nhắn trong retry queue
+            info = await self._redis.xinfo_groups(self._retry_queue)
+            count = info.get("lag", 0) if info else 0
+
+        logger.info("Thử lại webhook thất bại: %d lệnh trong hàng đợi", count)
+        return count
+
+    def _calculate_backoff(self, attempt: int) -> float:
+        """
+        Tính toán thời gian chờ theo exponential backoff.
+
+        Công thức: min(base_delay * 2^attempt, max_delay)
+
+        Tham số:
+            attempt: Số lần thử hiện tại (bắt đầu từ 0).
+
+        Trả về:
+            Thời gian chờ (giây).
+        """
+        delay = self._base_delay * (2 ** attempt)
+        return min(delay, self._max_delay)
+{% endraw %}

@@ -1,0 +1,325 @@
+/**
+ * WebhookSubscriptionListComponent — Danh sách webhook subscriptions.
+ *
+ * Hiển thị bảng subscriptions với tìm kiếm, lọc theo loại sự kiện,
+ * phân trang, và các nút CRUD (tạo, sửa, xóa).
+ *
+ * Tạo tự động bởi CP40 — không sửa thủ công.
+ */
+
+import {
+  Component,
+  OnInit,
+  Input,
+  Output,
+  EventEmitter,
+  ChangeDetectionStrategy,
+  inject
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
+import { catchError, map, shareReplay, tap } from 'rxjs/operators';
+
+// --- Định nghĩa kiểu dữ liệu ---
+
+/** Một webhook subscription. */
+export interface WebhookSubscription {
+  id: string;
+  name: string;
+  url: string;
+  eventType: string;
+  secret: string;
+  active: boolean;
+  tenantId?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastDeliveryStatus?: string;
+  failureCount: number;
+}
+
+/** Dữ liệu phân trang. */
+export interface PaginationInfo {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+/** Response API danh sách subscriptions. */
+interface SubscriptionListResponse {
+  subscriptions: WebhookSubscription[];
+  pagination: PaginationInfo;
+}
+
+// --- Dữ liệu tĩnh từ template ---
+
+/** Các loại sự kiện có thể lọc. */
+const EVENT_TYPE_FILTERS: string[] = [
+{% for event in event_types %}
+  '{{ event }}'{% if not loop.last %},{% endif %}
+{% endfor %}
+];
+
+/** Kích thước trang mặc định. */
+const DEFAULT_PAGE_SIZE: number = 10;
+
+/**
+ * Component danh sách subscriptions — hỗ trợ tìm kiếm, lọc, phân trang, và CRUD.
+ *
+ * Sử dụng:
+ *   <app-webhook-subscription-list
+ *     [eventType]="'order.created'"
+ *     (onDelete)="handleDelete($event)"
+ *     (onEdit)="handleEdit($event)">
+ *   </app-webhook-subscription-list>
+ */
+@Component({
+  selector: 'app-webhook-subscription-list',
+  standalone: true,
+  imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+{% raw %}
+  template: `
+    <div class="subscription-list">
+      <!-- Thanh tìm kiếm và lọc -->
+      <header class="list-header">
+        <div class="search-bar">
+          <input
+            type="text"
+            class="search-input"
+            placeholder="Tìm kiếm theo tên hoặc URL..."
+            [value]="searchQuery"
+            (input)="onSearchChange($event)"
+          />
+          <select
+            class="filter-select"
+            [value]="selectedEventType"
+            (change)="onEventTypeChange($event)"
+          >
+            <option value="">Tất cả sự kiện</option>
+            <option *ngFor="let evt of eventFilters" [value]="evt">{{ evt }}</option>
+          </select>
+        </div>
+        <button class="btn-create" (click)="onCreate.emit()">Tạo Mới</button>
+      </header>
+
+      <!-- Bảng danh sách -->
+      <table class="subscription-table">
+        <thead>
+          <tr>
+            <th>Tên</th>
+            <th>URL</th>
+            <th>Loại Sự Kiện</th>
+            <th>Trạng Thái</th>
+            <th>Lần Giao Cuối</th>
+            <th>Lỗi</th>
+            <th>Hành Động</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let sub of subscriptions$ | async">
+            <td class="name-cell">
+              <a [routerLink]="['/webhooks', sub.id]" [title]="sub.name">
+                {{ sub.name }}
+              </a>
+            </td>
+            <td class="url-cell" [title]="sub.url">{{ sub.url | slice:0:35 }}</td>
+            <td><span class="event-tag">{{ sub.eventType }}</span></td>
+            <td>
+              <span class="active-badge" [class.active]="sub.active" [class.inactive]="!sub.active">
+                {{ sub.active ? 'Hoạt Động' : 'Vô Hiệu' }}
+              </span>
+            </td>
+            <td>
+              <span [class.error-text]="sub.lastDeliveryStatus === 'failed'">
+                {{ sub.lastDeliveryStatus || 'Chưa giao' }}
+              </span>
+            </td>
+            <td>
+              <span [class.warning-text]="sub.failureCount > 0">{{ sub.failureCount }}</span>
+            </td>
+            <td class="actions-cell">
+              <button class="btn-icon btn-edit" (click)="onEdit.emit(sub.id)" title="Sửa">
+                Sửa
+              </button>
+              <button class="btn-icon btn-delete" (click)="confirmDelete(sub.id)" title="Xóa">
+                Xóa
+              </button>
+            </td>
+          </tr>
+          <tr *ngIf="!(subscriptions$ | async)?.length">
+            <td colspan="7" class="empty-state">Không tìm thấy subscription nào</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Phân trang -->
+      <footer class="pagination" *ngIf="(pagination$ | async) as pagination">
+        <div class="page-info">
+          Trang {{ pagination.page }} / {{ pagination.totalPages }}
+          ({{ pagination.totalItems }} kết quả)
+        </div>
+        <div class="page-controls">
+          <button
+            class="btn-page"
+            [disabled]="pagination.page <= 1"
+            (click)="changePage(pagination.page - 1)"
+          >
+            Trước
+          </button>
+          <button
+            class="btn-page"
+            [disabled]="pagination.page >= pagination.totalPages"
+            (click)="changePage(pagination.page + 1)"
+          >
+            Sau
+          </button>
+        </div>
+      </footer>
+    </div>
+  `
+{% endraw %}
+})
+export class WebhookSubscriptionListComponent implements OnInit {
+  private readonly http = inject(HttpClient);
+
+  // --- Đầu vào ---
+
+  /** Lọc theo loại sự kiện — tùy chọn, áp dụng khi mount. */
+  @Input() eventType: string | null = null;
+
+  /** ID tenant — nếu có, chỉ hiển thị subscriptions của tenant. */
+  @Input() tenantId: string | null = null;
+
+  // --- Đầu ra ---
+
+  /** Phát ra khi người dùng nhấn nút xóa — chứa subscription ID. */
+  @Output() onDelete = new EventEmitter<string>();
+
+  /** Phát ra khi người dùng nhấn nút sửa — chứa subscription ID. */
+  @Output() onEdit = new EventEmitter<string>();
+
+  /** Phát ra khi người dùng nhấn nút tạo mới. */
+  @Output() onCreate = new EventEmitter<void>();
+
+  // --- Trạng thái nội bộ ---
+
+  /** Query tìm kiếm. */
+  public searchQuery: string = '';
+
+  /** Loại sự kiện đang lọc. */
+  public selectedEventType: string = '';
+
+  /** Trang hiện tại. */
+  private currentPage: number = 1;
+
+  /** Observable danh sách subscriptions. */
+  public subscriptions$: Observable<WebhookSubscription[]> = of([]);
+
+  /** Observable thông tin phân trang. */
+  public pagination$: Observable<PaginationInfo> = of({
+    page: 1,
+    pageSize: DEFAULT_PAGE_SIZE,
+    totalItems: 0,
+    totalPages: 0
+  });
+
+  /** Danh sách bộ lọc sự kiện. */
+  public readonly eventFilters: string[] = EVENT_TYPE_FILTERS;
+
+  ngOnInit(): void {
+    // Áp dụng eventType đầu vào làm bộ lọc mặc định.
+    if (this.eventType) {
+      this.selectedEventType = this.eventType;
+    }
+    this.loadSubscriptions();
+  }
+
+  /**
+   * Tải lại danh sách subscriptions từ API với các bộ lọc hiện tại.
+   */
+  private loadSubscriptions(): void {
+    const params = this.buildQueryParams();
+    const url = '/api/webhooks/subscriptions' + params;
+
+    this.subscriptions$ = this.http.get<SubscriptionListResponse>(url).pipe(
+      map(response => response.subscriptions),
+      catchError(error => {
+        console.warn('[WebhookSubscriptionList] Không thể tải danh sách:', error);
+        return of([]);
+      }),
+      shareReplay(1)
+    );
+
+    this.pagination$ = this.http.get<SubscriptionListResponse>(url).pipe(
+      map(response => response.pagination),
+      catchError(error => {
+        return of({
+          page: this.currentPage,
+          pageSize: DEFAULT_PAGE_SIZE,
+          totalItems: 0,
+          totalPages: 0
+        });
+      }),
+      shareReplay(1)
+    );
+  }
+
+  /**
+   * Xây dựng query string từ các bộ lọc và phân trang.
+   */
+  private buildQueryParams(): string {
+    const parts: string[] = [];
+    parts.push('page=' + encodeURIComponent(String(this.currentPage)));
+    parts.push('pageSize=' + encodeURIComponent(String(DEFAULT_PAGE_SIZE)));
+
+    if (this.selectedEventType) {
+      parts.push('eventType=' + encodeURIComponent(this.selectedEventType));
+    }
+    if (this.searchQuery.trim()) {
+      parts.push('search=' + encodeURIComponent(this.searchQuery.trim()));
+    }
+    if (this.tenantId) {
+      parts.push('tenantId=' + encodeURIComponent(this.tenantId));
+    }
+
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+
+  /**
+   * Xử lý khi người dùng nhập từ khóa tìm kiếm.
+   */
+  onSearchChange(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    this.searchQuery = target.value;
+    this.currentPage = 1; // quay về trang đầu khi tìm kiếm
+    this.loadSubscriptions();
+  }
+
+  /**
+   * Xử lý khi người dùng thay đổi bộ lọc sự kiện.
+   */
+  onEventTypeChange(event: Event): void {
+    const target = event.target as HTMLSelectElement;
+    this.selectedEventType = target.value;
+    this.currentPage = 1;
+    this.loadSubscriptions();
+  }
+
+  /**
+   * Xử lý chuyển trang.
+   */
+  changePage(page: number): void {
+    this.currentPage = page;
+    this.loadSubscriptions();
+  }
+
+  /**
+   * Xác nhận xóa subscription — phát sự kiện onDelete.
+   */
+  confirmDelete(id: string): void {
+    // Phát sự kiện cho component cha xử lý xác nhận.
+    this.onDelete.emit(id);
+  }
+}

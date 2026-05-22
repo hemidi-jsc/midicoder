@@ -1,0 +1,122 @@
+/**
+ * WebhookModule - NestJS Module cho Webhook stack.
+ *
+ * Khởi tạo và kết nối tất cả các component của hệ thống webhook:
+ * - TypeORM entity (WebhookSubscription)
+ * - CRUD Service (WebhookService)
+ * - REST Controller (WebhookController)
+ * - Dispatcher (WebhookDispatcherService) - gửi HTTP request
+ * - Queue (WebhookQueueService) - async processing với Bull/Redis
+ *
+ * Hỗ trợ conditional import cho Redis/Bull:
+ * - Nếu use_redis = true: import BullModule cho job queue
+ * - Nếu use_redis = false: chỉ dùng in-memory queue
+ *
+ * Redis URL: {{ redis_url }}
+ * Sử dụng Redis: {{ use_redis }}
+ * Total subscriptions: {{ subscription_count }}
+ *
+ * CP40: Webhook
+ */
+
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { HttpModule } from "@nestjs/axios";
+import { EventEmitterModule } from "@nestjs/event-emitter";
+import { WebhookSubscription } from "./webhook.entity";
+import { WebhookController } from "./webhook.controller";
+import { WebhookService } from "./webhook.service";
+import { WebhookDispatcherService } from "./webhook-dispatcher.service";
+import { WebhookQueueService } from "./webhook-queue.service";
+
+/**
+ * WebhookModule - module cho webhook subscription management.
+ *
+ * Structure:
+ * - Imports:
+ * - TypeOrmModule.forFeature([WebhookSubscription]) - database entity
+ * - HttpModule - HTTP client cho webhook dispatch
+ * - EventEmitterModule - lắng nghe events để enqueue webhook jobs
+ * {% if use_redis %}
+ * - BullModule - job queue với Redis backend (production)
+ * {% endif %}
+ *
+ * - Controllers:
+ * - WebhookController - REST API cho CRUD webhook subscriptions
+ *
+ * - Providers:
+ * - WebhookService - CRUD và query logic
+ * - WebhookDispatcherService - gửi HTTP request đến webhook endpoint
+ * - WebhookQueueService - quản lý hàng đợi và async processing
+ *
+ * - Exports:
+ * - WebhookService - để module khác có thể query subscriptions
+ * - WebhookDispatcherService - để module khác có thể dispatch events
+ * - WebhookQueueService - để module khác có thể enqueue jobs
+ *
+ * Usage trong AppModule:
+ * @Module({
+ *   imports: [
+ *     WebhookModule,
+ *   ],
+ * })
+ * export class AppModule {}
+ *
+ * Usage để dispatch event từ module khác:
+ * constructor(
+ *   private readonly queueService: WebhookQueueService,
+ * ) {}
+ *
+ * // Emit event - WebhookQueueService sẽ tự động enqueue
+ * this.eventEmitter.emit("webhook.order.created", { orderId: "123" });
+ */
+@Module({
+  imports: [
+    // TypeORM - quản lý WebhookSubscription entity
+    TypeOrmModule.forFeature([WebhookSubscription]),
+
+    // HTTP Client - gửi webhook requests đến external endpoints
+    HttpModule,
+
+    // Event Emitter - lắng nghe events từ các module khác
+    EventEmitterModule,
+
+{% if use_redis %}
+    // Bull Queue - async job processing với Redis backend
+    // Sử dụng BullModule.registerQueue để đăng ký webhook-dispatch queue
+    // Config Redis connection: {{ redis_url }}
+    // BullModule.registerQueue({
+    //   name: "webhook-dispatch",
+    //   redis: { url: "{{ redis_url }}" },
+    //   defaultJobOptions: {
+    //     attempts: 3,
+    //     backoff: {
+    //       type: "exponential",
+    //       delay: 1000,
+    //     },
+    //   },
+    // }),
+{% endif %}
+  ],
+  controllers: [
+    // REST Controller cho webhook subscription CRUD
+    WebhookController,
+  ],
+  providers: [
+    // CRUD Service cho webhook subscription
+    WebhookService,
+
+    // Dispatcher - gửi HTTP request với HMAC, retry, backoff
+    WebhookDispatcherService,
+
+    // Queue - async processing và event subscription
+    WebhookQueueService,
+  ],
+  exports: [
+    // Export các services để module khác có thể inject
+    WebhookService,
+    WebhookDispatcherService,
+    WebhookQueueService,
+  ],
+})
+export class WebhookModule {}

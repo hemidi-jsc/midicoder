@@ -1,0 +1,205 @@
+/**
+* WebhookSubscriptionList — danh sach dang ky: tim kiem, loc, phan trang.
+* Sinh boi CP40 WebhookEmitter.
+*/
+
+import React, { useState, useMemo, useCallback } from 'react';
+
+export type SubscriptionStatus = 'active' | 'paused' | 'failed';
+export interface WebhookSubscription {
+id: string;
+name: string;
+callbackUrl: string;
+eventTypes: string[];
+status: SubscriptionStatus;
+signatureEnabled: boolean;
+createdAt: string;
+successCount: number;
+failureCount: number;
+}
+export interface WebhookSubscriptionListProps {
+subscriptions: WebhookSubscription[];
+onDelete: (id: string) => void;
+onEdit: (sub: WebhookSubscription) => void;
+onCreate: () => void;
+pageSize?: number;
+}
+
+/* Style objects */
+const sWrap = { fontFamily: 'system-ui, sans-serif', padding: '16px' };
+const sToolbar = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' };
+const sFilters = { display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' };
+const sInput = { padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', minWidth:
+'220px' };
+const sSelect = { padding: '8px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' };
+const sCbLabel = { fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px' };
+const sTable = { width: '100%', borderCollapse: 'collapse', fontSize: '13px' };
+const sThRow = { borderBottom: '2px solid #e5e7eb', textAlign: 'left' as const };
+const sTh = { padding: '8px', cursor: 'pointer' };
+const sTr = { borderBottom: '1px solid #f3f4f6' };
+const sTd = { padding: '10px 8px' };
+const sTdName = { padding: '10px 8px', fontWeight: 500 };
+const sTdUrl = { padding: '10px 8px', fontFamily: 'monospace', fontSize: '12px', maxWidth: '200px', overflow: 'hidden',
+textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const };
+const sTdOk = { padding: '10px 8px', color: '#16a34a' };
+const sChipWrap = { display: 'flex', gap: '4px', flexWrap: 'wrap' as const };
+const sChip = { padding: '1px 6px', backgroundColor: '#f3f4f6', borderRadius: '4px', fontSize: '11px', fontFamily:
+'monospace' };
+const sActions = { display: 'flex', gap: '8px' };
+const sBtnEdit = { fontSize: '12px', padding: '4px 8px', color: '#3b82f6', background: 'none', border: '1px solid
+#3b82f6', borderRadius: '4px' };
+const sBtnDel = { fontSize: '12px', padding: '4px 8px', color: '#dc2626', background: 'none', border: '1px solid
+#dc2626', borderRadius: '4px' };
+const sBtnCreate = { padding: '8px 16px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius:
+'6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' };
+const sEmptyCell = { padding: '32px', textAlign: 'center' as const, color: '#9ca3af' };
+const sPage = { display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '16px' };
+const sPageBtn = { padding: '6px 12px' };
+const sPageBtnAct = { padding: '6px 12px', fontWeight: 700, backgroundColor: '#3b82f6', color: '#fff' };
+const sH2 = { margin: 0, fontSize: '18px' };
+const sH2Cnt = { fontSize: '14px', color: '#6b7280', fontWeight: 400 };
+const sExtraLabel = { padding: '10px 8px', fontSize: '11px', color: '#6b7280' };
+
+const statusMeta: Record<SubscriptionStatus, { label: string; bg: string; fg: string }> = {
+    active: { label: 'Hoat dong', bg: '#dcfce7', fg: '#166534' },
+    paused: { label: 'Tam dung', bg: '#fef3c7', fg: '#92400e' },
+    failed: { label: 'Loi', bg: '#fee2e2', fg: '#991b1b' },
+    };
+    function badgeStyle(status: SubscriptionStatus) {
+    const m = statusMeta[status];
+    return { padding: '3px 10px', borderRadius: '9999px', fontSize: '11px', fontWeight: 600, backgroundColor: m.bg,
+    color: m.fg };
+    }
+    function failColor(n: number) { return n > 0 ? '#dc2626' : '#9ca3af'; }
+    function tdFail(n: number) { return { padding: '10px 8px', color: failColor(n) }; }
+
+    type SortField = 'name' | 'status' | 'createdAt' | 'successCount' | 'failureCount';
+
+    export function WebhookSubscriptionList({
+    subscriptions, onDelete, onEdit, onCreate, pageSize = 10,
+    }: WebhookSubscriptionListProps) {
+    const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState<SubscriptionStatus | ''>('');
+        const [eventFilter, setEventFilter] = useState('');
+        const [sigOnly, setSigOnly] = useState(false);
+        const [sort, setSort] = useState<SortField>('createdAt');
+            const [dir, setDir] = useState<'asc' | 'desc'>('desc');
+                const [page, setPage] = useState(1);
+
+                const filtered = useMemo(() => {
+                let r = subscriptions.filter((s) => {
+                if (search) { const q = search.toLowerCase(); if (!s.name.toLowerCase().includes(q) &&
+                !s.callbackUrl.toLowerCase().includes(q) && !s.id.toLowerCase().includes(q)) return false; }
+                if (statusFilter && s.status !== statusFilter) return false;
+                if (eventFilter && !s.eventTypes.includes(eventFilter)) return false;
+                if (sigOnly && !s.signatureEnabled) return false;
+                return true;
+                });
+                r.sort((a, b) => {
+                let c = 0;
+                if (sort === 'name') c = a.name.localeCompare(b.name);
+                else if (sort === 'status') c = a.status.localeCompare(b.status);
+                else if (sort === 'createdAt') c = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+                else if (sort === 'successCount') c = a.successCount - b.successCount;
+                else if (sort === 'failureCount') c = a.failureCount - b.failureCount;
+                return dir === 'asc' ? c : -c;
+                });
+                return r;
+                }, [subscriptions, search, statusFilter, eventFilter, sigOnly, sort, dir]);
+
+                const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+                const items = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+                const toggleSort = useCallback((f: SortField) => { if (sort === f) setDir((p) => (p === 'asc' ? 'desc' :
+                'asc')); else { setSort(f); setDir('asc'); } }, [sort]);
+                const icon = (f: SortField) => (sort === f ? (dir === 'asc' ? '\u2191' : '\u2193') : '\u2195');
+
+                return (
+                <div style={sWrap}>
+                    <div style={sToolbar}>
+                        <h2 style={sH2}>Dang ky Webhook <span style={sH2Cnt}>({filtered.length})</span></h2>
+                        <button onClick={onCreate} style={sBtnCreate}>+ Tao moi</button>
+                    </div>
+
+                    <div style={sFilters}>
+                        <input type="text" placeholder="Tim theo ten, URL, hoac ID..." value={search} onChange={(e)=> {
+                        setSearch(e.target.value); setPage(1); }} style={sInput} />
+                        <select value={statusFilter} onChange={(e)=> { setStatusFilter(e.target.value as
+                            SubscriptionStatus | ''); setPage(1); }} style={sSelect}>
+                            <option value="">Tat ca trang thai</option>
+                            <option value="active">Hoat dong</option>
+                            <option value="paused">Tam dung</option>
+                            <option value="failed">Loi</option>
+                        </select>
+                        <select value={eventFilter} onChange={(e)=> { setEventFilter(e.target.value); setPage(1); }}
+                            style={sSelect}>
+                            <option value="">Tat ca su kien</option>
+                            {% for event in event_types %} <option value="{{ event }}">{{ event }}</option>
+                            {% endfor %}
+                        </select>
+                        <label style={sCbLabel}>
+                            <input type="checkbox" checked={sigOnly} onChange={(e)=> setSigOnly(e.target.checked)} />
+                            Chi chu ky
+                        </label>
+                    </div>
+
+                    <table style={sTable}>
+                        <thead>
+                            <tr style={sThRow}>
+                                <th style={sTh} onClick={()=> toggleSort('name')}>Ten {icon('name')}</th>
+                                <th style={sTh}>URL</th>
+                                <th style={sTh} onClick={()=> toggleSort('status')}>Trang thai {icon('status')}</th>
+                                <th style={sTh}>Su kien</th>
+                                <th style={sTh} onClick={()=> toggleSort('successCount')}>OK {icon('successCount')}</th>
+                                <th style={sTh} onClick={()=> toggleSort('failureCount')}>Fail {icon('failureCount')}
+                                </th>
+                                <th style={sTh}>Thao tac</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {items.map((s) => (
+                            <tr key={s.id} style={sTr}>
+                                <td style={sTdName}>{s.name || s.id.slice(0, 8)}</td>
+                                <td style={sTdUrl}>{s.callbackUrl}</td>
+                                <td style={sTd}><span style={badgeStyle(s.status)}>{statusMeta[s.status].label}</span>
+                                </td>
+                                <td style={sTd}>
+                                    <div style={sChipWrap}>
+                                        {s.eventTypes.slice(0, 3).map((e) => (<span key={e} style={sChip}>{e}</span>))}
+                                        {s.eventTypes.length > 3 && <span style={sExtraLabel}>+{s.eventTypes.length -
+                                            3}</span>}
+                                    </div>
+                                </td>
+                                <td style={sTdOk}>{s.successCount}</td>
+                                <td style={tdFail(s.failureCount)}>{s.failureCount}</td>
+                                <td style={sTd}>
+                                    <div style={sActions}>
+                                        <button onClick={()=> onEdit(s)} style={sBtnEdit}>Sua</button>
+                                        <button onClick={()=> { if (window.confirm('Ban co chac muon xoa?'))
+                                            onDelete(s.id); }} style={sBtnDel}>Xoa</button>
+                                    </div>
+                                </td>
+                            </tr>
+                            ))}
+                            {items.length === 0 && (<tr>
+                                <td colSpan={7} style={sEmptyCell}>Khong tim thay dang ky</td>
+                            </tr>)}
+                        </tbody>
+                    </table>
+
+                    {totalPages > 1 && (
+                    <div style={sPage}>
+                        <button onClick={()=> setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+                            style={sPageBtn}>Truoc</button>
+                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter((p) => totalPages <= 7 || p===1 || p===totalPages || Math.abs(p - page) <=1) .map((p)=>
+                            (<button key={p} onClick={()=> setPage(p)} style={page === p ? sPageBtnAct :
+                                sPageBtn}>{p}</button>))}
+                            <button onClick={()=> setPage((p) => Math.min(totalPages, p + 1))} disabled={page ===
+                                totalPages} style={sPageBtn}>Sau</button>
+                    </div>
+                    )}
+                </div>
+                );
+                }
+                export default WebhookSubscriptionList;

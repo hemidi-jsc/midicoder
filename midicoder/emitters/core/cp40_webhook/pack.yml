@@ -1,0 +1,215 @@
+# ===========================================================================
+# CP40 — Webhook & Outbound Integration Hub
+# ===========================================================================
+# File contributions declaration cho 4 stacks: FastAPI, NestJS, Angular, React
+#
+# Capabilities:
+# - webhook_manage: CRUD webhook subscriptions với tenant isolation
+# - event_deliver: Dispatch event đến external webhook endpoints
+# - retry_policy: Exponential backoff retry cho failed dispatches
+# - outbound_api: HTTP outbound client với auth + signature
+#
+# Storage: SQLite + Redis queue
+# ===========================================================================
+
+pack:
+  id: "CP40"
+  name: "Webhook & Outbound Integration Hub"
+  internal_id: "cp40_webhook"
+  version: "1.0.0"
+  status: "stable"
+  category: "integration"
+  depends_on: ["CP05", "CP12", "CP14"]
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP40"
+    range: "MDC-CP40-001 to MDC-CP40-010"
+  capabilities_provided:
+    - webhook_manage
+    - event_deliver
+    - retry_policy
+    - outbound_api
+  capabilities:
+    - id: "webhook_manage"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "event_deliver"
+      emitter: "fastapi, nestjs"
+    - id: "retry_policy"
+      emitter: "fastapi, nestjs"
+    - id: "outbound_api"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "WebhookSubscription"
+      description: "Đăng ký webhook endpoint (event_type → URL + auth + retry)"
+    - name: "WebhookDispatch"
+      description: "Bản ghi dispatch (subscription → payload → delivery tracking)"
+    - name: "WebhookDispatcher"
+      description: "Engine dispatch webhook (subscribe → render → dispatch → audit)"
+    - name: "RetryPolicy"
+      description: "Chính sách retry exponential backoff (max_retries, base_delay, max_delay)"
+  obligations:
+    - name: "DispatchReliability"
+      description: "Mỗi dispatch phải được retry theo policy và ghi audit trail"
+    - name: "SubscriptionIsolation"
+      description: "Webhook subscriptions phải được isolate theo tenant"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend
+      # ------------------------------------------------------------------
+      - path: "app/webhook/models.py"
+        file_type: "webhook_models"
+        template: "cp40_webhook/webhook_models.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["subscriptions", "event_types"]
+      - path: "app/webhook/schemas.py"
+        file_type: "webhook_schemas"
+        template: "cp40_webhook/webhook_schemas.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["subscriptions"]
+      - path: "app/webhook/services/webhook_service.py"
+        file_type: "webhook_service"
+        template: "cp40_webhook/webhook_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["subscriptions", "event_types"]
+      - path: "app/webhook/routers/webhook_router.py"
+        file_type: "webhook_router"
+        template: "cp40_webhook/webhook_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/webhook/services/webhook_dispatch.py"
+        file_type: "webhook_dispatch"
+        template: "cp40_webhook/webhook_dispatch.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["subscriptions"]
+      - path: "app/webhook/workers/webhook_worker.py"
+        file_type: "webhook_worker"
+        template: "cp40_webhook/webhook_worker.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["redis_url"]
+      - path: "app/webhook/middleware.py"
+        file_type: "webhook_middleware"
+        template: "cp40_webhook/webhook_middleware.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # NestJS — Backend
+      # ------------------------------------------------------------------
+      - path: "src/webhook/webhook.module.ts"
+        file_type: "webhook_module"
+        template: "cp40_webhook/webhook.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/webhook/entities/webhook.entity.ts"
+        file_type: "webhook_entity"
+        template: "cp40_webhook/webhook.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["subscriptions"]
+      - path: "src/webhook/dtos/webhook.dto.ts"
+        file_type: "webhook_dto"
+        template: "cp40_webhook/webhook.dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["subscriptions"]
+      - path: "src/webhook/services/webhook.service.ts"
+        file_type: "webhook_service"
+        template: "cp40_webhook/webhook.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["subscriptions"]
+      - path: "src/webhook/controllers/webhook.controller.ts"
+        file_type: "webhook_controller"
+        template: "cp40_webhook/webhook.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/webhook/services/webhook-dispatcher.service.ts"
+        file_type: "webhook_dispatcher"
+        template: "cp40_webhook/webhook-dispatcher.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["subscriptions"]
+      - path: "src/webhook/services/webhook-queue.service.ts"
+        file_type: "webhook_queue"
+        template: "cp40_webhook/webhook-queue.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["redis_url"]
+      # ------------------------------------------------------------------
+      # Angular — Frontend
+      # ------------------------------------------------------------------
+      - path: "src/app/webhook/webhook-dashboard.component.ts"
+        file_type: "webhook_dashboard"
+        template: "cp40_webhook/webhook-dashboard.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["subscriptions"]
+      - path: "src/app/webhook/webhook-subscription-list.component.ts"
+        file_type: "webhook_subscription_list"
+        template: "cp40_webhook/webhook-subscription-list.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/webhook/webhook-delivery-viewer.component.ts"
+        file_type: "webhook_delivery_viewer"
+        template: "cp40_webhook/webhook-delivery-viewer.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/core/webhook/webhook.service.ts"
+        file_type: "webhook_service"
+        template: "cp40_webhook/webhook.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # React — Frontend
+      # ------------------------------------------------------------------
+      - path: "src/webhook/components/WebhookDashboard.tsx"
+        file_type: "webhook_dashboard"
+        template: "cp40_webhook/WebhookDashboard.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["subscriptions"]
+      - path: "src/webhook/components/WebhookSubscriptionList.tsx"
+        file_type: "webhook_subscription_list"
+        template: "cp40_webhook/WebhookSubscriptionList.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/webhook/hooks/useWebhooks.ts"
+        file_type: "webhook_hook"
+        template: "cp40_webhook/useWebhooks.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/webhook/hooks/useDispatchStatus.ts"
+        file_type: "dispatch_status_hook"
+        template: "cp40_webhook/useDispatchStatus.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+  frontend_integration:
+    angular:
+      - WebhookDashboardComponent
+      - WebhookSubscriptionListComponent
+      - WebhookDeliveryViewerComponent
+      - WebhookService
+    react:
+      - WebhookDashboard
+      - WebhookSubscriptionList
+      - useWebhooks
+      - useDispatchStatus
+  recipes:
+    - basic_webhook_recipe
+    - event_driven_webhook_recipe

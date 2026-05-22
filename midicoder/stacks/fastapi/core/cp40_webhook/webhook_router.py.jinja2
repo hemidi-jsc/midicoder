@@ -1,0 +1,187 @@
+# ----------------------------------------------------------
+# CP40 Webhook — Router FastAPI cho quản lý webhook
+# ----------------------------------------------------------
+# Sinh bởi CP40WebhookEmitter
+# Routes: CRUD /webhooks + tìm kiếm theo event_type
+# Các sự kiện hỗ trợ: {{ ", ".join(event_types) }}
+# ----------------------------------------------------------
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+# Định danh router
+router = APIRouter(prefix="/webhooks", tags=["webhook"])
+
+
+# --------------------------------------------------------------
+# Phụ thuộc — injection
+# --------------------------------------------------------------
+
+def get_webhook_service(session: AsyncSession = Depends(lambda: None)) -> "WebhookService":
+    """
+    Cung cấp dịch vụ webhook cho các route.
+    Đây là điểm phụ thuộc injection cho WebhookService.
+    """
+    from webhook_service import WebhookService
+    return WebhookService(session)
+
+
+# --------------------------------------------------------------
+# Route: Liệt kê đăng ký
+# --------------------------------------------------------------
+
+@router.get(
+    "",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Liệt kê đăng ký webhook",
+    description="Lấy danh sách tất cả đăng ký webhook với phân trang và bộ lọc.",
+)
+async def list_webhooks(
+    offset: int = Query(0, ge=0, description="Số bản ghi bỏ qua"),
+    limit: int = Query(50, ge=1, le=200, description="Số bản ghi tối đa"),
+    status_filter: Optional[str] = Query(None, alias="status", description="Lọc theo trạng thái"),
+    tenant_id: Optional[str] = Query(None, description="Lọc theo thuê trọ"),
+    service: "WebhookService" = Depends(get_webhook_service),
+) -> List[Dict[str, Any]]:
+    """
+    Liệt kê tất cả đăng ký webhook với phân trang.
+    """
+    items, total = await service.list_subscriptions(
+        offset=offset,
+        limit=limit,
+        status=status_filter,
+        tenant_id=tenant_id,
+    )
+    return [item.__dict__ for item in items]
+
+
+# --------------------------------------------------------------
+# Route: Lấy chi tiết đăng ký
+# --------------------------------------------------------------
+
+@router.get(
+    "/{subscription_id}",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Chi tiết đăng ký webhook",
+    description="Lấy thông tin chi tiết của một đăng ký webhook theo định danh.",
+)
+async def get_webhook(
+    subscription_id: str,
+    service: "WebhookService" = Depends(get_webhook_service),
+) -> Dict[str, Any]:
+    """
+    Lấy chi tiết một đăng ký webhook.
+    """
+    subscription = await service.get_subscription(subscription_id)
+    if subscription is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy đăng ký webhook với định danh: {}".format(subscription_id),
+        )
+    return subscription.__dict__
+
+
+# --------------------------------------------------------------
+# Route: Tạo mới đăng ký
+# --------------------------------------------------------------
+
+@router.post(
+    "",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Tạo đăng ký webhook mới",
+    description="Đăng ký endpoint nhận sự kiện webhook từ hệ thống.",
+)
+async def create_webhook(
+    payload: Dict[str, Any],
+    service: "WebhookService" = Depends(get_webhook_service),
+) -> Dict[str, Any]:
+    """
+    Tạo mới một đăng ký webhook.
+    """
+    subscription = await service.create_subscription(payload)
+    return subscription.__dict__
+
+
+# --------------------------------------------------------------
+# Route: Cập nhật đăng ký
+# --------------------------------------------------------------
+
+@router.put(
+    "/{subscription_id}",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Cập nhật đăng ký webhook",
+    description="Cập nhật thông tin cấu hình của một đăng ký webhook.",
+)
+async def update_webhook(
+    subscription_id: str,
+    payload: Dict[str, Any],
+    service: "WebhookService" = Depends(get_webhook_service),
+) -> Dict[str, Any]:
+    """
+    Cập nhật thông tin đăng ký webhook.
+    """
+    subscription = await service.update_subscription(subscription_id, payload)
+    if subscription is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy đăng ký webhook để cập nhật: {}".format(subscription_id),
+        )
+    return subscription.__dict__
+
+
+# --------------------------------------------------------------
+# Route: Xóa đăng ký
+# --------------------------------------------------------------
+
+@router.delete(
+    "/{subscription_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Xóa đăng ký webhook",
+    description="Xóa hoàn toàn một đăng ký webhook khỏi hệ thống.",
+)
+async def delete_webhook(
+    subscription_id: str,
+    service: "WebhookService" = Depends(get_webhook_service),
+) -> None:
+    """
+    Xóa đăng ký webhook theo định danh.
+    """
+    deleted = await service.delete_subscription(subscription_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy đăng ký webhook để xóa: {}".format(subscription_id),
+        )
+
+
+# --------------------------------------------------------------
+# Route: Tìm theo loại sự kiện
+# --------------------------------------------------------------
+
+@router.get(
+    "/event/{event_type}",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Tìm đăng ký theo loại sự kiện",
+    description="Lấy danh sách đăng ký webhook lắng nghe một loại sự kiện cụ thể.",
+)
+async def list_webhooks_by_event(
+    event_type: str,
+    service: "WebhookService" = Depends(get_webhook_service),
+) -> List[Dict[str, Any]]:
+    """
+    Tìm kiếm đăng ký webhook theo loại sự kiện.
+    """
+    subscriptions = await service.list_by_event_type(event_type)
+    return [sub.__dict__ for sub in subscriptions]
+{% endraw %}

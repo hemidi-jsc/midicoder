@@ -1,0 +1,351 @@
+/**
+* WebhookDeliveryViewerComponent — Xem chi tiết lịch sử delivery.
+*
+* Hiển thị timeline các lần thử giao webhook cho một subscription cụ thể,
+* bao gồm trạng thái HTTP, thời gian phản hồi, payload, và nút retry.
+*
+* Tạo tự động bởi CP40 — không sửa thủ công.
+*/
+
+import {
+Component,
+OnInit,
+OnChanges,
+SimpleChanges,
+Input,
+ChangeDetectionStrategy,
+inject
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
+import { catchError, map, shareReplay, tap } from 'rxjs/operators';
+
+// --- Định nghĩa kiểu dữ liệu ---
+
+/** Một lần thử giao webhook. */
+export interface DeliveryAttempt {
+id: string;
+subscriptionId: string;
+eventId: string;
+eventType: string;
+url: string;
+status: 'delivered' | 'failed' | 'pending' | 'processing';
+httpMethod: string;
+requestHeaders?: Record<string, string>;
+    requestPayload?: string;
+    responseStatusCode?: number;
+    responseHeaders?: Record<string, string>;
+        responseBody?: string;
+        durationMs?: number;
+        error?: string;
+        createdAt: string;
+        deliveredAt?: string;
+        retryAfter?: string;
+        }
+
+        /** Thông tin chi tiết subscription để hiển thị cùng timeline. */
+        export interface SubscriptionDetail {
+        id: string;
+        name: string;
+        url: string;
+        eventType: string;
+        active: boolean;
+        secret: string;
+        }
+
+        /** Response API từ endpoint delivery history. */
+        interface DeliveryHistoryResponse {
+        attempts: DeliveryAttempt[];
+        subscription: SubscriptionDetail;
+        totalAttempts: number;
+        successRate: number;
+        }
+
+        /** Response API khi retry một delivery thất bại. */
+        interface RetryResponse {
+        deliveryId: string;
+        status: string;
+        message: string;
+        }
+
+        // --- Cấu hình từ template ---
+
+        /** Số lượng attempts tối đa hiển thị mỗi lần tải. */
+        const DEFAULT_ATTEMPTS_LIMIT: number = 20;
+
+        /** Cờ Redis — nếu bật, hiển thị thông tin queue. */
+        const REDIS_QUEUE_ENABLED: boolean = {{ 'true' if use_redis else 'false' }};
+
+        /** URL Redis — chỉ hiển thị trong chế độ phát triển. */
+        const REDIS_CONNECTION_INFO: string = '{{ redis_url }}';
+
+        /**
+        * Component hiển thị timeline delivery history cho một subscription.
+        *
+        * Sử dụng:
+        * <app-webhook-delivery-viewer [subscriptionId]="'abc-123'"></app-webhook-delivery-viewer>
+        */
+        @Component({
+        selector: 'app-webhook-delivery-viewer',
+        standalone: true,
+        imports: [CommonModule],
+        changeDetection: ChangeDetectionStrategy.OnPush,
+        {% raw %}
+        template: `
+        <div class="delivery-viewer">
+            <!-- Thông tin subscription -->
+            <header class="viewer-header" *ngIf="(subscription$ | async) as sub">
+                <h2>Lịch Sử Giao Webhook</h2>
+                <div class="sub-info">
+                    <span class="sub-name">{{ sub.name }}</span>
+                    <span class="sub-url" [title]="sub.url">{{ sub.url }}</span>
+                    <span class="event-badge">{{ sub.eventType }}</span>
+                    <span class="status-badge" [class.active]="sub.active" [class.inactive]="!sub.active">
+                        {{ sub.active ? 'Hoạt Động' : 'Vô Hiệu' }}
+                    </span>
+                </div>
+                <!-- Hiển thị Redis info nếu bật -->
+                <div class="redis-info" *ngIf="redisEnabled">
+                    Queue: Redis ({{ redisConnection }})
+                </div>
+            </header>
+
+            <!-- Thống kê tóm tắt -->
+            <section class="delivery-stats" *ngIf="stats$ | async as stats">
+                <div class="stat">
+                    <span class="stat-value">{{ stats.totalAttempts }}</span>
+                    <span class="stat-label">Tổng Lần Thử</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">{{ (stats.successRate * 100) | number:'1.0-0' }}%</span>
+                    <span class="stat-label">Tỷ Lệ Thành Công</span>
+                </div>
+            </section>
+
+            <!-- Timeline các lần thử giao -->
+            <section class="delivery-timeline">
+                <ul class="timeline-list">
+                    <li *ngFor="let attempt of attempts$ | async" class="timeline-item">
+                        <div class="timeline-marker" [class]="getMarkerClass(attempt.status)"></div>
+                        <div class="timeline-content" [class.expanded]="expandedIds.indexOf(attempt.id) !== -1">
+                            <!-- Dòng tóm tắt -->
+                            <div class="timeline-summary" (click)="toggleExpand(attempt.id)">
+                                <span class="timeline-status" [class]="getStatusClass(attempt.status)">
+                                    {{ getStatusLabel(attempt.status) }}
+                                </span>
+                                <span class="timeline-event">{{ attempt.eventType }}</span>
+                                <span class="timeline-http" *ngIf="attempt.responseStatusCode">
+                                    HTTP {{ attempt.responseStatusCode }}
+                                </span>
+                                <span class="timeline-duration" *ngIf="attempt.durationMs">
+                                    {{ attempt.durationMs }}ms
+                                </span>
+                                <span class="timeline-time">{{ attempt.createdAt | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+                                <span class="expand-icon">{{ expandedIds.indexOf(attempt.id) !== -1 ? '&#9660;' :
+                                    '&#9654;' }}</span>
+                            </div>
+
+                            <!-- Chi tiết mở rộng -->
+                            <div class="timeline-details" *ngIf="expandedIds.indexOf(attempt.id) !== -1">
+                                <div class="detail-row">
+                                    <strong>ID:</strong> {{ attempt.id }}
+                                </div>
+                                <div class="detail-row">
+                                    <strong>Phương thức:</strong> {{ attempt.httpMethod }} {{ attempt.url }}
+                                </div>
+                                <div class="detail-row" *ngIf="attempt.responseStatusCode">
+                                    <strong>Mã phản hồi:</strong> {{ attempt.responseStatusCode }}
+                                </div>
+                                <div class="detail-row" *ngIf="attempt.durationMs">
+                                    <strong>Thời gian:</strong> {{ attempt.durationMs }}ms
+                                </div>
+                                <div class="detail-row" *ngIf="attempt.error">
+                                    <strong>Lỗi:</strong>
+                                    <span class="error-text">{{ attempt.error }}</span>
+                                </div>
+                                <div class="detail-row" *ngIf="attempt.responseBody">
+                                    <strong>Phản hồi:</strong>
+                                    <pre class="response-pre">{{ attempt.responseBody }}</pre>
+                                </div>
+                                <div class="detail-row" *ngIf="attempt.requestPayload">
+                                    <strong>Payload:</strong>
+                                    <pre class="payload-pre">{{ attempt.requestPayload }}</pre>
+                                </div>
+                                <!-- Nút retry — chỉ hiển thị cho thất bại -->
+                                <div class="retry-section" *ngIf="attempt.status === 'failed'">
+                                    <button class="btn-retry" (click)="retryDelivery(attempt.id)"
+                                        [disabled]="retryingIds.indexOf(attempt.id) !== -1">
+                                        {{ retryingIds.indexOf(attempt.id) !== -1 ? 'Đang thử lại...' : 'Thử Lại' }}
+                                    </button>
+                                    <span class="retry-after" *ngIf="attempt.retryAfter">
+                                        (tối thiểu: {{ attempt.retryAfter }})
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+                    <li *ngIf="!(attempts$ | async)?.length" class="empty-state">
+                        Chưa có lịch sử giao nào cho subscription này.
+                    </li>
+                </ul>
+            </section>
+        </div>
+        `
+        {% endraw %}
+        })
+        export class WebhookDeliveryViewerComponent implements OnInit, OnChanges {
+        private readonly http = inject(HttpClient);
+
+        // --- Đầu vào ---
+
+        /** ID subscription cần xem delivery history. */
+        @Input() subscriptionId: string = '';
+
+        // --- Trạng thái ---
+
+        /** Các ID đang mở rộng để xem chi tiết. */
+        public expandedIds: string[] = [];
+
+        /** Các ID đang trong quá trình retry. */
+        public retryingIds: string[] = [];
+
+        /** Cờ Redis. */
+        public readonly redisEnabled: boolean = REDIS_QUEUE_ENABLED;
+
+        /** Thông tin kết nối Redis. */
+        public readonly redisConnection: string = REDIS_CONNECTION_INFO;
+
+        /** Observable thông tin subscription. */
+        public subscription$: Observable<SubscriptionDetail> = of({} as SubscriptionDetail);
+
+            /** Observable danh sách delivery attempts. */
+            public attempts$: Observable<DeliveryAttempt[]> = of([]);
+
+                /** Observable thống kê tóm tắt. */
+                public stats$: Observable<{ totalAttempts: number; successRate: number }> = of({
+                    totalAttempts: 0,
+                    successRate: 0
+                    });
+
+                    ngOnInit(): void {
+                    this.loadData();
+                    }
+
+                    /**
+                    * Xử lý khi subscriptionId thay đổi — tải lại dữ liệu.
+                    */
+                    ngOnChanges(changes: SimpleChanges): void {
+                    if (changes['subscriptionId'] && this.subscriptionId) {
+                    this.loadData();
+                    }
+                    }
+
+                    /**
+                    * Tải dữ liệu delivery history từ API.
+                    */
+                    private loadData(): void {
+                    if (!this.subscriptionId) {
+                    return;
+                    }
+
+                    const url = '/api/webhooks/subscriptions/' + encodeURIComponent(this.subscriptionId)
+                    + '/deliveries?limit=' + DEFAULT_ATTEMPTS_LIMIT;
+
+                    // Observable chính — phân tách thành 3 stream.
+                    const source$ = this.http.get<DeliveryHistoryResponse>(url).pipe(
+                        catchError(error => {
+                        console.warn('[WebhookDeliveryViewer] Không thể tải lịch sử:', error);
+                        return of({
+                        attempts: [],
+                        subscription: {} as SubscriptionDetail,
+                        totalAttempts: 0,
+                        successRate: 0
+                        });
+                        }),
+                        shareReplay(1)
+                        );
+
+                        this.subscription$ = source$.pipe(map(r => r.subscription));
+                        this.attempts$ = source$.pipe(map(r => r.attempts));
+                        this.stats$ = source$.pipe(map(r => ({
+                        totalAttempts: r.totalAttempts,
+                        successRate: r.successRate
+                        })));
+                        }
+
+                        /**
+                        * Mở rộng / thu gọn chi tiết của một delivery attempt.
+                        */
+                        toggleExpand(id: string): void {
+                        const index = this.expandedIds.indexOf(id);
+                        if (index >= 0) {
+                        this.expandedIds.splice(index, 1);
+                        } else {
+                        this.expandedIds.push(id);
+                        }
+                        }
+
+                        /**
+                        * Thử lại một delivery thất bại.
+                        */
+                        retryDelivery(deliveryId: string): void {
+                        // Thêm vào danh sách đang retry.
+                        this.retryingIds.push(deliveryId);
+
+                        const url = '/api/webhooks/deliveries/' + encodeURIComponent(deliveryId) + '/retry';
+
+                        this.http.post<RetryResponse>(url, {}).pipe(
+                            tap(response => {
+                            console.log('[WebhookDeliveryViewer] Retry thành công:', response.message);
+                            }),
+                            catchError(error => {
+                            console.warn('[WebhookDeliveryViewer] Retry thất bại:', error);
+                            return of({ deliveryId, status: 'failed', message: 'Không thể thử lại' });
+                            })
+                            ).subscribe({
+                            complete: () => {
+                            // Xóa khỏi danh sách đang retry.
+                            const idx = this.retryingIds.indexOf(deliveryId);
+                            if (idx >= 0) {
+                            this.retryingIds.splice(idx, 1);
+                            }
+                            // Tải lại dữ liệu để hiển thị kết quả mới.
+                            this.loadData();
+                            }
+                            });
+                            }
+
+                            /**
+                            * Lấy class CSS cho marker timeline.
+                            */
+                            getMarkerClass(status: string): string {
+                            const map: Record<string, string> = {
+                                delivered: 'marker-success',
+                                failed: 'marker-error',
+                                pending: 'marker-pending',
+                                processing: 'marker-processing'
+                                };
+                                return map[status] || 'marker-unknown';
+                                }
+
+                                /**
+                                * Lấy class CSS cho trạng thái trong timeline.
+                                */
+                                getStatusClass(status: string): string {
+                                return 'status-' + status;
+                                }
+
+                                /**
+                                * Lấy nhãn tiếng Việt cho trạng thái delivery.
+                                */
+                                getStatusLabel(status: string): string {
+                                const map: Record<string, string> = {
+                                    delivered: 'Đã Giao',
+                                    failed: 'Thất Bại',
+                                    pending: 'Đang Chờ',
+                                    processing: 'Đang Xử Lý'
+                                    };
+                                    return map[status] || status;
+                                    }
+                                    }

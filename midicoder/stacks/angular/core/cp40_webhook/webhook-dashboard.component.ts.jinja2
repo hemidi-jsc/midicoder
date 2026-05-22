@@ -1,0 +1,209 @@
+/**
+* WebhookDashboardComponent — Dashboard quản lý webhook tổng quan.
+*
+* Hiển thị thống kê subscriptions (tổng, hoạt động, thất bại),
+* bảng dispatches gần đây, và nút điều hướng nhanh.
+*
+* Tạo tự động bởi CP40 — không sửa thủ công.
+*/
+
+import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
+import { catchError, map, shareReplay } from 'rxjs/operators';
+
+// --- Định nghĩa kiểu dữ liệu ---
+
+/** Thống kê tổng quan từ API. */
+export interface DashboardStats {
+total: number;
+active: number;
+failed: number;
+pending: number;
+}
+
+/** Một dispatch gần đây. */
+export interface RecentDispatch {
+id: string;
+subscriptionId: string;
+eventType: string;
+url: string;
+status: 'delivered' | 'failed' | 'pending' | 'processing';
+statusCode?: number;
+deliveredAt: string;
+attempts: number;
+}
+
+// --- Dữ liệu tĩnh tạo từ template ---
+
+/** Tổng số subscriptions được tạo từ lúc build. */
+const TOTAL_SUBSCRIPTIONS: number = {{ subscription_count }};
+
+/** Các loại sự kiện được hỗ trợ. */
+const SUPPORTED_EVENT_TYPES: string[] = [
+{% for event in event_types %}
+'{{ event }}'{% if not loop.last %},{% endif %}
+{% endfor %}
+];
+
+/** Cấu hình Redis — dùng cho chế độ queue webhook. */
+const REDIS_ENABLED: boolean = {{ 'true' if use_redis else 'false' }};
+
+/**
+* Component dashboard chính — hiển thị stats cards và danh sách dispatches gần đây.
+*
+* Sử dụng:
+* <app-webhook-dashboard></app-webhook-dashboard>
+*/
+@Component({
+selector: 'app-webhook-dashboard',
+standalone: true,
+imports: [CommonModule],
+changeDetection: ChangeDetectionStrategy.OnPush,
+{% raw %}
+template: `
+<div class="webhook-dashboard">
+    <!-- Thẻ tiêu đề -->
+    <header class="dashboard-header">
+        <h1>Bảng Điều Khiển Webhook</h1>
+        <span class="redis-badge" *ngIf="redisEnabled">Redis Queue Hoạt Động</span>
+    </header>
+
+    <!-- Thẻ thống kê -->
+    <section class="stats-cards">
+        <div class="stat-card" *ngIf="stats$ | async as stats">
+            <div class="stat total">
+                <span class="stat-value">{{ stats.total }}</span>
+                <span class="stat-label">Tổng Subscription</span>
+            </div>
+            <div class="stat active">
+                <span class="stat-value">{{ stats.active }}</span>
+                <span class="stat-label">Hoạt Động</span>
+            </div>
+            <div class="stat failed">
+                <span class="stat-value">{{ stats.failed }}</span>
+                <span class="stat-label">Thất Bại</span>
+            </div>
+            <div class="stat pending">
+                <span class="stat-value">{{ stats.pending }}</span>
+                <span class="stat-label">Đang Chờ</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Bảng dispatches gần đây -->
+    <section class="recent-dispatches">
+        <h2>Dispatch Gần Đây</h2>
+        <table class="dispatch-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Loại Sự Kiện</th>
+                    <th>URL</th>
+                    <th>Trạng Thái</th>
+                    <th>Thử</th>
+                    <th>Thời Gian</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr *ngFor="let dispatch of recentDispatches$ | async">
+                    <td class="id-cell">{{ dispatch.id | slice:0:8 }}</td>
+                    <td>{{ dispatch.eventType }}</td>
+                    <td class="url-cell" [title]="dispatch.url">{{ dispatch.url | slice:0:40 }}</td>
+                    <td>
+                        <span class="status-badge" [class]="getStatusClass(dispatch.status)">
+                            {{ getStatusLabel(dispatch.status) }}
+                        </span>
+                    </td>
+                    <td>{{ dispatch.attempts }}</td>
+                    <td>{{ dispatch.deliveredAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                </tr>
+                <tr *ngIf="!(recentDispatches$ | async)">
+                    <td colspan="6" class="empty-state">Chưa có dispatch nào</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- Các loại sự kiện được hỗ trợ -->
+    <section class="event-types">
+        <h3>Loại Sự Kiện Hỗ Trợ</h3>
+        <div class="event-chips">
+            <span class="event-chip" *ngFor="let event of supportedEvents">
+                {{ event }}
+            </span>
+        </div>
+    </section>
+</div>
+`
+{% endraw %}
+})
+export class WebhookDashboardComponent implements OnInit {
+private readonly http = inject(HttpClient);
+
+/** Observable thống kê tổng quan. */
+public stats$: Observable<DashboardStats>;
+
+    /** Observable danh sách dispatches gần đây. */
+    public recentDispatches$: Observable<RecentDispatch[]>;
+
+        /** Cờ Redis queue. */
+        public readonly redisEnabled: boolean = REDIS_ENABLED;
+
+        /** Danh sách sự kiện được hỗ trợ. */
+        public readonly supportedEvents: string[] = SUPPORTED_EVENT_TYPES;
+
+        /** Số subscriptions tại thời điểm build. */
+        public readonly buildTimeTotal: number = TOTAL_SUBSCRIPTIONS;
+
+        ngOnInit(): void {
+        // Tải thống kê tổng quan từ API.
+        this.stats$ = this.http.get<{ stats: DashboardStats }>('/api/webhooks/stats').pipe(
+            map(response => response.stats),
+            catchError(error => {
+            console.warn('[WebhookDashboard] Không thể tải thống kê:', error);
+            return of({ total: this.buildTimeTotal, active: 0, failed: 0, pending: 0 });
+            }),
+            shareReplay(1)
+            );
+
+            // Tải danh sách dispatches gần đây (10 bản ghi mới nhất).
+            this.recentDispatches$ = this.http.get<{ dispatches: RecentDispatch[] }>(
+                '/api/webhooks/dispatches?limit=10'
+                ).pipe(
+                map(response => response.dispatches),
+                catchError(error => {
+                console.warn('[WebhookDashboard] Không thể tải dispatches:', error);
+                return of([]);
+                }),
+                shareReplay(1)
+                );
+                }
+
+                /**
+                * Lấy class CSS tương ứng với trạng thái dispatch.
+                */
+                getStatusClass(status: string): string {
+                const classMap: Record<string, string> = {
+                    delivered: 'status-delivered',
+                    failed: 'status-failed',
+                    pending: 'status-pending',
+                    processing: 'status-processing'
+                    };
+                    return classMap[status] || 'status-unknown';
+                    }
+
+                    /**
+                    * Lấy nhãn tiếng Việt tương ứng với trạng thái dispatch.
+                    */
+                    getStatusLabel(status: string): string {
+                    const labelMap: Record<string, string> = {
+                        delivered: 'Đã Giao',
+                        failed: 'Thất Bại',
+                        pending: 'Đang Chờ',
+                        processing: 'Đang Xử Lý'
+                        };
+                        return labelMap[status] || status;
+                        }
+                        }

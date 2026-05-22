@@ -1,0 +1,262 @@
+/**
+ * WebhookSubscription Entity - TypeORM entity cho webhook subscription.
+ *
+ * Lưu thông tin cấu hình của từng webhook endpoint: địa chỉ URL,
+ * phương thức HTTP, cấu hình xác thực, payload template, retry policy,
+ * và rate limiting.
+ *
+ * CP40: Webhook
+ * Total subscriptions: {{ subscription_count }}
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from "typeorm";
+
+/**
+ * Interface cho WebhookSubscription properties.
+ */
+export interface IWebhookSubscription {
+  subscriptionId: string;
+  eventType: string;
+  url: string;
+  httpMethod: string;
+  authConfig: Record<string, any>;
+  payloadTemplate: Record<string, any>;
+  retryPolicy: Record<string, any>;
+  rateLimitRpm: number;
+  status: string;
+  tenantId: string | null;
+  tags: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Định nghĩa các event type hợp lệ cho webhook.
+ */
+export const EVENT_TYPES = [
+{% for event_type in event_types %}  "{{ event_type }}",
+{% endfor %}];
+
+/**
+ * Định nghĩa các HTTP method hợp lệ.
+ */
+export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+/**
+ * Các trạng thái webhook subscription.
+ */
+export const WEBHOOK_STATUSES = ["active", "paused", "disabled"];
+
+/**
+ * WebhookSubscription Entity.
+ *
+ * Mỗi subscription đại diện cho một webhook endpoint:
+ * - subscriptionId: UUID định danh duy nhất
+ * - eventType: loại event sẽ kích hoạt webhook
+ * - url: endpoint URL nhận webhook
+ * - httpMethod: phương thức HTTP (mặc định POST)
+ * - authConfig: cấu hình xác thực (HMAC, Bearer, Basic)
+ * - payloadTemplate: template để render payload
+ * - retryPolicy: chính sách retry khi gửi thất bại
+ * - rateLimitRpm: giới hạn số lần gọi/phút
+ * - status: trạng thái (active, paused, disabled)
+ * - tenantId: tenant ID (NULL = global)
+ * - tags: danh sách tag để nhóm/分類 subscription
+ *
+ * Indexes:
+ * - (eventType) - tối ưu tìm theo event type
+ * - (tenantId) - tối ưu lọc theo tenant
+ * - (status) - tối ưu lọc theo trạng thái
+ */
+@Entity("webhook_subscriptions")
+@Index("idx_webhook_event_type", ["eventType"])
+@Index("idx_webhook_tenant_id", ["tenantId"])
+@Index("idx_webhook_status", ["status"])
+export class WebhookSubscription implements IWebhookSubscription {
+  /**
+   * Primary key - UUID tự sinh.
+   */
+  @PrimaryGeneratedColumn("uuid")
+  subscriptionId: string;
+
+  /**
+   * Event type - loại event kích hoạt webhook.
+   *
+   * Ví dụ: "order.created", "payment.success", "user.updated"
+   * Phải thuộc danh sách event types được cấu hình.
+   */
+  @Column({ name: "event_type", type: "varchar", length: 128 })
+  eventType: string;
+
+  /**
+   * URL endpoint nhận webhook.
+   *
+   * Phải là URL hợp lệ (http:// hoặc https://).
+   * Ví dụ: "https://example.com/api/webhooks/orders"
+   */
+  @Column({ name: "url", type: "varchar", length: 1024 })
+  url: string;
+
+  /**
+   * Phương thức HTTP để gửi webhook.
+   *
+   * Mặc định: "POST"
+   * Hỗ trợ: GET, POST, PUT, PATCH, DELETE
+   */
+  @Column({ name: "http_method", type: "varchar", length: 10, default: "POST" })
+  httpMethod: string;
+
+  /**
+   * Cấu hình xác thực cho webhook.
+   *
+   * Dạng JSON, các trường:
+   * - auth_type: "hmac" | "bearer" | "basic" | "none"
+   * - header_name: tên header chứa thông tin xác thực
+   * - secret: bí mật dùng để ký HMAC hoặc mật khẩu Basic
+   * - algorithm: thuật toán HMAC (sha256, sha512, ...)
+   *
+   * Ví dụ:
+   * {
+   *   "auth_type": "hmac",
+   *   "header_name": "X-Webhook-Signature",
+   *   "secret": "sk_wh_abc123",
+   *   "algorithm": "sha256"
+   * }
+   */
+  @Column({ name: "auth_config", type: "jsonb", default: () => "'{}'::jsonb" })
+  authConfig: Record<string, any>;
+
+  /**
+   * Payload template - cấu hình cấu trúc dữ liệu gửi đi.
+   *
+   * Dạng JSON, hỗ trợ custom structure.
+   * Ví dụ:
+   * {
+   *   "includeHeaders": true,
+   *   "includeRequestBody": false,
+   *   "customFields": ["orderId", "total"],
+   *   "wrapInEnvelope": true
+   * }
+   */
+  @Column({ name: "payload_template", type: "jsonb", default: () => "'{}'::jsonb" })
+  payloadTemplate: Record<string, any>;
+
+  /**
+   * Chính sách retry khi gửi webhook thất bại.
+   *
+   * Dạng JSON, các trường:
+   * - max_retries: số lần retry tối đa (mặc định 3)
+   * - base_delay: delay ban đầu (giây, mặc định 1)
+   * - max_delay: delay tối đa (giây, mặc định 60)
+   *
+   * Sử dụng exponential backoff:
+   * delay = min(base_delay * 2^attempt, max_delay)
+   */
+  @Column({ name: "retry_policy", type: "jsonb", default: () => "'{\"max_retries\":3,\"base_delay\":1,\"max_delay\":60}'::jsonb" })
+  retryPolicy: Record<string, any>;
+
+  /**
+   * Giới hạn số lần gọi webhook mỗi phút (rate limiting).
+   *
+   * Mặc định: 60 calls/phút
+   * 0 = không giới hạn
+   */
+  @Column({ name: "rate_limit_rpm", type: "int", default: 60 })
+  rateLimitRpm: number;
+
+  /**
+   * Trạng thái webhook subscription.
+   *
+   * - "active": đang hoạt động, nhận và gửi events
+   * - "paused": tạm dừng, không gửi events mới
+   * - "disabled": vô hiệu hóa hoàn toàn
+   */
+  @Column({ name: "status", type: "varchar", length: 20, default: "active" })
+  status: string;
+
+  /**
+   * Tenant ID - cách ly webhook theo tenant.
+   *
+   * NULL = webhook global (cho tất cả tenant)
+   * Có UUID = webhook cho tenant cụ thể
+   */
+  @Column({ name: "tenant_id", type: "uuid", nullable: true })
+  tenantId: string | null;
+
+  /**
+   * Danh sách tag để nhóm/分類 subscription.
+   *
+   * Ví dụ: ["production", "payments", "critical"]
+   * Dùng để lọc và quản lý webhook theo nhóm.
+   */
+  @Column({ name: "tags", type: "simple-array", default: [] })
+  tags: string[];
+
+  /**
+   * Created at - thời điểm tạo subscription.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at - thời điểm cập nhật subscription.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra webhook có đang hoạt động không.
+   *
+   * @returns True nếu status là "active"
+   */
+  isActive(): boolean {
+    return this.status === "active";
+  }
+
+  /**
+   * Kiểm tra webhook có đang bị tạm dừng không.
+   *
+   * @returns True nếu status là "paused"
+   */
+  isPaused(): boolean {
+    return this.status === "paused";
+  }
+
+  /**
+   * Lấy auth type từ authConfig.
+   *
+   * @returns Auth type hoặc "none" nếu không cấu hình
+   */
+  getAuthType(): string {
+    return (this.authConfig && this.authConfig.auth_type) || "none";
+  }
+
+  /**
+   * Lấy max retries từ retryPolicy.
+   *
+   * @returns Số lần retry tối đa (mặc định 3)
+   */
+  getMaxRetries(): number {
+    return (this.retryPolicy && this.retryPolicy.max_retries) ?? 3;
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return `<WebhookSubscription(id="${this.subscriptionId}", event="${this.eventType}", status="${this.status}")>`;
+  }
+}

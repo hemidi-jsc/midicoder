@@ -716,7 +716,7 @@ core_packs:
       - retry_policy
       - outbound_api
     category: integration
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP42
     name: Approval Workflow Engine

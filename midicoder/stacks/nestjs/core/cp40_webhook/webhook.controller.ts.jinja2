@@ -1,0 +1,308 @@
+/**
+ * WebhookController - controller cho API webhook subscription.
+ *
+ * Cung cấp các endpoint REST cho việc quản lý webhook:
+ * - CRUD cho webhook subscriptions
+ * - Tìm kiếm theo event type
+ * - Phân trang và lọc
+ *
+ * CP40: Webhook
+ * Total subscriptions: {{ subscription_count }}
+ * Event types: {{ event_types | length }}
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  HttpStatus,
+  HttpCode,
+  ParseUUIDPipe,
+  ValidationPipe,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiParam,
+} from "@nestjs/swagger";
+import { WebhookService, PaginatedWebhooks } from "./webhook.service";
+import { WebhookSubscription } from "./webhook.entity";
+import {
+  CreateWebhookDto,
+  UpdateWebhookDto,
+  WebhookResponseDto,
+} from "./webhook.dto";
+
+/**
+ * WebhookController - quản lý webhook subscription.
+ *
+ * API Routes:
+ * - GET    /webhooks            - List tất cả subscriptions (có phân trang)
+ * - POST   /webhooks            - Tạo mới webhook subscription
+ * - GET    /webhooks/:id        - Lấy chi tiết subscription theo ID
+ * - PUT    /webhooks/:id        - Cập nhật subscription
+ * - DELETE /webhooks/:id        - Xóa subscription
+ * - GET    /webhooks/event/:eventType - Lấy subscriptions theo event type
+ */
+@ApiTags("Webhook")
+@ApiBearerAuth()
+@Controller("webhooks")
+export class WebhookController {
+  /**
+   * Constructor.
+   *
+   * @param webhookService - WebhookService instance
+   */
+  constructor(
+    private readonly webhookService: WebhookService,
+  ) {}
+
+  // ========================================================================
+  // Query Endpoints
+  // ========================================================================
+
+  /**
+   * List tất cả webhook subscriptions với phân trang và lọc.
+   *
+   * Hỗ trợ:
+   * - Phân trang: limit, offset
+   * - Lọc theo event type, tenant, status, tag
+   *
+   * @param limit - Số lượng mỗi trang (mặc định 20)
+   * @param offset - Offset phân trang (mặc định 0)
+   * @param eventType - Lọc theo event type
+   * @param tenantId - Lọc theo tenant ID
+   * @param status - Lọc theo trạng thái
+   * @param tag - Lọc theo tag
+   * @returns Object chứa data và pagination info
+   */
+  @Get()
+  @ApiOperation({
+    summary: "List tất cả webhook subscriptions",
+    description:
+      "Lấy danh sách webhook subscriptions với phân trang và lọc. Hỗ trợ lọc theo event type, tenant, status, tag.",
+  })
+  @ApiQuery({ name: "limit", required: false, example: 20 })
+  @ApiQuery({ name: "offset", required: false, example: 0 })
+  @ApiQuery({ name: "eventType", required: false, example: "order.created" })
+  @ApiQuery({ name: "tenantId", required: false, type: "string", format: "uuid" })
+  @ApiQuery({ name: "status", required: false, example: "active" })
+  @ApiQuery({ name: "tag", required: false, example: "production" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List subscriptions thành công",
+  })
+  async findAll(
+    @Query("limit") limit?: number,
+    @Query("offset") offset?: number,
+    @Query("eventType") eventType?: string,
+    @Query("tenantId") tenantId?: string,
+    @Query("status") status?: string,
+    @Query("tag") tag?: string,
+  ): Promise<PaginatedWebhooks> {
+    return this.webhookService.findAll({
+      limit: limit ?? 20,
+      offset: offset ?? 0,
+      eventType,
+      tenantId,
+      status,
+      tag,
+    });
+  }
+
+  /**
+   * Lấy chi tiết webhook subscription theo ID.
+   *
+   * @param id - Subscription ID
+   * @returns WebhookResponseDto hoặc 404
+   */
+  @Get(":id")
+  @ApiOperation({
+    summary: "Lấy chi tiết webhook subscription",
+    description: "Lấy thông tin chi tiết của một webhook subscription theo ID.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Subscription ID",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Tìm thấy subscription",
+    type: WebhookResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy subscription",
+  })
+  async findOne(
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<WebhookResponseDto> {
+    const subscription = await this.webhookService.findById(id);
+
+    if (!subscription) {
+      throw new Error("Không tìm thấy webhook subscription: " + id);
+    }
+
+    return this.webhookService.toResponseDto(subscription);
+  }
+
+  /**
+   * Lấy tất cả subscriptions cho một event type cụ thể.
+   *
+   * @param eventType - Event type
+   * @param tenantId - Tenant ID (optional, để lọc theo tenant)
+   * @returns List WebhookSubscription
+   */
+  @Get("event/:eventType")
+  @ApiOperation({
+    summary: "Lấy subscriptions theo event type",
+    description:
+      "Lấy tất cả webhook subscriptions đang active cho một event type cụ thể. Chỉ trả về subscriptions có status là active.",
+  })
+  @ApiParam({
+    name: "eventType",
+    description: "Event type cần tìm",
+    example: "order.created",
+  })
+  @ApiQuery({
+    name: "tenantId",
+    required: false,
+    description: "Tenant ID để lọc thêm",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List subscriptions cho event type",
+    type: [WebhookSubscription],
+  })
+  async findByEventType(
+    @Param("eventType") eventType: string,
+    @Query("tenantId", new ParseUUIDPipe({ optional: true }))
+    tenantId?: string,
+  ): Promise<WebhookSubscription[]> {
+    return this.webhookService.findByEventType(eventType, tenantId);
+  }
+
+  // ========================================================================
+  // Mutation Endpoints
+  // ========================================================================
+
+  /**
+   * Tạo mới webhook subscription.
+   *
+   * @param createDto - CreateWebhookDto
+   * @returns WebhookResponseDto vừa tạo
+   */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo mới webhook subscription",
+    description:
+      "Đăng ký webhook endpoint mới để nhận events. Cung cấp URL, event type, và cấu hình xác thực.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Webhook subscription đã được tạo",
+    type: WebhookResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ",
+  })
+  async create(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createDto: CreateWebhookDto,
+  ): Promise<WebhookResponseDto> {
+    const subscription = await this.webhookService.create(createDto);
+    return this.webhookService.toResponseDto(subscription);
+  }
+
+  /**
+   * Cập nhật webhook subscription.
+   *
+   * Partial update - chỉ cập nhật các field được truyền.
+   *
+   * @param id - Subscription ID
+   * @param updateDto - UpdateWebhookDto
+   * @returns WebhookResponseDto đã cập nhật
+   */
+  @Put(":id")
+  @ApiOperation({
+    summary: "Cập nhật webhook subscription",
+    description:
+      "Cập nhật thông tin của webhook subscription. Chỉ cập nhật các field được truyền trong body.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Subscription ID cần cập nhật",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Subscription đã được cập nhật",
+    type: WebhookResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy subscription",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ",
+  })
+  async update(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    updateDto: UpdateWebhookDto,
+  ): Promise<WebhookResponseDto> {
+    const subscription = await this.webhookService.update(id, updateDto);
+    return this.webhookService.toResponseDto(subscription);
+  }
+
+  /**
+   * Xóa webhook subscription.
+   *
+   * @param id - Subscription ID
+   * @returns Result của xóa
+   */
+  @Delete(":id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "Xóa webhook subscription",
+    description: "Xóa webhook subscription theo ID. Subscription đã xóa sẽ không còn nhận events.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Subscription ID cần xóa",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.NO_CONTENT,
+    description: "Subscription đã được xóa",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy subscription",
+  })
+  async remove(
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<void> {
+    const deleted = await this.webhookService.remove(id);
+    if (!deleted) {
+      throw new Error("Không tìm thấy webhook subscription: " + id);
+    }
+  }
+}
