@@ -73,6 +73,7 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP36": "cp36_tenant_onboarding",
     "CP37": "cp37_feature_flags",
     "CP38": "cp38_data_etl",
+    "CP39": "cp39_i18n_runtime",
     "CP51": "cp51_blueprint",
     "CP52": "cp52_invariant",
     "CP53": "cp53_domain_bridge",

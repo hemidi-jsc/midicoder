@@ -1,0 +1,377 @@
+/**
+ * I18nInterceptor - NestJS Interceptor phat hien locale tu request.
+ *
+ * Tu dong xac dinh locale cua nguoi dung tu:
+ * 1. Query parameter (?locale=vi-VN) - uu tien cao nhat
+ * 2. Header "X-Locale"
+ * 3. Header "Accept-Language"
+ * 4. Cookie "locale"
+ * 5. Locale mac dinh neu khong tim thay
+ *
+ * Sau khi phat hien, interceptor set locale vao request object
+ * de cac service/controller khac co the su dung.
+ *
+ * CP39: i18n/L10n Runtime
+ * Locale mac dinh: {{ default_locale }}
+ */
+
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  Logger,
+} from "@nestjs/common";
+import { Observable } from "rxjs";
+
+const logger = new Logger("I18nInterceptor");
+
+/**
+ * Interface cho request da mo rong voi locale.
+ *
+ * Moi request sau khi qua interceptor se co cac properties:
+ * - locale: locale code da phat hien
+ * - localeSource: nguon phat hien (query, header, accept-language, cookie, default)
+ */
+export interface I18nRequest {
+  /** Locale code da phat hien */
+  locale: string;
+  /** Nguon phat hien locale */
+  localeSource: LocaleSource;
+  /** Raw Accept-Language header (neu co) */
+  _rawAcceptLanguage?: string;
+  /** List locales da parse tu Accept-Language (theo priority) */
+  _acceptedLocales?: string[];
+}
+
+/**
+ * Enum cho nguon phat hien locale.
+ *
+ * Theo thu tu uu tien:
+ * 1. query - ?locale=vi-VN (uu tien cao nhat, nguoi dung chon ro rang)
+ * 2. header - X-Locale header
+ * 3. accept-language - Accept-Language header (browser auto)
+ * 4. cookie - locale cookie
+ * 5. default - locale mac dinh cua he thong
+ */
+export type LocaleSource = "query" | "header" | "accept-language" | "cookie" | "default";
+
+/**
+ * Interface cho HTTP request - tuong thich Express/Fastify.
+ */
+interface HttpCompatibleRequest {
+  query: Record<string, any>;
+  headers: Record<string, string | string[] | undefined>;
+  cookies?: Record<string, string>;
+  [key: string]: any;
+}
+
+/**
+ * Danh sach locales duoc hop le.
+ */
+const VALID_LOCALE_CODES = [
+{% for locale in locales %}  "{{ locale.code }}",
+{% endfor %}];
+
+/**
+ * I18nInterceptor - phat hien locale tu request.
+ *
+ * Thu tu phat hien (theo uu tien giam dan):
+ * 1. Query param "?locale=XX"
+ *    - Uu tien cao nhat vi nguoi dung chon ro rang
+ *    - Vi du: /api/translations?locale=vi-VN
+ *
+ * 2. Header "X-Locale: XX"
+ *    - Custom header de client chi dinh locale
+ *    - Vi du: X-Locale: en-US
+ *
+ * 3. Header "Accept-Language: XX"
+ *    - Browser tu dong gui theo ngon ngu hien thi
+ *    - Ho tro priority: en-US,en;q=0.9,vi;q=0.8
+ *    - Parse va chon locale co priority cao nhat
+ *
+ * 4. Cookie "locale=XX"
+ *    - Luu lua chon cua nguoi dung
+ *    - Vi du: locale=ja-JP
+ *
+ * 5. Locale mac dinh "{{ default_locale }}"
+ *    - Su dung khi khong phat hien duoc
+ *    - Luon la fallback cuoi cung
+ *
+ * Sau khi phat hien, interceptor set cac properties sau vao request:
+ * - request.locale: locale code (string)
+ * - request.localeSource: nguon phat hien (LocaleSource)
+ * - request._acceptedLocales: danh sach locales theo priority (neu tu Accept-Language)
+ *
+ * Usage trong controller:
+ *   @Get("messages")
+ *   getMessages(@Req() req: I18nRequest) {
+ *     const locale = req.locale; // "vi-VN"
+ *     const source = req.localeSource; // "query"
+ *     return this.service.getMessages(locale);
+ *   }
+ *
+ * Config trong module:
+ *   providers: [{
+ *     provide: APP_INTERCEPTOR,
+ *     useClass: I18nInterceptor,
+ *   }]
+ */
+@Injectable()
+export class I18nInterceptor implements NestInterceptor {
+  /**
+   * Locale mac dinh khi khong phat hien duoc.
+   */
+  private readonly defaultLocale: string = "{{ default_locale }}";
+
+  /**
+   * Intercept moi HTTP request.
+   *
+   * @param context - Execution context
+   * @param next - Next handler
+   * @returns Observable khong thay doi response
+   */
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const request = context.switchToHttp().getRequest<HttpCompatibleRequest & I18nRequest>();
+
+    // Thu tu phat hien locale
+    let locale: string | null = null;
+    let source: LocaleSource = "default";
+
+    // 1. Query parameter (?locale=XX) - uu tien cao nhat
+    if (!locale) {
+      const queryLocale = this.extractQueryLocale(request);
+      if (queryLocale) {
+        locale = queryLocale;
+        source = "query";
+      }
+    }
+
+    // 2. Custom header "X-Locale"
+    if (!locale) {
+      const headerLocale = this.extractHeaderLocale(request);
+      if (headerLocale) {
+        locale = headerLocale;
+        source = "header";
+      }
+    }
+
+    // 3. Accept-Language header (browser auto)
+    if (!locale) {
+      const acceptLangResult = this.extractAcceptLanguage(request);
+      if (acceptLangResult) {
+        locale = acceptLangResult.locale;
+        request._rawAcceptLanguage = acceptLangResult.raw;
+        request._acceptedLocales = acceptLangResult.locales;
+        source = "accept-language";
+      }
+    }
+
+    // 4. Cookie "locale"
+    if (!locale) {
+      const cookieLocale = this.extractCookieLocale(request);
+      if (cookieLocale) {
+        locale = cookieLocale;
+        source = "cookie";
+      }
+    }
+
+    // 5. Locale mac dinh
+    if (!locale) {
+      locale = this.defaultLocale;
+      source = "default";
+    }
+
+    // Set vao request object
+    request.locale = locale;
+    request.localeSource = source;
+
+    // Log debug (chua thay doi locale mac dinh)
+    if (source !== "default") {
+      logger.debug(
+        `[I18n] Detected locale "${locale}" from ${source}`,
+      );
+    }
+
+    // Tiep tuc voi next handler
+    return next.handle();
+  }
+
+  /**
+   * Extract locale tu query parameter.
+   *
+   * @param request - HTTP request
+   * @returns Locale code hoac null
+   */
+  private extractQueryLocale(request: HttpCompatibleRequest): string | null {
+    const queryLocale = request.query?.locale;
+
+    if (!queryLocale || typeof queryLocale !== "string") {
+      return null;
+    }
+
+    // Validate locale
+    const normalized = queryLocale.toLowerCase().trim();
+    return this.normalizeAndValidate(normalized) || null;
+  }
+
+  /**
+   * Extract locale tu custom header "X-Locale".
+   *
+   * @param request - HTTP request
+   * @returns Locale code hoac null
+   */
+  private extractHeaderLocale(request: HttpCompatibleRequest): string | null {
+    const headerValue = request.headers["x-locale"];
+
+    if (!headerValue || typeof headerValue !== "string") {
+      return null;
+    }
+
+    const normalized = headerValue.toLowerCase().trim();
+    return this.normalizeAndValidate(normalized) || null;
+  }
+
+  /**
+   * Extract locale tu Accept-Language header.
+   *
+   * Parse danh sach locales theo priority (q-value).
+   * Vi du: "en-US,en;q=0.9,vi;q=0.8,zh-CN;q=0.7"
+   *
+   * @param request - HTTP request
+   * @returns Object chua locale, raw header, va danh sach locales hoac null
+   */
+  private extractAcceptLanguage(
+    request: HttpCompatibleRequest,
+  ): { locale: string; raw: string; locales: string[] } | null {
+    const rawHeader = request.headers["accept-language"];
+
+    if (!rawHeader || typeof rawHeader !== "string") {
+      return null;
+    }
+
+    // Parse Accept-Language header
+    const parsed = this.parseAcceptLanguage(rawHeader);
+
+    if (parsed.length === 0) {
+      return null;
+    }
+
+    // Tim locale hop le dau tien trong danh sach
+    for (const candidate of parsed) {
+      const normalized = candidate.toLowerCase().trim();
+      const validated = this.normalizeAndValidate(normalized);
+      if (validated) {
+        return {
+          locale: validated,
+          raw: rawHeader,
+          locales: parsed,
+        };
+      }
+    }
+
+    // Khong tim thay locale hop le, tra ve null de thu cach khac
+    return null;
+  }
+
+  /**
+   * Parse Accept-Language header thanh danh sach locales theo priority.
+   *
+   * Format: "language;q=value,language;q=value"
+   * Neu khong co q-value, mac dinh la 1.0
+   *
+   * @param headerValue - Raw Accept-Language header value
+   * @returns Danh sach locales da sap xep theo priority
+   */
+  private parseAcceptLanguage(headerValue: string): string[] {
+    const parts = headerValue.split(",");
+    const entries: Array<{ locale: string; priority: number }> = [];
+
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+
+      const segments = trimmed.split(";");
+      const locale = segments[0].trim();
+      let priority = 1.0;
+
+      // Parse q-value
+      if (segments.length > 1) {
+        const qSegment = segments[1].trim();
+        if (qSegment.startsWith("q=")) {
+          const qValue = parseFloat(qSegment.substring(2));
+          if (!isNaN(qValue)) {
+            priority = qValue;
+          }
+        }
+      }
+
+      // Loai bo private use tag (-x-...)
+      const cleaned = locale.split("-").filter((seg) => seg !== "x").join("-");
+      if (cleaned) {
+        entries.push({ locale: cleaned, priority });
+      }
+    }
+
+    // Sap xep theo priority giam dan
+    entries.sort((a, b) => b.priority - a.priority);
+
+    return entries.map((e) => e.locale);
+  }
+
+  /**
+   * Extract locale tu cookie "locale".
+   *
+   * @param request - HTTP request
+   * @returns Locale code hoac null
+   */
+  private extractCookieLocale(request: HttpCompatibleRequest): string | null {
+    const cookies = request.cookies;
+
+    if (!cookies || typeof cookies !== "object") {
+      return null;
+    }
+
+    const cookieLocale = cookies["locale"];
+
+    if (!cookieLocale || typeof cookieLocale !== "string") {
+      return null;
+    }
+
+    const normalized = cookieLocale.toLowerCase().trim();
+    return this.normalizeAndValidate(normalized) || null;
+  }
+
+  /**
+   * Chuẩn hoa va xac thuc locale code.
+   *
+   * Ho tro ca 2 che do:
+   * - Khop day du: "vi-VN" === "vi-VN"
+   * - Khop prefix: "vi" se tim locale bat dau bang "vi" (vi-VN, vi-VN)
+   *
+   * @param code - Locale code can xac thuc
+   * @returns Locale code da xac thuc hoac null
+   */
+  private normalizeAndValidate(code: string): string | null {
+    if (!code) {
+      return null;
+    }
+
+    // Thuc day du trc
+    for (const valid of VALID_LOCALE_CODES) {
+      if (valid.toLowerCase() === code) {
+        return valid;
+      }
+    }
+
+    // Thuc khop prefix: "vi" -> "vi-VN"
+    for (const valid of VALID_LOCALE_CODES) {
+      const validParts = valid.split("-");
+      if (validParts[0].toLowerCase() === code) {
+        return valid;
+      }
+    }
+
+    return null;
+  }
+}

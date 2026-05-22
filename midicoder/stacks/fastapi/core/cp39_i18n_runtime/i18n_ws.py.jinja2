@@ -1,0 +1,422 @@
+"""
+WebSocket handler cho real-time i18n sync.
+
+Tao tu dong boi CP39 — khong sua thu cong.
+
+Cung cap WebSocket endpoint de sync thay doi ban dich thoi gian thuc:
+- Khach hai co the subscribe vao cac locale/namespace cu the
+- Server broadcast thay doi khi ban dich duoc cap nhat
+- Cho phep nhieu client dong thoi ket noi
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import json
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["i18n WebSocket"])
+
+
+class ConnectionManager:
+    """Quan ly WebSocket connections va subscription.
+
+    Theo doi moi ket noi va subscription cua tung khach hai.
+    Khi co thay doi ban dich, broadcast toi nhung client dang subscribe.
+
+    Attrs:
+        active_connections: Danh sach tat ca connections dang hoat dong.
+        subscriptions: Dict {subscription_key: set[WebSocket]}.
+        client_info: Dict {websocket: dict} de theo doi thong tin client.
+    """
+
+    def __init__(self) -> None:
+        """Khoi tao ConnectionManager."""
+        self.active_connections: list[WebSocket] = []
+        self.subscriptions: dict[str, set[WebSocket]] = {}
+        self.client_info: dict[WebSocket, dict[str, Any]] = {}
+
+    async def connect(self, websocket: WebSocket, client_id: str = "") -> None:
+        """Accept WebSocket connection moi.
+
+        Args:
+            websocket: WebSocket object da duoc accept.
+            client_id: ID cua client (tu chon).
+        """
+        self.active_connections.append(websocket)
+        self.client_info[websocket] = {
+            "client_id": client_id,
+            "connected_at": datetime.now(timezone.utc).isoformat(),
+            "subscriptions": [],
+        }
+        logger.info(f"WebSocket connected: {client_id or 'anonymous'} (total: {len(self.active_connections)})")
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        """Xoa WebSocket connection va unsubscribe toan bo.
+
+        Args:
+            websocket: WebSocket object can xoa.
+        """
+        # Unsubscribe toan bo
+        for key, conns in list(self.subscriptions.items()):
+            conns.discard(websocket)
+            if not conns:
+                del self.subscriptions[key]
+
+        # Xoa khoi danh sach connections
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+        client_id = self.client_info.get(websocket, {}).get("client_id", "unknown")
+        self.client_info.pop(websocket, None)
+        logger.info(f"WebSocket disconnected: {client_id} (total: {len(self.active_connections)})")
+
+    async def subscribe(self, websocket: WebSocket, subscription_key: str) -> None:
+        """Khach hai subscribe vao mot subscription key.
+
+        Subscription key duoc xay dung theo dinh dang:
+        {locale}:{namespace} hoac {locale}:* (tat ca namespace)
+
+        Args:
+            websocket: WebSocket cua client.
+            subscription_key: Key subscription (ví dụ: "vi:common", "en:*").
+        """
+        if subscription_key not in self.subscriptions:
+            self.subscriptions[subscription_key] = set()
+        self.subscriptions[subscription_key].add(websocket)
+
+        # Cap nhat client info
+        if websocket in self.client_info:
+            if subscription_key not in self.client_info[websocket]["subscriptions"]:
+                self.client_info[websocket]["subscriptions"].append(subscription_key)
+
+        logger.debug(f"Subscribed: {subscription_key} (subscribers: {len(self.subscriptions[subscription_key])})")
+
+    async def unsubscribe(self, websocket: WebSocket, subscription_key: str) -> None:
+        """Khach hai unsubscribe khoi mot subscription key.
+
+        Args:
+            websocket: WebSocket cua client.
+            subscription_key: Key subscription can huy.
+        """
+        if subscription_key in self.subscriptions:
+            self.subscriptions[subscription_key].discard(websocket)
+            if not self.subscriptions[subscription_key]:
+                del self.subscriptions[subscription_key]
+
+        # Cap nhat client info
+        if websocket in self.client_info:
+            subs = self.client_info[websocket].get("subscriptions", [])
+            if subscription_key in subs:
+                subs.remove(subscription_key)
+
+        logger.debug(f"Unsubscribed: {subscription_key}")
+
+    async def broadcast(self, message: dict[str, Any]) -> None:
+        """Gui message toi tat ca active connections.
+
+        Args:
+            message: Dict message can gui.
+        """
+        disconnected = []
+        for conn in self.active_connections:
+            try:
+                await conn.send_json(message)
+            except Exception as exc:
+                logger.warning(f"Failed to send to connection: {exc}")
+                disconnected.append(conn)
+
+        for conn in disconnected:
+            self.disconnect(conn)
+
+    async def broadcast_to_subscribers(
+        self,
+        message: dict[str, Any],
+        locale: str,
+        namespace: str,
+    ) -> None:
+        """Gui message toi nhung client dang subscribe locale/namespace.
+
+        Gui den ca subscriptions cu the (locale:namespace) va wildcard (locale:*).
+
+        Args:
+            message: Dict message can gui.
+            locale: Locale code.
+            namespace: Namespace.
+        """
+        targets: set[WebSocket] = set()
+
+        # Subscribers cua locale:namespace cu the
+        specific_key = f"{locale}:{namespace}"
+        if specific_key in self.subscriptions:
+            targets.update(self.subscriptions[specific_key])
+
+        # Subscribers cua locale:* (tat ca namespace)
+        wildcard_key = f"{locale}:*"
+        if wildcard_key in self.subscriptions:
+            targets.update(self.subscriptions[wildcard_key])
+
+        disconnected = []
+        for conn in targets:
+            try:
+                await conn.send_json(message)
+            except Exception as exc:
+                logger.warning(f"Failed to send to subscriber: {exc}")
+                disconnected.append(conn)
+
+        for conn in disconnected:
+            self.disconnect(conn)
+
+        logger.debug(f"Broadcast to {len(targets)} subscribers for {specific_key}")
+
+    def get_status(self) -> dict[str, Any]:
+        """Tra ve trang thai cua ConnectionManager.
+
+        Returns:
+            Dict chua so luong connections, subscriptions, va client info.
+        """
+        return {
+            "active_connections": len(self.active_connections),
+            "subscription_count": len(self.subscriptions),
+            "subscriptions": {
+                key: len(conns) for key, conns in self.subscriptions.items()
+            },
+            "clients": [
+                {
+                    "client_id": info.get("client_id", "unknown"),
+                    "connected_at": info.get("connected_at"),
+                    "subscriptions": info.get("subscriptions", []),
+                }
+                for info in self.client_info.values()
+            ],
+        }
+
+
+# Singleton manager — chia se giua tat ca endpoints
+manager = ConnectionManager()
+
+
+# ============================================================================
+# WebSocket Endpoint
+# ============================================================================
+
+
+@router.websocket("/ws/i18n")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    client_id: str = "",
+) -> None:
+    """WebSocket endpoint cho real-time i18n sync.
+
+    Message format nhan vao (tu client):
+    - {"type": "subscribe", "locale": "vi", "namespace": "common"}
+    - {"type": "unsubscribe", "locale": "vi", "namespace": "common"}
+    - {"type": "ping"}
+
+    Message format gui ra (toi client):
+    - {"type": "translation_updated", "key": "...", "locale": "...", "value": "..."}
+    - {"type": "translation_deleted", "key": "...", "locale": "..."}
+    - {"type": "locale_added", "code": "...", "name": "..."}
+    - {"type": "locale_updated", "code": "..."}
+    - {"type": "pong"}
+    - {"type": "error", "message": "..."}
+
+    Args:
+        websocket: WebSocket connection.
+        client_id: Tu chon, ID cua client de debug.
+    """
+    await websocket.accept()
+    await manager.connect(websocket, client_id)
+
+    try:
+        while True:
+            # Nhan message tu client
+            raw_data = await websocket.receive_text()
+
+            try:
+                data = json.loads(raw_data)
+            except json.JSONDecodeError:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": "Invalid JSON format",
+                })
+                continue
+
+            message_type = data.get("type")
+
+            if message_type == "subscribe":
+                locale = data.get("locale", "")
+                namespace = data.get("namespace", "*")
+                if not locale:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Missing 'locale' in subscribe message",
+                    })
+                    continue
+                subscription_key = f"{locale}:{namespace}"
+                await manager.subscribe(websocket, subscription_key)
+                await websocket.send_json({
+                    "type": "subscribed",
+                    "subscription": subscription_key,
+                })
+
+            elif message_type == "unsubscribe":
+                locale = data.get("locale", "")
+                namespace = data.get("namespace", "*")
+                if not locale:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Missing 'locale' in unsubscribe message",
+                    })
+                    continue
+                subscription_key = f"{locale}:{namespace}"
+                await manager.unsubscribe(websocket, subscription_key)
+                await websocket.send_json({
+                    "type": "unsubscribed",
+                    "subscription": subscription_key,
+                })
+
+            elif message_type == "ping":
+                await websocket.send_json({"type": "pong", "timestamp": datetime.now(timezone.utc).isoformat()})
+
+            else:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": f"Unknown message type: {message_type}",
+                })
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as exc:
+        logger.error(f"WebSocket error: {exc}")
+        manager.disconnect(websocket)
+
+
+# ============================================================================
+# Internal HTTP endpoints de broadcast thay doi
+# ============================================================================
+
+internal_router = APIRouter(prefix="/api/i18n/internal", tags=["i18n Internal"])
+
+
+@internal_router.post("/broadcast-translation-update")
+async def broadcast_translation_update(
+    key: str,
+    locale: str,
+    namespace: str,
+    value: str,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """Internal endpoint de broadcast thay doi ban dich.
+
+    Duoc goi tu i18n service sau khi ban dich duoc cap nhat.
+    Chi can su dung ben trong ung dung — khong public.
+
+    Args:
+        key: Translation key da thay doi.
+        locale: Locale code.
+        namespace: Namespace.
+        value: Noi dung ban dich moi.
+        tenant_id: Tenant ID (tu chon).
+
+    Returns:
+        Dict chua so luong subscribers nhan duoc message.
+    """
+    message = {
+        "type": "translation_updated",
+        "key": key,
+        "locale": locale,
+        "namespace": namespace,
+        "value": value,
+        "tenant_id": tenant_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    await manager.broadcast_to_subscribers(message, locale, namespace)
+
+    status = manager.get_status()
+    return {
+        "status": "sent",
+        "message": message,
+        "active_subscriptions": status["subscription_count"],
+    }
+
+
+@internal_router.post("/broadcast-translation-deleted")
+async def broadcast_translation_deleted(
+    key: str,
+    locale: str,
+    namespace: str,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """Internal endpoint de broadcast viec xoa ban dich.
+
+    Args:
+        key: Translation key da bi xoa.
+        locale: Locale code.
+        namespace: Namespace.
+        tenant_id: Tenant ID (tu chon).
+
+    Returns:
+        Dict chua trang thai gui.
+    """
+    message = {
+        "type": "translation_deleted",
+        "key": key,
+        "locale": locale,
+        "namespace": namespace,
+        "tenant_id": tenant_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    await manager.broadcast_to_subscribers(message, locale, namespace)
+    return {"status": "sent", "message": message}
+
+
+@internal_router.post("/broadcast-locale-change")
+async def broadcast_locale_change(
+    code: str,
+    action: str,  # "added" | "updated" | "deleted"
+    name: str | None = None,
+) -> dict[str, Any]:
+    """Internal endpoint de broadcast thay doi locale.
+
+    Args:
+        code: BCP 47 locale code.
+        action: Loai thay doi (added, updated, deleted).
+        name: Ten locale (neu co).
+
+    Returns:
+        Dict chua trang thai gui.
+    """
+    message = {
+        "type": f"locale_{action}",
+        "code": code,
+        "name": name,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    # Locale change gui toi tat ca clients
+    await manager.broadcast(message)
+    return {"status": "sent", "message": message}
+
+
+@internal_router.get("/status")
+async def get_ws_status() -> dict[str, Any]:
+    """Lay trang thai cua WebSocket manager.
+
+    Returns:
+        Dict chua thong tin connections va subscriptions.
+    """
+    return manager.get_status()
+
+
+__all__ = [
+    "ConnectionManager",
+    "manager",
+    "router",
+    "internal_router",
+]

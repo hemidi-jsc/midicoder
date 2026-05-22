@@ -1,0 +1,360 @@
+"""
+Cache layer cho i18n — ho tro ca memory va Redis backend.
+
+Tao tu dong boi CP39 — khong sua thu cong.
+
+Cung cap lop cache de toi uu hieu nang tra cuu ban dich:
+- MemoryBackend: dung dict trong bo nho, co TTL
+- RedisBackend: dung Redis server de chia se cache cross-process
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Memory Cache Backend (CacheDict voi TTL)
+# ============================================================================
+
+
+class CacheDict:
+    """Dict cache voi TTL cho moi entry.
+
+    Moi entry duoc luu voi thoi gian het han. Khi doc/gia tri, neu da het han
+    thi entry se duoc xoa va tra ve None.
+
+    Attrs:
+        ttl_seconds: Thoi gian song cua moi entry (giay).
+        max_size: So entry toi da cho phep.
+    """
+
+    def __init__(self, ttl_seconds: int = 3600, max_size: int = 10000) -> None:
+        """Khoi tao CacheDict.
+
+        Args:
+            ttl_seconds: TTL cho moi entry (mac dinh: 1 gio).
+            max_size: So entry toi da (mac dinh: 10000).
+        """
+        self._store: dict[str, tuple[str, float]] = {}  # key -> (value, expire_at)
+        self._lock = asyncio.Lock()
+        self.ttl_seconds = ttl_seconds
+        self.max_size = max_size
+
+    async def get(self, key: str) -> str | None:
+        """Doc gia tri tu cache.
+
+        Args:
+            key: Cache key.
+
+        Returns:
+            Gia tri neu van co hieu luc, nguoc lai None.
+        """
+        async with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+
+            value, expire_at = entry
+            if time.monotonic() > expire_at:
+                # Het han — xoa entry
+                del self._store[key]
+                logger.debug(f"Cache expired: {key}")
+                return None
+
+            return value
+
+    async def set(self, key: str, value: str) -> None:
+        """Ghi gia tri vao cache voi TTL.
+
+        Khi qua gioi han max_size, entry cu nhat se duoc xoa.
+
+        Args:
+            key: Cache key.
+            value: Gia tri can luu.
+        """
+        async with self._lock:
+            # Kiem tra va lam sach neu qua gioi han
+            if len(self._store) >= self.max_size and key not in self._store:
+                await self._evict_expired()
+                # Neu van qua gioi han, xoa entry cu nhat
+                if len(self._store) >= self.max_size:
+                    oldest_key = min(self._store, key=lambda k: self._store[k][1])
+                    del self._store[oldest_key]
+                    logger.debug(f"Cache eviction: {oldest_key} (max_size={self.max_size})")
+
+            expire_at = time.monotonic() + self.ttl_seconds
+            self._store[key] = (value, expire_at)
+
+    async def invalidate(self, key: str) -> None:
+        """Xoa mot entry khoi cache.
+
+        Args:
+            key: Cache key can xoa.
+        """
+        async with self._lock:
+            self._store.pop(key, None)
+
+    async def clear(self) -> None:
+        """Xoa toan bo cache."""
+        async with self._lock:
+            self._store.clear()
+
+    async def _evict_expired(self) -> None:
+        """Xoa nhung entry da het han."""
+        now = time.monotonic()
+        expired_keys = [k for k, (_, exp) in self._store.items() if now > exp]
+        for key in expired_keys:
+            del self._store[key]
+        if expired_keys:
+            logger.debug(f"Evicted {len(expired_keys)} expired cache entries")
+
+    async def get_size(self) -> int:
+        """Tra ve so entry hien tai trong cache."""
+        async with self._lock:
+            return len(self._store)
+
+
+# ============================================================================
+# Redis Cache Backend
+# ============================================================================
+
+
+class RedisCacheBackend:
+    """Cache backend su dung Redis server.
+
+    Cho phep chia se cache giua nhieu instance cua ung dung.
+    Yeu cau package redis[async] duoc cai dat.
+
+    Attrs:
+        redis_url: Connection URL cua Redis server.
+        ttl_seconds: TTL cho moi cache entry.
+    """
+
+    PREFIX = "i18n:"
+    DEFAULT_TTL = 3600  # 1 gio
+
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379/0",
+        ttl_seconds: int = DEFAULT_TTL,
+    ) -> None:
+        """Khoi tao Redis cache backend.
+
+        Args:
+            redis_url: Redis connection URL.
+            ttl_seconds: TTL cho moi entry (giay).
+        """
+        try:
+            import redis.asyncio as aioredis
+        except ImportError:
+            raise ImportError(
+                "redis[async] package la bat buoc cho RedisCacheBackend. "
+                "Cai dat: pip install redis[async]"
+            )
+
+        self._redis = aioredis.from_url(redis_url, decode_responses=True)
+        self.ttl_seconds = ttl_seconds
+        self._redis_url = redis_url
+
+    async def get(self, key: str) -> str | None:
+        """Doc gia tri tu Redis.
+
+        Args:
+            key: Cache key (se duoc them PREFIX).
+
+        Returns:
+            Gia tri neu ton tai, nguoc lai None.
+        """
+        full_key = f"{self.PREFIX}{key}"
+        value = await self._redis.get(full_key)
+        return value
+
+    async def set(self, key: str, value: str) -> None:
+        """Ghi gia tri vao Redis voi TTL.
+
+        Args:
+            key: Cache key (se duoc them PREFIX).
+            value: Gia tri can luu.
+        """
+        full_key = f"{self.PREFIX}{key}"
+        await self._redis.set(full_key, value, ex=self.ttl_seconds)
+
+    async def invalidate(self, key: str) -> None:
+        """Xoa mot entry khoi Redis.
+
+        Args:
+            key: Cache key can xoa (se duoc them PREFIX).
+        """
+        full_key = f"{self.PREFIX}{key}"
+        await self._redis.delete(full_key)
+
+    async def clear(self) -> None:
+        """Xoa toan bo cache entries cua i18n.
+
+        Su dung SCAN de tim va xoa cac key co PREFIX.
+        """
+        cursor = 0
+        while True:
+            cursor, keys = await self._redis.scan(cursor, match=f"{self.PREFIX}*", count=100)
+            if keys:
+                await self._redis.delete(*keys)
+            if cursor == 0:
+                break
+
+    async def close(self) -> None:
+        """Dong Redis connection."""
+        await self._redis.close()
+
+
+# ============================================================================
+# TranslationCache — Facade class
+# ============================================================================
+
+
+class TranslationCache:
+    """Lop facade cho cache ban dich.
+
+    Cho phep chon backend (memory hoac redis) va cung cap
+    cac phuong thuc thong nhat de thao tac voi cache.
+
+    Attrs:
+        backend: Loai backend ("memory" hoac "redis").
+        _backend: Instance cua CacheDict hoac RedisCacheBackend.
+    """
+
+    def __init__(
+        self,
+        backend: str = "memory",
+        ttl_seconds: int = 3600,
+        max_size: int = 10000,
+        redis_url: str | None = None,
+    ) -> None:
+        """Khoi tao TranslationCache.
+
+        Args:
+            backend: Loai backend ("memory" hoac "redis").
+            ttl_seconds: TTL cho moi cache entry.
+            max_size: So entry toi da (cho memory backend).
+            redis_url: Redis URL (cho redis backend).
+        """
+        self.backend = backend
+
+        if backend == "redis":
+            if redis_url is None:
+                raise ValueError("redis_url la bat buoc khi backend='redis'")
+            self._backend = RedisCacheBackend(
+                redis_url=redis_url,
+                ttl_seconds=ttl_seconds,
+            )
+        else:
+            # Mac dinh: memory backend
+            self._backend = CacheDict(
+                ttl_seconds=ttl_seconds,
+                max_size=max_size,
+            )
+
+    async def get(self, key: str) -> str | None:
+        """Doc ban dich tu cache.
+
+        Args:
+            key: Cache key duong dan: {namespace}:{locale}:{key}[:{tenant_id}].
+
+        Returns:
+            Ban dich neu co trong cache, nguoc lai None.
+        """
+        try:
+            return await self._backend.get(key)
+        except Exception as exc:
+            logger.error(f"Cache get error (key={key}): {exc}")
+            return None
+
+    async def set(self, key: str, value: str) -> None:
+        """Ghi ban dich vao cache.
+
+        Args:
+            key: Cache key duong dan: {namespace}:{locale}:{key}[:{tenant_id}].
+            value: Noi dung ban dich.
+        """
+        try:
+            await self._backend.set(key, value)
+        except Exception as exc:
+            logger.error(f"Cache set error (key={key}): {exc}")
+
+    async def invalidate(self, key: str) -> None:
+        """Xoa mot cache entry.
+
+        Args:
+            key: Cache key can xoa.
+        """
+        try:
+            await self._backend.invalidate(key)
+        except Exception as exc:
+            logger.error(f"Cache invalidate error (key={key}): {exc}")
+
+    async def invalidate_locale(self, locale: str) -> None:
+        """Xoa toan bo cache entries cho mot locale.
+
+        Can thiet khi co ban dich cua locale duoc cap nhat
+        va can dat lai cache.
+
+        Args:
+            locale: Locale code can invalidate cache.
+        """
+        if self.backend == "memory":
+            # Voi memory backend, scan qua tat ca keys
+            cd = self._backend  # type: ignore
+            async with cd._lock:
+                keys_to_remove = [
+                    k for k in cd._store
+                    if f":{locale}:" in k
+                ]
+                for k in keys_to_remove:
+                    del cd._store[k]
+            logger.info(f"Invalidated {len(keys_to_remove)} cache entries for locale '{locale}'")
+        else:
+            # Voi Redis, su dung SCAN de tim va xoa keys
+            rc = self._backend  # type: ignore
+            pattern = f"{rc.PREFIX}*:{locale}:*"
+            cursor = 0
+            count = 0
+            while True:
+                cursor, keys = await rc._redis.scan(cursor, match=pattern, count=100)
+                if keys:
+                    await rc._redis.delete(*keys)
+                    count += len(keys)
+                if cursor == 0:
+                    break
+            logger.info(f"Invalidated {count} Redis cache entries for locale '{locale}'")
+
+    async def clear(self) -> None:
+        """Xoa toan bo cache."""
+        await self._backend.clear()
+
+    async def close(self) -> None:
+        """Dong backend connection (chi Redis can)."""
+        if self.backend == "redis":
+            rc = self._backend  # type: ignore
+            await rc.close()
+
+
+# ============================================================================
+# Default cache config tu template context
+# ============================================================================
+
+CACHE_BACKENDS: list[str] = [
+{% for backend in cache_backends %}
+    "{{ backend }}",
+{% endfor %}
+]
+
+__all__ = [
+    "CacheDict",
+    "RedisCacheBackend",
+    "TranslationCache",
+    "CACHE_BACKENDS",
+]

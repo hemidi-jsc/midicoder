@@ -1,0 +1,266 @@
+/**
+* Locale Entity - TypeORM entity cho ngôn ngữ/vùng miền.
+*
+* Lưu thông tin cấu hình của từng locale: định dạng ngày tháng,
+* số, tiền tệ, quy tắc số nhiều, và fallback.
+*
+* CP39: i18n/L10n Runtime
+* Mặc định: {{ default_locale }}
+*/
+
+import {
+Entity,
+PrimaryGeneratedColumn,
+Column,
+CreateDateColumn,
+UpdateDateColumn,
+OneToMany,
+Index,
+} from "typeorm";
+import { Translation } from "./translation.entity";
+
+/**
+* Interface cho Locale properties.
+*/
+export interface ILocale {
+id: number;
+code: string;
+name: string;
+isDefault: boolean;
+dateFormat: string;
+numberFormat: string;
+currencyCode: string;
+pluralRule: string;
+fallbackLocale: string | null;
+translations: Translation[];
+createdAt: Date;
+updatedAt: Date;
+}
+
+/**
+* Định nghĩa locale codes đã cấu hình.
+*/
+export const LOCALE_CODES = [
+{% for locale in locales %} "{{ locale.code }}",
+{% endfor %}];
+
+/**
+* Định nghĩa các quy tắc số nhiều (CLDR plural rules).
+*/
+export const PLURAL_RULES = [
+{% for rule in plural_rules %} "{{ rule }}",
+{% endfor %}];
+
+/**
+* Locale Entity - lưu trữ thông tin ngôn ngữ/vùng miền.
+*
+* Mỗi locale định nghĩa:
+* - code: mã locale chuẩn BCP 47 (ví dụ: "vi-VN", "en-US")
+* - name: tên hiển thị của ngôn ngữ
+* - isDefault: có phải ngôn ngữ mặc định không (chỉ 1 locale)
+* - dateFormat: pattern định dạng ngày (ICU format)
+* - numberFormat: pattern định dạng số
+* - currencyCode: mã tiền tệ ISO 4217
+* - pluralRule: quy tắc số nhiều (CLDR)
+* - fallbackLocale: locale dự phòng khi thiếu bản dịch
+*
+* Relations:
+* - @OneToMany với Translation (cascade insert/remove)
+*
+* Indexes:
+* - (code) UNIQUE - mỗi locale code chỉ xuất hiện 1 lần
+* - (isDefault) - tối ưu tìm locale mặc định
+*
+* Usage:
+* const locale = new Locale();
+* locale.code = "vi-VN";
+* locale.name = "Tiếng Việt";
+* locale.isDefault = true;
+* locale.dateFormat = "dd/MM/yyyy";
+* locale.numberFormat = "#,##0.00";
+* locale.currencyCode = "VND";
+* locale.pluralRule = "one";
+* locale.fallbackLocale = null;
+* await localeRepository.save(locale);
+*/
+@Entity("locales")
+@Index("idx_locale_is_default", ["isDefault"])
+export class Locale implements ILocale {
+/**
+* Primary key - số nguyên tự tăng.
+*/
+@PrimaryGeneratedColumn()
+id: number;
+
+/**
+* Locale code - mã ngôn ngữ/vùng miền chuẩn BCP 47.
+*
+* Định dạng: "language" hoặc "language-REGION"
+* Ví dụ: "vi", "vi-VN", "en", "en-US", "zh-CN"
+*
+* UNIQUE constraint - không được trùng lặp.
+* Không phân biệt hoa/thường khi so sánh.
+*/
+@Column({ name: "code", type: "varchar", length: 10, unique: true })
+code: string;
+
+/**
+* Tên hiển thị của ngôn ngữ.
+*
+* Ví dụ: "Tiếng Việt", "English (US)", "中文(简体)"
+* Dùng để hiển thị trong giao diện người dùng.
+*/
+@Column({ name: "name", type: "varchar", length: 100 })
+name: string;
+
+/**
+* Cờ ngôn ngữ mặc định.
+*
+* Chỉ một locale duy nhất có isDefault = true.
+* Locale này được dùng làm mặc định khi:
+* - Không xác định được locale từ request
+* - Locale yêu cầu không tồn tại trong hệ thống
+*/
+@Column({ name: "is_default", type: "boolean", default: false })
+isDefault: boolean;
+
+/**
+* Pattern định dạng ngày tháng.
+*
+* Sử dụng ICU date format pattern:
+* - "yyyy-MM-dd": 2026-05-22
+* - "dd/MM/yyyy": 22/05/2026
+* - "MMMM d, y": Tháng 5 22, 2026
+* - "MM/dd/yyyy hh:mm a": 05/22/2026 02:30 PM
+*
+* Tham khảo: https://unicode.org/reports/tr35/tr35-dates.html
+*/
+@Column({ name: "date_format", type: "varchar", length: 100, default: "yyyy-MM-dd" })
+dateFormat: string;
+
+/**
+* Pattern định dạng số.
+*
+* Sử dụng ICU number format pattern:
+* - "#,##0.00": 1,234.56
+* - "#.##0,00": 1.234,56
+* - "#,##0": 1,234
+* - "0.00%": 123.45%
+*/
+@Column({ name: "number_format", type: "varchar", length: 100, default: "#,##0.00" })
+numberFormat: string;
+
+/**
+* Mã tiền tệ ISO 4217.
+*
+* Ví dụ: "VND", "USD", "EUR", "JPY"
+* Dùng để định dạng giá trị tiền tệ.
+*/
+@Column({ name: "currency_code", type: "varchar", length: 3, default: "USD" })
+currencyCode: string;
+
+/**
+* Quy tắc số nhiều (CLDR plural rule).
+*
+* Xác định cách xử lý số nhiều trong bản dịch:
+* - "one": 1 phần tử (tiếng Anh, tiếng Việt cơ bản)
+* - "other": 0 hoặc >1 phần tử
+* - "zero, one, two, few, many, other": tiếng Ba Lan, Ả Rập
+*
+* CLDR supported: zero, one, two, few, many, other
+*/
+@Column({ name: "plural_rule", type: "varchar", length: 50, default: "one" })
+pluralRule: string;
+
+/**
+* Locale dự phòng.
+*
+* Khi bản dịch cho locale hiện tại không tồn tại,
+* hệ thống sẽ thử tìm trong fallbackLocale trước
+* khi trả về key gốc.
+*
+* NULL = không có fallback (chỉ dùng locale mặc định)
+* Ví dụ: "zh-TW" fallback về "zh-CN"
+*/
+@Column({ name: "fallback_locale", type: "varchar", length: 10, nullable: true })
+fallbackLocale: string | null;
+
+/**
+* Danh sách bản dịch thuộc locale này.
+*
+* @OneToMany relation với Translation entity.
+* Cascade insert/remove: khi xóa locale, xóa tất cả translations.
+*/
+@OneToMany(() => Translation, (translation) => translation.locale, {
+cascade: true,
+})
+translations: Translation[];
+
+/**
+* Created at - thời điểm tạo locale.
+*/
+@CreateDateColumn({ name: "created_at" })
+createdAt: Date;
+
+/**
+* Updated at - thời điểm cập nhật locale.
+*/
+@UpdateDateColumn({ name: "updated_at" })
+updatedAt: Date;
+
+// ========================================================================
+// Utility Methods
+// ========================================================================
+
+/**
+* Trả về locale code đã chuẩn hóa (lowercase).
+*
+* @returns Locale code đã chuyển sang lowercase
+*/
+getNormalizedCode(): string {
+return this.code.toLowerCase();
+}
+
+/**
+* Kiểm tra locale có khớp với code cho trước không.
+*
+* So sánh không phân biệt hoa/thường.
+* Hỗ trợ khớp prefix: "vi-VN" khớp với "vi"
+*
+* @param code Locale code cần so sánh
+* @returns True nếu khớp (đầy đủ hoặc prefix)
+*/
+matches(code: string): boolean {
+const normalized = this.getNormalizedCode();
+const input = code.toLowerCase();
+// Khớp đầy đủ
+if (normalized === input) {
+return true;
+}
+// Khớp prefix: "vi-VN" khớp với "vi"
+const separatorIndex = normalized.indexOf("-");
+if (separatorIndex > 0) {
+return normalized.substring(0, separatorIndex) === input;
+}
+return false;
+}
+
+/**
+* Đếm số bản dịch hiện có.
+*
+* @returns Số lượng translations
+*/
+getTranslationCount(): number {
+return this.translations ? this.translations.length : 0;
+}
+
+/**
+* String representation cho debugging.
+*
+* @returns Formatted string
+*/
+toString(): string {
+const defaultFlag = this.isDefault ? " [mặc định]" : "";
+return `<Locale(code="${this.code}", name="${this.name}" ${defaultFlag})>`;
+    }
+    }

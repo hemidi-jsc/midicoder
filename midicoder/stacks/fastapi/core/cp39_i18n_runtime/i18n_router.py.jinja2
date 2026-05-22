@@ -1,0 +1,466 @@
+"""
+FastAPI API routes cho i18n/L10n Runtime.
+
+Tao tu dong boi CP39 — khong sua thu cong.
+
+Cung cap REST API de quan ly locale va ban dich:
+- CRUD cho Locale (GET /locales, POST /locales)
+- CRUD cho Translation (GET /translations, POST /translations)
+- Batch import translations (POST /translations/batch)
+- Tim ban dich theo key (GET /translations/{key})
+- Xoa ban dich (DELETE /translations/{key})
+- Phat hien key thieu (GET /missing)
+- Auto-discover quet nguon (POST /discover)
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.i18n_runtime.schemas.i18n_schemas import (
+    DiscoverRequest,
+    DiscoverResponse,
+    LocaleCreate,
+    LocaleResponse,
+    LocaleUpdate,
+    TranslationCreate,
+    TranslationResponse,
+    TranslationUpdate,
+)
+from app.i18n_runtime.services.i18n_service import TranslationService
+from app.i18n_runtime.services.i18n_discover import TranslationDiscoverer
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/i18n", tags=["i18n/L10n"])
+
+
+# ============================================================================
+# Locale Endpoints
+# ============================================================================
+
+
+@router.get("/locales", response_model=list[LocaleResponse])
+async def list_locales(
+    db: AsyncSession = Depends(get_db),
+) -> list[LocaleResponse]:
+    """Lay danh sach toan bo locales.
+
+    Returns:
+        Danh sach LocaleResponse sap xep theo is_default (cao nhat truoc).
+    """
+    service = TranslationService(db)
+    return await service.get_all_locales()
+
+
+@router.post("/locales", response_model=LocaleResponse, status_code=201)
+async def create_locale(
+    data: LocaleCreate,
+    db: AsyncSession = Depends(get_db),
+) -> LocaleResponse:
+    """Them locale moi.
+
+    Args:
+        data: Du lieu locale moi (LocaleCreate).
+
+    Returns:
+        LocaleResponse cua locale da tao.
+
+    Raises:
+        HTTPException 409: Neu code da ton tai.
+    """
+    service = TranslationService(db)
+    try:
+        return await service.add_locale(data)
+    except Exception as exc:
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            raise HTTPException(
+                status_code=409,
+                detail=f"Locale code '{data.code}' da ton tai",
+            )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Lỗi khi tạo locale: {str(exc)}",
+        )
+
+
+@router.put("/locales/{locale_code}", response_model=LocaleResponse)
+async def update_locale(
+    locale_code: str,
+    data: LocaleUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> LocaleResponse:
+    """Cap nhat thong tin locale.
+
+    Args:
+        locale_code: BCP 47 code cua locale can cap nhat.
+        data: Cac truoc can cap nhat (LocaleUpdate).
+
+    Returns:
+        LocaleResponse da cap nhat.
+
+    Raises:
+        HTTPException 404: Neu locale khong ton tai.
+    """
+    service = TranslationService(db)
+    locales = await service.get_all_locales()
+    locale = next((l for l in locales if l.code == locale_code), None)
+    if locale is None:
+        raise HTTPException(status_code=404, detail=f"Locale '{locale_code}' khong tim thay")
+
+    # Cap nhat (dinh dang don gian)
+    update_dict = data.model_dump(exclude_unset=True)
+    for field, value in update_dict.items():
+        if value is not None:
+            setattr(locale, field, value)
+
+    await db.flush()
+    return locale
+
+
+# ============================================================================
+# Translation Endpoints
+# ============================================================================
+
+
+@router.get("/translations", response_model=dict[str, Any])
+async def list_translations(
+    locale: str = Query(..., description="Locale code BCP 47"),
+    namespace: str | None = Query(None, description="Namespace (de None de lay het)"),
+    tenant_id: str | None = Query(None, description="Tenant ID"),
+    skip: int = Query(0, ge=0, description="So luong bo qua"),
+    limit: int = Query(100, ge=1, le=1000, description="So luong toi da"),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Lay danh sach ban dich theo locale voi pagination.
+
+    Args:
+        locale: Locale code can lay ban dich.
+        namespace: Namespace de loc (tu chon).
+        tenant_id: Tenant ID (tu chon).
+        skip: Offset pagination.
+        limit: Limit pagination.
+
+    Returns:
+        Dict {total: int, items: list[TranslationResponse]}.
+    """
+    service = TranslationService(db)
+    total, items = await service.list_by_locale(
+        locale=locale,
+        namespace=namespace,
+        tenant_id=tenant_id,
+        skip=skip,
+        limit=limit,
+    )
+    return {"total": total, "items": items}
+
+
+@router.post("/translations", response_model=TranslationResponse, status_code=201)
+async def create_translation(
+    data: TranslationCreate,
+    db: AsyncSession = Depends(get_db),
+) -> TranslationResponse:
+    """Them ban dich moi.
+
+    Args:
+        data: Du lieu ban dich moi (TranslationCreate).
+
+    Returns:
+        TranslationResponse cua ban dich da tao.
+
+    Raises:
+        HTTPException 404: Neu locale khong ton tai.
+        HTTPException 409: Neu key+namespace+locale+tenant da ton tai.
+    """
+    service = TranslationService(db)
+    try:
+        return await service.add_translation(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ban dich '{data.key}' trong namespace '{data.namespace}' cho locale '{data.locale}' da ton tai",
+            )
+        raise HTTPException(status_code=500, detail=f"Lỗi khi tạo bản dịch: {str(exc)}")
+
+
+@router.post("/translations/batch", response_model=dict[str, Any])
+async def batch_create_translations(
+    items: list[TranslationCreate],
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Import nhieu ban dich mot luc (batch).
+
+    Dung de import tu file JSON/CSV. Cac ban dich khong hop le se bi bo qua
+    va tra ve trong danh sach errors.
+
+    Args:
+        items: Danh sach TranslationCreate can them.
+
+    Returns:
+        Dict {success_count: int, error_count: int, errors: list[dict]}.
+    """
+    service = TranslationService(db)
+    errors: list[dict[str, str]] = []
+    valid_items = []
+
+    for i, data in enumerate(items):
+        try:
+            valid_items.append(data)
+        except Exception as exc:
+            errors.append({
+                "index": i,
+                "key": getattr(data, "key", f"item[{i}]"),
+                "error": str(exc),
+            })
+
+    success_count = await service.add_bulk(valid_items)
+
+    return {
+        "success_count": success_count,
+        "error_count": len(errors),
+        "errors": errors,
+    }
+
+
+@router.delete("/translations/{key}", status_code=204)
+async def delete_translation(
+    key: str,
+    locale: str = Query(..., description="Locale code"),
+    namespace: str = Query("common", description="Namespace"),
+    tenant_id: str | None = Query(None, description="Tenant ID"),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Xoa mot ban dich theo key.
+
+    Args:
+        key: Translation key can xoa.
+        locale: Locale code.
+        namespace: Namespace.
+        tenant_id: Tenant ID (tu chon).
+
+    Raises:
+        HTTPException 404: Neu ban dich khong ton tai.
+    """
+    service = TranslationService(db)
+    deleted = await service.delete_translation(
+        key=key,
+        locale=locale,
+        namespace=namespace,
+        tenant_id=tenant_id,
+    )
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Ban dich '{key}' trong namespace '{namespace}' cho locale '{locale}' khong tim thay",
+        )
+
+
+@router.get("/translations/{key}", response_model=TranslationResponse)
+async def get_translation(
+    key: str,
+    locale: str = Query(..., description="Locale code"),
+    namespace: str = Query("common", description="Namespace"),
+    tenant_id: str | None = Query(None, description="Tenant ID"),
+    db: AsyncSession = Depends(get_db),
+) -> TranslationResponse:
+    """Lay mot ban dich theo key voi fallback chain.
+
+    Su dung fallback chain de tim ban dich:
+    1. Tenant-specific -> locale yeu cau
+    2. Global -> locale yeu cau
+    3. Fallback locale
+    4. Default locale
+
+    Args:
+        key: Translation key can lay.
+        locale: Locale code yeu cau.
+        namespace: Namespace.
+        tenant_id: Tenant ID (tu chon).
+
+    Raises:
+        HTTPException 404: Neu khong tim thay ban dich trong toan bo fallback chain.
+    """
+    service = TranslationService(db)
+    value, resolved_locale = await service.resolve_with_fallback(
+        key=key,
+        locale=locale,
+        namespace=namespace,
+        tenant_id=tenant_id,
+    )
+    # Neu tra ve key name -> khong tim thay
+    if value == key and resolved_locale == locale:
+        # Kiem tra xem key co thuc su ton tai trong DB khong
+        total, items = await service.list_by_locale(
+            locale=resolved_locale,
+            namespace=namespace,
+            skip=0,
+            limit=1,
+        )
+        if not items:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Ban dich '{key}' khong tim thay trong namespace '{namespace}' cho locale '{locale}'",
+            )
+
+    # Tra ve TranslationResponse
+    return TranslationResponse(
+        id=0,
+        key=key,
+        namespace=namespace,
+        locale=resolved_locale,
+        value=value,
+        tenant_id=tenant_id,
+    )
+
+
+# ============================================================================
+# Missing Keys Endpoint
+# ============================================================================
+
+
+@router.get("/missing", response_model=dict[str, Any])
+async def get_missing_keys(
+    locale: str = Query(..., description="Locale code de kiem tra"),
+    namespace: str = Query("common", description="Namespace"),
+    tenant_id: str | None = Query(None, description="Tenant ID"),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Tim nhung translation key chua co ban dich cho locale.
+
+    So sanh danh sach keys ton tai trong default locale voi locale yeu cau
+    de tim nhung key chua duoc dich.
+
+    Args:
+        locale: Locale code can kiem tra key thieu.
+        namespace: Namespace.
+        tenant_id: Tenant ID (tu chon).
+
+    Returns:
+        Dict {locale: str, missing_keys: list[str], total_missing: int}.
+    """
+    service = TranslationService(db)
+
+    # Lay tat ca keys tu default locale
+    default_total, default_items = await service.list_by_locale(
+        locale="{{ default_locale }}",
+        namespace=namespace,
+        skip=0,
+        limit=10000,
+    )
+    default_keys = [t.key for t in default_items]
+
+    # Tim nhung key thieu trong locale yeu cau
+    missing = await service.missing_keys(
+        keys=default_keys,
+        locale=locale,
+        namespace=namespace,
+        tenant_id=tenant_id,
+    )
+
+    return {
+        "locale": locale,
+        "namespace": namespace,
+        "missing_keys": missing,
+        "total_missing": len(missing),
+        "total_in_default": len(default_keys),
+    }
+
+
+# ============================================================================
+# Discover Endpoint
+# ============================================================================
+
+
+@router.post("/discover", response_model=DiscoverResponse)
+async def discover_translations(
+    data: DiscoverRequest,
+    db: AsyncSession = Depends(get_db),
+) -> DiscoverResponse:
+    """Quet source code de phat hien translation keys.
+
+    Tu dong quet qua cac thu muc duoc chi dinh, trich xuat cac
+    translation key va so sanh voi database de tim key thieu.
+
+    Args:
+        data: Du lieu yeu cau quet (DiscoverRequest).
+
+    Returns:
+        DiscoverResponse chua ket qua phat hien.
+    """
+    discoverer = TranslationDiscoverer(discover_sources=data.sources)
+    all_keys: list[str] = []
+    namespaces_found: set[str] = set()
+    sources_scanned: set[str] = set()
+
+    for path_str in data.paths:
+        # Quet moi thu muc
+        for source_type, keys in discoverer.scan_directory(path_str).items():
+            if keys:
+                sources_scanned.add(source_type)
+                all_keys.extend(keys)
+                namespaces_found.add(data.namespace)
+
+    # So sanh voi database de tim key thieu
+    service = TranslationService(db)
+    all_locales = await service.get_all_locales()
+    locale_codes = [loc.code for loc in all_locales]
+
+    # Dem so key thieu cho moi locale
+    total_missing = 0
+    missing_keys: list[str] = []
+
+    for locale_code in locale_codes:
+        missing = await service.missing_keys(
+            keys=list(set(all_keys)),
+            locale=locale_code,
+            namespace=data.namespace,
+        )
+        total_missing += len(missing)
+        missing_keys.extend(missing)
+
+    # Dem so key da ton tai
+    unique_keys = list(set(all_keys))
+    existing_count = len(unique_keys) - len(set(missing_keys))
+
+    return DiscoverResponse(
+        total_keys=len(unique_keys),
+        missing_count=total_missing,
+        existing_count=max(0, existing_count),
+        missing_keys=list(set(missing_keys)),
+        namespaces=list(namespaces_found),
+        sources_scanned=list(sources_scanned),
+    )
+
+
+# ============================================================================
+# Default locales tu template context (seed data)
+# ============================================================================
+
+# {# Seed data cho default locales khi khoi tao app #}
+SEED_LOCALES: list[dict] = [
+{% for locale in locales %}
+    {
+        "code": "{{ locale.code }}",
+        "name": "{{ locale.name }}",
+        "is_default": {{ "true" if locale.is_default else "false" }},
+        "date_format": "{{ locale.date_format }}",
+        "number_format": {{ '"%s"'|format(locale.number_format) if locale.number_format else "None" }},
+        "currency_code": {{ '"%s"'|format(locale.currency_code) if locale.currency_code else "None" }},
+        "plural_rule": "{{ locale.plural_rule }}",
+        "fallback_locale": {{ '"%s"'|format(locale.fallback_locale) if locale.fallback_locale else "None" }},
+    },
+{% endfor %}
+]
+
+__all__ = [
+    "router",
+    "SEED_LOCALES",
+]

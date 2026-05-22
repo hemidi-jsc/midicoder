@@ -1,0 +1,304 @@
+/**
+ * LocaleFormatterDirective — Định dạng giá trị theo locale.
+ *
+ * Attribute directive `[appLocaleFormat]` — tự động định dạng nội dung
+ * phần tử theo date, number, currency, hoặc relativeTime của locale hiện tại.
+ *
+ * Tạo tự động bởi CP39 — không sửa thủ công.
+ */
+
+import {
+  Directive,
+  Input,
+  OnInit,
+  OnChanges,
+  SimpleChanges,
+  Renderer2,
+  ElementRef,
+  inject
+} from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { I18nRuntimeService } from './i18n-runtime.service';
+import { Subscription } from 'rxjs';
+
+/** Các kiểu định dạng được hỗ trợ. */
+export type FormatType = 'date' | 'number' | 'currency' | 'relativeTime';
+
+/** Dữ liệu trả về từ API định dạng. */
+interface FormatApiResponse {
+  formatted: string;
+  locale: string;
+  type: FormatType;
+}
+
+/** Mapping từ code locale sang Intl locale string — dùng cho định dạng phía client. */
+const LOCALE_INTL_MAP: Record<string, string> = {
+{% for locale in locales %}
+  '{{ locale.code }}': '{{ locale.code }}'{% if not loop.last %}, {% endif %}
+{% endfor %}
+};
+
+/** Currency mapping — dùng Intl.NumberFormat với currency code. */
+const CURRENCY_MAP: Record<string, string> = {
+{% for locale in locales %}
+  '{{ locale.code }}': '{{ locale.currency_code }}'{% if not loop.last %}, {% endif %}
+{% endfor %}
+};
+
+/** Date format pattern mapping — dùng cho Intl.DateTimeFormat. */
+const DATE_FORMAT_MAP: Record<string, string> = {
+{% for locale in locales %}
+  '{{ locale.code }}': '{{ locale.date_format }}'{% if not loop.last %}, {% endif %}
+{% endfor %}
+};
+
+/**
+ * Directive áp dụng định dạng locale lên nội dung text của phần tử.
+ *
+ * Sử dụng:
+ *   <span [appLocaleFormat]="'date'" [localeFormatValue]="myDate"></span>
+ *   <span [appLocaleFormat]="'currency'" [localeFormatValue]="price"></span>
+ *   <span [appLocaleFormat]="'number'" [localeFormatValue]="count"></span>
+ *   <span [appLocaleFormat]="'relativeTime'" [localeFormatValue]="timestamp"></span>
+ */
+@Directive({
+  selector: '[appLocaleFormat]',
+  standalone: true
+})
+export class LocaleFormatterDirective implements OnInit, OnChanges {
+  private readonly renderer = inject(Renderer2);
+  private readonly elementRef = inject(ElementRef);
+  private readonly http = inject(HttpClient);
+  private readonly i18nService = inject(I18nRuntimeService);
+
+  /** Kiểu định dạng: 'date', 'number', 'currency', 'relativeTime'. */
+  @Input() appLocaleFormat: FormatType = 'number';
+
+  /** Giá trị cần định dạng. */
+  @Input() localeFormatValue: any;
+
+  /** Locale override — nếu không cung cấp, dùng locale hiện tại từ I18nRuntimeService. */
+  @Input() localeFormatLocale: string | null = null;
+
+  /** Tùy chọn: sử dụng API server để định dạng thay vì client-side. */
+  @Input() localeFormatUseServer: boolean = false;
+
+  /** Subscription để unsubscribe khi directive bị hủy. */
+  private localeSubscription: Subscription | null = null;
+
+  ngOnInit(): void {
+    // Lắng nghe thay đổi locale — tự động định dạng lại khi người dùng đổi ngôn ngữ.
+    this.localeSubscription = this.i18nService.currentLocale$.subscribe(() => {
+      this.applyFormatting();
+    });
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // Khi giá trị đầu vào thay đổi, áp dụng định dạng mới.
+    if (changes['localeFormatValue'] || changes['appLocaleFormat'] || changes['localeFormatLocale']) {
+      this.applyFormatting();
+    }
+  }
+
+  /**
+   * Áp dụng định dạng lên phần tử — tùy chọn client-side hoặc server-side.
+   */
+  private applyFormatting(): void {
+    if (this.localeFormatValue === null || this.localeFormatValue === undefined) {
+      this.renderer.setProperty(this.elementRef.nativeElement, 'textContent', '');
+      return;
+    }
+
+    const localeCode = this.localeFormatLocale || this.i18nService.getCurrentLocale();
+
+    if (this.localeFormatUseServer) {
+      this.formatViaServer(localeCode);
+    } else {
+      this.formatClientSide(localeCode);
+    }
+  }
+
+  /**
+   * Định dạng phía client — dùng Intl API của trình duyệt.
+   */
+  private formatClientSide(localeCode: string): void {
+    const intlLocale = LOCALE_INTL_MAP[localeCode] || localeCode;
+    let formatted: string;
+
+    switch (this.appLocaleFormat) {
+      case 'date':
+        formatted = this.formatDate(intlLocale, localeCode);
+        break;
+      case 'number':
+        formatted = this.formatNumber(intlLocale);
+        break;
+      case 'currency':
+        formatted = this.formatCurrency(intlLocale, localeCode);
+        break;
+      case 'relativeTime':
+        formatted = this.formatRelativeTime(intlLocale);
+        break;
+      default:
+        formatted = String(this.localeFormatValue);
+    }
+
+    this.renderer.setProperty(this.elementRef.nativeElement, 'textContent', formatted);
+  }
+
+  /**
+   * Định dạng qua API server — gọi /api/i18n/format.
+   */
+  private formatViaServer(localeCode: string): void {
+    const payload = {
+      type: this.appLocaleFormat,
+      value: this.localeFormatValue,
+      locale: localeCode
+    };
+
+    this.http.post<FormatApiResponse>('/api/i18n/format', payload).subscribe({
+      next: (response) => {
+        this.renderer.setProperty(this.elementRef.nativeElement, 'textContent', response.formatted);
+      },
+      error: (error) => {
+        console.warn(`[LocaleFormatter] API format thất bại, chuyển sang client-side:`, error);
+        this.formatClientSide(localeCode);
+      }
+    });
+  }
+
+  // ========================
+  //  Phương thức định dạng riêng lẻ
+  // ========================
+
+  /**
+   * Định dạng ngày tháng theo locale.
+   */
+  private formatDate(intlLocale: string, localeCode: string): string {
+    const dateValue = this.localeFormatValue instanceof Date
+      ? this.localeFormatValue
+      : new Date(this.localeFormatValue);
+
+    if (isNaN(dateValue.getTime())) {
+      return String(this.localeFormatValue);
+    }
+
+    const dateFormat = DATE_FORMAT_MAP[localeCode];
+
+    // Nếu pattern có dạng 'YYYY-MM-DD' hoặc 'DD/MM/YYYY', parse thành DateTimeFormat options.
+    if (dateFormat) {
+      const options = this.parseDateFormatPattern(dateFormat);
+      return new Intl.DateTimeFormat(intlLocale, options).format(dateValue);
+    }
+
+    // Fallback: dùng default DateTimeFormat của locale.
+    return new Intl.DateTimeFormat(intlLocale, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    }).format(dateValue);
+  }
+
+  /**
+   * Chuyển đổi pattern string thành DateTimeFormat options.
+   */
+  private parseDateFormatPattern(pattern: string): Intl.DateTimeFormatOptions {
+    const options: Intl.DateTimeFormatOptions = {};
+
+    if (pattern.includes('YYYY') || pattern.includes('yyyy')) {
+      options.year = 'numeric';
+    }
+    if (pattern.includes('MM')) {
+      options.month = 'long';
+    }
+    if (pattern.includes('DD') || pattern.includes('dd')) {
+      options.day = '2-digit';
+    }
+    if (pattern.includes('HH') || pattern.includes('hh')) {
+      options.hour = '2-digit';
+      options.minute = '2-digit';
+    }
+    if (pattern.includes('AP') || pattern.includes('A') || pattern.includes('AM')) {
+      options.hour12 = true;
+    }
+
+    return options;
+  }
+
+  /**
+   * Định dạng số theo locale.
+   */
+  private formatNumber(intlLocale: string): string {
+    const numericValue = Number(this.localeFormatValue);
+
+    if (isNaN(numericValue)) {
+      return String(this.localeFormatValue);
+    }
+
+    return new Intl.NumberFormat(intlLocale, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    }).format(numericValue);
+  }
+
+  /**
+   * Định dạng tiền tệ theo locale.
+   */
+  private formatCurrency(intlLocale: string, localeCode: string): string {
+    const numericValue = Number(this.localeFormatValue);
+    const currency = CURRENCY_MAP[localeCode] || 'USD';
+
+    if (isNaN(numericValue)) {
+      return String(this.localeFormatValue);
+    }
+
+    return new Intl.NumberFormat(intlLocale, {
+      style: 'currency',
+      currency: currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(numericValue);
+  }
+
+  /**
+   * Định dạng thời gian tương đối (vd: "2 giờ trước", "tomorrow").
+   */
+  private formatRelativeTime(intlLocale: string): string {
+    const targetDate = this.localeFormatValue instanceof Date
+      ? this.localeFormatValue
+      : new Date(this.localeFormatValue);
+
+    if (isNaN(targetDate.getTime())) {
+      return String(this.localeFormatValue);
+    }
+
+    const now = new Date();
+    const diffMs = targetDate.getTime() - now.getTime();
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    const diffWeeks = Math.floor(diffDays / 7);
+
+    // Định nghĩa các ngưỡng thời gian tương đối.
+    const rtf = new Intl.RelativeTimeFormat(intlLocale, { numeric: 'auto' });
+
+    if (Math.abs(diffSeconds) < 60) {
+      return rtf.format(diffSeconds, 'second');
+    } else if (Math.abs(diffMinutes) < 60) {
+      return rtf.format(diffMinutes, 'minute');
+    } else if (Math.abs(diffHours) < 24) {
+      return rtf.format(diffHours, 'hour');
+    } else if (Math.abs(diffDays) < 7) {
+      return rtf.format(diffDays, 'day');
+    } else if (Math.abs(diffWeeks) < 4) {
+      return rtf.format(diffWeeks, 'week');
+    } else {
+      // Sau 4 tuần, hiển thị ngày đầy đủ.
+      return new Intl.DateTimeFormat(intlLocale, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      }).format(targetDate);
+    }
+  }
+}

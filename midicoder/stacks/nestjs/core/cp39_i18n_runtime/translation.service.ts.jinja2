@@ -1,0 +1,761 @@
+/**
+* TranslationService - dịch vụ quản lý bản dịch i18n.
+*
+* Cung cấp các phương thức CRUD cho Translation entity và
+* logic resolve với fallback chain:
+* cache → tenant-specific → global → fallback locale → key gốc
+*
+* CP39: i18n/L10n Runtime
+* Cache backend: {{ cache_config.backend }}
+* Cache TTL: {{ cache_config.ttl_seconds }}s
+*/
+
+import {
+Injectable,
+NotFoundException,
+BadRequestException,
+Logger,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository, In, Like, Not } from "typeorm";
+import { Translation } from "./translation.entity";
+import { Locale } from "./locale.entity";
+import {
+CreateTranslationDto,
+UpdateTranslationDto,
+PaginatedTranslationDto,
+VALID_LOCALE_CODES,
+VALID_NAMESPACES,
+} from "./translation.dto";
+import { I18nCacheService } from "./i18n-cache.service";
+
+const logger = new Logger("TranslationService");
+
+/**
+* Kết quả resolve bản dịch.
+*/
+export interface ResolvedTranslation {
+/** Nội dung bản dịch đã resolve */
+value: string;
+/** Nguồn của bản dịch */
+source: "cache" | "tenant" | "global" | "fallback" | "key";
+/** Locale code thực tế được sử dụng */
+resolvedLocale: string;
+/** Tenant ID (nếu là tenant-specific) */
+tenantId: string | null;
+}
+
+/**
+* Kết quả tìm bản dịch thiếu.
+*/
+export interface MissingTranslation {
+/** Translation key */
+key: string;
+/** Namespace */
+namespace: string;
+/** Locale code thiếu bản dịch */
+locale: string;
+/** Tenant ID (nếu áp dụng) */
+tenantId: string | null;
+}
+
+/**
+* TranslationService - quản lý bản dịch i18n.
+*
+* Phương thức chính:
+* - findByKeyAndLocale: tìm bản dịch theo key + locale (có cache)
+* - resolveWithFallback: resolve bản dịch với fallback chain đầy đủ
+* - create/update/remove: CRUD cơ bản
+* - findByLocale: lấy tất cả translations của một locale
+* - findMissing: tìm các keys chưa có bản dịch
+* - createBulk: tạo hàng loạt bản dịch
+*
+* Resolve chain (thứ tự ưu tiên):
+* 1. Cache: kiểm tra I18nCacheService trước
+* 2. Tenant-specific: tìm bản dịch có tenant_id
+* 3. Global: tìm bản dịch có tenant_id = null
+* 4. Fallback locale: thử locale fallback
+* 5. Key gốc: trả về translation key nếu không tìm thấy
+*/
+@Injectable()
+export class TranslationService {
+/**
+* Constructor.
+*
+* @param translationRepository - Repository cho Translation entity
+* @param localeRepository - Repository cho Locale entity
+* @param cacheService - Dịch vụ cache i18n
+*/
+constructor(
+@InjectRepository(Translation)
+private readonly translationRepository: Repository<Translation>,
+    @InjectRepository(Locale)
+    private readonly localeRepository: Repository<Locale>,
+        private readonly cacheService: I18nCacheService,
+        ) {}
+
+        // ========================================================================
+        // Query Methods
+        // ========================================================================
+
+        /**
+        * Tìm bản dịch theo key và locale.
+        *
+        * Ưu tiên tenant-specific, sau đó global.
+        *
+        * @param key - Translation key
+        * @param localeCode - Locale code
+        * @param namespace - Namespace (mặc định "default")
+        * @param tenantId - Tenant ID (optional)
+        * @returns Translation entity hoặc null
+        */
+        async findByKeyAndLocale(
+        key: string,
+        localeCode: string,
+        namespace: string = "default",
+        tenantId?: string,
+        ): Promise<Translation | null> {
+            // Bước 1: Kiểm tra cache
+            const cacheKey = this.buildCacheKey(key, localeCode, namespace, tenantId);
+            const cached = await this.cacheService.get<Translation>(cacheKey);
+                if (cached) {
+                logger.debug(`[Cache HIT] ${cacheKey}`);
+                return cached;
+                }
+
+                // Bước 2: Tìm trong database
+                const locale = await this.localeRepository.findOne({
+                where: { code: localeCode },
+                });
+
+                if (!locale) {
+                logger.warn(`[Locale not found] ${localeCode}`);
+                return null;
+                }
+
+                let translation: Translation | null = null;
+
+                // Bước 3: Nếu có tenantId, tìm tenant-specific trước
+                if (tenantId) {
+                translation = await this.translationRepository.findOne({
+                where: {
+                key,
+                namespace,
+                locale: { id: locale.id },
+                tenantId,
+                },
+                });
+                }
+
+                // Bước 4: Nếu không tìm thấy tenant-specific, tìm global
+                if (!translation) {
+                translation = await this.translationRepository.findOne({
+                where: {
+                key,
+                namespace,
+                locale: { id: locale.id },
+                tenantId: null,
+                },
+                });
+                }
+
+                // Bước 5: Lưu vào cache nếu tìm thấy
+                if (translation) {
+                await this.cacheService.set(cacheKey, translation);
+                }
+
+                return translation;
+                }
+
+                /**
+                * Resolve bản dịch với fallback chain đầy đủ.
+                *
+                * Thứ tự ưu tiên:
+                * 1. Cache (I18nCacheService)
+                * 2. Tenant-specific translation
+                * 3. Global translation
+                * 4. Fallback locale (thử recursively)
+                * 5. Trả về key gốc
+                *
+                * @param key - Translation key
+                * @param localeCode - Locale code
+                * @param namespace - Namespace
+                * @param tenantId - Tenant ID (optional)
+                * @returns ResolvedTranslation với thông tin source
+                */
+                async resolveWithFallback(
+                key: string,
+                localeCode: string,
+                namespace: string = "default",
+                tenantId?: string,
+                ): Promise<ResolvedTranslation> {
+                    // Bước 1: Kiểm tra cache
+                    const cacheKey = this.buildCacheKey(key, localeCode, namespace, tenantId);
+                    const cached = await this.cacheService.get<ResolvedTranslation>(cacheKey);
+                        if (cached) {
+                        return cached;
+                        }
+
+                        // Bước 2: Tìm trong database với tenant priority
+                        const result = await this.resolveFromDatabase(
+                        key,
+                        localeCode,
+                        namespace,
+                        tenantId,
+                        );
+
+                        // Bước 3: Lưu kết quả vào cache
+                        await this.cacheService.set(cacheKey, result);
+
+                        return result;
+                        }
+
+                        /**
+                        * Resolve bản dịch từ database (nội bộ).
+                        *
+                        * @param key - Translation key
+                        * @param localeCode - Locale code
+                        * @param namespace - Namespace
+                        * @param tenantId - Tenant ID (optional)
+                        * @param visitedLocales - Set các locales đã thử (tránh vòng lặp)
+                        * @returns ResolvedTranslation
+                        */
+                        private async resolveFromDatabase(
+                        key: string,
+                        localeCode: string,
+                        namespace: string,
+                        tenantId: string | undefined,
+                        visitedLocales: Set<string> = new Set(),
+                            ): Promise<ResolvedTranslation> {
+                                // Ngăn vòng lặp fallback
+                                if (visitedLocales.has(localeCode)) {
+                                logger.warn(
+                                `[Fallback loop detected] ${localeCode} for key ${key}`,
+                                );
+                                return {
+                                value: key,
+                                source: "key",
+                                resolvedLocale: localeCode,
+                                tenantId: null,
+                                };
+                                }
+                                visitedLocales.add(localeCode);
+
+                                // Tìm locale entity
+                                const locale = await this.localeRepository.findOne({
+                                where: { code: localeCode },
+                                });
+
+                                if (!locale) {
+                                logger.warn(`[Locale not found] ${localeCode}`);
+                                return {
+                                value: key,
+                                source: "key",
+                                resolvedLocale: localeCode,
+                                tenantId: null,
+                                };
+                                }
+
+                                // Thử tìm tenant-specific
+                                if (tenantId) {
+                                const tenantTranslation = await this.translationRepository.findOne({
+                                where: {
+                                key,
+                                namespace,
+                                locale: { id: locale.id },
+                                tenantId,
+                                },
+                                });
+
+                                if (tenantTranslation) {
+                                return {
+                                value: tenantTranslation.value,
+                                source: "tenant",
+                                resolvedLocale: localeCode,
+                                tenantId,
+                                };
+                                }
+                                }
+
+                                // Thử tìm global
+                                const globalTranslation = await this.translationRepository.findOne({
+                                where: {
+                                key,
+                                namespace,
+                                locale: { id: locale.id },
+                                tenantId: null,
+                                },
+                                });
+
+                                if (globalTranslation) {
+                                return {
+                                value: globalTranslation.value,
+                                source: "global",
+                                resolvedLocale: localeCode,
+                                tenantId: null,
+                                };
+                                }
+
+                                // Thử fallback locale
+                                const fallbackCode =
+                                locale.fallbackLocale || "{{ default_locale }}";
+
+                                if (fallbackCode && fallbackCode !== localeCode) {
+                                logger.debug(
+                                `[Fallback] ${localeCode} -> ${fallbackCode} for key ${key}`,
+                                );
+                                return this.resolveFromDatabase(
+                                key,
+                                fallbackCode,
+                                namespace,
+                                tenantId,
+                                visitedLocales,
+                                );
+                                }
+
+                                // Không tìm thấy, trả về key gốc
+                                logger.debug(`[Not resolved] ${key} for ${localeCode}`);
+                                return {
+                                value: key,
+                                source: "key",
+                                resolvedLocale: localeCode,
+                                tenantId: null,
+                                };
+                                }
+
+                                /**
+                                * Lấy tất cả translations của một locale.
+                                *
+                                * Hỗ trợ phân trang và lọc.
+                                *
+                                * @param localeCode - Locale code
+                                * @param options - Tùy chọn phân trang và lọc
+                                * @returns Object chứa data và pagination info
+                                */
+                                async findByLocale(
+                                localeCode: string,
+                                options?: PaginatedTranslationDto,
+                                ): Promise<{ data: Translation[]; total: number; limit: number; offset: number; }> {
+                                    const locale = await this.localeRepository.findOne({
+                                    where: { code: localeCode },
+                                    });
+
+                                    if (!locale) {
+                                    throw new NotFoundException(
+                                    `Locale "${localeCode}" không tồn tại`,
+                                    );
+                                    }
+
+                                    const limit = options?.limit ?? 20;
+                                    const offset = options?.offset ?? 0;
+
+                                    const where: any = { locale: { id: locale.id } };
+
+                                    // Lọc theo namespace
+                                    if (options?.namespace) {
+                                    where.namespace = options.namespace;
+                                    }
+
+                                    // Lọc theo tenant
+                                    if (options?.tenantId) {
+                                    where.tenantId = options.tenantId;
+                                    } else if (options?.globalOnly) {
+                                    where.tenantId = null;
+                                    } else if (options?.tenantOnly) {
+                                    where.tenantId = Not(null);
+                                    }
+
+                                    // Tìm kiếm theo keyword
+                                    if (options?.search) {
+                                    where.key = Like(`%${options.search}%`);
+                                    }
+
+                                    const [data, total] = await this.translationRepository.findAndCount({
+                                    where,
+                                    take: limit,
+                                    skip: offset,
+                                    order: { key: "ASC" },
+                                    });
+
+                                    return { data, total, limit, offset };
+                                    }
+
+                                    /**
+                                    * Tìm các translation keys chưa có bản dịch.
+                                    *
+                                    * So sánh với các locales khác để phát hiện bản dịch thiếu.
+                                    *
+                                    * @param localeCode - Locale code cần kiểm tra
+                                    * @param namespace - Namespace (optional)
+                                    * @returns List MissingTranslation
+                                    */
+                                    async findMissing(
+                                    localeCode: string,
+                                    namespace?: string,
+                                    ): Promise<MissingTranslation[]> {
+                                        const locale = await this.localeRepository.findOne({
+                                        where: { code: localeCode },
+                                        });
+
+                                        if (!locale) {
+                                        throw new NotFoundException(
+                                        `Locale "${localeCode}" không tồn tại`,
+                                        );
+                                        }
+
+                                        // Lấy locale mặc định làm reference
+                                        const defaultLocale = await this.localeRepository.findOne({
+                                        where: { isDefault: true },
+                                        });
+
+                                        if (!defaultLocale) {
+                                        throw new NotFoundException("Không tìm thấy locale mặc định");
+                                        }
+
+                                        // Lấy tất cả keys từ locale mặc định
+                                        const defaultWhere: any = { locale: { id: defaultLocale.id } };
+                                        if (namespace) {
+                                        defaultWhere.namespace = namespace;
+                                        }
+                                        const defaultTranslations = await this.translationRepository.find({
+                                        where: defaultWhere,
+                                        select: ["key", "namespace"],
+                                        });
+
+                                        // Lấy các keys đã có trong locale đích
+                                        const targetWhere: any = { locale: { id: locale.id } };
+                                        if (namespace) {
+                                        targetWhere.namespace = namespace;
+                                        }
+                                        const targetTranslations = await this.translationRepository.find({
+                                        where: targetWhere,
+                                        select: ["key", "namespace"],
+                                        });
+
+                                        // Tạo set để so sánh
+                                        const targetKeys = new Set(
+                                        targetTranslations.map((t) => `${t.key}::${t.namespace}`),
+                                        );
+
+                                        // Tìm các keys thiếu
+                                        const missing: MissingTranslation[] = defaultTranslations
+                                        .filter((t) => !targetKeys.has(`${t.key}::${t.namespace}`))
+                                        .map((t) => ({
+                                        key: t.key,
+                                        namespace: t.namespace,
+                                        locale: localeCode,
+                                        tenantId: null,
+                                        }));
+
+                                        return missing;
+                                        }
+
+                                        // ========================================================================
+                                        // CRUD Methods
+                                        // ========================================================================
+
+                                        /**
+                                        * Tạo mới bản dịch.
+                                        *
+                                        * @param createDto - CreateTranslationDto
+                                        * @returns Translation entity vừa tạo
+                                        */
+                                        async create(createDto: CreateTranslationDto): Promise<Translation> {
+                                            // Xác thực locale và namespace
+                                            this.validateLocaleAndNamespace(createDto.locale, createDto.namespace);
+
+                                            const locale = await this.localeRepository.findOne({
+                                            where: { code: createDto.locale },
+                                            });
+
+                                            if (!locale) {
+                                            throw new NotFoundException(
+                                            `Locale "${createDto.locale}" không tồn tại`,
+                                            );
+                                            }
+
+                                            // Kiểm tra trùng lặp
+                                            const existing = await this.translationRepository.findOne({
+                                            where: {
+                                            key: createDto.key,
+                                            namespace: createDto.namespace ?? "default",
+                                            locale: { id: locale.id },
+                                            tenantId: createDto.tenantId ?? null,
+                                            },
+                                            });
+
+                                            if (existing) {
+                                            throw new BadRequestException(
+                                            `Bản dịch "${createDto.key}" đã tồn tại cho locale "${createDto.locale}"`,
+                                            );
+                                            }
+
+                                            const translation = this.translationRepository.create({
+                                            key: createDto.key,
+                                            namespace: createDto.namespace ?? "default",
+                                            locale,
+                                            value: createDto.value,
+                                            tenantId: createDto.tenantId ?? null,
+                                            });
+
+                                            const saved = await this.translationRepository.save(translation);
+
+                                            // Xóa cache liên quan
+                                            await this.invalidateCacheForKey(createDto.key, createDto.locale,
+                                            createDto.namespace);
+
+                                            return saved;
+                                            }
+
+                                            /**
+                                            * Cập nhật bản dịch.
+                                            *
+                                            * @param key - Translation key
+                                            * @param localeCode - Locale code
+                                            * @param updateDto - UpdateTranslationDto
+                                            * @returns Translation entity đã cập nhật
+                                            */
+                                            async update(
+                                            key: string,
+                                            localeCode: string,
+                                            updateDto: UpdateTranslationDto,
+                                            ): Promise<Translation> {
+                                                const locale = await this.localeRepository.findOne({
+                                                where: { code: localeCode },
+                                                });
+
+                                                if (!locale) {
+                                                throw new NotFoundException(
+                                                `Locale "${localeCode}" không tồn tại`,
+                                                );
+                                                }
+
+                                                const translation = await this.translationRepository.findOne({
+                                                where: {
+                                                key,
+                                                locale: { id: locale.id },
+                                                },
+                                                relations: ["locale"],
+                                                });
+
+                                                if (!translation) {
+                                                throw new NotFoundException(
+                                                `Không tìm thấy bản dịch "${key}" cho locale "${localeCode}"`,
+                                                );
+                                                }
+
+                                                // Xác thực namespace nếu có thay đổi
+                                                if (updateDto.namespace) {
+                                                this.validateLocaleAndNamespace(localeCode, updateDto.namespace);
+                                                }
+
+                                                // Apply updates
+                                                if (updateDto.key) translation.key = updateDto.key;
+                                                if (updateDto.namespace) translation.namespace = updateDto.namespace;
+                                                if (updateDto.value) translation.value = updateDto.value;
+                                                if (updateDto.tenantId !== undefined) {
+                                                translation.tenantId = updateDto.tenantId || null;
+                                                }
+
+                                                const saved = await this.translationRepository.save(translation);
+
+                                                // Xóa cache liên quan
+                                                await this.invalidateCacheForKey(key, localeCode,
+                                                translation.namespace);
+
+                                                return saved;
+                                                }
+
+                                                /**
+                                                * Xóa bản dịch.
+                                                *
+                                                * @param key - Translation key
+                                                * @param localeCode - Locale code
+                                                * @returns True nếu xóa thành công
+                                                */
+                                                async remove(
+                                                key: string,
+                                                localeCode: string,
+                                                ): Promise<boolean> {
+                                                    const locale = await this.localeRepository.findOne({
+                                                    where: { code: localeCode },
+                                                    });
+
+                                                    if (!locale) {
+                                                    throw new NotFoundException(
+                                                    `Locale "${localeCode}" không tồn tại`,
+                                                    );
+                                                    }
+
+                                                    const result = await this.translationRepository.delete({
+                                                    key,
+                                                    locale: { id: locale.id },
+                                                    });
+
+                                                    // Xóa cache liên quan
+                                                    await this.invalidateCacheForKey(key, localeCode);
+
+                                                    return result.affected ?? 0 > 0;
+                                                    }
+
+                                                    /**
+                                                    * Tạo hàng loạt bản dịch.
+                                                    *
+                                                    * @param dtos - Danh sách CreateTranslationDto
+                                                    * @param conflictStrategy - Chế độ xử lý trùng lặp
+                                                    * @returns Object chứa kết quả tạo
+                                                    */
+                                                    async createBulk(
+                                                    dtos: CreateTranslationDto[],
+                                                    conflictStrategy: "skip" | "overwrite" | "error" = "skip",
+                                                    ): Promise<{ created: number; updated: number; skipped: number;
+                                                        errors: string[]; }> {
+                                                        const result = {
+                                                        created: 0,
+                                                        updated: 0,
+                                                        skipped: 0,
+                                                        errors: [] as string[],
+                                                        };
+
+                                                        for (const dto of dtos) {
+                                                        try {
+                                                        // Xác thực locale và namespace
+                                                        this.validateLocaleAndNamespace(dto.locale, dto.namespace);
+
+                                                        const locale = await this.localeRepository.findOne({
+                                                        where: { code: dto.locale },
+                                                        });
+
+                                                        if (!locale) {
+                                                        result.errors.push(`Locale "${dto.locale}" không tồn tại`);
+                                                        result.skipped++;
+                                                        continue;
+                                                        }
+
+                                                        const existing = await this.translationRepository.findOne({
+                                                        where: {
+                                                        key: dto.key,
+                                                        namespace: dto.namespace ?? "default",
+                                                        locale: { id: locale.id },
+                                                        tenantId: dto.tenantId ?? null,
+                                                        },
+                                                        });
+
+                                                        if (existing) {
+                                                        if (conflictStrategy === "skip") {
+                                                        result.skipped++;
+                                                        } else if (conflictStrategy === "overwrite") {
+                                                        existing.value = dto.value;
+                                                        await this.translationRepository.save(existing);
+                                                        result.updated++;
+                                                        } else {
+                                                        // error
+                                                        result.errors.push(
+                                                        `Bản dịch "${dto.key}" đã tồn tại`,
+                                                        );
+                                                        result.skipped++;
+                                                        }
+                                                        } else {
+                                                        const translation = this.translationRepository.create({
+                                                        key: dto.key,
+                                                        namespace: dto.namespace ?? "default",
+                                                        locale,
+                                                        value: dto.value,
+                                                        tenantId: dto.tenantId ?? null,
+                                                        });
+                                                        await this.translationRepository.save(translation);
+                                                        result.created++;
+                                                        }
+                                                        } catch (error) {
+                                                        result.errors.push(
+                                                        `Lỗi khi tạo "${dto.key}": ${error instanceof Error ?
+                                                        error.message : "Unknown error"}`,
+                                                        );
+                                                        result.skipped++;
+                                                        }
+                                                        }
+
+                                                        // Xóa cache sau bulk operation
+                                                        await this.cacheService.clear();
+
+                                                        logger.log(
+                                                        `[Bulk create] created=${result.created},
+                                                        updated=${result.updated}, skipped=${result.skipped},
+                                                        errors=${result.errors.length}`,
+                                                        );
+
+                                                        return result;
+                                                        }
+
+                                                        //
+                                                        ========================================================================
+                                                        // Internal Helpers
+                                                        //
+                                                        ========================================================================
+
+                                                        /**
+                                                        * Xây dựng cache key.
+                                                        *
+                                                        * @param key - Translation key
+                                                        * @param locale - Locale code
+                                                        * @param namespace - Namespace
+                                                        * @param tenantId - Tenant ID (optional)
+                                                        * @returns Cache key string
+                                                        */
+                                                        private buildCacheKey(
+                                                        key: string,
+                                                        locale: string,
+                                                        namespace: string,
+                                                        tenantId?: string,
+                                                        ): string {
+                                                        const tenantSuffix = tenantId ? `:t:${tenantId}` : ":g";
+                                                        return `i18n:${namespace}:${key}:${locale}${tenantSuffix}`;
+                                                        }
+
+                                                        /**
+                                                        * Xóa cache cho translation key.
+                                                        *
+                                                        * @param key - Translation key
+                                                        * @param locale - Locale code
+                                                        * @param namespace - Namespace (optional)
+                                                        */
+                                                        private async invalidateCacheForKey(
+                                                        key: string,
+                                                        locale: string,
+                                                        namespace?: string,
+                                                        ): Promise<void> {
+                                                            if (namespace) {
+                                                            await
+                                                            this.cacheService.invalidate(`i18n:${namespace}:${key}:${locale}:*`);
+                                                            }
+                                                            // Cũng xóa cả cache global và tenant
+                                                            await
+                                                            this.cacheService.invalidate(`i18n:*:${key}:${locale}:*`);
+                                                            }
+
+                                                            /**
+                                                            * Xác thực locale và namespace.
+                                                            *
+                                                            * @param locale - Locale code
+                                                            * @param namespace - Namespace (optional)
+                                                            * @throws BadRequestException nếu không hợp lệ
+                                                            */
+                                                            private validateLocaleAndNamespace(
+                                                            locale: string,
+                                                            namespace?: string,
+                                                            ): void {
+                                                            if (!VALID_LOCALE_CODES.includes(locale)) {
+                                                            throw new BadRequestException(
+                                                            `Locale "${locale}" không hợp lệ. Các locale được hỗ trợ:
+                                                            ${VALID_LOCALE_CODES.join(", ")}`,
+                                                            );
+                                                            }
+
+                                                            if (namespace && !VALID_NAMESPACES.includes(namespace)) {
+                                                            throw new BadRequestException(
+                                                            `Namespace "${namespace}" không hợp lệ. Các namespace được
+                                                            hỗ trợ: ${VALID_NAMESPACES.join(", ")}`,
+                                                            );
+                                                            }
+                                                            }
+                                                            }

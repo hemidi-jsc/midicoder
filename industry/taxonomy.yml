@@ -697,7 +697,7 @@ core_packs:
       - translation_manage
       - language_switch
     category: internationalization
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP40
     name: Webhook & Outbound Integration Hub

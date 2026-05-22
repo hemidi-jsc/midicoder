@@ -1,0 +1,460 @@
+"""
+LocaleFormatter Service — dinh dang ngay, so, tien te theo locale.
+
+Tao tu dong boi CP39 — khong sua thu cong.
+
+Cung cap cac phuong thuc de dinh dang data theo quan diem cua moi locale:
+- format_date: Dinh dang datetime theo date_format cua locale
+- format_number: Dinh dang so thuc/nguyen voi ky tu phan cach
+- format_currency: Dinh dang so tien voi currency code
+- format_relative_time: Bieuu thuc thoi gian tuong doi ("2 gio truoc")
+- pluralize: Chon dang so nhieu/s so it theo plural_rule
+"""
+
+from __future__ import annotations
+
+import math
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+# ============================================================================
+# Plural rule mapping
+# ============================================================================
+
+# Cac quy tac so nhieu theo CLDR simplification
+# "singular" -> chi co 1 dang (count == 1)
+# "plural" -> 2 dang (count == 1 va count != 1)
+
+PLURAL_RULES: dict[str, list[str]] = {
+    "singular": ["singular"],
+    "plural": ["singular", "plural"],
+}
+
+
+class LocaleFormatter:
+    """Service dinh dang data theo locale cua nguoi dung.
+
+    Su dung thong tin tu Locale model de dinh dang ngay, so, tien te
+    mot cach hop le theo van hoa cua moi vung mien.
+
+    Attrs:
+        locales: Dict {locale_code: Locale} de tra cuu nhanh.
+    """
+
+    def __init__(self, locales: dict[str, Any] | None = None) -> None:
+        """Khoi tao LocaleFormatter.
+
+        Args:
+            locales: Dict {code: locale_data} de tra cuu thong tin locale.
+                     Neu None, se su dung cac gia tri mac dinh.
+        """
+        self._locales: dict[str, Any] = locales or {}
+
+    def _get_locale_info(self, locale_code: str) -> dict[str, Any]:
+        """Lay thong tin locale theo code.
+
+        Args:
+            locale_code: BCP 47 locale code.
+
+        Returns:
+            Dict chua thong tin locale hoac gia tri mac dinh.
+        """
+        if locale_code in self._locales:
+            return self._locales[locale_code]
+
+        # Mac dinh cho locale khong co trong bo nho
+        return {
+            "code": locale_code,
+            "date_format": "dd/MM/yyyy",
+            "number_format": ",.",
+            "currency_code": "USD",
+            "plural_rule": "plural",
+        }
+
+    # ========================================================================
+    # Date Formatting
+    # ========================================================================
+
+    def format_date(self, dt: datetime, locale_code: str) -> str:
+        """Dinh dang datetime thanh chuoi theo date_format cua locale.
+
+        Support cac format pattern:
+        - dd: ngay (2 chu so)
+        - MM: thang (2 chu so)
+        - yyyy: nam (4 chu so)
+        - HH: gio (24h)
+        - mm: phut
+        - ss: giay
+
+        Args:
+            dt: Datetime object can dinh dang.
+            locale_code: BCP 47 locale code.
+
+        Returns:
+            Chuoi da dinh dang.
+
+        Examples:
+            >>> formatter.format_date(datetime(2024, 1, 15), "vi-VN")
+            '15/01/2024'
+            >>> formatter.format_date(datetime(2024, 1, 15), "en")
+            '01/15/2024'
+        """
+        locale_info = self._get_locale_info(locale_code)
+        date_format = locale_info.get("date_format", "dd/MM/yyyy")
+
+        # Replacing patterns trong date_format
+        result = date_format
+        result = result.replace("dd", str(dt.day).zfill(2))
+        result = result.replace("d", str(dt.day))
+        result = result.replace("MM", str(dt.month).zfill(2))
+        result = result.replace("yyyy", str(dt.year))
+        result = result.replace("yy", str(dt.year)[-2:])
+        result = result.replace("HH", str(dt.hour).zfill(2))
+        result = result.replace("hh", str(dt.hour % 12 or 12).zfill(2))
+        result = result.replace("mm", str(dt.minute).zfill(2))
+        result = result.replace("ss", str(dt.second).zfill(2))
+
+        return result
+
+    # ========================================================================
+    # Number Formatting
+    # ========================================================================
+
+    def format_number(self, value: float | int, locale_code: str) -> str:
+        """Dinh dang so voi ky tu phan cach hang nghan va phan thap phan.
+
+        Su dung number_format cua locale de xac dinh:
+        - Ky tu dau tien: phan cach hang nghan
+        - Ky tu thu hai: phan cach phan thap phan
+
+        Args:
+            value: So can dinh dang.
+            locale_code: BCP 47 locale code.
+
+        Returns:
+            Chuoi so da dinh dang.
+
+        Examples:
+            >>> formatter.format_number(1234567.89, "vi-VN")
+            '1.234.567,89'
+            >>> formatter.format_number(1234567.89, "en")
+            '1,234,567.89'
+        """
+        locale_info = self._get_locale_info(locale_code)
+        number_format = locale_info.get("number_format", ",.")
+
+        if not number_format or len(number_format) < 2:
+            # Mac dinh: , la thousand separator, . la decimal
+            thousands_sep = ","
+            decimal_sep = "."
+        else:
+            thousands_sep = number_format[0]
+            decimal_sep = number_format[1]
+
+        # Xac dinh so la nguyen hay thuc
+        if isinstance(value, float) and not value.is_integer():
+            # So thuc: tach phan nguyen va phan thap phan
+            integer_part, decimal_part = str(abs(value)).split(".")
+            sign = "-" if value < 0 else ""
+            integer_part = self._format_integer_part(integer_part, thousands_sep)
+            return f"{sign}{integer_part}{decimal_sep}{decimal_part}"
+        else:
+            # So nguyen
+            abs_value = abs(int(value))
+            sign = "-" if value < 0 else ""
+            integer_part = self._format_integer_part(str(abs_value), thousands_sep)
+            return f"{sign}{integer_part}"
+
+    def _format_integer_part(self, integer_str: str, thousands_sep: str) -> str:
+        """Dinh dang phan nguyen voi ky tu phan cach hang nghan.
+
+        Args:
+            integer_str: Chuoi so nguyen.
+            thousands_sep: Ky tu phan cach hang nghan.
+
+        Returns:
+            Chuoi so da co ky tu phan cach.
+        """
+        if not integer_str:
+            return "0"
+
+        # Them ky tu phan cach moi 3 chu so
+        reversed_str = integer_str[::-1]
+        grouped = []
+        for i, ch in enumerate(reversed_str):
+            if i > 0 and i % 3 == 0:
+                grouped.append(thousands_sep)
+            grouped.append(ch)
+
+        return "".join(grouped)[::-1]
+
+    # ========================================================================
+    # Currency Formatting
+    # ========================================================================
+
+    def format_currency(self, value: float | int, locale_code: str) -> str:
+        """Dinh dang so tien voi currency code va ky tu phan cach.
+
+        Format: [sign][formatted_number][space][currency_code]
+
+        Args:
+            value: So tien can dinh dang.
+            locale_code: BCP 47 locale code.
+
+        Returns:
+            Chuoi so tien da dinh dang.
+
+        Examples:
+            >>> formatter.format_currency(1234567.50, "vi-VN")
+            '1.234.567,50 VND'
+            >>> formatter.format_currency(-100.00, "en")
+            '-100.00 USD'
+        """
+        locale_info = self._get_locale_info(locale_code)
+        currency_code = locale_info.get("currency_code", "USD")
+        formatted_number = self.format_number(value, locale_code)
+
+        return f"{formatted_number} {currency_code}"
+
+    # ========================================================================
+    # Relative Time Formatting
+    # ========================================================================
+
+    def format_relative_time(self, dt: datetime, locale_code: str, now: datetime | None = None) -> str:
+        """Bieuu thuc thoi gian tuong doi voi thoi diem hien tai.
+
+        Support cac khoang thoi gian:
+        - Voi phut: "X phut truoc" / "Sau X phut"
+        - Voi gio: "X gio truoc" / "Sau X gio"
+        - Voi ngay: "X ngay truoc" / "Sau X ngay"
+        - Voi tuan: "X tuan truoc" / "Sau X tuan"
+        - Voi thang: "X thang truoc" / "Sau X thang"
+        - Voi nam: "X nam truoc" / "Sau X nam"
+
+        Args:
+            dt: Thoi diem can bieuu thuc.
+            locale_code: BCP 47 locale code de chon ngon ngu.
+            now: Thoi diem hien tai (mac dinh: hien tai).
+
+        Returns:
+            Chuoi bieuu thuc thoi gian tuong doi.
+
+        Examples:
+            >>> formatter.format_relative_time(past_dt, "vi-VN")
+            '2 gio truoc'
+            >>> formatter.format_relative_time(future_dt, "vi-VN")
+            'Sau 30 phut'
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+
+        delta = now - dt
+        total_seconds = abs(delta.total_seconds())
+        is_future = delta.total_seconds() < 0
+
+        # Chon ngon ngu bieuu thuc
+        lang = locale_code.split("-")[0].lower() if locale_code else "en"
+
+        if total_seconds < 60:
+            units = max(1, int(total_seconds))
+            label = self._pluralize_label(units, "second", lang)
+        elif total_seconds < 3600:
+            units = int(total_seconds // 60)
+            label = self._pluralize_label(units, "minute", lang)
+        elif total_seconds < 86400:
+            units = int(total_seconds // 3600)
+            label = self._pluralize_label(units, "hour", lang)
+        elif total_seconds < 604800:
+            units = int(total_seconds // 86400)
+            label = self._pluralize_label(units, "day", lang)
+        elif total_seconds < 2592000:
+            units = int(total_seconds // 604800)
+            label = self._pluralize_label(units, "week", lang)
+        elif total_seconds < 31536000:
+            units = int(total_seconds // 2592000)
+            label = self._pluralize_label(units, "month", lang)
+        else:
+            units = int(total_seconds // 31536000)
+            label = self._pluralize_label(units, "year", lang)
+
+        if is_future:
+            return self._format_future(units, label, lang)
+        else:
+            return self._format_past(units, label, lang)
+
+    # ========================================================================
+    # Pluralization
+    # ========================================================================
+
+    def pluralize(self, count: int, locale_code: str) -> str:
+        """Chon dang so nhieu/s so it theo plural_rule cua locale.
+
+        Tra ve "singular" neu count == 1, nguoc lai la "plural".
+
+        Args:
+            count: So luong de xac dinh dang.
+            locale_code: BCP 47 locale code.
+
+        Returns:
+            "singular" hoac "plural".
+
+        Examples:
+            >>> formatter.pluralize(1, "vi-VN")
+            'singular'
+            >>> formatter.pluralize(5, "vi-VN")
+            'plural'
+        """
+        locale_info = self._get_locale_info(locale_code)
+        plural_rule = locale_info.get("plural_rule", "plural")
+
+        if plural_rule == "singular":
+            # Ngon ngu chi co 1 dang (tieng Viet, Tieng Nhat,...)
+            return "singular"
+
+        # Mac dinh: CLDR singular/plural rule
+        if count == 1:
+            return "singular"
+        return "plural"
+
+    # ========================================================================
+    # Internal helpers cho relative time
+    # ========================================================================
+
+    def _pluralize_label(self, count: int, unit: str, lang: str) -> str:
+        """Lay label da so nhieu/s so it cho don vi thoi gian.
+
+        Args:
+            count: So luong.
+            unit: Don vi thoi gian (second, minute, hour, day, week, month, year).
+            lang: Ngon ngu (2 ki tu).
+
+        Returns:
+            Chuoi label (co the co so luong).
+        """
+        # Bang dich cho cac don vi thoi gian
+        labels: dict[str, dict[str, tuple[str, str]]] = {
+            "vi": {
+                "second": ("giây", "giây"),
+                "minute": ("phút", "phút"),
+                "hour": ("giờ", "giờ"),
+                "day": ("ngày", "ngày"),
+                "week": ("tuần", "tuần"),
+                "month": ("tháng", "tháng"),
+                "year": ("năm", "năm"),
+            },
+            "en": {
+                "second": ("second", "seconds"),
+                "minute": ("minute", "minutes"),
+                "hour": ("hour", "hours"),
+                "day": ("day", "days"),
+                "week": ("week", "weeks"),
+                "month": ("month", "months"),
+                "year": ("year", "years"),
+            },
+            "fr": {
+                "second": ("seconde", "secondes"),
+                "minute": ("minute", "minutes"),
+                "hour": ("heure", "heures"),
+                "day": ("jour", "jours"),
+                "week": ("semaine", "semaines"),
+                "month": ("mois", "mois"),
+                "year": ("an", "ans"),
+            },
+            "de": {
+                "second": ("Sekunde", "Sekunden"),
+                "minute": ("Minute", "Minuten"),
+                "hour": ("Stunde", "Stunden"),
+                "day": ("Tag", "Tage"),
+                "week": ("Woche", "Wochen"),
+                "month": ("Monat", "Monate"),
+                "year": ("Jahr", "Jahre"),
+            },
+            "ja": {
+                "second": ("秒", "秒"),
+                "minute": ("分", "分"),
+                "hour": ("時間", "時間"),
+                "day": ("日", "日"),
+                "week": ("週間", "週間"),
+                "month": ("ヶ月", "ヶ月"),
+                "year": ("年", "年"),
+            },
+        }
+
+        lang_labels = labels.get(lang, labels.get("en", {}))
+        singular, plural = lang_labels.get(unit, (unit, unit + "s"))
+
+        if count == 1:
+            return singular
+        return plural
+
+    def _format_past(self, count: int, label: str, lang: str) -> str:
+        """Bieuu thuc thoi gian trong qua khue.
+
+        Args:
+            count: So don vi.
+            label: Label da so nhieu.
+            lang: Ngon ngu.
+
+        Returns:
+            Chuoi "X {label} truoc" hoac "{label} ago X".
+        """
+        if lang == "vi":
+            return f"{count} {label} trước"
+        elif lang == "fr":
+            return f"il y a {count} {label}"
+        elif lang == "de":
+            return f"vor {count} {label}"
+        elif lang == "ja":
+            return f"{count} {label}前"
+        else:
+            return f"{count} {label} ago"
+
+    def _format_future(self, count: int, label: str, lang: str) -> str:
+        """Bieuu thuc thoi gian trong tuong lai.
+
+        Args:
+            count: So don vi.
+            label: Label da so nhieu.
+            lang: Ngon ngu.
+
+        Returns:
+            Chuoi "Sau X {label}" hoac "in X {label}".
+        """
+        if lang == "vi":
+            return f"Sau {count} {label}"
+        elif lang == "fr":
+            return f"dans {count} {label}"
+        elif lang == "de":
+            return f"in {count} {label}"
+        elif lang == "ja":
+            return f"{count} {label}後"
+        else:
+            return f"in {count} {label}"
+
+
+# ============================================================================
+# Default locale data tu template context
+# ============================================================================
+
+DEFAULT_LOCALE_DATA: dict[str, dict[str, Any]] = {
+{% for locale in locales %}
+    "{{ locale.code }}": {
+        "code": "{{ locale.code }}",
+        "name": "{{ locale.name }}",
+        "date_format": "{{ locale.date_format }}",
+        "number_format": {{ '"%s"'|format(locale.number_format) if locale.number_format else '".,"' }},
+        "currency_code": {{ '"%s"'|format(locale.currency_code) if locale.currency_code else '"USD"' }},
+        "plural_rule": "{{ locale.plural_rule }}",
+    },
+{% endfor %}
+}
+
+__all__ = [
+    "LocaleFormatter",
+    "PLURAL_RULES",
+    "DEFAULT_LOCALE_DATA",
+]

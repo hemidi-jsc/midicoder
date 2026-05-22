@@ -1,0 +1,137 @@
+"""
+SQLAlchemy models cho i18n/L10n Runtime.
+
+Tạo tự động bởi CP39 — không sửa thủ công.
+
+Cung cấp các model để lưu trữ thông tin locale và bản dịch:
+- Locale: thông tin ngôn ngữ, định dạng ngày/số/tiền tệ
+- Translation: bản dịch từng key theo namespace và tenant
+"""
+
+from __future__ import annotations
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import relationship
+
+Base = object  # type: ignore
+
+# ============================================================================
+# Model: Locale
+# ============================================================================
+
+
+class Locale(Base):
+    """Model quản lý thông tin ngôn ngữ và định dạng vùng miền.
+
+    Fields:
+        code: Mã BCP 47 (ví dụ: "en", "vi-VN", "fr-FR")
+        name: Tên hiển thị của ngôn ngữ
+        is_default: Có phải ngôn ngữ mặc định không
+        date_format: Định dạng ngày theo locale
+        number_format: Ký tự phân cách hàng nghìn / phần thập phân
+        currency_code: Mã tiền tệ ISO 4217
+        plural_rule: Quy tắc số nhiều (singular/plural)
+        fallback_locale: Fallback locale khi key không có bản dịch
+    """
+
+    __tablename__ = "locales"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(10), unique=True, nullable=False, index=True)  # BCP 47
+    name = Column(String(100), nullable=False)
+    is_default = Column(Boolean, default=False)
+    date_format = Column(String(20), default="dd/MM/yyyy")
+    number_format = Column(String(20), nullable=True)
+    currency_code = Column(String(3), nullable=True)
+    plural_rule = Column(String(10), default="plural")
+    fallback_locale = Column(String(10), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    translations = relationship("Translation", back_populates="locale")
+
+    def __repr__(self) -> str:
+        return f"<Locale(code='{self.code}', name='{self.name}')>"
+
+
+# ============================================================================
+# Model: Translation
+# ============================================================================
+
+
+class Translation(Base):
+    """Model lưu trữ bản dịch theo key, namespace, locale và tenant.
+
+    Mỗi bản dịch được xác định bởi bộ 4: (key, namespace, locale_id, tenant_id).
+    Tenant_id có thể là None cho bản dịch chung, hoặc có giá trị cho bản dịch
+    riêng của từng tenant.
+
+    Fields:
+        key: Translation key (ví dụ: "common.greeting")
+        namespace: Namespace để nhóm các bản dịch (ví dụ: "common", "admin")
+        locale_id: FK đến locales.id
+        value: Nội dung bản dịch
+        tenant_id: Tenant ID cho multi-tenant; None = chung
+    """
+
+    __tablename__ = "translations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(200), nullable=False, index=True)
+    namespace = Column(String(100), default="common", index=True)
+    locale_id = Column(Integer, ForeignKey("locales.id"), nullable=False)
+    value = Column(Text, nullable=False)
+    tenant_id = Column(String(100), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    locale = relationship("Locale", back_populates="translations")
+
+    # Ràng buộc duy nhất: mỗi key+namespace+locale+tenant chỉ có 1 bản dịch
+    __table_args__ = (
+        UniqueConstraint("key", "namespace", "locale_id", "tenant_id", name="uq_translation_key_ns_locale_tenant"),
+        Index("ix_translations_key_namespace", "key", "namespace"),
+        Index("ix_translations_locale_namespace", "locale_id", "namespace"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Translation(key='{self.key}', ns='{self.namespace}')>"
+
+
+# ============================================================================
+# Dữ liệu mặc định cho locales từ template context
+# ============================================================================
+
+# {# Các locales được seed từ template context #}
+DEFAULT_LOCALES: list[dict] = [
+{% for locale in locales %}
+    {
+        "code": "{{ locale.code }}",
+        "name": "{{ locale.name }}",
+        "is_default": {{ "true" if locale.is_default else "false" }},
+        "date_format": "{{ locale.date_format }}",
+        "number_format": {{ '"%s"'|format(locale.number_format) if locale.number_format else "None" }},
+        "currency_code": {{ '"%s"'|format(locale.currency_code) if locale.currency_code else "None" }},
+        "plural_rule": "{{ locale.plural_rule }}",
+        "fallback_locale": {{ '"%s"'|format(locale.fallback_locale) if locale.fallback_locale else "None" }},
+    },
+{% endfor %}
+]
+
+__all__ = [
+    "Locale",
+    "Translation",
+    "DEFAULT_LOCALES",
+]

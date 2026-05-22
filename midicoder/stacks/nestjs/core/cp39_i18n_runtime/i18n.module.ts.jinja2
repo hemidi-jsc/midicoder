@@ -1,0 +1,110 @@
+/**
+* I18nModule - NestJS Module cho i18n/L10n Runtime.
+*
+* Khoi tao va ket noi tat ca cac component cua he thong i18n:
+* - TypeORM entities (Translation, Locale)
+* - Services (TranslationService, LocaleFormatterService, I18nCacheService)
+* - Controller (TranslationController)
+* - WebSocket Gateway (I18nGateway)
+* - Interceptor (I18nInterceptor)
+*
+* CP39: i18n/L10n Runtime
+* Locales: {{ locale_count }}
+* Translations: {{ translation_count }}
+* Cache: {{ cache_config.backend }} (TTL: {{ cache_config.ttl_seconds }}s)
+*/
+
+import { Module, Global } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { APP_INTERCEPTOR } from "@nestjs/core";
+import { Translation } from "./translation.entity";
+import { Locale } from "./locale.entity";
+import { TranslationController } from "./translation.controller";
+import { TranslationService } from "./translation.service";
+import { LocaleFormatterService } from "./locale-formatter.service";
+import { I18nCacheService } from "./i18n-cache.service";
+import { I18nGateway } from "./i18n.gateway";
+import { I18nInterceptor } from "./i18n.interceptor";
+
+/**
+* I18nModule - module toan cuc cho i18n/L10n.
+*
+* @Global - Module nay duoc ky hieu la Global, nghia la
+* tat ca cac module khac trong application deu co the
+* su dung cac providers va exports cua module nay
+* ma khong can import.
+*
+* Structure:
+* - Imports:
+* - TypeOrmModule cho Translation va Locale entities
+*
+* - Providers:
+* - TranslationService: CRUD va resolve translations
+* - LocaleFormatterService: Dinh dang date/number/currency theo locale
+* - I18nCacheService: In-memory cache voi TTL
+* - I18nGateway: WebSocket gateway cho real-time updates
+* - I18nInterceptor: (APP_INTERCEPTOR) Phat hien locale tu request
+*
+* - Controllers:
+* - TranslationController: REST API cho i18n
+*
+* - Exports:
+* - TranslationService
+* - LocaleFormatterService
+* - I18nCacheService
+* - I18nGateway
+* - I18nInterceptor
+*
+* Usage trong module cha:
+* @Module({
+* imports: [
+* I18nModule, // Khong can import rieng vi da la @Global
+* ],
+* })
+* export class AppModule {}
+*
+* Usage trong controller/service:
+* constructor(
+* private readonly translationService: TranslationService,
+* private readonly formatterService: LocaleFormatterService,
+* ) {}
+*/
+@Global()
+@Module({
+imports: [
+// TypeORM - quan ly entities
+TypeOrmModule.forFeature([Translation, Locale]),
+],
+controllers: [
+// REST Controller cho i18n
+TranslationController,
+],
+providers: [
+// Services chinh
+TranslationService,
+LocaleFormatterService,
+I18nCacheService,
+
+// WebSocket Gateway cho real-time updates
+I18nGateway,
+
+// Interceptor - phat hien locale tu request
+// Su dung APP_INTERCEPTOR de ap dung cho TOAN BO application
+{
+provide: APP_INTERCEPTOR,
+useClass: I18nInterceptor,
+},
+],
+exports: [
+// Export TypeORM repository de module khac co the truy cap
+TypeOrmModule,
+
+// Export services de module khac co the inject
+TranslationService,
+LocaleFormatterService,
+I18nCacheService,
+I18nGateway,
+I18nInterceptor,
+],
+})
+export class I18nModule {}

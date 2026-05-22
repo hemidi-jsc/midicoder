@@ -905,6 +905,25 @@ class ErrorCode(str, Enum):
     CP38_RENDER_FAILED = "MDC-CP38-018"
 
     # =========================================================================
+    # CP39: i18n/L10n Runtime Errors
+    # =========================================================================
+    CP39_EMPTY_LOCALE_CODE = "MDC-CP39-001"
+    CP39_INVALID_LOCALE_CODE = "MDC-CP39-002"
+    CP39_EMPTY_TRANSLATION_KEY = "MDC-CP39-003"
+    CP39_DUPLICATE_LOCALE = "MDC-CP39-004"
+    CP39_DUPLICATE_KEY_LOCALE = "MDC-CP39-005"
+    CP39_LOCALE_NOT_FOUND = "MDC-CP39-006"
+    CP39_TRANSLATION_NOT_FOUND = "MDC-CP39-007"
+    CP39_INVALID_NAMESPACE = "MDC-CP39-008"
+    CP39_CACHE_CONFIG_INVALID = "MDC-CP39-009"
+    CP39_TEMPLATE_NOT_FOUND = "MDC-CP39-010"
+    CP39_RENDER_FAILED = "MDC-CP39-011"
+    CP39_FORMATTER_INVALID_LOCALE = "MDC-CP39-012"
+    CP39_INVALID_PLURAL_RULE = "MDC-CP39-013"
+    CP39_TENANT_TRANSLATION_CONFLICT = "MDC-CP39-014"
+    CP39_DISCOVER_SCAN_FAILED = "MDC-CP39-015"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1385,6 +1404,23 @@ class MidicoderErrorManager:
         ErrorCode.CP38_JSON_PARSE_FAILED: "JSON parse thất bại: {reason}",
         ErrorCode.CP38_TEMPLATE_NOT_FOUND: "Jinja2 template không tìm thấy: {template}",
         ErrorCode.CP38_RENDER_FAILED: "Render template thất bại {template}: {reason}",
+
+        # CP39: i18n/L10n Runtime Error Templates
+        ErrorCode.CP39_EMPTY_LOCALE_CODE: "Locale code không được để trống.",
+        ErrorCode.CP39_INVALID_LOCALE_CODE: "Locale code không hợp lệ: {locale_code}. Phải theo chuẩn BCP 47 (ví dụ: 'vi', 'en-US').",
+        ErrorCode.CP39_EMPTY_TRANSLATION_KEY: "Translation key không được để trống.",
+        ErrorCode.CP39_DUPLICATE_LOCALE: "Locale đã tồn tại: {locale_code}",
+        ErrorCode.CP39_DUPLICATE_KEY_LOCALE: "Translation key '{key}' đã tồn tại cho locale '{locale_code}'.",
+        ErrorCode.CP39_LOCALE_NOT_FOUND: "Không tìm thấy locale: {locale_code}",
+        ErrorCode.CP39_TRANSLATION_NOT_FOUND: "Không tìm thấy translation cho key '{key}' ở locale '{locale_code}'.",
+        ErrorCode.CP39_INVALID_NAMESPACE: "Namespace không hợp lệ: {namespace}. Phải là snake_case.",
+        ErrorCode.CP39_CACHE_CONFIG_INVALID: "Cache config không hợp lệ: {reason}",
+        ErrorCode.CP39_TEMPLATE_NOT_FOUND: "Jinja2 template không tìm thấy: {template}",
+        ErrorCode.CP39_RENDER_FAILED: "Render template thất bại {template}: {reason}",
+        ErrorCode.CP39_FORMATTER_INVALID_LOCALE: "Formatter không hỗ trợ locale: {locale_code}",
+        ErrorCode.CP39_INVALID_PLURAL_RULE: "Plural rule không hợp lệ: {rule}. Chọn trong 'singular', 'plural'.",
+        ErrorCode.CP39_TENANT_TRANSLATION_CONFLICT: "Tenant translation conflict: {detail}",
+        ErrorCode.CP39_DISCOVER_SCAN_FAILED: "Auto-discover scan thất bại: {reason}",
 
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",

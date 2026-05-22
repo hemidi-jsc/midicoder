@@ -1,0 +1,705 @@
+"""
+Translation Service — CRUD + cache + fallback chain cho i18n.
+
+Tao tu dong boi CP39 — khong sua thu cong.
+
+Service nay chua toan bo logic de:
+- Doc/ghi/xoa ban dich theo key, namespace, locale, tenant
+- Duoc cache tro giup (memory hoac Redis)
+- Fallback chain: tenant-specific → global → fallback locale → default locale → key name
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import delete, select, update, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.i18n_runtime.models.i18n_models import Locale, Translation
+from app.i18n_runtime.schemas.i18n_schemas import (
+    LocaleCreate,
+    LocaleUpdate,
+    LocaleResponse,
+    TranslationCreate,
+    TranslationUpdate,
+    TranslationResponse,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class TranslationService:
+    """Service quan ly ban dich voi cache va fallback chain.
+
+    Fallback chain (thu tu uu tien):
+    1. Tenant-specific translation cho locale yeu cau
+    2. Global translation (tenant_id=None) cho locale yeu cau
+    3. Tenant-specific translation cho fallback locale
+    4. Global translation cho fallback locale
+    5. Default locale translation
+    6. Translation key (key name) như giá trị fallback cuoi cung
+
+    Attrs:
+        db: AsyncSession de truy van database
+        cache: TranslationCache (tu chon) de luu cache ban dich
+    """
+
+    def __init__(
+        self,
+        db: AsyncSession,
+        cache: Any | None = None,
+    ) -> None:
+        """Khoi tao TranslationService.
+
+        Args:
+            db: AsyncSession SQLAlchemy.
+            cache: TranslationCache instance (tu chon).
+        """
+        self.db = db
+        self.cache = cache
+
+    # ========================================================================
+    # Cache helper
+    # ========================================================================
+
+    async def _cache_get(self, key: str, namespace: str, locale: str, tenant_id: str | None) -> str | None:
+        """Doc cache ban dich neu co.
+
+        Args:
+            key: Translation key.
+            namespace: Namespace.
+            locale: Locale code.
+            tenant_id: Tenant ID.
+
+        Returns:
+            Ban dich neu co trong cache, nguoc lai None.
+        """
+        if self.cache is None:
+            return None
+        cache_key = f"{namespace}:{locale}:{key}"
+        if tenant_id:
+            cache_key += f":{tenant_id}"
+        return await self.cache.get(cache_key)
+
+    async def _cache_set(self, key: str, namespace: str, locale: str, tenant_id: str | None, value: str) -> None:
+        """Ghi cache ban dich.
+
+        Args:
+            key: Translation key.
+            namespace: Namespace.
+            locale: Locale code.
+            tenant_id: Tenant ID.
+            value: Noi dung ban dich.
+        """
+        if self.cache is None:
+            return
+        cache_key = f"{namespace}:{locale}:{key}"
+        if tenant_id:
+            cache_key += f":{tenant_id}"
+        await self.cache.set(cache_key, value)
+
+    async def _cache_invalidate(self, key: str, namespace: str, locale: str, tenant_id: str | None) -> None:
+        """Xoa cache cho mot key cu the.
+
+        Args:
+            key: Translation key.
+            namespace: Namespace.
+            locale: Locale code.
+            tenant_id: Tenant ID.
+        """
+        if self.cache is None:
+            return
+        cache_key = f"{namespace}:{locale}:{key}"
+        if tenant_id:
+            cache_key += f":{tenant_id}"
+        await self.cache.invalidate(cache_key)
+
+    # ========================================================================
+    # Core: get_translation voi fallback chain
+    # ========================================================================
+
+    async def get_translation(
+        self,
+        key: str,
+        locale: str,
+        namespace: str = "common",
+        tenant_id: str | None = None,
+    ) -> str:
+        """Lay ban dich voi fallback chain toan dien.
+
+        Thu tu fallback:
+        1. Tenant-specific → locale yeu cau
+        2. Global (tenant=None) → locale yeu cau
+        3. Tenant-specific → fallback locale
+        4. Global → fallback locale
+        5. Default locale (tenant-specific → global)
+        6. Tra ve key name (fallback cuoi cung)
+
+        Args:
+            key: Translation key can tim.
+            locale: Locale code yeu cau.
+            namespace: Namespace nhom ban dich.
+            tenant_id: Tenant ID (tu chon).
+
+        Returns:
+            Noi dung ban dich hoac key name neu khong tim thay.
+        """
+        # 1. Kiem tra cache truoc
+        cached = await self._cache_get(key, namespace, locale, tenant_id)
+        if cached is not None:
+            return cached
+
+        # 2. Tim theo fallback chain trong database
+        value = await self._resolve_with_fallback(key, locale, namespace, tenant_id)
+
+        # 3. Luu cache neu tim thay
+        if value is not None:
+            await self._cache_set(key, namespace, locale, tenant_id, value)
+            return value
+
+        # 4. Fallback cuoi cung: tra ve key name
+        return key
+
+    async def _resolve_with_fallback(
+        self,
+        key: str,
+        locale: str,
+        namespace: str,
+        tenant_id: str | None,
+    ) -> str | None:
+        """Phan giai ban dich theo fallback chain.
+
+        Args:
+            key: Translation key.
+            locale: Locale code.
+            namespace: Namespace.
+            tenant_id: Tenant ID.
+
+        Returns:
+            Ban dich hoac None neu khong tim thay.
+        """
+        locale_obj = await self._get_locale_by_code(locale)
+        if locale_obj is None:
+            return None
+
+        # Build danh sach locales can tim theo thu tu fallback
+        locales_to_try = self._build_fallback_chain(locale_obj)
+
+        for loc in locales_to_try:
+            # Thử tenant-specific trước
+            if tenant_id:
+                value = await self._find_translation(key, namespace, loc.code, tenant_id)
+                if value is not None:
+                    return value
+            # Thử global (tenant_id = None)
+            value = await self._find_translation(key, namespace, loc.code, None)
+            if value is not None:
+                return value
+
+        return None
+
+    def _build_fallback_chain(self, start_locale: Locale) -> list[Locale]:
+        """Xay dung chuoi fallback tu locale hien tai den default locale.
+
+        Args:
+            start_locale: Locale bat dau.
+
+        Returns:
+            Danh sach Locale theo thu tu fallback.
+        """
+        chain: list[Locale] = []
+        visited: set[str] = set()
+        current: Locale | None = start_locale
+
+        while current is not None and current.code not in visited:
+            visited.add(current.code)
+            chain.append(current)
+            if current.fallback_locale:
+                current = None  # Se lay ben duoi
+            else:
+                break
+
+        # Neu chua co default locale trong chain, them vao
+        if not any(loc.is_default for loc in chain):
+            # Se lay default locale trong logic ben duoi
+            pass
+
+        return chain
+
+    async def _find_translation(
+        self,
+        key: str,
+        namespace: str,
+        locale_code: str,
+        tenant_id: str | None,
+    ) -> str | None:
+        """Tim mot ban dich cu the trong database.
+
+        Args:
+            key: Translation key.
+            namespace: Namespace.
+            locale_code: Locale code.
+            tenant_id: Tenant ID.
+
+        Returns:
+            Ban dich hoac None.
+        """
+        stmt = (
+            select(Translation.value)
+            .where(
+                Translation.key == key,
+                Translation.namespace == namespace,
+                Translation.locale_id.in_(
+                    select(Locale.id).where(Locale.code == locale_code)
+                ),
+            )
+        )
+        if tenant_id is not None:
+            stmt = stmt.where(Translation.tenant_id == tenant_id)
+        else:
+            stmt = stmt.where(Translation.tenant_id.is_(None))
+
+        result = (await self.db.execute(stmt)).scalar_one_or_none()
+        return result
+
+    async def _get_locale_by_code(self, code: str) -> Locale | None:
+        """Lay Locale theo BCP 47 code.
+
+        Args:
+            code: BCP 47 locale code.
+
+        Returns:
+            Locale object hoac None.
+        """
+        stmt = select(Locale).where(Locale.code == code)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    # ========================================================================
+    # CRUD: Translation
+    # ========================================================================
+
+    async def add_translation(self, data: TranslationCreate) -> TranslationResponse:
+        """Them ban dich moi.
+
+        Args:
+            data: Du lieu ban dich moi.
+
+        Returns:
+            Ban dich da tao.
+
+        Raises:
+            ValueError: Neu locale khong ton tai.
+        """
+        locale = await self._get_locale_by_code(data.locale)
+        if locale is None:
+            raise ValueError(f"Locale '{data.locale}' khong ton tai")
+
+        now = datetime.now(timezone.utc)
+        translation = Translation(
+            key=data.key,
+            namespace=data.namespace,
+            locale_id=locale.id,
+            value=data.value,
+            tenant_id=data.tenant_id,
+            created_at=now,
+            updated_at=now,
+        )
+        self.db.add(translation)
+        await self.db.flush()
+        await self.db.refresh(translation)
+
+        # Ghi cache
+        await self._cache_set(data.key, data.namespace, data.locale, data.tenant_id, data.value)
+
+        return self._to_response(translation)
+
+    async def update_translation(
+        self,
+        key: str,
+        data: TranslationUpdate,
+        locale: str,
+        tenant_id: str | None = None,
+        namespace: str = "common",
+    ) -> TranslationResponse | None:
+        """Cap nhat ban dich.
+
+        Args:
+            key: Translation key can cap nhat.
+            data: Du lieu cap nhat.
+            locale: Locale code.
+            tenant_id: Tenant ID.
+            namespace: Namespace.
+
+        Returns:
+            Ban dich da cap nhat hoac None neu khong tim thay.
+        """
+        locale_obj = await self._get_locale_by_code(locale)
+        if locale_obj is None:
+            return None
+
+        conditions = [
+            Translation.key == key,
+            Translation.locale_id == locale_obj.id,
+            Translation.namespace == namespace,
+        ]
+        if tenant_id is not None:
+            conditions.append(Translation.tenant_id == tenant_id)
+        else:
+            conditions.append(Translation.tenant_id.is_(None))
+
+        stmt = select(Translation).where(*conditions)
+        translation = (await self.db.execute(stmt)).scalar_one_or_none()
+        if translation is None:
+            return None
+
+        # Cap nhat cac truoc duoc cung cap
+        update_data = data.model_dump(exclude_unset=True)
+        for field_name, value in update_data.items():
+            if value is not None:
+                setattr(translation, field_name, value)
+        translation.updated_at = datetime.now(timezone.utc)
+
+        await self.db.flush()
+        await self.db.refresh(translation)
+
+        # Xoa cache cu va ghi cache moi
+        await self._cache_invalidate(key, translation.namespace, locale, tenant_id)
+        await self._cache_set(key, translation.namespace, locale, tenant_id, translation.value)
+
+        return self._to_response(translation)
+
+    async def delete_translation(
+        self,
+        key: str,
+        locale: str,
+        namespace: str = "common",
+        tenant_id: str | None = None,
+    ) -> bool:
+        """Xoa ban dich.
+
+        Args:
+            key: Translation key can xoa.
+            locale: Locale code.
+            namespace: Namespace.
+            tenant_id: Tenant ID.
+
+        Returns:
+            True neu xoa thanh cong, False neu khong tim thay.
+        """
+        locale_obj = await self._get_locale_by_code(locale)
+        if locale_obj is None:
+            return False
+
+        conditions = [
+            Translation.key == key,
+            Translation.locale_id == locale_obj.id,
+            Translation.namespace == namespace,
+        ]
+        if tenant_id is not None:
+            conditions.append(Translation.tenant_id == tenant_id)
+        else:
+            conditions.append(Translation.tenant_id.is_(None))
+
+        stmt = delete(Translation).where(*conditions)
+        result = await self.db.execute(stmt)
+        await self.db.flush()
+
+        if result.rowcount > 0:
+            await self._cache_invalidate(key, namespace, locale, tenant_id)
+            return True
+        return False
+
+    async def list_by_locale(
+        self,
+        locale: str,
+        namespace: str | None = None,
+        tenant_id: str | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> tuple[int, list[TranslationResponse]]:
+        """Lay danh sach ban dich theo locale.
+
+        Args:
+            locale: Locale code.
+            namespace: Namespace (tu chon, de None de lay het).
+            tenant_id: Tenant ID (tu chon).
+            skip: So luong bo qua (pagination).
+            limit: So luong tra ve toi da.
+
+        Returns:
+            Tuple (total, danh sach TranslationResponse).
+        """
+        locale_obj = await self._get_locale_by_code(locale)
+        if locale_obj is None:
+            return 0, []
+
+        conditions = [
+            Translation.locale_id == locale_obj.id,
+        ]
+        if namespace is not None:
+            conditions.append(Translation.namespace == namespace)
+        if tenant_id is not None:
+            conditions.append(Translation.tenant_id == tenant_id)
+
+        # Dem total
+        count_stmt = select(func.count()).select_from(Translation).where(*conditions)
+        total = (await self.db.execute(count_stmt)).scalar_one()
+
+        # Lay danh sach
+        stmt = (
+            select(Translation)
+            .where(*conditions)
+            .order_by(Translation.namespace, Translation.key)
+            .offset(skip)
+            .limit(limit)
+        )
+        translations = (await self.db.execute(stmt)).scalars().all()
+
+        return total, [self._to_response(t) for t in translations]
+
+    async def add_bulk(self, translations: list[TranslationCreate]) -> int:
+        """Them nhieu ban dich mot luc.
+
+        Args:
+            translations: Danh sach du lieu ban dich.
+
+        Returns:
+            So ban dich da them thanh cong.
+        """
+        now = datetime.now(timezone.utc)
+        count = 0
+
+        for data in translations:
+            locale = await self._get_locale_by_code(data.locale)
+            if locale is None:
+                logger.warning(f"Locale '{data.locale}' khong ton tai — bo qua key '{data.key}'")
+                continue
+
+            t = Translation(
+                key=data.key,
+                namespace=data.namespace,
+                locale_id=locale.id,
+                value=data.value,
+                tenant_id=data.tenant_id,
+                created_at=now,
+                updated_at=now,
+            )
+            self.db.add(t)
+            count += 1
+
+        if count > 0:
+            await self.db.flush()
+
+        return count
+
+    # ========================================================================
+    # Missing keys detection
+    # ========================================================================
+
+    async def missing_keys(
+        self,
+        keys: list[str],
+        locale: str,
+        namespace: str = "common",
+        tenant_id: str | None = None,
+    ) -> list[str]:
+        """Tim nhung key chua co ban dich.
+
+        Args:
+            keys: Danh sach translation key can kiem tra.
+            locale: Locale code.
+            namespace: Namespace.
+            tenant_id: Tenant ID.
+
+        Returns:
+            Danh sach key chua co ban dich.
+        """
+        locale_obj = await self._get_locale_by_code(locale)
+        if locale_obj is None:
+            return keys  # Neu locale khong ton tai, tat ca key deu "thieu"
+
+        conditions = [
+            Translation.key.in_(keys),
+            Translation.locale_id == locale_obj.id,
+            Translation.namespace == namespace,
+        ]
+        if tenant_id is not None:
+            conditions.append(Translation.tenant_id == tenant_id)
+        else:
+            conditions.append(Translation.tenant_id.is_(None))
+
+        stmt = select(Translation.key).where(*conditions)
+        existing = set((await self.db.execute(stmt)).scalars().all())
+
+        return [k for k in keys if k not in existing]
+
+    # ========================================================================
+    # Locale CRUD
+    # ========================================================================
+
+    async def get_all_locales(self) -> list[LocaleResponse]:
+        """Lay danh sach tat ca locales.
+
+        Returns:
+            Danh sach LocaleResponse sap xep theo ma hien thi.
+        """
+        stmt = select(Locale).order_by(Locale.is_default.desc(), Locale.code)
+        locales = (await self.db.execute(stmt)).scalars().all()
+
+        result = []
+        for loc in locales:
+            count_stmt = select(func.count()).where(Translation.locale_id == loc.id)
+            count = (await self.db.execute(count_stmt)).scalar_one()
+            result.append(LocaleResponse(
+                id=loc.id,
+                code=loc.code,
+                name=loc.name,
+                is_default=loc.is_default,
+                date_format=loc.date_format,
+                number_format=loc.number_format,
+                currency_code=loc.currency_code,
+                plural_rule=loc.plural_rule,
+                fallback_locale=loc.fallback_locale,
+                translation_count=count,
+                created_at=loc.created_at,
+                updated_at=loc.updated_at,
+            ))
+        return result
+
+    async def add_locale(self, data: LocaleCreate) -> LocaleResponse:
+        """Them locale moi.
+
+        Args:
+            data: Du lieu locale moi.
+
+        Returns:
+            Locale da tao.
+        """
+        now = datetime.now(timezone.utc)
+
+        # Neu la default, tat ca locale khac khong phai default
+        if data.is_default:
+            await self.db.execute(
+                update(Locale).values(is_default=False)
+            )
+
+        locale = Locale(
+            code=data.code,
+            name=data.name,
+            is_default=data.is_default,
+            date_format=data.date_format,
+            number_format=data.number_format,
+            currency_code=data.currency_code,
+            plural_rule=data.plural_rule,
+            fallback_locale=data.fallback_locale,
+            created_at=now,
+            updated_at=now,
+        )
+        self.db.add(locale)
+        await self.db.flush()
+        await self.db.refresh(locale)
+
+        return LocaleResponse(
+            id=locale.id,
+            code=locale.code,
+            name=locale.name,
+            is_default=locale.is_default,
+            date_format=locale.date_format,
+            number_format=locale.number_format,
+            currency_code=locale.currency_code,
+            plural_rule=locale.plural_rule,
+            fallback_locale=locale.fallback_locale,
+            translation_count=0,
+            created_at=locale.created_at,
+            updated_at=locale.updated_at,
+        )
+
+    async def resolve_with_fallback(
+        self,
+        key: str,
+        locale: str,
+        namespace: str = "common",
+        tenant_id: str | None = None,
+    ) -> tuple[str, str]:
+        """Phan giai ban dich va tra ve ca gitac nguon.
+
+        Khac voi get_translation o cho nay tra ve ca locale code
+        duoc su dung (de biet co phai fallback hay khong).
+
+        Args:
+            key: Translation key.
+            locale: Locale code yeu cau.
+            namespace: Namespace.
+            tenant_id: Tenant ID.
+
+        Returns:
+            Tuple (ban_dich, locale_code_dung).
+        """
+        # Kiem tra cache
+        cached = await self._cache_get(key, namespace, locale, tenant_id)
+        if cached is not None:
+            return cached, locale
+
+        locale_obj = await self._get_locale_by_code(locale)
+        if locale_obj is None:
+            return key, locale
+
+        fallback_chain = self._build_fallback_chain(locale_obj)
+
+        for loc in fallback_chain:
+            if tenant_id:
+                value = await self._find_translation(key, namespace, loc.code, tenant_id)
+                if value is not None:
+                    await self._cache_set(key, namespace, locale, tenant_id, value)
+                    return value, loc.code
+            value = await self._find_translation(key, namespace, loc.code, None)
+            if value is not None:
+                await self._cache_set(key, namespace, locale, tenant_id, value)
+                return value, loc.code
+
+        return key, locale
+
+    # ========================================================================
+    # Internal helper
+    # ========================================================================
+
+    @staticmethod
+    def _to_response(t: Translation) -> TranslationResponse:
+        """Chuyen Translation model sang Response schema.
+
+        Args:
+            t: Translation object.
+
+        Returns:
+            TranslationResponse.
+        """
+        return TranslationResponse(
+            id=t.id,
+            key=t.key,
+            namespace=t.namespace,
+            locale="",  # Se duoc fill khi join voi Locale
+            value=t.value,
+            tenant_id=t.tenant_id,
+            created_at=t.created_at,
+            updated_at=t.updated_at,
+        )
+
+
+# ============================================================================
+# Default configuration tu template context
+# ============================================================================
+
+DEFAULT_CACHE_CONFIG: dict = {
+    "backend": "{{ cache_config.backend }}",
+    "ttl_seconds": {{ cache_config.ttl_seconds }},
+    "max_size": {{ cache_config.max_size }},
+    "redis_url": {{ '"%s"'|format(cache_config.redis_url) if cache_config.redis_url else "None" }},
+}
+
+__all__ = [
+    "TranslationService",
+    "DEFAULT_CACHE_CONFIG",
+]

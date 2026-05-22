@@ -1,0 +1,246 @@
+﻿/**
+* useFormattedValue hook \u2014 \u0111\u1ecbnh d\u1ea1ng giá tr\u1ecb theo locale.
+*
+* Sinh b\u1ed1i CP39 I18nRuntimeEmitter
+* H\u1ed7 tr\u1edd: date, number, currency, relativeTime.
+*/
+
+import { useCallback, useMemo } from 'react';
+import { useLocale } from './useLocale';
+
+// ============================================================
+// Ki\u1ec3u d\u1eef li\u1ec7u
+// ============================================================
+
+/** Ki\u1ec3u giá tr\u1ecb \u0111\u1ecbnh d\u1ea1ng */
+export type FormatType = 'date' | 'number' | 'currency' | 'relativeTime';
+
+/** T\u00e0i nguy\u1ec5n \u0111\u1ecbnh d\u1ea1ng \u0111\u1ea1t gi\u1ea3 */
+export interface FormatOptions {
+/** Ki\u1ec3u \u0111\u1ecbnh d\u1ea1ng */
+type: FormatType;
+/** Currency code (ch\u1ec9 d\u00f9ng khi type='currency') */
+currency?: string;
+/** Pattern \u0111\u1ecbnh d\u1ea1ng ng\u00e0y (vd: 'YYYY-MM-DD', 'DD/MM/YYYY') */
+dateFormat?: string;
+/** S\u1ed1 ch\u1eef th\u1eadp ph\u00e2n (cho number/currency) */
+fractionDigits?: number;
+/** Hi\u1ec3n th\u1ecb d\u1ea5u ph\u00e2n n\u0103m (cho number) */
+useGrouping?: boolean;
+/** Gi\u1edbi h\u1ea1n s\u1ed1 ch\u1eef th\u1eadp ph\u00e2n t\u1ed1i \u0111a */
+maximumFractionDigits?: number;
+/** Gi\u1edbi h\u1ea1n s\u1ed1 ch\u1eef th\u1eadp ph\u00e2n t\u1ed1i thi\u1ec3u */
+minimumFractionDigits?: number;
+/** Style hi\u1ec3n th\u1ecb ng\u00e0y (ch\u1ec9 d\u00f9ng khi type='date') */
+dateStyle?: 'full' | 'long' | 'medium' | 'short';
+/** S\u1ed1 gi\u1ea3y \u0111\u1ec3 hi\u1ec3n th\u1ecb relative time */
+base?: number;
+/** Unit cho relative time */
+numeric?: 'always' | 'auto';
+}
+
+/** K\u1ebft qu\u1ea3 \u0111\u1ecbnh d\u1ea1ng */
+export interface FormattedResult {
+/** Chu\u1eddi \u0111\u00e3 \u0111\u1ecbnh d\u1ea1ng */
+value: string;
+/** Ki\u1ec3u \u0111\u1ecbnh d\u1ea1ng \u0111\u00e3 s\u1eed d\u1ee9ng */
+type: FormatType;
+/** Locale \u0111\u00e3 s\u1eed d\u1ee9ng */
+locale: string;
+}
+
+/** Ki\u1ec3u giá tr\u1ecb \u0111\u1ec3 \u0111\u1ecbnh d\u1ea1ng */
+export type FormatValue = string | number | Date;
+
+// ============================================================
+// C\u1ea3i \u0111\u1eb7t currency m\u1eb7c \u0111\u1ecbnh theo locale
+// ============================================================
+
+const defaultCurrencyMap: Record<string, string> = {
+    {% for loc in locales %}
+    '{{ loc["code"] }}': '{{ loc["currency_code"] if loc.get("currency_code") else "USD" }}',
+    {% endfor %}
+    };
+
+    // ============================================================
+    // H\u00e0m \u0111\u1ecbnh d\u1ea1ng ng\u00e0y th\u00e1ng custom pattern
+    // ============================================================
+
+    function formatDateWithPattern(date: Date, pattern: string): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+
+    return pattern
+    .replace('YYYY', String(year))
+    .replace('YY', String(year).slice(-2))
+    .replace('MM', month)
+    .replace('DD', day)
+    .replace('HH', hours)
+    .replace('mm', minutes)
+    .replace('ss', seconds);
+    }
+
+    // ============================================================
+    // useFormattedValue hook
+    // ============================================================
+
+    /**
+    * useFormattedValue \u2014 \u0111\u1ecbnh d\u1ea1ng giá tr\u1ecb theo locale hi\u1ec7n t\u1ea1i.
+    *
+    * H\u1ed7 tr\u1edd 4 ki\u1ec3u:
+    * - 'date': \u0111\u1ecbnh d\u1ea1ng ng\u00e0y th\u00e1ng (Intl.DateTimeFormat ho\u1eb7c custom pattern)
+    * - 'number': \u0111\u1ecbnh d\u1ea1ng s\u1ed1 (Intl.NumberFormat)
+    * - 'currency': \u0111\u1ecbnh d\u1ea1ng ti\u1ec1n t\u1ec1 (t\u1ef1 \u0111\u1ed9nh currency theo locale)
+    * - 'relativeTime': \u0111\u1ecbnh d\u1ea1ng th\u1eddi gian t\u01b0\u01a1ng \u0111\u1ed1i (Intl.RelativeTimeFormat)
+    *
+    * T\u1ef1 \u0111\u1ed9nh \u0111\u1ed5i khi locale thay \u0111\u1ed5i.
+    */
+    export function useFormattedValue() {
+    const { locale } = useLocale();
+
+    /**
+    * format(value, type, options?) \u2192 FormattedResult
+    */
+    const format = useCallback(
+    (
+    value: FormatValue,
+    type: FormatType,
+    options?: Partial<FormatOptions>,
+        ): FormattedResult => {
+        const result: Partial<FormattedResult> = { type, locale };
+
+            switch (type) {
+            case 'date': {
+            const date = value instanceof Date ? value : new Date(value);
+            if (isNaN(date.getTime())) {
+            result.value = String(value);
+            return result as FormattedResult;
+            }
+
+            if (options?.dateFormat) {
+            // S\u1eed d\u1ee9ng custom pattern (vd: 'DD/MM/YYYY')
+            result.value = formatDateWithPattern(date, options.dateFormat);
+            } else if (options?.dateStyle) {
+            // S\u1eed d\u1ee9ng Intl.DateTimeFormat v\u1edbi style
+            result.value = new Intl.DateTimeFormat(locale, {
+            dateStyle: options.dateStyle,
+            }).format(date);
+            } else {
+            // M\u1eb7c \u0111\u1ecbnh: \u0111\u1ea7y \u0111\u1ee7 theo locale
+            result.value = new Intl.DateTimeFormat(locale, {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            }).format(date);
+            }
+            break;
+            }
+
+            case 'number': {
+            const num = typeof value === 'number' ? value : Number(value);
+            if (isNaN(num)) {
+            result.value = String(value);
+            return result as FormattedResult;
+            }
+            result.value = new Intl.NumberFormat(locale, {
+            minimumFractionDigits: options?.minimumFractionDigits ?? 0,
+            maximumFractionDigits:
+            options?.maximumFractionDigits ?? options?.fractionDigits,
+            useGrouping: options?.useGrouping ?? true,
+            }).format(num);
+            break;
+            }
+
+            case 'currency': {
+            const num = typeof value === 'number' ? value : Number(value);
+            const currency = options?.currency ?? defaultCurrencyMap[locale] ?? 'USD';
+            if (isNaN(num)) {
+            result.value = String(value);
+            return result as FormattedResult;
+            }
+            result.value = new Intl.NumberFormat(locale, {
+            style: 'currency',
+            currency,
+            minimumFractionDigits: options?.minimumFractionDigits ?? 2,
+            maximumFractionDigits:
+            options?.maximumFractionDigits ?? options?.fractionDigits ?? 2,
+            }).format(num);
+            break;
+            }
+
+            case 'relativeTime': {
+            const now = options?.base ?? Date.now();
+            let seconds: number;
+            if (value instanceof Date) {
+            seconds = Math.round((value.getTime() - now) / 1000);
+            } else if (typeof value === 'number') {
+            seconds = value;
+            } else {
+            seconds = Math.round((new Date(value).getTime() - now) / 1000);
+            }
+
+            const rtf = new Intl.RelativeTimeFormat(locale, {
+            numeric: options?.numeric ?? 'always',
+            });
+
+            // T\u1ef1 \u0111\u1ed9nh ch\u1ecdn unit th\u1eddi gian
+            const absSeconds = Math.abs(seconds);
+            if (absSeconds < 60) { result.value=rtf.format(seconds, 'second' ); } else if (absSeconds < 3600) {
+                result.value=rtf.format(Math.round(seconds / 60), 'minute' ); } else if (absSeconds < 86400) {
+                result.value=rtf.format(Math.round(seconds / 3600), 'hour' ); } else if (absSeconds < 2592000) {
+                result.value=rtf.format(Math.round(seconds / 86400), 'day' ); } else if (absSeconds < 31536000) {
+                result.value=rtf.format(Math.round(seconds / 2592000), 'month' ); } else {
+                result.value=rtf.format(Math.round(seconds / 31536000), 'year' ); } break; } default:
+                result.value=String(value); } return result as FormattedResult; }, [locale], ); /** * formatDate(value,
+                options?) \u2192 FormattedResult */ const formatDate=useCallback( (value: FormatValue, options?:
+                Omit<Partial<FormatOptions>, 'type'>): FormattedResult =>
+                format(value, 'date', options),
+                [format],
+                );
+
+                /**
+                * formatNumber(value, options?) \u2192 FormattedResult
+                */
+                const formatNumber = useCallback(
+                (value: FormatValue, options?: Omit<Partial<FormatOptions>, 'type'>): FormattedResult =>
+                    format(value, 'number', options),
+                    [format],
+                    );
+
+                    /**
+                    * formatCurrency(value, options?) \u2192 FormattedResult
+                    */
+                    const formatCurrency = useCallback(
+                    (value: FormatValue, options?: Omit<Partial<FormatOptions>, 'type'>): FormattedResult =>
+                        format(value, 'currency', options),
+                        [format],
+                        );
+
+                        /**
+                        * formatRelativeTime(value, options?) \u2192 FormattedResult
+                        */
+                        const formatRelativeTime = useCallback(
+                        (value: FormatValue, options?: Omit<Partial<FormatOptions>, 'type'>): FormattedResult =>
+                            format(value, 'relativeTime', options),
+                            [format],
+                            );
+
+                            return {
+                            /** format(value, type, options?) => FormattedResult */
+                            format,
+                            /** formatDate(value, options?) => FormattedResult */
+                            formatDate,
+                            /** formatNumber(value, options?) => FormattedResult */
+                            formatNumber,
+                            /** formatCurrency(value, options?) => FormattedResult */
+                            formatCurrency,
+                            /** formatRelativeTime(value, options?) => FormattedResult */
+                            formatRelativeTime,
+                            };
+                            }
+
+                            export default useFormattedValue;

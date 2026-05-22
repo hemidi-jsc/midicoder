@@ -1,0 +1,199 @@
+﻿/**
+ * useTranslation hook \u2014 truy xu\u1ea5t key th\u00ec tr\u1ea3 v\u1ec1 ch\u01b0\u1eddi theo locale hi\u1ec7n t\u1ea1i.
+ *
+ * Sinh b\u1ed1i CP39 I18nRuntimeEmitter
+ * S\u1eed d\u1ee9ng I18nContext \u0111\u1ec3 tra c\u01b0\u1ee3n translation Map.
+ */
+
+import { useContext, useCallback } from 'react';
+import { I18nContext } from './I18nRuntimeProvider';
+
+// ============================================================
+// Ki\u1ec3u d\u1eef li\u1ec7u
+// ============================================================
+
+/** Gi\u00e1 tr\u1ecb d\u00f9ng l\u00e0m tham s\u1ed1 cho interpolation: {count: 5}, {name: 'An'} */
+export type TranslationParams = Record<string, string | number | boolean | undefined>;
+
+/** Ki\u1ec3u h\u00e0m t \u2014 tra c\u01b0\u1ee3n chuy\u1ec3n \u0111\u1ed5i */
+export type TranslationFunction = (key: string, params?: TranslationParams, options?: { ns?: string }) => string;
+
+/** K\u1ebft qu\u1ea3 tra c\u01b0\u1ee3n chi ti\u1ebft */
+export interface ResolveResult {
+  /** Key g\u1ed1c */
+  key: string;
+  /** Namespace ch\u1ee9a key (null n\u1ebfu kh\u00f4ng c\u00f3) */
+  namespace: string | null;
+  /** Gi\u00e1 tr\u1ecb \u0111\u1ea7y \u0111\u1ee7 sau khi interpolation */
+  resolved: string;
+  /** Locale \u0111\u01b0\u1ee3c d\u00f9ng \u0111\u1ec3 tra c\u01b0\u1ee3n */
+  locale: string;
+  /** C\u00f3 t\u00ecm th\u1ea5y value hay kh\u00f4ng */
+  found: boolean;
+}
+
+// ============================================================
+// Quy t\u1eafc plural \u2014 t\u1eeb plural_rules b\u1ed1i context
+// ============================================================
+
+type PluralCategory = 'zero' | 'one' | 'two' | 'few' | 'many' | 'other';
+
+const pluralRuleMap: Record<string, (n: number) => PluralCategory> = {
+{% for rule in plural_rules %}
+  '{{ rule.locale }}': (n: number) => {
+    {% if rule.expression %}
+    return '{{ rule.expression }}' as PluralCategory;
+    {% else %}
+    /* Fallback cho {{ rule.locale }} */
+    return (n === 0 ? 'zero' : n === 1 ? 'one' : 'other') as PluralCategory;
+    {% endif %}
+  },
+{% endfor %}
+};
+
+/**
+ * X\u00e1c \u0111\u1ecbnh plural category theo CLDR
+ */
+function resolvePluralCategory(locale: string, n: number): PluralCategory {
+  const rule = pluralRuleMap[locale];
+  if (rule) return rule(n);
+  // Fallback: ti\u1ebfng Anh
+  return n === 0 ? 'zero' : n === 1 ? 'one' : 'other';
+}
+
+// ============================================================
+// Interpolation \u2014 thay th\u1ebf {param} b\u1eb1ng gi\u00e1 tr\u1ecb th\u1eadt
+// ============================================================
+
+function interpolate(template: string, params: TranslationParams): string {
+  return template.replace(/{(\\w+)}/g, (_match, paramName) => {
+    const value = params[paramName];
+    if (value === undefined) return _match;
+    return String(value);
+  });
+}
+
+// ============================================================
+// X\u00e2y d\u1ef1ng key \u0111\u1ea7y \u0111\u1ee7 t\u1eeb namespace + key
+// ============================================================
+
+/**
+ * V\u00ed d\u1ee5: ns='common', key='greeting' => 'common:greeting'
+ */
+function buildFullKey(key: string, ns?: string): string {
+  if (ns && !key.startsWith(`${ns}:`)) {
+    return `${ns}:${key}`;
+  }
+  return key;
+}
+
+// ============================================================
+// useTranslation hook
+// ============================================================
+
+/**
+ * useTranslation hook \u2014 cung c\u1ea5p b\u1edfi React Context.
+ *
+ * \u0110\u1ecdc translations Map v\u00e0 locale t\u1eeb I18nContext.
+ * Tra c\u01b0\u1ee3n theo th\u1ef1 t\u1ef1: locale hi\u1ec7n t\u1ea1i > fallback locales.
+ * H\u1ed7 tr\u1edd interpolation {param} v\u00e0 plural form.
+ */
+export function useTranslation(defaultNs?: string) {
+  const context = useContext(I18nContext);
+
+  if (!context) {
+    throw new Error('useTranslation ph\u1ea3i \u0111\u01b0\u1ee3c s\u1eed d\u1ee9ng trong I18nRuntimeProvider');
+  }
+
+  const { translations, locale, supportedLocales, localeConfig } = context;
+
+  /**
+   * Tra c\u01b0\u1ee3n key \u2192 chuy\u1ec3n \u0111\u1ed5i.
+   * Th\u1ef1 t\u1ef1: locale hi\u1ec7n t\u1ea1i > fallback locales.
+   * H\u1ed7 tr\u1edd plural + interpolation.
+   */
+  const resolve = useCallback(
+    (key: string, params?: TranslationParams, ns?: string): ResolveResult => {
+      const fullKey = buildFullKey(key, ns);
+      const resolvedLocales: string[] = [locale, ...supportedLocales].filter(
+        (l, i, a) => a.indexOf(l) === i,
+      );
+
+      let found = false;
+      let resolved = key;
+      let usedLocale = locale;
+
+      // D\u1ef1n th\u1ef1 t\u1ef1 locale \u0111\u1ec3 tra c\u01b0\u1ee3n
+      for (const loc of resolvedLocales) {
+        const value = translations.get(`${loc}:${fullKey}`);
+        if (value !== undefined) {
+          resolved = value;
+          usedLocale = loc;
+          found = true;
+          break;
+        }
+      }
+
+      // X\u1eed l\u00fd interpolation v\u00e0 plural
+      if (params && found) {
+        const pluralCount = params.count;
+        if (typeof pluralCount === 'number') {
+          const category = resolvePluralCategory(usedLocale, pluralCount);
+          const pluralKey = `${fullKey}_${category}`;
+          const pluralValue = translations.get(`${usedLocale}:${pluralKey}`);
+          if (pluralValue !== undefined) {
+            resolved = pluralValue;
+          }
+          resolved = resolved.replace(/{count}/g, String(pluralCount));
+        }
+        // Interpolation c\u00e1c param c\u00f2n l\u1ea1i
+        resolved = interpolate(resolved, params);
+      }
+
+      return { key, namespace: ns ?? null, resolved, locale: usedLocale, found };
+    },
+    [translations, locale, supportedLocales],
+  );
+
+  /**
+   * t(key, params?, options?) \u2192 chuy\u1ec3n \u0111\u1ed5i
+   * Tr\u1ea3 v\u1ec1 chuy\u1ec3n \u0111\u1ed5i ho\u1eb7c key g\u1ed1c n\u1ebfu kh\u00f4ng t\u00ecm th\u1ea5y.
+   */
+  const t = useCallback(
+    (key: string, params?: TranslationParams, options?: { ns?: string }): string => {
+      const ns = options?.ns ?? defaultNs;
+      return resolve(key, params, ns).resolved;
+    },
+    [resolve, defaultNs],
+  );
+
+  /** Ki\u1ec3m tra key c\u00f3 t\u1ed3n t\u1ea1i trong translations */
+  const exists = useCallback(
+    (key: string, ns?: string): boolean => resolve(key, undefined, ns).found,
+    [resolve],
+  );
+
+  /** Tr\u1ea3 v\u1ec1 ResolveResult \u0111\u1ec3 c\u00f3 th\u00f4ng tin chi ti\u1ebft */
+  const resolveFull = useCallback(
+    (key: string, params?: TranslationParams, options?: { ns?: string }): ResolveResult => {
+      const ns = options?.ns ?? defaultNs;
+      return resolve(key, params, ns);
+    },
+    [resolve, defaultNs],
+  );
+
+  return {
+    /** t(key, params?, options?) => chuy\u1ec3n \u0111\u1ed5i */
+    t,
+    /** exists(key, ns?) => boolean */
+    exists,
+    /** resolve(key, params?, options?) => ResolveResult */
+    resolve: resolveFull,
+    /** Locale hi\u1ec7n t\u1ea1i */
+    locale,
+    /** C\u1ea3i \u0111\u1eb7t locale */
+    localeConfig,
+  };
+}
+
+export default useTranslation;

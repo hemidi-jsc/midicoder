@@ -1,0 +1,502 @@
+﻿/**
+ * TranslationSyncWorker \u2014 WebSocket client cho \u0111\u1ed3ng b\u1ed9 realtime.
+ *
+ * Sinh b\u1ed1i CP39 I18nRuntimeEmitter
+ * T\u1ef1 \u0111\u1ed9ng k\u1ebft n\u1ed1i, auto-reconnect v\u1edbi exponential backoff.
+ * H\u1ed7 tr\u1edd: translation update, locale changed, batch sync.
+ */
+
+// ============================================================
+// Ki\u1ec3u d\u1eef li\u1ec7u
+// ============================================================
+
+/** Tr\u1ea1ng th\u00e1i k\u1ebft n\u1ed1i WebSocket */
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
+/** Ki\u1ec3u tin nh\u00e1n t\u1eeb server */
+export type MessageType =
+  | 'translation_update'
+  | 'translation_batch'
+  | 'locale_changed'
+  | 'heartbeat'
+  | 'error'
+  | 'ack';
+
+/** Tin nh\u00e1n t\u1eeb server g\u1eedi xu\u1ed1ng */
+export interface ServerMessage {
+  /** Ki\u1ec3u tin nh\u00e1n */
+  type: MessageType;
+  /** D\u1eef li\u1ec7u k\u1eb9m theo */
+  payload: unknown;
+  /** Timestamp server */
+  timestamp: number;
+  /** ID tin nh\u00e1n \u0111\u1ec3 ack */
+  messageId?: string;
+}
+
+/** Tin nh\u00e1n t\u1eeb client g\u1eedi l\u00ean */
+export interface ClientMessage {
+  /** Ki\u1ec3u tin nh\u00e1n */
+  type: 'subscribe' | 'unsubscribe' | 'ping' | 'sync_request' | 'ack';
+  /** D\u1eef li\u1ec7u k\u1eb9m theo */
+  payload?: unknown;
+}
+
+/** Callback cho translation update */
+export type TranslationUpdateHandler = (data: {
+  /** Locale c\u1ee7a translation \u0111\u00e3 thay \u0111\u1ed5i */
+  locale: string;
+  /** Key \u0111\u00e3 thay \u0111\u1ed5i */
+  key: string;
+  /** Giá tr\u1ecb m\u1edbi */
+  value: string;
+  /** Namespace (n\u1ebfu c\u00f3) */
+  namespace?: string;
+}) => void;
+
+/** Callback cho batch update */
+export type TranslationBatchHandler = (data: {
+  /** C\u1eadp translation \u0111\u00e3 thay \u0111\u1ed5i */
+  updates: Array<{ locale: string; key: string; value: string; namespace?: string }>;
+  /** S\u1ed1 l\u01b0\u1ee3ng updates */
+  count: number;
+}) => void;
+
+/** Callback cho locale changed */
+export type LocaleChangedHandler = (data: {
+  /** Locale m\u1edbi */
+  locale: string;
+  /** Lý do thay \u0111\u1ed5i */
+  reason?: string;
+}) => void;
+
+/** Callback cho error */
+export type ErrorHandler = (data: {
+  /** Mã l\u1ed7i */
+  code: string;
+  /** Th\u00f4ng \u0111i\u1ec7u l\u1ed7i */
+  message: string;
+  /** Timestamp */
+  timestamp: number;
+}) => void;
+
+/** Callback cho status thay \u0111\u1ed5i */
+export type StatusChangedHandler = (status: ConnectionStatus, retryCount: number) => void;
+
+/** C\u1ea3i \u0111\u1eb7t WebSocket */
+export interface SyncWorkerOptions {
+  /** URL WebSocket (m\u1eb7c \u0111\u1ecbnh: 'ws://localhost:8080/ws/i18n') */
+  url?: string;
+  /** Token x\u00e1c th\u1ef1c (n\u1ebfu c\u00f3) */
+  authToken?: string;
+  /** K\u1eaft th\u1ee9c auto-reconnect sau bao nhi\u00eau l\u1ea7n th\u1eed */
+  maxRetries?: number;
+  /** \u0110\u1ed9 tr\u1ec9 ban \u0111\u1ea7u khi reconnect (ms) */
+  initialDelay?: number;
+  /** Náº¥n n\u00e9n backoff */
+  backoffMultiplier?: number;
+  /** Gi\u1edbi h\u1ea1n \u0111\u1ed9 tr\u1ec9 t\u1ed1i \u0111a (ms) */
+  maxDelay?: number;
+  /** K\u1eaft n\u1ed1i ngay khi t\u1ea1o */
+  autoConnect?: boolean;
+  /** Kho\u1ea3ng th\u1eddi gian heartbeat (ms) */
+  heartbeatInterval?: number;
+  /** Th\u1eddi gian ch\u1edd heartbeat timeout (ms) */
+  heartbeatTimeout?: number;
+}
+
+// ============================================================
+// C\u1ea3i \u0111\u1eb7t m\u1eb7c \u0111\u1ecbnh
+// ============================================================
+
+const DEFAULT_OPTIONS: Required<Omit<SyncWorkerOptions, 'url' | 'authToken'>> = {
+  maxRetries: 10,
+  initialDelay: 1000,
+  backoffMultiplier: 2,
+  maxDelay: 30000,
+  autoConnect: true,
+  heartbeatInterval: 30000,
+  heartbeatTimeout: 10000,
+};
+
+// ============================================================
+// TranslationSyncWorker
+// ============================================================
+
+/**
+ * TranslationSyncWorker \u2014 qu\u1ea3n l\u00fd WebSocket k\u1ebft n\u1ed1i \u0111\u1ec3 \u0111\u1ed3ng b\u1ed9
+ * translation realtime t\u1eeb server.
+ *
+ * T\u1ec9ch h\u1ee3p:
+ * - Auto-reconnect v\u1edbi exponential backoff
+ * - Heartbeat \u0111\u1ec3 gi\u1eef k\u1ebft n\u1ed1i s\u1ed1ng
+ * - Callback cho t\u1eebng ki\u1ec3u s\u1ef1 ki\u1ec7n
+ * - Batch update hi\u1ec7u su\u1ea5t cao
+ */
+export class TranslationSyncWorker {
+  private ws: WebSocket | null = null;
+  private status: ConnectionStatus = 'disconnected';
+  private retryCount = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private messageHandlers: Map<MessageType, Set<Function>> = new Map();
+  private statusHandlers: Set<StatusChangedHandler> = new Set();
+  private messageIdCounter = 0;
+  private pendingAcks: Set<string> = new Set();
+  private readonly options: Required<SyncWorkerOptions>;
+
+  constructor(options: SyncWorkerOptions = {}) {
+    this.options = {
+      url: 'ws://localhost:8080/ws/i18n',
+      authToken: '',
+      ...DEFAULT_OPTIONS,
+      ...options,
+    };
+
+    if (this.options.autoConnect) {
+      this.connect();
+    }
+  }
+
+  /** Tr\u1ea1ng th\u00e1i k\u1ebft n\u1ed1i hi\u1ec7n t\u1ea1i */
+  get connectionStatus(): ConnectionStatus {
+    return this.status;
+  }
+
+  /** S\u1ed1 l\u1ea7n retry hi\u1ec7n t\u1ea1i */
+  get currentRetryCount(): number {
+    return this.retryCount;
+  }
+
+  /**
+   * K\u1ebft n\u1ed1i WebSocket \u0111\u1ebfn server.
+   * N\u1ebfu \u0111ang k\u1ebft n\u1ed1i th\u00ec báº¡t báº¡c.
+   */
+  connect(): void {
+    if (this.status === 'connected' || this.status === 'connecting') {
+      return;
+    }
+
+    this.setStatus('connecting');
+    const url = this.buildUrl();
+
+    try {
+      this.ws = new WebSocket(url);
+    } catch (error) {
+      this.handleError('CONNECT_ERROR', `Kh\u00f4ng th\u1ec3 t\u1ea1o WebSocket: ${error}`);
+      this.scheduleReconnect();
+      return;
+    }
+
+    this.ws.onopen = () => {
+      this.retryCount = 0;
+      this.setStatus('connected');
+      this.startHeartbeat();
+    };
+
+    this.ws.onmessage = (event: MessageEvent) => {
+      this.clearHeartbeatTimeout();
+      this.startHeartbeatTimeout();
+
+      try {
+        const message: ServerMessage = JSON.parse(event.data);
+        this.dispatchMessage(message);
+      } catch (error) {
+        this.handleError('PARSE_ERROR', `Kh\u00f4ng th\u1ec3 gi\u1ea3i mÃ¢ ho\u1eb7c tin nh\u00e1n: ${error}`);
+      }
+    };
+
+    this.ws.onclose = (event: CloseEvent) => {
+      this.stopHeartbeat();
+      this.setStatus('disconnected');
+
+      // Náº¿u báº¡t báº¡c khÃ´ng ch\u1ee9ng th\u00ec k\u1ebf ho\u1ea1ch reconnect
+      if (!event.wasClean) {
+        this.scheduleReconnect();
+      }
+    };
+
+    this.ws.onerror = () => {
+      this.handleError('WS_ERROR', 'L\u1ed7i WebSocket');
+    };
+  }
+
+  /**
+   * Ng\u1eafc k\u1ebft n\u1ed1i WebSocket.
+   * Báº¡t báº¡c t\u1ea5t c\u1ea3 timers.
+   */
+  disconnect(): void {
+    this.clearReconnectTimer();
+    this.stopHeartbeat();
+
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close(1000, 'Client disconnected');
+      this.ws = null;
+    }
+
+    this.setStatus('disconnected');
+    this.retryCount = 0;
+  }
+
+  /**
+   * \u0110\u0103ng k\u00fd callback cho s\u1ef1 ki\u1ec7n translation update.
+   * G\u1ecdi khi c\u00f3 translation cáº¯c \u0111\u1ed9i \u0111\u1ed5i.
+   */
+  onTranslationUpdate(handler: TranslationUpdateHandler): () => void {
+    this.addHandler('translation_update', handler);
+    return () => this.removeHandler('translation_update', handler);
+  }
+
+  /**
+   * \u0110\u0103ng k\u00fd callback cho batch translation update.
+   * G\u1ecdi khi c\u00f3 nhi\u1ec1u translations \u0111\u1ed5i \u0111\u1ed9ng.
+   */
+  onTranslationBatch(handler: TranslationBatchHandler): () => void {
+    this.addHandler('translation_batch', handler);
+    return () => this.removeHandler('translation_batch', handler);
+  }
+
+  /**
+   * \u0110\u0103ng k\u00fd callback cho s\u1ef1 ki\u1ec7n locale \u0111\u1ed5i \u0111\u1ed9ng.
+   * G\u1ecdi khi server g\u1eedi th\u00f4ng báº¡o \u0111\u1ed5i locale.
+   */
+  onLocaleChanged(handler: LocaleChangedHandler): () => void {
+    this.addHandler('locale_changed', handler);
+    return () => this.removeHandler('locale_changed', handler);
+  }
+
+  /**
+   * \u0110\u0103ng k\u00fd callback cho l\u1ed7i.
+   */
+  onError(handler: ErrorHandler): () => void {
+    this.addHandler('error', handler);
+    return () => this.removeHandler('error', handler);
+  }
+
+  /**
+   * \u0110\u0103ng k\u00fd callback cho thay \u0111\u1ed5i tr\u1ea1ng th\u00e1i k\u1ebft n\u1ed1i.
+   */
+  onStatusChanged(handler: StatusChangedHandler): () => void {
+    this.statusHandlers.add(handler);
+    return () => this.statusHandlers.delete(handler);
+  }
+
+  /**
+   * G\u1eedi tin nh\u00e1n \u0111\u1ebfn server.
+   */
+  send(message: ClientMessage): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      console.warn('[TranslationSyncWorker] Kh\u00f4ng th\u1ec3 g\u1eedi tin nh\u00e1n \u2014 khÃ´ng c\u00f3 k\u1ebft n\u1ed1i');
+      return;
+    }
+    this.ws.send(JSON.stringify(message));
+  }
+
+  /**
+   * Y\u00eau c\u1ea7u sync t\u1ea5t c\u1ea3 translations t\u1eeb server.
+   */
+  requestFullSync(): void {
+    this.send({ type: 'sync_request', payload: { scope: 'all' } });
+  }
+
+  /**
+   * Y\u00eau c\u1ea7u sync cáº¯c translations cho namespace.
+   */
+  requestNamespaceSync(namespace: string): void {
+    this.send({ type: 'sync_request', payload: { scope: 'namespace', namespace } });
+  }
+
+  /**
+   * G\u1eedi ack cho tin nh\u00e1n \u0111\u00e3 nh\u1eadn.
+   */
+  ack(messageId: string): void {
+    this.pendingAcks.delete(messageId);
+    this.send({ type: 'ack', payload: { messageId } });
+  }
+
+  /**
+   * H\u01b0\u1ed1y báº¡t t\u1ea5t c\u1ea3 callbacks.
+   */
+  destroy(): void {
+    this.disconnect();
+    this.messageHandlers.clear();
+    this.statusHandlers.clear();
+    this.pendingAcks.clear();
+  }
+
+  // ============================================================
+  // H\u00e0m n\u1ed9i báº¡
+  // ============================================================
+
+  /**
+   * X\u00e2y d\u1ef1ng URL k\u1ebft n\u1ed1i v\u1edbi query params.
+   */
+  private buildUrl(): string {
+    const url = new URL(this.options.url);
+    {% if requires_auth %}
+    if (this.options.authToken) {
+      url.searchParams.set('token', this.options.authToken);
+    }
+    {% endif %}
+    {% if has_namespaces %}
+    // Theo d\u00f5i namespaces cáº¯ng báº¡
+    url.searchParams.set('namespaces', 'all');
+    {% endif %}
+    return url.toString();
+  }
+
+  /**
+   * Thay \u0111\u1ed5i tr\u1ea1ng th\u00e1i k\u1ebft n\u1ed1i v\u00e0 g\u1ecdi status handlers.
+   */
+  private setStatus(newStatus: ConnectionStatus): void {
+    this.status = newStatus;
+    for (const handler of this.statusHandlers) {
+      handler(newStatus, this.retryCount);
+    }
+  }
+
+  /**
+   * K\u1ebf ho\u1ea1ch reconnect v\u1edbi exponential backoff.
+   */
+  private scheduleReconnect(): void {
+    if (this.retryCount >= this.options.maxRetries) {
+      this.handleError('MAX_RETRIES', `V\u01b0\u1ee3t gi\u1edbi h\u1ea1n ${this.options.maxRetries} l\u1ea7n th\u1eed k\u1ebft n\u1ed1i`);
+      return;
+    }
+
+    this.retryCount++;
+    const delay = this.calculateBackoffDelay();
+    this.setStatus('reconnecting');
+
+    this.clearReconnectTimer();
+    this.reconnectTimer = setTimeout(() => {
+      this.connect();
+    }, delay);
+  }
+
+  /**
+   * T\u00ednh to\u00e1n \u0111\u1ed9 tr\u1ec9 reconnect (exponential backoff v\u1edbi jitter).
+   */
+  private calculateBackoffDelay(): number {
+    const exponentialDelay =
+      this.options.initialDelay * Math.pow(this.options.backoffMultiplier, this.retryCount - 1);
+    const clampedDelay = Math.min(exponentialDelay, this.options.maxDelay);
+    // Jitter: +0-25% th\u1eddi gian ng\u1ea7u nhi\u00ean
+    const jitter = clampedDelay * 0.25 * Math.random();
+    return clampedDelay + jitter;
+  }
+
+  /**
+   * Ph\u00e2n ph\u1ed1i tin nh\u00e1n \u0111\u1ebfn callbacks t\u01b0\u01a1ng \u1ee9ng.
+   */
+  private dispatchMessage(message: ServerMessage): void {
+    // Track ack
+    if (message.messageId) {
+      this.pendingAcks.add(message.messageId);
+    }
+
+    const handlers = this.messageHandlers.get(message.type);
+    if (!handlers) return;
+
+    for (const handler of handlers) {
+      try {
+        (handler as Function)(message.payload);
+      } catch (error) {
+        console.error(`[TranslationSyncWorker] L\u1ed7i trong handler cho '${message.type}':`, error);
+      }
+    }
+  }
+
+  /**
+   * \u0110\u0103ng k\u00fd handler cho ki\u1ec3u tin nh\u00e1n.
+   */
+  private addHandler(type: MessageType, handler: Function): void {
+    if (!this.messageHandlers.has(type)) {
+      this.messageHandlers.set(type, new Set());
+    }
+    this.messageHandlers.get(type)!.add(handler);
+  }
+
+  /**
+   * Báº¡t báº¡c handler cho ki\u1ec3u tin nh\u00e1n.
+   */
+  private removeHandler(type: MessageType, handler: Function): void {
+    this.messageHandlers.get(type)?.delete(handler);
+  }
+
+  /**
+   * G\u1ecdi error handlers v\u1edbi th\u00f4ng tin l\u1ed7i.
+   */
+  private handleError(code: string, message: string): void {
+    const errorData = { code, message, timestamp: Date.now() };
+    const handlers = this.messageHandlers.get('error');
+    if (handlers) {
+      for (const handler of handlers) {
+        try {
+          (handler as ErrorHandler)(errorData);
+        } catch (e) {
+          console.error('[TranslationSyncWorker] L\u1ed7i trong error handler:', e);
+        }
+      }
+    }
+  }
+
+  /**
+   * Báº¡t heartbeat \u0111\u1ec3 gi\u1eef k\u1ebft n\u1ed1i s\u1ed1ng.
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      this.send({ type: 'ping' });
+      this.startHeartbeatTimeout();
+    }, this.options.heartbeatInterval);
+  }
+
+  /**
+   * D\u1eebng heartbeat timers.
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.clearHeartbeatTimeout();
+  }
+
+  /**
+   * Báº¡t timeout cho heartbeat response.
+   */
+  private startHeartbeatTimeout(): void {
+    this.clearHeartbeatTimeout();
+    this.heartbeatTimeoutTimer = setTimeout(() => {
+      this.handleError('HEARTBEAT_TIMEOUT', 'KhÃ´ng nh\u1eadn \u0111\u01b0\u1ee3c heartbeat response');
+      if (this.ws) {
+        this.ws.close(4000, 'Heartbeat timeout');
+      }
+    }, this.options.heartbeatTimeout);
+  }
+
+  /**
+   * X\u00f3a heartbeat timeout timer.
+   */
+  private clearHeartbeatTimeout(): void {
+    if (this.heartbeatTimeoutTimer) {
+      clearTimeout(this.heartbeatTimeoutTimer);
+      this.heartbeatTimeoutTimer = null;
+    }
+  }
+
+  /**
+   * X\u00f3a reconnect timer.
+   */
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+}
+
+export default TranslationSyncWorker;

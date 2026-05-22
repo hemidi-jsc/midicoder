@@ -1,0 +1,477 @@
+/**
+* LocaleFormatterService - dich vu dinh dang theo locale.
+*
+* Cung cap cac phuong thuc dinh dang ngay thang, so, tien te,
+* thoi gian tuong doi, va so nhieu dua tren cau hinh locale.
+*
+* CP39: i18n/L10n Runtime
+* Cache backend: {{ cache_config.backend }}
+*/
+
+import {
+Injectable,
+NotFoundException,
+Logger,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Locale } from "./locale.entity";
+import { I18nCacheService } from "./i18n-cache.service";
+
+const logger = new Logger("LocaleFormatterService");
+
+/**
+* Ket qua dinh dang ngay thang.
+*/
+export interface FormattedDate {
+value: string;
+locale: string;
+pattern: string;
+}
+
+/**
+* Ket qua dinh dang so.
+*/
+export interface FormattedNumber {
+value: string;
+locale: string;
+pattern: string;
+}
+
+/**
+* Ket qua dinh dang tien te.
+*/
+export interface FormattedCurrency {
+value: string;
+currency: string;
+locale: string;
+}
+
+/**
+* Ket qua dinh dang thoi gian tuong doi.
+*/
+export interface FormattedRelativeTime {
+value: string;
+locale: string;
+diffSeconds: number;
+}
+
+/**
+* Ket qua pluralize.
+*/
+export interface PluralizedString {
+value: string;
+rule: string;
+count: number;
+locale: string;
+}
+
+/**
+* Mapping quy tac so nhieu cho cac ngon ngu (CLDR plural rules).
+*/
+const PLURAL_RULE_MAP: Record<string, (n: number)=> string> = {
+    {% for locale in locales %} "{{ locale.code }}": (n: number): string => {
+    return "{{ locale.plural_rule }}";
+    },
+    {% endfor %} "default": (n: number): string => "other",
+    };
+
+    /**
+    * Mapping nhãn thoi gian tuong doi theo locale.
+    */
+    const RELATIVE_TIME_LABELS: Record<string, Record<string, string>> = {
+        {% for locale in locales %} "{{ locale.code }}": {
+        "just_now": "[{{ locale.name }}] Vua xong",
+        "seconds_ago": "[{{ locale.name }}] {n} giay truoc",
+        "minute_ago": "[{{ locale.name }}] {n} phut truoc",
+        "minutes_ago": "[{{ locale.name }}] {n} phut truoc",
+        "hour_ago": "[{{ locale.name }}] {n} gio truoc",
+        "hours_ago": "[{{ locale.name }}] {n} gio truoc",
+        "day_ago": "[{{ locale.name }}] {n} ngay truoc",
+        "days_ago": "[{{ locale.name }}] {n} ngay truoc",
+        "week_ago": "[{{ locale.name }}] {n} tuan truoc",
+        "weeks_ago": "[{{ locale.name }}] {n} tuan truoc",
+        "month_ago": "[{{ locale.name }}] {n} thang truoc",
+        "months_ago": "[{{ locale.name }}] {n} thang truoc",
+        "year_ago": "[{{ locale.name }}] {n} nam truoc",
+        "years_ago": "[{{ locale.name }}] {n} nam truoc",
+        "seconds_from_now": "[{{ locale.name }}] {n} giay nua",
+        "minute_from_now": "[{{ locale.name }}] {n} phut nua",
+        "minutes_from_now": "[{{ locale.name }}] {n} phut nua",
+        "hour_from_now": "[{{ locale.name }}] {n} gio nua",
+        "hours_from_now": "[{{ locale.name }}] {n} gio nua",
+        "day_from_now": "[{{ locale.name }}] {n} ngay nua",
+        "days_from_now": "[{{ locale.name }}] {n} ngay nua",
+        },
+        {% endfor %}
+        };
+
+        /**
+        * LocaleFormatterService - dinh dang du lieu theo locale.
+        *
+        * Phuong thuc chinh:
+        * - formatDate: dinh dang Date thanh chuoi theo dateFormat cua locale
+        * - formatNumber: dinh dang so theo numberFormat cua locale
+        * - formatCurrency: dinh dang tien te theo currencyCode cua locale
+        * - formatRelativeTime: dinh dang thoi gian tuong doi (5 phut truoc)
+        * - pluralize: chon quy tac so nhieu dua tren count va locale
+        *
+        * Tat ca phuong thuc deu cache ket qua lay locale tu database.
+        */
+        @Injectable()
+        export class LocaleFormatterService {
+        constructor(
+        @InjectRepository(Locale)
+        private readonly localeRepository: Repository<Locale>,
+            private readonly cacheService: I18nCacheService,
+            ) {}
+
+            // ========================================================================
+            // Date Formatting
+            // ========================================================================
+
+            /**
+            * Dinh dang ngay thang theo locale.
+            *
+            * Su dung dateFormat pattern cua locale de dinh dang Date object.
+            *
+            * @param date - Date object can dinh dang
+            * @param localeCode - Locale code
+            * @returns FormattedDate voi value, locale, pattern
+            */
+            async formatDate(date: Date, localeCode: string): Promise<FormattedDate> {
+                const locale = await this.getLocale(localeCode);
+                const formatted = this.applyDatePattern(date, locale.dateFormat);
+
+                return {
+                value: formatted,
+                locale: localeCode,
+                pattern: locale.dateFormat,
+                };
+                }
+
+                /**
+                * Áp dụng pattern dinh dang ngay thang.
+                *
+                * Ho tro cac token: yyyy, yy, MM, dd, HH, hh, mm, ss, a
+                *
+                * @param date - Date object
+                * @param pattern - ICU date pattern
+                * @returns Chuoi ngay da dinh dang
+                */
+                private applyDatePattern(date: Date, pattern: string): string {
+                const year = date.getFullYear();
+                const month = date.getMonth() + 1;
+                const day = date.getDate();
+                let hours = date.getHours();
+                const minutes = date.getMinutes();
+                const seconds = date.getSeconds();
+                const ampm = hours >= 12 ? "PM" : "AM";
+
+                let result = pattern;
+
+                // Year
+                result = result.replace(/yyyy/g, String(year));
+                result = result.replace(/yy/g, String(year).slice(-2));
+
+                // Month va Day
+                result = result.replace(/MM/g, this.padZero(month));
+                result = result.replace(/dd/g, this.padZero(day));
+
+                // Hours
+                if (result.includes("HH")) {
+                result = result.replace(/HH/g, this.padZero(hours));
+                } else if (result.includes("hh")) {
+                hours = hours % 12 || 12;
+                result = result.replace(/hh/g, this.padZero(hours));
+                result = result.replace(/a/g, ampm);
+                }
+
+                // Minutes va Seconds
+                result = result.replace(/mm/g, this.padZero(minutes));
+                result = result.replace(/ss/g, this.padZero(seconds));
+
+                return result;
+                }
+
+                // ========================================================================
+                // Number Formatting
+                // ========================================================================
+
+                /**
+                * Dinh dang so theo locale.
+                *
+                * @param value - Gia tri so can dinh dang
+                * @param localeCode - Locale code
+                * @returns FormattedNumber voi value, locale, pattern
+                */
+                async formatNumber(
+                value: number,
+                localeCode: string,
+                ): Promise<FormattedNumber> {
+                    const locale = await this.getLocale(localeCode);
+                    const formatted = this.applyNumberPattern(value, locale.numberFormat);
+
+                    return {
+                    value: formatted,
+                    locale: localeCode,
+                    pattern: locale.numberFormat,
+                    };
+                    }
+
+                    /**
+                    * Áp dụng pattern dinh dang so.
+                    *
+                    * Ho tro: #, 0, , (thousand sep), . (decimal sep)
+                    *
+                    * @param value - Gia tri so
+                    * @param pattern - Number format pattern
+                    * @returns Chuoi so da dinh dang
+                    */
+                    private applyNumberPattern(value: number, pattern: string): string {
+                    const hasDot = pattern.includes(".");
+                    const hasComma = pattern.includes(",");
+
+                    let thousandSep: string;
+                    let decimalSep: string;
+
+                    if (hasDot && hasComma) {
+                    const dotIndex = pattern.indexOf(".");
+                    const commaIndex = pattern.indexOf(",");
+                    if (dotIndex < commaIndex) { thousandSep="," ; decimalSep="." ; } else { thousandSep="." ;
+                        decimalSep="," ; } } else if (hasComma) { thousandSep="," ; decimalSep="." ; } else if (hasDot)
+                        { if (pattern.match(/\.\d+/)) { thousandSep="," ; decimalSep="." ; } else { thousandSep="." ;
+                        decimalSep="," ; } } else { thousandSep="," ; decimalSep="." ; } // Xac so chu so thap phan
+                        const decimalPart=pattern.split(decimalSep)[1]; const fractionDigits=decimalPart ?
+                        decimalPart.replace(/[^0#]/g, "" ).length : 0; const isNegative=value < 0; const
+                        absValue=Math.abs(value); const integerPart=Math.floor(absValue); const fractionalPart=absValue
+                        - integerPart; // Format integer voi thousand separator let intString=integerPart .toString()
+                        .replace(/\B(?=(\d{3})+(?!\d))/g, thousandSep); // Format fractional part let fracString="" ; if
+                        (fractionDigits> 0) {
+                        const fracRounded = fractionalPart.toFixed(fractionDigits);
+                        fracString = decimalSep + fracRounded.substring(2);
+                        }
+
+                        return (isNegative ? "-" : "") + intString + fracString;
+                        }
+
+                        // ========================================================================
+                        // Currency Formatting
+                        // ========================================================================
+
+                        /**
+                        * Dinh dang tien te theo locale.
+                        *
+                        * Ket hop formatNumber voi currencyCode cua locale.
+                        *
+                        * @param value - Gia tri tien te
+                        * @param localeCode - Locale code
+                        * @returns FormattedCurrency voi value, currency, locale
+                        */
+                        async formatCurrency(
+                        value: number,
+                        localeCode: string,
+                        ): Promise<FormattedCurrency> {
+                            const locale = await this.getLocale(localeCode);
+                            const numberResult = await this.formatNumber(value, localeCode);
+
+                            // Mot so tien te co ky tu dat truoc, mot so dat sau
+                            const prefixCurrencies = ["USD", "EUR", "GBP", "JPY", "CNY", "KRW", "AUD", "CAD"];
+                            let formattedValue: string;
+
+                            if (prefixCurrencies.includes(locale.currencyCode)) {
+                            const currencySymbol = this.getCurrencySymbol(locale.currencyCode);
+                            formattedValue = `${currencySymbol}${numberResult.value}`;
+                            } else {
+                            formattedValue = `${numberResult.value} ${locale.currencyCode}`;
+                            }
+
+                            return {
+                            value: formattedValue,
+                            currency: locale.currencyCode,
+                            locale: localeCode,
+                            };
+                            }
+
+                            /**
+                            * Tra ve ky hieu tien te.
+                            *
+                            * @param currencyCode - Ma tien te ISO 4217
+                            * @returns Ky hieu tien te
+                            */
+                            private getCurrencySymbol(currencyCode: string): string {
+                            const symbols: Record<string, string> = {
+                                USD: "$",
+                                EUR: "\u20ac",
+                                GBP: "\u00a3",
+                                JPY: "\u00a5",
+                                CNY: "\u00a5",
+                                KRW: "\u20a9",
+                                AUD: "A$",
+                                CAD: "C$",
+                                VND: "\u20ab",
+                                INR: "\u20b9",
+                                BRL: "R$",
+                                RUB: "\u20d1",
+                                CHF: "CHF",
+                                };
+                                return symbols[currencyCode] || currencyCode;
+                                }
+
+                                // ========================================================================
+                                // Relative Time Formatting
+                                // ========================================================================
+
+                                /**
+                                * Dinh dang thoi gian tuong doi.
+                                *
+                                * So sanh date voi current time va tra ve chuoi tuong doi
+                                * theo ngon ngu cua locale.
+                                *
+                                * @param date - Date object can so sanh
+                                * @param localeCode - Locale code
+                                * @param base - Ngay gio co so (mac dinh la hien tai)
+                                * @returns FormattedRelativeTime
+                                */
+                                async formatRelativeTime(
+                                date: Date,
+                                localeCode: string,
+                                base: Date = new Date(),
+                                ): Promise<FormattedRelativeTime> {
+                                    const diffMs = date.getTime() - base.getTime();
+                                    const diffSeconds = Math.round(diffMs / 1000);
+
+                                    // Labels cho locale
+                                    const labels =
+                                    RELATIVE_TIME_LABELS[localeCode] ||
+                                    RELATIVE_TIME_LABELS["{{ default_locale }}"];
+
+                                    if (!labels) {
+                                    return {
+                                    value: `${diffSeconds}s`,
+                                    locale: localeCode,
+                                    diffSeconds,
+                                    };
+                                    }
+
+                                    let label: string;
+                                    const absSeconds = Math.abs(diffSeconds);
+                                    const isFuture = diffSeconds >= 0;
+
+                                    // Xac dinh label phu hop
+                                    if (absSeconds < 10) { label="just_now" ; } else if (absSeconds < 60) {
+                                        label=isFuture ? "seconds_from_now" : "seconds_ago" ; } else if (absSeconds <
+                                        3600) { const minutes=Math.floor(absSeconds / 60); label=minutes===1 ? isFuture
+                                        ? "minute_from_now" : "minute_ago" : isFuture ? "minutes_from_now"
+                                        : "minutes_ago" ; } else if (absSeconds < 86400) { const
+                                        hours=Math.floor(absSeconds / 3600); label=hours===1 ? isFuture
+                                        ? "hour_from_now" : "hour_ago" : isFuture ? "hours_from_now" : "hours_ago" ; }
+                                        else if (absSeconds < 604800) { const days=Math.floor(absSeconds / 86400);
+                                        label=days===1 ? isFuture ? "day_from_now" : "day_ago" : isFuture
+                                        ? "days_from_now" : "days_ago" ; } else if (absSeconds < 2592000) {
+                                        label=isFuture ? "weeks_from_now" : "weeks_ago" ; } else if (absSeconds <
+                                        31536000) { label=isFuture ? "months_from_now" : "months_ago" ; } else {
+                                        label=isFuture ? "years_from_now" : "years_ago" ; } // Tinh gia tri n de thay
+                                        vao template let n: number; if (absSeconds < 60) { n=absSeconds; } else if
+                                        (absSeconds < 3600) { n=Math.floor(absSeconds / 60); } else if (absSeconds <
+                                        86400) { n=Math.floor(absSeconds / 3600); } else if (absSeconds < 604800) {
+                                        n=Math.floor(absSeconds / 86400); } else if (absSeconds < 2592000) {
+                                        n=Math.floor(absSeconds / 604800); } else if (absSeconds < 31536000) {
+                                        n=Math.floor(absSeconds / 2592000); } else { n=Math.floor(absSeconds /
+                                        31536000); } // Thay {n} trong label const template=labels[label] || label;
+                                        const resultValue=template.replace("{n}", String(n)); return { value:
+                                        resultValue, locale: localeCode, diffSeconds, }; }
+                                        //========================================================================//
+                                        Pluralization
+                                        //========================================================================/** *
+                                        Xac dinh quy tac so nhieu dua tren count va locale. * * Dua tren CLDR plural
+                                        rules, tra ve rule name * (zero, one, two, few, many, other). * * @param count -
+                                        So luong * @param localeCode - Locale code * @returns PluralizedString voi rule
+                                        va count */ async pluralize( count: number, localeCode: string, ):
+                                        Promise<PluralizedString> {
+                                        const locale = await this.getLocale(localeCode);
+
+                                        const ruleFn = PLURAL_RULE_MAP[localeCode] || PLURAL_RULE_MAP["default"];
+                                        const rule = ruleFn(count);
+
+                                        return {
+                                        value: rule,
+                                        rule,
+                                        count,
+                                        locale: localeCode,
+                                        };
+                                        }
+
+                                        /**
+                                        * Pluralize voi template - chon chuoi phu hop dua tren count.
+                                        *
+                                        * @param count - So luong
+                                        * @param forms - Object chua cac forms cho tung rule
+                                        * @param localeCode - Locale code
+                                        * @returns Chuoi phu hop voi count
+                                        */
+                                        async pluralizeTemplate(
+                                        count: number,
+                                        forms: Record<string, string>,
+                                            localeCode: string,
+                                            ): Promise<string> {
+                                                const result = await this.pluralize(count, localeCode);
+                                                const template =
+                                                forms[result.value] || forms["other"] || Object.values(forms)[0];
+                                                return template.replace("{n}", String(count));
+                                                }
+
+                                                //
+                                                ========================================================================
+                                                // Internal Helpers
+                                                //
+                                                ========================================================================
+
+                                                /**
+                                                * Lay Locale entity voi cache.
+                                                *
+                                                * @param localeCode - Locale code
+                                                * @returns Locale entity
+                                                * @throws NotFoundException neu locale khong ton tai
+                                                */
+                                                private async getLocale(localeCode: string): Promise<Locale> {
+                                                    const cacheKey = `locale:format:${localeCode}`;
+                                                    const cached = await this.cacheService.get<Locale>(cacheKey);
+                                                        if (cached) {
+                                                        return cached;
+                                                        }
+
+                                                        const locale = await this.localeRepository.findOne({
+                                                        where: { code: localeCode },
+                                                        });
+
+                                                        if (!locale) {
+                                                        // Thu fallback ve locale mac dinh
+                                                        const defaultLocale = await this.localeRepository.findOne({
+                                                        where: { isDefault: true },
+                                                        });
+
+                                                        if (defaultLocale) {
+                                                        logger.warn(
+                                                        `[Locale fallback] "${localeCode}" -> "${defaultLocale.code}"`,
+                                                        );
+                                                        await this.cacheService.set(cacheKey, defaultLocale);
+                                                        return defaultLocale;
+                                                        }
+
+                                                        throw new NotFoundException(`Locale "${localeCode}" khong ton
+                                                        tai`);
+                                                        }
+
+                                                        await this.cacheService.set(cacheKey, locale);
+                                                        return locale;
+                                                        }
+
+                                                        /**
+                                                        * Pad so ve 2 chu so.
+                                                        *
+                                                        * @param n - So can pad
+                                                        * @returns Chuoi 2 chu so
+                                                        */
+                                                        private padZero(n: number): string {
+                                                        return n < 10 ? `0${n}` : String(n); } }

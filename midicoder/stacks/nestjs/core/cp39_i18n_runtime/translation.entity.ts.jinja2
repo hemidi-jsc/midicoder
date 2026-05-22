@@ -1,0 +1,254 @@
+/**
+* Translation Entity - TypeORM entity cho bản dịch i18n.
+*
+* Lưu trữ từng key dịch cho mỗi locale và namespace.
+* Hỗ trợ multi-tenant qua tenant_id column.
+*
+* CP39: i18n/L10n Runtime
+* Tổng cộng {{ locale_count }} locales, {{ translation_count }} translations.
+*/
+
+import {
+Entity,
+PrimaryGeneratedColumn,
+Column,
+CreateDateColumn,
+UpdateDateColumn,
+ManyToOne,
+JoinColumn,
+Index,
+Unique,
+} from "typeorm";
+import { Locale } from "./locale.entity";
+
+/**
+* Interface cho Translation properties.
+*/
+export interface ITranslation {
+id: number;
+key: string;
+namespace: string;
+locale: Locale;
+value: string;
+tenantId: string | null;
+createdAt: Date;
+updatedAt: Date;
+}
+
+/**
+* Các namespace được cấu hình cho hệ thống i18n.
+*
+* Namespace giúp nhóm các bản dịch theo module chức năng.
+*/
+export const NAMESPACE_OPTIONS = [
+{% for ns in namespaces %} "{{ ns }}",
+{% endfor %}];
+
+/**
+* Translation Entity - lưu trữ bản dịch.
+*
+* Mỗi record là một bản dịch cụ thể:
+* - key: translation key (ví dụ: "common.save")
+* - namespace: nhóm logic (ví dụ: "admin", "public")
+* - locale: liên kết với Locale entity
+* - value: nội dung đã dịch
+* - tenantId: ID tenant (null = global, có giá trị = tenant-specific override)
+*
+* Unique constraint: (key, namespace, locale_id, tenant_id)
+* Đảm bảo không có bản dịch trùng lặp cho cùng một kết hợp.
+*
+* Indexes:
+* - (locale_id, key) - tối ưu tìm theo locale + key
+* - (tenant_id) - tối ưu lọc theo tenant
+* - (namespace) - tối ưu tải theo namespace
+*
+* Usage:
+* const translation = new Translation();
+* translation.key = "common.save";
+* translation.namespace = "public";
+* translation.locale = localeEntity;
+* translation.value = "Lưu";
+* translation.tenantId = null; // global
+* await translationRepository.save(translation);
+*/
+@Entity("translations")
+@Unique(["uk_translation_key_locale_tenant"], ["key", "namespace", "locale", "tenantId"])
+@Index("idx_translation_locale_key", ["locale", "key"])
+@Index("idx_translation_tenant", ["tenantId"])
+@Index("idx_translation_namespace", ["namespace"])
+export class Translation implements ITranslation {
+/**
+* Primary key - số nguyên tự tăng.
+*
+* Dùng INT thay UUID vì bảng translations có lượng record lớn
+* và cần tối ưu hiệu năng query.
+*/
+@PrimaryGeneratedColumn()
+id: number;
+
+/**
+* Translation key - định danh bản dịch.
+*
+* Ví dụ: "common.save", "auth.login_title", "error.not_found"
+* Không được rỗng, có độ dài tối đa 255 ký tự.
+*/
+@Column({ name: "key", type: "varchar", length: 255 })
+key: string;
+
+/**
+* Namespace - nhóm logic của bản dịch.
+*
+* Hỗ trợ {{ namespaces | length }} namespace:
+{% for ns in namespaces %} * - "{{ ns }}": module {{ ns }}
+{% endfor %} *
+* Default: "default" nếu không chỉ định.
+*/
+@Column({ name: "namespace", type: "varchar", length: 100, default: "default" })
+namespace: string;
+
+/**
+* Locale - ngôn ngữ của bản dịch.
+*
+* @ManyToOne relation với Locale entity.
+* onDelete: CASCADE - khi xóa locale, xóa tất cả translations liên quan.
+*
+* Hỗ trợ {{ locale_count }} locales:
+{% for locale in locales %} * - "{{ locale.code }}" ({{ locale.name }}{% if locale.is_default %} [mặc định]{% endif %})
+{% endfor %}
+*/
+@ManyToOne(() => Locale, (locale) => locale.translations, {
+onDelete: "CASCADE",
+})
+@JoinColumn({ name: "locale_id" })
+locale: Locale;
+
+/**
+* Value - nội dung bản dịch.
+*
+* Có thể chứa placeholder dạng {raw}{{variable}}{endraw} cho interpolation.
+* Ví dụ: "Chào mừng {raw}{{name}}{endraw} vào hệ thống!"
+* Sử dụng text type để hỗ trợ nội dung dài.
+*/
+@Column({ name: "value", type: "text" })
+value: string;
+
+/**
+* Tenant ID - cách ly bản dịch theo tenant.
+*
+* NULL = bản dịch global (áp dụng cho tất cả tenant)
+* Có giá trị = bản dịch override cho tenant cụ thể
+*
+* Multi-tenant priority:
+* 1. Tenant-specific translation (tenant_id có giá trị)
+* 2. Global translation (tenant_id = NULL)
+* 3. Fallback locale
+* 4. Trả về key gốc
+*/
+@Column({ name: "tenant_id", type: "uuid", nullable: true })
+tenantId: string | null;
+
+/**
+* Created at - thời điểm tạo bản dịch.
+*/
+@CreateDateColumn({ name: "created_at" })
+createdAt: Date;
+
+/**
+* Updated at - thời điểm cập nhật bản dịch.
+*/
+@UpdateDateColumn({ name: "updated_at" })
+updatedAt: Date;
+
+// ========================================================================
+// Utility Methods
+// ========================================================================
+
+/**
+* Trả về composite key để nhận dạng duy nhất một bản dịch.
+*
+* Format: `{namespace}:{key}:{locale_code}:{tenant_id}`
+*
+* @returns Composite key string
+*/
+getCompositeKey(): string {
+const localeCode = this.locale ? this.locale.code : "unknown";
+const tenantSuffix = this.tenantId ? `:${this.tenantId}` : ":global";
+return `${this.namespace}:${this.key}:${localeCode}${tenantSuffix}`;
+}
+
+/**
+* Kiểm tra bản dịch có phải global không.
+*
+* @returns True nếu tenant_id = null
+*/
+isGlobal(): boolean {
+return this.tenantId === null;
+}
+
+/**
+* Kiểm tra bản dịch có phải tenant-specific override không.
+*
+* @returns True nếu tenant_id có giá trị
+*/
+isTenantSpecific(): boolean {
+return this.tenantId !== null;
+}
+
+/**
+* Parse các placeholder từ value thành object.
+*
+{% raw %}
+* Ví dụ: "Chào {{name}}, bạn có {{count}} tin nhắn"
+* => { name: true, count: true }
+{% endraw %}
+*
+* @returns Object chứa các placeholder key
+*/
+extractPlaceholders(): Record<string, boolean> {
+    {% raw %}
+    const placeholders: Record<string, boolean> = {};
+        const regex = /\{\{(\w+)\}\}/g;
+        let match;
+
+        while ((match = regex.exec(this.value)) !== null) {
+        placeholders[match[1]] = true;
+        }
+        {% endraw %}
+        return placeholders;
+        }
+
+        /**
+        * Thay thế placeholder trong value bằng các tham số.
+        *
+        * @param params Object chứa key-value cho placeholder
+        * @returns Value đã thay thế
+        *
+        {% raw %}
+        * Usage:
+        * translation.interpolate({ name: "An", count: "5" })
+        * => "Chào An, bạn có 5 tin nhắn"
+        {% endraw %}
+        */
+        interpolate(params: Record<string, string | number>): string {
+            {% raw %}
+            let result = this.value;
+            for (const [key, value] of Object.entries(params)) {
+            result = result.replace(
+            new RegExp(`\\{\\{${key}\\}\\}`, "g"),
+            String(value),
+            );
+            }
+            {% endraw %}
+            return result;
+            }
+
+            /**
+            * String representation cho debugging.
+            *
+            * @returns Formatted string
+            */
+            toString(): string {
+            const scope = this.isGlobal() ? "global" : `tenant:${this.tenantId}`;
+            return `<Translation(key="${this.key}", ns="${this.namespace}" , scope=${scope})>`;
+                }
+                }

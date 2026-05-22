@@ -1,0 +1,378 @@
+/**
+* LocaleFormatterPipe — Pipe định dạng giá trị theo locale.
+*
+* Sử dụng trong template Angular để định dạng ngày tháng, số, và tiền tệ
+* dựa trên cấu hình locale.
+*
+* Tạo tự động bởi CP39 — không sửa thủ công.
+*
+* Sử dụng:
+* (myDate | localeFormat:'date':'vi-VN')
+* (price | localeFormat:'currency':'en-US')
+* (count | localeFormat:'number')
+*/
+
+import { Pipe, PipeTransform, inject } from '@angular/core';
+import { I18nRuntimeService, LocaleConfig } from './i18n-runtime.service';
+
+// ========================
+// Định nghĩa kiểu dữ liệu
+// ========================
+
+/** Kiểu định dạng được hỗ trợ bởi pipe. */
+export type PipeFormatType = 'date' | 'number' | 'currency';
+
+// ========================
+// Bảng ánh xạ locale (tạo từ template)
+// ========================
+
+/** Ánh xạ từ code locale sang chuỗi locale chuẩn Intl. */
+const LOCALE_INTL_MAP: Record<string, string> = {
+    {% for locale in locales %}
+    '{{ locale.code }}': '{{ locale.code }}'{% if not loop.last %}, {% endif %}
+    {% endfor %}
+    };
+
+    /** Ánh xạ từ code locale sang currency code. */
+    const CURRENCY_MAP: Record<string, string> = {
+        {% for locale in locales %}
+        '{{ locale.code }}': '{{ locale.currency_code }}'{% if not loop.last %}, {% endif %}
+        {% endfor %}
+        };
+
+        /** Ánh xạ từ code locale sang pattern định dạng ngày. */
+        const DATE_PATTERN_MAP: Record<string, string> = {
+            {% for locale in locales %}
+            '{{ locale.code }}': '{{ locale.date_format }}'{% if not loop.last %}, {% endif %}
+            {% endfor %}
+            };
+
+            /** Ánh xạ từ code locale sang pattern định dạng số. */
+            const NUMBER_PATTERN_MAP: Record<string, string> = {
+                {% for locale in locales %}
+                '{{ locale.code }}': '{{ locale.number_format }}'{% if not loop.last %}, {% endif %}
+                {% endfor %}
+                };
+
+                /**
+                * Fallback locale chain — thứ tự fallback khi không tìm thấy cấu hình cho locale.
+                */
+                const FALLBACK_LOCALE_CHAIN: Record<string, string[]> = {
+                    {% for locale in locales %}
+                    '{{ locale.code }}': [
+                    '{{ locale.code }}'
+                    {% if locale.fallback_locale and locale.fallback_locale != locale.code %}, '{{
+                    locale.fallback_locale }}'{% endif %}
+                    {% if 'en' not in [locale.code, locale.fallback_locale] %}, 'en'{% endif %}
+                    ]{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                    };
+
+                    // ========================
+                    // Pipe
+                    // ========================
+
+                    @Pipe({
+                    name: 'localeFormat',
+                    pure: false,
+                    standalone: true
+                    })
+                    export class LocaleFormatterPipe implements PipeTransform {
+                    private readonly i18nService = inject(I18nRuntimeService);
+
+                    /**
+                    * Định dạng giá trị theo kiểu và locale được chỉ định.
+                    *
+                    * @param value - Giá trị cần định dạng (Date, number, string, hoặc null/undefined).
+                    * @param formatType - Kiểu định dạng: 'date', 'number', 'currency'.
+                    * @param localeCode - Mã locale; nếu không cung cấp, dùng locale hiện tại từ I18nRuntimeService.
+                    * @returns Giá trị đã định dạng dưới dạng string.
+                    */
+                    transform(value: any, formatType: PipeFormatType, localeCode?: string): string {
+                    // Xử lý giá trị null / undefined.
+                    if (value === null || value === undefined) {
+                    return '';
+                    }
+
+                    // Xác định locale — ưu tiên tham số, sau đó lấy từ service.
+                    const effectiveLocale = localeCode || this.i18nService.getCurrentLocale();
+
+                    // Dispatch theo kiểu định dạng.
+                    switch (formatType) {
+                    case 'date':
+                    return this.formatDate(value, effectiveLocale);
+                    case 'number':
+                    return this.formatNumber(value, effectiveLocale);
+                    case 'currency':
+                    return this.formatCurrency(value, effectiveLocale);
+                    default:
+                    // Kiểu không xác định — trả về string của giá trị gốc.
+                    return String(value);
+                    }
+                    }
+
+                    // ========================
+                    // Phương thức định dạng riêng lẻ
+                    // ========================
+
+                    /**
+                    * Định dạng ngày tháng theo pattern của locale.
+                    */
+                    private formatDate(value: any, localeCode: string): string {
+                    const date = this.parseDate(value);
+                    if (!date) {
+                    return String(value);
+                    }
+
+                    // Tìm pattern phù hợp — thử theo chuỗi fallback locale.
+                    const fallbackChain = FALLBACK_LOCALE_CHAIN[localeCode] || [localeCode];
+                    let pattern: string | null = null;
+                    let intlLocale: string | null = null;
+
+                    for (const tryLocale of fallbackChain) {
+                    if (DATE_PATTERN_MAP[tryLocale]) {
+                    pattern = DATE_PATTERN_MAP[tryLocale];
+                    intlLocale = LOCALE_INTL_MAP[tryLocale] || tryLocale;
+                    break;
+                    }
+                    }
+
+                    // Nếu không tìm thấy pattern, dùng cấu hình từ I18nRuntimeService.
+                    if (!pattern) {
+                    const config = this.i18nService.getCurrentLocaleConfig();
+                    pattern = config?.dateFormat || 'YYYY-MM-DD';
+                    }
+                    if (!intlLocale) {
+                    intlLocale = LOCALE_INTL_MAP[localeCode] || localeCode;
+                    }
+
+                    // Chuyển đổi pattern string thành Intl.DateTimeFormatOptions.
+                    const options = this.buildDateTimeOptions(pattern);
+                    return new Intl.DateTimeFormat(intlLocale, options).format(date);
+                    }
+
+                    /**
+                    * Định dạng số theo pattern của locale.
+                    */
+                    private formatNumber(value: any, localeCode: string): string {
+                    const numeric = this.toNumber(value);
+                    if (numeric === null) {
+                    return String(value);
+                    }
+
+                    const intlLocale = LOCALE_INTL_MAP[localeCode] || localeCode;
+
+                    // Tìm pattern số — dùng để xác định cách phân nhóm và dấu thập phân.
+                    const fallbackChain = FALLBACK_LOCALE_CHAIN[localeCode] || [localeCode];
+                    let numberPattern: string | null = null;
+
+                    for (const tryLocale of fallbackChain) {
+                    if (NUMBER_PATTERN_MAP[tryLocale]) {
+                    numberPattern = NUMBER_PATTERN_MAP[tryLocale];
+                    break;
+                    }
+                    }
+
+                    // Xác định số chữ số thập phân từ pattern.
+                    const fractionDigits = this.extractFractionDigits(numberPattern, numeric);
+
+                    return new Intl.NumberFormat(intlLocale, {
+                    minimumFractionDigits: fractionDigits.min,
+                    maximumFractionDigits: fractionDigits.max,
+                    useGrouping: true
+                    }).format(numeric);
+                    }
+
+                    /**
+                    * Định dạng tiền tệ theo currency code của locale.
+                    */
+                    private formatCurrency(value: any, localeCode: string): string {
+                    const numeric = this.toNumber(value);
+                    if (numeric === null) {
+                    return String(value);
+                    }
+
+                    // Tìm currency code — thử theo chuỗi fallback.
+                    const fallbackChain = FALLBACK_LOCALE_CHAIN[localeCode] || [localeCode];
+                    let currency: string | null = null;
+                    let intlLocale: string | null = null;
+
+                    for (const tryLocale of fallbackChain) {
+                    if (CURRENCY_MAP[tryLocale]) {
+                    currency = CURRENCY_MAP[tryLocale];
+                    intlLocale = LOCALE_INTL_MAP[tryLocale] || tryLocale;
+                    break;
+                    }
+                    }
+
+                    // Fallback: lấy từ cấu hình service.
+                    if (!currency) {
+                    const config = this.i18nService.getCurrentLocaleConfig();
+                    currency = config?.currencyCode || 'USD';
+                    }
+                    if (!intlLocale) {
+                    intlLocale = LOCALE_INTL_MAP[localeCode] || localeCode;
+                    }
+
+                    return new Intl.NumberFormat(intlLocale, {
+                    style: 'currency',
+                    currency: currency,
+                    currencyDisplay: 'symbol',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                    }).format(numeric);
+                    }
+
+                    // ========================
+                    // Phương thức tiện ích nội bộ
+                    // ========================
+
+                    /**
+                    * Chuyển đổi giá trị thành Date object.
+                    */
+                    private parseDate(value: any): Date | null {
+                    if (value instanceof Date) {
+                    return isNaN(value.getTime()) ? null : value;
+                    }
+
+                    if (typeof value === 'number') {
+                    const date = new Date(value);
+                    return isNaN(date.getTime()) ? null : date;
+                    }
+
+                    if (typeof value === 'string') {
+                    const date = new Date(value);
+                    return isNaN(date.getTime()) ? null : date;
+                    }
+
+                    return null;
+                    }
+
+                    /**
+                    * Chuyển đổi giá trị thành số.
+                    */
+                    private toNumber(value: any): number | null {
+                    if (typeof value === 'number') {
+                    return isNaN(value) ? null : value;
+                    }
+
+                    if (typeof value === 'string') {
+                    // Loại bỏ ký tự không phải số (trừ dấu chấm và dấu trừ).
+                    const cleaned = value.replace(/[^0-9.\-]/g, '');
+                    const parsed = Number(cleaned);
+                    return isNaN(parsed) ? null : parsed;
+                    }
+
+                    // Thử chuyển đổi từ các kiểu khác.
+                    const parsed = Number(value);
+                    return isNaN(parsed) ? null : parsed;
+                    }
+
+                    /**
+                    * Chuyển đổi pattern string (vd: 'DD/MM/YYYY', 'YYYY-MM-DD HH:mm')
+                    * thành Intl.DateTimeFormatOptions.
+                    */
+                    private buildDateTimeOptions(pattern: string): Intl.DateTimeFormatOptions {
+                    const options: Intl.DateTimeFormatOptions = {};
+
+                    // Năm
+                    if (pattern.includes('YYYY') || pattern.includes('yyyy')) {
+                    options.year = 'numeric';
+                    } else if (pattern.includes('YY') || pattern.includes('yy')) {
+                    options.year = '2-digit';
+                    }
+
+                    // Tháng
+                    if (pattern.includes('MMMM')) {
+                    options.month = 'long';
+                    } else if (pattern.includes('MMM') || pattern.includes('MMM')) {
+                    options.month = 'short';
+                    } else if (pattern.includes('MM')) {
+                    options.month = '2-digit';
+                    }
+
+                    // Ngày
+                    if (pattern.includes('DD') || pattern.includes('dd')) {
+                    options.day = '2-digit';
+                    } else if (pattern.includes('D') || pattern.includes('d')) {
+                    options.day = 'numeric';
+                    }
+
+                    // Thứ trong tuần
+                    if (pattern.includes('EEEE')) {
+                    options.weekday = 'long';
+                    } else if (pattern.includes('EEE') || pattern.includes('eee')) {
+                    options.weekday = 'short';
+                    }
+
+                    // Giờ
+                    if (pattern.includes('HH')) {
+                    options.hour = '2-digit';
+                    options.hour12 = false;
+                    } else if (pattern.includes('hh')) {
+                    options.hour = '2-digit';
+                    options.hour12 = true;
+                    } else if (pattern.includes('H') || pattern.includes('h')) {
+                    options.hour = 'numeric';
+                    }
+
+                    // Phút
+                    if (pattern.includes('mm')) {
+                    options.minute = '2-digit';
+                    } else if (pattern.includes('m')) {
+                    options.minute = 'numeric';
+                    }
+
+                    // Giây
+                    if (pattern.includes('ss')) {
+                    options.second = '2-digit';
+                    } else if (pattern.includes('s')) {
+                    options.second = 'numeric';
+                    }
+
+                    // AM/PM
+                    if (pattern.includes('A') || pattern.includes('a') || pattern.includes('AP')) {
+                    options.hour12 = true;
+                    }
+
+                    // Múi giờ
+                    if (pattern.includes('Z') || pattern.includes('z')) {
+                    options.timeZoneName = 'short';
+                    }
+
+                    return options;
+                    }
+
+                    /**
+                    * Trích xuất số chữ số thập phân từ pattern số.
+                    *
+                    * Pattern vd: '#,##0.00' → 2 chữ số thập phân, '#,##0' → 0 chữ số thập phân.
+                    */
+                    private extractFractionDigits(pattern: string | null, value: number): { min: number; max: number } {
+                    if (!pattern) {
+                    // Mặc định: 0-2 chữ số thập phân.
+                    return { min: 0, max: 2 };
+                    }
+
+                    // Kiểm tra phần thập phân (sau dấu chấm).
+                    const dotIndex = pattern.lastIndexOf('.');
+                    if (dotIndex === -1) {
+                    return { min: 0, max: 0 };
+                    }
+
+                    const fractionPart = pattern.substring(dotIndex + 1);
+                    // Đếm số ký tự '0' và '#' trong phần thập phân.
+                    const zeros = (fractionPart.match(/0/g) || []).length;
+                    const hashes = (fractionPart.match(/#/g) || []).length;
+
+                    const minDigits = zeros;
+                    const maxDigits = zeros + hashes;
+
+                    // Nếu giá trị là số nguyên, không cần hiển thị chữ số thập phân không cần thiết.
+                    if (Number.isInteger(value) && minDigits === 0) {
+                    return { min: 0, max: 0 };
+                    }
+
+                    return { min: minDigits, max: maxDigits || minDigits };
+                    }
+                    }

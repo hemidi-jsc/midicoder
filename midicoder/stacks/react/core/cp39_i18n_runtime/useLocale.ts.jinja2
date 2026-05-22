@@ -1,0 +1,94 @@
+﻿/**
+* useLocale hook \u2014 truy xu\u1ea5t locale hi\u1ec7n t\u1ea1i v\u00e0 h\u00e0m \u0111\u1ed5i locale.
+*
+* Sinh b\u1ed1i CP39 I18nRuntimeEmitter
+* S\u1eed d\u1ee9ng I18nContext \u0111\u1ec3 l\u00e2y locale state.
+*/
+
+import { useContext, useCallback } from 'react';
+import { I18nContext } from './I18nRuntimeProvider';
+
+// ============================================================
+// Ki\u1ec3u d\u1eef li\u1ec7u
+// ============================================================
+
+/** K\u1ebft qu\u1ea3 tr\u1ea3 v\u1ec1 t\u1eeb useLocale */
+export interface LocaleState {
+/** Locale hi\u1ec7n t\u1ea1i (vd: 'vi', 'en', 'ja') */
+locale: string;
+/** \u0110\u1ed5i locale \u2014 g\u1ecdi t\u1ea1i component \u0111\u1ec3 \u0111\u1ed5i ng\u00f4n ng\u1eef */
+setLocale: (locale: string) => void;
+/** Danh s\u00e1ch t\u1ea5t c\u1ea3 locales \u0111\u01b0\u1ee3c h\u1ed7 tr\u1edd */
+supportedLocales: readonly string[];
+/** Ki\u1ec3m tra locale c\u00f3 \u0111\u01b0\u1ee3c h\u1ed7 tr\u1edd hay kh\u00f4ng */
+isSupported: (locale: string) => boolean;
+/** T\u00ean ng\u00f4n ng\u1eef hi\u1ec7n t\u1ea1i hi\u1ec3n th\u1ecb (vd: 'Ti\u1ebfng Vi\u1ec7t') */
+displayName: string;
+/** Ki\u1ec3m tra xem h\u1ec7 th\u1ed1ng \u0111ang t\u1ea3i translations */
+isLoading: boolean;
+}
+
+/** Bản đồ tên hiển thị cho mỗi locale */
+const localeDisplayNames: Record<string, string> = {
+    {% for loc in locales %}
+    '{{ loc["code"] }}': '{{ loc["name"] }}',
+    {% endfor %}
+    };
+
+    // ============================================================
+    // useLocale hook
+    // ============================================================
+
+    /**
+    * useLocale \u2014 tr\u1ea3 v\u1ec1 tr\u1ea1ng th\u00e1i locale hi\u1ec7n t\u1ea1i c\u00f9ng c\u00e1c h\u00e0m thao
+    t\u00e1c.
+    *
+    * - locale: m\u00e3 locale hi\u1ec7n t\u1ea1i
+    * - setLocale: h\u00e0m \u0111\u1ed5i locale (c\u00f3 ki\u1ec3m tra h\u1ed7 tr\u1edd)
+    * - supportedLocales: danh s\u00e1ch locales c\u00f3 th\u1ec3 d\u00f9ng
+    * - isSupported: ki\u1ec3m tra m\u00e3 locale c\u00f3 h\u1ed9p l\u1ec5
+    * - displayName: t\u00ean ng\u00f4n ng\u1eef \u0111ang d\u00f9ng (hi\u1ec3n th\u1ecb)
+    * - isLoading: \u0111ang t\u1ea3i translations hay kh\u00f4ng
+    */
+    export function useLocale(): LocaleState {
+    const context = useContext(I18nContext);
+
+    if (!context) {
+    throw new Error('useLocale ph\u1ea3i \u0111\u01b0\u1ee3c s\u1eed d\u1ee9ng trong I18nRuntimeProvider');
+    }
+
+    const { locale, setLocale, supportedLocales, isLoading } = context;
+
+    /** Ki\u1ec3m tra m\u00e3 locale c\u00f3 \u0111\u01b0\u1ee3c h\u1ed7 tr\u1edd */
+    const isSupported = useCallback(
+    (code: string): boolean => supportedLocales.includes(code),
+    [supportedLocales],
+    );
+
+    /** \u0110\u1ed5i locale c\u00f3 ki\u1ec3m tra h\u1ed9p l\u1ec5 */
+    const changeLocale = useCallback(
+    (code: string): void => {
+    if (!supportedLocales.includes(code)) {
+    console.warn(`[I18n] Locale '${code}' kh\u00f4ng \u0111\u01b0\u1ee3c h\u1ed7 tr\u1edd. H\u1ed7 tr\u1edd:
+    [${supportedLocales.join(', ')}]`);
+    return;
+    }
+    setLocale(code);
+    },
+    [setLocale, supportedLocales],
+    );
+
+    /** T\u00ean hi\u1ec3n th\u1ecb ng\u00f4n ng\u1eef hi\u1ec7n t\u1ea1i */
+    const displayName = localeDisplayNames[locale] ?? locale;
+
+    return {
+    locale,
+    setLocale: changeLocale,
+    supportedLocales,
+    isSupported,
+    displayName,
+    isLoading,
+    };
+    }
+
+    export default useLocale;

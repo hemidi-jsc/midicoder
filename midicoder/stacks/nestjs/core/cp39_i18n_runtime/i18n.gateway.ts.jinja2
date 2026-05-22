@@ -1,0 +1,360 @@
+/**
+* I18nGateway - WebSocket Gateway cho i18n/L10n.
+*
+* Cung cap thong bao real-time khi co thay doi ve ban dich:
+* - subscribe/unsubscribe theo locale va namespace
+* - broadcast khi them/sua/xoa ban dich
+* - thong bao realtime cho cac client da ket noi
+*
+* CP39: i18n/L10n Runtime
+* Locales: {{ locale_count }}
+* Namespaces: {{ namespaces | join(", ") }}
+*/
+
+import {
+Injectable,
+Logger,
+} from "@nestjs/common";
+import {
+WebSocketGateway,
+WebSocketServer,
+SubscribeMessage,
+OnGatewayConnection,
+OnGatewayDisconnect,
+OnGatewayInit,
+} from "@nestjs/websockets";
+import { Server, Socket } from "socket.io";
+
+const logger = new Logger("I18nGateway");
+
+/**
+* Interface cho subscription.
+*/
+interface ClientSubscription {
+clientId: string;
+locale: string;
+namespace: string;
+subscribedAt: Date;
+}
+
+/**
+* Interface cho payload event.
+*/
+interface TranslationUpdatePayload {
+action: "created" | "updated" | "deleted" | "bulk_updated";
+key: string;
+namespace: string;
+locale: string;
+value?: string;
+tenantId?: string | null;
+timestamp: string;
+}
+
+/**
+* Interface cho client da ket noi.
+*/
+interface ConnectedClient {
+socketId: string;
+subscriptions: ClientSubscription[];
+connectedAt: Date;
+remoteAddress: string;
+}
+
+/**
+* I18nGateway - WebSocket Gateway cho i18n events.
+*
+* Events:
+* - subscribe: Client subscribe theo locale + namespace
+* - unsubscribe: Client unsubscribe theo locale + namespace
+* - translation_updated: Server broadcast khi co thay doi ban dich
+* - translation_created: Server broadcast khi them ban dich moi
+* - translation_deleted: Server broadcast khi xoa ban dich
+*
+* Flow:
+* 1. Client ket noi voi WebSocket
+* 2. Client gui "subscribe" voi { locale, namespace }
+* 3. Server luu subscription cua client
+* 4. Khi TranslationService cap nhat ban dich, goi broadcastTranslationUpdate()
+* 5. Server gui event den cac client da subscribe phu hop
+*/
+@Injectable()
+@WebSocketGateway({
+cors: {
+origin: "*",
+methods: ["GET", "POST"],
+},
+namespace: "/i18n",
+path: "/i18n/socket",
+})
+export class I18nGateway
+implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
+@WebSocketServer() server: Server;
+
+/** Map chua danh sach clients da ket noi */
+private readonly clients = new Map<string, ConnectedClient>();
+
+    /** Map chua danh sach subscriptions theo locale:namespace */
+    private readonly subscriptions = new Map<string, Set<string>>();
+
+        /**
+        * Gateway init hook.
+        */
+        afterInit(): void {
+        logger.log("[I18nGateway] Initialized on namespace /i18n");
+
+        this.server.on("error", (error: Error) => {
+        logger.error("[I18nGateway] Server error:", error.stack);
+        });
+        }
+
+        /**
+        * Xu ly ket noi moi.
+        */
+        handleConnection(client: Socket): void {
+        const remoteAddr = (client.handshake.address as string) || "unknown";
+
+        this.clients.set(client.id, {
+        socketId: client.id,
+        subscriptions: [],
+        connectedAt: new Date(),
+        remoteAddress: remoteAddr,
+        });
+
+        logger.log(
+        `[I18nGateway] Client connected: ${client.id} from ${remoteAddr} (total: ${this.clients.size})`,
+        );
+
+        client.emit("connected", {
+        clientId: client.id,
+        timestamp: new Date().toISOString(),
+        supportedLocales: [
+        {% for locale in locales %} "{{ locale.code }}",
+        {% endfor %} ],
+        supportedNamespaces: [
+        {% for ns in namespaces %} "{{ ns }}",
+        {% endfor %} ],
+        });
+        }
+
+        /**
+        * Xu ly ngat ket noi.
+        */
+        handleDisconnect(client: Socket): void {
+        for (const [, clientSet] of this.subscriptions.entries()) {
+        clientSet.delete(client.id);
+        }
+        // Dọn các key rỗng
+        for (const [key, clientSet] of this.subscriptions.entries()) {
+        if (clientSet.size === 0) {
+        this.subscriptions.delete(key);
+        }
+        }
+
+        this.clients.delete(client.id);
+
+        logger.log(
+        `[I18nGateway] Client disconnected: ${client.id} (total: ${this.clients.size})`,
+        );
+        }
+
+        // ========================================================================
+        // WebSocket Events
+        // ========================================================================
+
+        /**
+        * Client subscribe theo locale + namespace.
+        */
+        @SubscribeMessage("subscribe")
+        handleSubscribe(
+        client: Socket,
+        data: { locale: string; namespace: string },
+        ): void {
+        const { locale, namespace } = data;
+
+        // Xac thuc locale
+        const validLocales = [
+        {% for locale in locales %} "{{ locale.code }}",
+        {% endfor %} ];
+        if (!validLocales.includes(locale)) {
+        client.emit("error", {
+        message: `Locale "${locale}" khong hop le`,
+        supportedLocales: validLocales,
+        });
+        return;
+        }
+
+        // Xac thuc namespace
+        const validNamespaces = [
+        {% for ns in namespaces %} "{{ ns }}",
+        {% endfor %} ];
+        if (!validNamespaces.includes(namespace)) {
+        client.emit("error", {
+        message: `Namespace "${namespace}" khong hop le`,
+        supportedNamespaces: validNamespaces,
+        });
+        return;
+        }
+
+        // Them subscription
+        const subKey = `${locale}:${namespace}`;
+        if (!this.subscriptions.has(subKey)) {
+        this.subscriptions.set(subKey, new Set());
+        }
+        this.subscriptions.get(subKey)!.add(client.id);
+
+        // Cap nhat client info
+        const clientInfo = this.clients.get(client.id);
+        if (clientInfo) {
+        const existing = clientInfo.subscriptions.find(
+        (s) => s.locale === locale && s.namespace === namespace,
+        );
+        if (!existing) {
+        clientInfo.subscriptions.push({
+        clientId: client.id,
+        locale,
+        namespace,
+        subscribedAt: new Date(),
+        });
+        }
+        }
+
+        logger.debug(`[I18nGateway] ${client.id} subscribed to ${subKey}`);
+
+        client.emit("subscribed", {
+        locale,
+        namespace,
+        subscriberCount: this.subscriptions.get(subKey)!.size,
+        timestamp: new Date().toISOString(),
+        });
+        }
+
+        /**
+        * Client unsubscribe theo locale + namespace.
+        */
+        @SubscribeMessage("unsubscribe")
+        handleUnsubscribe(
+        client: Socket,
+        data: { locale: string; namespace: string },
+        ): void {
+        const { locale, namespace } = data;
+        const subKey = `${locale}:${namespace}`;
+
+        const clientSet = this.subscriptions.get(subKey);
+        if (clientSet) {
+        clientSet.delete(client.id);
+        if (clientSet.size === 0) {
+        this.subscriptions.delete(subKey);
+        }
+        }
+
+        const clientInfo = this.clients.get(client.id);
+        if (clientInfo) {
+        clientInfo.subscriptions = clientInfo.subscriptions.filter(
+        (s) => !(s.locale === locale && s.namespace === namespace),
+        );
+        }
+
+        logger.debug(`[I18nGateway] ${client.id} unsubscribed from ${subKey}`);
+
+        client.emit("unsubscribed", {
+        locale,
+        namespace,
+        timestamp: new Date().toISOString(),
+        });
+        }
+
+        // ========================================================================
+        // Broadcast Methods - goi tu service
+        // ========================================================================
+
+        /**
+        * Broadcast thay doi ban dich den cac client da subscribe.
+        *
+        * Goi trong TranslationService sau khi them/sua/xoa ban dich.
+        *
+        * @param payload - TranslationUpdatePayload
+        */
+        broadcastTranslationUpdate(payload: TranslationUpdatePayload): void {
+        const { action, key, namespace, locale } = payload;
+        const subKey = `${locale}:${namespace}`;
+
+        const clientSet = this.subscriptions.get(subKey);
+        if (!clientSet || clientSet.size === 0) {
+        logger.debug(`[I18nGateway] No subscribers for ${subKey}`);
+        return;
+        }
+
+        // Event name theo action
+        const eventName =
+        action === "created"
+        ? "translation_created"
+        : action === "updated"
+        ? "translation_updated"
+        : action === "deleted"
+        ? "translation_deleted"
+        : "bulk_update";
+
+        const fullPayload = {
+        ...payload,
+        timestamp: new Date().toISOString(),
+        };
+
+        this.server.to([...clientSet]).emit(eventName, fullPayload);
+
+        logger.log(
+        `[I18nGateway] Broadcast ${eventName} to ${clientSet.size} clients: ${key} (${locale})`,
+        );
+        }
+
+        /**
+        * Broadcast cap nhat hang loat.
+        *
+        * @param locale - Locale code
+        * @param namespace - Namespace
+        * @param count - So luong ban dich da thay doi
+        */
+        broadcastBulkUpdate(
+        locale: string,
+        namespace: string,
+        count: number,
+        ): void {
+        const subKey = `${locale}:${namespace}`;
+        const clientSet = this.subscriptions.get(subKey);
+
+        if (!clientSet || clientSet.size === 0) {
+        return;
+        }
+
+        this.server.to([...clientSet]).emit("bulk_update", {
+        action: "bulk_updated",
+        locale,
+        namespace,
+        count,
+        timestamp: new Date().toISOString(),
+        });
+
+        logger.log(
+        `[I18nGateway] Broadcast bulk_update (${count}) to ${clientSet.size} clients: ${subKey}`,
+        );
+        }
+
+        // ========================================================================
+        // Stats
+        // ========================================================================
+
+        /**
+        * Lay thong ke gateway.
+        */
+        getStats(): {
+        connectedClients: number;
+        totalSubscriptions: number;
+        subscriptionTopics: string[];
+        } {
+        return {
+        connectedClients: this.clients.size,
+        totalSubscriptions: this.subscriptions.size,
+        subscriptionTopics: [...this.subscriptions.keys()],
+        };
+        }
+        }

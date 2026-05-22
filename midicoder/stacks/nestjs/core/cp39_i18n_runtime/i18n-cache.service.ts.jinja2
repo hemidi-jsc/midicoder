@@ -1,0 +1,436 @@
+/**
+ * I18nCacheService - dịch vụ cache cho i18n/L10n.
+ *
+ * Cung cấp in-memory cache với TTL (Time-To-Live) cho các
+ * bản dịch và cấu hình locale. Hỗ trợ invalidate theo key
+ * hoặc theo locale.
+ *
+ * Backend cấu hình: {{ cache_config.backend }}
+ * TTL mặc định: {{ cache_config.ttl_seconds }} giây
+ * Max size: {{ cache_config.max_size }} entries
+ {% if cache_config.redis_url %}
+ * Redis URL: {{ cache_config.redis_url }}
+{% endif %}
+ * Cache backends hỗ trợ: {{ cache_backends | join(", ") }}
+ *
+ * CP39: i18n/L10n Runtime
+ */
+
+import { Injectable, Logger } from "@nestjs/common";
+import { OnModuleInit, OnModuleDestroy } from "@nestjs/common";
+
+const logger = new Logger("I18nCacheService");
+
+/**
+ * Entry trong cache với metadata TTL.
+ */
+interface CacheEntry<T> {
+  /** Giá trị cached */
+  value: T;
+  /** Thời điểm hết hạn (ms) */
+  expiresAt: number;
+  /** Thời điểm tạo entry */
+  createdAt: number;
+}
+
+/**
+ * Trạng thái của cache.
+ */
+interface CacheStats {
+  /** Tổng số entries */
+  size: number;
+  /** Số entries còn hạn */
+  valid: number;
+  /** Số entries đã hết hạn */
+  expired: number;
+  /** Số lần hit */
+  hits: number;
+  /** Số lần miss */
+  misses: number;
+  /** Tỷ lệ hit */
+  hitRate: number;
+}
+
+/**
+ * I18nCacheService - cache trong bộ nhớ cho i18n.
+ *
+ * Cache layer đầu tiên trong resolve chain:
+ * 1. I18nCacheService (in-memory, nhanh nhất)
+ * 2. Database (TypeORM)
+ * 3. Fallback locale
+ * 4. Key gốc
+ *
+ * Features:
+ * - TTL configurable cho từng entry hoặc dùng default
+ * - Auto-expiry: entries hết hạn tự động bị loại bỏ khi truy cập
+ * - Invalidate theo key (glob pattern với *)
+ * - Invalidate theo locale (xóa tất cả cache của locale)
+ * - Clear toàn bộ cache
+ * - Stats để monitor hit/miss rate
+ *
+ * Cache key convention:
+ * - i18n:{namespace}:{key}:{locale}:t:{tenantId} - tenant-specific
+ * - i18n:{namespace}:{key}:{locale}:g - global
+ * - locale:format:{localeCode} - locale config
+ *
+ * Usage:
+ *   // Set với TTL mặc định ({{ cache_config.ttl_seconds }}s)
+ *   await cache.set("i18n:default:common.save:vi-VN:g", translation);
+ *
+ *   // Set với TTL tùy chỉnh (60 giây)
+ *   await cache.set("i18n:admin:dashboard.title:en-US:g", translation, 60);
+ *
+ *   // Get (tự động xử lý expired entries)
+ *   const result = await cache.get("i18n:default:common.save:vi-VN:g");
+ *
+ *   // Invalidate theo pattern
+ *   await cache.invalidate("i18n:*:common.save:*:*");
+ *
+ *   // Invalidate theo locale
+ *   await cache.invalidateLocale("vi-VN");
+ *
+ *   // Clear toàn bộ
+ *   await cache.clear();
+ */
+@Injectable()
+export class I18nCacheService implements OnModuleInit, OnModuleDestroy {
+  /** Map chứa các cache entries */
+  private readonly cache = new Map<string, CacheEntry<unknown>>();
+
+  /** Số lần hit */
+  private hits = 0;
+
+  /** Số lần miss */
+  private misses = 0;
+
+  /** Interval để dọn dẹp entries hết hạn */
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  /**
+   * TTL mặc định (giây) - từ cấu hình.
+   */
+  private readonly defaultTtlSeconds: number = {{ cache_config.ttl_seconds }};
+
+  /**
+   * Số lượng entries tối đa.
+   */
+  private readonly maxSize: number = {{ cache_config.max_size }};
+
+  /**
+   * Khoảng thời gian dọn dẹp (ms).
+   * Chạy mỗi 60 giây để xóa các entries hết hạn.
+   */
+  private readonly cleanupIntervalMs: number = 60000;
+
+  /**
+   * Module init hook.
+   *
+   * Bắt đầu interval dọn dẹp entries hết hạn.
+   */
+  onModuleInit(): void {
+    this.cleanupInterval = setInterval(
+      () => this.cleanupExpired(),
+      this.cleanupIntervalMs,
+    );
+    logger.log(
+      `[I18nCache] Initialized - TTL: ${this.defaultTtlSeconds}s, Max: ${this.maxSize} entries`,
+    );
+  }
+
+  /**
+   * Module destroy hook.
+   *
+   * Dừng interval dọn dẹp và clear cache.
+   */
+  onModuleDestroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    this.cache.clear();
+    logger.log("[I18nCache] Destroyed - cache cleared");
+  }
+
+  // ========================================================================
+  // Core Methods
+  // ========================================================================
+
+  /**
+   * Lấy giá trị từ cache.
+   *
+   * Nếu entry đã hết hạn, tự động xóa và trả về undefined.
+   *
+   * @param key - Cache key
+   * @returns Giá trị cached hoặc undefined
+   */
+  async get<T>(key: string): Promise<T | undefined> {
+    const entry = this.cache.get(key);
+
+    if (!entry) {
+      this.misses++;
+      return undefined;
+    }
+
+    // Kiểm tra hết hạn
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      this.misses++;
+      logger.debug(`[Cache EXPIRED] ${key}`);
+      return undefined;
+    }
+
+    this.hits++;
+    return entry.value as T;
+  }
+
+  /**
+   * Lưu giá trị vào cache với TTL.
+   *
+   * Nếu cache đã đạt max size, xóa entry cũ nhất trước.
+   *
+   * @param key - Cache key
+   * @param value - Giá trị cần cache
+   * @param ttlSeconds - TTL tùy chỉnh (giây), dùng default nếu không truyền
+   */
+  async set<T>(
+    key: string,
+    value: T,
+    ttlSeconds: number = this.defaultTtlSeconds,
+  ): Promise<void> {
+    // Kiểm tra max size - xóa entry cũ nhất nếu cần
+    if (this.cache.size >= this.maxSize) {
+      this.evictOldest();
+    }
+
+    const entry: CacheEntry<T> = {
+      value,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+      createdAt: Date.now(),
+    };
+
+    this.cache.set(key, entry as CacheEntry<unknown>);
+    logger.debug(`[Cache SET] ${key} (TTL: ${ttlSeconds}s)`);
+  }
+
+  /**
+   * Xóa entry khỏi cache theo key.
+   *
+   * Hỗ trợ glob pattern với * (wildcard) ở cuối key.
+   *
+   * @param key - Cache key hoặc pattern
+   * @returns Số lượng entries đã xóa
+   */
+  async invalidate(key: string): Promise<number> {
+    // Kiểm tra có phải glob pattern không
+    if (key.includes("*")) {
+      return this.invalidatePattern(key);
+    }
+
+    const deleted = this.cache.delete(key);
+    logger.debug(`[Cache INVALIDATE] ${key} - ${deleted ? "deleted" : "not found"}`);
+    return deleted ? 1 : 0;
+  }
+
+  /**
+   * Xóa tất cả cache của một locale.
+   *
+   * Xóa cả translation cache và locale format cache.
+   *
+   * @param localeCode - Locale code
+   * @returns Số lượng entries đã xóa
+   */
+  async invalidateLocale(localeCode: string): Promise<number> {
+    let count = 0;
+
+    // Xóa translation cache: i18n:*:*:{locale}:*
+    const translationPattern = `i18n:*:*:${localeCode}:*`;
+    count += this.invalidatePattern(translationPattern);
+
+    // Xóa locale format cache: locale:format:{localeCode}
+    const formatKey = `locale:format:${localeCode}`;
+    if (this.cache.delete(formatKey)) {
+      count++;
+    }
+
+    logger.log(`[Cache INVALIDATE LOCALE] ${localeCode} - ${count} entries deleted`);
+    return count;
+  }
+
+  /**
+   * Xóa toàn bộ cache.
+   *
+   * CẢNH BÁO: Xóa tất cả entries, reset hit/miss stats.
+   * Chỉ dùng khi cần reset hoàn toàn hoặc module destroy.
+   *
+   * @returns Số lượng entries đã xóa
+   */
+  async clear(): Promise<number> {
+    const count = this.cache.size;
+    this.cache.clear();
+    this.hits = 0;
+    this.misses = 0;
+    logger.warn(`[Cache CLEAR] All ${count} entries deleted`);
+    return count;
+  }
+
+  // ========================================================================
+  // Stats & Monitoring
+  // ========================================================================
+
+  /**
+   * Lấy thông tin thống kê cache.
+   *
+   * @returns CacheStats
+   */
+  getStats(): CacheStats {
+    let valid = 0;
+    let expired = 0;
+    const now = Date.now();
+
+    for (const entry of this.cache.values()) {
+      if (now > entry.expiresAt) {
+        expired++;
+      } else {
+        valid++;
+      }
+    }
+
+    const total = this.hits + this.misses;
+
+    return {
+      size: this.cache.size,
+      valid,
+      expired,
+      hits: this.hits,
+      misses: this.misses,
+      hitRate: total > 0 ? this.hits / total : 0,
+    };
+  }
+
+  /**
+   * Kiểm tra key có tồn tại trong cache và còn hạn không.
+   *
+   * @param key - Cache key
+   * @returns True nếu key tồn tại và còn hạn
+   */
+  async has(key: string): Promise<boolean> {
+    const entry = this.cache.get(key);
+    if (!entry) {
+      return false;
+    }
+    // Nếu đã hết hạn, xóa và trả về false
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Lấy TTL còn lại của key (giây).
+   *
+   * @param key - Cache key
+   * @returns TTL còn lại (giây) hoặc 0 nếu không tồn tại/hết hạn
+   */
+  async getRemainingTTL(key: string): Promise<number> {
+    const entry = this.cache.get(key);
+    if (!entry) {
+      return 0;
+    }
+    const remaining = entry.expiresAt - Date.now();
+    if (remaining <= 0) {
+      this.cache.delete(key);
+      return 0;
+    }
+    return Math.round(remaining / 1000);
+  }
+
+  // ========================================================================
+  // Internal Helpers
+  // ========================================================================
+
+  /**
+   * Xóa entries theo glob pattern.
+   *
+   * Hỗ trợ * wildcard:
+   * - "i18n:*:common.save:*:*" - khớp tất cả namespace, locale, tenant
+   * - "locale:format:*" - khớp tất cả locale format cache
+   *
+   * @param pattern - Glob pattern
+   * @returns Số lượng entries đã xóa
+   */
+  private invalidatePattern(pattern: string): number {
+    // Chuyển glob pattern thành regex
+    // Escape các ký tự đặc biệt regex, trừ *
+    const regexPattern = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, ".*");
+    const regex = new RegExp(`^${regexPattern}$`);
+
+    let count = 0;
+    for (const key of this.cache.keys()) {
+      if (regex.test(key)) {
+        this.cache.delete(key);
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      logger.debug(`[Cache INVALIDATE PATTERN] ${pattern} - ${count} entries deleted`);
+    }
+
+    return count;
+  }
+
+  /**
+   * Xóa entry cũ nhất (theo createdAt).
+   *
+   * Được gọi khi cache đạt max size.
+   */
+  private evictOldest(): void {
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+
+    for (const [key, entry] of this.cache.entries()) {
+      // Ưu tiên xóa entry đã hết hạn
+      if (Date.now() > entry.expiresAt) {
+        oldestKey = key;
+        oldestTime = -1; // Ưu tiên nhất
+        break;
+      }
+      // Nếu chưa có entry hết hạn, tìm entry cũ nhất
+      if (entry.createdAt < oldestTime) {
+        oldestKey = key;
+        oldestTime = entry.createdAt;
+      }
+    }
+
+    if (oldestKey) {
+      this.cache.delete(oldestKey);
+      logger.debug(`[Cache EVICT] ${oldestKey} (oldest entry)`);
+    }
+  }
+
+  /**
+   * Dọn dẹp các entries đã hết hạn.
+   *
+   * Được gọi tự động bởi cleanup interval.
+   */
+  private cleanupExpired(): number {
+    const now = Date.now();
+    let count = 0;
+
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiresAt) {
+        this.cache.delete(key);
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      logger.debug(`[Cache CLEANUP] Removed ${count} expired entries`);
+    }
+
+    return count;
+  }
+}

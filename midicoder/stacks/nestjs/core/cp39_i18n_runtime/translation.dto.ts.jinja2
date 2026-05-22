@@ -1,0 +1,651 @@
+/**
+* DTOs cho i18n/L10n Runtime.
+*
+* Định nghĩa các Data Transfer Objects cho việc tạo, cập nhật,
+* tìm kiếm và phân trang bản dịch cùng locale.
+*
+* CP39: i18n/L10n Runtime
+*/
+
+import {
+IsString,
+IsOptional,
+IsNotEmpty,
+IsBoolean,
+IsUUID,
+IsIn,
+IsInt,
+Min,
+Max,
+IsArray,
+ValidateNested,
+IsNumber,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+// ============================================================================
+// Hằng số xác thực
+// ============================================================================
+
+/** Danh sách locale codes hợp lệ */
+export const VALID_LOCALE_CODES = [
+{% for locale in locales %} "{{ locale.code }}",
+{% endfor %}];
+
+/** Danh sách namespace hợp lệ */
+export const VALID_NAMESPACES = [
+{% for ns in namespaces %} "{{ ns }}",
+{% endfor %}];
+
+/** Độ dài tối đa cho translation key */
+export const MAX_KEY_LENGTH = 255;
+
+/** Độ dài tối đa cho namespace */
+export const MAX_NAMESPACE_LENGTH = 100;
+
+// ============================================================================
+// CreateTranslationDto
+// ============================================================================
+
+/**
+* DTO để tạo mới bản dịch.
+*
+* Sử dụng khi POST /translations hoặc POST /translations/batch (mỗi item).
+*
+* Required fields:
+* - key: translation key (bắt buộc, không rỗng)
+* - locale: locale code của bản dịch (bắt buộc, phải hợp lệ)
+* - value: nội dung bản dịch (bắt buộc, không rỗng)
+*
+* Optional fields:
+* - namespace: nhóm logic (mặc định "default")
+* - tenantId: tenant ID cho bản dịch tenant-specific
+*/
+export class CreateTranslationDto {
+/**
+* Translation key - định danh bản dịch.
+*
+* Ví dụ: "common.save", "auth.login_title"
+*/
+@ApiProperty({
+description: "Translation key - định danh bản dịch",
+example: "common.save",
+maxLength: MAX_KEY_LENGTH,
+})
+@IsString()
+@IsNotEmpty({ message: "Translation key không được để trống" })
+@IsString({ message: "Translation key phải là chuỗi" })
+key: string;
+
+/**
+* Namespace - nhóm logic của bản dịch.
+*
+* Phải thuộc danh sách namespace được cấu hình.
+*/
+@ApiPropertyOptional({
+description: "Namespace - nhóm logic của bản dịch",
+example: "default",
+enum: VALID_NAMESPACES,
+default: "default",
+})
+@IsOptional()
+@IsString()
+@IsIn(VALID_NAMESPACES, {
+message: `Namespace phải thuộc danh sách: ${VALID_NAMESPACES.join(", ")}`,
+})
+namespace?: string;
+
+/**
+* Locale code - ngôn ngữ của bản dịch.
+*
+* Phải thuộc danh sách locale được cấu hình.
+*/
+@ApiProperty({
+description: "Locale code - ngôn ngữ của bản dịch",
+example: "{{ default_locale }}",
+enum: VALID_LOCALE_CODES,
+})
+@IsString()
+@IsNotEmpty({ message: "Locale code không được để trống" })
+@IsIn(VALID_LOCALE_CODES, {
+message: `Locale code phải thuộc danh sách: ${VALID_LOCALE_CODES.join(", ")}`,
+})
+locale: string;
+
+/**
+* Value - nội dung bản dịch.
+*
+{% raw %}
+* Có thể chứa placeholder dạng {{variable}} cho interpolation.
+{% endraw %}
+*/
+@ApiProperty({
+description: "Nội dung bản dịch",
+{% raw %}
+example: "Chào mừng {{name}}!",
+{% endraw %}
+})
+@IsString()
+@IsNotEmpty({ message: "Nội dung bản dịch không được để trống" })
+value: string;
+
+/**
+* Tenant ID - cách ly bản dịch theo tenant.
+*
+* Không truyền = bản dịch global (cho tất cả tenant)
+* Có UUID = bản dịch override cho tenant cụ thể
+*/
+@ApiPropertyOptional({
+description: "Tenant ID - để trống cho bản dịch global",
+example: "550e8400-e29b-41d4-a716-446655440000",
+})
+@IsOptional()
+@IsUUID("4", { message: "Tenant ID phải là UUID hợp lệ" })
+tenantId?: string;
+}
+
+// ============================================================================
+// UpdateTranslationDto
+// ============================================================================
+
+/**
+* DTO để cập nhật bản dịch hiện có.
+*
+* Sử dụng khi PATCH /translations/:key.
+* Tất cả fields đều optional - chỉ cập nhật những field được truyền.
+*/
+export class UpdateTranslationDto {
+/**
+* Translation key mới (không khuyến nghị thay đổi key).
+*/
+@ApiPropertyOptional({
+description: "Translation key mới",
+example: "common.updated_save",
+})
+@IsOptional()
+@IsString()
+@IsNotEmpty({ message: "Nếu truyền key thì không được để trống" })
+key?: string;
+
+/**
+* Namespace mới.
+*/
+@ApiPropertyOptional({
+description: "Namespace mới",
+enum: VALID_NAMESPACES,
+})
+@IsOptional()
+@IsString()
+@IsIn(VALID_NAMESPACES, {
+message: `Namespace phải thuộc danh sách: ${VALID_NAMESPACES.join(", ")}`,
+})
+namespace?: string;
+
+/**
+* Nội dung bản dịch mới.
+*/
+@ApiPropertyOptional({
+description: "Nội dung bản dịch mới",
+example: "Lưu thay đổi",
+})
+@IsOptional()
+@IsString()
+@IsNotEmpty({ message: "Nếu truyền value thì không được để trống" })
+value?: string;
+
+/**
+* Tenant ID mới.
+* Truyền null để chuyển từ tenant-specific về global.
+*/
+@ApiPropertyOptional({
+description: "Tenant ID mới (dùng empty string để chuyển về global)",
+})
+@IsOptional()
+@IsUUID("4", {
+message: "Tenant ID phải là UUID hợp lệ hoặc empty string",
+})
+tenantId?: string;
+}
+
+// ============================================================================
+// CreateLocaleDto
+// ============================================================================
+
+/**
+* DTO để tạo mới locale.
+*
+* Sử dụng khi POST /locales.
+*
+* Required fields:
+* - code: mã locale chuẩn BCP 47
+* - name: tên hiển thị
+*
+* Optional fields:
+* - isDefault: cờ mặc định
+* - dateFormat, numberFormat: pattern định dạng
+* - currencyCode: mã tiền tệ
+* - pluralRule: quy tắc số nhiều
+* - fallbackLocale: locale dự phòng
+*/
+export class CreateLocaleDto {
+/**
+* Locale code - mã ngôn ngữ chuẩn BCP 47.
+*
+* Ví dụ: "vi-VN", "en-US", "zh-CN"
+* Không được trùng với locale đã tồn tại.
+*/
+@ApiProperty({
+description: "Locale code - mã ngôn ngữ chuẩn BCP 47",
+example: "vi-VN",
+maxLength: 10,
+})
+@IsString()
+@IsNotEmpty({ message: "Locale code không được để trống" })
+code: string;
+
+/**
+* Tên hiển thị của ngôn ngữ.
+*/
+@ApiProperty({
+description: "Tên hiển thị của ngôn ngữ",
+example: "Tiếng Việt",
+maxLength: 100,
+})
+@IsString()
+@IsNotEmpty({ message: "Tên ngôn ngữ không được để trống" })
+name: string;
+
+/**
+* Cờ ngôn ngữ mặc định.
+*
+* Chỉ một locale duy nhất được phép là default.
+* Nếu set true, locale default cũ sẽ bị vô hiệu hóa.
+*/
+@ApiPropertyOptional({
+description: "Cờ ngôn ngữ mặc định",
+example: false,
+default: false,
+})
+@IsOptional()
+@IsBoolean()
+isDefault?: boolean;
+
+/**
+* Pattern định dạng ngày tháng (ICU format).
+*/
+@ApiPropertyOptional({
+description: "Pattern định dạng ngày tháng",
+example: "dd/MM/yyyy",
+})
+@IsOptional()
+@IsString()
+dateFormat?: string;
+
+/**
+* Pattern định dạng số (ICU format).
+*/
+@ApiPropertyOptional({
+description: "Pattern định dạng số",
+example: "#,##0.00",
+})
+@IsOptional()
+@IsString()
+numberFormat?: string;
+
+/**
+* Mã tiền tệ ISO 4217.
+*/
+@ApiPropertyOptional({
+description: "Mã tiền tệ ISO 4217",
+example: "VND",
+})
+@IsOptional()
+@IsString()
+currencyCode?: string;
+
+/**
+* Quy tắc số nhiều (CLDR).
+*/
+@ApiPropertyOptional({
+description: "Quy tắc số nhiều (CLDR plural rule)",
+example: "one",
+})
+@IsOptional()
+@IsString()
+pluralRule?: string;
+
+/**
+* Locale dự phòng - code của locale.
+*
+* Khi thiếu bản dịch, hệ thống sẽ thử tìm ở fallback locale.
+*/
+@ApiPropertyOptional({
+description: "Locale code dự phòng",
+example: "en",
+})
+@IsOptional()
+@IsString()
+fallbackLocale?: string;
+}
+
+// ============================================================================
+// UpdateLocaleDto
+// ============================================================================
+
+/**
+* DTO để cập nhật locale hiện có.
+*
+* Sử dụng khi PATCH /locales/:code.
+* Tất cả fields đều optional.
+*/
+export class UpdateLocaleDto {
+/**
+* Tên hiển thị mới.
+*/
+@ApiPropertyOptional({
+description: "Tên hiển thị mới",
+example: "Tiếng Việt (Việt Nam)",
+})
+@IsOptional()
+@IsString()
+@IsNotEmpty({ message: "Nếu truyền name thì không được để trống" })
+name?: string;
+
+/**
+* Cập nhật cờ default.
+*/
+@ApiPropertyOptional({
+description: "Cập nhật cờ default",
+})
+@IsOptional()
+@IsBoolean()
+isDefault?: boolean;
+
+/**
+* Pattern định dạng ngày mới.
+*/
+@ApiPropertyOptional({
+description: "Pattern định dạng ngày mới",
+})
+@IsOptional()
+@IsString()
+dateFormat?: string;
+
+/**
+* Pattern định dạng số mới.
+*/
+@ApiPropertyOptional({
+description: "Pattern định dạng số mới",
+})
+@IsOptional()
+@IsString()
+numberFormat?: string;
+
+/**
+* Mã tiền tệ mới.
+*/
+@ApiPropertyOptional({
+description: "Mã tiền tệ mới",
+})
+@IsOptional()
+@IsString()
+currencyCode?: string;
+
+/**
+* Quy tắc số nhiều mới.
+*/
+@ApiPropertyOptional({
+description: "Quy tắc số nhiều mới",
+})
+@IsOptional()
+@IsString()
+pluralRule?: string;
+
+/**
+* Locale dự phòng mới.
+* Truyền null để xóa fallback.
+*/
+@ApiPropertyOptional({
+description: "Locale dự phòng mới (dùng null để xóa)",
+nullable: true,
+})
+@IsOptional()
+@IsString()
+fallbackLocale?: string | null;
+}
+
+// ============================================================================
+// DiscoverRequestDto
+// ============================================================================
+
+/**
+* DTO cho yêu cầu phát hiện translation keys.
+*
+* Sử dụng khi POST /discover để quét codebase và tìm
+* các translation key chưa có bản dịch.
+*/
+export class DiscoverRequestDto {
+/**
+* Đường dẫn thư mục cần quét.
+*
+* Ví dụ: "./src", "./packages/web"
+*/
+@ApiProperty({
+description: "Đường dẫn thư mục cần quét",
+example: "./src",
+})
+@IsString()
+@IsNotEmpty({ message: "Đường dẫn thư mục không được để trống" })
+directory: string;
+
+/**
+* Patterns glob để lọc file cần quét.
+*
+* Ví dụ: ["**/*.ts", "**/*.tsx", "**/*.vue"]
+*/
+@ApiPropertyOptional({
+description: "Patterns glob để lọc file",
+example: ["**/*.ts", "**/*.tsx"],
+})
+@IsOptional()
+@IsArray()
+@IsString({ each: true })
+filePatterns?: string[];
+
+/**
+* Patterns glob để loại trừ.
+*
+* Ví dụ: ["**/*.spec.ts", "**/node_modules/**"]
+*/
+@ApiPropertyOptional({
+description: "Patterns glob để loại trừ",
+example: ["**/*.spec.ts", "**/node_modules/**"],
+})
+@IsOptional()
+@IsArray()
+@IsString({ each: true })
+excludePatterns?: string[];
+
+/**
+* Locale code cần discover.
+*
+* Nếu không truyền, discover cho tất cả locales.
+*/
+@ApiPropertyOptional({
+description: "Locale code cần discover (để trống = tất cả)",
+enum: VALID_LOCALE_CODES,
+})
+@IsOptional()
+@IsString()
+@IsIn(VALID_LOCALE_CODES, {
+message: `Locale code phải thuộc danh sách: ${VALID_LOCALE_CODES.join(", ")}`,
+})
+locale?: string;
+
+/**
+* Namespace cần discover.
+*
+* Nếu không truyền, discover cho tất cả namespaces.
+*/
+@ApiPropertyOptional({
+description: "Namespace cần discover (để trống = tất cả)",
+enum: VALID_NAMESPACES,
+})
+@IsOptional()
+@IsString()
+@IsIn(VALID_NAMESPACES, {
+message: `Namespace phải thuộc danh sách: ${VALID_NAMESPACES.join(", ")}`,
+})
+namespace?: string;
+}
+
+// ============================================================================
+// PaginatedTranslationDto
+// ============================================================================
+
+/**
+* DTO cho phân trang kết quả tìm kiếm translation.
+*/
+export class PaginatedTranslationDto {
+/**
+* Số lượng kết quả trên mỗi trang.
+*/
+@ApiPropertyOptional({
+description: "Số kết quả mỗi trang",
+example: 20,
+minimum: 1,
+maximum: 100,
+})
+@IsOptional()
+@IsInt()
+@Min(1)
+@Max(100)
+limit?: number;
+
+/**
+* Số trang hiện tại (0-indexed).
+*/
+@ApiPropertyOptional({
+description: "Số trang hiện tại (bắt đầu từ 0)",
+example: 0,
+minimum: 0,
+})
+@IsOptional()
+@IsInt()
+@Min(0)
+offset?: number;
+
+/**
+* Lọc theo locale code.
+*/
+@ApiPropertyOptional({
+description: "Lọc theo locale code",
+enum: VALID_LOCALE_CODES,
+})
+@IsOptional()
+@IsString()
+@IsIn(VALID_LOCALE_CODES, {
+message: `Locale code phải thuộc danh sách: ${VALID_LOCALE_CODES.join(", ")}`,
+})
+locale?: string;
+
+/**
+* Lọc theo namespace.
+*/
+@ApiPropertyOptional({
+description: "Lọc theo namespace",
+enum: VALID_NAMESPACES,
+})
+@IsOptional()
+@IsString()
+@IsIn(VALID_NAMESPACES, {
+message: `Namespace phải thuộc danh sách: ${VALID_NAMESPACES.join(", ")}`,
+})
+namespace?: string;
+
+/**
+* Lọc theo tenant ID.
+*/
+@ApiPropertyOptional({
+description: "Lọc theo tenant ID",
+})
+@IsOptional()
+@IsUUID("4")
+tenantId?: string;
+
+/**
+* Từ khóa tìm kiếm trong key hoặc value.
+*/
+@ApiPropertyOptional({
+description: "Từ khóa tìm kiếm trong key hoặc value",
+example: "save",
+})
+@IsOptional()
+@IsString()
+search?: string;
+
+/**
+* Chỉ trả về bản dịch global (tenant_id = null).
+*/
+@ApiPropertyOptional({
+description: "Chỉ bản dịch global",
+example: false,
+})
+@IsOptional()
+@IsBoolean()
+globalOnly?: boolean;
+
+/**
+* Chỉ trả về bản dịch tenant-specific.
+*/
+@ApiPropertyOptional({
+description: "Chỉ bản dịch tenant-specific",
+example: false,
+})
+@IsOptional()
+@IsBoolean()
+tenantOnly?: boolean;
+}
+
+// ============================================================================
+// BatchTranslationDto - cho bulk create
+// ============================================================================
+
+/**
+* DTO cho tạo hàng loạt bản dịch.
+*
+* Sử dụng khi POST /translations/batch.
+*/
+export class BatchCreateTranslationsDto {
+/**
+* Danh sách bản dịch cần tạo.
+*/
+@ApiProperty({
+description: "Danh sách bản dịch cần tạo",
+type: [CreateTranslationDto],
+minItems: 1,
+maxItems: 1000,
+})
+@IsArray()
+@IsNotEmpty({ message: "Danh sách bản dịch không được để trống" })
+@ValidateNested({ each: true })
+@Type(() => CreateTranslationDto)
+translations: CreateTranslationDto[];
+
+/**
+* Chế độ xử lý trùng lặp.
+*
+* - "skip": bỏ qua bản dịch đã tồn tại
+* - "overwrite": ghi đè bản dịch đã tồn tại
+* - "error": trả về lỗi nếu có bản dịch trùng
+*/
+@ApiPropertyOptional({
+description: "Chế độ xử lý trùng lặp",
+enum: ["skip", "overwrite", "error"],
+default: "skip",
+})
+@IsOptional()
+@IsIn(["skip", "overwrite", "error"])
+conflictStrategy?: "skip" | "overwrite" | "error";
+}

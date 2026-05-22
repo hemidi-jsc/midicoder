@@ -1,0 +1,250 @@
+"""
+Pydantic schemas cho i18n/L10n Runtime.
+
+Tạo tự động bởi CP39 — không sửa thủ công.
+
+Cung cấp các schema dùng cho:
+- Validate request/response của API endpoints
+- Tạo bản dịch mới hoặc cập nhật
+- Cấu hình cache
+- Phát hiện bản dịch thiếu
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field, ConfigDict
+
+
+# ============================================================================
+# Locale Schemas
+# ============================================================================
+
+
+class LocaleCreate(BaseModel):
+    """Schema tạo locale mới.
+
+    Fields:
+        code: Mã BCP 47 (bắt buộc, duy nhất)
+        name: Tên hiển thị ngôn ngữ
+        is_default: Đánh dấu locale mặc định
+        date_format: Định dạng ngày
+        number_format: Ký tự phân cách số
+        currency_code: Mã tiền tệ ISO 4217
+        plural_rule: Quy tắc số nhiều
+        fallback_locale: Fallback khi thiếu bản dịch
+    """
+    model_config = ConfigDict(strict=True)
+
+    code: str = Field(..., min_length=2, max_length=10, pattern=r"^[a-z]{2}(-[A-Za-z0-9]+)*$",
+                      description="Mã BCP 47 (ví dụ: en, vi-VN, fr-FR)")
+    name: str = Field(..., min_length=1, max_length=100, description="Tên hiển thị")
+    is_default: bool = Field(False, description="Có phải ngôn ngữ mặc định không")
+    date_format: str = Field("dd/MM/yyyy", max_length=20, description="Định dạng ngày")
+    number_format: str | None = Field(None, max_length=20, description="Ký tự phân cách số")
+    currency_code: str | None = Field(None, max_length=3, description="Mã tiền tệ ISO 4217")
+    plural_rule: str = Field("plural", description="Quy tắc số nhiều: singular, plural")
+    fallback_locale: str | None = Field(None, max_length=10, description="Fallback locale")
+
+
+class LocaleUpdate(BaseModel):
+    """Schema cập nhật locale.
+
+    Tất cả các trường đều tùy chọn — chỉ những trường được cung cấp sẽ được cập nhật.
+    """
+    model_config = ConfigDict(strict=True)
+
+    name: str | None = Field(None, min_length=1, max_length=100)
+    is_default: bool | None = None
+    date_format: str | None = Field(None, max_length=20)
+    number_format: str | None = Field(None, max_length=20)
+    currency_code: str | None = Field(None, max_length=3)
+    plural_rule: str | None = None
+    fallback_locale: str | None = Field(None, max_length=10)
+
+
+class LocaleResponse(BaseModel):
+    """Schema trả về thông tin locale.
+
+    Fields:
+        id: Database ID
+        code: Mã BCP 47
+        name: Tên hiển thị
+        is_default: Có phải mặc định không
+        date_format: Định dạng ngày
+        number_format: Định dạng số
+        currency_code: Mã tiền tệ
+        plural_rule: Quy tắc số nhiều
+        fallback_locale: Fallback locale
+        translation_count: Số bản dịch của locale này
+        created_at: Thời gian tạo
+        updated_at: Thời gian cập nhật
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    is_default: bool
+    date_format: str
+    number_format: str | None
+    currency_code: str | None
+    plural_rule: str
+    fallback_locale: str | None
+    translation_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+# ============================================================================
+# Translation Schemas
+# ============================================================================
+
+
+class TranslationCreate(BaseModel):
+    """Schema tạo bản dịch mới.
+
+    Fields:
+        key: Translation key (bắt buộc, duy nhất theo namespace+locale+tenant)
+        namespace: Namespace nhóm bản dịch
+        locale: Locale code (BCP 47)
+        value: Nội dung bản dịch
+        tenant_id: Tenant ID; None = bản dịch chung
+    """
+    model_config = ConfigDict(strict=True)
+
+    key: str = Field(..., min_length=1, max_length=200, description="Translation key")
+    namespace: str = Field("common", min_length=1, max_length=100, description="Namespace")
+    locale: str = Field(..., min_length=2, max_length=10, description="Locale code BCP 47")
+    value: str = Field(..., min_length=1, description="Nội dung bản dịch")
+    tenant_id: str | None = Field(None, max_length=100, description="Tenant ID; None = chung")
+
+
+class TranslationUpdate(BaseModel):
+    """Schema cập nhật bản dịch.
+
+    Chỉ các trường được cung cấp sẽ được cập nhật.
+    """
+    model_config = ConfigDict(strict=True)
+
+    value: str | None = Field(None, min_length=1, description="Nội dung bản dịch mới")
+    namespace: str | None = Field(None, min_length=1, max_length=100)
+    locale: str | None = Field(None, min_length=2, max_length=10)
+    tenant_id: str | None = Field(None, max_length=100)
+
+
+class TranslationResponse(BaseModel):
+    """Schema trả về bản dịch.
+
+    Fields:
+        id: Database ID
+        key: Translation key
+        namespace: Namespace
+        locale: Locale code
+        value: Nội dung bản dịch
+        tenant_id: Tenant ID hoặc None
+        created_at: Thời gian tạo
+        updated_at: Thời gian cập nhật
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    key: str
+    namespace: str
+    locale: str
+    value: str
+    tenant_id: str | None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+# ============================================================================
+# Discover Schemas
+# ============================================================================
+
+
+class DiscoverRequest(BaseModel):
+    """Schema yêu cầu quét phát hiện bản dịch chưa dịch.
+
+    Fields:
+        paths: Danh sách đường dẫn file/directory cần quét
+        sources: Các nguồn quét (template, html, tsx, code)
+        namespace: Namespace để lọc
+    """
+    model_config = ConfigDict(strict=True)
+
+    paths: list[str] = Field(..., min_length=1, description="Danh sách paths cần quét")
+    sources: list[str] = Field(
+        ["template", "html", "tsx", "code"],
+        description="Các nguồn quét: template, html, tsx, code"
+    )
+    namespace: str = Field("common", description="Namespace để gán cho key phát hiện")
+
+
+class DiscoverResponse(BaseModel):
+    """Schema trả về kết quả phát hiện bản dịch.
+
+    Fields:
+        total_keys: Tổng số key tìm thấy
+        missing_count: Số key chưa có bản dịch
+        existing_count: Số key đã có bản dịch
+        missing_keys: Danh sách key thiếu bản dịch
+        namespaces: Danh sách namespace tìm được
+        sources_scanned: Danh sách sources đã quét
+    """
+    model_config = ConfigDict(strict=True)
+
+    total_keys: int = 0
+    missing_count: int = 0
+    existing_count: int = 0
+    missing_keys: list[str] = Field(default_factory=list, description="Danh sách key thiếu")
+    namespaces: list[str] = Field(default_factory=list, description="Namespace tìm được")
+    sources_scanned: list[str] = Field(default_factory=list, description="Sources đã quét")
+
+
+# ============================================================================
+# Cache Configuration Schema
+# ============================================================================
+
+
+class CacheConfigSchema(BaseModel):
+    """Schema cấu hình cache cho i18n.
+
+    Fields:
+        backend: Loại backend cache (memory hoặc redis)
+        ttl_seconds: Thời gian sống của cache entry (giây)
+        max_size: Số lượng entry tối đa (cho memory backend)
+        redis_url: Redis connection URL (cho redis backend)
+    """
+    model_config = ConfigDict(strict=True)
+
+    backend: str = Field("memory", description="Backend cache: memory hoặc redis")
+    ttl_seconds: int = Field(3600, ge=1, le=86400, description="TTL theo giây (1 - 86400)")
+    max_size: int = Field(10000, ge=100, le=1000000, description="Số entry tối đa")
+    redis_url: str | None = Field(None, description="Redis URL; cần thiết nếu backend=redis")
+
+
+# ============================================================================
+# Danh sách namespace mặc định từ template context
+# ============================================================================
+
+DEFAULT_NAMESPACES: list[str] = [
+{% for ns in namespaces %}
+    "{{ ns }}",
+{% endfor %}
+]
+
+__all__ = [
+    "LocaleCreate",
+    "LocaleUpdate",
+    "LocaleResponse",
+    "TranslationCreate",
+    "TranslationUpdate",
+    "TranslationResponse",
+    "DiscoverRequest",
+    "DiscoverResponse",
+    "CacheConfigSchema",
+    "DEFAULT_NAMESPACES",
+]

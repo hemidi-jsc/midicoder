@@ -1,0 +1,513 @@
+/**
+ * TranslationSyncService — Đồng bộ bản dịch thời gian thực qua WebSocket.
+ *
+ * Kết nối tới `/ws/i18n`, lắng nghe sự kiện cập nhật bản dịch từ server,
+ * cập nhật cache cục bộ và phát thông báo cho các subscriber.
+ *
+ * Tạo tự động bởi CP39 — không sửa thủ công.
+ */
+
+import { Injectable, inject, OnDestroy } from '@angular/core';
+import { Subject, BehaviorSubject, Observable } from 'rxjs';
+import { I18nRuntimeService, TranslationEntry } from './i18n-runtime.service';
+
+// ========================
+//  Định nghĩa kiểu dữ liệu
+// ========================
+
+/** Loại sự kiện WebSocket i18n. */
+export type I18nWsEventType =
+  | 'translation_updated'
+  | 'translation_added'
+  | 'translation_removed'
+  | 'locale_added'
+  | 'locale_removed'
+  | 'cache_invalidated'
+  | 'connected'
+  | 'disconnected'
+  | 'error';
+
+/** Thông điệp WebSocket nhận từ server. */
+export interface I18nWsMessage {
+  type: I18nWsEventType;
+  timestamp: number;
+  data?: I18nWsPayload;
+}
+
+/** Payload dữ liệu theo từng loại sự kiện. */
+export interface I18nWsPayload {
+  /** Locale bị ảnh hưởng (có thể là mảng nếu nhiều locale). */
+  locale?: string | string[];
+  /** Namespace bị ảnh hưởng. */
+  namespace?: string;
+  /** Key bản dịch (có trong translation_updated, translation_added, translation_removed). */
+  key?: string;
+  /** Giá trị mới của bản dịch (có trong translation_updated, translation_added). */
+  value?: string;
+  /** tenant_id nếu đa tenant. */
+  tenantId?: string;
+  /** Tên locale mới (có trong locale_added). */
+  localeName?: string;
+  /** Lý do lỗi (có trong error). */
+  errorMessage?: string;
+}
+
+/** Trạng thái kết nối WebSocket. */
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
+/** Cấu hình kết nối WebSocket. */
+interface WebSocketConfig {
+  /** URL cơ sở cho WebSocket — sẽ được bổ sung `/ws/i18n`. */
+  baseUrl: string;
+  /** Thời gian chờ tối đa giữa các lần reconnect (ms). */
+  maxReconnectDelay: number;
+  /** Thời gian chờ ban đầu cho reconnect (ms). */
+  initialReconnectDelay: number;
+  /** Số lần reconnect tối đa trước khi bỏ cuộc. */
+  maxReconnectAttempts: number;
+  /** Khoảng thời gian ping/pong để kiểm tra kết nối (ms). */
+  heartbeatInterval: number;
+}
+
+/** Cấu hình WebSocket mặc định. */
+const DEFAULT_WS_CONFIG: WebSocketConfig = {
+  baseUrl: '',
+  maxReconnectDelay: 30000,
+  initialReconnectDelay: 1000,
+  maxReconnectAttempts: 10,
+  heartbeatInterval: 30000
+};
+
+// ========================
+//  Service
+// ========================
+
+@Injectable({
+  providedIn: 'root'
+})
+export class TranslationSyncService implements OnDestroy {
+  private readonly i18nService = inject(I18nRuntimeService);
+
+  /** WebSocket hiện tại — null nếu chưa kết nối. */
+  private ws: WebSocket | null = null;
+
+  /** Subject phát ra tất cả sự kiện WebSocket cho subscriber. */
+  private readonly messageSubject = new Subject<I18nWsMessage>();
+
+  /** Theo dõi trạng thái kết nối. */
+  private readonly connectionStateSubject = new BehaviorSubject<ConnectionState>('disconnected');
+
+  /** Số lần reconnect hiện tại. */
+  private reconnectAttempts = 0;
+
+  /** Timer ID cho reconnect — dùng để hủy khi ngắt kết nối. */
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Timer ID cho heartbeat. */
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Thời điểm ping cuối cùng — để tính timeout. */
+  private lastPingTime = 0;
+
+  /** Cấu hình WebSocket. */
+  private config: WebSocketConfig = { ...DEFAULT_WS_CONFIG };
+
+  // ========================
+  //  Observable công khai
+  // ========================
+
+  /** Observable — tất cả tin nhắn WebSocket nhận được từ server. */
+  public readonly messages$ = this.messageSubject.asObservable();
+
+  /** Observable — trạng thái kết nối hiện tại. */
+  public readonly connectionState$ = this.connectionStateSubject.asObservable();
+
+  // ========================
+  //  Phương thức công khai
+  // ========================
+
+  /**
+   * Kết nối WebSocket tới server i18n.
+   *
+   * Tự động xây dựng URL WebSocket dựa trên host hiện tại của trình duyệt.
+   */
+  connect(configOverride?: Partial<WebSocketConfig>): void {
+    // Áp dụng cấu hình tùy chỉnh.
+    if (configOverride) {
+      this.config = { ...this.config, ...configOverride };
+    }
+
+    // Nếu đang kết nối, không làm gì.
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    // Nếu đang trong quá trình kết nối, bỏ qua.
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
+    this.setConnectionState('connecting');
+    this.buildAndOpenWebSocket();
+  }
+
+  /**
+   * Ngắt kết nối WebSocket.
+   *
+   * Hủy tất cả timer và dọn dẹp tài nguyên.
+   */
+  disconnect(): void {
+    this.clearReconnectTimer();
+    this.clearHeartbeatTimer();
+
+    if (this.ws) {
+      this.ws.onclose = null; // Ngăn chặn reconnect tự động khi đóng chủ động.
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
+      this.ws.close(1000, 'Client disconnected');
+      this.ws = null;
+    }
+
+    this.reconnectAttempts = 0;
+    this.setConnectionState('disconnected');
+  }
+
+  /**
+   * Gửi tin nhắn tới server.
+   *
+   * @param message - Tin nhắn JSON-serializable.
+   */
+  sendMessage(message: Record<string, any>): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    } else {
+      console.warn('[TranslationSync] Không thể gửi tin nhắn — WebSocket chưa kết nối.');
+    }
+  }
+
+  /**
+   * Gửi yêu cầu xác nhận locale — server sẽ gửi bản dịch cập nhật cho locale này.
+   *
+   * @param localeCode - Mã locale cần đồng bộ.
+   * @param namespace - Namespace tùy chọn.
+   */
+  requestSync(localeCode: string, namespace?: string): void {
+    this.sendMessage({
+      action: 'sync_request',
+      locale: localeCode,
+      namespace: namespace || '*'
+    });
+  }
+
+  /**
+   * Lấy trạng thái kết nối hiện tại.
+   */
+  getConnectionState(): ConnectionState {
+    return this.connectionStateSubject.value;
+  }
+
+  // ========================
+  //  Phương thức nội bộ
+  // ========================
+
+  /**
+   * Xây dựng URL WebSocket và mở kết nối.
+   */
+  private buildAndOpenWebSocket(): void {
+    // Xây dựng URL WebSocket từ URL hiện tại của trình duyệt.
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/ws/i18n`;
+
+    try {
+      this.ws = new WebSocket(wsUrl);
+    } catch (error) {
+      console.error('[TranslationSync] Không thể tạo WebSocket:', error);
+      this.scheduleReconnect();
+      return;
+    }
+
+    this.setupWebSocketHandlers();
+  }
+
+  /**
+   * Thiết lập các event handler cho WebSocket.
+   */
+  private setupWebSocketHandlers(): void {
+    if (!this.ws) return;
+
+    // --- Khi kết nối thành công ---
+    this.ws.onopen = (event: Event) => {
+      console.log('[TranslationSync] WebSocket kết nối thành công.');
+      this.reconnectAttempts = 0;
+      this.setConnectionState('connected');
+      this.messageSubject.next({
+        type: 'connected',
+        timestamp: Date.now()
+      });
+
+      // Bắt đầu heartbeat để duy trì kết nối.
+      this.startHeartbeat();
+
+      // Tự động request sync cho locale hiện tại.
+      const currentLocale = this.i18nService.getCurrentLocale();
+      this.requestSync(currentLocale);
+    };
+
+    // --- Khi nhận được tin nhắn ---
+    this.ws.onmessage = (event: MessageEvent) => {
+      try {
+        const message: I18nWsMessage = JSON.parse(event.data as string);
+        this.handleIncomingMessage(message);
+      } catch (error) {
+        console.error('[TranslationSync] Không thể phân tích tin nhắn:', error, event.data);
+      }
+    };
+
+    // --- Khi kết nối đóng ---
+    this.ws.onclose = (event: CloseEvent) => {
+      console.warn(`[TranslationSync] WebSocket đóng: code=${event.code}, reason=${event.reason}`);
+      this.setConnectionState('disconnected');
+      this.clearHeartbeatTimer();
+
+      this.messageSubject.next({
+        type: 'disconnected',
+        timestamp: Date.now(),
+        data: { errorMessage: event.reason || 'Kết nối đóng' }
+      });
+
+      // Nếu đóng không do client chủ động (code 1000), thử reconnect.
+      if (event.code !== 1000) {
+        this.scheduleReconnect();
+      }
+    };
+
+    // --- Khi có lỗi ---
+    this.ws.onerror = (event: Event) => {
+      console.error('[TranslationSync] WebSocket lỗi:', event);
+      this.messageSubject.next({
+        type: 'error',
+        timestamp: Date.now(),
+        data: { errorMessage: 'WebSocket lỗi — sẽ thử kết nối lại' }
+      });
+    };
+  }
+
+  /**
+   * Xử lý tin nhắn nhận được từ server.
+   */
+  private handleIncomingMessage(message: I18nWsMessage): void {
+    // Phát sự kiện cho tất cả subscriber.
+    this.messageSubject.next(message);
+
+    const data = message.data;
+    if (!data) return;
+
+    switch (message.type) {
+      case 'translation_updated':
+      case 'translation_added':
+        this.handleTranslationUpdate(message.type, data);
+        break;
+
+      case 'translation_removed':
+        this.handleTranslationRemoved(data);
+        break;
+
+      case 'locale_added':
+        this.handleLocaleAdded(data);
+        break;
+
+      case 'locale_removed':
+        this.handleLocaleRemoved(data);
+        break;
+
+      case 'cache_invalidated':
+        this.handleCacheInvalidated(data);
+        break;
+
+      default:
+        // Các loại sự kiện khác (connected, disconnected, error) đã được xử lý ở handler.
+        break;
+    }
+  }
+
+  /**
+   * Xử lý sự kiện bản dịch được cập nhật hoặc thêm mới.
+   */
+  private handleTranslationUpdate(type: I18nWsEventType, data: I18nWsPayload): void {
+    const locale = data.locale as string;
+    const namespace = data.namespace;
+    const key = data.key;
+    const value = data.value;
+
+    if (!locale || !key || value === undefined) {
+      console.warn('[TranslationSync] Dữ kiện translation không đầy đủ:', data);
+      return;
+    }
+
+    console.log(`[TranslationSync] ${type} — locale: ${locale}, namespace: ${namespace}, key: ${key}`);
+
+    // Nếu bản dịch thuộc về locale hiện tại, buộc tải lại để cập nhật UI.
+    const currentLocale = this.i18nService.getCurrentLocale();
+    if (locale === currentLocale && namespace) {
+      this.i18nService.loadTranslations(locale, namespace).catch(err => {
+        console.error(`[TranslationSync] Không thể tải lại bản dịch cho namespace '${namespace}':`, err);
+      });
+    }
+  }
+
+  /**
+   * Xử lý sự kiện bản dịch bị xóa.
+   */
+  private handleTranslationRemoved(data: I18nWsPayload): void {
+    const locale = data.locale as string;
+    const namespace = data.namespace;
+
+    console.log(`[TranslationSync] translation_removed — locale: ${locale}, namespace: ${namespace}`);
+
+    // Xóa cache của namespace/locale bị ảnh hưởng.
+    const currentLocale = this.i18nService.getCurrentLocale();
+    if (locale === currentLocale) {
+      this.i18nService.clearCache(locale);
+    }
+  }
+
+  /**
+   * Xử lý sự kiện locale mới được thêm.
+   */
+  private handleLocaleAdded(data: I18nWsPayload): void {
+    const localeCode = data.locale as string;
+    const localeName = data.localeName;
+
+    if (localeCode) {
+      console.log(`[TranslationSync] locale_added: ${localeCode} (${localeName || 'không rõ tên'})`);
+    }
+
+    // Reload lại danh sách locale — trong thực tế có thể gọi API để lấy danh sách mới.
+    // Tại đây chỉ log vì I18nRuntimeService.SUPPORTED_LOCALES là hằng số compile-time.
+  }
+
+  /**
+   * Xử lý sự kiện locale bị xóa.
+   */
+  private handleLocaleRemoved(data: I18nWsPayload): void {
+    const localeCode = data.locale as string;
+    const currentLocale = this.i18nService.getCurrentLocale();
+
+    if (localeCode && localeCode === currentLocale) {
+      console.warn(`[TranslationSync] Locale hiện tại '${localeCode}' bị xóa — chuyển về locale mặc định.`);
+      // Chuyển về locale mặc định.
+      const defaultLocale = this.i18nService.getSupportedLocales().find(l => l.isDefault)?.code;
+      if (defaultLocale) {
+        this.i18nService.setLocale(defaultLocale);
+      }
+    }
+  }
+
+  /**
+   * Xử lý sự kiện cache bị vô hiệu hóa từ server.
+   */
+  private handleCacheInvalidated(data: I18nWsPayload): void {
+    const locale = data.locale as string | string[];
+
+    console.log('[TranslationSync] cache_invalidated — buộc tải lại bản dịch.');
+
+    if (Array.isArray(locale)) {
+      // Nhiều locale bị ảnh hưởng.
+      locale.forEach(loc => this.i18nService.clearCache(loc));
+    } else if (locale) {
+      this.i18nService.clearCache(locale);
+    } else {
+      // Không có locale cụ thể — xóa toàn bộ cache.
+      this.i18nService.clearCache();
+    }
+  }
+
+  /**
+   * Lên lịch reconnect với exponential backoff.
+   */
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
+      console.error('[TranslationSync] Đã đạt số lần reconnect tối đa, ngừng kết nối lại.');
+      this.setConnectionState('disconnected');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    this.setConnectionState('reconnecting');
+
+    // Exponential backoff: delay = initialDelay * 2^(attempts-1), giới hạn maxReconnectDelay.
+    const delay = Math.min(
+      this.config.initialReconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
+      this.config.maxReconnectDelay
+    );
+
+    // Thêm jitter ngẫu nhiên (0-500ms) để tránh nhiều client reconnect cùng lúc.
+    const jitter = Math.random() * 500;
+    const totalDelay = delay + jitter;
+
+    console.log(`[TranslationSync] Sẽ reconnect sau ${Math.round(totalDelay)}ms (lần ${this.reconnectAttempts}/${this.config.maxReconnectAttempts}).`);
+
+    this.clearReconnectTimer();
+    this.reconnectTimer = setTimeout(() => {
+      this.buildAndOpenWebSocket();
+    }, totalDelay);
+  }
+
+  /**
+   * Bắt đầu heartbeat — gửi ping định kỳ để giữ kết nối sống.
+   */
+  private startHeartbeat(): void {
+    this.clearHeartbeatTimer();
+    this.lastPingTime = Date.now();
+
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.lastPingTime = Date.now();
+        this.ws.send(JSON.stringify({ action: 'ping', timestamp: this.lastPingTime }));
+      } else {
+        this.clearHeartbeatTimer();
+      }
+    }, this.config.heartbeatInterval);
+  }
+
+  /**
+   * Cập nhật trạng thái kết nối.
+   */
+  private setConnectionState(state: ConnectionState): void {
+    this.connectionStateSubject.next(state);
+  }
+
+  /**
+   * Hủy timer reconnect nếu đang chạy.
+   */
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  /**
+   * Hủy timer heartbeat nếu đang chạy.
+   */
+  private clearHeartbeatTimer(): void {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  // ========================
+  //  Vòng đời
+  // ========================
+
+  /**
+   * Dọn dẹp khi service bị hủy — đảm bảo ngắt kết nối và giải phóng tài nguyên.
+   */
+  ngOnDestroy(): void {
+    this.disconnect();
+    this.messageSubject.complete();
+    this.connectionStateSubject.complete();
+  }
+}

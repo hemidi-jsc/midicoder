@@ -1,0 +1,273 @@
+/**
+ * I18nRuntimeService — Dịch vụ thời gian chạy cho i18n/L10n.
+ *
+ * Quản lý locale hiện tại, cache bản dịch, và gọi API để tải dữ liệu.
+ * Tạo tự động bởi CP39 — không sửa thủ công.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject, Observable, of, firstValueFrom, throwError } from 'rxjs';
+import { catchError, map, shareReplay, tap } from 'rxjs/operators';
+
+// --- Định nghĩa kiểu dữ liệu ---
+
+/** Cấu hình của một locale được hỗ trợ. */
+export interface LocaleConfig {
+  code: string;
+  name: string;
+  isDefault: boolean;
+  dateFormat: string;
+  numberFormat: string;
+  currencyCode: string;
+  pluralRule: string;
+  fallbackLocale: string;
+}
+
+/** Một bản dịch riêng lẻ. */
+export interface TranslationEntry {
+  key: string;
+  namespace: string;
+  locale: string;
+  value: string;
+  tenantId?: string;
+}
+
+/** Khung dữ liệu trả về từ API translations. */
+interface TranslationApiResponse {
+  locale: string;
+  namespace: string;
+  translations: Record<string, string>;
+}
+
+// --- Danh sách locale được hỗ trợ (tạo từ template) ---
+
+const SUPPORTED_LOCALES: LocaleConfig[] = [
+{% for locale in locales %}
+  {
+    code: '{{ locale.code }}',
+    name: '{{ locale.name }}',
+    isDefault: {{ 'true' if locale.is_default else 'false' }},
+    dateFormat: '{{ locale.date_format }}',
+    numberFormat: '{{ locale.number_format }}',
+    currencyCode: '{{ locale.currency_code }}',
+    pluralRule: '{{ locale.plural_rule }}',
+    fallbackLocale: '{{ locale.fallback_locale }}'
+  }{% if not loop.last %},{% endif %}
+{% endfor %}
+];
+
+/** Các namespace bản dịch có sẵn. */
+const AVAILABLE_NAMESPACES: string[] = [
+{% for ns in namespaces %}
+  '{{ ns }}'{% if not loop.last %}, {% endif %}
+{% endfor %}
+];
+
+/** Locale mặc định. */
+const DEFAULT_LOCALE: string = '{{ default_locale }}';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class I18nRuntimeService {
+  private readonly http = inject(HttpClient);
+
+  /** Subject theo dõi locale hiện tại — các subscriber nhận giá trị mới khi đổi ngôn ngữ. */
+  private readonly currentLocaleSubject = new BehaviorSubject<string>(DEFAULT_LOCALE);
+
+  /** Cache bản dịch: key = "locale:namespace", value = Map<key, translatedValue>. */
+  private readonly translationCache = new Map<string, Map<string, string>>();
+
+  /** Observable chỉ đọc — trả về locale hiện tại. */
+  public readonly currentLocale$ = this.currentLocaleSubject.asObservable();
+
+  // ========================
+  //  Phương thức công khai
+  // ========================
+
+  /**
+   * Lấy bản dịch của một key, fallback qua namespace mặc định nếu không tìm thấy.
+   *
+   * @param key - Key bản dịch cần tra cứu.
+   * @param namespace - Namespace tùy chọn; mặc định là 'common'.
+   * @returns Observable<string> — bản dịch hoặc key gốc nếu không tìm thấy.
+   */
+  translate(key: string, namespace: string = 'common'): Observable<string> {
+    const locale = this.currentLocaleSubject.value;
+    const cacheKey = `${locale}:${namespace}`;
+    const cached = this.translationCache.get(cacheKey);
+
+    // Nếu cache đã có sẵn, trả về ngay.
+    if (cached && cached.has(key)) {
+      return of(cached.get(key)!);
+    }
+
+    // Nếu cache của namespace này đã tồn tại nhưng thiếu key, tra cache trước khi gọi API.
+    if (cached) {
+      return of(key); // key không tồn tại trong cache, fallback trả về key gốc
+    }
+
+    // Chưa có cache — gọi API để tải namespace này.
+    return this.fetchTranslation(locale, key, namespace).pipe(
+      tap(value => {
+        // Nếu chưa có namespace trong cache, khởi tạo mới.
+        if (!this.translationCache.has(cacheKey)) {
+          this.translationCache.set(cacheKey, new Map());
+        }
+        this.translationCache.get(cacheKey)!.set(key, value);
+      }),
+      catchError(() => {
+        // Nếu API thất bại, thử fallback locale.
+        const fallback = this.getFallbackLocale(locale);
+        if (fallback && fallback !== locale) {
+          return this.fetchTranslation(fallback, key, namespace);
+        }
+        return of(key); // fallback cuối cùng: trả về key gốc
+      })
+    );
+  }
+
+  /**
+   * Đổi locale hiện tại và thông báo cho tất cả subscriber.
+   *
+   * @param localeCode - Mã locale cần chuyển đến.
+   */
+  setLocale(localeCode: string): void {
+    const supported = SUPPORTED_LOCALES.find(l => l.code === localeCode);
+    if (!supported) {
+      console.warn(`[I18nRuntime] Locale '${localeCode}' không được hỗ trợ, giữ locale hiện tại.`);
+      return;
+    }
+    this.currentLocaleSubject.next(localeCode);
+  }
+
+  /**
+   * Trả về danh sách đầy đủ các locale được hỗ trợ.
+   */
+  getSupportedLocales(): LocaleConfig[] {
+    return [...SUPPORTED_LOCALES];
+  }
+
+  /**
+   * Lấy namespace có sẵn.
+   */
+  getAvailableNamespaces(): string[] {
+    return [...AVAILABLE_NAMESPACES];
+  }
+
+  /**
+   * Tải tất cả bản dịch cho một locale và namespace cụ thể.
+   *
+   * @param localeCode - Mã locale.
+   * @param namespace - Namespace; mặc định tải tất cả namespace.
+   */
+  async loadTranslations(localeCode: string, namespace?: string): Promise<void> {
+    try {
+      if (namespace) {
+        await this.loadNamespaceTranslations(localeCode, namespace);
+      } else {
+        // Tải tất cả namespace cho locale.
+        const promises = AVAILABLE_NAMESPACES.map(ns => this.loadNamespaceTranslations(localeCode, ns));
+        await Promise.all(promises);
+      }
+    } catch (error) {
+      console.error(`[I18nRuntime] Không thể tải bản dịch cho locale '${localeCode}':`, error);
+      // Thử fallback locale nếu tải thất bại.
+      const fallback = this.getFallbackLocale(localeCode);
+      if (fallback && fallback !== localeCode) {
+        console.warn(`[I18nRuntime] Thử tải từ fallback locale '${fallback}'.`);
+        await this.loadTranslations(fallback, namespace);
+      }
+    }
+  }
+
+  /**
+   * Xóa cache bản dịch — hữu ích khi muốn tải lại dữ liệu mới từ server.
+   *
+   * @param localeCode - Nếu có, chỉ xóa cache của locale này; nếu không, xóa toàn bộ.
+   */
+  clearCache(localeCode?: string): void {
+    if (localeCode) {
+      AVAILABLE_NAMESPACES.forEach(ns => {
+        this.translationCache.delete(`${localeCode}:${ns}`);
+      });
+    } else {
+      this.translationCache.clear();
+    }
+  }
+
+  /**
+   * Lấy locale hiện tại dưới dạng string.
+   */
+  getCurrentLocale(): string {
+    return this.currentLocaleSubject.value;
+  }
+
+  /**
+   * Lấy cấu hình chi tiết của locale hiện tại.
+   */
+  getCurrentLocaleConfig(): LocaleConfig | undefined {
+    return SUPPORTED_LOCALES.find(l => l.code === this.currentLocaleSubject.value);
+  }
+
+  // ========================
+  //  Phương thức nội bộ
+  // ========================
+
+  /**
+   * Tải bản dịch của một namespace cho một locale cụ thể từ API.
+   */
+  private async loadNamespaceTranslations(localeCode: string, namespace: string): Promise<void> {
+    const cacheKey = `${localeCode}:${namespace}`;
+
+    // Tránh tải trùng namespace đã có trong cache.
+    if (this.translationCache.has(cacheKey)) {
+      return;
+    }
+
+    const apiUrl = `/api/i18n/translations?locale=${encodeURIComponent(localeCode)}&namespace=${encodeURIComponent(namespace)}`;
+    const response: TranslationApiResponse = await firstValueFrom(this.http.get<TranslationApiResponse>(apiUrl));
+
+    const entryMap = new Map<string, string>();
+    if (response && response.translations) {
+      Object.entries(response.translations).forEach(([k, v]) => {
+        entryMap.set(k, v);
+      });
+    }
+    this.translationCache.set(cacheKey, entryMap);
+  }
+
+  /**
+   * Lấy bản dịch của một key riêng lẻ từ API.
+   */
+  private fetchTranslation(locale: string, key: string, namespace: string): Observable<string> {
+    const apiUrl = `/api/i18n/translations?locale=${encodeURIComponent(locale)}&namespace=${encodeURIComponent(namespace)}`;
+
+    return this.http.get<TranslationApiResponse>(apiUrl).pipe(
+      map(response => {
+        const value = response?.translations?.[key];
+        // Lưu vào cache.
+        const cacheKey = `${locale}:${namespace}`;
+        if (!this.translationCache.has(cacheKey)) {
+          this.translationCache.set(cacheKey, new Map());
+        }
+        const cache = this.translationCache.get(cacheKey)!;
+        // Lưu toàn bộ translations nhận được vào cache.
+        if (response?.translations) {
+          Object.entries(response.translations).forEach(([k, v]) => cache.set(k, v));
+        }
+        return value ?? key;
+      }),
+      shareReplay(1)
+    );
+  }
+
+  /**
+   * Lấy fallback locale của một locale.
+   */
+  private getFallbackLocale(localeCode: string): string | null {
+    const config = SUPPORTED_LOCALES.find(l => l.code === localeCode);
+    return config?.fallbackLocale ?? null;
+  }
+}

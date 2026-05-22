@@ -1,0 +1,577 @@
+/**
+ * TranslationController - controller cho API i18n/L10n.
+ *
+ * Cung cấp các endpoint REST cho việc quản lý bản dịch và locale:
+ * - CRUD cho locales và translations
+ * - Phân trang, tìm kiếm, lọc
+ * - Phát hiện bản dịch thiếu
+ * - Quét codebase để discover translation keys
+ *
+ * CP39: i18n/L10n Runtime
+ * Total locales: {{ locale_count }}
+ * Total translations: {{ translation_count }}
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Delete,
+  Param,
+  Query,
+  HttpStatus,
+  HttpCode,
+  ParseUUIDPipe,
+  ValidationPipe,
+} from "@nestjs/common";
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiParam } from "@nestjs/swagger";
+import { TranslationService, MissingTranslation, ResolvedTranslation } from "./translation.service";
+import { Locale } from "./locale.entity";
+import { Translation } from "./translation.entity";
+import {
+  CreateTranslationDto,
+  UpdateTranslationDto,
+  CreateLocaleDto,
+  UpdateLocaleDto,
+  DiscoverRequestDto,
+  PaginatedTranslationDto,
+  BatchCreateTranslationsDto,
+} from "./translation.dto";
+
+/**
+ * TranslationController - quản lý bản dịch i18n.
+ *
+ * API Routes:
+ * - GET    /i18n/locales            - List tất cả locales
+ * - POST   /i18n/locales            - Tạo mới locale
+ * - PATCH  /i18n/locales/:code      - Cập nhật locale
+ * - DELETE /i18n/locales/:code      - Xóa locale
+ * - GET    /i18n/translations       - List translations (có phân trang)
+ * - POST   /i18n/translations       - Tạo mới translation
+ * - POST   /i18n/translations/batch - Tạo hàng loạt translations
+ * - PATCH  /i18n/translations/:key  - Cập nhật translation
+ * - DELETE /i18n/translations/:key  - Xóa translation
+ * - GET    /i18n/translations/:key  - Tìm translation theo key
+ * - GET    /i18n/translations/:key/resolve - Resolve với fallback
+ * - GET    /i18n/missing            - Tìm bản dịch thiếu
+ * - POST   /i18n/discover           - Quét codebase để discover keys
+ */
+@ApiTags("i18n/L10n")
+@ApiBearerAuth()
+@Controller("i18n")
+export class TranslationController {
+  /**
+   * Constructor.
+   *
+   * @param translationService - TranslationService instance
+   */
+  constructor(
+    private readonly translationService: TranslationService,
+  ) {}
+
+  // ========================================================================
+  // Locale Endpoints
+  // ========================================================================
+
+  /**
+   * List tất cả locales.
+   *
+   * Trả về danh sách đầy đủ các ngôn ngữ được hỗ trợ.
+   * Mỗi locale bao gồm cấu hình: dateFormat, numberFormat,
+   * currencyCode, pluralRule, fallbackLocale.
+   *
+   * @returns List Locale entities
+   */
+  @Get("locales")
+  @ApiOperation({
+    summary: "List tất cả locales",
+    description: "Trả về danh sách đầy đủ các ngôn ngữ được hỗ trợ cùng cấu hình của từng locale.",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List locales thành công",
+    type: [Locale],
+  })
+  async findAllLocales(): Promise<Locale[]> {
+    return this.translationService.findAllLocales();
+  }
+
+  /**
+   * Tạo mới locale.
+   *
+   * @param createDto - CreateLocaleDto
+   * @returns Locale entity vừa tạo
+   */
+  @Post("locales")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo mới locale",
+    description: "Thêm ngôn ngữ mới vào hệ thống i18n.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Locale đã được tạo",
+    type: Locale,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ hoặc locale code đã tồn tại",
+  })
+  async createLocale(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createDto: CreateLocaleDto,
+  ): Promise<Locale> {
+    return this.translationService.createLocale(createDto);
+  }
+
+  /**
+   * Cập nhật locale.
+   *
+   * @param code - Locale code
+   * @param updateDto - UpdateLocaleDto
+   * @returns Locale entity đã cập nhật
+   */
+  @Patch("locales/:code")
+  @ApiOperation({
+    summary: "Cập nhật locale",
+    description: "Cập nhật thông tin của ngôn ngữ đã tồn tại.",
+  })
+  @ApiParam({
+    name: "code",
+    description: "Locale code cần cập nhật",
+    example: "{{ default_locale }}",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Locale đã được cập nhật",
+    type: Locale,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Locale không tồn tại",
+  })
+  async updateLocale(
+    @Param("code") code: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    updateDto: UpdateLocaleDto,
+  ): Promise<Locale> {
+    return this.translationService.updateLocale(code, updateDto);
+  }
+
+  /**
+   * Xóa locale.
+   *
+   * Cảnh báo: Xóa locale sẽ xóa CASCADE tất cả translations liên quan.
+   *
+   * @param code - Locale code
+   * @returns Result của xóa
+   */
+  @Delete("locales/:code")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "Xóa locale",
+    description: "Xóa ngôn ngữ và tất cả translations liên quan (CASCADE). Không thể xóa locale mặc định.",
+  })
+  @ApiParam({
+    name: "code",
+    description: "Locale code cần xóa",
+  })
+  @ApiResponse({
+    status: HttpStatus.NO_CONTENT,
+    description: "Locale đã được xóa",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Không thể xóa locale mặc định",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Locale không tồn tại",
+  })
+  async removeLocale(
+    @Param("code") code: string,
+  ): Promise<void> {
+    return this.translationService.removeLocale(code);
+  }
+
+  // ========================================================================
+  // Translation Endpoints
+  // ========================================================================
+
+  /**
+   * List translations với phân trang và lọc.
+   *
+   * Hỗ trợ:
+   * - Phân trang: limit, offset
+   * - Lọc theo locale, namespace, tenant
+   * - Tìm kiếm theo keyword
+   * - Lọc global/tenant-only
+   *
+   * @param options - PaginatedTranslationDto (query params)
+   * @returns Object chứa data và pagination info
+   */
+  @Get("translations")
+  @ApiOperation({
+    summary: "List translations",
+    description: "Lấy danh sách bản dịch với phân trang và lọc. Hỗ trợ tìm kiếm theo keyword, lọc theo locale, namespace, tenant.",
+  })
+  @ApiQuery({ name: "limit", required: false, example: 20 })
+  @ApiQuery({ name: "offset", required: false, example: 0 })
+  @ApiQuery({ name: "locale", required: false, example: "{{ default_locale }}" })
+  @ApiQuery({ name: "namespace", required: false, example: "default" })
+  @ApiQuery({ name: "search", required: false, example: "save" })
+  @ApiQuery({ name: "globalOnly", required: false, example: false })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List translations thành công",
+  })
+  async findAllTranslations(
+    @Query(new ValidationPipe({ transform: true }))
+    options: PaginatedTranslationDto,
+  ): Promise<{
+    data: Translation[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const localeCode = options.locale || "{{ default_locale }}";
+    return this.translationService.findByLocale(localeCode, options);
+  }
+
+  /**
+   * Tạo mới translation.
+   *
+   * @param createDto - CreateTranslationDto
+   * @returns Translation entity vừa tạo
+   */
+  @Post("translations")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo mới translation",
+    description: "Thêm bản dịch mới cho key, locale và namespace được chỉ định.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Translation đã được tạo",
+    type: Translation,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ hoặc bản dịch đã tồn tại",
+  })
+  async createTranslation(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createDto: CreateTranslationDto,
+  ): Promise<Translation> {
+    return this.translationService.create(createDto);
+  }
+
+  /**
+   * Tạo hàng loạt translations.
+   *
+   * Hỗ trợ lên đến 1000 bản dịch trong một lần gọi.
+   * Chế độ xử lý trùng lặp: skip, overwrite, error.
+   *
+   * @param batchDto - BatchCreateTranslationsDto
+   * @returns Object chứa kết quả tạo
+   */
+  @Post("translations/batch")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo hàng loạt translations",
+    description: "Thêm nhiều bản dịch trong một lần gọi. Hỗ trợ chế độ xử lý trùng lặp: skip, overwrite, error.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Bulk create hoàn tất",
+    schema: {
+      example: {
+        created: 50,
+        updated: 5,
+        skipped: 3,
+        errors: [],
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ",
+  })
+  async createBatch(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    batchDto: BatchCreateTranslationsDto,
+  ): Promise<{
+    created: number;
+    updated: number;
+    skipped: number;
+    errors: string[];
+  }> {
+    return this.translationService.createBulk(
+      batchDto.translations,
+      batchDto.conflictStrategy,
+    );
+  }
+
+  /**
+   * Tìm translation theo key.
+   *
+   * @param key - Translation key
+   * @param locale - Locale code (query param)
+   * @param namespace - Namespace (query param)
+   * @param tenantId - Tenant ID (query param)
+   * @returns Translation entity hoặc null
+   */
+  @Get("translations/:key")
+  @ApiOperation({
+    summary: "Tìm translation theo key",
+    description: "Lấy bản dịch cụ thể theo key, locale, namespace và tenant.",
+  })
+  @ApiParam({
+    name: "key",
+    description: "Translation key",
+    example: "common.save",
+  })
+  @ApiQuery({ name: "locale", required: false, example: "{{ default_locale }}" })
+  @ApiQuery({ name: "namespace", required: false, example: "default" })
+  @ApiQuery({ name: "tenantId", required: false, type: "string", format: "uuid" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Tìm thấy bản dịch",
+    type: Translation,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy bản dịch",
+  })
+  async findTranslation(
+    @Param("key") key: string,
+    @Query("locale") locale: string = "{{ default_locale }}",
+    @Query("namespace") namespace: string = "default",
+    @Query("tenantId", new ParseUUIDPipe({ optional: true })) tenantId?: string,
+  ): Promise<Translation | null> {
+    return this.translationService.findByKeyAndLocale(
+      key,
+      locale,
+      namespace,
+      tenantId,
+    );
+  }
+
+  /**
+   * Resolve translation với fallback chain.
+   *
+   * Trả về bản dịch đã resolve theo thứ tự:
+   * cache → tenant → global → fallback locale → key gốc
+   *
+   * @param key - Translation key
+   * @param locale - Locale code
+   * @param namespace - Namespace
+   * @param tenantId - Tenant ID
+   * @returns ResolvedTranslation với thông tin source
+   */
+  @Get("translations/:key/resolve")
+  @ApiOperation({
+    summary: "Resolve translation với fallback",
+    description: "Resolve bản dịch với fallback chain: cache -> tenant -> global -> fallback locale -> key gốc.",
+  })
+  @ApiParam({
+    name: "key",
+    description: "Translation key",
+    example: "common.save",
+  })
+  @ApiQuery({ name: "locale", required: false, example: "{{ default_locale }}" })
+  @ApiQuery({ name: "namespace", required: false, example: "default" })
+  @ApiQuery({ name: "tenantId", required: false, type: "string", format: "uuid" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Resolved translation",
+    schema: {
+      example: {
+        value: "Lưu",
+        source: "global",
+        resolvedLocale: "vi-VN",
+        tenantId: null,
+      },
+    },
+  })
+  async resolveTranslation(
+    @Param("key") key: string,
+    @Query("locale") locale: string = "{{ default_locale }}",
+    @Query("namespace") namespace: string = "default",
+    @Query("tenantId", new ParseUUIDPipe({ optional: true })) tenantId?: string,
+  ): Promise<ResolvedTranslation> {
+    return this.translationService.resolveWithFallback(
+      key,
+      locale,
+      namespace,
+      tenantId,
+    );
+  }
+
+  /**
+   * Cập nhật translation.
+   *
+   * @param key - Translation key
+   * @param locale - Locale code (query param)
+   * @param updateDto - UpdateTranslationDto
+   * @returns Translation entity đã cập nhật
+   */
+  @Patch("translations/:key")
+  @ApiOperation({
+    summary: "Cập nhật translation",
+    description: "Cập nhật bản dịch đã tồn tại. Chỉ cập nhật các field được truyền.",
+  })
+  @ApiParam({
+    name: "key",
+    description: "Translation key cần cập nhật",
+  })
+  @ApiQuery({ name: "locale", required: true, example: "{{ default_locale }}" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Translation đã được cập nhật",
+    type: Translation,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy bản dịch",
+  })
+  async updateTranslation(
+    @Param("key") key: string,
+    @Query("locale") locale: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    updateDto: UpdateTranslationDto,
+  ): Promise<Translation> {
+    return this.translationService.update(key, locale, updateDto);
+  }
+
+  /**
+   * Xóa translation.
+   *
+   * @param key - Translation key
+   * @param locale - Locale code (query param)
+   * @returns Result của xóa
+   */
+  @Delete("translations/:key")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "Xóa translation",
+    description: "Xóa bản dịch theo key và locale.",
+  })
+  @ApiParam({
+    name: "key",
+    description: "Translation key cần xóa",
+  })
+  @ApiQuery({ name: "locale", required: true, example: "{{ default_locale }}" })
+  @ApiResponse({
+    status: HttpStatus.NO_CONTENT,
+    description: "Translation đã được xóa",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy bản dịch",
+  })
+  async removeTranslation(
+    @Param("key") key: string,
+    @Query("locale") locale: string,
+  ): Promise<void> {
+    const deleted = await this.translationService.remove(key, locale);
+    if (!deleted) {
+      throw new Error(
+        `Không tìm thấy bản dịch "${key}" cho locale "${locale}"`,
+      );
+    }
+  }
+
+  // ========================================================================
+  // Utility Endpoints
+  // ========================================================================
+
+  /**
+   * Tìm các bản dịch thiếu.
+   *
+   * So sánh với locale mặc định để phát hiện các keys
+   * chưa có bản dịch cho locale đích.
+   *
+   * @param locale - Locale code cần kiểm tra
+   * @param namespace - Namespace (optional)
+   * @returns List MissingTranslation
+   */
+  @Get("missing")
+  @ApiOperation({
+    summary: "Tìm bản dịch thiếu",
+    description: "So sánh với locale mặc định để phát hiện các keys chưa có bản dịch cho locale được chỉ định.",
+  })
+  @ApiQuery({ name: "locale", required: true, example: "ja-JP" })
+  @ApiQuery({ name: "namespace", required: false, example: "default" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List bản dịch thiếu",
+    schema: {
+      example: [
+        {
+          key: "common.save",
+          namespace: "default",
+          locale: "ja-JP",
+          tenantId: null,
+        },
+      ],
+    },
+  })
+  async findMissing(
+    @Query("locale") locale: string,
+    @Query("namespace") namespace?: string,
+  ): Promise<MissingTranslation[]> {
+    return this.translationService.findMissing(locale, namespace);
+  }
+
+  /**
+   * Discover translation keys từ codebase.
+   *
+   * Quét source code để tìm các translation keys được sử dụng
+   * nhưng chưa có bản dịch.
+   *
+   * @param discoverDto - DiscoverRequestDto
+   * @returns Object chứa kết quả discover
+   */
+  @Post("discover")
+  @ApiOperation({
+    summary: "Discover translation keys",
+    description: "Quét source code để tìm các translation keys chưa có bản dịch. Hữu ích cho CI/CD pipeline.",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Discover hoàn tất",
+    schema: {
+      example: {
+        totalKeys: 150,
+        missingKeys: [
+          {
+            key: "feature.new_button",
+            namespace: "public",
+            locale: "vi-VN",
+            location: "src/components/Feature.tsx:42",
+          },
+        ],
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Đường dẫn thư mục không hợp lệ",
+  })
+  async discover(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    discoverDto: DiscoverRequestDto,
+  ): Promise<{
+    totalKeys: number;
+    missingKeys: Array<{
+      key: string;
+      namespace: string;
+      locale: string;
+      location: string;
+    }>;
+  }> {
+    return this.translationService.discover(discoverDto);
+  }
+}

@@ -1,0 +1,248 @@
+# ===========================================================================
+# CP39 — i18n/L10n Runtime
+# ===========================================================================
+# File contributions declaration cho 4 stacks: FastAPI, NestJS, Angular, React
+#
+# Capabilities:
+# - locale_format: Date/number/currency formatting theo locale
+# - translation_manage: CRUD translation entries với tenant isolation
+# - language_switch: Real-time language switch qua WebSocket/SSE
+#
+# Storage: Database (SQLite/PostgreSQL) + Redis cache
+# ===========================================================================
+
+pack:
+  id: "CP39"
+  name: "i18n/L10n Runtime"
+  internal_id: "cp39_i18n_runtime"
+  version: "1.0.0"
+  status: "stable"
+  category: "internationalization"
+  depends_on: ["CP01", "CP02"]
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP39"
+    range: "MDC-CP39-001 to MDC-CP39-015"
+  capabilities_provided:
+    - locale_format
+    - translation_manage
+    - language_switch
+  capabilities:
+    - id: "locale_format"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "translation_manage"
+      emitter: "fastapi, nestjs"
+    - id: "language_switch"
+      emitter: "fastapi, nestjs, angular, react"
+  definitions:
+    - name: "LocaleConfig"
+      description: "Cấu hình locale (BCP 47 code, date/number/currency format)"
+    - name: "TranslationEntry"
+      description: "Bản ghi translation với key, namespace, locale, tenant scope"
+    - name: "TranslationStore"
+      description: "Abstract storage interface cho translation backend (SQLite/PostgreSQL)"
+    - name: "LocaleFormatter"
+      description: "Engine format date/number/currency/relative time theo locale"
+  obligations:
+    - name: "TranslationFallbackChain"
+      description: "Translation resolution phải theo chain: cache → tenant → global → fallback locale → raw key"
+    - name: "TenantTranslationIsolation"
+      description: "Tenant translations phải được isolate và có fallback về global"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend
+      # ------------------------------------------------------------------
+      - path: "app/i18n/models.py"
+        file_type: "i18n_models"
+        template: "cp39_i18n_runtime/i18n_models.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["locales", "translations"]
+      - path: "app/i18n/schemas.py"
+        file_type: "i18n_schemas"
+        template: "cp39_i18n_runtime/i18n_schemas.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["locales", "translations"]
+      - path: "app/i18n/services/translation_service.py"
+        file_type: "translation_service"
+        template: "cp39_i18n_runtime/i18n_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["locales", "translations"]
+      - path: "app/i18n/services/locale_formatter.py"
+        file_type: "locale_formatter"
+        template: "cp39_i18n_runtime/i18n_formatter.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["locales"]
+      - path: "app/i18n/routers/i18n_router.py"
+        file_type: "i18n_router"
+        template: "cp39_i18n_runtime/i18n_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/i18n/services/cache.py"
+        file_type: "i18n_cache"
+        template: "cp39_i18n_runtime/i18n_cache.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/i18n/services/discover.py"
+        file_type: "i18n_discover"
+        template: "cp39_i18n_runtime/i18n_discover.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/i18n/ws.py"
+        file_type: "i18n_websocket"
+        template: "cp39_i18n_runtime/i18n_ws.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/i18n/middleware.py"
+        file_type: "i18n_middleware"
+        template: "cp39_i18n_runtime/i18n_middleware.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["locales"]
+      # ------------------------------------------------------------------
+      # NestJS — Backend
+      # ------------------------------------------------------------------
+      - path: "src/i18n/i18n.module.ts"
+        file_type: "i18n_module"
+        template: "cp39_i18n_runtime/i18n.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/i18n/entities/translation.entity.ts"
+        file_type: "translation_entity"
+        template: "cp39_i18n_runtime/translation.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["translations"]
+      - path: "src/i18n/entities/locale.entity.ts"
+        file_type: "locale_entity"
+        template: "cp39_i18n_runtime/locale.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["locales"]
+      - path: "src/i18n/dtos/translation.dto.ts"
+        file_type: "translation_dto"
+        template: "cp39_i18n_runtime/translation.dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["translations"]
+      - path: "src/i18n/services/translation.service.ts"
+        file_type: "translation_service"
+        template: "cp39_i18n_runtime/translation.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["locales", "translations"]
+      - path: "src/i18n/controllers/translation.controller.ts"
+        file_type: "translation_controller"
+        template: "cp39_i18n_runtime/translation.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/i18n/services/locale-formatter.service.ts"
+        file_type: "locale_formatter"
+        template: "cp39_i18n_runtime/locale-formatter.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["locales"]
+      - path: "src/i18n/services/i18n-cache.service.ts"
+        file_type: "i18n_cache"
+        template: "cp39_i18n_runtime/i18n-cache.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/i18n/gateways/i18n.gateway.ts"
+        file_type: "i18n_gateway"
+        template: "cp39_i18n_runtime/i18n.gateway.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/i18n/interceptors/i18n.interceptor.ts"
+        file_type: "i18n_interceptor"
+        template: "cp39_i18n_runtime/i18n.interceptor.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["locales"]
+      # ------------------------------------------------------------------
+      # Angular — Frontend
+      # ------------------------------------------------------------------
+      - path: "src/app/core/i18n/i18n-runtime.service.ts"
+        file_type: "i18n_runtime_service"
+        template: "cp39_i18n_runtime/i18n-runtime.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["locales", "translations"]
+      - path: "src/app/core/i18n/locale-directive.ts"
+        file_type: "locale_directive"
+        template: "cp39_i18n_runtime/locale-directive.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/core/i18n/translation-sync.service.ts"
+        file_type: "translation_sync"
+        template: "cp39_i18n_runtime/translation-sync.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/core/i18n/locale-formatter.pipe.ts"
+        file_type: "locale_formatter_pipe"
+        template: "cp39_i18n_runtime/locale-formatter.pipe.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["locales"]
+      # ------------------------------------------------------------------
+      # React — Frontend
+      # ------------------------------------------------------------------
+      - path: "src/i18n/hooks/useTranslation.ts"
+        file_type: "translation_hook"
+        template: "cp39_i18n_runtime/useTranslation.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/i18n/hooks/useLocale.ts"
+        file_type: "locale_hook"
+        template: "cp39_i18n_runtime/useLocale.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["locales"]
+      - path: "src/i18n/hooks/useFormattedValue.ts"
+        file_type: "formatted_value_hook"
+        template: "cp39_i18n_runtime/useFormattedValue.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/i18n/workers/TranslationSyncWorker.ts"
+        file_type: "sync_worker"
+        template: "cp39_i18n_runtime/TranslationSyncWorker.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/i18n/components/I18nRuntimeProvider.tsx"
+        file_type: "i18n_provider"
+        template: "cp39_i18n_runtime/I18nRuntimeProvider.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["locales", "translations"]
+  frontend_integration:
+    angular:
+      - I18nRuntimeService
+      - LocaleDirective
+      - TranslationSyncService
+      - LocaleFormatterPipe
+    react:
+      - useTranslation
+      - useLocale
+      - useFormattedValue
+      - TranslationSyncWorker
+      - I18nRuntimeProvider
+  recipes:
+    - basic_i18n_recipe
+    - multitenant_i18n_recipe

@@ -1,0 +1,434 @@
+"""
+Locale detection middleware cho FastAPI.
+
+Tao tu dong boi CP39 — khong sua thu cong.
+
+Tuc dong xac dinh locale cua nguoi dung tu:
+1. Query parameter (?locale=vi)
+2. Cookie (X-Locale=vi)
+3. Accept-Language header
+4. Default locale cua ung dung
+
+Va set locale vao request.state.locale de cac route handlers co the su dung.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any, Awaitable, Callable
+
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Locale detection helpers
+# ============================================================================
+
+
+def parse_accept_language(header_value: str) -> list[tuple[str, float]]:
+    """Phan tich Accept-Language header thanh danh sach (locale, quality).
+
+    Accept-Language format: "vi-VN;q=0.9,en-US;q=0.8,en;q=0.7"
+    Tra ve danh sach da sap xep theo quality (cao nhat truoc).
+
+    Args:
+        header_value: Chuoi Accept-Language header.
+
+    Returns:
+        Danh sach (locale_code, quality_score) sap xep giam dan.
+
+    Examples:
+        >>> parse_accept_language("vi-VN;q=0.9,en;q=0.8")
+        [("vi-VN", 0.9), ("en", 0.8)]
+    """
+    if not header_value:
+        return []
+
+    languages: list[tuple[str, float]] = []
+    # Pattern: language-tag[,;q=quality]*
+    for part in header_value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+
+        # Tach locale va quality
+        segments = part.split(";")
+        locale_code = segments[0].strip()
+        quality = 1.0  # Mac dinh: quality = 1.0
+
+        if len(segments) > 1:
+            for seg in segments[1:]:
+                seg = seg.strip()
+                if seg.lower().startswith("q="):
+                    try:
+                        quality = float(seg[2:])
+                    except ValueError:
+                        quality = 1.0
+
+        if locale_code:
+            languages.append((locale_code, quality))
+
+    # Sap xep theo quality giam dan
+    languages.sort(key=lambda x: x[1], reverse=True)
+    return languages
+
+
+def detect_locale_from_accept_language(
+    accept_language: str,
+    supported_locales: list[str],
+) -> str | None:
+    """Xac dinh locale tu Accept-Language header.
+
+    So sanh danh sach locale cua browser voi danh sach locale
+    ho tro cua ung dung de tim locale phu hop nhat.
+
+    Support cai:
+    - Exact match: "vi-VN" -> "vi-VN"
+    - Prefix match: "vi-VN" -> "vi" (neu "vi-VN" khong co trong supported)
+    - Wildcard: "*" -> bat ky locale nao
+
+    Args:
+        accept_language: Chuoi Accept-Language header.
+        supported_locales: Danh sach locale codes ung dung ho tro.
+
+    Returns:
+        Locale code phu hop nhat hoac None neu khong tim thay.
+    """
+    parsed = parse_accept_language(accept_language)
+
+    for locale_code, quality in parsed:
+        if quality <= 0:
+            continue
+
+        # Wildcard: ho tro bat ky locale nao
+        if locale_code == "*":
+            return supported_locales[0] if supported_locales else None
+
+        # Exact match
+        if locale_code in supported_locales:
+            return locale_code
+
+        # Prefix match: "vi-VN" -> "vi"
+        prefix = locale_code.split("-")[0]
+        if prefix in supported_locales:
+            return prefix
+
+    return None
+
+
+def detect_locale_from_query(request: Request, param: str = "locale") -> str | None:
+    """Xac dinh locale tu query parameter.
+
+    Kiem tra query string (?locale=vi) de lay yeu cau locale cua khach hang.
+
+    Args:
+        request: FastAPI Request object.
+        param: Ten query parameter (mac dinh: "locale").
+
+    Returns:
+        Locale code tu query parameter hoac None.
+    """
+    locale = request.query_params.get(param)
+    if locale:
+        # Validate: chi cho phep chu cai va ky tu lien ket
+        if re.match(r"^[a-zA-Z]{2}(-[a-zA-Z0-9]+)*$", locale):
+            return locale
+        logger.warning(f"Locale param khong hop le: {locale}")
+    return None
+
+
+def detect_locale_from_cookie(request: Request, cookie_name: str = "X-Locale") -> str | None:
+    """Xac dinh locale tu cookie.
+
+    Doc cookie de ghi nho yeu thich locale cua nguoi dung.
+
+    Args:
+        request: FastAPI Request object.
+        cookie_name: Ten cookie chua locale (mac dinh: "X-Locale").
+
+    Returns:
+        Locale code tu cookie hoac None.
+    """
+    locale = request.cookies.get(cookie_name)
+    if locale:
+        # Validate format
+        if re.match(r"^[a-zA-Z]{2}(-[a-zA-Z0-9]+)*$", locale):
+            return locale
+        logger.warning(f"Locale cookie khong hop le: {locale}")
+    return None
+
+
+def detect_locale_from_header(
+    request: Request,
+    header_name: str = "X-Locale",
+) -> str | None:
+    """Xac dinh locale tu HTTP header.
+
+    Kiem tra HTTP header (X-Locale) de xac dinh locale.
+
+    Args:
+        request: FastAPI Request object.
+        header_name: Ten header chua locale (mac dinh: "X-Locale").
+
+    Returns:
+        Locale code tu header hoac None.
+    """
+    locale = request.headers.get(header_name)
+    if locale:
+        if re.match(r"^[a-zA-Z]{2}(-[a-zA-Z0-9]+)*$", locale):
+            return locale.strip()
+        logger.warning(f"Locale header khong hop le: {locale}")
+    return None
+
+
+# ============================================================================
+# Locale Detection Chain
+# ============================================================================
+
+
+class LocaleDetector:
+    """Chain of responsibility de xac dinh locale theo priority.
+
+    Priority (cao -> thap):
+    1. Query parameter (?locale=vi) — nen cang nh
+    2. Cookie (X-Locale) — yeu thich da luu cua nguoi dung
+    3. HTTP header (X-Locale) — yeu cau tu client
+    4. Accept-Language header — yeu thich mac dinh cua browser
+    5. Default locale cua ung dung — fallback cuoi cung
+
+    Attrs:
+        supported_locales: Danh sach locale codes ung dung ho tro.
+        default_locale: Locale code mac dinh.
+        query_param: Ten query parameter.
+        cookie_name: Ten cookie.
+        header_name: Ten HTTP header.
+    """
+
+    def __init__(
+        self,
+        supported_locales: list[str] | None = None,
+        default_locale: str = "{{ default_locale }}",
+        query_param: str = "locale",
+        cookie_name: str = "X-Locale",
+        header_name: str = "X-Locale",
+    ) -> None:
+        """Khoi tao LocaleDetector.
+
+        Args:
+            supported_locales: Danh sach locale codes.
+            default_locale: Locale mac dinh.
+            query_param: Ten query parameter.
+            cookie_name: Ten cookie.
+            header_name: Ten HTTP header.
+        """
+        self.supported_locales = supported_locales or ["{{ default_locale }}"]
+        self.default_locale = default_locale
+        self.query_param = query_param
+        self.cookie_name = cookie_name
+        self.header_name = header_name
+
+    def detect(self, request: Request) -> str:
+        """Xac dinh locale theo priority chain.
+
+        Args:
+            request: FastAPI Request object.
+
+        Returns:
+            Locale code da xac dinh (luon co gia tri, toi thieu la default).
+        """
+        # 1. Query parameter — nen cang nh
+        locale = detect_locale_from_query(request, self.query_param)
+        if locale and locale in self.supported_locales:
+            logger.debug(f"Locale from query param: {locale}")
+            return locale
+
+        # 2. Cookie
+        locale = detect_locale_from_cookie(request, self.cookie_name)
+        if locale and locale in self.supported_locales:
+            logger.debug(f"Locale from cookie: {locale}")
+            return locale
+
+        # 3. HTTP header
+        locale = detect_locale_from_header(request, self.header_name)
+        if locale and locale in self.supported_locales:
+            logger.debug(f"Locale from header: {locale}")
+            return locale
+
+        # 4. Accept-Language header
+        accept_lang = request.headers.get("accept-language", "")
+        if accept_lang:
+            locale = detect_locale_from_accept_language(accept_lang, self.supported_locales)
+            if locale:
+                logger.debug(f"Locale from Accept-Language: {locale}")
+                return locale
+
+        # 5. Default locale
+        logger.debug(f"Using default locale: {self.default_locale}")
+        return self.default_locale
+
+
+# ============================================================================
+# FastAPI Middleware
+# ============================================================================
+
+
+class I18nMiddleware(BaseHTTPMiddleware):
+    """Middleware tu dong xac dinh locale va inject vao request.state.
+
+    Sau khi middleware chay, cac route handlers co the truy cap locale
+    qua request.state.locale va request.state.locale_detector.
+
+    Usage:
+        app.add_middleware(I18nMiddleware, supported_locales=["en", "vi", "fr"])
+
+    Ho:
+        - Xac dinh locale theo priority chain
+        - Set request.state.locale = locale_code
+        - Set Response header Content-Language
+        - Skip cac path khong can locale (health check, docs)
+    """
+
+    def __init__(
+        self,
+        app,
+        supported_locales: list[str] | None = None,
+        default_locale: str = "{{ default_locale }}",
+        skip_paths: list[str] | None = None,
+        set_response_header: bool = True,
+        set_cookie: bool = False,
+        query_param: str = "locale",
+        cookie_name: str = "X-Locale",
+        header_name: str = "X-Locale",
+    ) -> None:
+        """Khoi tao I18nMiddleware.
+
+        Args:
+            app: FastAPI application.
+            supported_locales: Danh sach locale codes ho tro.
+            default_locale: Locale mac dinh.
+            skip_paths: Danh sach paths bo qua middleware.
+            set_response_header: Co them Content-Language header khong.
+            set_cookie: Co ghi cookie locale lai khong.
+            query_param: Ten query parameter de lay locale.
+            cookie_name: Ten cookie de luu locale.
+            header_name: Ten HTTP header de lay locale.
+        """
+        super().__init__(app)
+        self.supported_locales = supported_locales or ["{{ default_locale }}"]
+        self.detector = LocaleDetector(
+            supported_locales=self.supported_locales,
+            default_locale=default_locale,
+            query_param=query_param,
+            cookie_name=cookie_name,
+            header_name=header_name,
+        )
+        self.skip_paths = skip_paths or ["/docs", "/openapi.json", "/redoc", "/health", "/favicon.ico"]
+        self.set_response_header = set_response_header
+        self.set_cookie = set_cookie
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        """Dispatch request voi locale detection.
+
+        Flow:
+        1. Kiem tra path co can skip khong
+        2. Xac dinh locale theo priority chain
+        3. Set locale vao request.state
+        4. Goi next middleware/handler
+        5. Them Content-Language header vao response (neu co)
+
+        Args:
+            request: Incoming FastAPI request.
+            call_next: Next middleware/handler callable.
+
+        Returns:
+            Response object.
+        """
+        # Skip neu path khong can locale
+        if any(request.url.path.startswith(p) for p in self.skip_paths):
+            # Van set default locale de co the su dung trong template
+            request.state.locale = self.detector.default_locale
+            response = await call_next(request)
+            return response
+
+        # Xac dinh locale
+        locale = self.detector.detect(request)
+
+        # Set locale vao request state de route handlers truy cap
+        request.state.locale = locale
+        request.state.supported_locales = self.supported_locales
+
+        # Goi next handler
+        response = await call_next(request)
+
+        # Them Content-Language header
+        if self.set_response_header:
+            response.headers["Content-Language"] = locale
+
+        # Ghi cookie neu client chon locale qua query param
+        if self.set_cookie:
+            query_locale = detect_locale_from_query(request, self.detector.query_param)
+            if query_locale:
+                response.set_cookie(
+                    key=self.detector.cookie_name,
+                    value=query_locale,
+                    max_age=60 * 60 * 24 * 30,  # 30 ngay
+                    path="/",
+                    httponly=False,
+                    samesite="lax",
+                )
+                logger.info(f"Set locale cookie: {query_locale}")
+
+        return response
+
+
+# ============================================================================
+# Dependency de inject locale vao route handler
+# ============================================================================
+
+
+async def get_request_locale(request: Request) -> str:
+    """Dependency function de lay locale tu request state.
+
+    Su dung trong route handlers de inject locale mot cach de dang.
+
+    Usage:
+        @router.get("/messages")
+        async def get_messages(locale: str = Depends(get_request_locale)):
+            return {"greeting": translate("hello", locale=locale)}
+
+    Args:
+        request: FastAPI Request.
+
+    Returns:
+        Locale code.
+    """
+    return getattr(request.state, "locale", "{{ default_locale }}")
+
+
+# ============================================================================
+# Default locales tu template context
+# ============================================================================
+
+SUPPORTED_LOCALES: list[str] = [
+{% for locale in locales %}
+    "{{ locale.code }}",
+{% endfor %}
+]
+
+DEFAULT_LOCALE: str = "{{ default_locale }}"
+
+__all__ = [
+    "I18nMiddleware",
+    "LocaleDetector",
+    "get_request_locale",
+    "detect_locale_from_accept_language",
+    "detect_locale_from_query",
+    "detect_locale_from_cookie",
+    "detect_locale_from_header",
+    "parse_accept_language",
+    "SUPPORTED_LOCALES",
+    "DEFAULT_LOCALE",
+]

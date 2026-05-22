@@ -1,0 +1,307 @@
+"""
+Auto-discover scanner — tim translation key trong source code.
+
+Tao tu dong boi CP39 — khong sua thu cong.
+
+Quet tung to nguon de phat hien cac translation key chua co ban dich.
+Ho tro quet cac loai tep:
+- Jinja2 templates (.jinja2, .html.jinja2)
+- HTML (.html)
+- TSX/JSX (.tsx, .jsx)
+- Python code (.py)
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Regex patterns de trích xuất translation key
+# ============================================================================
+
+# Jinja2 templates: uses _()/gettext() call syntax or pipe filter
+JINJA2_PATTERNS = [
+    re.compile(r'''\{\{\s*_["']([^"']+)["']\s*\}\}'''),          # pipe filter: key|_
+    re.compile(r'''\{\{\s*_t?\(["']([^"']+)["']\s*\)\s*\}\}'''), # _() call inside template
+    re.compile(r'''\{\{\s*gettext\(["']([^"']+)["']\s*\)\s*\}\}'''), # gettext() call inside template
+]
+
+# HTML: data-i18n="key", data-translate="key"
+HTML_PATTERNS = [
+    re.compile(r'''data-i18n=["']([^"']+)["']'''),
+    re.compile(r'''data-translate=["']([^"']+)["']'''),
+    re.compile(r'''data-t=["']([^"']+)["']'''),
+]
+
+# TSX/JSX: t("key"), intl.formatMessage({id: "key"}), {"key"|_}
+TSX_PATTERNS = [
+    re.compile(r'''t\(["']([^"']+)["']\)'''),                      # t("key")
+    re.compile(r'''formatMessage\(\{[^}]*id:\s*["']([^"']+)["']'''), # intl.formatMessage({id: "key"})
+    re.compile(r'''useTranslation[^{]*\{\s*[^}]*\(\s*["']([^"']+)["']'''),
+]
+
+# Python code: _("key"), _t("key"), gettext("key"), translate("key")
+CODE_PATTERNS = [
+    re.compile(r'''_["']([^"']+)["']'''),                          # _("key")
+    re.compile(r'''_t\(["']([^"']+)["']\)'''),                     # _t("key")
+    re.compile(r'''gettext\(["']([^"']+)["']\)'''),                # gettext("key")
+    re.compile(r'''translate\(["']([^"']+)["']\)'''),              # translate("key")
+]
+
+
+# Map file extension -> source type
+EXTENSION_MAP: dict[str, str] = {
+    ".jinja2": "template",
+    ".html.jinja2": "template",
+    ".html": "html",
+    ".htm": "html",
+    ".tsx": "tsx",
+    ".jsx": "tsx",
+    ".py": "code",
+}
+
+
+class TranslationDiscoverer:
+    """Scanner tu dong tim translation key trong source code.
+
+    Quet qua cac tep nguon, trích xuất cac key dung trong cac goi goi
+    dich thu (gettext, t(), data-i18n,...) va so sanh voi database
+    de tim nhung key chua co ban dich.
+
+    Attrs:
+        discover_sources: Danh sach loai nguon can quet.
+    """
+
+    def __init__(self, discover_sources: list[str] | None = None) -> None:
+        """Khoi tao TranslationDiscoverer.
+
+        Args:
+            discover_sources: Danh sach loai nguon can quet
+                             (template, html, tsx, code).
+        """
+        self.discover_sources = discover_sources or ["template", "html", "tsx", "code"]
+
+    def scan_directory(
+        self,
+        directory: str,
+        exclude_dirs: list[str] | None = None,
+    ) -> dict[str, list[str]]:
+        """Quet toan bo thu muc de tim translation keys.
+
+        Tra ve dict {source_type: [key1, key2, ...]} cho moi loai nguon.
+
+        Args:
+            directory: Duong dan thu muc can quet.
+            exclude_dirs: Danh sach ten thu muc bo qua.
+
+        Returns:
+            Dict {source_type: danh sach keys tim thay}.
+        """
+        exclude = exclude_dirs or [".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build"]
+        results: dict[str, list[str]] = {src: [] for src in self.discover_sources}
+        root = Path(directory)
+
+        if not root.is_dir():
+            logger.warning(f"Duong dan khong hop le: {directory}")
+            return results
+
+        for file_path in root.rglob("*"):
+            # Bo qua thu muc duoc loai tru
+            parts = file_path.relative_to(root).parts
+            if any(p in exclude for p in parts[:-1]):
+                continue
+
+            # Chi xet file thuc su
+            if not file_path.is_file():
+                continue
+
+            # Kiem tra extension
+            source_type = self._get_source_type(file_path)
+            if source_type is None or source_type not in self.discover_sources:
+                continue
+
+            # Trich xuat keys tu file
+            try:
+                keys = self.scan_file(str(file_path), source_type)
+                for key in keys:
+                    if key not in results[source_type]:
+                        results[source_type].append(key)
+            except (UnicodeDecodeError, PermissionError) as exc:
+                logger.debug(f"Khong the doc file {file_path}: {exc}")
+
+        return results
+
+    def scan_file(self, file_path: str, source_type: str | None = None) -> list[str]:
+        """Quet mot file de tim translation keys.
+
+        Args:
+            file_path: Duong dan den file can quet.
+            source_type: Loai nguon (neu None, se suy ra tu extension).
+
+        Returns:
+            Danh sach keys tim thay trong file.
+        """
+        path = Path(file_path)
+
+        if source_type is None:
+            source_type = self._get_source_type(path)
+            if source_type is None:
+                return []
+
+        # Doc noi dung file voi UTF-8
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, PermissionError) as exc:
+            logger.debug(f"Khong the doc {file_path}: {exc}")
+            return []
+
+        # Trich xuat keys theo loai nguon
+        keys: list[str] = []
+        if source_type == "template":
+            keys = self.extract_from_template(content)
+        elif source_type == "html":
+            keys = self.extract_from_html(content)
+        elif source_type == "tsx":
+            keys = self.extract_from_tsx(content)
+        elif source_type == "code":
+            keys = self.extract_from_code(content)
+        else:
+            logger.warning(f"Source type '{source_type}' khong ho tro")
+            return []
+
+        return keys
+
+    def extract_from_template(self, content: str) -> list[str]:
+        """Trich xuat translation keys tu Jinja2 template.
+
+        Tim cac bat chuoi:
+        - _("key")
+        - _t("key")
+        - gettext("key")
+
+        Args:
+            content: Noi dung template.
+
+        Returns:
+            Danh sach keys tim thay.
+        """
+        keys: list[str] = []
+        for pattern in JINJA2_PATTERNS:
+            found = pattern.findall(content)
+            keys.extend(found)
+        return list(dict.fromkeys(keys))  # Keep order, remove duplicates
+
+    def extract_from_html(self, content: str) -> list[str]:
+        """Trich xuat translation keys tu HTML file.
+
+        Tim cac thuoc tinh:
+        - data-i18n="key"
+        - data-translate="key"
+        - data-t="key"
+
+        Va ca Jinja2 patterns neu HTML co kehop Jinja2.
+
+        Args:
+            content: Noi dung HTML.
+
+        Returns:
+            Danh sach keys tim thay.
+        """
+        keys: list[str] = []
+        # HTML data attributes
+        for pattern in HTML_PATTERNS:
+            found = pattern.findall(content)
+            keys.extend(found)
+        # Jinja2 trong HTML
+        keys.extend(self.extract_from_template(content))
+        return list(dict.fromkeys(keys))
+
+    def extract_from_tsx(self, content: str) -> list[str]:
+        """Trich xuat translation keys tu TSX/JSX file.
+
+        Tim cac goi goi:
+        - t("key")
+        - intl.formatMessage({id: "key"})
+        - useTranslation hook
+
+        Args:
+            content: Noi dung TSX/JSX.
+
+        Returns:
+            Danh sach keys tim thay.
+        """
+        keys: list[str] = []
+        for pattern in TSX_PATTERNS:
+            found = pattern.findall(content)
+            keys.extend(found)
+        return list(dict.fromkeys(keys))
+
+    def extract_from_code(self, content: str) -> list[str]:
+        """Trich xuat translation keys tu Python code.
+
+        Tim cac goi goi:
+        - _("key")
+        - _t("key")
+        - gettext("key")
+        - translate("key")
+
+        Args:
+            content: Noi dung Python code.
+
+        Returns:
+            Danh sach keys tim thay.
+        """
+        keys: list[str] = []
+        for pattern in CODE_PATTERNS:
+            found = pattern.findall(content)
+            keys.extend(found)
+        return list(dict.fromkeys(keys))
+
+    def _get_source_type(self, path: Path) -> str | None:
+        """Xac dinh loai nguon tu extension cua file.
+
+        Args:
+            path: Duong dan file.
+
+        Returns:
+            Loai nguon (template, html, tsx, code) hoac None.
+        """
+        # Kiem tra cac extension dac bieng truoc
+        name = path.name
+        suffix = path.suffix
+
+        # Kiem tra .html.jinja2 truoc .jinja2
+        if name.endswith(".html.jinja2"):
+            return "template" if "template" in self.discover_sources else None
+
+        source_type = EXTENSION_MAP.get(suffix)
+        if source_type and source_type in self.discover_sources:
+            return source_type
+
+        # Kiem tra cac pattern khac
+        if ".jinja2" in name:
+            return "template" if "template" in self.discover_sources else None
+
+        return None
+
+
+# ============================================================================
+# Default discover sources tu template context
+# ============================================================================
+
+DEFAULT_DISCOVER_SOURCES: list[str] = [
+{% for src in discover_sources %}
+    "{{ src }}",
+{% endfor %}
+]
+
+__all__ = [
+    "TranslationDiscoverer",
+    "DEFAULT_DISCOVER_SOURCES",
+]
