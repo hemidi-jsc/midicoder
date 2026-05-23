@@ -1,0 +1,846 @@
+/**
+ * ApprovalHistoryComponent — Lịch sử phê duyệt.
+ *
+ * Hiển thị bảng dữ liệu các yêu cầu phê duyệt đã xử lý với tính năng sắp xếp,
+ * lọc, phân trang. Hỗ trợ lọc theo khoảng thời gian. Tùy chọn xuất dữ liệu
+ * dưới dạng CSV.
+ *
+ * Tạo tự động bởi CP42 — không sửa thủ công.
+ */
+
+import {
+  Component,
+  OnInit,
+  ChangeDetectionStrategy,
+  inject,
+  signal,
+  computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+
+import { ApprovalService } from './approval.service';
+import { ApprovalStore } from './approval.store';
+import {
+  ApprovalRequest,
+  ApprovalStatus,
+  ApprovalType
+} from './approval-types';
+
+// ===========================================================================
+// Cấu hình từ template
+// ===========================================================================
+
+/** Số yêu cầu phê duyệt mẫu. */
+const NUM_REQUESTS: number = {{ num_requests }};
+
+/**
+ * ApprovalHistoryComponent — Lịch sử phê duyệt.
+ *
+ * Sử dụng:
+ *   <app-approval-history></app-approval-history>
+ */
+@Component({
+  selector: 'app-approval-history',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+
+  template:
+{% raw %}
+`
+    <div class="approval-history">
+      <!-- Tiêu đề -->
+      <header class="history-header">
+        <h1>Lịch Sử Phê Duyệt</h1>
+        <span class="total-count">Tổng: {{ totalCount() }} yêu cầu</span>
+      </header>
+
+      <!-- Bộ lọc -->
+      <section class="filter-section">
+        <!-- Lọc theo khoảng thời gian -->
+        <div class="date-range-filter">
+          <label for="date-from">Từ ngày:</label>
+          <input
+            id="date-from"
+            type="date"
+            [(ngModel)]="dateFrom"
+            (change)="onDateFilterChange()"
+          />
+
+          <label for="date-to">Đến ngày:</label>
+          <input
+            id="date-to"
+            type="date"
+            [(ngModel)]="dateTo"
+            (change)="onDateFilterChange()"
+          />
+
+          <button class="btn-clear-date" (click)="clearDateFilter()">
+            Xóa lọc ngày
+          </button>
+        </div>
+
+        <!-- Lọc theo loại và trạng thái -->
+        <div class="combined-filter">
+          <label for="history-type-filter">Loại:</label>
+          <select id="history-type-filter" [(ngModel)]="selectedType" (change)="applyFilters()">
+            <option value="">Tất cả</option>
+            <option value="sequential">Tuần tự</option>
+            <option value="parallel">Song song</option>
+            <option value="matrix">Ma trận</option>
+            <option value="voting">Biểu quyết</option>
+            <option value="single">Đơn lẻ</option>
+          </select>
+
+          <label for="history-status-filter">Trạng thái:</label>
+          <select id="history-status-filter" [(ngModel)]="selectedStatus" (change)="applyFilters()">
+            <option value="">Tất cả</option>
+            <option value="pending">Đang chờ</option>
+            <option value="approved">Đã phê duyệt</option>
+            <option value="rejected">Đã từ chối</option>
+            <option value="escalated">Đã leo thang</option>
+            <option value="delegated">Đã ủy quyền</option>
+            <option value="expired">Hết hạn</option>
+            <option value="cancelled">Đã hủy</option>
+          </select>
+
+          <label for="search-input">Tìm kiếm:</label>
+          <input
+            id="search-input"
+            type="text"
+            [(ngModel)]="searchText"
+            (input)="onSearchInput()"
+            placeholder="Tìm theo ID hoặc tiêu đề..."
+          />
+        </div>
+      </section>
+
+      <!-- Nút hành động -->
+      <section class="action-bar">
+        <button class="btn-action" (click)="loadHistory()">Làm mới</button>
+        <button class="btn-action btn-export" (click)="exportToCSV()">Xuất CSV</button>
+      </section>
+
+      <!-- Bảng dữ liệu -->
+      <section class="datatable-section">
+        <table class="approval-table">
+          <thead>
+            <tr>
+              <th (click)="onSortChange('requestId')" class="sortable">
+                ID {{ getSortIndicator('requestId') }}
+              </th>
+              <th (click)="onSortChange('title')" class="sortable">
+                Tiêu Đề {{ getSortIndicator('title') }}
+              </th>
+              <th (click)="onSortChange('approvalType')" class="sortable">
+                Loại {{ getSortIndicator('approvalType') }}
+              </th>
+              <th (click)="onSortChange('status')" class="sortable">
+                Trạng Thái {{ getSortIndicator('status') }}
+              </th>
+              <th (click)="onSortChange('currentStep')" class="sortable">
+                Bước {{ getSortIndicator('currentStep') }}
+              </th>
+              <th (click)="onSortChange('createdAt')" class="sortable">
+                Ngày Tạo {{ getSortIndicator('createdAt') }}
+              </th>
+              <th (click)="onSortChange('deadline')" class="sortable">
+                Hạn {{ getSortIndicator('deadline') }}
+              </th>
+              <th>Hành Động</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let request of paginatedRequests()">
+              <td class="cell-id">#{{ request.requestId }}</td>
+              <td class="cell-title">{{ request.title }}</td>
+              <td>{{ getTypeLabel(request.approvalType) }}</td>
+              <td>
+                <span class="status-pill" [class]="getStatusClass(request.status)">
+                  {{ getStatusLabel(request.status) }}
+                </span>
+              </td>
+              <td>{{ request.currentStep }}/{{ request.totalSteps }}</td>
+              <td>{{ request.createdAt | date:'dd/MM/yyyy' }}</td>
+              <td>
+                <span [class.overdue]="isOverdue(request.deadline)">
+                  {{ request.deadline | date:'dd/MM/yyyy' }}
+                </span>
+              </td>
+              <td>
+                <button class="btn-view" (click)="onViewDetails(request)">
+                  Xem chi tiết
+                </button>
+              </td>
+            </tr>
+            <tr *ngIf="!paginatedRequests().length">
+              <td colspan="8" class="empty-row">
+                Không có dữ liệu phù hợp với bộ lọc.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Phân trang -->
+      <section class="pagination-section" *ngIf="totalCount() > pageSize()">
+        <div class="pagination-info">
+          Hiển thị {{ paginatedRequests().length }} / {{ totalCount() }} kết quả
+          (Trang {{ currentPage() + 1 }}/{{ totalPages() }})
+        </div>
+        <div class="pagination-controls">
+          <button
+            class="btn-page"
+            (click)="goToFirstPage()"
+            [disabled]="currentPage() === 0"
+          >
+            « Đầu
+          </button>
+          <button
+            class="btn-page"
+            (click)="goToPrevPage()"
+            [disabled]="currentPage() === 0"
+          >
+            ‹ Trước
+          </button>
+
+          <!-- Các nút trang -->
+          <button
+            class="btn-page"
+            *ngFor="let page of visiblePages(); let i = index"
+            (click)="goToPage(i)"
+            [class.active]="i === currentPage()"
+            [disabled]="i === currentPage()"
+          >
+            {{ i + 1 }}
+          </button>
+
+          <button
+            class="btn-page"
+            (click)="goToNextPage()"
+            [disabled]="currentPage() >= totalPages() - 1"
+          >
+            Tiếp ›
+          </button>
+          <button
+            class="btn-page"
+            (click)="goToLastPage()"
+            [disabled]="currentPage() >= totalPages() - 1"
+          >
+            Cuối »
+          </button>
+        </div>
+
+        <!-- Chọn số lượng trên mỗi trang -->
+        <div class="page-size-selector">
+          <label for="page-size">Mỗi trang:</label>
+          <select id="page-size" [(ngModel)]="pageSizeValue" (change)="onPageSizeChange()">
+            <option [value]="10">10</option>
+            <option [value]="25">25</option>
+            <option [value]="50">50</option>
+            <option [value]="100">100</option>
+          </select>
+        </div>
+      </section>
+    </div>
+`,
+{% endraw %}
+  styles: [`
+    .approval-history {
+      padding: 24px;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .total-count {
+      font-size: 0.9rem;
+      color: #6b7280;
+    }
+    /* Bộ lọc */
+    .filter-section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+      padding: 16px;
+      background: #f9fafb;
+      border-radius: 8px;
+    }
+    .date-range-filter, .combined-filter {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .date-range-filter input[type="date"],
+    .combined-filter input[type="text"] {
+      padding: 6px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    .combined-filter input[type="text"] {
+      flex: 1;
+      min-width: 200px;
+    }
+    .btn-clear-date {
+      padding: 6px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .action-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .btn-action {
+      padding: 8px 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-action:hover {
+      background: #f3f4f6;
+    }
+    /* Bảng dữ liệu */
+    .approval-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .approval-table th,
+    .approval-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+    }
+    .approval-table th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #374151;
+      position: sticky;
+      top: 0;
+    }
+    .approval-table th.sortable {
+      cursor: pointer;
+      user-select: none;
+    }
+    .approval-table th.sortable:hover {
+      background: #e5e7eb;
+    }
+    .cell-id {
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+    .cell-title {
+      max-width: 250px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .status-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .status-pill.pending { background: #eab308; }
+    .status-pill.approved { background: #22c55e; }
+    .status-pill.rejected { background: #ef4444; }
+    .status-pill.escalated { background: #f97316; }
+    .status-pill.delegated { background: #8b5cf6; }
+    .status-pill.expired { background: #6b7280; }
+    .status-pill.cancelled { background: #9ca3af; }
+    .overdue {
+      color: #ef4444;
+      font-weight: 600;
+    }
+    .btn-view {
+      padding: 4px 10px;
+      border: 1px solid #3b82f6;
+      border-radius: 4px;
+      background: #eff6ff;
+      color: #3b82f6;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .btn-view:hover {
+      background: #dbeafe;
+    }
+    .empty-row {
+      text-align: center;
+      color: #9ca3af;
+      padding: 32px !important;
+    }
+    /* Phân trang */
+    .pagination-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+    }
+    .pagination-info {
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+    .pagination-controls {
+      display: flex;
+      gap: 4px;
+    }
+    .btn-page {
+      padding: 6px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .btn-page:hover:not(:disabled) {
+      background: #f3f4f6;
+    }
+    .btn-page:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .btn-page.active {
+      background: #3b82f6;
+      color: #fff;
+      border-color: #3b82f6;
+    }
+    .page-size-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+    }
+  `
+
+})
+export class ApprovalHistoryComponent implements OnInit {
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  private readonly approvalService = inject(ApprovalService);
+  private readonly approvalStore = inject(ApprovalStore);
+
+  // ===========================================================================
+  // Local state — bộ lọc
+  // ===========================================================================
+
+  /** Ngày bắt đầu lọc. */
+  public dateFrom: string = '';
+
+  /** Ngày kết thúc lọc. */
+  public dateTo: string = '';
+
+  /** Loại phê duyệt đang lọc. */
+  public selectedType: string = '';
+
+  /** Trạng thái đang lọc. */
+  public selectedStatus: string = '';
+
+  /** Từ khóa tìm kiếm. */
+  public searchText: string = '';
+
+  /** Thời gian debounce cho tìm kiếm. */
+  private searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  // ===========================================================================
+  // Local state — sắp xếp
+  // ===========================================================================
+
+  /** Trường sắp xếp hiện tại. */
+  private sortField: string = 'createdAt';
+
+  /** Hướng sắp xếp: 'asc' hoặc 'desc'. */
+  private sortDirection: 'asc' | 'desc' = 'desc';
+
+  // ===========================================================================
+  // Local state — phân trang
+  // ===========================================================================
+
+  /** Trang hiện tại (0-based). */
+  public readonly currentPage = signal<number>(0);
+
+  /** Số lượng trên mỗi trang. */
+  public readonly pageSize = signal<number>(25);
+
+  /** Giá trị select số lượng trên mỗi trang. */
+  public pageSizeValue: number = 25;
+
+  // ===========================================================================
+  // Computed
+  // ===========================================================================
+
+  /** Tất cả yêu cầu từ store. */
+  private readonly allRequests = this.approvalStore.pendingRequests;
+
+  /** Danh sách đã lọc (theo ngày, loại, trạng thái, từ khóa). */
+  private readonly filteredRequests = computed<ApprovalRequest[]>(() => {
+    let requests = this.allRequests();
+
+    // Lọc theo khoảng ngày.
+    if (this.dateFrom) {
+      const from = new Date(this.dateFrom).getTime();
+      requests = requests.filter(r => {
+        if (!r.createdAt) return false;
+        return new Date(r.createdAt).getTime() >= from;
+      });
+    }
+    if (this.dateTo) {
+      const to = new Date(this.dateTo);
+      to.setHours(23, 59, 59, 999);
+      const toTime = to.getTime();
+      requests = requests.filter(r => {
+        if (!r.createdAt) return false;
+        return new Date(r.createdAt).getTime() <= toTime;
+      });
+    }
+
+    // Lọc theo loại phê duyệt.
+    if (this.selectedType) {
+      requests = requests.filter(r => r.approvalType === this.selectedType as ApprovalType);
+    }
+
+    // Lọc theo trạng thái.
+    if (this.selectedStatus) {
+      requests = requests.filter(r => r.status === this.selectedStatus as ApprovalStatus);
+    }
+
+    // Lọc theo từ khóa tìm kiếm.
+    if (this.searchText.trim()) {
+      const query = this.searchText.trim().toLowerCase();
+      requests = requests.filter(r =>
+        r.requestId.toLowerCase().includes(query) ||
+        r.title.toLowerCase().includes(query)
+      );
+    }
+
+    return requests;
+  });
+
+  /** Danh sách đã sắp xếp. */
+  private readonly sortedRequests = computed<ApprovalRequest[]>(() => {
+    const requests = this.filteredRequests();
+    const field = this.sortField;
+    const dir = this.sortDirection === 'asc' ? 1 : -1;
+
+    return [...requests].sort((a, b) => {
+      const aVal = a[field as keyof ApprovalRequest];
+      const bVal = b[field as keyof ApprovalRequest];
+
+      // So sánh chuỗi.
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return aVal.localeCompare(bVal) * dir;
+      }
+      // So sánh số.
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return (aVal - bVal) * dir;
+      }
+      // So sánh ngày (chuỗi ISO).
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        const aTime = aVal ? new Date(aVal).getTime() : 0;
+        const bTime = bVal ? new Date(bVal).getTime() : 0;
+        return (aTime - bTime) * dir;
+      }
+
+      return 0;
+    });
+  });
+
+  /** Tổng số kết quả sau khi lọc. */
+  public readonly totalCount = computed<number>(() => {
+    return this.filteredRequests().length;
+  });
+
+  /** Tổng số trang. */
+  public readonly totalPages = computed<number>(() => {
+    return Math.max(1, Math.ceil(this.totalCount() / this.pageSize()));
+  });
+
+  /** Danh sách yêu cầu của trang hiện tại. */
+  public readonly paginatedRequests = computed<ApprovalRequest[]>(() => {
+    const sorted = this.sortedRequests();
+    const start = this.currentPage() * this.pageSize();
+    const end = start + this.pageSize();
+    return sorted.slice(start, end);
+  });
+
+  /** Các trang hiển thị (tối đa 7 trang xung quanh trang hiện tại). */
+  public readonly visiblePages = computed<number[]>(() => {
+    const total = this.totalPages();
+    const current = this.currentPage();
+    const pages: number[] = [];
+
+    // Hiển thị tối đa 7 trang.
+    const half = 3;
+    let start = Math.max(0, current - half);
+    let end = Math.min(total - 1, current + half);
+
+    // Điều chỉnh để luôn có 7 trang (nếu đủ).
+    if (end - start + 1 < 7) {
+      if (start === 0) {
+        end = Math.min(total - 1, start + 6);
+      } else if (end === total - 1) {
+        start = Math.max(0, end - 6);
+      }
+    }
+
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+
+    return pages;
+  });
+
+  // ===========================================================================
+  // Lifecycle
+  // ===========================================================================
+
+  ngOnInit(): void {
+    // Tải lịch sử yêu cầu phê duyệt.
+    this.loadHistory();
+  }
+
+  // ===========================================================================
+  // Tải dữ liệu
+  // ===========================================================================
+
+  /**
+   * Tải danh sách yêu cầu từ server.
+   */
+  loadHistory(): void {
+    this.approvalService.fetchAllRequests().pipe(takeUntilDestroyed()).subscribe(requests => {
+      this.approvalStore.setRequests(requests);
+    });
+  }
+
+  // ===========================================================================
+  // Bộ lọc
+  // ===========================================================================
+
+  /**
+   * Xử lý khi thay đổi bộ lọc ngày.
+   */
+  onDateFilterChange(): void {
+    this.applyFilters();
+  }
+
+  /**
+   * Xóa bộ lọc ngày.
+   */
+  clearDateFilter(): void {
+    this.dateFrom = '';
+    this.dateTo = '';
+    this.applyFilters();
+  }
+
+  /**
+   * Áp dụng tất cả bộ lọc — reset về trang đầu.
+   */
+  applyFilters(): void {
+    this.currentPage.set(0);
+  }
+
+  /**
+   * Xử lý khi nhập từ khóa tìm kiếm (debounce 300ms).
+   */
+  onSearchInput(): void {
+    if (this.searchDebounce) {
+      clearTimeout(this.searchDebounce);
+    }
+    this.searchDebounce = setTimeout(() => {
+      this.currentPage.set(0);
+    }, 300);
+  }
+
+  // ===========================================================================
+  // Sắp xếp
+  // ===========================================================================
+
+  /**
+   * Xử lý khi thay đổi trường sắp xếp.
+   */
+  onSortChange(field: string): void {
+    // Nếu click cùng trường thì đảo hướng, nếu khác trường thì sắp xếp giảm.
+    if (this.sortField === field) {
+      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortField = field;
+      this.sortDirection = 'desc';
+    }
+    this.currentPage.set(0);
+  }
+
+  /**
+   * Lấy ký chỉ thị sắp xếp cho trường.
+   */
+  getSortIndicator(field: string): string {
+    if (this.sortField !== field) return '';
+    return this.sortDirection === 'asc' ? '▲' : '▼';
+  }
+
+  // ===========================================================================
+  // Phân trang
+  // ===========================================================================
+
+  /**
+   * Về trang đầu tiên.
+   */
+  goToFirstPage(): void {
+    this.currentPage.set(0);
+  }
+
+  /**
+   * Về trang trước.
+   */
+  goToPrevPage(): void {
+    this.currentPage.update(page => Math.max(0, page - 1));
+  }
+
+  /**
+   * Về trang tiếp theo.
+   */
+  goToNextPage(): void {
+    this.currentPage.update(page => Math.min(this.totalPages() - 1, page + 1));
+  }
+
+  /**
+   * Về trang cuối cùng.
+   */
+  goToLastPage(): void {
+    this.currentPage.set(this.totalPages() - 1);
+  }
+
+  /**
+   * Đi đến trang cụ thể.
+   */
+  goToPage(page: number): void {
+    this.currentPage.set(page);
+  }
+
+  /**
+   * Xử lý khi thay đổi số lượng trên mỗi trang.
+   */
+  onPageSizeChange(): void {
+    this.pageSize.set(this.pageSizeValue);
+    this.currentPage.set(0);
+  }
+
+  // ===========================================================================
+  // Xuất dữ liệu
+  // ===========================================================================
+
+  /**
+   * Xuất danh sách đã lọc sang file CSV.
+   */
+  exportToCSV(): void {
+    const data = this.sortedRequests();
+    const csv = this.generateCSV(data);
+    this.downloadCSV(csv, 'approval-history.csv');
+  }
+
+  /**
+   * Tạo nội dung CSV.
+   */
+  private generateCSV(requests: ApprovalRequest[]): string {
+    const header = 'ID,Ti\u00eau \u0110\u1ec1,Loại,Tr\u1ea1ng th\u00e1i,B\u01b0\u1edbc,Hạn,Ng\u00e0y t\u1ea1o';
+    const rows = requests.map(r =>
+      [
+        r.requestId, r.title, r.approvalType, r.status,
+        r.currentStep + '/' + r.totalSteps,
+        r.deadline || '', r.createdAt || ''
+      ].join(',')
+    );
+    return [header, ...rows].join('\n');
+  }
+
+  /**
+   * Tải file CSV về máy.
+   */
+  private downloadCSV(content: string, filename: string): void {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  // ===========================================================================
+  // Điều hướng
+  // ===========================================================================
+
+  /**
+   * Xem chi tiết một yêu cầu.
+   */
+  onViewDetails(request: ApprovalRequest): void {
+    this.approvalStore.setCurrentRequest(request);
+  }
+
+  // ===========================================================================
+  // Helper methods
+  // ===========================================================================
+
+  /**
+   * Lấy class CSS cho trạng thái.
+   */
+  getStatusClass(status: string): string {
+    return status ? 'status-' + status : '';
+  }
+
+  /**
+   * Lấy nhãn tiếng Việt cho trạng thái.
+   */
+  getStatusLabel(status: string): string {
+    const labelMap: Record<string, string> = {
+      pending: 'Đang chờ',
+      approved: 'Đã phê duyệt',
+      rejected: 'Đã từ chối',
+      escalated: 'Đã leo thang',
+      delegated: 'Đã ủy quyền',
+      expired: 'Hết hạn',
+      cancelled: 'Đã hủy'
+    };
+    return labelMap[status] || status;
+  }
+
+  /**
+   * Lấy nhãn tiếng Việt cho loại phê duyệt.
+   */
+  getTypeLabel(type: string): string {
+    const labelMap: Record<string, string> = {
+      sequential: 'Tuần tự',
+      parallel: 'Song song',
+      matrix: 'Ma trận',
+      voting: 'Biểu quyết',
+      single: 'Đơn lẻ'
+    };
+    return labelMap[type] || type;
+  }
+
+  /**
+   * Kiểm tra thời hạn có đã qua chưa.
+   */
+  isOverdue(deadline: string | null): boolean {
+    if (!deadline) return false;
+    return new Date(deadline).getTime() < Date.now();
+  }
+}

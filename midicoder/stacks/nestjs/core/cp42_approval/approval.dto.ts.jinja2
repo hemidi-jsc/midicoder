@@ -1,0 +1,451 @@
+/**
+* Approval DTO - Data Transfer Objects cho Approval Workflow Engine.
+*
+* Định nghĩa các DTO với class-validator decorators:
+* - CreateApprovalRequestDto: tạo yêu cầu phê duyệt mới
+* - DecideDto: đưa ra quyết định phê duyệt
+* - DelegateDto: ủy quyền phê duyệt
+* - EscalateDto: leo thang phê duyệt
+*
+* CP42: Approval Workflow Engine
+* Tổng số yêu cầu mẫu: {{ num_requests }}
+* Tổng số bước mẫu: {{ num_steps }}
+*/
+
+import {
+IsString,
+IsUUID,
+IsEnum,
+IsOptional,
+IsNotEmpty,
+IsNumber,
+IsDateString,
+IsObject,
+IsArray,
+ValidateNested,
+Min,
+MaxLength,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/**
+* Các trạng thái phê duyệt hợp lệ.
+*/
+export const APPROVAL_STATUSES = [
+"pending",
+"approved",
+"rejected",
+"escalated",
+"delegated",
+"expired",
+"cancelled",
+];
+
+/**
+* Các loại phê duyệt hợp lệ.
+*/
+export const APPROVAL_TYPES = [
+"sequential",
+"parallel",
+"matrix",
+"voting",
+"single",
+];
+
+/**
+* Các chiến lược leo thang hợp lệ.
+*/
+export const ESCALATION_STRATEGIES = [
+"next_level",
+"next_role",
+"manager",
+"timeout",
+];
+
+/**
+* Các loại ủy quyền hợp lệ.
+*/
+export const DELEGATION_TYPES = [
+"temporary",
+"permanent",
+"conditional",
+];
+
+// ===========================================================================
+// CreateApprovalRequestDto
+// ===========================================================================
+
+/**
+* DTO cho việc tạo yêu cầu phê duyệt mới.
+*
+* Trường bắt buộc:
+* - title: tiêu đề yêu cầu
+* - entityType: loại thực thể liên quan
+* - entityId: ID thực thể liên quan
+* - initiatorId: ID người khởi tạo
+* - approvalType: loại quy trình phê duyệt
+*
+* Trường tùy chọn:
+* - description: mô tả chi tiết
+* - totalSteps: tổng số bước (mặc định 1)
+* - deadline: thời hạn phê duyệt
+* - metadata: dữ liệu bổ sung
+*/
+export class CreateApprovalRequestDto {
+/**
+* Tiêu đề yêu cầu phê duyệt.
+*/
+@IsString()
+@IsNotEmpty()
+@MaxLength(255)
+@ApiProperty({
+description: "Tiêu đề yêu cầu phê duyệt",
+example: "Yêu cầu mua thiết bị văn phòng",
+})
+title: string;
+
+/**
+* Mô tả chi tiết yêu cầu.
+*/
+@IsString()
+@IsOptional()
+@ApiPropertyOptional({
+description: "Mô tả chi tiết yêu cầu",
+example: "Cần mua 10 máy tính cho phòng mới",
+})
+description?: string;
+
+/**
+* Loại thực thể liên quan.
+*/
+@IsString()
+@IsNotEmpty()
+@ApiProperty({
+description: "Loại thực thể liên quan",
+example: "purchase_order",
+})
+entityType: string;
+
+/**
+* ID thực thể liên quan.
+*/
+@IsUUID("4")
+@IsNotEmpty()
+@ApiProperty({
+description: "ID thực thể liên quan",
+example: "550e8400-e29b-41d4-a716-446655440000",
+})
+entityId: string;
+
+/**
+* Loại quy trình phê duyệt.
+*/
+@IsEnum(APPROVAL_TYPES)
+@IsNotEmpty()
+@ApiProperty({
+description: "Loại quy trình phê duyệt",
+enum: APPROVAL_TYPES,
+example: "sequential",
+})
+approvalType: string;
+
+/**
+* ID người khởi tạo yêu cầu.
+*/
+@IsUUID("4")
+@IsNotEmpty()
+@ApiProperty({
+description: "ID người khởi tạo yêu cầu",
+example: "550e8400-e29b-41d4-a716-446655440001",
+})
+initiatorId: string;
+
+/**
+* Tổng số bước phê duyệt.
+*/
+@IsNumber()
+@Min(1)
+@IsOptional()
+@ApiPropertyOptional({
+description: "Tổng số bước phê duyệt",
+example: 3,
+})
+totalSteps?: number;
+
+/**
+* Thời hạn phê duyệt.
+*/
+@IsDateString()
+@IsOptional()
+@ApiPropertyOptional({
+description: "Thời hạn phê duyệt",
+example: "2026-06-01T00:00:00Z",
+})
+deadline?: string;
+
+/**
+* Dữ liệu bổ sung.
+*/
+@IsObject()
+@IsOptional()
+@ApiPropertyOptional({
+description: "Dữ liệu bổ sung dạng JSON",
+example: { amount: 10000000, currency: "VND" },
+})
+metadata?: Record<string, any>;
+
+    /**
+    * Danh sách bước phê duyệt ban đầu.
+    */
+    @IsArray()
+    @ValidateNested({ each: true })
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Danh sách bước phê duyệt ban đầu",
+    type: [CreateApprovalStepDto],
+    })
+    @Type(() => CreateApprovalStepDto)
+    steps?: CreateApprovalStepDto[];
+    }
+
+    // ===========================================================================
+    // CreateApprovalStepDto
+    // ===========================================================================
+
+    /**
+    * DTO cho việc tạo bước phê duyệt.
+    */
+    export class CreateApprovalStepDto {
+    /**
+    * Thứ tự bước trong chuỗi (1-based).
+    */
+    @IsNumber()
+    @Min(1)
+    @ApiProperty({
+    description: "Thứ tự bước trong chuỗi",
+    example: 1,
+    })
+    stepNumber: number;
+
+    /**
+    * ID người phê duyệt.
+    */
+    @IsUUID("4")
+    @IsNotEmpty()
+    @ApiProperty({
+    description: "ID người phê duyệt",
+    example: "550e8400-e29b-41d4-a716-446655440002",
+    })
+    approverId: string;
+
+    /**
+    * Vai trò của người phê duyệt.
+    */
+    @IsString()
+    @IsNotEmpty()
+    @ApiProperty({
+    description: "Vai trò của người phê duyệt",
+    example: "manager",
+    })
+    approverRole: string;
+
+    /**
+    * Thời hạn hành động cho bước này.
+    */
+    @IsDateString()
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Thời hạn hành động cho bước này",
+    example: "2026-05-26T00:00:00Z",
+    })
+    actionDeadline?: string;
+
+    /**
+    * Có thực hiện song song với các bước khác không.
+    */
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Có thực hiện song song không",
+    example: false,
+    })
+    isParallel?: boolean;
+
+    /**
+    * Biểu thức điều kiện để kích hoạt bước.
+    */
+    @IsString()
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Biểu thức điều kiện để kích hoạt bước",
+    example: "amount > 5000000",
+    })
+    conditionExpression?: string;
+    }
+
+    // ===========================================================================
+    // DecideDto
+    // ===========================================================================
+
+    /**
+    * DTO cho việc đưa ra quyết định phê duyệt.
+    *
+    * Trường bắt buộc:
+    * - decision: quyết định (approved/rejected)
+    *
+    * Trường tùy chọn:
+    * - comment: nhận xét kèm theo
+    */
+    export class DecideDto {
+    /**
+    * Quyết định: approved hoặc rejected.
+    */
+    @IsEnum(["approved", "rejected"])
+    @IsNotEmpty()
+    @ApiProperty({
+    description: "Quyết định phê duyệt",
+    enum: ["approved", "rejected"],
+    example: "approved",
+    })
+    decision: string;
+
+    /**
+    * Nhận xét kèm theo quyết định.
+    */
+    @IsString()
+    @IsOptional()
+    @MaxLength(1000)
+    @ApiPropertyOptional({
+    description: "Nhận xét kèm theo quyết định",
+    example: "Đồng ý, đã xem xét kỹ",
+    })
+    comment?: string;
+    }
+
+    // ===========================================================================
+    // DelegateDto
+    // ===========================================================================
+
+    /**
+    * DTO cho việc ủy quyền phê duyệt.
+    *
+    * Trường bắt buộc:
+    * - delegateeId: ID người nhận ủy quyền
+    *
+    * Trường tùy chọn:
+    * - delegationType: loại ủy quyền (mặc định temporary)
+    * - scope: phạm vi ủy quyền
+    * - validUntil: thời điểm hết hiệu lực
+    */
+    export class DelegateDto {
+    /**
+    * ID người nhận ủy quyền.
+    */
+    @IsUUID("4")
+    @IsNotEmpty()
+    @ApiProperty({
+    description: "ID người nhận ủy quyền",
+    example: "550e8400-e29b-41d4-a716-446655440003",
+    })
+    delegateeId: string;
+
+    /**
+    * Loại ủy quyền.
+    */
+    @IsEnum(DELEGATION_TYPES)
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Loại ủy quyền",
+    enum: DELEGATION_TYPES,
+    example: "temporary",
+    })
+    delegationType?: string;
+
+    /**
+    * Phạm vi ủy quyền.
+    */
+    @IsString()
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Phạm vi ủy quyền",
+    example: "all",
+    })
+    scope?: string;
+
+    /**
+    * Thời điểm hết hiệu lực ủy quyền.
+    */
+    @IsDateString()
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Thời điểm hết hiệu lực ủy quyền",
+    example: "2026-06-01T00:00:00Z",
+    })
+    validUntil?: string;
+    }
+
+    // ===========================================================================
+    // EscalateDto
+    // ===========================================================================
+
+    /**
+    * DTO cho việc leo thang phê duyệt.
+    *
+    * Trường bắt buộc:
+    * - escalationStrategy: chiến lược leo thang
+    *
+    * Trường tùy chọn:
+    * - targetRole: vai trò mục tiêu
+    * - targetId: ID mục tiêu
+    * - reason: lý do leo thang
+    */
+    export class EscalateDto {
+    /**
+    * Chiến lược leo thang.
+    */
+    @IsEnum(ESCALATION_STRATEGIES)
+    @IsNotEmpty()
+    @ApiProperty({
+    description: "Chiến lược leo thang",
+    enum: ESCALATION_STRATEGIES,
+    example: "next_level",
+    })
+    escalationStrategy: string;
+
+    /**
+    * Vai trò mục tiêu khi leo thang.
+    */
+    @IsString()
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Vai trò mục tiêu khi leo thang",
+    example: "director",
+    })
+    targetRole?: string;
+
+    /**
+    * ID mục tiêu khi leo thang.
+    */
+    @IsUUID("4")
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "ID mục tiêu khi leo thang",
+    example: "550e8400-e29b-41d4-a716-446655440004",
+    })
+    targetId?: string;
+
+    /**
+    * Lý do leo thang.
+    */
+    @IsString()
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Lý do leo thang",
+    example: "Hết thời gian chờ phản hồi",
+    })
+    reason?: string;
+    }

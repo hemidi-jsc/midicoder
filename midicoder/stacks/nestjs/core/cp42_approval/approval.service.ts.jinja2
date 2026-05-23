@@ -1,0 +1,900 @@
+/**
+* ApprovalService - dịch vụ quản lý Approval Workflow Engine.
+*
+* Cung cấp các phương thức chính:
+* - createRequest: tạo yêu cầu phê duyệt mới
+* - getRequest: lấy yêu cầu phê duyệt theo ID
+* - decide: đưa ra quyết định phê duyệt (approved/rejected)
+* - approve: phê duyệt nhanh (giả định decide với "approved")
+* - reject: từ chối nhanh (giả định decide với "rejected")
+* - escalate: leo thang yêu cầu phê duyệt
+* - delegate: ủy quyền phê duyệt cho người khác
+* - checkDeadlines: kiểm tra các yêu cầu hết hạn
+* - getPendingApprovals: lấy danh sách yêu cầu đang chờ user
+* - getDecisions: lấy danh sách quyết định cho yêu cầu
+* - detectCycle: phát hiện chu trình vô hạn trong chuỗi phê duyệt
+* - resolveApprover: giải quyết người phê duyệt thực tế (dựa trên ủy quyền)
+*
+* Tích hợp WebSocket Gateway để emit events realtime.
+*
+* CP42: Approval Workflow Engine
+* Tổng số yêu cầu: {{ num_requests }}
+* Tổng số bước: {{ num_steps }}
+*/
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Inject,
+  Optional,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import {
+  ApprovalRequest,
+  ApprovalStep,
+  ApprovalDecision,
+  EscalationRule,
+  DelegationRecord,
+} from "./approval.entity";
+import {
+  CreateApprovalRequestDto,
+  DecideDto,
+  DelegateDto,
+  EscalateDto,
+  DECISION_TYPES,
+  APPROVAL_STATUSES,
+} from "./approval.dto";
+import { ApprovalGateway } from "./approval.gateway";
+
+const logger = new Logger("ApprovalService");
+
+/**
+* Kết quả phân trang yêu cầu phê duyệt.
+*/
+export interface PaginatedApprovals {
+  /** Danh sách yêu cầu */
+  data: ApprovalRequest[];
+  /** Tổng số yêu cầu */
+  total: number;
+  /** Số lượng mỗi trang */
+  limit: number;
+  /** Trang hiện tại */
+  page: number;
+}
+
+/**
+* Tùy chọn tìm kiếm yêu cầu phê duyệt.
+*/
+export interface ApprovalQueryOptions {
+  /** Lọc theo trạng thái */
+  status?: string;
+  /** Lọc theo loại quy trình */
+  approvalType?: string;
+  /** Số lượng mỗi trang */
+  limit?: number;
+  /** Trang hiện tại */
+  page?: number;
+}
+
+/**
+* Kết quả kiểm tra deadline.
+*/
+export interface DeadlineCheckResult {
+  /** Danh sách request_ids đã hết hạn */
+  expiredRequests: string[];
+  /** Số lượng yêu cầu hết hạn */
+  expiredCount: number;
+  /** Thời điểm kiểm tra */
+  checkedAt: string;
+}
+
+/**
+* ApprovalService - quản lý quy trình phê duyệt, leo thang, và ủy quyền.
+*
+* Phương thức chính:
+* - createRequest: tạo yêu cầu mới với validation đầy đủ và các bước
+* - getRequest: lấy chi tiết yêu cầu với các bước và quyết định
+* - decide: đưa ra quyết định, tự động chuyển bước tiếp theo
+* - approve/reject: phương thức helper để gọi decide nhanh
+* - escalate: leo thang đến cấp cao hơn theo quy tắc
+* - delegate: ủy quyền phê duyệt cho người khác
+* - checkDeadlines: duyệt tất cả pending, tìm hết hạn
+* - getPendingApprovals: tìm yêu cầu đang chờ user xử lý
+* - getDecisions: lấy lịch sử quyết định
+* - detectCycle: phát hiện chu trình trong chuỗi phê duyệt
+* - resolveApprover: giải quyết approver thực tế từ ủy quyền
+*
+* Event emit:
+* - "new_approval_request": khi tạo yêu cầu mới
+* - "approval_decision": khi có quyết định phê duyệt
+* - "approval_escalated": khi leo thang yêu cầu
+* - "approval_delegated": khi ủy quyền phê duyệt
+* - "deadline_expiring": khi deadline sắp đến
+*/
+@Injectable()
+export class ApprovalService {
+  /**
+  * Constructor.
+  *
+  * @param requestRepository - Repository cho ApprovalRequest
+  * @param stepRepository - Repository cho ApprovalStep
+  * @param decisionRepository - Repository cho ApprovalDecision
+  * @param escalationRuleRepository - Repository cho EscalationRule
+  * @param delegationRepository - Repository cho DelegationRecord
+  * @param gateway - ApprovalGateway để emit events (optional)
+  */
+  constructor(
+    @InjectRepository(ApprovalRequest)
+    private readonly requestRepository: Repository<ApprovalRequest>,
+    @InjectRepository(ApprovalStep)
+    private readonly stepRepository: Repository<ApprovalStep>,
+    @InjectRepository(ApprovalDecision)
+    private readonly decisionRepository: Repository<ApprovalDecision>,
+    @InjectRepository(EscalationRule)
+    private readonly escalationRuleRepository: Repository<EscalationRule>,
+    @InjectRepository(DelegationRecord)
+    private readonly delegationRepository: Repository<DelegationRecord>,
+    @Optional()
+    @Inject(ApprovalGateway)
+    private readonly gateway: ApprovalGateway,
+  ) {}
+
+  // ========================================================================
+  // Request Methods
+  // ========================================================================
+
+  /**
+  * Tạo yêu cầu phê duyệt mới.
+  *
+  * Xác thực:
+  * - title bắt buộc và không để trống
+  * - entityType và entityId bắt buộc
+  * - totalSteps > 0
+  *
+  * Tự động tạo các bước phê duyệt nếu có steps trong DTO.
+  * Phát event new_approval_request qua WebSocket.
+  *
+  * @param createDto - CreateApprovalRequestDto
+  * @returns ApprovalRequest entity vừa tạo
+  */
+  async createRequest(createDto: CreateApprovalRequestDto): Promise<ApprovalRequest> {
+    // Xác thực loại quy trình
+    const approvalType = createDto.approvalType || "sequential";
+    if (!["sequential", "parallel", "matrix", "voting", "single"].includes(approvalType)) {
+      throw new BadRequestException("Loại quy trình phê duyệt không hợp lệ: " + approvalType);
+    }
+
+    // Tạo yêu cầu phê duyệt
+    const request = this.requestRepository.create({
+      title: createDto.title,
+      description: createDto.description || "",
+      entityType: createDto.entityType,
+      entityId: createDto.entityId,
+      approvalType,
+      status: "pending",
+      initiatorId: createDto.initiatorId,
+      currentStep: 1,
+      totalSteps: createDto.totalSteps || 1,
+      deadline: createDto.deadline ? new Date(createDto.deadline) : null,
+      metadata: createDto.metadata || {},
+    });
+
+    const saved = await this.requestRepository.save(request);
+
+    // Tạo các bước phê duyệt (nếu có)
+    if (createDto.steps && createDto.steps.length > 0) {
+      const steps = createDto.steps.map((step) =>
+        this.stepRepository.create({
+          requestId: saved.requestId,
+          stepNumber: step.stepNumber,
+          approverId: step.approverId,
+          approverRole: step.approverRole,
+          status: "pending",
+          isParallel: step.isParallel || false,
+          actionDeadline: step.actionDeadline ? new Date(step.actionDeadline) : null,
+          conditionExpression: step.conditionExpression || null,
+        }),
+      );
+      await this.stepRepository.save(steps);
+    }
+
+    logger.log(
+      "Tạo yêu cầu phê duyệt mới: " +
+      saved.requestId +
+      " (type: " +
+      approvalType +
+      ", initiator: " +
+      createDto.initiatorId +
+      ")",
+    );
+
+    // Phát event qua WebSocket
+    this.emitEvent("new_approval_request", {
+      requestId: saved.requestId,
+      title: saved.title,
+      approvalType,
+      initiatorId: createDto.initiatorId,
+    });
+
+    return saved;
+  }
+
+  /**
+  * Lấy yêu cầu phê duyệt theo ID.
+  *
+  * @param requestId - ID yêu cầu phê duyệt
+  * @returns ApprovalRequest entity hoặc null
+  */
+  async getRequest(requestId: string): Promise<ApprovalRequest | null> {
+    return this.requestRepository.findOne({
+      where: { requestId },
+      relations: ["steps", "decisions"],
+    });
+  }
+
+  /**
+  * Lấy danh sách yêu cầu phê duyệt với phân trang.
+  *
+  * @param options - Tùy chọn tìm kiếm
+  * @returns Object chứa data và pagination info
+  */
+  async getRequests(options?: ApprovalQueryOptions): Promise<PaginatedApprovals> {
+    const limit = options?.limit ?? 20;
+    const page = options?.page ?? 1;
+    const skip = (page - 1) * limit;
+
+    const query = this.requestRepository
+      .createQueryBuilder("request")
+      .orderBy("request.createdAt", "DESC")
+      .take(limit)
+      .skip(skip);
+
+    // Lọc theo trạng thái
+    if (options?.status) {
+      query.andWhere("request.status = :status", { status: options.status });
+    }
+
+    // Lọc theo loại quy trình
+    if (options?.approvalType) {
+      query.andWhere("request.approvalType = :type", { type: options.approvalType });
+    }
+
+    const [data, total] = await query.getManyAndCount();
+
+    return { data, total, limit, page };
+  }
+
+  // ========================================================================
+  // Decision Methods
+  // ========================================================================
+
+  /**
+  * Đưa ra quyết định phê duyệt cho một bước.
+  *
+  * Xác thực:
+  * - step_id phải tồn tại
+  * - bước chưa có quyết định (status là pending hoặc escalated)
+  * - approver_id phải khớp với bước hoặc có ủy quyền
+  * - decision phải là "approved" hoặc "rejected"
+  *
+  * Sau khi quyết định:
+  * - Cập nhật trạng thái bước
+  * - Tạo ApprovalDecision record
+  * - Tự động chuyển bước tiếp theo (sequential)
+  * - Nếu bị từ chối: kết thúc luôn yêu cầu
+  * - Phát event approval_decision qua WebSocket
+  *
+  * @param stepId - ID bước phê duyệt
+  * @param approverId - ID người đưa ra quyết định
+  * @param decideDto - DecideDto chứa decision và comment
+  * @returns ApprovalDecision entity vừa tạo
+  */
+  async decide(
+    stepId: string,
+    approverId: string,
+    decideDto: DecideDto,
+  ): Promise<ApprovalDecision> {
+    // Tìm bước phê duyệt
+    const step = await this.stepRepository.findOne({
+      where: { stepId },
+      relations: ["request"],
+    });
+
+    if (!step) {
+      throw new NotFoundException("Không tìm thấy bước phê duyệt: " + stepId);
+    }
+
+    // Giải quyết người phê duyệt thực tế (từ ủy quyền)
+    const actualApproverId = await this.resolveApprover(approverId);
+
+    // Validate: đúng lượt của người phê duyệt
+    if (step.approverId !== actualApproverId && step.approverId !== approverId) {
+      throw new BadRequestException("Không phải lượt của bạn để phê duyệt bước này");
+    }
+
+    // Validate: bước chưa có quyết định
+    if (step.status !== "pending" && step.status !== "escalated") {
+      throw new BadRequestException(
+        "Bước đã có quyết định - trạng thái hiện tại: " + step.status,
+      );
+    }
+
+    // Validate: loại quyết định hợp lệ
+    if (!DECISION_TYPES.includes(decideDto.decision)) {
+      throw new BadRequestException("Loại quyết định không hợp lệ: " + decideDto.decision);
+    }
+
+    // Tạo decision record
+    const decision = this.decisionRepository.create({
+      stepId,
+      requestId: step.requestId,
+      approverId,
+      decision: decideDto.decision,
+      comment: decideDto.comment || "",
+    });
+
+    await this.decisionRepository.save(decision);
+
+    // Cập nhật trạng thái bước
+    step.status = decideDto.decision === "approved" ? "approved" : "rejected";
+    await this.stepRepository.save(step);
+
+    // Chuyển tiếp chuỗi phê duyệt
+    await this.advanceChain(step, decideDto.decision);
+
+    logger.log(
+      "Quyết định phê duyệt: " +
+      decideDto.decision +
+      " cho bước " +
+      stepId +
+      " bởi " +
+      approverId,
+    );
+
+    // Phát event qua WebSocket
+    this.emitEvent("approval_decision", {
+      requestId: step.requestId,
+      stepId,
+      approverId,
+      decision: decideDto.decision,
+      comment: decideDto.comment,
+    });
+
+    return decision;
+  }
+
+  /**
+  * Phê duyệt nhanh (giả định decide với "approved").
+  *
+  * @param stepId - ID bước phê duyệt
+  * @param approverId - ID người phê duyệt
+  * @param comment - Nhận xét (tùy chọn)
+  * @returns ApprovalDecision entity
+  */
+  async approve(
+    stepId: string,
+    approverId: string,
+    comment?: string,
+  ): Promise<ApprovalDecision> {
+    return this.decide(stepId, approverId, {
+      decision: "approved",
+      comment: comment || "",
+    });
+  }
+
+  /**
+  * Từ chối nhanh (giả định decide với "rejected").
+  *
+  * @param stepId - ID bước phê duyệt
+  * @param approverId - ID người từ chối
+  * @param comment - Lý do từ chối (tùy chọn)
+  * @returns ApprovalDecision entity
+  */
+  async reject(
+    stepId: string,
+    approverId: string,
+    comment?: string,
+  ): Promise<ApprovalDecision> {
+    return this.decide(stepId, approverId, {
+      decision: "rejected",
+      comment: comment || "",
+    });
+  }
+
+  // ========================================================================
+  // Escalation Methods
+  // ========================================================================
+
+  /**
+  * Leo thang yêu cầu phê duyệt.
+  *
+  * Tìm các quy tắc leo thang đang hoạt động cho yêu cầu,
+  * cập nhật trạng thái các bước pending sang escalated,
+  * và chuyển đến mục tiêu leo thang.
+  *
+  * @param requestId - ID yêu cầu phê duyệt
+  * @param escalateDto - EscalateDto (tùy chọn)
+  * @returns Danh sách rule_ids đã được kích hoạt
+  */
+  async escalate(
+    requestId: string,
+    escalateDto?: EscalateDto,
+  ): Promise<string[]> {
+    // Kiểm tra yêu cầu tồn tại
+    const request = await this.requestRepository.findOne({
+      where: { requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException("Không tìm thấy yêu cầu phê duyệt: " + requestId);
+    }
+
+    // Tìm các quy tắc leo thang đang hoạt động
+    const activeRules = await this.escalationRuleRepository.find({
+      where: { requestId, isActive: true },
+    });
+
+    if (!activeRules.length) {
+      // Tạo quy tắc mặc định nếu không có
+      const defaultRule = this.escalationRuleRepository.create({
+        requestId,
+        triggerAfterMinutes: 60,
+        escalationStrategy: escalateDto?.escalationStrategy || "next_level",
+        targetRole: escalateDto?.targetRole || "",
+        targetId: escalateDto?.targetId || null,
+        maxEscalationLevel: 3,
+        isActive: true,
+      });
+      await this.escalationRuleRepository.save(defaultRule);
+      activeRules.push(defaultRule);
+    }
+
+    const escalatedRuleIds: string[] = [];
+
+    for (const rule of activeRules) {
+      // Cập nhật trạng thái yêu cầu
+      request.status = "escalated";
+      await this.requestRepository.save(request);
+
+      // Cập nhật trạng thái các bước pending
+      const pendingSteps = await this.stepRepository.find({
+        where: { requestId, status: "pending" },
+      });
+
+      for (const step of pendingSteps) {
+        step.status = "escalated";
+
+        // Nếu có target_role hoặc target_id từ rule, cập nhật step
+        if (rule.targetRole) {
+          step.approverRole = rule.targetRole;
+        }
+        if (rule.targetId) {
+          step.approverId = rule.targetId;
+        }
+
+        // Đặt lại thời hạn hành động
+        step.actionDeadline = new Date(Date.now() + rule.triggerAfterMinutes * 60 * 1000);
+
+        await this.stepRepository.save(step);
+      }
+
+      escalatedRuleIds.push(rule.ruleId);
+    }
+
+    logger.log(
+      "Leo thang yêu cầu: " +
+      requestId +
+      " với " +
+      escalatedRuleIds.length +
+      " quy tắc",
+    );
+
+    // Phát event qua WebSocket
+    this.emitEvent("approval_escalated", {
+      requestId,
+      escalatedRuleIds,
+      reason: escalateDto?.reason || "",
+    });
+
+    return escalatedRuleIds;
+  }
+
+  // ========================================================================
+  // Delegation Methods
+  // ========================================================================
+
+  /**
+  * Ủy quyền phê duyệt cho người khác.
+  *
+  * Xác thực:
+  * - yêu cầu phải tồn tại
+  * - không ủy quyền cho chính mình
+  *
+  * Tạo bản ghi ủy quyền với phạm vi và thời hạn.
+  * Cập nhật trạng thái yêu cầu sang "delegated".
+  *
+  * @param requestId - ID yêu cầu phê duyệt
+  * @param delegatorId - ID người ủy quyền
+  * @param delegateDto - DelegateDto
+  * @returns DelegationRecord entity
+  */
+  async delegate(
+    requestId: string,
+    delegatorId: string,
+    delegateDto: DelegateDto,
+  ): Promise<DelegationRecord> {
+    // Validate yêu cầu tồn tại
+    const request = await this.requestRepository.findOne({
+      where: { requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException("Không tìm thấy yêu cầu phê duyệt: " + requestId);
+    }
+
+    // Validate: không ủy quyền cho chính mình
+    if (delegatorId === delegateDto.delegateeId) {
+      throw new BadRequestException("Không thể ủy quyền cho chính mình");
+    }
+
+    // Tạo bản ghi ủy quyền
+    const delegation = this.delegationRepository.create({
+      delegatorId,
+      delegateeId: delegateDto.delegateeId,
+      delegationType: delegateDto.delegationType || "temporary",
+      scope: delegateDto.scope || "*",
+      validFrom: new Date(),
+      validUntil: delegateDto.validUntil ? new Date(delegateDto.validUntil) : null,
+      isActive: true,
+    });
+
+    await this.delegationRepository.save(delegation);
+
+    // Cập nhật trạng thái yêu cầu
+    request.status = "delegated";
+    await this.requestRepository.save(request);
+
+    logger.log(
+      "Ủy quyền phê duyệt: " +
+      delegatorId +
+      " -> " +
+      delegateDto.delegateeId +
+      " (scope: " +
+      (delegateDto.scope || "*") +
+      ")",
+    );
+
+    // Phát event qua WebSocket
+    this.emitEvent("approval_delegated", {
+      requestId,
+      delegatorId,
+      delegateeId: delegateDto.delegateeId,
+      delegationType: delegateDto.delegationType,
+    });
+
+    return delegation;
+  }
+
+  // ========================================================================
+  // Deadline Methods
+  // ========================================================================
+
+  /**
+  * Kiểm tra các yêu cầu phê duyệt đã hết thời hạn.
+  *
+  * Duyệt qua tất cả yêu cầu đang pending, tìm những yêu cầu
+  * vượt quá thời hạn và tự động leo thang.
+  *
+  * @returns DeadlineCheckResult với danh sách yêu cầu hết hạn
+  */
+  async checkDeadlines(): Promise<DeadlineCheckResult> {
+    const now = new Date();
+    const expiredRequests: string[] = [];
+
+    // Lấy tất cả yêu cầu pending và delegated
+    const pendingRequests = await this.requestRepository.find({
+      where: [{ status: "pending" }, { status: "delegated" }],
+    });
+
+    for (const request of pendingRequests) {
+      // Kiểm tra deadline tổng của request
+      if (request.deadline && now > request.deadline) {
+        request.status = "expired";
+        await this.requestRepository.save(request);
+        expiredRequests.push(request.requestId);
+
+        // Thử tự động leo thang
+        try {
+          await this.escalate(request.requestId);
+        } catch (error) {
+          // Nếu không có quy tắc leo thang, giữ trạng thái expired
+          logger.warn(
+            "Không thể leo thang yêu cầu hết hạn: " + request.requestId,
+          );
+        }
+      }
+
+      // Kiểm tra deadline của từng bước
+      const pendingSteps = await this.stepRepository.find({
+        where: { requestId: request.requestId, status: "pending" },
+      });
+
+      for (const step of pendingSteps) {
+        if (step.actionDeadline && now > step.actionDeadline) {
+          step.status = "expired";
+          await this.stepRepository.save(step);
+
+          // Nếu request vẫn pending, thử leo thang
+          if (request.status === "pending") {
+            try {
+              await this.escalate(request.requestId);
+            } catch (error) {
+              // Giữ nguyên trạng thái
+            }
+          }
+        }
+      }
+    }
+
+    logger.log(
+      "Kiểm tra deadline: " +
+      expiredRequests.length +
+      " yêu cầu hết hạn",
+    );
+
+    return {
+      expiredRequests,
+      expiredCount: expiredRequests.length,
+      checkedAt: now.toISOString(),
+    };
+  }
+
+  // ========================================================================
+  // Query Methods
+  // ========================================================================
+
+  /**
+  * Lấy danh sách yêu cầu phê duyệt đang chờ người dùng xử lý.
+  *
+  * Tìm tất cả yêu cầu có bước pending dành cho userId,
+  * bao gồm cả các bước đã được ủy quyền cho user.
+  *
+  * @param userId - ID người dùng
+  * @returns List ApprovalRequest đang chờ xử lý
+  */
+  async getPendingApprovals(userId: string): Promise<ApprovalRequest[]> {
+    // Tìm các bước pending của user
+    const pendingSteps = await this.stepRepository.find({
+      where: { approverId: userId, status: "pending" },
+      relations: ["request"],
+    });
+
+    // Tìm các ủy quyền dành cho user
+    const delegations = await this.delegationRepository.find({
+      where: { delegateeId: userId, isActive: true },
+    });
+
+    // Thu thập các request IDs
+    const requestIds = new Set<string>();
+
+    for (const step of pendingSteps) {
+      requestIds.add(step.requestId);
+    }
+
+    // Thêm các request từ ủy quyền
+    for (const delegation of delegations) {
+      const delegatedSteps = await this.stepRepository.find({
+        where: { approverId: delegation.delegatorId, status: "pending" },
+      });
+      for (const step of delegatedSteps) {
+        requestIds.add(step.requestId);
+      }
+    }
+
+    // Lọc các request còn pending
+    const requests = await this.requestRepository.find({
+      where: Array.from(requestIds).map((id) => ({ requestId: id })),
+    });
+
+    return requests.filter(
+      (r) => r.status === "pending" || r.status === "delegated",
+    );
+  }
+
+  /**
+  * Lấy tất cả quyết định cho một yêu cầu phê duyệt.
+  *
+  * Sắp xếp theo created_at tăng dần (cũ nhất trước).
+  *
+  * @param requestId - ID yêu cầu phê duyệt
+  * @returns List ApprovalDecision
+  */
+  async getDecisions(requestId: string): Promise<ApprovalDecision[]> {
+    // Kiểm tra yêu cầu tồn tại
+    const request = await this.requestRepository.findOne({
+      where: { requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException("Không tìm thấy yêu cầu phê duyệt: " + requestId);
+    }
+
+    return this.decisionRepository.find({
+      where: { requestId },
+      order: { createdAt: "ASC" },
+    });
+  }
+
+  // ========================================================================
+  // Internal Methods
+  // ========================================================================
+
+  /**
+  * Phát hiện chu trình trong chuỗi phê duyệt.
+  *
+  * Duyệt qua các bước của yêu cầu, kiểm tra xem có tồn tại
+  * chu trình lặp vô hạn (ví dụ: A -> B -> A).
+  *
+  * @param requestId - ID yêu cầu phê duyệt
+  * @returns True nếu phát hiện chu trình
+  */
+  async detectCycle(requestId: string): Promise<boolean> {
+    const request = await this.requestRepository.findOne({
+      where: { requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException("Không tìm thấy yêu cầu phê duyệt: " + requestId);
+    }
+
+    // Lấy tất cả bước, sắp xếp theo step_number
+    const steps = await this.stepRepository.find({
+      where: { requestId },
+      order: { stepNumber: "ASC" },
+    });
+
+    // Kiểm tra: nếu có 2 bước khác nhau với cùng approver_id
+    // Với quy trình sequential, điều này là chu trình
+    const seenApprovers = new Map<string, number[]>();
+
+    for (const step of steps) {
+      const existing = seenApprovers.get(step.approverId) || [];
+      existing.push(step.stepNumber);
+      seenApprovers.set(step.approverId, existing);
+    }
+
+    // Với sequential, một approver không được xuất hiện ở nhiều bước
+    if (request.approvalType === "sequential") {
+      for (const [approver, stepNumbers] of seenApprovers) {
+        if (stepNumbers.length > 1) {
+          throw new BadRequestException(
+            "Phát hiện chu trình trong chuỗi phê duyệt: approver " +
+            approver +
+            " xuất hiện ở bước " +
+            stepNumbers.join(", "),
+          );
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+  * Giải quyết người phê duyệt thực tế dựa trên ủy quyền.
+  *
+  * Kiểm tra xem approverId có ủy quyền cho người khác không.
+  * Nếu có ủy quyền hiệu lực, trả về delegateeId.
+  *
+  * @param approverId - ID người phê duyệt ban đầu
+  * @returns ID người phê duyệt thực tế (có thể là delegatee)
+  */
+  async resolveApprover(approverId: string): Promise<string> {
+    const now = new Date();
+
+    // Tìm ủy quyền hiệu lực: approverId là delegator
+    const delegations = await this.delegationRepository.find({
+      where: { delegatorId: approverId, isActive: true },
+    });
+
+    for (const delegation of delegations) {
+      // Kiểm tra thời gian hiệu lực
+      if (delegation.validFrom && now < delegation.validFrom) {
+        continue;
+      }
+      if (delegation.validUntil && now > delegation.validUntil) {
+        continue;
+      }
+
+      // Trả về delegatee - người thực tế sẽ phê duyệt
+      return delegation.delegateeId;
+    }
+
+    return approverId;
+  }
+
+  /**
+  * Tự động chuyển tiếp chuỗi phê duyệt sau khi có quyết định.
+  *
+  * Xử lý theo loại quy trình:
+  * - SEQUENTIAL: chuyển đến bước tiếp theo
+  * - PARALLEL: kiểm tra tất cả bước song song
+  * - VOTING: tổng hợp kết quả biểu quyết
+  * - SINGLE: hoàn tất ngay
+  *
+  * @param step - Bước vừa có quyết định
+  * @param decision - Quyết định ("approved" hoặc "rejected")
+  */
+  private async advanceChain(step: ApprovalStep, decision: string): Promise<void> {
+    const request = await this.requestRepository.findOne({
+      where: { requestId: step.requestId },
+    });
+
+    if (!request) {
+      return;
+    }
+
+    // Nếu bị từ chối, kết thúc luôn
+    if (decision === "rejected") {
+      request.status = "rejected";
+      await this.requestRepository.save(request);
+      return;
+    }
+
+    // Xử lý theo loại quy trình
+    if (request.approvalType === "single") {
+      // Một người phê duyệt duy nhất - đã xong
+      request.status = "approved";
+      await this.requestRepository.save(request);
+
+    } else if (request.approvalType === "sequential") {
+      // Chuyển đến bước tiếp theo
+      const nextStep = await this.stepRepository.findOne({
+        where: {
+          requestId: step.requestId,
+          stepNumber: step.stepNumber + 1,
+          status: "pending",
+        },
+      });
+
+      if (nextStep) {
+        request.currentStep = nextStep.stepNumber;
+      } else {
+        // Không có bước tiếp theo - hoàn tất
+        request.status = "approved";
+      }
+      await this.requestRepository.save(request);
+
+    } else if (request.approvalType === "parallel") {
+      // Kiểm tra tất cả bước song song đã quyết định
+      const parallelSteps = await this.stepRepository.find({
+        where: { requestId: step.requestId, isParallel: true },
+      });
+
+      const allDecided = parallelSteps.every(
+        (s) => s.status === "approved" || s.status === "rejected",
+      );
+
+      if (allDecided) {
+        const hasRejection = parallelSteps.some((s) => s.status === "rejected");
+        request.status = hasRejection ? "rejected" : "approved";
+        await this.requestRepository.save(request);
+      }
+    }
+  }
+
+  /**
+  * Phát event qua WebSocket Gateway.
+  *
+  * @param event - Tên sự kiện
+  * @param data - Dữ liệu sự kiện
+  */
+  private emitEvent(event: string, data: any): void {
+    if (this.gateway) {
+      this.gateway.broadcastToAll(event, data);
+    }
+  }
+}

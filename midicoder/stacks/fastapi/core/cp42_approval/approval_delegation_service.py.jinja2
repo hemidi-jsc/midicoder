@@ -1,0 +1,534 @@
+# ----------------------------------------------------------
+# CP42 Approval Workflow — Dich vu uy quyen phê duyêt
+# ----------------------------------------------------------
+# Sinh boi CP42ApprovalEmitter
+# Class: ApprovalDelegationService — chuyên xử lý delegation
+# ----------------------------------------------------------
+
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Sequence
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+
+class ApprovalDelegationService:
+    """
+    Dich vu chuyên xử lý uy quyen phê duyêt.
+
+    Quan ly viec tao, thu hồi, va giai quyen cac buôc phê duyêt
+    dua tren chuôi uy quyen. Bao gồm validation: không self-delegation,
+    không expired delegation.
+
+    Cach lan:
+    1. create_delegation: tao ban ghi uy quyen moi voi validation
+    2. revoke_delegation: thu hồi ban ghi uy quyen
+    3. resolve_approver: giai quyet ngươI phê duyêt thuc te (kiem tra delegation chain)
+    4. validate_delegation: xac minh tính hieu luc cua ban ghi uy quyen
+    """
+
+    def __init__(self, session: AsyncSession, event_publisher=None) -> None:
+        """
+        Khoi tao dich vu voi phien lam viec SQLAlchemy async.
+
+        Tham so:
+            session: Phien lam viec async de truy cap co so du lieu.
+            event_publisher: Event publisher de phat events (tu chon).
+        """
+        self._session = session
+        self._event_publisher = event_publisher
+
+    # --------------------------------------------------------------
+    # Tao uy quyen
+    # --------------------------------------------------------------
+
+    async def create_delegation(
+        self,
+        delegator_id: str,
+        delegatee_id: str,
+        delegation_type: str = "temporary",
+        scope: str = "*",
+        valid_until: Optional[datetime] = None,
+        valid_from: Optional[datetime] = None,
+    ) -> Any:
+        """
+        Tao ban ghi uy quyen moi voi validation toan dien.
+
+        Validation:
+        1. Không duoc uy quyen cho chinh minh (no self-delegation)
+        2. Không duoc tao delegation khi da co delegation trung lap
+        3. valid_from không duoc sau valid_until
+        4. delegation_type phai hop le
+
+        Tham so:
+            delegator_id: ID ngươI uy quyen.
+            delegatee_id: ID ngươI duoc uy quyen.
+            delegation_type: Loai uy quyen (temporary, permanent, conditional).
+            scope: Pham vi uy quyen (request_id cu the hoac "*" cho tat ca).
+            valid_until: Thoi diem het hieu luc (None = vinh vien).
+            valid_from: Thoi diem bat dau hieu luc (mac dinh la hien tai).
+
+        Tra ve:
+            Doi tuong DelegationRecord moi duoc tao.
+
+        Nhom ra:
+            ValueError: Neu vi pham cac qui tac validation.
+        """
+        # Validate: không duoc uy quyen cho chinh minh
+        if delegator_id == delegatee_id:
+            raise ValueError(
+                "Không duoc uy quyen cho chinh minh (delegator_id == delegatee_id)"
+            )
+
+        # Validate: delegator_id va delegatee_id khong duoc de trong
+        if not delegator_id or not delegator_id.strip():
+            raise ValueError("delegator_id khong duoc de trong")
+        if not delegatee_id or not delegatee_id.strip():
+            raise ValueError("delegatee_id khong duoc de trong")
+
+        # Validate: delegation_type
+        valid_types = ("temporary", "permanent", "conditional")
+        if delegation_type not in valid_types:
+            raise ValueError(
+                "delegation_type phai la mot trong: {}".format(", ".join(valid_types))
+            )
+
+        # Validate: thoi han
+        now = datetime.now(timezone.utc)
+        if valid_from is None:
+            valid_from = now
+        if valid_from > valid_until and valid_until is not None:
+            raise ValueError(
+                "valid_from không duoc sau valid_until"
+            )
+
+        # Kiem tra delegation trung lap — khong cho phep 2 delegation cuoi cung
+        # voi cung delegator_id, delegatee_id, va scope
+        existing = await self._check_duplicate_delegation(
+            delegator_id, delegatee_id, scope
+        )
+        if existing is not None:
+            raise ValueError(
+                "Da ton tai ban ghi uy quyen cua '{}' den '{}' voi pham vi '{}'".format(
+                    delegator_id, delegatee_id, scope
+                )
+            )
+
+        # Tao ban ghi uy quyen
+        delegation_id = str(uuid.uuid4())
+
+        delegation = self._delegation_model()(
+            delegation_id=delegation_id,
+            delegator_id=delegator_id,
+            delegatee_id=delegatee_id,
+            delegation_type=delegation_type,
+            scope=scope,
+            valid_from=valid_from,
+            valid_until=valid_until,
+            is_active=True,
+        )
+
+        self._session.add(delegation)
+        await self._session.commit()
+        await self._session.refresh(delegation)
+
+        # Phat event uy quyen
+        await self._emit_delegation_event(delegation)
+
+        logger.info(
+            "Da tao ban ghi uy quyen: id=%s, tu=%s, den=%s, pham_vi=%s, loai=%s",
+            delegation_id,
+            delegator_id,
+            delegatee_id,
+            scope,
+            delegation_type,
+        )
+
+        return delegation
+
+    # --------------------------------------------------------------
+    # Thu hồi uy quyen
+    # --------------------------------------------------------------
+
+    async def revoke_delegation(self, delegation_id: str) -> bool:
+        """
+        Thu hồi ban ghi uy quyen bang cach danh dau la khong hoat dong.
+
+        Thao tac nay se lam cho delegation không con hieu luc
+        nhung van giu lai ban ghi de audit trail.
+
+        Tham so:
+            delegation_id: ID ban ghi uy quyen can thu hồi.
+
+        Tra ve:
+            True neu thu hồi thanh cong, False neu không tim thay.
+
+        Nhom ra:
+            ValueError: Neu delegation da bi thu hồi.
+        """
+        delegation = await self._get_delegation(delegation_id)
+
+        if delegation is None:
+            logger.warning("Không tim thay delegation de thu hồi: id=%s", delegation_id)
+            return False
+
+        if not delegation.is_active:
+            raise ValueError(
+                "Ban ghi uy quyen '{}' da duoc thu hồi truôc do".format(delegation_id)
+            )
+
+        delegation.is_active = False
+        await self._session.commit()
+
+        logger.info(
+            "Da thu hồi ban ghi uy quyen: id=%s, tu=%s, den=%s",
+            delegation_id,
+            delegation.delegator_id,
+            delegation.delegatee_id,
+        )
+
+        return True
+
+    # --------------------------------------------------------------
+    # Giai quyet ngươI phê duyêt (kiem tra delegation chain)
+    # --------------------------------------------------------------
+
+    async def resolve_approver(self, approver_id: str, request_id: Optional[str] = None) -> str:
+        """
+        Giai quyet ngươI phê duyêt thuc te dua tren delegation chain.
+
+        Kiem tra xem approver_id co uy quyen cho ngươI khac khong.
+        Neu co, tiep tuc kiem tra xem delegatee co tiêp tuc uy quyen
+        khong (delegation chain), den khi tìm thay ngươI phê duyêt cuôi cùng.
+
+        Tham so:
+            approver_id: ID ngươI phê duyêt ban dau.
+            request_id: ID yeu cau phê duyêt (de loc theo scope).
+
+        Tra ve:
+            ID ngươI phê duyêt thuc te (có the la delegatee sau cuôi trong chain).
+        """
+        now = datetime.now(timezone.utc)
+
+        # Giới hạn chain depth de tránh vuòng loop
+        max_depth = 10
+        current_approver = approver_id
+        visited: set[str] = {current_approver}
+
+        for depth in range(max_depth):
+            # Tim delegation hieu luc cho current_approver
+            delegation = await self._get_valid_delegation_for(
+                current_approver, request_id, now
+            )
+
+            if delegation is None:
+                # Không co delegation — current_approver la ngươI phê duyêt cuôi cùng
+                break
+
+            next_approver = delegation.delegatee_id
+
+            # Kiem tra chu trinh: neu da truy cập qua, dong lại
+            if next_approver in visited:
+                logger.warning(
+                    "Phat hien chu trinh delegation chain: %s -> %s (depth=%d)",
+                    current_approver, next_approver, depth,
+                )
+                break
+
+            visited.add(next_approver)
+            current_approver = next_approver
+
+        return current_approver
+
+    # --------------------------------------------------------------
+    # Validation — xac minh tính hieu luc
+    # --------------------------------------------------------------
+
+    async def validate_delegation(self, delegation_id: str) -> Dict[str, Any]:
+        """
+        Xac minh tính hieu luc cua ban ghi uy quyen.
+
+        Kiem tra:
+        1. Delegation ton tai
+        2. Đang hoat dong (is_active == True)
+        3. Trong khoang thoi gian hieu luc (valid_from <= now <= valid_until)
+        4. Không phai self-delegation
+
+        Tham so:
+            delegation_id: ID ban ghi uy quyen can kiem tra.
+
+        Tra ve:
+            Tu dict chua ket qua validation:
+            - is_valid: True neu hop le
+            - reason: Ly do neu không hop le
+            - delegation: Toan bo thong tin delegation
+
+        Nhom ra:
+            ValueError: Neu delegation không ton tai.
+        """
+        delegation = await self._get_delegation(delegation_id)
+
+        if delegation is None:
+            raise ValueError(
+                "Không tim thay ban ghi uy quyen voi ID: {}".format(delegation_id)
+            )
+
+        now = datetime.now(timezone.utc)
+        is_valid = True
+        reasons: List[str] = []
+
+        # Kiem tra is_active
+        if not delegation.is_active:
+            is_valid = False
+            reasons.append("Ban ghi da duoc thu hồi (is_active=False)")
+
+        # Kiem tra self-delegation
+        if delegation.delegator_id == delegation.delegatee_id:
+            is_valid = False
+            reasons.append("Self-delegation: delegator va delegatee là cung mot ngươI")
+
+        # Kiem tra valid_from
+        if delegation.valid_from and now < delegation.valid_from:
+            is_valid = False
+            reasons.append(
+                "Chua den thoi diem hieu luc (valid_from: {})".format(
+                    delegation.valid_from.isoformat()
+                )
+            )
+
+        # Kiem tra valid_until
+        if delegation.valid_until and now > delegation.valid_until:
+            is_valid = False
+            reasons.append(
+                "Da qua thoi han hieu luc (valid_until: {})".format(
+                    delegation.valid_until.isoformat()
+                )
+            )
+
+        # Xac minh delegation_type hop le
+        valid_types = ("temporary", "permanent", "conditional")
+        if delegation.delegation_type not in valid_types:
+            is_valid = False
+            reasons.append(
+                "delegation_type không hop le: {}".format(delegation.delegation_type)
+            )
+
+        result = {
+            "is_valid": is_valid,
+            "reasons": reasons if not is_valid else ["Hieu luc"],
+            "delegation": {
+                "delegation_id": delegation.delegation_id,
+                "delegator_id": delegation.delegator_id,
+                "delegatee_id": delegation.delegatee_id,
+                "delegation_type": delegation.delegation_type,
+                "scope": delegation.scope,
+                "valid_from": delegation.valid_from.isoformat() if delegation.valid_from else None,
+                "valid_until": delegation.valid_until.isoformat() if delegation.valid_until else None,
+                "is_active": delegation.is_active,
+            },
+        }
+
+        logger.info(
+            "Validation delegation %s: is_valid=%s, reasons=%s",
+            delegation_id, is_valid, reasons,
+        )
+
+        return result
+
+    # --------------------------------------------------------------
+    # Lay danh sach delegation
+    # --------------------------------------------------------------
+
+    async def get_active_delegations(self, user_id: str) -> Sequence[Any]:
+        """
+        Lay tat ca uy quyen dang hoat dong cua ngươI dung.
+
+        Bao gồm ca delegation user da tao va delegation dành cho user.
+
+        Tham so:
+            user_id: ID ngươI dung.
+
+        Tra ve:
+            Danh sach DelegationRecord dang hoat dong.
+        """
+        now = datetime.now(timezone.utc)
+        delegation_model = self._delegation_model()
+
+        query = select(delegation_model).where(
+            delegation_model.is_active == True,
+            (
+                (delegation_model.delegator_id == user_id) |
+                (delegation_model.delegatee_id == user_id)
+            ),
+        )
+
+        result = await self._session.execute(query)
+        delegations = list(result.scalars().all())
+
+        # Loc bo nhung delegation da het thoi han
+        active_delegations = []
+        for d in delegations:
+            if d.valid_from and now < d.valid_from:
+                continue
+            if d.valid_until and now > d.valid_until:
+                continue
+            active_delegations.append(d)
+
+        return active_delegations
+
+    async def get_delegations_for_request(self, request_id: str) -> Sequence[Any]:
+        """
+        Lay tat ca delegation co pham vi áp dung cho mot yeu cau cụ the.
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt.
+
+        Tra ve:
+            Danh sach DelegationRecord áp dung cho yeu cau.
+        """
+        now = datetime.now(timezone.utc)
+        delegation_model = self._delegation_model()
+
+        query = select(delegation_model).where(
+            delegation_model.is_active == True,
+            (
+                (delegation_model.scope == request_id) |
+                (delegation_model.scope == "*")
+            ),
+        )
+
+        result = await self._session.execute(query)
+        delegations = list(result.scalars().all())
+
+        # Loc theo thoi gian hieu luc
+        active = []
+        for d in delegations:
+            if d.valid_from and now < d.valid_from:
+                continue
+            if d.valid_until and now > d.valid_until:
+                continue
+            active.append(d)
+
+        return active
+
+    # --------------------------------------------------------------
+    # Phuong thuc noi bo
+    # --------------------------------------------------------------
+
+    async def _get_delegation(self, delegation_id: str) -> Optional[Any]:
+        """Lay ban ghi uy quyen theo ID."""
+        query = select(self._delegation_model()).where(
+            self._delegation_model().delegation_id == delegation_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def _get_valid_delegation_for(
+        self,
+        delegator_id: str,
+        request_id: Optional[str],
+        moment: datetime,
+    ) -> Optional[Any]:
+        """
+        Tim mot delegation hieu luc cho mot delegator va scope.
+
+        Tham so:
+            delegator_id: ID ngươI uy quyen can tim.
+            request_id: ID yeu cau (de loc theo scope).
+            moment: Thoi diem kiem tra hieu luc.
+
+        Tra ve:
+            DelegationRecord neu co, None neu khong.
+        """
+        delegation_model = self._delegation_model()
+
+        if request_id:
+            query = select(delegation_model).where(
+                delegation_model.delegator_id == delegator_id,
+                delegation_model.is_active == True,
+                (
+                    (delegation_model.scope == request_id) |
+                    (delegation_model.scope == "*")
+                ),
+            )
+        else:
+            query = select(delegation_model).where(
+                delegation_model.delegator_id == delegator_id,
+                delegation_model.is_active == True,
+                delegation_model.scope == "*",
+            )
+
+        result = await self._session.execute(query)
+        delegations = list(result.scalars().all())
+
+        for d in delegations:
+            # Kiem tra thoi gian hieu luc
+            if d.valid_from and moment < d.valid_from:
+                continue
+            if d.valid_until and moment > d.valid_until:
+                continue
+            return d
+
+        return None
+
+    async def _check_duplicate_delegation(
+        self, delegator_id: str, delegatee_id: str, scope: str
+    ) -> Optional[Any]:
+        """
+        Kiem tra ton tai delegation trung lap.
+
+        Tham so:
+            delegator_id: ID ngươI uy quyen.
+            delegatee_id: ID ngươI duoc uy quyen.
+            scope: Pham vi uy quyen.
+
+        Tra ve:
+            DelegationRecord neu ton tai, None neu khong.
+        """
+        query = select(self._delegation_model()).where(
+            self._delegation_model().delegator_id == delegator_id,
+            self._delegation_model().delegatee_id == delegatee_id,
+            self._delegation_model().scope == scope,
+            self._delegation_model().is_active == True,
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def _emit_delegation_event(self, delegation: Any) -> None:
+        """
+        Phat event sau khi tao ban ghi uy quyen.
+
+        Tham so:
+            delegation: DelegationRecord da tao.
+        """
+        if self._event_publisher is None:
+            return
+
+        try:
+            event_data = {
+                "event_type": "approval.delegated",
+                "delegation_id": delegation.delegation_id,
+                "delegator_id": delegation.delegator_id,
+                "delegatee_id": delegation.delegatee_id,
+                "scope": delegation.scope,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            await self._event_publisher.publish("approval.delegated", event_data)
+            logger.debug("Da phat event: approval.delegated, delegation=%s", delegation.delegation_id)
+        except Exception as e:
+            logger.error("Loi phat event delegation: %s", str(e))
+
+    # --------------------------------------------------------------
+    # Lay mo hinh tu module models (import dong)
+    # --------------------------------------------------------------
+
+    def _delegation_model(self) -> type:
+        """Lay mo hinh DelegationRecord."""
+        from approval_models import DelegationRecord
+        return DelegationRecord
+

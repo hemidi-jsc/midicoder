@@ -1,0 +1,472 @@
+# ----------------------------------------------------------
+# CP42 Approval Workflow — Background worker leo thang
+# ----------------------------------------------------------
+# Sinh boi CP42ApprovalEmitter
+# Worker: kiem tra deadline, auto-escalate khi timeout,
+#         gui notification khi leo thang
+# Tuong thich voi Celery
+# ----------------------------------------------------------
+
+import asyncio
+import logging
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+# DOI SOI WORKER
+WORKER_POLL_INTERVAL = 30         # Giay giua cac lan poll
+ESCALATION_CHECK_BATCH = 100      # So yeu cau kiem tra trong moi batch
+NOTIFICATION_COOLDOWN_MINUTES = 5 # Thoi gian cooldown giua cac thong bao
+
+
+class ApprovalEscalationWorker:
+    """
+    Background worker cho he thong phê duyêt — kiem tra deadline
+    va tu dong leo thang yeu cau khi timeout.
+
+    Cac nhiem vu chinh:
+    1. Deadline monitoring: kiem tra cac buôc yeu cau het han
+    2. Auto-escalation: tu dong leo thang theo quy tac cau hinh
+    3. Notification: gui thong bao khi leo thang
+    4. Expiry handling: danh dau yeu cau expired neu qua thoi han toi da
+
+    Tuong thich voi Celery: moi phuong thuc task co the duoc goi
+    tu Celery beat schedule hoac tu API endpoint.
+
+    Attributes:
+        session_factory: Factory de tao AsyncSession moi cho moi task.
+    """
+
+    def __init__(self, session_factory: Any) -> None:
+        """
+        Khoi tao ApprovalEscalationWorker.
+
+        Tham so:
+            session_factory: Factory de tao AsyncSession moi (AsyncSessionmaker).
+        """
+        self._session_factory = session_factory
+
+    async def check_deadlines_and_escalate(self) -> Dict[str, Any]:
+        """
+        Kiem tra cac buôc phê duyêt het han va tu dong leo thang.
+
+        Celery-compatible task. Co the duoc dat schedule trong Celery beat.
+
+        Luu trinh:
+        1. Tim tat ca buôc pending da qua action_deadline
+        2. Voi moi buôc, kiem tra co escalation rule khong
+        3. Neu co rule, thuc hien leo thang
+        4. Neu khong co rule, danh dau buôc expired
+        5. Gui notification khi leo thang
+
+        Tra ve:
+            Tu dict chua thong ke ve so buôc da xu ly.
+        """
+        async with self._session_factory() as session:
+            try:
+                now = datetime.now(timezone.utc)
+                step_model = self._get_step_model()
+
+                # Tim cac buôc pending da het han
+                query = select(step_model).where(
+                    step_model.status == "pending",
+                    step_model.action_deadline != None,
+                    step_model.action_deadline < now,
+                ).limit(ESCALATION_CHECK_BATCH)
+
+                result = await session.execute(query)
+                expired_steps = list(result.scalars().all())
+
+                escalated_count = 0
+                expired_count = 0
+                notified_count = 0
+
+                for step in expired_steps:
+                    # Kiem tra co escalation rule khong
+                    rules = await self._get_active_escalation_rules(
+                        session, step.request_id
+                    )
+
+                    if rules:
+                        # Thuc hien leo thang
+                        success = await self._escalate_step(
+                            session, step, rules
+                        )
+                        if success:
+                            escalated_count += 1
+                            # Gui notification
+                            await self._send_escalation_notification(
+                                session, step
+                            )
+                            notified_count += 1
+                    else:
+                        # Khong co rule — danh dau expired
+                        step.status = "expired"
+                        expired_count += 1
+
+                await session.commit()
+
+                logger.info(
+                    "Da kiem tra deadline: buoc_het_han=%d, da_escalate=%d, da_expired=%d, da_thong_bao=%d",
+                    len(expired_steps),
+                    escalated_count,
+                    expired_count,
+                    notified_count,
+                )
+
+                return {
+                    "steps_checked": len(expired_steps),
+                    "escalated": escalated_count,
+                    "expired": expired_count,
+                    "notified": notified_count,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+            except Exception as e:
+                logger.error("Loi kiem tra deadline: %s", str(e))
+                return {
+                    "steps_checked": 0,
+                    "escalated": 0,
+                    "expired": 0,
+                    "notified": 0,
+                    "error": str(e),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+    async def check_request_deadlines(self) -> Dict[str, Any]:
+        """
+        Kiem tra deadline tong cua yeu cau phê duyêt.
+
+        Celery-compatible task. Danh dau cac yeu cau da qua
+        deadline cuoi cung thanh expired.
+
+        Tra ve:
+            Tu dict chua thong ke ve so yeu cau da xu ly.
+        """
+        async with self._session_factory() as session:
+            try:
+                now = datetime.now(timezone.utc)
+                request_model = self._get_request_model()
+
+                # Tim cac yeu cau pending da qua deadline
+                query = select(request_model).where(
+                    request_model.status.in_(("pending", "delegated")),
+                    request_model.deadline != None,
+                    request_model.deadline < now,
+                ).limit(ESCALATION_CHECK_BATCH)
+
+                result = await session.execute(query)
+                expired_requests = list(result.scalars().all())
+
+                expired_count = 0
+                for request in expired_requests:
+                    request.status = "expired"
+                    request.updated_at = now
+                    expired_count += 1
+
+                await session.commit()
+
+                logger.info(
+                    "Da kiem tra deadline yeu cau: het_han=%d",
+                    expired_count,
+                )
+
+                return {
+                    "requests_checked": len(expired_requests),
+                    "expired": expired_count,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+            except Exception as e:
+                logger.error("Loi kiem tra deadline yeu cau: %s", str(e))
+                return {
+                    "requests_checked": 0,
+                    "expired": 0,
+                    "error": str(e),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+    async def cleanup_expired_delegations(self) -> Dict[str, Any]:
+        """
+        Xoa cac ban ghi uy quyen da het hieu luc.
+
+        Celery-compatible task. Danh dau cac delegation het han
+        la khong hoat dong.
+
+        Tra ve:
+            Tu dict chua so ban ghi da cap nhat.
+        """
+        async with self._session_factory() as session:
+            try:
+                now = datetime.now(timezone.utc)
+                delegation_model = self._get_delegation_model()
+
+                # Tim cac delegation het han va con hoat dong
+                query = select(delegation_model).where(
+                    delegation_model.is_active == True,
+                    delegation_model.valid_until != None,
+                    delegation_model.valid_until < now,
+                )
+
+                result = await session.execute(query)
+                expired_delegations = list(result.scalars().all())
+
+                deactivated_count = 0
+                for delegation in expired_delegations:
+                    delegation.is_active = False
+                    deactivated_count += 1
+
+                await session.commit()
+
+                logger.info(
+                    "Da cleanup delegation het han: so_luong=%d",
+                    deactivated_count,
+                )
+
+                return {
+                    "delegations_checked": len(expired_delegations),
+                    "deactivated": deactivated_count,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+            except Exception as e:
+                logger.error("Loi cleanup delegation: %s", str(e))
+                return {
+                    "delegations_checked": 0,
+                    "deactivated": 0,
+                    "error": str(e),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+    async def run_worker_loop(self) -> None:
+        """
+        Chay worker loop — lap dai kiem tra deadline va leo thang.
+
+        Su dung de chay trong background task hoac service.
+        """
+        logger.info("ApprovalEscalationWorker bat dau luong chu")
+
+        while True:
+            try:
+                # Kiem tra deadline va leo thang
+                await self.check_deadlines_and_escalate()
+
+                # Kiem tra deadline tong cua yeu cau
+                await self.check_request_deadlines()
+
+                # Cleanup delegation het han — chi chay thi thoi
+                now = datetime.now(timezone.utc)
+                if now.hour == 3 and now.minute < 30:
+                    # Chay cleanup vao 3:00 AM mung
+                    await self.cleanup_expired_delegations()
+
+            except Exception as e:
+                logger.error("Loi trong worker loop: %s", str(e))
+
+            # Cho ky tiep theo
+            await asyncio.sleep(WORKER_POLL_INTERVAL)
+
+    # --------------------------------------------------------------
+    # Phuong thuc noi bo
+    # --------------------------------------------------------------
+
+    async def _get_active_escalation_rules(
+        self, session: AsyncSession, request_id: str
+    ) -> List[Any]:
+        """
+        Lay tat ca cac escalation rule hoat dong cho mot yeu cau.
+
+        Tham so:
+            session: AsyncSession.
+            request_id: ID yeu cau phê duyêt.
+
+        Tra ve:
+            Danh sach EscalationRule.
+        """
+        rule_model = self._get_escalation_model()
+        query = select(rule_model).where(
+            rule_model.request_id == request_id,
+            rule_model.is_active == True,
+        )
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+    async def _escalate_step(
+        self, session: AsyncSession, step: Any, rules: List[Any]
+    ) -> bool:
+        """
+        Thuc hien leo thang mot buôc phê duyêt.
+
+        Cap nhat approver va role cua step theo escalation rule dau tien.
+        Dat lai action_deadline voi thoi gian moi.
+
+        Tham so:
+            session: AsyncSession.
+            step: ApprovalStep can leo thang.
+            rules: Danh sach EscalationRule hoat dong.
+
+        Tra ve:
+            True neu leo thang thanh cong.
+        """
+        if not rules:
+            return False
+
+        rule = rules[0]  # Lay rule dau tien
+        now = datetime.now(timezone.utc)
+
+        # Cap nhat trang thai step
+        step.status = "escalated"
+
+        # Cap nhat approver va role theo rule
+        if rule.target_id:
+            step.approver_id = rule.target_id
+        if rule.target_role:
+            step.approver_role = rule.target_role
+
+        # Dat lai thoi han hanh dong
+        step.action_deadline = now + timedelta(minutes=rule.trigger_after_minutes)
+
+        # Cap nhat trang thai yeu cau neu chua bi escalation
+        request_model = self._get_request_model()
+        request_query = select(request_model).where(
+            request_model.request_id == step.request_id
+        )
+        request_result = await session.execute(request_query)
+        request = request_result.scalar_one_or_none()
+
+        if request and request.status == "pending":
+            request.status = "escalated"
+            request.updated_at = now
+
+        logger.info(
+            "Da leo thang buôc: step=%s, request=%s, strategy=%s, target=%s",
+            step.step_id,
+            step.request_id,
+            rule.escalation_strategy,
+            rule.target_id or rule.target_role,
+        )
+
+        return True
+
+    async def _send_escalation_notification(
+        self, session: AsyncSession, step: Any
+    ) -> None:
+        """
+        Gui thong bao khi buôc phê duyêt bi leo thang.
+
+        Placeholder — trong production, se tang hop voi CP12 Notification
+        de gui email, push notification, hoac in-app notification.
+
+        Tham so:
+            session: AsyncSession.
+            step: ApprovalStep da duoc leo thang.
+        """
+        # Placeholder cho notification — tang hop voi CP12
+        logger.info(
+            "[Notification] Buôc phê duyêt %s da duoc leo thang den %s (vai tro: %s)",
+            step.step_id,
+            step.approver_id,
+            step.approver_role,
+        )
+
+    # --------------------------------------------------------------
+    # Lay mo hinh tu module models (import dong)
+    # --------------------------------------------------------------
+
+    def _get_request_model(self) -> type:
+        """Lay mo hinh ApprovalRequest."""
+        from approval_models import ApprovalRequest
+        return ApprovalRequest
+
+    def _get_step_model(self) -> type:
+        """Lay mo hinh ApprovalStep."""
+        from approval_models import ApprovalStep
+        return ApprovalStep
+
+    def _get_escalation_model(self) -> type:
+        """Lay mo hinh EscalationRule."""
+        from approval_models import EscalationRule
+        return EscalationRule
+
+    def _get_delegation_model(self) -> type:
+        """Lay mo hinh DelegationRecord."""
+        from approval_models import DelegationRecord
+        return DelegationRecord
+
+
+# --------------------------------------------------------------
+# Celery-compatible task definitions
+# --------------------------------------------------------------
+# Cac task nay co the duoc goi boi Celery beat schedule.
+# Vi du Celery config:
+#
+#   beat_schedule = {
+#       "approval-deadline-check": {
+#           "task": "approval_escalation_worker.check_deadlines_task",
+#           "schedule": 300.0,  # moi 5 phut
+#       },
+#       "approval-request-deadline": {
+#           "task": "approval_escalation_worker.check_request_deadlines_task",
+#           "schedule": 600.0,  # moi 10 phut
+#       },
+#       "approval-cleanup-delegations": {
+#           "task": "approval_escalation_worker.cleanup_delegations_task",
+#           "schedule": 86400.0,  # moi 24 gio
+#       },
+#   }
+# --------------------------------------------------------------
+
+
+async def check_deadlines_task(session_factory: Any) -> Dict[str, Any]:
+    """
+    Celery task — kiem tra deadline va leo thang buôc phê duyêt.
+
+    Goi tu Celery beat schedule moi 5 phut.
+
+    Tham so:
+        session_factory: Factory de tao AsyncSession.
+
+    Tra ve:
+        Thong ke ve so buôc da xu ly.
+    """
+    worker = ApprovalEscalationWorker(session_factory)
+    return await worker.check_deadlines_and_escalate()
+
+
+async def check_request_deadlines_task(session_factory: Any) -> Dict[str, Any]:
+    """
+    Celery task — kiem tra deadline tong cua yeu cau phê duyêt.
+
+    Goi tu Celery beat schedule moi 10 phut.
+
+    Tham so:
+        session_factory: Factory de tao AsyncSession.
+
+    Tra ve:
+        Thong ke ve so yeu cau da xu ly.
+    """
+    worker = ApprovalEscalationWorker(session_factory)
+    return await worker.check_request_deadlines()
+
+
+async def cleanup_delegations_task(session_factory: Any) -> Dict[str, Any]:
+    """
+    Celery task — cleanup cac ban ghi uy quyen het han.
+
+    Goi tu Celery beat schedule moi 24 gio.
+
+    Tham so:
+        session_factory: Factory de tao AsyncSession.
+
+    Tra ve:
+        Thong ke ve so ban ghi da cap nhat.
+    """
+    worker = ApprovalEscalationWorker(session_factory)
+    return await worker.cleanup_expired_delegations()
+

@@ -722,7 +722,8 @@ core_packs:
     name: Approval Workflow Engine
     internal_id: cp42_approval
     phase: P1
-    description: Multi-level approval chain, approval matrix, delegation, escalation
+    description: "Hệ thống phê duyệt đa bước với leo thang, ủy quyền, và thông báo realtime"
+    prefix: MDC-CP42
     definitions_count: 4
     obligations_count: 2
     depends_on:
@@ -736,8 +737,26 @@ core_packs:
       - delegation
       - escalation
     category: runtime
-    status: planned
+    status: complete
     version: 1.0.0
+    error_codes:
+      MDC-CP42-001: "Approval request không tồn tại"
+      MDC-CP42-002: "Approval step không hợp lệ"
+      MDC-CP42-003: "Quyết định phê duyệt không hợp lệ"
+      MDC-CP42-004: "Quy tắc leo thang không hợp lệ"
+      MDC-CP42-005: "Ủy quyền không hợp lệ"
+      MDC-CP42-006: "Cấu hình thông báo không hợp lệ"
+      MDC-CP42-007: "Template không tìm thấy"
+      MDC-CP42-008: "Lỗi render template"
+      MDC-CP42-009: "Approval engine đã được khởi tạo"
+      MDC-CP42-010: "Lỗi khởi tạo approval engine"
+    components:
+      - models.py (5 enums, 5 dataclasses, ApprovalEngine)
+      - parser.py (ApprovalParser)
+      - recipes.py (build_approval_ir recipe)
+      - emitters: FastAPI, NestJS, Angular, React
+      - templates: 26 Jinja2 templates (4 stacks x 7 templates each, some shared)
+    tests: 282 passed
   - id: CP45
     name: Payment Gateway Abstraction
     internal_id: cp45_payment

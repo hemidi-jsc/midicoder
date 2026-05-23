@@ -1,0 +1,596 @@
+/**
+ * ApprovalStore — Store quản lý trạng thái quy trình phê duyệt.
+ *
+ * Sử dụng pattern: BehaviorSubject source + toSignal computed. Quản lý trạng thái
+ * gồm pendingRequests, approvals, currentRequest. Cung cấp các action:
+ * setRequests, addRequest, updateRequest, addDecision, escalateRequest,
+ * delegateRequest.
+ *
+ * Tạo tự động bởi CP42 — không sửa thủ công.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import { BehaviorSubject, Subject } from 'rxjs';
+import { toSignal } from '@angular/core/rxjs-interop';
+
+import {
+  ApprovalRequest,
+  ApprovalStep,
+  ApprovalDecision,
+  EscalationRule,
+  DelegationRecord,
+  ApprovalStatus
+} from './approval-types';
+
+// ===========================================================================
+// Interface nội bộ — trạng thái store
+// ===========================================================================
+
+/**
+ * Toàn bộ trạng thái của ApprovalStore.
+ *
+ * Không export ra ngoài — chỉ dùng nội bộ để đảm bảo immutability.
+ */
+interface ApprovalStoreState {
+  /** Danh sách tất cả yêu cầu phê duyệt. */
+  pendingRequests: ApprovalRequest[];
+  /** Danh sách tất cả bước phê duyệt. */
+  steps: ApprovalStep[];
+  /** Danh sách tất cả quyết định. */
+  decisions: ApprovalDecision[];
+  /** Danh sách quy tắc leo thang. */
+  escalationRules: EscalationRule[];
+  /** Danh sách bản ghi ủy quyền. */
+  delegationRecords: DelegationRecord[];
+  /** Yêu cầu đang xem chi tiết (nullable). */
+  currentRequest: ApprovalRequest | null;
+  /** ID của người dùng hiện tại. */
+  currentUserId: string | null;
+  /** Cờ đang tải dữ liệu. */
+  isLoading: boolean;
+  /** Lỗi cuối cùng (nullable). */
+  error: string | null;
+}
+
+// ===========================================================================
+// Giá trị mặc định
+// ===========================================================================
+
+/** Trạng thái ban đầu của store. */
+const INITIAL_STATE: ApprovalStoreState = {
+  pendingRequests: [],
+  steps: [],
+  decisions: [],
+  escalationRules: [],
+  delegationRecords: [],
+  currentRequest: null,
+  currentUserId: null,
+  isLoading: false,
+  error: null
+};
+
+/**
+ * ApprovalStore — Store quản lý trạng thái phê duyệt.
+ *
+ * Pattern: BehaviorSubject -> toSignal -> computed signals.
+ *
+ * Sử dụng:
+ *   const store = inject(ApprovalStore);
+ *   const requests = store.pendingRequests();
+ *   store.addRequest(newRequest);
+ */
+@Injectable({
+  providedIn: 'root'
+})
+export class ApprovalStore {
+  // ===========================================================================
+  // BehaviorSubject source
+  // ===========================================================================
+
+  /** Nguồn dữ liệu chính — BehaviorSubject giữ toàn bộ state. */
+  private readonly stateSubject = new BehaviorSubject<ApprovalStoreState>(INITIAL_STATE);
+
+  /** Subject thông báo khi có bất kỳ action nào (cho debug/logging). */
+  private readonly actionSubject = new Subject<string>();
+
+  // ===========================================================================
+  // Computed signals — từ BehaviorSubject source
+  // ===========================================================================
+
+  /**
+   * Danh sách tất cả yêu cầu phê duyệt (signal).
+   */
+  public readonly pendingRequests = toSignal<ApprovalRequest[]>(
+    this.stateSubject.value.pendingRequests ?
+      this.stateSubject.pipe() :
+      new BehaviorSubject<ApprovalRequest[]>(INITIAL_STATE.pendingRequests),
+    { requireSync: true }
+  );
+
+  /**
+   * Danh sách tất cả bước phê duyệt (signal).
+   */
+  public readonly steps = toSignal<ApprovalStep[]>(
+    new BehaviorSubject<ApprovalStep[]>(INITIAL_STATE.steps),
+    { requireSync: true }
+  );
+
+  /**
+   * Danh sách tất cả quyết định (signal).
+   */
+  public readonly decisions = toSignal<ApprovalDecision[]>(
+    new BehaviorSubject<ApprovalDecision[]>(INITIAL_STATE.decisions),
+    { requireSync: true }
+  );
+
+  /**
+   * Danh sách quy tắc leo thang (signal).
+   */
+  public readonly escalationRules = toSignal<EscalationRule[]>(
+    new BehaviorSubject<EscalationRule[]>(INITIAL_STATE.escalationRules),
+    { requireSync: true }
+  );
+
+  /**
+   * Danh sách bản ghi ủy quyền (signal).
+   */
+  public readonly delegationRecords = toSignal<DelegationRecord[]>(
+    new BehaviorSubject<DelegationRecord[]>(INITIAL_STATE.delegationRecords),
+    { requireSync: true }
+  );
+
+  /**
+   * Yêu cầu đang xem chi tiết (signal).
+   */
+  public readonly currentRequest = toSignal<ApprovalRequest | null>(
+    new BehaviorSubject<ApprovalRequest | null>(INITIAL_STATE.currentRequest),
+    { requireSync: true }
+  );
+
+  /**
+   * Cờ đang tải dữ liệu (signal).
+   */
+  public readonly isLoading = toSignal<boolean>(
+    new BehaviorSubject<boolean>(INITIAL_STATE.isLoading),
+    { requireSync: true }
+  );
+
+  /**
+   * Lỗi cuối cùng (signal).
+   */
+  public readonly error = toSignal<string | null>(
+    new BehaviorSubject<string | null>(INITIAL_STATE.error),
+    { requireSync: true }
+  );
+
+  // ===========================================================================
+  // Subjects riêng cho từng loại dữ liệu (để toSignal hoạt động đúng)
+  // ===========================================================================
+
+  private readonly requestsSubject = new BehaviorSubject<ApprovalRequest[]>(INITIAL_STATE.pendingRequests);
+  private readonly stepsSubject = new BehaviorSubject<ApprovalStep[]>(INITIAL_STATE.steps);
+  private readonly decisionsSubject = new BehaviorSubject<ApprovalDecision[]>(INITIAL_STATE.decisions);
+  private readonly escalationRulesSubject = new BehaviorSubject<EscalationRule[]>(INITIAL_STATE.escalationRules);
+  private readonly delegationRecordsSubject = new BehaviorSubject<DelegationRecord[]>(INITIAL_STATE.delegationRecords);
+  private readonly currentRequestSubject = new BehaviorSubject<ApprovalRequest | null>(INITIAL_STATE.currentRequest);
+  private readonly isLoadingSubject = new BehaviorSubject<boolean>(INITIAL_STATE.isLoading);
+  private readonly errorSubject = new BehaviorSubject<string | null>(INITIAL_STATE.error);
+
+  // ===========================================================================
+  // Signals public — tái khai báo đúng cách với toSignal
+  // ===========================================================================
+
+  /** Danh sách tất cả yêu cầu phê duyệt (signal). */
+  public readonly pendingRequests$ = toSignal(this.requestsSubject, { requireSync: true });
+
+  /** Danh sách tất cả bước phê duyệt (signal). */
+  public readonly steps$ = toSignal(this.stepsSubject, { requireSync: true });
+
+  /** Danh sách tất cả quyết định (signal). */
+  public readonly decisions$ = toSignal(this.decisionsSubject, { requireSync: true });
+
+  /** Danh sách quy tắc leo thang (signal). */
+  public readonly escalationRules$ = toSignal(this.escalationRulesSubject, { requireSync: true });
+
+  /** Danh sách bản ghi ủy quyền (signal). */
+  public readonly delegationRecords$ = toSignal(this.delegationRecordsSubject, { requireSync: true });
+
+  /** Yêu cầu đang xem chi tiết (signal). */
+  public readonly currentRequest$ = toSignal(this.currentRequestSubject, { requireSync: true });
+
+  /** Cờ đang tải dữ liệu (signal). */
+  public readonly isLoading$ = toSignal(this.isLoadingSubject, { requireSync: true });
+
+  /** Lỗi cuối cùng (signal). */
+  public readonly error$ = toSignal(this.errorSubject, { requireSync: true });
+
+  // ===========================================================================
+  // Alias — để component dùng tên ngắn (không có $)
+  // ===========================================================================
+
+  /** Alias cho pendingRequests$. */
+  public readonly pendingRequests = this.pendingRequests$;
+
+  /** Alias cho steps$. */
+  public readonly steps = this.steps$;
+
+  /** Alias cho decisions$. */
+  public readonly decisions = this.decisions$;
+
+  /** Alias cho escalationRules$. */
+  public readonly escalationRules = this.escalationRules$;
+
+  /** Alias cho delegationRecords$. */
+  public readonly delegationRecords = this.delegationRecords$;
+
+  /** Alias cho currentRequest$. */
+  public readonly currentRequest = this.currentRequest$;
+
+  /** Alias cho isLoading$. */
+  public readonly isLoading = this.isLoading$;
+
+  /** Alias cho error$. */
+  public readonly error = this.error$;
+
+  // ===========================================================================
+  // Actions — thao tác với yêu cầu phê duyệt
+  // ===========================================================================
+
+  /**
+   * Thay thế toàn bộ danh sách yêu cầu.
+   *
+   * @param requests Danh sách yêu cầu mới.
+   */
+  setRequests(requests: ApprovalRequest[]): void {
+    this.requestsSubject.next([...requests]);
+    this.stateSubject.next({ ...this.stateSubject.value, pendingRequests: [...requests] });
+    this.actionSubject.next('setRequests');
+  }
+
+  /**
+   * Thêm một yêu cầu mới vào danh sách.
+   *
+   * @param request Yêu cầu cần thêm.
+   */
+  addRequest(request: ApprovalRequest): void {
+    const current = this.requestsSubject.value;
+    const exists = current.find(r => r.requestId === request.requestId);
+    if (exists) {
+      console.warn('[ApprovalStore] Yêu cầu', request.requestId, 'đã tồn tại — bỏ qua');
+      return;
+    }
+    this.requestsSubject.next([...current, request]);
+    this.stateSubject.next({
+      ...this.stateSubject.value,
+      pendingRequests: [...current, request]
+    });
+    this.actionSubject.next('addRequest');
+  }
+
+  /**
+   * Cập nhật một yêu cầu theo ID.
+   *
+   * @param requestId ID yêu cầu cần cập nhật.
+   * @param updates Partial dữ liệu cần cập nhật.
+   */
+  updateRequest(requestId: string, updates: Partial<ApprovalRequest>): void {
+    const current = this.requestsSubject.value;
+    const updated = current.map(r => {
+      if (r.requestId === requestId) {
+        return { ...r, ...updates, updatedAt: new Date().toISOString() };
+      }
+      return r;
+    });
+    this.requestsSubject.next(updated);
+    this.stateSubject.next({ ...this.stateSubject.value, pendingRequests: updated });
+
+    // Nếu yêu cầu đang xem chi tiết thì cũng cập nhật luôn.
+    const currentReq = this.currentRequestSubject.value;
+    if (currentReq && currentReq.requestId === requestId) {
+      this.currentRequestSubject.next({ ...currentReq, ...updates, updatedAt: new Date().toISOString() });
+    }
+
+    this.actionSubject.next('updateRequest');
+  }
+
+  /**
+   * Xóa một yêu cầu khỏi danh sách.
+   *
+   * @param requestId ID yêu cầu cần xóa.
+   */
+  removeRequest(requestId: string): void {
+    const current = this.requestsSubject.value;
+    const filtered = current.filter(r => r.requestId !== requestId);
+    this.requestsSubject.next(filtered);
+    this.stateSubject.next({ ...this.stateSubject.value, pendingRequests: filtered });
+
+    // Nếu đang xem chi tiết yêu cầu này thì xóa luôn currentRequest.
+    if (this.currentRequestSubject.value?.requestId === requestId) {
+      this.currentRequestSubject.next(null);
+    }
+
+    this.actionSubject.next('removeRequest');
+  }
+
+  // ===========================================================================
+  // Actions — thao tác với bước phê duyệt
+  // ===========================================================================
+
+  /**
+   * Thay thế toàn bộ danh sách bước.
+   *
+   * @param steps Danh sách bước mới.
+   */
+  setSteps(steps: ApprovalStep[]): void {
+    this.stepsSubject.next([...steps]);
+    this.stateSubject.next({ ...this.stateSubject.value, steps: [...steps] });
+    this.actionSubject.next('setSteps');
+  }
+
+  /**
+   * Thêm một bước mới.
+   *
+   * @param step Bước cần thêm.
+   */
+  addStep(step: ApprovalStep): void {
+    const current = this.stepsSubject.value;
+    this.stepsSubject.next([...current, step]);
+    this.stateSubject.next({ ...this.stateSubject.value, steps: [...current, step] });
+    this.actionSubject.next('addStep');
+  }
+
+  /**
+   * Cập nhật một bước theo ID.
+   *
+   * @param stepId ID bước cần cập nhật.
+   * @param updates Dữ liệu cập nhật.
+   */
+  updateStep(stepId: string, updates: Partial<ApprovalStep>): void {
+    const current = this.stepsSubject.value;
+    const updated = current.map(s =>
+      s.stepId === stepId ? { ...s, ...updates } : s
+    );
+    this.stepsSubject.next(updated);
+    this.stateSubject.next({ ...this.stateSubject.value, steps: updated });
+    this.actionSubject.next('updateStep');
+  }
+
+  /**
+   * Lấy danh sách bước của một yêu cầu cụ thể.
+   *
+   * @param requestId ID yêu cầu phê duyệt.
+   * @returns Danh sách bước của yêu cầu.
+   */
+  getStepsByRequestId(requestId: string): ApprovalStep[] {
+    return this.stepsSubject.value.filter(s => s.requestId === requestId);
+  }
+
+  // ===========================================================================
+  // Actions — thao tác với quyết định
+  // ===========================================================================
+
+  /**
+   * Thêm một quyết định mới vào lịch sử.
+   *
+   * @param decision Quyết định cần thêm.
+   */
+  addDecision(decision: ApprovalDecision): void {
+    const current = this.decisionsSubject.value;
+    this.decisionsSubject.next([...current, decision]);
+    this.stateSubject.next({ ...this.stateSubject.value, decisions: [...current, decision] });
+
+    // Tự động cập nhật trạng thái yêu cầu nếu quyết định là rejected.
+    if (decision.decision === 'rejected') {
+      this.updateRequest(decision.requestId, { status: ApprovalStatus.REJECTED });
+    }
+
+    this.actionSubject.next('addDecision');
+  }
+
+  /**
+   * Thay thế toàn bộ danh sách quyết định.
+   *
+   * @param decisions Danh sách quyết định mới.
+   */
+  setDecisions(decisions: ApprovalDecision[]): void {
+    this.decisionsSubject.next([...decisions]);
+    this.stateSubject.next({ ...this.stateSubject.value, decisions: [...decisions] });
+    this.actionSubject.next('setDecisions');
+  }
+
+  // ===========================================================================
+  // Actions — thao tác với leo thang
+  // ===========================================================================
+
+  /**
+   * Xử lý leo thang cho một yêu cầu.
+   *
+   * @param requestId ID yêu cầu cần leo thang.
+   */
+  escalateRequest(requestId: string): void {
+    this.updateRequest(requestId, { status: ApprovalStatus.ESCALATED });
+    this.actionSubject.next('escalateRequest');
+  }
+
+  /**
+   * Thêm quy tắc leo thang mới.
+   *
+   * @param rule Quy tắc leo thang cần thêm.
+   */
+  addEscalationRule(rule: EscalationRule): void {
+    const current = this.escalationRulesSubject.value;
+    this.escalationRulesSubject.next([...current, rule]);
+    this.stateSubject.next({ ...this.stateSubject.value, escalationRules: [...current, rule] });
+    this.actionSubject.next('addEscalationRule');
+  }
+
+  /**
+   * Thay thế toàn bộ danh sách quy tắc leo thang.
+   *
+   * @param rules Danh sách quy tắc leo thang mới.
+   */
+  setEscalationRules(rules: EscalationRule[]): void {
+    this.escalationRulesSubject.next([...rules]);
+    this.stateSubject.next({ ...this.stateSubject.value, escalationRules: [...rules] });
+    this.actionSubject.next('setEscalationRules');
+  }
+
+  // ===========================================================================
+  // Actions — thao tác với ủy quyền
+  // ===========================================================================
+
+  /**
+   * Xử lý ủy quyền cho một yêu cầu.
+   *
+   * @param requestId ID yêu cầu cần ủy quyền.
+   * @param delegation Dữ liệu ủy quyền.
+   */
+  delegateRequest(requestId: string, delegation: DelegationRecord): void {
+    this.updateRequest(requestId, { status: ApprovalStatus.DELEGATED });
+    this.addDelegationRecord(delegation);
+    this.actionSubject.next('delegateRequest');
+  }
+
+  /**
+   * Thêm bản ghi ủy quyền mới.
+   *
+   * @param record Bản ghi ủy quyền cần thêm.
+   */
+  addDelegationRecord(record: DelegationRecord): void {
+    const current = this.delegationRecordsSubject.value;
+    this.delegationRecordsSubject.next([...current, record]);
+    this.stateSubject.next({ ...this.stateSubject.value, delegationRecords: [...current, record] });
+    this.actionSubject.next('addDelegationRecord');
+  }
+
+  /**
+   * Thay thế toàn bộ danh sách bản ghi ủy quyền.
+   *
+   * @param records Danh sách bản ghi ủy quyền mới.
+   */
+  setDelegationRecords(records: DelegationRecord[]): void {
+    this.delegationRecordsSubject.next([...records]);
+    this.stateSubject.next({ ...this.stateSubject.value, delegationRecords: [...records] });
+    this.actionSubject.next('setDelegationRecords');
+  }
+
+  // ===========================================================================
+  // Actions — thao tác với currentRequest
+  // ===========================================================================
+
+  /**
+   * Đặt yêu cầu đang xem chi tiết.
+   *
+   * @param request Yêu cầu cần đặt làm đang xem.
+   */
+  setCurrentRequest(request: ApprovalRequest): void {
+    this.currentRequestSubject.next({ ...request });
+    this.stateSubject.next({ ...this.stateSubject.value, currentRequest: { ...request } });
+    this.actionSubject.next('setCurrentRequest');
+  }
+
+  /**
+   * Xóa yêu cầu đang xem chi tiết.
+   */
+  clearCurrentRequest(): void {
+    this.currentRequestSubject.next(null);
+    this.stateSubject.next({ ...this.stateSubject.value, currentRequest: null });
+    this.actionSubject.next('clearCurrentRequest');
+  }
+
+  // ===========================================================================
+  // Actions — trạng thái tải và lỗi
+  // ===========================================================================
+
+  /**
+   * Đặt cờ đang tải.
+   *
+   * @param loading Trạng thái đang tải.
+   */
+  setLoading(loading: boolean): void {
+    this.isLoadingSubject.next(loading);
+    this.stateSubject.next({ ...this.stateSubject.value, isLoading: loading });
+    this.actionSubject.next('setLoading');
+  }
+
+  /**
+   * Đặt thông báo lỗi.
+   *
+   * @param error Thông báo lỗi (null để xóa lỗi).
+   */
+  setError(error: string | null): void {
+    this.errorSubject.next(error);
+    this.stateSubject.next({ ...this.stateSubject.value, error });
+    this.actionSubject.next('setError');
+  }
+
+  // ===========================================================================
+  // Tiện ích
+  // ===========================================================================
+
+  /**
+   * Đánh dấu component cần kiểm tra lại (cho OnPush).
+   *
+   * Dùng khi thay đổi local state (ví dụ: bộ lọc) để trigger change detection.
+   */
+  markForCheck(): void {
+    // Method này chủ yếu dùng để signal cho component rằng
+    // cần refresh — trong thực tế, signal-based store tự trigger.
+    // Giữ lại cho tương thích với ChangeDetectorRef.
+  }
+
+  /**
+   * Lấy trạng thái hiện tại của toàn bộ store (cho debug/testing).
+   *
+   * @returns Snapshot trạng thái hiện tại.
+   */
+  getState(): ApprovalStoreState {
+    return { ...this.stateSubject.value };
+  }
+
+  /**
+   * Reset toàn bộ store về trạng thái ban đầu.
+   */
+  reset(): void {
+    this.requestsSubject.next([]);
+    this.stepsSubject.next([]);
+    this.decisionsSubject.next([]);
+    this.escalationRulesSubject.next([]);
+    this.delegationRecordsSubject.next([]);
+    this.currentRequestSubject.next(null);
+    this.isLoadingSubject.next(false);
+    this.errorSubject.next(null);
+    this.stateSubject.next({ ...INITIAL_STATE });
+    this.actionSubject.next('reset');
+  }
+
+  /**
+   * Lấy yêu cầu theo ID.
+   *
+   * @param requestId ID yêu cầu cần tìm.
+   * @returns Yêu cầu tìm thấy hoặc undefined.
+   */
+  getRequestById(requestId: string): ApprovalRequest | undefined {
+    return this.requestsSubject.value.find(r => r.requestId === requestId);
+  }
+
+  /**
+   * Lấy danh sách quyết định của một yêu cầu.
+   *
+   * @param requestId ID yêu cầu phê duyệt.
+   * @returns Danh sách quyết định.
+   */
+  getDecisionsByRequestId(requestId: string): ApprovalDecision[] {
+    return this.decisionsSubject.value.filter(d => d.requestId === requestId);
+  }
+
+  /**
+   * Đếm số yêu cầu theo trạng thái.
+   *
+   * @param status Trạng thái cần đếm.
+   * @returns Số lượng yêu cầu.
+   */
+  countByStatus(status: ApprovalStatus): number {
+    return this.requestsSubject.value.filter(r => r.status === status).length;
+  }
+}

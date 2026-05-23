@@ -1,0 +1,311 @@
+/**
+ * useApprovals — React hook: WebSocket connection, fetch approvals, decide action, poll for deadline check.
+ * Sinh boi CP42 ApprovalEmitter.
+ *
+ * Returns: requests, pendingCount, decide, refresh, isConnected
+ *
+ * Su dung events: {{ use_events }}
+ */
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+/* ---- Loai trang thai ---- */
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'escalated' | 'delegated' | 'expired' | 'cancelled';
+
+/* ---- Interface du lieu ---- */
+export interface ApprovalRequestData {
+    request_id: string;
+    title: string;
+    description: string;
+    entity_type: string;
+    entity_id: string;
+    approval_type: string;
+    status: ApprovalStatus;
+    initiator_id: string;
+    current_step: number;
+    total_steps: number;
+    deadline: string | null;
+    metadata: Record<string, unknown>;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface ApprovalStepData {
+    step_id: string;
+    request_id: string;
+    step_number: number;
+    approver_id: string;
+    approver_role: string;
+    status: ApprovalStatus;
+    action_deadline: string | null;
+    is_parallel: boolean;
+    condition_expression: string | null;
+    created_at: string | null;
+}
+
+export interface UseApprovalsOptions {
+    apiBaseUrl?: string;
+    wsUrl?: string;
+    currentUserId?: string;
+    pollingIntervalMs?: number;
+    deadlineCheckIntervalMs?: number;
+}
+
+export interface UseApprovalsReturn {
+    requests: ApprovalRequestData[];
+    pendingCount: number;
+    pendingRequests: ApprovalRequestData[];
+    decide: (stepId: string, decision: 'approved' | 'rejected', comment?: string) => Promise<void>;
+    refresh: () => Promise<void>;
+    isConnected: boolean;
+    isLoading: boolean;
+    error: string | null;
+}
+
+/* Duong dan API mac dinh */
+const DEFAULT_API_BASE = '/api';
+const DEFAULT_POLLING_MS = 30000;
+const DEFAULT_DEADLINE_POLL_MS = 60000;
+
+/* ---- Helper: goi API lay danh sach requests ---- */
+async function fetchRequests(apiBaseUrl: string, userId: string): Promise<ApprovalRequestData[]> {
+    const url = `${apiBaseUrl}/approvals/requests?user_id=${encodeURIComponent(userId)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Lay danh sach requests that bai: ${response.status}`);
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.requests || []);
+}
+
+/* ---- Helper: goi API de quyet dinh phe duyet ---- */
+async function submitDecision(
+    apiBaseUrl: string,
+    stepId: string,
+    decision: 'approved' | 'rejected',
+    comment: string,
+): Promise<void> {
+    const url = `${apiBaseUrl}/approvals/decide`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step_id: stepId, decision, comment }),
+    });
+    if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        throw new Error(`Gui quyet dinh that bai: ${response.status} ${errorBody}`);
+    }
+}
+
+/* ---- Hook chinh: useApprovals ---- */
+export function useApprovals(options: UseApprovalsOptions = {}): UseApprovalsReturn {
+    const {
+        apiBaseUrl = DEFAULT_API_BASE,
+        wsUrl,
+        currentUserId = 'user_1',
+        pollingIntervalMs = DEFAULT_POLLING_MS,
+        deadlineCheckIntervalMs = DEFAULT_DEADLINE_POLL_MS,
+    } = options;
+
+    /* State */
+    const [requests, setRequests] = useState<ApprovalRequestData[]>([]);
+    const [isConnected, setIsConnected] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    /* Refs de tra nhap callback ma khong gat lai effect */
+    const wsRef = useRef<WebSocket | null>(null);
+    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const deadlineRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    /* Fetch danh sach requests */
+    const refresh = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const data = await fetchRequests(apiBaseUrl, currentUserId);
+            setRequests(data);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Loi khong ro';
+            setError(message);
+            console.error('[useApprovals] Refresh that bai:', message);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [apiBaseUrl, currentUserId]);
+
+    /* Decide: gui quyet dinh phe duyet/tu choi */
+    const decide = useCallback(
+        async (stepId: string, decision: 'approved' | 'rejected', comment = '') => {
+            setError(null);
+            try {
+                await submitDecision(apiBaseUrl, stepId, decision, comment);
+                /* Sau khi gui quyet dinh, lam moi danh sach */
+                await refresh();
+            } catch (err) {
+                const message = err instanceof Error ? err.message : 'Loi khong ro';
+                setError(message);
+                console.error('[useApprovals] Decide that bai:', message);
+            }
+        },
+        [apiBaseUrl, refresh],
+    );
+
+    /* Load du lieu khi mount */
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+
+    /* HTTP Polling — lap lai fetch de cap nhat du lieu */
+    useEffect(() => {
+        pollingRef.current = setInterval(() => {
+            refresh();
+        }, pollingIntervalMs);
+
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+                pollingRef.current = null;
+            }
+        };
+    }, [refresh, pollingIntervalMs]);
+
+    /* WebSocket ket noi cho realtime update */
+    {% if use_events %}
+    useEffect(() => {
+        if (!wsUrl) {
+            setIsConnected(false);
+            return;
+        }
+
+        const socket = new WebSocket(wsUrl);
+        wsRef.current = socket;
+
+        socket.onopen = () => {
+            setIsConnected(true);
+            // Gui yeu cau subscribe vao approval events
+            try {
+                socket.send(JSON.stringify({
+                    type: 'subscribe',
+                    channels: ['approval_updates', 'deadline_warnings'],
+                    user_id: currentUserId,
+                }));
+            } catch {
+                // Bo qua loi gui subscribe
+            }
+        };
+
+        socket.onclose = () => {
+            setIsConnected(false);
+            wsRef.current = null;
+        };
+
+        socket.onerror = () => {
+            setIsConnected(false);
+            setError('Ket noi WebSocket that bai');
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                // Xu ly theo loai event
+                switch (data.type) {
+                    case 'approval_updated':
+                        // Cap nhat mot request trong state
+                        setRequests((prev) =>
+                            prev.map((r) =>
+                                r.request_id === data.request_id
+                                    ? { ...r, ...data.payload, updated_at: new Date().toISOString() }
+                                    : r
+                            )
+                        );
+                        break;
+
+                    case 'new_approval':
+                        // Them request moi vao danh sach
+                        if (data.payload) {
+                            setRequests((prev) => [data.payload, ...prev]);
+                        }
+                        break;
+
+                    case 'deadline_warning':
+                        // C bao het han — lam moi danh sach de lay trang thai moi nhat
+                        refresh();
+                        break;
+
+                    case 'decision_received':
+                        // Co nguoi da quyet dinh — cap nhat status
+                        setRequests((prev) =>
+                            prev.map((r) =>
+                                r.request_id === data.request_id
+                                    ? { ...r, status: data.new_status, current_step: data.new_step || r.current_step, updated_at: new Date().toISOString() }
+                                    : r
+                            )
+                        );
+                        break;
+
+                    default:
+                        // Co the la event khac — bo qua
+                        break;
+                }
+            } catch {
+                // Loi giai ma JSON — bo qua
+                console.warn('[useApprovals] Loi giai ma WebSocket message');
+            }
+        };
+
+        return () => {
+            socket.close();
+            wsRef.current = null;
+        };
+    }, [wsUrl, currentUserId, refresh]);
+    {% else %}
+    useEffect(() => {
+        // WebSocket bi tat — chi su dung HTTP polling
+        setIsConnected(false);
+    }, []);
+    {% endif %}
+
+    /* Deadline check — polling de kiem tra requests het han */
+    useEffect(() => {
+        deadlineRef.current = setInterval(() => {
+            const now = new Date();
+            setRequests((prev) =>
+                prev.map((r) => {
+                    if (r.deadline && r.status === 'pending') {
+                        const deadlineDate = new Date(r.deadline);
+                        if (now > deadlineDate) {
+                            // Request da het han — cap nhat status thanh expired
+                            return { ...r, status: 'expired' as ApprovalStatus };
+                        }
+                    }
+                    return r;
+                })
+            );
+        }, deadlineCheckIntervalMs);
+
+        return () => {
+            if (deadlineRef.current) {
+                clearInterval(deadlineRef.current);
+                deadlineRef.current = null;
+            }
+        };
+    }, [deadlineCheckIntervalMs]);
+
+    /* Tinh so luong pending */
+    const pendingRequests = requests.filter((r) => r.status === 'pending');
+    const pendingCount = pendingRequests.length;
+
+    return {
+        requests,
+        pendingCount,
+        pendingRequests,
+        decide,
+        refresh,
+        isConnected,
+        isLoading,
+        error,
+    };
+}
+
+export default useApprovals;

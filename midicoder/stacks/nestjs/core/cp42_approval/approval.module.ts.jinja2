@@ -1,0 +1,98 @@
+/**
+ * ApprovalModule - NestJS Module cho Approval Workflow Engine.
+ *
+ * Khởi tạo và kết nối tất cả các component của hệ thống phê duyệt:
+ * - TypeORM entities (ApprovalRequest, ApprovalStep, ApprovalDecision, EscalationRule, DelegationRecord)
+ * - CRUD Service (ApprovalService)
+ * - REST Controller (ApprovalController)
+ * - WebSocket Gateway (ApprovalGateway)
+ * - Cron Scheduler (ApprovalScheduler)
+ *
+ * CP42: Approval Workflow Engine
+ * Tổng số yêu cầu mẫu: {{ num_requests }}
+ * Tổng số bước mẫu: {{ num_steps }}
+ */
+
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { ApprovalRequest, ApprovalStep, ApprovalDecision, EscalationRule, DelegationRecord } from "./approval.entity";
+import { ApprovalController } from "./approval.controller";
+import { ApprovalService } from "./approval.service";
+import { ApprovalGateway } from "./approval.gateway";
+import { ApprovalScheduler } from "./approval.scheduler";
+
+/**
+ * ApprovalModule - module cho Approval Workflow Engine.
+ *
+ * Structure:
+ * - Imports:
+ *   - TypeOrmModule.forFeature() - 5 entities cho approval
+ *
+ * - Controllers:
+ *   - ApprovalController - REST API cho yêu cầu, quyết định, leo thang, ủy quyền
+ *
+ * - Providers:
+ *   - ApprovalService - business logic chính
+ *   - ApprovalGateway - WebSocket realtime notification
+ *   - ApprovalScheduler - cron job kiểm tra deadline
+ *
+ * - Exports:
+ *   - ApprovalService - để module khác có thể gọi API phê duyệt
+ *   - ApprovalGateway - để module khác có thể broadcast events
+ *
+ * Usage trong AppModule:
+ * @Module({
+ *   imports: [
+ *     ApprovalModule,
+ *   ],
+ * })
+ * export class AppModule {}
+ */
+@Module({
+  imports: [
+    // TypeORM - quản lý các entity cho hệ thống phê duyệt
+    // - ApprovalRequest: yêu cầu phê duyệt chính
+    // - ApprovalStep: bước phê duyệt trong chuỗi
+    // - ApprovalDecision: quyết định phê duyệt/từ chối
+    // - EscalationRule: quy tắc leo thang
+    // - DelegationRecord: bản ghi ủy quyền
+    TypeOrmModule.forFeature([
+      ApprovalRequest,
+      ApprovalStep,
+      ApprovalDecision,
+      EscalationRule,
+      DelegationRecord,
+    ]),
+  ],
+  controllers: [
+    // REST Controller cho approval API
+    // - POST /approvals - tạo yêu cầu phê duyệt
+    // - GET /approvals - list yêu cầu
+    // - GET /approvals/:id - chi tiết yêu cầu
+    // - POST /approvals/:id/decide - quyết định phê duyệt
+    // - POST /approvals/:id/escalate - leo thang
+    // - POST /approvals/:id/delegate - ủy quyền
+    // - GET /approvals/:id/decisions - list quyết định
+    // - POST /approvals/deadlines/check - kiểm tra deadline
+    ApprovalController,
+  ],
+  providers: [
+    // Service chính - business logic cho quy trình phê duyệt
+    ApprovalService,
+
+    // WebSocket Gateway - realtime notification
+    // Namespace: /ws/approvals
+    // Events: new_approval_request, approval_decision, approval_escalated, approval_delegated, deadline_warning
+    ApprovalGateway,
+
+    // Cron Scheduler - kiểm tra deadline và tự động leo thang
+    // Chạy mỗi 5 phút
+    ApprovalScheduler,
+  ],
+  exports: [
+    // Export các service để module khác có thể inject
+    ApprovalService,
+    ApprovalGateway,
+  ],
+})
+export class ApprovalModule {}

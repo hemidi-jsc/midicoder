@@ -1,0 +1,391 @@
+# ----------------------------------------------------------
+# CP42 Approval Workflow — Pydantic schemas cho validation
+# ----------------------------------------------------------
+# Sinh bởi CP42ApprovalEmitter
+# Schemas: Create, Update, Read variants cho ApprovalRequest,
+#          ApprovalStep, ApprovalDecision
+# ----------------------------------------------------------
+
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+
+# ====================================================================
+# ApprovalRequest Schemas
+# ====================================================================
+
+
+class ApprovalRequestCreate(BaseModel):
+    """Schema tao yeu cau phê duyêt moi."""
+    title: str = Field(
+        ..., min_length=1, max_length=512,
+        description="Tieu de yeu cau phê duyêt"
+    )
+    description: Optional[str] = Field(
+        None, max_length=4096,
+        description="Mo ta chi tiet yeu cau"
+    )
+    entity_type: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Loai thuc the can phê duyêt (purchase_order, leave_request, ...)"
+    )
+    entity_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID cua thuc the lien quan"
+    )
+    approval_type: str = Field(
+        default="sequential",
+        description="Loai quy trinh: sequential, parallel, matrix, voting, single"
+    )
+    initiator_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID ngươI khoi tao yeu cau"
+    )
+    total_steps: int = Field(
+        default=1, ge=1, le=100,
+        description="Tong so buôc phê duyêt"
+    )
+    metadata_json: Optional[Dict[str, Any]] = Field(
+        None, description="Du lieu bo sung"
+    )
+
+    @field_validator("approval_type")
+    @classmethod
+    def validate_approval_type(cls, v: str) -> str:
+        """Kiem tra loai quy trinh phê duyêt hop le."""
+        valid_types = ("sequential", "parallel", "matrix", "voting", "single")
+        if v not in valid_types:
+            raise ValueError(
+                "approval_type phai la mot trong: {}".format(", ".join(valid_types))
+            )
+        return v
+
+
+class ApprovalRequestUpdate(BaseModel):
+    """Schema cap nhat yeu cau phê duyêt (bat chon)."""
+    title: Optional[str] = Field(
+        None, min_length=1, max_length=512,
+        description="Tieu de yeu cau phê duyêt"
+    )
+    description: Optional[str] = Field(
+        None, max_length=4096,
+        description="Mo ta chi tiet yeu cau"
+    )
+    status: Optional[str] = Field(
+        None,
+        description="Trang thai: pending, approved, rejected, escalated, delegated, expired, cancelled"
+    )
+    metadata_json: Optional[Dict[str, Any]] = Field(
+        None, description="Du lieu bo sung"
+    )
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Kiem tra trang thai hop le."""
+        valid_statuses = (
+            "pending", "approved", "rejected",
+            "escalated", "delegated", "expired", "cancelled"
+        )
+        if v not in valid_statuses:
+            raise ValueError(
+                "status phai la mot trong: {}".format(", ".join(valid_statuses))
+            )
+        return v
+
+
+class ApprovalRequestRead(BaseModel):
+    """Schema doc yeu cau phê duyêt."""
+    request_id: str = Field(..., description="ID duy nhat cua yeu cau")
+    title: str = Field(..., description="Tieu de yeu cau")
+    description: Optional[str] = Field(None, description="Mo ta chi tiet")
+    entity_type: str = Field(..., description="Loai thuc the")
+    entity_id: str = Field(..., description="ID thuc the lien quan")
+    approval_type: str = Field(..., description="Loai quy trinh phê duyêt")
+    status: str = Field(..., description="Trang thai hien tai")
+    initiator_id: str = Field(..., description="ID ngươI khoi tao")
+    current_step: int = Field(..., description="Buôc hien tai")
+    total_steps: int = Field(..., description="Tong so buôc")
+    deadline: Optional[datetime] = Field(None, description="Thoi han phê duyêt")
+    metadata_json: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat cuoi")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# ApprovalStep Schemas
+# ====================================================================
+
+
+class ApprovalStepCreate(BaseModel):
+    """Schema tao buôc phê duyêt moi."""
+    request_id: str = Field(
+        ..., min_length=1, max_length=36,
+        description="ID yeu cau phê duyêt cha"
+    )
+    step_number: int = Field(
+        ..., ge=1, le=100,
+        description="Thu tu buôc trong chuôi (1-based)"
+    )
+    approver_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID ngươI phê duyêt"
+    )
+    approver_role: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Vai tro cua ngươI phê duyêt"
+    )
+    is_parallel: bool = Field(
+        default=False,
+        description="Buôc co thuc hien song song voi cac buôc khac khong"
+    )
+    condition_expression: Optional[str] = Field(
+        None, max_length=2048,
+        description="Bieu thuc dieu kien de kich hoat buôc nay"
+    )
+
+    @field_validator("condition_expression")
+    @classmethod
+    def validate_condition_expression(cls, v: Optional[str]) -> Optional[str]:
+        """Kiem tra bieu thuc dieu kien khong qua dai."""
+        if v is not None and len(v) > 2048:
+            raise ValueError("condition_expression khong duoc vuot qua 2048 ky tu")
+        return v
+
+
+class ApprovalStepUpdate(BaseModel):
+    """Schema cap nhat buôc phê duyêt (bat chon)."""
+    status: Optional[str] = Field(
+        None,
+        description="Trang thai: pending, approved, rejected, escalated, delegated, expired"
+    )
+    action_deadline: Optional[datetime] = Field(
+        None, description="Thoi han hanh dong cho buôc nay"
+    )
+    condition_expression: Optional[str] = Field(
+        None, max_length=2048,
+        description="Bieu thuc dieu kien de kich hoat buôc nay"
+    )
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Kiem tra trang thai buôc hop le."""
+        valid_statuses = (
+            "pending", "approved", "rejected",
+            "escalated", "delegated", "expired"
+        )
+        if v not in valid_statuses:
+            raise ValueError(
+                "status phai la mot trong: {}".format(", ".join(valid_statuses))
+            )
+        return v
+
+
+class ApprovalStepRead(BaseModel):
+    """Schema doc buôc phê duyêt."""
+    step_id: str = Field(..., description="ID duy nhat cua buôc")
+    request_id: str = Field(..., description="ID yeu cau phê duyêt cha")
+    step_number: int = Field(..., description="Thu tu buôc")
+    approver_id: str = Field(..., description="ID ngươI phê duyêt")
+    approver_role: str = Field(..., description="Vai tro ngươI phê duyêt")
+    status: str = Field(..., description="Trang thai buôc")
+    action_deadline: Optional[datetime] = Field(None, description="Thoi han hanh dong")
+    is_parallel: bool = Field(..., description="Co song song khong")
+    condition_expression: Optional[str] = Field(None, description="Dieu kien kich hoat")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# ApprovalDecision Schemas
+# ====================================================================
+
+
+class ApprovalDecisionCreate(BaseModel):
+    """Schema tao quyet dinh phê duyêt moi."""
+    step_id: str = Field(
+        ..., min_length=1, max_length=36,
+        description="ID buôc phê duyêt lien quan"
+    )
+    approver_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID ngươI dua ra quyet dinh"
+    )
+    decision: str = Field(
+        ..., description="Quyet dinh: approved hoac rejected"
+    )
+    comment: Optional[str] = Field(
+        "", max_length=2048,
+        description="Nhan xet hoac ly do"
+    )
+
+    @field_validator("decision")
+    @classmethod
+    def validate_decision(cls, v: str) -> str:
+        """Kiem tra quyet dinh hop le."""
+        valid_decisions = ("approved", "rejected")
+        if v not in valid_decisions:
+            raise ValueError(
+                "decision phai la mot trong: {}".format(", ".join(valid_decisions))
+            )
+        return v
+
+
+class ApprovalDecisionRead(BaseModel):
+    """Schema doc quyet dinh phê duyêt."""
+    decision_id: str = Field(..., description="ID duy nhat cua quyet dinh")
+    step_id: str = Field(..., description="ID buôc phê duyêt")
+    request_id: str = Field(..., description="ID yeu cau phê duyêt cha")
+    approver_id: str = Field(..., description="ID ngươI dua ra quyet dinh")
+    decision: str = Field(..., description="Quyet dinh: approved hoac rejected")
+    comment: Optional[str] = Field("", description="Nhan xet hoac ly do")
+    created_at: datetime = Field(..., description="Thoi diem quyet dinh")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# EscalationRule Schemas
+# ====================================================================
+
+
+class EscalationRuleCreate(BaseModel):
+    """Schema tao quy tac leo thang moi."""
+    request_id: str = Field(
+        ..., min_length=1, max_length=36,
+        description="ID yeu cau phê duyêt lien quan"
+    )
+    trigger_after_minutes: int = Field(
+        default=60, ge=1, le=10080,
+        description="Thoi gian (phút) sau khi kich hoat leo thang"
+    )
+    escalation_strategy: str = Field(
+        default="next_level",
+        description="Chien luoc: next_level, next_role, manager, timeout"
+    )
+    target_role: Optional[str] = Field(
+        None, max_length=64,
+        description="Vai tro muc tiêu khi leo thang"
+    )
+    target_id: Optional[str] = Field(
+        None, max_length=64,
+        description="ID ngươI/phong ban muc tiêu khi leo thang"
+    )
+    max_escalation_level: int = Field(
+        default=3, ge=1, le=10,
+        description="Muc leo thang toi da"
+    )
+
+    @field_validator("escalation_strategy")
+    @classmethod
+    def validate_escalation_strategy(cls, v: str) -> str:
+        """Kiem tra chien luoc leo thang hop le."""
+        valid_strategies = ("next_level", "next_role", "manager", "timeout")
+        if v not in valid_strategies:
+            raise ValueError(
+                "escalation_strategy phai la mot trong: {}".format(", ".join(valid_strategies))
+            )
+        return v
+
+
+class EscalationRuleRead(BaseModel):
+    """Schema doc quy tac leo thang."""
+    rule_id: str = Field(..., description="ID duy nhat cua quy tac")
+    request_id: str = Field(..., description="ID yeu cau phê duyêt")
+    trigger_after_minutes: int = Field(..., description="Thoi gian kich hoat (phút)")
+    escalation_strategy: str = Field(..., description="Chien luoc leo thang")
+    target_role: Optional[str] = Field(None, description="Vai tro muc tiêu")
+    target_id: Optional[str] = Field(None, description="ID muc tiêu")
+    max_escalation_level: int = Field(..., description="Muc leo thang toi da")
+    is_active: bool = Field(..., description="Co dang hoat dong khong")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# DelegationRecord Schemas
+# ====================================================================
+
+
+class DelegationRecordCreate(BaseModel):
+    """Schema tao ban ghi uy quyen moi."""
+    delegator_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID ngươI uy quyen"
+    )
+    delegatee_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID ngươI duoc uy quyen"
+    )
+    delegation_type: str = Field(
+        default="temporary",
+        description="Loai uy quyen: temporary, permanent, conditional"
+    )
+    scope: str = Field(
+        default="*", max_length=128,
+        description="Pham vi uy quyen (request_id cu the hoac '*' cho tat ca)"
+    )
+    valid_until: Optional[datetime] = Field(
+        None, description="Thoi diem het hieu luc (None = vinh vien)"
+    )
+
+    @field_validator("delegation_type")
+    @classmethod
+    def validate_delegation_type(cls, v: str) -> str:
+        """Kiem tra loai uy quyen hop le."""
+        valid_types = ("temporary", "permanent", "conditional")
+        if v not in valid_types:
+            raise ValueError(
+                "delegation_type phai la mot trong: {}".format(", ".join(valid_types))
+            )
+        return v
+
+    @field_validator("delegatee_id")
+    @classmethod
+    def validate_no_self_delegation(cls, v: str, info: Any) -> str:
+        """Kiem tra khong duoc uy quyen cho chinh minh."""
+        delegator_id = info.data.get("delegator_id", "")
+        if v == delegator_id:
+            raise ValueError("Khong duoc uy quyen cho chinh minh")
+        return v
+
+
+class DelegationRecordRead(BaseModel):
+    """Schema doc ban ghi uy quyen."""
+    delegation_id: str = Field(..., description="ID duy nhat cua ban ghi uy quyen")
+    delegator_id: str = Field(..., description="ID ngươI uy quyen")
+    delegatee_id: str = Field(..., description="ID ngươI duoc uy quyen")
+    delegation_type: str = Field(..., description="Loai uy quyen")
+    scope: str = Field(..., description="Pham vi uy quyen")
+    valid_from: Optional[datetime] = Field(None, description="Bat dau hieu luc")
+    valid_until: Optional[datetime] = Field(None, description="Het hieu luc")
+    is_active: bool = Field(..., description="Co dang hoat dong khong")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# Pagination Response Schema
+# ====================================================================
+
+
+class PaginatedApprovals(BaseModel):
+    """Schema phan trang cho danh sach yeu cau phê duyêt."""
+    items: List[ApprovalRequestRead] = Field(..., description="Danh sach yeu cau")
+    total: int = Field(..., description="Tong so yeu cau")
+    offset: int = Field(..., description="So ban ghi bo qua")
+    limit: int = Field(..., description="So ban ghi toi da")
+
+
+class PaginatedDecisions(BaseModel):
+    """Schema phan trang cho danh sach quyet dinh."""
+    items: List[ApprovalDecisionRead] = Field(..., description="Danh sach quyet dinh")
+    total: int = Field(..., description="Tong so quyet dinh")
+    offset: int = Field(..., description="So ban ghi bo qua")
+    limit: int = Field(..., description="So ban ghi toi da")

@@ -1,0 +1,427 @@
+/**
+* DelegationSettings — UI cau hinh delegation: form chon delegatee, type, valid_until date picker, delegation list.
+* Sinh boi CP42 ApprovalEmitter.
+*/
+import React, { useState, useCallback } from 'react';
+
+/* ---- Loai uy quyen ---- */
+export type DelegationType = 'temporary' | 'permanent' | 'conditional';
+
+/* ---- Interface du lieu ---- */
+export interface DelegationRecordItem {
+delegation_id: string;
+delegator_id: string;
+delegatee_id: string;
+delegation_type: DelegationType;
+scope: string;
+valid_from: string | null;
+valid_until: string | null;
+is_active: boolean;
+}
+
+export interface DelegationSettingsProps {
+delegations: DelegationRecordItem[];
+currentUserId?: string;
+availableUsers?: string[];
+onCreateDelegation?: (data: {
+delegatee_id: string;
+delegation_type: DelegationType;
+scope: string;
+valid_until: string | null;
+}) => void;
+onRevokeDelegation?: (delegationId: string) => void;
+}
+
+/* ---- Style objects ---- */
+const sWrap: React.CSSProperties = {
+display: 'flex',
+flexDirection: 'column' as const,
+height: '100%',
+fontFamily: 'system-ui, sans-serif',
+backgroundColor: '#f3f4f6',
+};
+const sHeader: React.CSSProperties = {
+padding: '16px 20px',
+backgroundColor: '#fff',
+borderBottom: '1px solid #e5e7eb',
+};
+const sHeaderTitle: React.CSSProperties = {
+fontSize: '18px',
+fontWeight: 700,
+margin: 0,
+color: '#111827',
+};
+const sHeaderSub: React.CSSProperties = {
+fontSize: '13px',
+color: '#6b7280',
+marginTop: '2px',
+};
+
+/* Form section */
+const sFormSection: React.CSSProperties = {
+padding: '16px 20px',
+backgroundColor: '#fff',
+borderBottom: '1px solid #e5e7eb',
+};
+const sFormTitle: React.CSSProperties = {
+fontSize: '14px',
+fontWeight: 600,
+margin: '0 0 12px',
+color: '#111827',
+};
+const sFormGroup: React.CSSProperties = {
+marginBottom: '10px',
+};
+const sLabel: React.CSSProperties = {
+display: 'block',
+fontSize: '12px',
+fontWeight: 600,
+color: '#374151',
+marginBottom: '4px',
+};
+const sInput: React.CSSProperties = {
+width: '100%',
+padding: '8px 10px',
+border: '1px solid #d1d5db',
+borderRadius: '6px',
+fontSize: '13px',
+fontFamily: 'inherit',
+boxSizing: 'border-box' as const,
+};
+const sSelect: React.CSSProperties = {
+width: '100%',
+padding: '8px 10px',
+border: '1px solid #d1d5db',
+borderRadius: '6px',
+fontSize: '13px',
+fontFamily: 'inherit',
+backgroundColor: '#fff',
+boxSizing: 'border-box' as const,
+};
+const sFormRow: React.CSSProperties = {
+display: 'flex',
+gap: '12px',
+};
+const sFormCol: React.CSSProperties = {
+flex: 1,
+};
+const sCreateBtn: React.CSSProperties = {
+padding: '8px 18px',
+backgroundColor: '#3b82f6',
+color: '#fff',
+border: 'none',
+borderRadius: '6px',
+fontSize: '13px',
+fontWeight: 600,
+cursor: 'pointer',
+marginTop: '4px',
+};
+const sCreateBtnDisabled: React.CSSProperties = {
+...sCreateBtn,
+opacity: 0.5,
+cursor: 'not-allowed',
+};
+
+/* Delegation list */
+const sListSection: React.CSSProperties = {
+flex: 1,
+overflowY: 'auto' as const,
+padding: '16px 20px',
+};
+const sListTitle: React.CSSProperties = {
+fontSize: '14px',
+fontWeight: 600,
+margin: '0 0 10px',
+color: '#111827',
+};
+const sDelegationCard: React.CSSProperties = {
+padding: '12px 14px',
+backgroundColor: '#fff',
+borderRadius: '8px',
+boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+marginBottom: '8px',
+display: 'flex',
+justifyContent: 'space-between',
+alignItems: 'flex-start',
+};
+const sDelegationInfo: React.CSSProperties = {
+flex: 1,
+};
+const sDelegationId: React.CSSProperties = {
+fontSize: '11px',
+fontFamily: 'monospace',
+color: '#9ca3af',
+marginBottom: '4px',
+};
+const sDelegationPair: React.CSSProperties = {
+fontSize: '13px',
+fontWeight: 600,
+color: '#111827',
+marginBottom: '2px',
+};
+const sDelegationMeta: React.CSSProperties = {
+fontSize: '12px',
+color: '#6b7280',
+marginBottom: '2px',
+};
+const sRevokeBtn: React.CSSProperties = {
+padding: '4px 10px',
+backgroundColor: '#fee2e2',
+color: '#991b1b',
+border: '1px solid #fca5a5',
+borderRadius: '4px',
+fontSize: '11px',
+fontWeight: 600,
+cursor: 'pointer',
+marginLeft: '12px',
+flexShrink: 0,
+};
+const sEmptyState: React.CSSProperties = {
+padding: '24px 20px',
+textAlign: 'center' as const,
+color: '#9ca3af',
+fontSize: '13px',
+};
+
+/* Pre-declared inline styles to avoid double-brace conflict */
+const sActiveGroupLabel: React.CSSProperties = {
+fontSize: '12px',
+color: '#6b7280',
+marginBottom: '6px',
+fontWeight: 500,
+};
+const sInactiveGroupLabel: React.CSSProperties = {
+fontSize: '12px',
+color: '#9ca3af',
+marginBottom: '6px',
+marginTop: '12px',
+fontWeight: 500,
+};
+const sInactiveCard: React.CSSProperties = { ...sDelegationCard, opacity: 0.6 };
+
+/* Badge helper cho delegation type */
+function typeBadgeStyle(type: DelegationType): React.CSSProperties {
+const base: React.CSSProperties = {
+display: 'inline-block',
+padding: '1px 6px',
+borderRadius: '8px',
+fontSize: '10px',
+fontWeight: 600,
+marginRight: '6px',
+textTransform: 'capitalize' as const,
+};
+const map: Record<DelegationType, { bg: string; color: string }> = {
+    temporary: { bg: '#fef3c7', color: '#92400e' },
+    permanent: { bg: '#e0e7ff', color: '#3730a3' },
+    conditional: { bg: '#fce7f3', color: '#9d174d' },
+    };
+    const c = map[type] || map.temporary;
+    return { ...base, backgroundColor: c.bg, color: c.color };
+    }
+
+    /* Badge helper cho active status */
+    function activeBadgeStyle(isActive: boolean): React.CSSProperties {
+    const base: React.CSSProperties = {
+    display: 'inline-block',
+    padding: '1px 6px',
+    borderRadius: '8px',
+    fontSize: '10px',
+    fontWeight: 600,
+    };
+    if (isActive) {
+    return { ...base, backgroundColor: '#d1fae5', color: '#065f46' };
+    }
+    return { ...base, backgroundColor: '#f3f4f6', color: '#6b7280' };
+    }
+
+    /* ---- Utility ---- */
+    function formatDate(iso: string | null): string {
+    if (!iso) return '\u2014';
+    const d = new Date(iso);
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+
+    /* ---- Component: DelegationSettings ---- */
+    export function DelegationSettings({
+    delegations,
+    currentUserId = 'user_1',
+    availableUsers = [],
+    onCreateDelegation,
+    onRevokeDelegation,
+    }: DelegationSettingsProps) {
+    /* Form state */
+    const [delegateeId, setDelegateeId] = useState('');
+    const [delegationType, setDelegationType] = useState<DelegationType>('temporary');
+        const [scope, setScope] = useState('*');
+        const [validUntil, setValidUntil] = useState('');
+
+        /* Kiem tra form valid */
+        const isValid = delegateeId.trim().length > 0;
+
+        /* Submit form */
+        const handleCreate = useCallback(() => {
+        if (!isValid) return;
+        onCreateDelegation?.({
+        delegatee_id: delegateeId.trim(),
+        delegation_type: delegationType,
+        scope: scope.trim() || '*',
+        valid_until: delegationType === 'permanent' ? null : (validUntil || null),
+        });
+        /* Reset form */
+        setDelegateeId('');
+        setScope('*');
+        setValidUntil('');
+        setDelegationType('temporary');
+        }, [isValid, delegateeId, delegationType, scope, validUntil, onCreateDelegation]);
+
+        /* Revoke delegation */
+        const handleRevoke = useCallback(
+        (delegationId: string) => {
+        onRevokeDelegation?.(delegationId);
+        },
+        [onRevokeDelegation],
+        );
+
+        /* Tach danh sach active va inactive */
+        const activeDelegations = delegations.filter((d) => d.is_active);
+        const inactiveDelegations = delegations.filter((d) => !d.is_active);
+
+        return (
+        <div style={sWrap}>
+            {/* Header */}
+            <div style={sHeader}>
+                <h2 style={sHeaderTitle}>Cau hinh uy quyen</h2>
+                <div style={sHeaderSub}>
+                    Uy quyen cong viec phe duyet cho nguoi khac
+                </div>
+            </div>
+
+            {/* Form tao delegation moi */}
+            <div style={sFormSection}>
+                <div style={sFormTitle}>Tao uy quyen moi</div>
+
+                <div style={sFormGroup}>
+                    <label style={sLabel}>Nguoi duoc uy quyen (delegatee)</label>
+                    <select style={sSelect} value={delegateeId} onChange={(e)=> setDelegateeId(e.target.value)}
+                        >
+                        <option value="">-- Chon nguoi --</option>
+                        {availableUsers.map((user) => (
+                        <option key={user} value={user}>
+                            {user}
+                        </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div style={sFormRow}>
+                    <div style={sFormCol}>
+                        <div style={sFormGroup}>
+                            <label style={sLabel}>Loai uy quyen</label>
+                            <select style={sSelect} value={delegationType} onChange={(e)=>
+                                setDelegationType(e.target.value as DelegationType)}
+                                >
+                                <option value="temporary">Tam thoi (co thoi han)</option>
+                                <option value="permanent">Vinh vien</option>
+                                <option value="conditional">Co dieu kien</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style={sFormCol}>
+                        <div style={sFormGroup}>
+                            <label style={sLabel}>Pham vi (scope)</label>
+                            <input style={sInput} type="text" value={scope} onChange={(e)=> setScope(e.target.value)}
+                            placeholder="* cho tat ca"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {delegationType !== 'permanent' && (
+                <div style={sFormGroup}>
+                    <label style={sLabel}>Het hieu luc (valid_until)</label>
+                    <input style={sInput} type="datetime-local" value={validUntil} onChange={(e)=>
+                    setValidUntil(e.target.value)}
+                    />
+                </div>
+                )}
+
+                <button style={isValid ? sCreateBtn : sCreateBtnDisabled} onClick={handleCreate} disabled={!isValid}>
+                    Tao uy quyen
+                </button>
+            </div>
+
+            {/* Danh sach delegation */}
+            <div style={sListSection}>
+                <div style={sListTitle}>
+                    Danh sach uy quyen ({delegations.length})
+                </div>
+
+                {delegations.length === 0 ? (
+                <div style={sEmptyState}>
+                    Chua co ben ghi uy quyen nao.
+                </div>
+                ) : (
+                <>
+                    {/* Active delegations */}
+                    {activeDelegations.length > 0 && (
+                    <div style={sActiveGroupLabel}>
+                        Dang hieu luc ({activeDelegations.length})
+                    </div>
+                    )}
+                    {activeDelegations.map((del) => (
+                    <div key={del.delegation_id} style={sDelegationCard}>
+                        <div style={sDelegationInfo}>
+                            <div style={sDelegationId}>{del.delegation_id}</div>
+                            <div style={sDelegationPair}>
+                                {del.delegator_id} \u2192 {del.delegatee_id}
+                            </div>
+                            <div style={sDelegationMeta}>
+                                <span style={typeBadgeStyle(del.delegation_type)}>{del.delegation_type}</span>
+                                <span style={activeBadgeStyle(del.is_active)}>Hoat dong</span>
+                                Pham vi: {del.scope}
+                            </div>
+                            <div style={sDelegationMeta}>
+                                Tu: {formatDate(del.valid_from)}
+                                {del.valid_until && ` \u2192 Den: ${formatDate(del.valid_until)}`}
+                            </div>
+                        </div>
+                        <button style={sRevokeBtn} onClick={()=> handleRevoke(del.delegation_id)}
+                            >
+                            Thu hoi
+                        </button>
+                    </div>
+                    ))}
+
+                    {/* Inactive delegations */}
+                    {inactiveDelegations.length > 0 && (
+                    <div style={sInactiveGroupLabel}>
+                        Da ngung hieu luc ({inactiveDelegations.length})
+                    </div>
+                    )}
+                    {inactiveDelegations.map((del) => (
+                    <div key={del.delegation_id} style={sInactiveCard}>
+                        <div style={sDelegationInfo}>
+                            <div style={sDelegationId}>{del.delegation_id}</div>
+                            <div style={sDelegationPair}>
+                                {del.delegator_id} \u2192 {del.delegatee_id}
+                            </div>
+                            <div style={sDelegationMeta}>
+                                <span style={typeBadgeStyle(del.delegation_type)}>{del.delegation_type}</span>
+                                <span style={activeBadgeStyle(del.is_active)}>Dang hieu luc</span>
+                                Pham vi: {del.scope}
+                            </div>
+                            <div style={sDelegationMeta}>
+                                Tu: {formatDate(del.valid_from)}
+                                {del.valid_until && ` \u2192 Den: ${formatDate(del.valid_until)}`}
+                            </div>
+                        </div>
+                    </div>
+                    ))}
+                </>
+                )}
+            </div>
+        </div>
+        );
+        }
+
+        export default DelegationSettings;

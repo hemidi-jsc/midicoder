@@ -76,6 +76,7 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP39": "cp39_i18n_runtime",
     "CP40": "cp40_webhook",
     "CP41": "cp41_chat",
+    "CP42": "cp42_approval",
     "CP51": "cp51_blueprint",
     "CP52": "cp52_invariant",
     "CP53": "cp53_domain_bridge",

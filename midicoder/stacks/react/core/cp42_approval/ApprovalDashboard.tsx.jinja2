@@ -1,0 +1,362 @@
+/**
+* ApprovalDashboard — bo cong cu tong quan approvals: stat cards, filter tabs, danh sach request.
+* Sinh boi CP42 ApprovalEmitter.
+*
+* So luong requests: {{ num_requests }}
+* So luong steps: {{ num_steps }}
+* Su dung events: {{ use_events }}
+*/
+import React, { useState, useMemo, useCallback } from 'react';
+
+/* ---- Loai trang thai phe duyet ---- */
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'escalated' | 'delegated' | 'expired' | 'cancelled';
+export type ApprovalType = 'sequential' | 'parallel' | 'matrix' | 'voting' | 'single';
+
+/* ---- Interface du lieu ---- */
+export interface ApprovalRequestItem {
+request_id: string;
+title: string;
+description: string;
+entity_type: string;
+entity_id: string;
+approval_type: ApprovalType;
+status: ApprovalStatus;
+initiator_id: string;
+current_step: number;
+total_steps: number;
+deadline: string | null;
+metadata: Record<string, unknown>;
+    created_at: string | null;
+    updated_at: string | null;
+    }
+
+    export interface ApprovalDashboardProps {
+    requests: ApprovalRequestItem[];
+    onSelectRequest?: (requestId: string) => void;
+    currentUserId?: string;
+    wsUrl?: string;
+    }
+
+    /* ---- Style objects — de tranh double-brace trong JSX ---- */
+    const sWrap: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    height: '100%',
+    fontFamily: 'system-ui, sans-serif',
+    backgroundColor: '#f3f4f6',
+    };
+    const sHeader: React.CSSProperties = {
+    padding: '16px 20px',
+    backgroundColor: '#fff',
+    borderBottom: '1px solid #e5e7eb',
+    };
+    const sHeaderTitle: React.CSSProperties = {
+    fontSize: '20px',
+    fontWeight: 700,
+    margin: 0,
+    color: '#111827',
+    };
+    const sHeaderSub: React.CSSProperties = {
+    fontSize: '13px',
+    color: '#6b7280',
+    marginTop: '2px',
+    };
+
+    /* Stats cards */
+    const sStatsRow: React.CSSProperties = {
+    display: 'flex',
+    gap: '12px',
+    padding: '16px 20px',
+    flexWrap: 'wrap' as const,
+    };
+    const sStatCard: React.CSSProperties = {
+    flex: '1 1 0',
+    minWidth: '140px',
+    padding: '14px 16px',
+    borderRadius: '10px',
+    backgroundColor: '#fff',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+    };
+    const sStatNumber: React.CSSProperties = {
+    fontSize: '24px',
+    fontWeight: 700,
+    lineHeight: 1.2,
+    };
+    const sStatLabel: React.CSSProperties = {
+    fontSize: '12px',
+    color: '#6b7280',
+    marginTop: '2px',
+    };
+
+    /* Filter tabs */
+    const sFilterRow: React.CSSProperties = {
+    display: 'flex',
+    gap: '6px',
+    padding: '0 20px 12px',
+    flexWrap: 'wrap' as const,
+    };
+    const sTabBase: React.CSSProperties = {
+    padding: '6px 14px',
+    borderRadius: '20px',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    border: '1px solid #d1d5db',
+    backgroundColor: '#fff',
+    color: '#374151',
+    };
+    const sTabActive: React.CSSProperties = {
+    ...sTabBase,
+    backgroundColor: '#3b82f6',
+    color: '#fff',
+    borderColor: '#3b82f6',
+    };
+
+    /* Request list */
+    const sList: React.CSSProperties = {
+    flex: 1,
+    overflowY: 'auto' as const,
+    padding: '0 20px 20px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+    };
+    const sRequestCard: React.CSSProperties = {
+    padding: '14px 16px',
+    backgroundColor: '#fff',
+    borderRadius: '10px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+    cursor: 'pointer',
+    transition: 'box-shadow 0.15s',
+    };
+    const sRequestTitle: React.CSSProperties = {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#111827',
+    marginBottom: '4px',
+    };
+    const sRequestMeta: React.CSSProperties = {
+    display: 'flex',
+    gap: '12px',
+    fontSize: '12px',
+    color: '#6b7280',
+    flexWrap: 'wrap' as const,
+    };
+    const sRequestFooter: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: '8px',
+    };
+    const sEmptyCell: React.CSSProperties = {
+    padding: '40px 20px',
+    textAlign: 'center' as const,
+    color: '#9ca3af',
+    fontSize: '14px',
+    };
+
+    /* Inline JSX style objects — pre-declared to avoid double-brace conflict */
+    const sWsBadge: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    marginLeft: '10px',
+    };
+    const sWsDot: React.CSSProperties = {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    display: 'inline-block',
+    };
+    const sEmptyFooter: React.CSSProperties = {
+    fontSize: '11px',
+    color: '#9ca3af',
+    };
+
+    /* Badge style — helper function theo status */
+    function badgeStyle(status: ApprovalStatus): React.CSSProperties {
+    const base: React.CSSProperties = {
+    display: 'inline-block',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 600,
+    textTransform: 'capitalize' as const,
+    };
+    const map: Record<ApprovalStatus, { bg: string; color: string }> = {
+        pending: { bg: '#fef3c7', color: '#92400e' },
+        approved: { bg: '#d1fae5', color: '#065f46' },
+        rejected: { bg: '#fee2e2', color: '#991b1b' },
+        escalated: { bg: '#fce7f3', color: '#9d174d' },
+        delegated: { bg: '#e0e7ff', color: '#3730a3' },
+        expired: { bg: '#f3f4f6', color: '#4b5563' },
+        cancelled: { bg: '#f3f4f6', color: '#6b7280' },
+        };
+        const c = map[status] || map.pending;
+        return { ...base, backgroundColor: c.bg, color: c.color };
+        }
+
+        /* Helper: mau cho stat card theo loai */
+        function statNumberColor(type: string): string {
+        return ({ pending: '#f59e0b', approved: '#22c55e', rejected: '#ef4444', escalated: '#ec4899' } as Record<string,
+            string>)[type] || '#3b82f6';
+            }
+
+            /* Pre-declared stat number style overrides — avoids double-brace */
+            const sStatPending: React.CSSProperties = { ...sStatNumber, color: '#f59e0b' };
+            const sStatApproved: React.CSSProperties = { ...sStatNumber, color: '#22c55e' };
+            const sStatRejected: React.CSSProperties = { ...sStatNumber, color: '#ef4444' };
+            const sStatEscalated: React.CSSProperties = { ...sStatNumber, color: '#ec4899' };
+
+            /* Dynamic style helper — avoids inline double-brace */
+            function wsDotStyle(connected: boolean): React.CSSProperties {
+            return Object.assign({}, sWsDot, { backgroundColor: connected ? '#22c55e' : '#ef4444' });
+            }
+
+            /* ---- Utility ---- */
+            function formatDate(iso: string | null): string {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            }
+
+            function formatStepProgress(current: number, total: number): string {
+            return `${current}/${total}`;
+            }
+
+            /* ---- Component: ApprovalDashboard ---- */
+            export function ApprovalDashboard({
+            requests,
+            onSelectRequest,
+            currentUserId = 'user_1',
+            wsUrl,
+            }: ApprovalDashboardProps) {
+            const [activeFilter, setActiveFilter] = useState<ApprovalStatus | 'all'>('all');
+                const [wsConnected, setWsConnected] = useState(false);
+
+                /* WebSocket ket noi cho realtime cap nhat */
+                {% if use_events %}
+                React.useEffect(() => {
+                if (!wsUrl) return;
+                const socket = new WebSocket(wsUrl);
+                socket.onopen = () => setWsConnected(true);
+                socket.onclose = () => setWsConnected(false);
+                socket.onerror = () => setWsConnected(false);
+                return () => socket.close();
+                }, [wsUrl]);
+                {% else %}
+                React.useEffect(() => {
+                setWsConnected(false);
+                }, []);
+                {% endif %}
+
+                /* Dem so luong theo trang thai */
+                const stats = useMemo(() => {
+                const counts: Record<string, number> = {};
+                    requests.forEach((r) => {
+                    counts[r.status] = (counts[r.status] || 0) + 1;
+                    });
+                    return counts;
+                    }, [requests]);
+
+                    /* Lọc danh sach theo tab */
+                    const filteredRequests = useMemo(() => {
+                    if (activeFilter === 'all') return requests;
+                    return requests.filter((r) => r.status === activeFilter);
+                    }, [requests, activeFilter]);
+
+                    /* Xy ly click vao request */
+                    const handleSelect = useCallback(
+                    (id: string) => {
+                    onSelectRequest?.(id);
+                    },
+                    [onSelectRequest],
+                    );
+
+                    /* Danh sach filter tabs */
+                    const filterTabs: { key: ApprovalStatus | 'all'; label: string; count: number }[] = [
+                    { key: 'all', label: 'Tat ca', count: requests.length },
+                    { key: 'pending', label: 'Dang cho', count: stats['pending'] || 0 },
+                    { key: 'approved', label: 'Da phe duyet', count: stats['approved'] || 0 },
+                    { key: 'rejected', label: 'Bi tu choi', count: stats['rejected'] || 0 },
+                    { key: 'escalated', label: 'Da leo thang', count: stats['escalated'] || 0 },
+                    ];
+
+                    return (
+                    <div style={sWrap}>
+                        {/* Header */}
+                        <div style={sHeader}>
+                            <h2 style={sHeaderTitle}>Bang dieu khien phe duyet</h2>
+                            <div style={sHeaderSub}>
+                                {requests.length} yeu cau
+                                {wsUrl && (
+                                <span style={sWsBadge}>
+                                    <span style={wsDotStyle(wsConnected)} />
+                                    {wsConnected ? 'Da ket noi' : 'Ngat ket noi'}
+                                </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Stats cards */}
+                        <div style={sStatsRow}>
+                            <div style={sStatCard}>
+                                <div style={sStatPending}>{stats['pending'] ||
+                                    0}</div>
+                                <div style={sStatLabel}>Dang cho phe duyet</div>
+                            </div>
+                            <div style={sStatCard}>
+                                <div style={sStatApproved}>{stats['approved']
+                                    || 0}</div>
+                                <div style={sStatLabel}>Da phe duyet</div>
+                            </div>
+                            <div style={sStatCard}>
+                                <div style={sStatRejected}>{stats['rejected']
+                                    || 0}</div>
+                                <div style={sStatLabel}>Bi tu choi</div>
+                            </div>
+                            <div style={sStatCard}>
+                                <div style={sStatEscalated}>{stats['escalated']
+                                    || 0}</div>
+                                <div style={sStatLabel}>Da leo thang</div>
+                            </div>
+                        </div>
+
+                        {/* Filter tabs */}
+                        <div style={sFilterRow}>
+                            {filterTabs.map((tab) => (
+                            <button key={tab.key} style={activeFilter===tab.key ? sTabActive : sTabBase} onClick={()=>
+                                setActiveFilter(tab.key)}
+                                >
+                                {tab.label} ({tab.count})
+                            </button>
+                            ))}
+                        </div>
+
+                        {/* Danh sach request */}
+                        <div style={sList}>
+                            {filteredRequests.length === 0 && (
+                            <div style={sEmptyCell}>Khong co yeu cau nao trong nhom nay.</div>
+                            )}
+                            {filteredRequests.map((req) => (
+                            <div key={req.request_id} style={sRequestCard} onClick={()=> handleSelect(req.request_id)}>
+                                <div style={sRequestTitle}>{req.title || req.request_id}</div>
+                                <div style={sRequestMeta}>
+                                    <span>{req.entity_type}</span>
+                                    <span>Buoc: {formatStepProgress(req.current_step, req.total_steps)}</span>
+                                    <span>Han: {formatDate(req.deadline)}</span>
+                                </div>
+                                <div style={sRequestFooter}>
+                                    <span style={badgeStyle(req.status)}>{req.status}</span>
+                                    <span style={sEmptyFooter}>
+                                        {formatDate(req.created_at)}
+                                    </span>
+                                </div>
+                            </div>
+                            ))}
+                        </div>
+                    </div>
+                    );
+                    }
+
+                    export default ApprovalDashboard;

@@ -1,0 +1,416 @@
+/**
+* ApprovalDetails — chi tiet approval request: chain progress, phe duyet/tu choi, lich su quyet dinh.
+* Sinh boi CP42 ApprovalEmitter.
+*/
+import React, { useState, useCallback } from 'react';
+
+/* ---- Loai trang thai ---- */
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'escalated' | 'delegated' | 'expired' | 'cancelled';
+
+/* ---- Interface du lieu ---- */
+export interface ApprovalStepItem {
+step_id: string;
+request_id: string;
+step_number: number;
+approver_id: string;
+approver_role: string;
+status: ApprovalStatus;
+action_deadline: string | null;
+is_parallel: boolean;
+condition_expression: string | null;
+created_at: string | null;
+}
+
+export interface ApprovalDecisionItem {
+decision_id: string;
+step_id: string;
+request_id: string;
+approver_id: string;
+decision: 'approved' | 'rejected';
+comment: string;
+created_at: string | null;
+}
+
+export interface ApprovalDetailsProps {
+requestId: string;
+requestTitle: string;
+requestDescription: string;
+requestStatus: ApprovalStatus;
+currentStep: number;
+totalSteps: number;
+deadline: string | null;
+steps: ApprovalStepItem[];
+decisions: ApprovalDecisionItem[];
+onDecide?: (stepId: string, decision: 'approved' | 'rejected', comment: string) => void;
+currentUserId?: string;
+}
+
+/* ---- Style objects ---- */
+const sWrap: React.CSSProperties = {
+display: 'flex',
+flexDirection: 'column' as const,
+height: '100%',
+fontFamily: 'system-ui, sans-serif',
+backgroundColor: '#f3f4f6',
+};
+const sHeader: React.CSSProperties = {
+padding: '16px 20px',
+backgroundColor: '#fff',
+borderBottom: '1px solid #e5e7eb',
+};
+const sTitle: React.CSSProperties = {
+fontSize: '18px',
+fontWeight: 700,
+margin: 0,
+color: '#111827',
+};
+const sSubTitle: React.CSSProperties = {
+fontSize: '13px',
+color: '#6b7280',
+marginTop: '4px',
+};
+const sDesc: React.CSSProperties = {
+fontSize: '13px',
+color: '#374151',
+marginTop: '8px',
+lineHeight: 1.5,
+};
+
+/* Chain progress — visualization cac buoc phe duyet */
+const sChainSection: React.CSSProperties = {
+padding: '16px 20px',
+backgroundColor: '#fff',
+borderBottom: '1px solid #e5e7eb',
+};
+const sChainTitle: React.CSSProperties = {
+fontSize: '14px',
+fontWeight: 600,
+margin: '0 0 12px',
+color: '#111827',
+};
+const sChainList: React.CSSProperties = {
+display: 'flex',
+flexDirection: 'column' as const,
+gap: '0',
+};
+const sChainStep: React.CSSProperties = {
+display: 'flex',
+alignItems: 'flex-start',
+gap: '12px',
+position: 'relative' as const,
+paddingBottom: '16px',
+};
+const sChainIndicator: React.CSSProperties = {
+width: '28px',
+height: '28px',
+borderRadius: '50%',
+display: 'flex',
+alignItems: 'center',
+justifyContent: 'center',
+fontSize: '12px',
+fontWeight: 700,
+flexShrink: 0,
+marginTop: '2px',
+};
+const sChainContent: React.CSSProperties = {
+flex: 1,
+display: 'flex',
+flexDirection: 'column' as const,
+gap: '2px',
+};
+const sChainApprover: React.CSSProperties = {
+fontSize: '13px',
+fontWeight: 600,
+color: '#111827',
+};
+const sChainRole: React.CSSProperties = {
+fontSize: '12px',
+color: '#6b7280',
+};
+const sChainDeadline: React.CSSProperties = {
+fontSize: '11px',
+color: '#9ca3af',
+};
+
+/* Helper: mau cho indicator theo trang thai */
+function chainIndicatorStyle(status: ApprovalStatus): React.CSSProperties {
+const map: Record<ApprovalStatus, { bg: string; color: string; border: string }> = {
+    pending: { bg: '#fef3c7', color: '#92400e', border: '2px solid #f59e0b' },
+    approved: { bg: '#d1fae5', color: '#065f46', border: '2px solid #22c55e' },
+    rejected: { bg: '#fee2e2', color: '#991b1b', border: '2px solid #ef4444' },
+    escalated: { bg: '#fce7f3', color: '#9d174d', border: '2px solid #ec4899' },
+    delegated: { bg: '#e0e7ff', color: '#3730a3', border: '2px solid #6366f1' },
+    expired: { bg: '#f3f4f6', color: '#4b5563', border: '2px solid #9ca3af' },
+    cancelled: { bg: '#f3f4f6', color: '#6b7280', border: '2px solid #d1d5db' },
+    };
+    const c = map[status] || map.pending;
+    return { ...sChainIndicator, backgroundColor: c.bg, color: c.color, border: c.border };
+    }
+
+    /* Helper: icon theo trang thai */
+    function chainIcon(status: ApprovalStatus): string {
+    const map: Record<ApprovalStatus, string> = {
+        pending: '?',
+        approved: '\u2713',
+        rejected: '\u2717',
+        escalated: '\u25B2',
+        delegated: '\u21C4',
+        expired: '\u26D4',
+        cancelled: '\u00D7',
+        };
+        return map[status] || '?';
+        }
+
+        /* Action section — nut phe duyet/tu choi */
+        const sActionSection: React.CSSProperties = {
+        padding: '16px 20px',
+        backgroundColor: '#fff',
+        borderBottom: '1px solid #e5e7eb',
+        };
+        const sActionTitle: React.CSSProperties = {
+        fontSize: '14px',
+        fontWeight: 600,
+        margin: '0 0 10px',
+        color: '#111827',
+        };
+        const sActionRow: React.CSSProperties = {
+        display: 'flex',
+        gap: '8px',
+        alignItems: 'stretch',
+        };
+        const sCommentArea: React.CSSProperties = {
+        flex: 1,
+        padding: '8px 12px',
+        border: '1px solid #d1d5db',
+        borderRadius: '8px',
+        fontSize: '13px',
+        fontFamily: 'inherit',
+        minHeight: '36px',
+        resize: 'vertical' as const,
+        };
+        const sBtnBase: React.CSSProperties = {
+        padding: '8px 18px',
+        borderRadius: '8px',
+        fontSize: '13px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        border: 'none',
+        whiteSpace: 'nowrap' as const,
+        };
+        const sApproveBtn: React.CSSProperties = { ...sBtnBase, backgroundColor: '#22c55e', color: '#fff' };
+        const sRejectBtn: React.CSSProperties = { ...sBtnBase, backgroundColor: '#ef4444', color: '#fff' };
+        const sBtnDisabled: React.CSSProperties = { ...sBtnBase, opacity: 0.5, cursor: 'not-allowed' };
+
+        /* Decision history */
+        const sHistorySection: React.CSSProperties = {
+        flex: 1,
+        overflowY: 'auto' as const,
+        padding: '16px 20px',
+        };
+        const sHistoryTitle: React.CSSProperties = {
+        fontSize: '14px',
+        fontWeight: 600,
+        margin: '0 0 10px',
+        color: '#111827',
+        };
+        const sDecisionCard: React.CSSProperties = {
+        padding: '10px 14px',
+        backgroundColor: '#fff',
+        borderRadius: '8px',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+        marginBottom: '6px',
+        };
+        const sDecisionHeader: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '4px',
+        };
+        const sDecisionApprover: React.CSSProperties = {
+        fontSize: '13px',
+        fontWeight: 600,
+        color: '#111827',
+        };
+        const sDecisionTime: React.CSSProperties = {
+        fontSize: '11px',
+        color: '#9ca3af',
+        };
+        const sDecisionComment: React.CSSProperties = {
+        fontSize: '12px',
+        color: '#6b7280',
+        lineHeight: 1.4,
+        };
+
+        /* Pre-declared inline style to avoid double-brace conflict */
+        const sEmptyHistory: React.CSSProperties = {
+        fontSize: '13px',
+        color: '#9ca3af',
+        textAlign: 'center',
+        padding: '20px',
+        };
+
+        /* Badge style cho quyet dinh */
+        function decisionBadgeStyle(decision: 'approved' | 'rejected'): React.CSSProperties {
+        const isApproved = decision === 'approved';
+        return {
+        display: 'inline-block',
+        padding: '2px 8px',
+        borderRadius: '10px',
+        fontSize: '11px',
+        fontWeight: 600,
+        backgroundColor: isApproved ? '#d1fae5' : '#fee2e2',
+        color: isApproved ? '#065f46' : '#991b1b',
+        };
+        }
+
+        /* ---- Utility ---- */
+        function formatDate(iso: string | null): string {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+
+        function formatDateTime(iso: string | null): string {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        });
+        }
+
+        /* ---- Component: ApprovalDetails ---- */
+        export function ApprovalDetails({
+        requestId,
+        requestTitle,
+        requestDescription,
+        requestStatus,
+        currentStep,
+        totalSteps,
+        deadline,
+        steps,
+        decisions,
+        onDecide,
+        currentUserId = 'user_1',
+        }: ApprovalDetailsProps) {
+        const [comment, setComment] = useState('');
+
+        /* Tim step dang cho nguoi dung hien tai */
+        const pendingSteps = steps.filter((s) => s.status === 'pending');
+        const canAct = pendingSteps.length > 0;
+
+        /* Xy ly quyet dinh */
+        const handleDecide = useCallback(
+        (decision: 'approved' | 'rejected') => {
+        if (!canAct) return;
+        const stepId = pendingSteps[0]?.step_id;
+        if (stepId) {
+        onDecide?.(stepId, decision, comment.trim());
+        setComment('');
+        }
+        },
+        [canAct, pendingSteps, comment, onDecide],
+        );
+
+        /* Sach decision theo step de hien thi gan buoc */
+        const decisionsByStep = new Map<string, ApprovalDecisionItem[]>();
+            decisions.forEach((d) => {
+            const list = decisionsByStep.get(d.step_id) || [];
+            list.push(d);
+            decisionsByStep.set(d.step_id, list);
+            });
+
+            /* Sap xep steps theo step_number */
+            const sortedSteps = [...steps].sort((a, b) => a.step_number - b.step_number);
+
+            return (
+            <div style={sWrap}>
+                {/* Header */}
+                <div style={sHeader}>
+                    <h2 style={sTitle}>{requestTitle || requestId}</h2>
+                    <div style={sSubTitle}>
+                        {requestId} | Trạng thái: {requestStatus} | Bước {currentStep}/{totalSteps}
+                        {deadline && ` | Hạn: ${formatDate(deadline)}`}
+                    </div>
+                    {requestDescription && <div style={sDesc}>{requestDescription}</div>}
+                </div>
+
+                {/* Chain progress visualization */}
+                <div style={sChainSection}>
+                    <div style={sChainTitle}>Luu chuan phe duyet</div>
+                    <div style={sChainList}>
+                        {sortedSteps.map((step, idx) => (
+                        <div key={step.step_id} style={sChainStep}>
+                            <div style={chainIndicatorStyle(step.status)}>
+                                {chainIcon(step.status)}
+                            </div>
+                            <div style={sChainContent}>
+                                <div style={sChainApprover}>Buoc {step.step_number}: {step.approver_id}</div>
+                                <div style={sChainRole}>{step.approver_role}{step.is_parallel ? ' (song song)' : ''}
+                                </div>
+                                {step.action_deadline && (
+                                <div style={sChainDeadline}>Hạn hành động: {formatDate(step.action_deadline)}</div>
+                                )}
+                                {step.condition_expression && (
+                                <div style={sChainDeadline}>Điều kiện: {step.condition_expression}</div>
+                                )}
+                            </div>
+                        </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Action section — chi hien thi neu co step pending */}
+                {canAct && (
+                <div style={sActionSection}>
+                    <div style={sActionTitle}>Hanh dong cua ban</div>
+                    <div style={sActionRow}>
+                        <textarea style={sCommentArea} placeholder="Nhan xet (tuyen chua)..." value={comment}
+                            onChange={(e)=> setComment(e.target.value)}
+                            rows={1}
+                        />
+                        <button
+                            style={sApproveBtn}
+                            onClick={() => handleDecide('approved')}
+                        >
+                            Phe duyet
+                        </button>
+                        <button
+                            style={sRejectBtn}
+                            onClick={() => handleDecide('rejected')}
+                        >
+                            Tu choi
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Decision history */}
+            <div style={sHistorySection}>
+                <div style={sHistoryTitle}>Lich su quyet dinh ({decisions.length})</div>
+                {decisions.length === 0 && (
+                    <div style={sEmptyHistory}>
+                        Chua co quyet dinh nao.
+                    </div>
+                )}
+                {[...decisions].reverse().map((dec) => (
+                    <div key={dec.decision_id} style={sDecisionCard}>
+                        <div style={sDecisionHeader}>
+                            <span style={sDecisionApprover}>{dec.approver_id}</span>
+                            <span style={decisionBadgeStyle(dec.decision)}>
+                                {dec.decision === 'approved' ? 'Da phe duyet' : 'Bi tu choi'}
+                            </span>
+                        </div>
+                        {dec.comment && <div style={sDecisionComment}>{dec.comment}</div>}
+                        <div style={sDecisionTime}>{formatDateTime(dec.created_at)}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+export default ApprovalDetails;

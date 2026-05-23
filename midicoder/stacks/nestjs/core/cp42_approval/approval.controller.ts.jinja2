@@ -1,0 +1,395 @@
+/**
+ * ApprovalController - controller cho API Approval Workflow Engine.
+ *
+ * Cung cấp các endpoint REST cho việc quản lý phê duyệt:
+ * - POST   /approvals                 - Tạo yêu cầu phê duyệt mới
+ * - GET    /approvals                 - Lấy danh sách yêu cầu (phân trang)
+ * - GET    /approvals/:id             - Lấy chi tiết yêu cầu theo ID
+ * - POST   /approvals/:id/decide      - Đưa ra quyết định phê duyệt
+ * - POST   /approvals/:id/escalate    - Leo thang yêu cầu phê duyệt
+ * - POST   /approvals/:id/delegate    - Ủy quyền phê duyệt
+ * - GET    /approvals/:id/decisions   - Lấy danh sách quyết định
+ * - POST   /approvals/deadlines/check - Kiểm tra deadline
+ *
+ * CP42: Approval Workflow Engine
+ * Tổng số yêu cầu mẫu: {{ num_requests }}
+ * Tổng số bước mẫu: {{ num_steps }}
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  HttpStatus,
+  HttpCode,
+  ParseUUIDPipe,
+  ValidationPipe,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiParam,
+} from "@nestjs/swagger";
+import { ApprovalService, PaginatedApprovals, DeadlineCheckResult } from "./approval.service";
+import {
+  CreateApprovalRequestDto,
+  DecideDto,
+  DelegateDto,
+  EscalateDto,
+  PaginatedApprovalsDto,
+  DeadlineCheckResponseDto,
+} from "./approval.dto";
+
+/**
+ * ApprovalController - quản lý yêu cầu phê duyệt và quyết định.
+ *
+ * API Routes:
+ * - POST   /approvals                 - Tạo yêu cầu phê duyệt mới
+ * - GET    /approvals                 - Lấy danh sách yêu cầu (phân trang)
+ * - GET    /approvals/:id             - Lấy chi tiết yêu cầu theo ID
+ * - POST   /approvals/:id/decide      - Đưa ra quyết định (approved/rejected)
+ * - POST   /approvals/:id/escalate    - Leo thang yêu cầu phê duyệt
+ * - POST   /approvals/:id/delegate    - Ủy quyền phê duyệt cho người khác
+ * - GET    /approvals/:id/decisions   - Lấy danh sách quyết định cho yêu cầu
+ * - POST   /approvals/deadlines/check - Kiểm tra các yêu cầu hết hạn
+ */
+@ApiTags("Approval")
+@ApiBearerAuth()
+@Controller("approvals")
+export class ApprovalController {
+  /**
+   * Constructor.
+   *
+   * @param approvalService - ApprovalService instance
+   */
+  constructor(
+    private readonly approvalService: ApprovalService,
+  ) {}
+
+  // ========================================================================
+  // Request Endpoints
+  // ========================================================================
+
+  /**
+   * Tạo yêu cầu phê duyệt mới.
+   *
+   * Tự động tạo các bước phê duyệt từ danh sách steps trong DTO.
+   * Hỗ trợ nhiều loại quy trình: sequential, parallel, matrix, voting, single.
+   *
+   * @param createDto - CreateApprovalRequestDto
+   * @returns ApprovalRequest entity vừa tạo
+   */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo yêu cầu phê duyệt mới",
+    description:
+      "Tạo yêu cầu phê duyệt với loại quy trình (sequential/parallel/matrix/voting/single) và các bước phê duyệt.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Yêu cầu phê duyệt đã được tạo",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ",
+  })
+  async createRequest(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createDto: CreateApprovalRequestDto,
+  ): Promise<any> {
+    return this.approvalService.createRequest(createDto);
+  }
+
+  /**
+   * Lấy danh sách yêu cầu phê duyệt với phân trang.
+   *
+   * Hỗ trợ:
+   * - Phân trang: limit, page
+   * - Lọc theo trạng thái (status)
+   * - Lọc theo loại quy trình (approvalType)
+   *
+   * @param limit - Số lượng mỗi trang (mặc định 20)
+   * @param page - Trang hiện tại (mặc định 1)
+   * @param status - Lọc theo trạng thái
+   * @param approvalType - Lọc theo loại quy trình
+   * @returns Object chứa data và pagination info
+   */
+  @Get()
+  @ApiOperation({
+    summary: "Lấy danh sách yêu cầu phê duyệt",
+    description:
+      "Lấy danh sách yêu cầu phê duyệt với phân trang. Hỗ trợ lọc theo trạng thái và loại quy trình.",
+  })
+  @ApiQuery({ name: "limit", required: false, example: 20 })
+  @ApiQuery({ name: "page", required: false, example: 1 })
+  @ApiQuery({ name: "status", required: false, example: "pending" })
+  @ApiQuery({ name: "approvalType", required: false, example: "sequential" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List yêu cầu phê duyệt thành công",
+  })
+  async getRequests(
+    @Query("limit") limit?: number,
+    @Query("page") page?: number,
+    @Query("status") status?: string,
+    @Query("approvalType") approvalType?: string,
+  ): Promise<PaginatedApprovals> {
+    return this.approvalService.getRequests({
+      limit: limit ?? 20,
+      page: page ?? 1,
+      status,
+      approvalType,
+    });
+  }
+
+  /**
+   * Lấy chi tiết yêu cầu phê duyệt theo ID.
+   *
+   * Bao gồm các bước phê duyệt và quyết định liên quan.
+   *
+   * @param id - ID yêu cầu phê duyệt
+   * @returns ApprovalRequest entity
+   */
+  @Get(":id")
+  @ApiOperation({
+    summary: "Lấy chi tiết yêu cầu phê duyệt",
+    description:
+      "Lấy chi tiết yêu cầu phê duyệt bao gồm các bước và quyết định liên quan.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID yêu cầu phê duyệt",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Chi tiết yêu cầu phê duyệt",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy yêu cầu phê duyệt",
+  })
+  async getRequest(
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<any> {
+    return this.approvalService.getRequest(id);
+  }
+
+  // ========================================================================
+  // Decision Endpoints
+  // ========================================================================
+
+  /**
+   * Đưa ra quyết định phê duyệt cho yêu cầu.
+   *
+   * Xác thực:
+   * - Người gọi phải là approver của bước hiện tại
+   * - Bước chưa có quyết định
+   * - decision phải là "approved" hoặc "rejected"
+   *
+   * Sau khi quyết định:
+   * - Cập nhật trạng thái bước
+   * - Tự động chuyển bước tiếp theo (sequential) hoặc tổng hợp (parallel/voting)
+   *
+   * @param id - ID yêu cầu phê duyệt
+   * @param decideDto - DecideDto
+   * @returns ApprovalDecision entity vừa tạo
+   */
+  @Post(":id/decide")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Đưa ra quyết định phê duyệt",
+    description:
+      "Đưa ra quyết định (approved/rejected) cho yêu cầu phê duyệt. Tự động chuyển bước tiếp theo.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID yêu cầu phê duyệt",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Quyết định đã được tạo",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Không phải lượt của bạn hoặc bước đã có quyết định",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy yêu cầu phê duyệt",
+  })
+  async decide(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    decideDto: DecideDto,
+  ): Promise<any> {
+    // approverId sẽ được lấy từ auth guard trong thực tế
+    const approverId = "current-user-id-from-auth-guard";
+    return this.approvalService.decide(id, approverId, decideDto);
+  }
+
+  /**
+   * Lấy danh sách quyết định cho yêu cầu phê duyệt.
+   *
+   * Sắp xếp theo created_at tăng dần (cũ nhất trước).
+   *
+   * @param id - ID yêu cầu phê duyệt
+   * @returns List ApprovalDecision
+   */
+  @Get(":id/decisions")
+  @ApiOperation({
+    summary: "Lấy danh sách quyết định",
+    description:
+      "Lấy tất cả quyết định cho yêu cầu phê duyệt, sắp xếp theo thời gian tạo.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID yêu cầu phê duyệt",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List quyết định thành công",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy yêu cầu phê duyệt",
+  })
+  async getDecisions(
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<any[]> {
+    return this.approvalService.getDecisions(id);
+  }
+
+  // ========================================================================
+  // Escalation Endpoints
+  // ========================================================================
+
+  /**
+   * Leo thang yêu cầu phê duyệt.
+   *
+   * Di chuyển yêu cầu đến cấp/phòng ban tiếp theo theo chiến lược đã cấu hình.
+   *
+   * @param id - ID yêu cầu phê duyệt
+   * @param escalateDto - EscalateDto
+   * @returns Danh sách rule_ids đã được kích hoạt
+   */
+  @Post(":id/escalate")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Leo thang yêu cầu phê duyệt",
+    description:
+      "Leo thang yêu cầu phê duyệt đến cấp cao hơn theo chiến lược đã cấu hình.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID yêu cầu phê duyệt",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Yêu cầu đã được leo thang",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy yêu cầu phê duyệt",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Không có cấp tiếp theo để leo thang",
+  })
+  async escalate(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    escalateDto?: EscalateDto,
+  ): Promise<string[]> {
+    return this.approvalService.escalate(id, escalateDto);
+  }
+
+  // ========================================================================
+  // Delegation Endpoints
+  // ========================================================================
+
+  /**
+   * Ủy quyền phê duyệt cho người khác.
+   *
+   * Tạo bản ghi ủy quyền với phạm vi và thời hạn.
+   *
+   * @param id - ID yêu cầu phê duyệt
+   * @param delegateDto - DelegateDto
+   * @returns DelegationRecord entity
+   */
+  @Post(":id/delegate")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Ủy quyền phê duyệt",
+    description:
+      "Ủy quyền phê duyệt yêu cầu cho người khác với phạm vi và thời hạn.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID yêu cầu phê duyệt",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Bản ghi ủy quyền đã được tạo",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Không thể ủy quyền cho chính mình",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy yêu cầu phê duyệt",
+  })
+  async delegate(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    delegateDto: DelegateDto,
+  ): Promise<any> {
+    // delegatorId sẽ được lấy từ auth guard trong thực tế
+    const delegatorId = "current-user-id-from-auth-guard";
+    return this.approvalService.delegate(id, delegatorId, delegateDto);
+  }
+
+  // ========================================================================
+  // Deadline Endpoints
+  // ========================================================================
+
+  /**
+   * Kiểm tra các yêu cầu phê duyệt đã hết thời hạn.
+   *
+   * Duyệt qua tất cả yêu cầu đang pending, tìm những yêu cầu vượt quá thời hạn.
+   * Tự động leo thang các yêu cầu hết hạn.
+   *
+   * @returns DeadlineCheckResult với danh sách yêu cầu hết hạn
+   */
+  @Post("deadlines/check")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Kiểm tra deadline",
+    description:
+      "Kiểm tra tất cả yêu cầu phê duyệt đang pending và tự động leo thang các yêu cầu hết hạn.",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Kết quả kiểm tra deadline",
+  })
+  async checkDeadlines(): Promise<DeadlineCheckResult> {
+    return this.approvalService.checkDeadlines();
+  }
+}

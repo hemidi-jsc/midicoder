@@ -1,0 +1,370 @@
+# ----------------------------------------------------------
+# CP42 Approval Workflow — Router FastAPI cho quan ly phê duyêt
+# ----------------------------------------------------------
+# Sinh boi CP42ApprovalEmitter
+# Routes: CRUD yeu cau, quyet dinh, leo thang, uy quyen
+# Tong so yeu cau mau: {{ num_requests }}
+# Tong so buôc mau: {{ num_steps }}
+# ----------------------------------------------------------
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+# Dinh danh router
+router = APIRouter(prefix="/approvals", tags=["approval"])
+
+
+# --------------------------------------------------------------
+# Phu thuoc — injection
+# --------------------------------------------------------------
+
+def get_approval_service(session: AsyncSession = Depends(lambda: None), event_publisher=None) -> "ApprovalService":
+    """
+    Cung cap dich vu phê duyêt cho cac route.
+    Day la diem phu thuoc injection cho ApprovalService.
+    """
+    from approval_service import ApprovalService
+    return ApprovalService(session, event_publisher=event_publisher)
+
+
+# --------------------------------------------------------------
+# Route: tao yeu cau phê duyêt moi
+# --------------------------------------------------------------
+
+@router.post(
+    "",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Tao yeu cau phê duyêt",
+    description="Tao yeu cau phê duyêt moi voi cac buôc phê duyêt.",
+)
+async def create_approval_request(
+    payload: Dict[str, Any],
+    service: "ApprovalService" = Depends(get_approval_service),
+) -> Dict[str, Any]:
+    """
+    Tao yeu cau phê duyêt moi. Tu dong tao cac buôc phê duyêt
+    neu co step definitions trong payload.
+    """
+    # Kiem tra du lieu bat buoc
+    if not payload.get("initiator_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="initiator_id la bat buoc",
+        )
+    if not payload.get("title"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="title la bat buoc",
+        )
+    if not payload.get("entity_type"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="entity_type la bat buoc",
+        )
+    if not payload.get("entity_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="entity_id la bat buoc",
+        )
+
+    request = await service.create_request(payload)
+    return request.__dict__
+
+
+# --------------------------------------------------------------
+# Route: liet ke yeu cau dang cho
+# --------------------------------------------------------------
+
+@router.get(
+    "",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Liet ke yeu cau dang cho",
+    description="Lay danh sach yeu cau phê duyêt dang cho ngươI dung xu ly.",
+)
+async def list_pending_approvals(
+    user_id: str = Query(..., description="ID ngươI dung"),
+    service: "ApprovalService" = Depends(get_approval_service),
+) -> List[Dict[str, Any]]:
+    """
+    Liet ke tat ca yeu cau phê duyêt dang cho ngươI dung xu ly.
+    Bao gom ca cac buôc da duoc uy quyen cho ngươI dung.
+    """
+    items = await service.get_pending_approvals(user_id=user_id)
+    return [item.__dict__ for item in items]
+
+
+# --------------------------------------------------------------
+# Route: lay chi tiet yeu cau
+# --------------------------------------------------------------
+
+@router.get(
+    "/{request_id}",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Lay chi tiet yeu cau",
+    description="Lay chi tiet yeu cau phê duyêt bao gom cac buôc va quyet dinh.",
+)
+async def get_approval_request(
+    request_id: str,
+    service: "ApprovalService" = Depends(get_approval_service),
+) -> Dict[str, Any]:
+    """
+    Lay chi tiet yeu cau phê duyêt theo ID.
+    """
+    request = await service.get_request(request_id)
+
+    if request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Khong tim thay yeu cau phê duyêt voi ID: {}".format(request_id),
+        )
+
+    return request.__dict__
+
+
+# --------------------------------------------------------------
+# Route: dua ra quyet dinh
+# --------------------------------------------------------------
+
+@router.post(
+    "/{request_id}/decide",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Dua ra quyet dinh",
+    description="Phê duyêt hoac tu choi mot buôc phê duyêt.",
+)
+async def decide_approval(
+    request_id: str,
+    payload: Dict[str, Any],
+    service: "ApprovalService" = Depends(get_approval_service),
+) -> Dict[str, Any]:
+    """
+    Dua ra quyet dinh phê duyêt hoac tu choi cho mot buôc.
+
+    Payload can bao gom:
+    - step_id: ID buôc phê duyêt
+    - approver_id: ID ngươI dua ra quyet dinh
+    - decision: "approved" hoac "rejected"
+    - comment: Nhan xet (tu chon)
+    """
+    # Kiem tra du lieu bat buoc
+    if not payload.get("step_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="step_id la bat buoc",
+        )
+    if not payload.get("approver_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="approver_id la bat buoc",
+        )
+    if payload.get("decision") not in ("approved", "rejected"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="decision phai la 'approved' hoac 'rejected'",
+        )
+
+    try:
+        decision = await service.decide(
+            step_id=payload["step_id"],
+            approver_id=payload["approver_id"],
+            decision=payload["decision"],
+            comment=payload.get("comment", ""),
+        )
+    except ValueError as e:
+        error_msg = str(e)
+        if "khong phai luôt" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_msg,
+            )
+        elif "da co quyet dinh" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+
+    return decision.__dict__
+
+
+# --------------------------------------------------------------
+# Route: leo thang
+# --------------------------------------------------------------
+
+@router.post(
+    "/{request_id}/escalate",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Leo thang yeu cau",
+    description="Tu dong leo thang yeu cau phê duyêt den cap cao hon.",
+)
+async def escalate_approval(
+    request_id: str,
+    service: "ApprovalService" = Depends(get_approval_service),
+) -> Dict[str, Any]:
+    """
+    Leo thang yeu cau phê duyêt. Kiem tra cac quy tac leo thang
+    va di chuyen yeu cau den cap/phong ban tiep theo.
+    """
+    try:
+        escalated_rules = await service.escalate(request_id)
+    except ValueError as e:
+        error_msg = str(e)
+        if "Khong tim thay" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        elif "khong co quy tac" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+
+    return {
+        "request_id": request_id,
+        "escalated_rules": escalated_rules,
+        "message": "Da leo thang thanh cong voi {} quy tac".format(len(escalated_rules)),
+    }
+
+
+# --------------------------------------------------------------
+# Route: uy quyen
+# --------------------------------------------------------------
+
+@router.post(
+    "/{request_id}/delegate",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Uy quyen phê duyêt",
+    description="Uy quyen cong viec phê duyêt cho ngươI khac.",
+)
+async def delegate_approval(
+    request_id: str,
+    payload: Dict[str, Any],
+    service: "ApprovalService" = Depends(get_approval_service),
+) -> Dict[str, Any]:
+    """
+    Uy quyen phê duyêt cho ngươI khac.
+
+    Payload can bao gom:
+    - delegator_id: ID ngươI uy quyen
+    - delegatee_id: ID ngươI duoc uy quyen
+    - delegation_type: Loai uy quyen (temporary, permanent, conditional)
+    - valid_until: Thoi diem het hieu luc (tu chon)
+    """
+    # Kiem tra du lieu bat buoc
+    if not payload.get("delegator_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="delegator_id la bat buoc",
+        )
+    if not payload.get("delegatee_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="delegatee_id la bat buoc",
+        )
+
+    try:
+        delegation = await service.delegate(
+            request_id=request_id,
+            delegator_id=payload["delegator_id"],
+            delegatee_id=payload["delegatee_id"],
+            delegation_type=payload.get("delegation_type", "temporary"),
+            valid_until=payload.get("valid_until"),
+        )
+    except ValueError as e:
+        error_msg = str(e)
+        if "chinh minh" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+        elif "Khong tim thay" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+
+    return delegation.__dict__
+
+
+# --------------------------------------------------------------
+# Route: lay danh sach quyet dinh
+# --------------------------------------------------------------
+
+@router.get(
+    "/{request_id}/decisions",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Lay danh sach quyet dinh",
+    description="Lay tat ca quyet dinh cho mot yeu cau phê duyêt.",
+)
+async def get_approval_decisions(
+    request_id: str,
+    service: "ApprovalService" = Depends(get_approval_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lay tat ca quyet dinh cho yeu cau phê duyêt.
+    Sap xep theo thoi gian tao (cu nhat truôc).
+    """
+    try:
+        decisions = await service.get_decisions(request_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+    return [d.__dict__ for d in decisions]
+
+
+# --------------------------------------------------------------
+# Route: kiem tra thoi han
+# --------------------------------------------------------------
+
+@router.post(
+    "/deadlines/check",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Kiem tra thoi han",
+    description="Kiem tra va tu dong leo thang cac yeu cau het thoi han.",
+)
+async def check_deadlines(
+    service: "ApprovalService" = Depends(get_approval_service),
+) -> Dict[str, Any]:
+    """
+    Kiem tra cac yeu cau phê duyêt da het thoi han va
+    tu dong leo thang neu co quy tac.
+    """
+    expired_requests = await service.check_deadlines()
+
+    return {
+        "expired_requests": expired_requests,
+        "count": len(expired_requests),
+        "message": "Da kiem tra thoi han: {} yeu cau het han".format(len(expired_requests)),
+    }
+

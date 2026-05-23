@@ -1,0 +1,869 @@
+# ----------------------------------------------------------
+# CP42 Approval Workflow — Dich vu thao tac phê duyêt
+# ----------------------------------------------------------
+# Sinh bởi CP42ApprovalEmitter
+# Class: ApprovalService voi CRUD yeu cau, buôc, quyet dinh
+# Tong so yeu cau mau: {{ num_requests }}
+# Tong so buôc mau: {{ num_steps }}
+# ----------------------------------------------------------
+
+import logging
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Sequence
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+
+class ApprovalService:
+    """
+    Dich vu quan ly phê duyêt — thuc hien tao yeu cau, dua ra quyet dinh,
+    leo thang, uy quyen, va kiem tra thoi han cho quy trinh phê duyêt.
+
+    Cach lan: (1) RBAC check truôc khi dua ra quyet dinh,
+    (2) Event emission sau khi dua ra quyet dinh,
+    (3) Phat hien chu trinh trong chuôi phê duyêt.
+    """
+
+    def __init__(self, session: AsyncSession, event_publisher=None) -> None:
+        """
+        Khoi tao dich vu voi phien lam viec SQLAlchemy async va event publisher.
+
+        Tham so:
+            session: Phien lam viec async de truy cap co so du lieu.
+            event_publisher: Event publisher de phat domain events (tu chon).
+        """
+        self._session = session
+        self._event_publisher = event_publisher
+
+    # --------------------------------------------------------------
+    # Yeu cau phê duyêt — Tao
+    # --------------------------------------------------------------
+
+    async def create_request(self, data: Dict[str, Any]) -> Any:
+        """
+        Tao yeu cau phê duyêt moi.
+
+        Tu dong tao cac buôc phê duyêt theo so luong total_steps va
+        cau hinh steps_list tu template context.
+
+        Tham so:
+            data: Tu dict chua du lieu yeu cau theo schema ApprovalRequestCreate.
+
+        Tra ve:
+            Doi tuong ApprovalRequest moi duoc tao.
+        """
+        request_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+        total_steps = data.get("total_steps", 1)
+
+        # Thoi han mac dinh: 7 ngay tu thoi diem tao
+        deadline = data.get("deadline")
+        if deadline is None:
+            deadline = now + timedelta(days=7)
+
+        request = self._request_model()(
+            request_id=request_id,
+            title=data.get("title", ""),
+            description=data.get("description", ""),
+            entity_type=data.get("entity_type", ""),
+            entity_id=data.get("entity_id", ""),
+            approval_type=data.get("approval_type", "sequential"),
+            status="pending",
+            initiator_id=data.get("initiator_id", ""),
+            current_step=1,
+            total_steps=total_steps,
+            deadline=deadline,
+            metadata_json=data.get("metadata_json"),
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(request)
+
+        # Tu dong tao cac buôc phê duyêt neu co data step definitions
+        step_definitions = data.get("steps", [])
+        for i, step_def in enumerate(step_definitions):
+            step_id = str(uuid.uuid4())
+            step_deadline = step_def.get("action_deadline")
+            if step_deadline is None:
+                step_deadline = now + timedelta(days=3)
+
+            step = self._step_model()(
+                step_id=step_id,
+                request_id=request_id,
+                step_number=i + 1,
+                approver_id=step_def.get("approver_id", ""),
+                approver_role=step_def.get("approver_role", ""),
+                status="pending",
+                action_deadline=step_deadline,
+                is_parallel=step_def.get("is_parallel", False),
+                condition_expression=step_def.get("condition_expression"),
+                created_at=now,
+            )
+            self._session.add(step)
+
+        await self._session.commit()
+        await self._session.refresh(request)
+
+        logger.info(
+            "Tao yeu cau phê duyêt moi: id=%s, loai=%s, so_buoc=%d",
+            request_id,
+            data.get("approval_type"),
+            total_steps,
+        )
+
+        return request
+
+    # --------------------------------------------------------------
+    # Yeu cau phê duyêt — Truy van
+    # --------------------------------------------------------------
+
+    async def get_request(self, request_id: str) -> Optional[Any]:
+        """
+        Lay yeu cau phê duyêt theo ID.
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt can lay.
+
+        Tra ve:
+            Doi tuong ApprovalRequest hoac None neu khong tim thay.
+        """
+        query = select(self._request_model()).where(
+            self._request_model().request_id == request_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def get_pending_approvals(self, user_id: str) -> Sequence[Any]:
+        """
+        Lay danh sach yeu cau phê duyêt dang cho ngươI dung xu ly.
+
+        Tim tat ca yeu cau co buôc pending danh cho user_id,
+        bao gom ca cac buôc da duoc uy quyen cho user.
+
+        Tham so:
+            user_id: ID ngươI dung.
+
+        Tra ve:
+            Dong cac doi tuong ApprovalRequest dang cho xu ly.
+        """
+        request_model = self._request_model()
+        step_model = self._step_model()
+
+        # Tim cac buôc pending cua user
+        step_query = (
+            select(request_model)
+            .join(step_model, request_model.request_id == step_model.request_id)
+            .where(
+                step_model.approver_id == user_id,
+                step_model.status == "pending",
+                request_model.status.in_(("pending", "delegated")),
+            )
+        )
+
+        result = await self._session.execute(step_query)
+        direct_requests = list(result.scalars().all())
+
+        # Tim cac buôc duoc uy quyen
+        delegation_model = self._delegation_model()
+        delegated_query = (
+            select(request_model)
+            .join(step_model, request_model.request_id == step_model.request_id)
+            .join(delegation_model, step_model.approver_id == delegation_model.delegator_id)
+            .where(
+                delegation_model.delegatee_id == user_id,
+                delegation_model.is_active == True,
+                step_model.status == "pending",
+                request_model.status.in_(("pending", "delegated")),
+            )
+        )
+
+        delegated_result = await self._session.execute(delegated_query)
+        delegated_requests = list(delegated_result.scalars().all())
+
+        # Gop va loai bo trung
+        all_requests = {}
+        for req in direct_requests + delegated_requests:
+            all_requests[req.request_id] = req
+
+        return list(all_requests.values())
+
+    # --------------------------------------------------------------
+    # Quyet dinh — Phê duyêt / Tu choi
+    # --------------------------------------------------------------
+
+    async def decide(self, step_id: str, approver_id: str, decision: str, comment: str = "") -> Any:
+        """
+        Dua ra quyet dinh phê duyêt cho mot buôc.
+
+        Cach lan: (1) RBAC check truôc khi dua ra quyet dinh,
+        (2) Event emission sau khi dua ra quyet dinh.
+
+        Tham so:
+            step_id: ID buôc phê duyêt.
+            approver_id: ID ngươI dua ra quyet dinh.
+            decision: Quyet dinh ("approved" hoac "rejected").
+            comment: Nhan xet (nullable).
+
+        Tra ve:
+            Doi tuong ApprovalDecision da tao.
+
+        Nhom ra:
+            ValueError: Neu khong phai luôt cua ngươI phê duyêt.
+            ValueError: Neu buôc da co quyet dinh.
+        """
+        # Lay buôc phê duyêt
+        step = await self._get_step(step_id)
+        if step is None:
+            raise ValueError("Khong tim thay buôc phê duyêt voi ID: {}".format(step_id))
+
+        # Kiem tra RBAC — ngươI dua ra quyet dinh phai co quyen
+        self._check_rbac(approver_id, step)
+
+        # Giai quyet ngươI phê duyêt thuc te dua tren uy quyen
+        actual_approver_id = await self.resolve_approver(approver_id)
+
+        # Validate: da dung luôt cua ngươI phê duyêt chua?
+        if step.approver_id != actual_approver_id and step.approver_id != approver_id:
+            raise ValueError(
+                "Khong phai luôt cua ngươI phê duyêt '{}' cho buôc '{}'".format(approver_id, step_id)
+            )
+
+        # Validate: buôc chua duoc quyet dinh
+        if step.status not in ("pending", "escalated"):
+            raise ValueError(
+                "Buôc '{}' da co quyet dinh (trang thai: {})".format(step_id, step.status)
+            )
+
+        # Tao decision record
+        decision_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        approval_decision = self._decision_model()(
+            decision_id=decision_id,
+            step_id=step_id,
+            request_id=step.request_id,
+            approver_id=approver_id,
+            decision=decision,
+            comment=comment,
+            created_at=now,
+        )
+        self._session.add(approval_decision)
+
+        # Cap nhat trang thai buôc
+        if decision == "approved":
+            step.status = "approved"
+        else:
+            step.status = "rejected"
+
+        # Chuyen tiep chuôi phê duyêt
+        await self._advance_chain(step, decision)
+
+        await self._session.commit()
+        await self._session.refresh(approval_decision)
+
+        # Phat event sau khi dua ra quyet dinh
+        await self._emit_decision_event(step.request_id, step_id, approver_id, decision, comment)
+
+        logger.info(
+            "Da dua ra quyet dinh: decision=%s, step=%s, request=%s, approver=%s",
+            decision,
+            step_id,
+            step.request_id,
+            approver_id,
+        )
+
+        return approval_decision
+
+    async def approve(self, step_id: str, approver_id: str, comment: str = "") -> Any:
+        """
+        Phê duyêt mot buôc.
+
+        Tham so:
+            step_id: ID buôc phê duyêt.
+            approver_id: ID ngươI phê duyêt.
+            comment: Nhan xet (nullable).
+
+        Tra ve:
+            Doi tuong ApprovalDecision.
+        """
+        return await self.decide(step_id, approver_id, "approved", comment)
+
+    async def reject(self, step_id: str, approver_id: str, comment: str = "") -> Any:
+        """
+        Tu choi mot buôc.
+
+        Tham so:
+            step_id: ID buôc phê duyêt.
+            approver_id: ID ngươI phê duyêt.
+            comment: Ly do tu choi (nullable).
+
+        Tra ve:
+            Doi tuong ApprovalDecision.
+        """
+        return await self.decide(step_id, approver_id, "rejected", comment)
+
+    # --------------------------------------------------------------
+    # Leo thang
+    # --------------------------------------------------------------
+
+    async def escalate(self, request_id: str) -> List[str]:
+        """
+        Leo thang yeu cau phê duyêt.
+
+        Kiem tra cac quy tac leo thang da dang ky, di chuyen yeu cau
+        den cap/phong ban tiep theo theo chien luoc da cau hinh.
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt can leo thang.
+
+        Tra ve:
+            Danh sach rule_ids da duoc kich hoat.
+
+        Nhom ra:
+            ValueError: Neu khong co cap tiep theo de leo thang.
+        """
+        request = await self.get_request(request_id)
+        if request is None:
+            raise ValueError("Khong tim thay yeu cau phê duyêt voi ID: {}".format(request_id))
+
+        # Tim cac quy tac leo thang con hoat dong
+        rule_model = self._escalation_model()
+        query = select(rule_model).where(
+            rule_model.request_id == request_id,
+            rule_model.is_active == True,
+        )
+        result = await self._session.execute(query)
+        active_rules = list(result.scalars().all())
+
+        if not active_rules:
+            raise ValueError(
+                "Khong co quy tac leo thang hoat dong cho yeu cau '{}'".format(request_id)
+            )
+
+        escalated_rules = []
+        now = datetime.now(timezone.utc)
+
+        for rule in active_rules:
+            # Cap nhat trang thai request
+            request.status = "escalated"
+            request.updated_at = now
+
+            # Cap nhat trang thai cac buôc dang pending
+            step_model = self._step_model()
+            step_query = select(step_model).where(
+                step_model.request_id == request_id,
+                step_model.status == "pending",
+            )
+            step_result = await self._session.execute(step_query)
+            pending_steps = list(step_result.scalars().all())
+
+            for step in pending_steps:
+                step.status = "escalated"
+
+                # Neu co target_role hoac target_id tu rule, cap nhat step
+                if rule.target_role:
+                    step.approver_role = rule.target_role
+                if rule.target_id:
+                    step.approver_id = rule.target_id
+
+                # Dat lai thoi han hanh dong
+                step.action_deadline = now + timedelta(minutes=rule.trigger_after_minutes)
+
+            escalated_rules.append(rule.rule_id)
+
+        await self._session.commit()
+
+        logger.info(
+            "Da leo thang yeu cau: request=%s, so_quy_tac=%d",
+            request_id,
+            len(escalated_rules),
+        )
+
+        return escalated_rules
+
+    # --------------------------------------------------------------
+    # Uy quyen
+    # --------------------------------------------------------------
+
+    async def delegate(self, request_id: str, delegator_id: str, delegatee_id: str,
+                       delegation_type: str = "temporary",
+                       valid_until: Optional[datetime] = None) -> Any:
+        """
+        Uy quyen phê duyêt cho ngươI khac.
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt.
+            delegator_id: ID ngươI uy quyen.
+            delegatee_id: ID ngươI duoc uy quyen.
+            delegation_type: Loai uy quyen.
+            valid_until: Thoi diem het hieu luc (nullable).
+
+        Tra ve:
+            Doi tuong DelegationRecord da tao.
+
+        Nhom ra:
+            ValueError: Neu uy quyen cho chinh minh.
+        """
+        # Kiem tra khong duoc uy quyen cho chinh minh
+        if delegator_id == delegatee_id:
+            raise ValueError("Khong duoc uy quyen cho chinh minh")
+
+        # Kiem tra yeu cau ton tai
+        request = await self.get_request(request_id)
+        if request is None:
+            raise ValueError("Khong tim thay yeu cau phê duyêt voi ID: {}".format(request_id))
+
+        # Tao ban ghi uy quyen
+        delegation_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        delegation = self._delegation_model()(
+            delegation_id=delegation_id,
+            delegator_id=delegator_id,
+            delegatee_id=delegatee_id,
+            delegation_type=delegation_type,
+            scope=request_id,
+            valid_from=now,
+            valid_until=valid_until,
+            is_active=True,
+        )
+        self._session.add(delegation)
+
+        # Cap nhat trang thai request
+        request.status = "delegated"
+        request.updated_at = now
+
+        await self._session.commit()
+        await self._session.refresh(delegation)
+
+        logger.info(
+            "Da uy quyen: request=%s, tu=%s, den=%s",
+            request_id,
+            delegator_id,
+            delegatee_id,
+        )
+
+        return delegation
+
+    # --------------------------------------------------------------
+    # Kiem tra thoi han
+    # --------------------------------------------------------------
+
+    async def check_deadlines(self) -> List[str]:
+        """
+        Kiem tra cac yeu cau phê duyêt da het thoi han.
+
+        Duyêt qua tat ca yeu cau dang pending, tim nhung yeu cau
+        vuôt qua thoi han va tu dong leo thang.
+
+        Tra ve:
+            Danh sach request_ids da het han va duoc tu dong leo thang.
+        """
+        now = datetime.now(timezone.utc)
+        expired_requests = []
+
+        # Kiem tra deadline tong cua request
+        request_model = self._request_model()
+        request_query = select(request_model).where(
+            request_model.status.in_(("pending", "delegated")),
+            request_model.deadline != None,
+            request_model.deadline < now,
+        )
+        request_result = await self._session.execute(request_query)
+        expired_request_objs = list(request_result.scalars().all())
+
+        for request in expired_request_objs:
+            request.status = "expired"
+            request.updated_at = now
+            expired_requests.append(request.request_id)
+
+            # Thử tu dong leo thang
+            try:
+                await self.escalate(request.request_id)
+            except ValueError:
+                # Neu khong co quy tac leo thang, giu trang thai EXPIRED
+                pass
+
+        # Kiem tra deadline cua tung buôc
+        step_model = self._step_model()
+        step_query = select(step_model).where(
+            step_model.status == "pending",
+            step_model.action_deadline != None,
+            step_model.action_deadline < now,
+        )
+        step_result = await self._session.execute(step_query)
+        expired_steps = list(step_result.scalars().all())
+
+        for step in expired_steps:
+            step.status = "expired"
+
+            # Neu request chua bi expired, thử leo thang
+            request = await self.get_request(step.request_id)
+            if request and request.status == "pending":
+                try:
+                    await self.escalate(step.request_id)
+                except ValueError:
+                    pass
+
+        await self._session.commit()
+
+        logger.info(
+            "Da kiem tra thoi han: het_han=%d, buoc_het_han=%d",
+            len(expired_requests),
+            len(expired_steps),
+        )
+
+        return expired_requests
+
+    # --------------------------------------------------------------
+    # Lay danh sach quyet dinh
+    # --------------------------------------------------------------
+
+    async def get_decisions(self, request_id: str) -> Sequence[Any]:
+        """
+        Lay tat ca quyet dinh cho mot yeu cau phê duyêt.
+
+        Sap xep theo created_at tang dan (cu nhat truôc).
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt.
+
+        Tra ve:
+            Danh sach ApprovalDecision sap xep theo created_at tang dan.
+        """
+        # Kiem tra yeu cau ton tai
+        request = await self.get_request(request_id)
+        if request is None:
+            raise ValueError("Khong tim thay yeu cau phê duyêt voi ID: {}".format(request_id))
+
+        query = select(self._decision_model()).where(
+            self._decision_model().request_id == request_id
+        ).order_by(self._decision_model().created_at.asc())
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Phat hien chu trinh
+    # --------------------------------------------------------------
+
+    async def detect_cycle(self, request_id: str) -> bool:
+        """
+        Phat hien chu trinh trong chuôi phê duyêt.
+
+        Duyêt qua cac buôc cua yeu cau, kiem tra xem co ton tai
+        chu trinh lap vo han trong chuôi phê duyêt hay khong.
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt.
+
+        Tra ve:
+            True neu phat hien chu trinh.
+
+        Nhom ra:
+            ValueError: Neu phat hien chu trinh.
+        """
+        request = await self.get_request(request_id)
+        if request is None:
+            raise ValueError("Khong tim thay yeu cau phê duyêt voi ID: {}".format(request_id))
+
+        # Lay tat ca buôc cua request, sap xep theo step_number
+        steps = await self._get_steps_for_request(request_id)
+
+        # Kiem tra: neu co 2 buôc khac nhau voi cung approver_id
+        # Voi quy trinh sequential, dieu nay la chu trinh
+        seen_approvers: Dict[str, List[int]] = {}
+
+        for step in steps:
+            approver = step.approver_id
+            if approver not in seen_approvers:
+                seen_approvers[approver] = []
+            seen_approvers[approver].append(step.step_number)
+
+        # Voi sequential, mot approver khong duoc xuat hien o nhieu buôc
+        if request.approval_type == "sequential":
+            for approver, step_numbers in seen_approvers.items():
+                if len(step_numbers) > 1:
+                    raise ValueError(
+                        "Phat hien chu trinh: ngươI phê duyêt '{}' xuat hien o cac buôc {}".format(
+                            approver, step_numbers
+                        )
+                    )
+
+        return False
+
+    # --------------------------------------------------------------
+    # Giai quyet ngươI phê duyêt (dua tren uy quyen)
+    # --------------------------------------------------------------
+
+    async def resolve_approver(self, approver_id: str) -> str:
+        """
+        Giai quyet ngươI phê duyêt thuc te dua tren uy quyen.
+
+        Kiem tra xem approver_id co uy quyen cho ngươI khac khong.
+        Neu co uy quyen hieu luc, tra ve delegatee_id thay vi approver_id.
+
+        Tham so:
+            approver_id: ID ngươI phê duyêt ban dau.
+
+        Tra ve:
+            ID ngươI phê duyêt thuc te (co the la delegatee).
+        """
+        now = datetime.now(timezone.utc)
+
+        delegation_model = self._delegation_model()
+        query = select(delegation_model).where(
+            delegation_model.delegator_id == approver_id,
+            delegation_model.is_active == True,
+        )
+        result = await self._session.execute(query)
+        delegations = list(result.scalars().all())
+
+        for delegation in delegations:
+            # Kiem tra thoi han hieu luc
+            if delegation.valid_from and now < delegation.valid_from:
+                continue
+            if delegation.valid_until and now > delegation.valid_until:
+                continue
+
+            # Tra ve delegatee — ngươI thuc te se phê duyêt
+            return delegation.delegatee_id
+
+        return approver_id
+
+    # --------------------------------------------------------------
+    # Kiem tra RBAC
+    # --------------------------------------------------------------
+
+    def _check_rbac(self, user_id: str, step: Any) -> None:
+        """
+        Kiem tra RBAC truôc khi dua ra quyet dinh.
+
+        Validate xem ngươI dung co vai tro hop le de thao tac
+        tren buôc phê duyêt hay khong.
+
+        Tham so:
+            user_id: ID ngươI dung can kiem tra.
+            step: Doi tuong ApprovalStep.
+
+        Nhom ra:
+            ValueError: Neu ngươI dung khong co quyen.
+        """
+        # Trong he thong thuc te, se tang hop voi CP04 RBAC
+        # Day la placeholder cho RBAC check
+        # Vi du: kiem tra user co role "approver" hoac "admin"
+        if not user_id or not user_id.strip():
+            raise ValueError("ID ngươI dung khong duoc de trong")
+
+        if not step.approver_role or not step.approver_role.strip():
+            raise ValueError("Buôc '{}' thiêu vai tro ngươI phê duyêt".format(step.step_id))
+
+    # --------------------------------------------------------------
+    # Phat event quyet dinh
+    # --------------------------------------------------------------
+
+    async def _emit_decision_event(
+        self, request_id: str, step_id: str, approver_id: str,
+        decision: str, comment: str
+    ) -> None:
+        """
+        Phat domain event sau khi dua ra quyet dinh.
+
+        Su dung event_publisher de phat event approval.decided
+        den cac service khac.
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt.
+            step_id: ID buôc phê duyêt.
+            approver_id: ID ngươI dua ra quyet dinh.
+            decision: Quyet dinh (approved/rejected).
+            comment: Nhan xet.
+        """
+        if self._event_publisher is None:
+            return
+
+        try:
+            event_data = {
+                "event_type": "approval.decided",
+                "request_id": request_id,
+                "step_id": step_id,
+                "approver_id": approver_id,
+                "decision": decision,
+                "comment": comment,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            await self._event_publisher.publish("approval.decided", event_data)
+            logger.debug("Da phat event: approval.decided, request=%s", request_id)
+        except Exception as e:
+            logger.error("Loi phat event quyet dinh: %s", str(e))
+
+    # --------------------------------------------------------------
+    # Chuyen tiep chuôi phê duyêt
+    # --------------------------------------------------------------
+
+    async def _advance_chain(self, step: Any, decision: str) -> None:
+        """
+        Tu dong chuyen tiep chuôi phê duyêt sau khi co quyet dinh.
+
+        Xu ly theo loai quy trinh:
+        - SEQUENTIAL: Chuyen den buôc tiep theo (step_number + 1)
+        - PARALLEL: Kiem tra tat ca buôc song song da quyet dinh chua
+        - VOTING: Tong hop ket qua bieu quyet
+        - SINGLE: Hoan tat ngay sau quyet dinh
+        - MATRIX: Chuyen den hang/côt tiep theo
+
+        Tham so:
+            step: Buôc vua co quyet dinh.
+            decision: Quyet dinh ("approved" hoac "rejected").
+        """
+        request = await self.get_request(step.request_id)
+        if not request:
+            return
+
+        # Neu bi tu choi, ket thuc luôn
+        if decision == "rejected":
+            request.status = "rejected"
+            request.updated_at = datetime.now(timezone.utc)
+            return
+
+        # Xu ly theo loai quy trinh
+        if request.approval_type == "single":
+            # Mot ngươI phê duyêt duy nhat — da xong
+            request.status = "approved"
+            request.updated_at = datetime.now(timezone.utc)
+
+        elif request.approval_type == "sequential":
+            # Chuyen den buôc tiep theo
+            next_steps = await self._get_next_steps(step.request_id, step.step_number)
+            if next_steps:
+                request.current_step = next_steps[0].step_number
+            else:
+                # Khong co buôc tiep theo — hoan tat
+                request.status = "approved"
+            request.updated_at = datetime.now(timezone.utc)
+
+        elif request.approval_type == "parallel":
+            # Kiem tra tat ca buôc song song da quyet dinh
+            all_steps = await self._get_steps_for_request(step.request_id)
+            parallel_steps = [s for s in all_steps if s.is_parallel]
+
+            all_decided = all(
+                s.status in ("approved", "rejected")
+                for s in parallel_steps
+            )
+
+            if all_decided:
+                # Kiem tra co buôc nao bi tu choi khong
+                has_rejection = any(
+                    s.status == "rejected" for s in parallel_steps
+                )
+                request.status = "rejected" if has_rejection else "approved"
+            request.updated_at = datetime.now(timezone.utc)
+
+        elif request.approval_type == "voting":
+            # Tong hop bieu quyet
+            await self._resolve_voting(request)
+
+    async def _resolve_voting(self, request: Any) -> None:
+        """
+        Tong hop ket qua bieu quyet cho yeu cau phê duyêt.
+
+        Dua vao voting_mode (majority, unanimity, first_decides, weighted),
+        xac dinh ket qua cuôi cung tu cac quyet dinh da thu tap.
+
+        Tham so:
+            request: ApprovalRequest can tong hop.
+        """
+        all_steps = await self._get_steps_for_request(request.request_id)
+
+        decided_steps = [
+            s for s in all_steps
+            if s.status in ("approved", "rejected")
+        ]
+
+        if not decided_steps:
+            return
+
+        approved_count = sum(1 for s in decided_steps if s.status == "approved")
+        rejected_count = sum(1 for s in decided_steps if s.status == "rejected")
+        total_steps = len(all_steps)
+
+        # Kiem tra dieu kien quorum (it nhat mot nua so buôc phai co quyet dinh)
+        if len(decided_steps) < max(1, total_steps // 2):
+            return
+
+        # Da hoan tat khi tat ca buôc deu co quyet dinh
+        if len(decided_steps) == total_steps:
+            if approved_count >= rejected_count:
+                request.status = "approved"
+            else:
+                request.status = "rejected"
+
+        request.updated_at = datetime.now(timezone.utc)
+
+    # --------------------------------------------------------------
+    # Phuong thuc noi bo
+    # --------------------------------------------------------------
+
+    async def _get_step(self, step_id: str) -> Optional[Any]:
+        """Lay buôc phê duyêt theo ID."""
+        query = select(self._step_model()).where(
+            self._step_model().step_id == step_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def _get_steps_for_request(self, request_id: str) -> List[Any]:
+        """Lay tat ca buôc phê duyêt cua mot yeu cau."""
+        query = select(self._step_model()).where(
+            self._step_model().request_id == request_id
+        ).order_by(self._step_model().step_number.asc())
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    async def _get_next_steps(self, request_id: str, current_step_number: int) -> List[Any]:
+        """Lay cac buôc tiep theo trong chuôi phê duyêt."""
+        query = select(self._step_model()).where(
+            self._step_model().request_id == request_id,
+            self._step_model().step_number == current_step_number + 1,
+            self._step_model().status == "pending",
+        )
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Lay mo hinh tu module models (import dong)
+    # --------------------------------------------------------------
+
+    def _request_model(self) -> type:
+        """Lay mo hinh ApprovalRequest."""
+        from approval_models import ApprovalRequest
+        return ApprovalRequest
+
+    def _step_model(self) -> type:
+        """Lay mo hinh ApprovalStep."""
+        from approval_models import ApprovalStep
+        return ApprovalStep
+
+    def _decision_model(self) -> type:
+        """Lay mo hinh ApprovalDecision."""
+        from approval_models import ApprovalDecision
+        return ApprovalDecision
+
+    def _escalation_model(self) -> type:
+        """Lay mo hinh EscalationRule."""
+        from approval_models import EscalationRule
+        return EscalationRule
+
+    def _delegation_model(self) -> type:
+        """Lay mo hinh DelegationRecord."""
+        from approval_models import DelegationRecord
+        return DelegationRecord
+

@@ -952,6 +952,20 @@ class ErrorCode(str, Enum):
     CP41_CHAT_SSE_CONNECTION_CLOSED = "MDC-CP41-010"
 
     # =========================================================================
+    # CP42: Approval Workflow Engine Errors
+    # =========================================================================
+    CP42_APPROVAL_REQUEST_NOT_FOUND = "MDC-CP42-001"
+    CP42_APPROVAL_NOT_YOUR_TURN = "MDC-CP42-002"
+    CP42_APPROVAL_ALREADY_DECIDED = "MDC-CP42-003"
+    CP42_APPROVAL_MISSING_ROLE = "MDC-CP42-004"
+    CP42_APPROVAL_CHAIN_CYCLE_DETECTED = "MDC-CP42-005"
+    CP42_APPROVAL_ESCALATION_NO_NEXT_LEVEL = "MDC-CP42-006"
+    CP42_APPROVAL_DELEGATION_EXPIRED = "MDC-CP42-007"
+    CP42_APPROVAL_DELEGATION_SELF = "MDC-CP42-008"
+    CP42_APPROVAL_VOTING_NOT_QUORUM = "MDC-CP42-009"
+    CP42_APPROVAL_EVENT_HANDLER_FAILED = "MDC-CP42-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1473,6 +1487,18 @@ class MidicoderErrorManager:
         ErrorCode.CP41_CHAT_RATE_LIMIT_EXCEEDED: "Vượt rate limit chat: {user_id} ({messages} msg/min)",
         ErrorCode.CP41_CHAT_CONTENT_FILTER_VIOLATION: "Message vi phạm content filter: {reason}",
         ErrorCode.CP41_CHAT_SSE_CONNECTION_CLOSED: "SSE connection đóng không mong muốn",
+
+        # CP42: Approval Workflow Engine Error Templates
+        ErrorCode.CP42_APPROVAL_REQUEST_NOT_FOUND: "Approval request không tồn tại: {request_id}",
+        ErrorCode.CP42_APPROVAL_NOT_YOUR_TURN: "Bạn không phải người duyệt ở bước hiện tại: {user_id}",
+        ErrorCode.CP42_APPROVAL_ALREADY_DECIDED: "Approval đã được quyết định: {request_id}",
+        ErrorCode.CP42_APPROVAL_MISSING_ROLE: "User không có role để duyệt: {required_role}",
+        ErrorCode.CP42_APPROVAL_CHAIN_CYCLE_DETECTED: "Phát hiện vòng lặp trong approval chain",
+        ErrorCode.CP42_APPROVAL_ESCALATION_NO_NEXT_LEVEL: "Không có cấp cao hơn để escalation",
+        ErrorCode.CP42_APPROVAL_DELEGATION_EXPIRED: "Delegation đã hết hạn: {delegation_id}",
+        ErrorCode.CP42_APPROVAL_DELEGATION_SELF: "Không thể delegation cho chính mình",
+        ErrorCode.CP42_APPROVAL_VOTING_NOT_QUORUM: "Chưa đạt quorum vote: {votes}/{required}",
+        ErrorCode.CP42_APPROVAL_EVENT_HANDLER_FAILED: "Xử lý event approval thất bại: {reason}",
 
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",

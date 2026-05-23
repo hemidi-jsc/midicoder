@@ -1,0 +1,474 @@
+# ----------------------------------------------------------
+# CP42 Approval Workflow — Event handler qua CP05
+# ----------------------------------------------------------
+# Sinh boi CP42ApprovalEmitter
+# Event topics: approval.requested, approval.decided,
+#               approval.escalated, approval.delegated
+# ----------------------------------------------------------
+
+import asyncio
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional
+
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Approval Event Handler — Láng nghe domain events qua CP05
+# ============================================================================
+
+
+class ApprovalEventHandler:
+    """
+    Event handler cho he thong phê duyêt — láng nghe domain events
+    va tu dong tao yeu cau phê duyêt khi event khop dieu kien.
+
+    Event topics:
+    - approval.requested: Yeu cau phê duyêt moi da duoc tao
+    - approval.decided: Quyet dinh phê duyêt da duoc dua ra
+    - approval.escalated: Yeu cau da duoc leo thang
+    - approval.delegated: Yeu cau da duoc uy quyen
+
+    Attributes:
+        session_factory: Factory de tao AsyncSession moi cho moi event.
+        event_bus: EventBus instance de subscribe events.
+    """
+
+    def __init__(
+        self,
+        session_factory: Any,
+        event_bus: Optional[Any] = None,
+    ) -> None:
+        """
+        Khoi tao ApprovalEventHandler voi session factory va event bus.
+
+        Tham so:
+            session_factory: Factory de tao AsyncSession moi.
+            event_bus: EventBus instance tu CP05 (tu chon).
+        """
+        self._session_factory = session_factory
+        self._event_bus = event_bus
+        self._handlers: Dict[str, List[Callable]] = {
+            "approval.requested": [],
+            "approval.decided": [],
+            "approval.escalated": [],
+            "approval.delegated": [],
+        }
+
+        # Dang ky cac handler mac dinh
+        self._register_default_handlers()
+
+        # Subscribe den event bus neu co
+        if self._event_bus is not None:
+            self._subscribe_to_topics()
+
+    def _register_default_handlers(self) -> None:
+        """Dang ky cac handler mac dinh cho moi event topic."""
+        self._handlers["approval.requested"].append(self._on_approval_requested)
+        self._handlers["approval.decided"].append(self._on_approval_decided)
+        self._handlers["approval.escalated"].append(self._on_approval_escalated)
+        self._handlers["approval.delegated"].append(self._on_approval_delegated)
+
+    def _subscribe_to_topics(self) -> None:
+        """Dang ky subscribe den cac event topics tren CP05 event bus."""
+        topics = [
+            "approval.requested",
+            "approval.decided",
+            "approval.escalated",
+            "approval.delegated",
+        ]
+
+        for topic in topics:
+            self._event_bus.subscribe(topic, self.handle_event)
+            logger.info("Da subscribe den topic: %s", topic)
+
+    async def handle_event(self, event: Any) -> None:
+        """
+        Xy ly event nhan duoc tu CP05 event bus.
+
+        Route event den cac handler phu hop theo event type.
+
+        Tham so:
+            event: EventMessage hoac dict chua du lieu event.
+        """
+        # Trich chuot event type va payload
+        if isinstance(event, dict):
+            event_type = event.get("event_type", event.get("type", ""))
+            payload = event.get("payload", event)
+        else:
+            event_type = getattr(event, "event_id", "") or getattr(event, "type", "")
+            payload = getattr(event, "payload", {})
+
+        if not event_type:
+            logger.warning("Event khong co event_type, bo qua")
+            return
+
+        logger.info("Nhan duoc event: type=%s", event_type)
+
+        # Route den cac handler phu hop
+        handlers = self._handlers.get(event_type, [])
+        if not handlers:
+            logger.debug("Khong co handler cho event type: %s", event_type)
+            return
+
+        for handler in handlers:
+            try:
+                if asyncio.iscoroutinefunction(handler):
+                    await handler(payload)
+                else:
+                    handler(payload)
+            except Exception as e:
+                logger.error(
+                    "Loi xu ly event '%s': %s",
+                    event_type,
+                    str(e),
+                    exc_info=True,
+                )
+
+    # --------------------------------------------------------------
+    # Handler: approval.requested
+    # --------------------------------------------------------------
+
+    async def _on_approval_requested(self, payload: Dict[str, Any]) -> None:
+        """
+        Xu ly event approval.requested — yeu cau phê duyêt moi da duoc tao.
+
+        Xu ly: (1) kiem tra dieu kien auto-create neu co,
+        (2) phat thanh thong bao cho cac buôc phê duyêt lien quan,
+        (3) ghi log audit trail.
+
+        Tham so:
+            payload: Du lieu event chua request_id, initiator_id, v.v.
+        """
+        request_id = payload.get("request_id", "")
+        initiator_id = payload.get("initiator_id", "")
+        entity_type = payload.get("entity_type", "")
+        entity_id = payload.get("entity_id", "")
+
+        logger.info(
+            "Xu ly event approval.requested: request=%s, entity=%s:%s, initiator=%s",
+            request_id, entity_type, entity_id, initiator_id,
+        )
+
+        # Kiem tra co can tao tu dong yeu cau phê duyêt phu hoac khong
+        # (vi du: neu entity_type la "purchase_order" va gia tri > ngông old)
+        await self._check_auto_approval_conditions(entity_type, entity_id, payload)
+
+        # Ghi log audit
+        await self._log_audit_event(
+            event_type="approval.requested",
+            request_id=request_id,
+            actor_id=initiator_id,
+            metadata=payload,
+        )
+
+    # --------------------------------------------------------------
+    # Handler: approval.decided
+    # --------------------------------------------------------------
+
+    async def _on_approval_decided(self, payload: Dict[str, Any]) -> None:
+        """
+        Xu ly event approval.decided — quyet dinh da duoc dua ra.
+
+        Xu ly: (1) cap nhat trang thai cac system lien quan,
+        (2) gui thong bao cho initiator va cac phuong lien quan,
+        (3)ghi log audit trail.
+
+        Tham so:
+            payload: Du lieu event chua decision, approver_id, comment, v.v.
+        """
+        request_id = payload.get("request_id", "")
+        step_id = payload.get("step_id", "")
+        approver_id = payload.get("approver_id", "")
+        decision = payload.get("decision", "")
+        comment = payload.get("comment", "")
+
+        logger.info(
+            "Xu ly event approval.decided: request=%s, step=%s, decision=%s, approver=%s",
+            request_id, step_id, decision, approver_id,
+        )
+
+        # Gui thong bao cho cac phuong lien quan
+        await self._notify_stakeholders(request_id, decision, comment)
+
+        # Neu da approved toan bo, co the trigger cac actions tiep theo
+        if decision == "approved":
+            await self._check_completion_and_trigger(request_id)
+
+        # Ghi log audit
+        await self._log_audit_event(
+            event_type="approval.decided",
+            request_id=request_id,
+            actor_id=approver_id,
+            metadata=payload,
+        )
+
+    # --------------------------------------------------------------
+    # Handler: approval.escalated
+    # --------------------------------------------------------------
+
+    async def _on_approval_escalated(self, payload: Dict[str, Any]) -> None:
+        """
+        Xu ly event approval.escalated — yeu cau da duoc leo thang.
+
+        Xu ly: (1) gui thong bao cap nhat cho new_approver,
+        (2) cap nhat thoi han hanh dong,
+        (3) ghi log audit trail.
+
+        Tham so:
+            payload: Du lieu event chua request_id, escalation_rules, v.v.
+        """
+        request_id = payload.get("request_id", "")
+        escalated_rules = payload.get("escalated_rules", [])
+
+        logger.info(
+            "Xu ly event approval.escalated: request=%s, rules=%s",
+            request_id, escalated_rules,
+        )
+
+        # Gui thong bao ve viec leo thang
+        await self._notify_escalation(request_id)
+
+        # Ghi log audit
+        await self._log_audit_event(
+            event_type="approval.escalated",
+            request_id=request_id,
+            actor_id="system",
+            metadata=payload,
+        )
+
+    # --------------------------------------------------------------
+    # Handler: approval.delegated
+    # --------------------------------------------------------------
+
+    async def _on_approval_delegated(self, payload: Dict[str, Any]) -> None:
+        """
+        Xu ly event approval.delegated — yeu cau da duoc uy quyen.
+
+        Xu ly: (1) gui thong bao cho delegatee,
+        (2) xac minh uy quyen hieu luc,
+        (3) ghi log audit trail.
+
+        Tham so:
+            payload: Du lieu event chua delegation_id, delegatee_id, v.v.
+        """
+        request_id = payload.get("request_id", "")
+        delegation_id = payload.get("delegation_id", "")
+        delegatee_id = payload.get("delegatee_id", "")
+        delegator_id = payload.get("delegator_id", "")
+
+        logger.info(
+            "Xu ly event approval.delegated: request=%s, tu=%s, den=%s, delegation=%s",
+            request_id, delegator_id, delegatee_id, delegation_id,
+        )
+
+        # Gui thong bao cho ngươI duoc uy quyen
+        await self._notify_delegation(delegatee_id, request_id, delegator_id)
+
+        # Ghi log audit
+        await self._log_audit_event(
+            event_type="approval.delegated",
+            request_id=request_id,
+            actor_id=delegator_id,
+            metadata=payload,
+        )
+
+    # --------------------------------------------------------------
+    # Auto-create approval request khi event khop dieu kien
+    # --------------------------------------------------------------
+
+    async def _check_auto_approval_conditions(
+        self,
+        entity_type: str,
+        entity_id: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        """
+        Kiem tra cac dieu kien de tu dong tao yeu cau phê duyêt phu.
+
+        Vi du:
+        - Purchase order > $10,000 can extra approval
+        - Leave request > 5 ngay can manager approval
+        - Contract change can legal review
+
+        Tham so:
+            entity_type: Loai thuc the (purchase_order, leave_request, ...).
+            entity_id: ID thuc the.
+            payload: Du lieu event toan bo.
+        """
+        # Placeholder cho cac dieu kien auto-create
+        # Trong he thong thuc te, se doc config tu database hoac config file
+
+        amount = payload.get("amount")
+        if entity_type == "purchase_order" and amount is not None:
+            if amount > 10000:
+                logger.info(
+                    "Purchase order %s voi gia tri %s vuot ngong old, can phê duyêt them",
+                    entity_id, amount,
+                )
+                # Tu dong tao yeu cau phê duyêt them
+                # await self._create_extra_approval(entity_type, entity_id, payload)
+
+        days = payload.get("days")
+        if entity_type == "leave_request" and days is not None:
+            if days > 5:
+                logger.info(
+                    "Leave request %s voi %s ngay vuot gioi han, can manager phê duyêt",
+                    entity_id, days,
+                )
+
+    async def _create_extra_approval(
+        self,
+        entity_type: str,
+        entity_id: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        """
+        Tu dong tao yeu cau phê duyêt phu khi dieu kien duoc thoa man.
+
+        Goi ApprovalService de tao yeu cau moi voi cac buôc phê duyêt
+        phu hop voi dieu kien.
+
+        Tham so:
+            entity_type: Loai thuc the.
+            entity_id: ID thuc the.
+            payload: Du lieu event.
+        """
+        async with self._session_factory() as session:
+            from approval_service import ApprovalService
+            service = ApprovalService(session)
+
+            extra_request = await service.create_request({
+                "title": "Phê duyêt them: {} {}".format(entity_type, entity_id),
+                "description": "Tu dong tao tu event: {}".format(payload.get("event_type", "")),
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "approval_type": "sequential",
+                "initiator_id": payload.get("initiator_id", "system"),
+                "total_steps": 2,
+            })
+
+            logger.info(
+                "Da tao yeu cau phê duyêt them: id=%s, entity=%s:%s",
+                extra_request.request_id, entity_type, entity_id,
+            )
+
+    # --------------------------------------------------------------
+    # Phuong thuc noi bo — Thong bao
+    # --------------------------------------------------------------
+
+    async def _notify_stakeholders(
+        self, request_id: str, decision: str, comment: str
+    ) -> None:
+        """
+        Gui thong bao cho cac phuong lien quan sau quyet dinh.
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt.
+            decision: Quyet dinh (approved/rejected).
+            comment: Nhan xet.
+        """
+        # Placeholder cho notification — tang hop voi CP12 Notification
+        logger.info(
+            "Gui thong bao ve quyet dinh %s cho yeu cau %s",
+            decision, request_id,
+        )
+
+    async def _notify_escalation(self, request_id: str) -> None:
+        """
+        Gui thong bao ve viec leo thang yeu cau phê duyêt.
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt.
+        """
+        # Placeholder cho notification ve leo thang
+        logger.info("Gui thong bao leo thang cho yeu cau %s", request_id)
+
+    async def _notify_delegation(
+        self, delegatee_id: str, request_id: str, delegator_id: str
+    ) -> None:
+        """
+        Gui thong bao cho ngươI duoc uy quyen.
+
+        Tham so:
+            delegatee_id: ID ngươI duoc uy quyen.
+            request_id: ID yeu cau phê duyêt.
+            delegator_id: ID ngươI uy quyen.
+        """
+        # Placeholder cho notification ve uy quyen
+        logger.info(
+            "Gui thong bao uy quyen den %s cho yeu cau %s (tu %s)",
+            delegatee_id, request_id, delegator_id,
+        )
+
+    async def _check_completion_and_trigger(self, request_id: str) -> None:
+        """
+        Kiem tra yeu cau da duoc approved toan bo va trigger actions.
+
+        Tham so:
+            request_id: ID yeu cau phê duyêt.
+        """
+        # Placeholder cho completion check
+        # Vi du: update entity status, trigger workflow, v.v.
+        logger.debug("Kiem tra hoan tat cho yeu cau %s", request_id)
+
+    # --------------------------------------------------------------
+    # Phuong thuc noi bo — Audit log
+    # --------------------------------------------------------------
+
+    async def _log_audit_event(
+        self,
+        event_type: str,
+        request_id: str,
+        actor_id: str,
+        metadata: Dict[str, Any],
+    ) -> None:
+        """
+        Ghi log audit trail cho event phê duyêt.
+
+        Tang hop voi CP14 Audit Compliance deghi nhan toan bo
+        cac thao tac trong quy trinh phê duyêt.
+
+        Tham so:
+            event_type: Loai event.
+            request_id: ID yeu cau phê duyêt.
+            actor_id: ID ngươI thuc hien thao tac.
+            metadata: Du lieu bo sung cua event.
+        """
+        audit_entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event_type": event_type,
+            "request_id": request_id,
+            "actor_id": actor_id,
+            "metadata": metadata,
+        }
+        logger.info("Audit log: %s", json.dumps(audit_entry, default=str))
+
+
+# ============================================================================
+# Factory function
+# ============================================================================
+
+
+def create_approval_event_handler(
+    session_factory: Any,
+    event_bus: Optional[Any] = None,
+) -> ApprovalEventHandler:
+    """
+    Tao ApprovalEventHandler moi voi config.
+
+    Tham so:
+        session_factory: Factory de tao AsyncSession.
+        event_bus: EventBus instance tu CP05 (tu chon).
+
+    Tra ve:
+        ApprovalEventHandler instance.
+    """
+    return ApprovalEventHandler(
+        session_factory=session_factory,
+        event_bus=event_bus,
+    )
+

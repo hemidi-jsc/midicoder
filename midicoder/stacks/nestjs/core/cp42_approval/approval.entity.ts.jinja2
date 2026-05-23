@@ -1,0 +1,843 @@
+/**
+* Approval Entity - TypeORM entities cho Approval Workflow Engine.
+*
+* Định nghĩa các entity:
+* - ApprovalRequest: yêu cầu phê duyệt với metadata và trạng thái
+* - ApprovalStep: bước phê duyệt trong chuỗi
+* - ApprovalDecision: quyết định phê duyệt (approved/rejected, nhận xét)
+* - EscalationRule: quy tắc leo thang (trigger, chiến lược, mục tiêu)
+* - DelegationRecord: bản ghi ủy quyền (người ủy, người nhận, phạm vi)
+*
+* CP42: Approval Workflow Engine
+* Tổng số yêu cầu mẫu: {{ num_requests }}
+* Tổng số bước mẫu: {{ num_steps }}
+*/
+
+import {
+Entity,
+PrimaryGeneratedColumn,
+Column,
+CreateDateColumn,
+UpdateDateColumn,
+Index,
+OneToMany,
+ManyToOne,
+JoinColumn,
+} from "typeorm";
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/**
+* Các trạng thái phê duyệt hợp lệ.
+*/
+export const APPROVAL_STATUSES = [
+"pending",
+"approved",
+"rejected",
+"escalated",
+"delegated",
+"expired",
+"cancelled",
+];
+
+/**
+* Các loại phê duyệt hợp lệ.
+*/
+export const APPROVAL_TYPES = [
+"sequential",
+"parallel",
+"matrix",
+"voting",
+"single",
+];
+
+/**
+* Các chiến lược leo thang hợp lệ.
+*/
+export const ESCALATION_STRATEGIES = [
+"next_level",
+"next_role",
+"manager",
+"timeout",
+];
+
+/**
+* Các loại ủy quyền hợp lệ.
+*/
+export const DELEGATION_TYPES = [
+"temporary",
+"permanent",
+"conditional",
+];
+
+/**
+* Các chế độ biểu quyết hợp lệ.
+*/
+export const VOTING_MODES = [
+"majority",
+"unanimity",
+"first_decides",
+"weighted",
+];
+
+// ===========================================================================
+// ApprovalRequest Entity
+// ===========================================================================
+
+/**
+* Interface cho ApprovalRequest properties.
+*/
+export interface IApprovalRequest {
+requestId: string;
+title: string;
+description: string;
+entityType: string;
+entityId: string;
+approvalType: string;
+status: string;
+initiatorId: string;
+currentStep: number;
+totalSteps: number;
+deadline: Date | null;
+metadata: Record<string, any>;
+    steps: ApprovalStep[];
+    decisions: ApprovalDecision[];
+    createdAt: Date;
+    updatedAt: Date;
+    }
+
+    /**
+    * ApprovalRequest Entity - yêu cầu phê duyệt.
+    *
+    * Đại diện cho một yêu cầu cần được phê duyệt, bao gồm loại quy trình,
+    * trạng thái hiện tại, và tổng số bước phê duyệt.
+    *
+    * Mối quan hệ:
+    * - Một yêu cầu có nhiều bước phê duyệt (OneToMany: steps)
+    * - Một yêu cầu có nhiều quyết định (OneToMany: decisions)
+    *
+    * Indexes:
+    * - (status) - tối ưu lọc theo trạng thái
+    * - (initiatorId) - tối ưu tìm yêu cầu theo người khởi tạo
+    * - (approvalType) - tối ưu lọc theo loại quy trình
+    */
+    @Entity("approval_requests")
+    @Index("idx_approval_request_status", ["status"])
+    @Index("idx_approval_request_initiator", ["initiatorId"])
+    @Index("idx_approval_request_type", ["approvalType"])
+    export class ApprovalRequest implements IApprovalRequest {
+    /**
+    * Primary key - UUID tự sinh.
+    */
+    @PrimaryGeneratedColumn("uuid")
+    requestId: string;
+
+    /**
+    * Tiêu đề yêu cầu phê duyệt.
+    */
+    @Column({ type: "varchar", length: 255, default: "" })
+    title: string;
+
+    /**
+    * Mô tả chi tiết yêu cầu.
+    */
+    @Column({ type: "text", default: "" })
+    description: string;
+
+    /**
+    * Loại thực thể liên quan.
+    *
+    * Ví dụ: "purchase_order", "leave_request", "expense_report"
+    */
+    @Column({ name: "entity_type", type: "varchar", length: 128, default: "" })
+    entityType: string;
+
+    /**
+    * ID thực thể liên quan.
+    */
+    @Column({ name: "entity_id", type: "uuid" })
+    entityId: string;
+
+    /**
+    * Loại quy trình phê duyệt.
+    *
+    * - "sequential": phê duyệt tuần tự, từng bước theo thứ tự
+    * - "parallel": phê duyệt song song, nhiều người cùng lúc
+    * - "matrix": phê duyệt ma trận (theo cả cấp bậc và chuyên môn)
+    * - "voting": phê duyệt bằng biểu quyết
+    * - "single": phê duyệt bởi một người duy nhất
+    */
+    @Column({ name: "approval_type", type: "varchar", length: 32, default: "sequential" })
+    approvalType: string;
+
+    /**
+    * Trạng thái hiện tại của yêu cầu.
+    *
+    * - "pending": đang chờ phê duyệt
+    * - "approved": đã được phê duyệt
+    * - "rejected": đã bị từ chối
+    * - "escalated": đã leo thang đến cấp cao hơn
+    * - "delegated": đã được ủy quyền cho người khác
+    * - "expired": đã hết thời hạn
+    * - "cancelled": đã bị hủy
+    */
+    @Column({ type: "varchar", length: 20, default: "pending" })
+    status: string;
+
+    /**
+    * ID người khởi tạo yêu cầu.
+    */
+    @Column({ name: "initiator_id", type: "uuid" })
+    initiatorId: string;
+
+    /**
+    * Số bước hiện tại đang xử lý (1-based).
+    */
+    @Column({ name: "current_step", type: "int", default: 1 })
+    currentStep: number;
+
+    /**
+    * Tổng số bước phê duyệt.
+    */
+    @Column({ name: "total_steps", type: "int", default: 1 })
+    totalSteps: number;
+
+    /**
+    * Thời hạn phê duyệt cuối cùng.
+    *
+    * NULL nếu không có thời hạn cụ thể.
+    */
+    @Column({ type: "timestamptz", nullable: true })
+    deadline: Date | null;
+
+    /**
+    * Dữ liệu bổ sung (metadata tùy chỉnh).
+    *
+    * Dạng JSON, có thể chứa các trường tùy chỉnh cho từng loại thực thể.
+    */
+    @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+    metadata: Record<string, any>;
+
+        /**
+        * Danh sách bước phê duyệt.
+        */
+        @OneToMany(() => ApprovalStep, (step) => step.request)
+        steps: ApprovalStep[];
+
+        /**
+        * Danh sách quyết định.
+        */
+        @OneToMany(() => ApprovalDecision, (decision) => decision.request)
+        decisions: ApprovalDecision[];
+
+        /**
+        * Created at - thời điểm tạo yêu cầu.
+        */
+        @CreateDateColumn({ name: "created_at" })
+        createdAt: Date;
+
+        /**
+        * Updated at - thời điểm cập nhật yêu cầu.
+        */
+        @UpdateDateColumn({ name: "updated_at" })
+        updatedAt: Date;
+
+        // ========================================================================
+        // Utility Methods
+        // ========================================================================
+
+        /**
+        * Kiểm tra yêu cầu có đang chờ phê duyệt không.
+        *
+        * @returns True nếu status là "pending"
+        */
+        isPending(): boolean {
+        return this.status === "pending";
+        }
+
+        /**
+        * Kiểm tra yêu cầu đã hoàn tất không (approved hoặc rejected).
+        *
+        * @returns True nếu status là "approved" hoặc "rejected"
+        */
+        isFinalized(): boolean {
+        return this.status === "approved" || this.status === "rejected";
+        }
+
+        /**
+        * Kiểm tra đã hết thời hạn chưa.
+        *
+        * @returns True nếu deadline đã qua
+        */
+        isDeadlinePassed(): boolean {
+        if (!this.deadline) {
+        return false;
+        }
+        return new Date() > this.deadline;
+        }
+
+        /**
+        * String representation cho debugging.
+        *
+        * @returns Formatted string
+        */
+        toString(): string {
+        return "<ApprovalRequest(id=\"" + this.requestId + "\" , status=\"" + this.status + "\" , type=\"" +
+            this.approvalType + "\" , step=" + this.currentStep + " /" + this.totalSteps + ")>" ; } }
+            //===========================================================================// ApprovalStep Entity
+            //===========================================================================/** * Interface cho
+            ApprovalStep properties. */ export interface IApprovalStep { stepId: string; requestId: string; stepNumber:
+            number; approverId: string; approverRole: string; status: string; actionDeadline: Date | null; isParallel:
+            boolean; conditionExpression: string | null; request: ApprovalRequest; createdAt: Date; } /** * ApprovalStep
+            Entity - bước phê duyệt trong chuỗi. * * Mỗi bước xác định một người phê duyệt cụ thể với vai trò, * thời
+            hạn hành động, và điều kiện kích hoạt. * * Mối quan hệ: * - Thuộc một yêu cầu phê duyệt (ManyToOne: request)
+            * * Indexes: * - (requestId, stepNumber) unique - mỗi request có step number duy nhất * - (approverId) - tối
+            ưu tìm bước theo người phê duyệt * - (status) - tối ưu lọc theo trạng thái * - (actionDeadline) - tối ưu tìm
+            bước hết hạn */ @Entity("approval_steps") @Index("idx_approval_step_request_number",
+            ["requestId", "stepNumber" ], { unique: true }) @Index("idx_approval_step_approver", ["approverId"])
+            @Index("idx_approval_step_status", ["status"]) @Index("idx_approval_step_deadline", ["actionDeadline"])
+            export class ApprovalStep implements IApprovalStep { /** * Primary key - UUID tự sinh. */
+            @PrimaryGeneratedColumn("uuid") stepId: string; /** * ID yêu cầu phê duyệt cha. */ @Column({
+            name: "request_id" , type: "uuid" }) requestId: string; /** * Mối quan hệ ManyToOne với ApprovalRequest. */
+            @ManyToOne(()=> ApprovalRequest, (request) => request.steps, {
+            onDelete: "CASCADE",
+            })
+            @JoinColumn({ name: "request_id" })
+            request: ApprovalRequest;
+
+            /**
+            * Thứ tự bước trong chuỗi (1-based).
+            */
+            @Column({ name: "step_number", type: "int", default: 1 })
+            stepNumber: number;
+
+            /**
+            * ID người phê duyệt.
+            */
+            @Column({ name: "approver_id", type: "uuid" })
+            approverId: string;
+
+            /**
+            * Vai trò của người phê duyệt.
+            *
+            * Ví dụ: "team_lead", "department_manager", "cto"
+            */
+            @Column({ name: "approver_role", type: "varchar", length: 128, default: "" })
+            approverRole: string;
+
+            /**
+            * Trạng thái của bước.
+            *
+            * Các giá trị: pending, approved, rejected, escalated, delegated, expired
+            */
+            @Column({ type: "varchar", length: 20, default: "pending" })
+            status: string;
+
+            /**
+            * Thời hạn hành động cho bước này.
+            *
+            * NULL nếu không có thời hạn cụ thể.
+            */
+            @Column({ name: "action_deadline", type: "timestamptz", nullable: true })
+            actionDeadline: Date | null;
+
+            /**
+            * Bước có thực hiện song song với các bước khác không.
+            *
+            * True cho quy trình parallel - nhiều bước cùng mức.
+            */
+            @Column({ name: "is_parallel", type: "boolean", default: false })
+            isParallel: boolean;
+
+            /**
+            * Biểu thức điều kiện để kích hoạt bước này.
+            *
+            * NULL nếu không có điều kiện (bước luôn được kích hoạt).
+            */
+            @Column({ name: "condition_expression", type: "text", nullable: true })
+            conditionExpression: string | null;
+
+            /**
+            * Created at - thời điểm tạo bước.
+            */
+            @CreateDateColumn({ name: "created_at" })
+            createdAt: Date;
+
+            // ========================================================================
+            // Utility Methods
+            // ========================================================================
+
+            /**
+            * Kiểm tra bước có đang chờ xử lý không.
+            *
+            * @returns True nếu status là "pending" hoặc "escalated"
+            */
+            isActionable(): boolean {
+            return this.status === "pending" || this.status === "escalated";
+            }
+
+            /**
+            * Kiểm tra bước đã có quyết định cuối cùng chưa.
+            *
+            * @returns True nếu status là "approved" hoặc "rejected"
+            */
+            isDecided(): boolean {
+            return this.status === "approved" || this.status === "rejected";
+            }
+
+            /**
+            * Kiểm tra đã hết thời hạn hành động chưa.
+            *
+            * @returns True nếu actionDeadline đã qua
+            */
+            isActionDeadlinePassed(): boolean {
+            if (!this.actionDeadline) {
+            return false;
+            }
+            return new Date() > this.actionDeadline;
+            }
+
+            /**
+            * String representation cho debugging.
+            *
+            * @returns Formatted string
+            */
+            toString(): string {
+            return "<ApprovalStep(id=\"" + this.stepId + "\" , step=" + this.stepNumber
+      + " , approver=\"" + this.approverId + "\" , status=\"" + this.status + "\" )>";
+                }
+                }
+
+                // ===========================================================================
+                // ApprovalDecision Entity
+                // ===========================================================================
+
+                /**
+                * Interface cho ApprovalDecision properties.
+                */
+                export interface IApprovalDecision {
+                decisionId: string;
+                stepId: string;
+                requestId: string;
+                approverId: string;
+                decision: string;
+                comment: string;
+                request: ApprovalRequest;
+                createdAt: Date;
+                }
+
+                /**
+                * ApprovalDecision Entity - quyết định phê duyệt.
+                *
+                * Ghi nhận quyết định (phê duyệt/từ chối) của một người phê duyệt
+                * tại một bước cụ thể, kèm theo nhận xét.
+                *
+                * Mối quan hệ:
+                * - Thuộc một yêu cầu phê duyệt (ManyToOne: request)
+                *
+                * Indexes:
+                * - (stepId) - tối ưu tìm quyết định theo bước
+                * - (requestId) - tối ưu tìm quyết định theo yêu cầu
+                * - (approverId) - tối ưu tìm quyết định theo người phê duyệt
+                * - (decision) - tối ưu lọc theo loại quyết định
+                */
+                @Entity("approval_decisions")
+                @Index("idx_approval_decision_step", ["stepId"])
+                @Index("idx_approval_decision_request", ["requestId"])
+                @Index("idx_approval_decision_approver", ["approverId"])
+                @Index("idx_approval_decision_type", ["decision"])
+                export class ApprovalDecision implements IApprovalDecision {
+                /**
+                * Primary key - UUID tự sinh.
+                */
+                @PrimaryGeneratedColumn("uuid")
+                decisionId: string;
+
+                /**
+                * ID bước phê duyệt liên quan.
+                */
+                @Column({ name: "step_id", type: "uuid" })
+                stepId: string;
+
+                /**
+                * ID yêu cầu phê duyệt cha.
+                */
+                @Column({ name: "request_id", type: "uuid" })
+                requestId: string;
+
+                /**
+                * Mối quan hệ ManyToOne với ApprovalRequest.
+                */
+                @ManyToOne(() => ApprovalRequest, (request) => request.decisions, {
+                onDelete: "CASCADE",
+                })
+                @JoinColumn({ name: "request_id" })
+                request: ApprovalRequest;
+
+                /**
+                * ID người đưa ra quyết định.
+                */
+                @Column({ name: "approver_id", type: "uuid" })
+                approverId: string;
+
+                /**
+                * Quyết định phê duyệt.
+                *
+                * - "approved": phê duyệt
+                * - "rejected": từ chối
+                */
+                @Column({ type: "varchar", length: 20 })
+                decision: string;
+
+                /**
+                * Nhận xét hoặc lý do.
+                *
+                * Optional - giải thích lý do phê duyệt hoặc từ chối.
+                */
+                @Column({ type: "text", default: "" })
+                comment: string;
+
+                /**
+                * Created at - thời điểm đưa ra quyết định.
+                */
+                @CreateDateColumn({ name: "created_at" })
+                createdAt: Date;
+
+                // ========================================================================
+                // Utility Methods
+                // ========================================================================
+
+                /**
+                * Kiểm tra có phải quyết định phê duyệt không.
+                *
+                * @returns True nếu decision là "approved"
+                */
+                isApproved(): boolean {
+                return this.decision === "approved";
+                }
+
+                /**
+                * Kiểm tra có phải quyết định từ chối không.
+                *
+                * @returns True nếu decision là "rejected"
+                */
+                isRejected(): boolean {
+                return this.decision === "rejected";
+                }
+
+                /**
+                * String representation cho debugging.
+                *
+                * @returns Formatted string
+                */
+                toString(): string {
+                return "<ApprovalDecision(id=\"" + this.decisionId + "\" , decision=\"" + this.decision + "\" ,
+                    approver=\"" + this.approverId + "\" )>";
+                    }
+                    }
+
+                    // ===========================================================================
+                    // EscalationRule Entity
+                    // ===========================================================================
+
+                    /**
+                    * Interface cho EscalationRule properties.
+                    */
+                    export interface IEscalationRule {
+                    ruleId: string;
+                    requestId: string;
+                    triggerAfterMinutes: number;
+                    escalationStrategy: string;
+                    targetRole: string;
+                    targetId: string | null;
+                    maxEscalationLevel: number;
+                    isActive: boolean;
+                    createdAt: Date;
+                    updatedAt: Date;
+                    }
+
+                    /**
+                    * EscalationRule Entity - quy tắc leo thang phê duyệt.
+                    *
+                    * Xác định khi nào và như thế nào một yêu cầu phê duyệt
+                    * sẽ được leo thang khi không được xử lý kịp thời.
+                    *
+                    * Indexes:
+                    * - (requestId) - tối ưu tìm quy tắc theo yêu cầu
+                    * - (isActive) - tối ưu lọc quy tắc đang hoạt động
+                    * - (escalationStrategy) - tối ưu lọc theo chiến lược
+                    */
+                    @Entity("escalation_rules")
+                    @Index("idx_escalation_rule_request", ["requestId"])
+                    @Index("idx_escalation_rule_active", ["isActive"])
+                    @Index("idx_escalation_rule_strategy", ["escalationStrategy"])
+                    export class EscalationRule implements IEscalationRule {
+                    /**
+                    * Primary key - UUID tự sinh.
+                    */
+                    @PrimaryGeneratedColumn("uuid")
+                    ruleId: string;
+
+                    /**
+                    * ID yêu cầu phê duyệt liên quan.
+                    */
+                    @Column({ name: "request_id", type: "uuid" })
+                    requestId: string;
+
+                    /**
+                    * Thời gian (phút) sau khi kích hoạt leo thang.
+                    *
+                    * Mặc định: 60 phút (1 giờ)
+                    */
+                    @Column({ name: "trigger_after_minutes", type: "int", default: 60 })
+                    triggerAfterMinutes: number;
+
+                    /**
+                    * Chiến lược leo thang.
+                    *
+                    * - "next_level": chuyển đến cấp phê duyệt tiếp theo
+                    * - "next_role": chuyển đến vai trò khác có thẩm quyền
+                    * - "manager": chuyển đến quản lý trực tiếp
+                    * - "timeout": tự động xử lý khi hết thời gian
+                    */
+                    @Column({ name: "escalation_strategy", type: "varchar", length: 32, default: "next_level" })
+                    escalationStrategy: string;
+
+                    /**
+                    * Vai trò mục tiêu khi leo thang.
+                    *
+                    * Ví dụ: "senior_manager", "director", "cto"
+                    */
+                    @Column({ name: "target_role", type: "varchar", length: 128, default: "" })
+                    targetRole: string;
+
+                    /**
+                    * ID người/phòng ban mục tiêu khi leo thang.
+                    *
+                    * NULL nếu chưa xác định mục tiêu cụ thể.
+                    */
+                    @Column({ name: "target_id", type: "uuid", nullable: true })
+                    targetId: string | null;
+
+                    /**
+                    * Mức leo thang tối đa.
+                    *
+                    * Số lần tối đa có thể leo thang cho một yêu cầu.
+                    * Mặc định: 3
+                    */
+                    @Column({ name: "max_escalation_level", type: "int", default: 3 })
+                    maxEscalationLevel: number;
+
+                    /**
+                    * Quy tắc có đang hoạt động không.
+                    */
+                    @Column({ name: "is_active", type: "boolean", default: true })
+                    isActive: boolean;
+
+                    /**
+                    * Created at - thời điểm tạo quy tắc.
+                    */
+                    @CreateDateColumn({ name: "created_at" })
+                    createdAt: Date;
+
+                    /**
+                    * Updated at - thời điểm cập nhật quy tắc.
+                    */
+                    @UpdateDateColumn({ name: "updated_at" })
+                    updatedAt: Date;
+
+                    // ========================================================================
+                    // Utility Methods
+                    // ========================================================================
+
+                    /**
+                    * Kiểm tra quy tắc có đang hoạt động không.
+                    *
+                    * @returns True nếu isActive là true
+                    */
+                    isActiveRule(): boolean {
+                    return this.isActive === true;
+                    }
+
+                    /**
+                    * Kiểm tra chiến lược có phải leo thang theo cấp bậc không.
+                    *
+                    * @returns True nếu escalationStrategy là "next_level"
+                    */
+                    isNextLevelStrategy(): boolean {
+                    return this.escalationStrategy === "next_level";
+                    }
+
+                    /**
+                    * String representation cho debugging.
+                    *
+                    * @returns Formatted string
+                    */
+                    toString(): string {
+                    return "<EscalationRule(id=\"" + this.ruleId + "\" , strategy=\"" + this.escalationStrategy + "\" ,
+                        trigger=" + this.triggerAfterMinutes + " min, active=" + this.isActive + " )>";
+                        }
+                        }
+
+                        // ===========================================================================
+                        // DelegationRecord Entity
+                        // ===========================================================================
+
+                        /**
+                        * Interface cho DelegationRecord properties.
+                        */
+                        export interface IDelegationRecord {
+                        delegationId: string;
+                        delegatorId: string;
+                        delegateeId: string;
+                        delegationType: string;
+                        scope: string;
+                        validFrom: Date | null;
+                        validUntil: Date | null;
+                        isActive: boolean;
+                        createdAt: Date;
+                        updatedAt: Date;
+                        }
+
+                        /**
+                        * DelegationRecord Entity - bản ghi ủy quyền phê duyệt.
+                        *
+                        * Ghi nhận việc một người phê duyệt ủy quyền công việc
+                        * cho người khác, với phạm vi và thời hạn rõ ràng.
+                        *
+                        * Indexes:
+                        * - (delegatorId) - tối ưu tìm ủy quyền theo người ủy
+                        * - (delegateeId) - tối ưu tìm ủy quyền theo người nhận
+                        * - (isActive) - tối ưu lọc ủy quyền đang hoạt động
+                        * - (scope) - tối ưu tìm ủy quyền theo phạm vi
+                        */
+                        @Entity("delegation_records")
+                        @Index("idx_delegation_delegator", ["delegatorId"])
+                        @Index("idx_delegation_delegatee", ["delegateeId"])
+                        @Index("idx_delegation_active", ["isActive"])
+                        @Index("idx_delegation_scope", ["scope"])
+                        export class DelegationRecord implements IDelegationRecord {
+                        /**
+                        * Primary key - UUID tự sinh.
+                        */
+                        @PrimaryGeneratedColumn("uuid")
+                        delegationId: string;
+
+                        /**
+                        * ID người ủy quyền.
+                        */
+                        @Column({ name: "delegator_id", type: "uuid" })
+                        delegatorId: string;
+
+                        /**
+                        * ID người được ủy quyền.
+                        */
+                        @Column({ name: "delegatee_id", type: "uuid" })
+                        delegateeId: string;
+
+                        /**
+                        * Loại ủy quyền.
+                        *
+                        * - "temporary": ủy quyền tạm thời (có thời hạn)
+                        * - "permanent": ủy quyền vĩnh viễn (cho đến khi thu hồi)
+                        * - "conditional": ủy quyền có điều kiện
+                        */
+                        @Column({ name: "delegation_type", type: "varchar", length: 20, default: "temporary" })
+                        delegationType: string;
+
+                        /**
+                        * Phạm vi ủy quyền.
+                        *
+                        * - request_id cụ thể: ủy quyền cho yêu cầu cụ thể
+                        * - "*": ủy quyền cho tất cả yêu cầu đang pending của delegator
+                        */
+                        @Column({ type: "varchar", length: 64, default: "*" })
+                        scope: string;
+
+                        /**
+                        * Thời điểm bắt đầu có hiệu lực.
+                        */
+                        @Column({ name: "valid_from", type: "timestamptz", nullable: true })
+                        validFrom: Date | null;
+
+                        /**
+                        * Thời điểm hết hiệu lực.
+                        *
+                        * NULL = vĩnh viễn (cho đến khi thu hồi)
+                        */
+                        @Column({ name: "valid_until", type: "timestamptz", nullable: true })
+                        validUntil: Date | null;
+
+                        /**
+                        * Bản ghi ủy quyền có đang hoạt động không.
+                        */
+                        @Column({ name: "is_active", type: "boolean", default: true })
+                        isActive: boolean;
+
+                        /**
+                        * Created at - thời điểm tạo bản ghi.
+                        */
+                        @CreateDateColumn({ name: "created_at" })
+                        createdAt: Date;
+
+                        /**
+                        * Updated at - thời điểm cập nhật bản ghi.
+                        */
+                        @UpdateDateColumn({ name: "updated_at" })
+                        updatedAt: Date;
+
+                        // ========================================================================
+                        // Utility Methods
+                        // ========================================================================
+
+                        /**
+                        * Kiểm tra ủy quyền có còn hiệu lực tại thời điểm cụ thể không.
+                        *
+                        * @param moment - Thời điểm kiểm tra (mặc định là hiện tại)
+                        * @returns True nếu ủy quyền còn hiệu lực
+                        */
+                        isValidAt(moment?: Date): boolean {
+                        if (!this.isActive) {
+                        return false;
+                        }
+
+                        const checkTime = moment || new Date();
+
+                        if (this.validFrom && checkTime < this.validFrom) { return false; } if (this.validUntil &&
+                            checkTime> this.validUntil) {
+                            return false;
+                            }
+
+                            return true;
+                            }
+
+                            /**
+                            * Kiểm tra có phải ủy quyền vĩnh viễn không.
+                            *
+                            * @returns True nếu delegationType là "permanent"
+                            */
+                            isPermanent(): boolean {
+                            return this.delegationType === "permanent";
+                            }
+
+                            /**
+                            * Kiểm tra có phải ủy quyền cho tất cả yêu cầu không.
+                            *
+                            * @returns True nếu scope là "*"
+                            */
+                            isUniversalScope(): boolean {
+                            return this.scope === "*";
+                            }
+
+                            /**
+                            * String representation cho debugging.
+                            *
+                            * @returns Formatted string
+                            */
+                            toString(): string {
+                            return "<DelegationRecord(id=\"" + this.delegationId + "\" , from=\"" + this.delegatorId
+                                + "\" , to=\"" + this.delegateeId + "\" , type=\"" + this.delegationType + "\" )>";
+                                }
+                                }

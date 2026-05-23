@@ -1,0 +1,343 @@
+# ----------------------------------------------------------
+# CP42 Approval Workflow — SQLAlchemy mô hình dữ liệu
+# ----------------------------------------------------------
+# Sinh bởi CP42ApprovalEmitter
+# Mô hình: ApprovalRequest, ApprovalStep, ApprovalDecision,
+#          EscalationRule, DelegationRecord
+# Tổng số yêu cầu mẫu: {{ num_requests }}
+# Tổng số bước mẫu: {{ num_steps }}
+# ----------------------------------------------------------
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import sqlalchemy as sa
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Co so khai bao cho toan bo mo hinh SQLAlchemy cua he thong phê duyệt."""
+    pass
+
+
+{% for request in requests_list %}
+# Yeuu cau mau: {{ request.title }} (loai: {{ request.approval_type }})
+{% endfor %}
+
+
+class ApprovalRequest(Base):
+    """
+    Mô hình yêu cầu phê duyệt — thực thể chính trong quy trình.
+
+    Đại diện cho một yêu cầu cần được phê duyệt, bao gồm loại quy trình,
+    trạng thái hiện tại, và tổng số bước phê duyệt.
+
+    Trang thai: pending, approved, rejected, escalated, delegated, expired, cancelled
+    Loai quy trinh: sequential, parallel, matrix, voting, single
+    """
+    __tablename__ = "approval_requests"
+
+    # Dinh danh
+    request_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    title: Mapped[str] = mapped_column(
+        sa.String(512), nullable=False, server_default=""
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+
+    # Thong tin thuc the lien quan
+    entity_type: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, server_default="", index=True
+    )
+    entity_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, server_default=""
+    )
+
+    # Loai quy trinh va trang thai
+    approval_type: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="sequential", index=True
+    )
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="pending", index=True
+    )
+
+    # Nguoi khoi tao
+    initiator_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Tien trinh phê duyệt
+    current_step: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="1"
+    )
+    total_steps: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="1"
+    )
+
+    # Thoi han va metadata
+    deadline: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True, index=True
+    )
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Dau thoi gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Moi quan he
+    steps: Mapped[List["ApprovalStep"]] = relationship(
+        "ApprovalStep",
+        back_populates="request",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    decisions: Mapped[List["ApprovalDecision"]] = relationship(
+        "ApprovalDecision",
+        back_populates="request",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    escalation_rules: Mapped[List["EscalationRule"]] = relationship(
+        "EscalationRule",
+        back_populates="request",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+
+
+class ApprovalStep(Base):
+    """
+    Mô hình bước phê duyệt trong chuỗi.
+
+    Môc buôc xac dinh mot ngươI phê duyêt cu the voi vai tro,
+    thoi han hanh dong, và dieu kien kich hoat.
+
+    Trang thai: pending, approved, rejected, escalated, delegated, expired
+    """
+    __tablename__ = "approval_steps"
+
+    # Dinh danh
+    step_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    request_id: Mapped[str] = mapped_column(
+        sa.String(36),
+        sa.ForeignKey("approval_requests.request_id"),
+        nullable=False,
+        index=True,
+    )
+    step_number: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="1", index=True
+    )
+
+    # NgươI phê duyêt
+    approver_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+    approver_role: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, server_default=""
+    )
+
+    # Trang thai
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="pending", index=True
+    )
+
+    # Thoi han va dieu kien
+    action_deadline: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True, index=True
+    )
+    is_parallel: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="0"
+    )
+    condition_expression: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+
+    # Dau thoi gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Moi quan he
+    request: Mapped["ApprovalRequest"] = relationship(
+        "ApprovalRequest", back_populates="steps"
+    )
+    decisions: Mapped[List["ApprovalDecision"]] = relationship(
+        "ApprovalDecision",
+        back_populates="step",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+
+
+class ApprovalDecision(Base):
+    """
+    Mô hình quyết định phê duyệt.
+
+    Ghi nhan quyet dinh (phê duyêt/tu choi) cua mot ngươI phê duyêt
+    tai mot buôc cu the, kem theo nhan xet.
+
+    Quyet dinh: approved, rejected
+    """
+    __tablename__ = "approval_decisions"
+
+    # Dinh danh
+    decision_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    step_id: Mapped[str] = mapped_column(
+        sa.String(36),
+        sa.ForeignKey("approval_steps.step_id"),
+        nullable=False,
+        index=True,
+    )
+    request_id: Mapped[str] = mapped_column(
+        sa.String(36),
+        sa.ForeignKey("approval_requests.request_id"),
+        nullable=False,
+        index=True,
+    )
+
+    # NgươI quyêt dinh
+    approver_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Noi dung quyêt dinh
+    decision: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="approved", index=True
+    )
+    comment: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+
+    # Dau thoi gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        index=True,
+    )
+
+    # Moi quan he
+    step: Mapped["ApprovalStep"] = relationship(
+        "ApprovalStep", back_populates="decisions"
+    )
+    request: Mapped["ApprovalRequest"] = relationship(
+        "ApprovalRequest", back_populates="decisions"
+    )
+
+
+class EscalationRule(Base):
+    """
+    Mô hình quy tac leo thang phê duyệt.
+
+    Xac dinh khi nao va nhu the nao mot yeu cau phê duyêt
+    se duoc leo thang khi khong duoc xu ly kip thoi.
+
+    Chien luoc: next_level, next_role, manager, timeout
+    """
+    __tablename__ = "escalation_rules"
+
+    # Dinh danh
+    rule_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    request_id: Mapped[str] = mapped_column(
+        sa.String(36),
+        sa.ForeignKey("approval_requests.request_id"),
+        nullable=False,
+        index=True,
+    )
+
+    # Chieu leo thang
+    trigger_after_minutes: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="60"
+    )
+    escalation_strategy: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="next_level", index=True
+    )
+    target_role: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True
+    )
+    target_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True, index=True
+    )
+
+    # Gioi han
+    max_escalation_level: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="3"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="1", index=True
+    )
+
+
+class DelegationRecord(Base):
+    """
+    Mô hình ban ghi uy quyen phê duyệt.
+
+    Ghi nhan viec mot ngươI phê duyêt uy quyen cong viec
+    cho ngươI khac, voi pham vi va thoi han ro rang.
+
+    Loai uy quyen: temporary, permanent, conditional
+    """
+    __tablename__ = "delegation_records"
+
+    # Dinh danh
+    delegation_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+
+    # NgươI uy quyen va ngươI nhan
+    delegator_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+    delegatee_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Loai va pham vi
+    delegation_type: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="temporary", index=True
+    )
+    scope: Mapped[str] = mapped_column(
+        sa.String(128), nullable=False, server_default="*", index=True
+    )
+
+    # Thoi han hieu luc
+    valid_from: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    valid_until: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    # Trang thai
+    is_active: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="1", index=True
+    )
+
+    # Kiem tra duy nhat: khong cho phep uy quyen trung lap
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "delegator_id", "delegatee_id", "scope",
+            name="uq_delegation_delegator_delegatee_scope"
+        ),
+    )

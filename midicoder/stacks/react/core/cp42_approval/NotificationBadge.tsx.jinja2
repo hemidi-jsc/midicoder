@@ -1,0 +1,358 @@
+/**
+* NotificationBadge — badge icon voi so pending approvals, dropdown de xem list, quick approve/reject.
+* Sinh boi CP42 ApprovalEmitter.
+*
+* Su dung events: {{ use_events }}
+* Cong hieu thong bao: {{ notification_config }}
+*/
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+
+/* ---- Loai trang thai ---- */
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'escalated' | 'delegated' | 'expired' | 'cancelled';
+
+/* ---- Interface du lieu ---- */
+export interface PendingApprovalItem {
+request_id: string;
+title: string;
+step_id: string;
+status: ApprovalStatus;
+deadline: string | null;
+created_at: string | null;
+}
+
+export interface NotificationBadgeProps {
+pendingRequests: PendingApprovalItem[];
+onApprove?: (stepId: string) => void;
+onReject?: (stepId: string) => void;
+onSelectRequest?: (requestId: string) => void;
+wsUrl?: string;
+currentUserId?: string;
+}
+
+/* ---- Style objects ---- */
+const sWrap: React.CSSProperties = {
+position: 'relative' as const,
+display: 'inline-block',
+};
+const sBellIcon: React.CSSProperties = {
+width: '36px',
+height: '36px',
+borderRadius: '50%',
+display: 'flex',
+alignItems: 'center',
+justifyContent: 'center',
+cursor: 'pointer',
+backgroundColor: '#fff',
+border: '1px solid #e5e7eb',
+fontSize: '18px',
+transition: 'background-color 0.15s',
+};
+const sBellHover: React.CSSProperties = {
+...sBellIcon,
+backgroundColor: '#f3f4f6',
+};
+const sBadge: React.CSSProperties = {
+position: 'absolute' as const,
+top: '-4px',
+right: '-4px',
+minWidth: '18px',
+height: '18px',
+borderRadius: '9px',
+backgroundColor: '#ef4444',
+color: '#fff',
+fontSize: '10px',
+fontWeight: 700,
+display: 'flex',
+alignItems: 'center',
+justifyContent: 'center',
+padding: '0 4px',
+lineHeight: 1,
+};
+const sPulseDot: React.CSSProperties = {
+position: 'absolute' as const,
+top: '0px',
+right: '0px',
+width: '8px',
+height: '8px',
+borderRadius: '50%',
+backgroundColor: '#ef4444',
+};
+
+/* Dropdown */
+const sDropdown: React.CSSProperties = {
+position: 'absolute' as const,
+top: '44px',
+right: '0',
+width: '320px',
+maxHeight: '420px',
+backgroundColor: '#fff',
+borderRadius: '10px',
+boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+border: '1px solid #e5e7eb',
+zIndex: 1000,
+overflow: 'hidden',
+display: 'flex',
+flexDirection: 'column' as const,
+};
+const sDropdownHeader: React.CSSProperties = {
+padding: '10px 14px',
+borderBottom: '1px solid #e5e7eb',
+fontSize: '13px',
+fontWeight: 600,
+color: '#111827',
+display: 'flex',
+justifyContent: 'space-between',
+alignItems: 'center',
+};
+const sQuickActionBtn: React.CSSProperties = {
+padding: '3px 8px',
+fontSize: '11px',
+fontWeight: 600,
+borderRadius: '4px',
+border: 'none',
+cursor: 'pointer',
+};
+const sDropdownList: React.CSSProperties = {
+flex: 1,
+overflowY: 'auto' as const,
+};
+const sDropdownItem: React.CSSProperties = {
+padding: '10px 14px',
+borderBottom: '1px solid #f3f4f6',
+cursor: 'pointer',
+transition: 'background-color 0.1s',
+};
+const sDropdownItemTitle: React.CSSProperties = {
+fontSize: '13px',
+fontWeight: 600,
+color: '#111827',
+marginBottom: '3px',
+};
+const sDropdownItemMeta: React.CSSProperties = {
+fontSize: '11px',
+color: '#6b7280',
+marginBottom: '6px',
+};
+const sDropdownItemActions: React.CSSProperties = {
+display: 'flex',
+gap: '6px',
+};
+const sItemApproveBtn: React.CSSProperties = {
+...sQuickActionBtn,
+backgroundColor: '#22c55e',
+color: '#fff',
+flex: 1,
+padding: '4px 8px',
+fontSize: '11px',
+};
+const sItemRejectBtn: React.CSSProperties = {
+...sQuickActionBtn,
+backgroundColor: '#ef4444',
+color: '#fff',
+flex: 1,
+padding: '4px 8px',
+fontSize: '11px',
+};
+const sEmptyState: React.CSSProperties = {
+padding: '24px 14px',
+textAlign: 'center' as const,
+color: '#9ca3af',
+fontSize: '13px',
+};
+const sWsStatus: React.CSSProperties = {
+display: 'inline-flex',
+alignItems: 'center',
+gap: '4px',
+fontSize: '10px',
+color: '#6b7280',
+};
+const sWsDot: React.CSSProperties = {
+width: '6px',
+height: '6px',
+borderRadius: '50%',
+};
+
+/* Pre-declared inline styles to avoid double-brace conflict */
+const sDropdownHint: React.CSSProperties = {
+fontSize: '10px',
+color: '#9ca3af',
+};
+const sViewDetailBtn: React.CSSProperties = {
+...sQuickActionBtn,
+backgroundColor: '#e5e7eb',
+color: '#374151',
+padding: '4px 8px',
+fontSize: '11px',
+};
+
+/* Dynamic style helper — avoids inline double-brace */
+function wsDotStyle(connected: boolean): React.CSSProperties {
+return Object.assign({}, sWsDot, { backgroundColor: connected ? '#22c55e' : '#ef4444' });
+}
+
+/* ---- Utility ---- */
+function formatTimeShort(iso: string | null): string {
+if (!iso) return '\u2014';
+const d = new Date(iso);
+const now = new Date();
+const diffMs = now.getTime() - d.getTime();
+const diffMin = Math.floor(diffMs / 60000);
+
+if (diffMin < 1) return 'Moi vua' ; if (diffMin < 60) return `${diffMin} phut truoc`; const diffHr=Math.floor(diffMin /
+    60); if (diffHr < 24) return `${diffHr} gio truoc`; const diffDay=Math.floor(diffHr / 24); return `${diffDay} ngay
+    truoc`; } function formatDeadline(iso: string | null): string { if (!iso) return '' ; const d=new Date(iso); const
+    now=new Date(); const diffMs=d.getTime() - now.getTime(); if (diffMs < 0) return 'Da het han' ; const
+    diffHr=Math.floor(diffMs / 3600000); if (diffHr < 24) return `Con ${diffHr} gio`; const diffDay=Math.floor(diffHr /
+    24); return `Con ${diffDay} ngay`; } /* ---- Component: NotificationBadge ---- */ export function
+    NotificationBadge({ pendingRequests, onApprove, onReject, onSelectRequest, wsUrl, currentUserId='user_1' , }:
+    NotificationBadgeProps) { const [isOpen, setIsOpen]=useState(false); const [hovered, setHovered]=useState(false);
+    const [wsConnected, setWsConnected]=useState(false); const dropdownRef=useRef<HTMLDivElement>(null);
+
+    /* WebSocket ket noi cho realtime update */
+    {% if use_events %}
+    useEffect(() => {
+    if (!wsUrl) return;
+    const socket = new WebSocket(wsUrl);
+    socket.onopen = () => setWsConnected(true);
+    socket.onclose = () => setWsConnected(false);
+    socket.onerror = () => setWsConnected(false);
+    socket.onmessage = (event) => {
+    try {
+    const data = JSON.parse(event.data);
+    if (data.type === 'approval_update') {
+    // Cap nhat danh sach pending requests tu server
+    // Logic xu ly se duoc thuc hien boi cha component
+    }
+    } catch {
+    // Loi giai ma tin nhan — bo qua
+    }
+    };
+    return () => socket.close();
+    }, [wsUrl]);
+    {% else %}
+    useEffect(() => {
+    setWsConnected(false);
+    }, []);
+    {% endif %}
+
+    /* Dat dropdown khi click ngoai */
+    useEffect(() => {
+    if (!isOpen) return;
+    function handleClick(e: MouseEvent) {
+    if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+    setIsOpen(false);
+    }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+    }, [isOpen]);
+
+    /* Toggle dropdown */
+    const toggleDropdown = useCallback(() => {
+    setIsOpen((v) => !v);
+    }, []);
+
+    /* Quick approve mot request */
+    const handleQuickApprove = useCallback(
+    (stepId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onApprove?.(stepId);
+    },
+    [onApprove],
+    );
+
+    /* Quick reject mot request */
+    const handleQuickReject = useCallback(
+    (stepId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onReject?.(stepId);
+    },
+    [onReject],
+    );
+
+    /* Xem chi tiet request */
+    const handleViewDetail = useCallback(
+    (requestId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSelectRequest?.(requestId);
+    setIsOpen(false);
+    },
+    [onSelectRequest],
+    );
+
+    /* So luong pending */
+    const pendingCount = pendingRequests.length;
+
+    return (
+    <div style={sWrap} ref={dropdownRef}>
+        {/* Bell icon */}
+        <div style={hovered ? sBellHover : sBellIcon} onClick={toggleDropdown} onMouseEnter={()=> setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+            title="Thong bao phe duyet"
+            >
+            \u{1F514}
+            {pendingCount > 0 && <span style={sBadge}>{pendingCount > 99 ? '99+' : pendingCount}</span>}
+            {pendingCount === 0 && !wsConnected && <span style={sPulseDot} />}
+        </div>
+
+        {/* Dropdown */}
+        {isOpen && (
+        <div style={sDropdown}>
+            <div style={sDropdownHeader}>
+                <span>
+                    Dang cho phe duyet ({pendingCount})
+                    {wsUrl && (
+                    <span style={sWsStatus}>
+                        <span style={wsDotStyle(wsConnected)} />
+                        {wsConnected ? 'Realtime' : 'Offline'}
+                    </span>
+                    )}
+                </span>
+                {pendingCount > 0 && (
+                <span style={sDropdownHint}>
+                    Nhip de xem chi tiet
+                </span>
+                )}
+            </div>
+
+            <div style={sDropdownList}>
+                {pendingCount === 0 ? (
+                <div style={sEmptyState}>
+                    Khong co yeu cau dang cho.
+                </div>
+                ) : (
+                pendingRequests.map((req) => (
+                <div key={req.request_id} style={sDropdownItem}>
+                    <div style={sDropdownItemTitle}>
+                        {req.title || req.request_id}
+                    </div>
+                    <div style={sDropdownItemMeta}>
+                        {formatTimeShort(req.created_at)}
+                        {req.deadline && ` \u00B7 ${formatDeadline(req.deadline)}`}
+                    </div>
+                    <div style={sDropdownItemActions}>
+                        <button style={sItemApproveBtn} onClick={(e)=> handleQuickApprove(req.step_id, e)}
+                            >
+                            \u2713 Phe duyet
+                        </button>
+                        <button style={sItemRejectBtn} onClick={(e)=> handleQuickReject(req.step_id, e)}
+                            >
+                            \u2717 Tu choi
+                        </button>
+                        <button style={sViewDetailBtn} onClick={(e)=> handleViewDetail(req.request_id,
+                            e)}
+                            >
+                            Chi tiet
+                        </button>
+                    </div>
+                </div>
+                ))
+                )}
+            </div>
+        </div>
+        )}
+    </div>
+    );
+    }
+
+    export default NotificationBadge;

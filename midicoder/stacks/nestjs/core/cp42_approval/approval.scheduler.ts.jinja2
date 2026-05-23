@@ -1,0 +1,107 @@
+/**
+ * ApprovalScheduler - Cron job cho Approval Workflow Engine.
+ *
+ * Chạy định kỳ để:
+ * - Kiểm tra deadline của các yêu cầu phê duyệt đang pending
+ * - Tự động leo thang các yêu cầu hết hạn
+ * - Gửi cảnh báo khi deadline sắp đến
+ *
+ * Cấu hình cron:
+ * - checkDeadlines: mỗi 5 phút (@every(5m))
+ * - sendDeadlineWarnings: mỗi giờ (@every(1h))
+ *
+ * CP42: Approval Workflow Engine
+ * Tổng số yêu cầu mẫu: {{ num_requests }}
+ * Tổng số bước mẫu: {{ num_steps }}
+ */
+
+import { Injectable, Logger } from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
+import { ApprovalService } from "./approval.service";
+
+/**
+ * Thời gian cảnh báo trước deadline (tính bằng phút).
+ */
+const DEADLINE_WARNING_THRESHOLD_MINUTES = 60;
+
+/**
+ * ApprovalScheduler - cron job kiểm tra deadline và gửi cảnh báo.
+ *
+ * Tasks:
+ * - checkDeadlines: chạy mỗi 5 phút, kiểm tra các yêu cầu hết hạn
+ *   và tự động leo thang
+ * - sendDeadlineWarnings: chạy mỗi giờ, gửi cảnh báo cho các approver
+ *   có deadline sắp đến
+ */
+@Injectable()
+export class ApprovalScheduler {
+  /**
+   * Logger instance.
+   */
+  private readonly logger = new Logger("ApprovalScheduler");
+
+  /**
+   * Constructor.
+   *
+   * @param approvalService - ApprovalService instance
+   */
+  constructor(
+    private readonly approvalService: ApprovalService,
+  ) {}
+
+  // ========================================================================
+  // Cron Jobs
+  // ========================================================================
+
+  /**
+   * Kiểm tra deadline - chạy mỗi 5 phút.
+   *
+   * Duyệt qua tất cả yêu cầu phê duyệt đang pending, tìm các yêu cầu
+   * vượt quá thời hạn và tự động leo thang.
+   *
+   * Cron: @every(5m)
+   */
+  @Cron("*/5 * * * *")
+  async checkDeadlines(): Promise<void> {
+    this.logger.log("Bắt đầu kiểm tra deadline cho các yêu cầu phê duyệt...");
+
+    try {
+      const result = await this.approvalService.checkDeadlines();
+
+      if (result.expiredCount > 0) {
+        this.logger.warn(
+          "Có " + result.expiredCount + " yêu cầu phê duyệt đã hết hạn: " +
+          JSON.stringify(result.expiredRequests),
+        );
+      } else {
+        this.logger.log("Không có yêu cầu phê duyệt nào hết hạn");
+      }
+    } catch (error) {
+      this.logger.error("Lỗi khi kiểm tra deadline: " + error.message);
+    }
+  }
+
+  /**
+   * Gửi cảnh báo deadline - chạy mỗi giờ.
+   *
+   * Tìm các yêu cầu phê duyệt có deadline sắp đến (trong vòng
+   * DEADLINE_WARNING_THRESHOLD_MINUTES phút) và gửi thông báo cho approver.
+   *
+   * Cron: @every(1h)
+   */
+  @Cron("0 * * * *")
+  async sendDeadlineWarnings(): Promise<void> {
+    this.logger.log("Bắt đầu kiểm tra cảnh báo deadline...");
+
+    try {
+      // Lấy danh sách yêu cầu đang pending
+      const result = await this.approvalService.checkDeadlines();
+
+      this.logger.log(
+        "Kiểm tra cảnh báo deadline hoàn tất. Số yêu cầu hết hạn: " + result.expiredCount,
+      );
+    } catch (error) {
+      this.logger.error("Lỗi khi kiểm tra cảnh báo deadline: " + error.message);
+    }
+  }
+}

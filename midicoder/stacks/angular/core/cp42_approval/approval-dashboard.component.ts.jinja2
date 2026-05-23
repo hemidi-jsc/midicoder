@@ -1,0 +1,528 @@
+/**
+* ApprovalDashboardComponent — Bảng điều khiển tổng quan phê duyệt.
+*
+* Hiển thị tổng quan các yêu cầu phê duyệt đang chờ xử lý. Thống kê nhanh
+* theo trạng thái (pending/approved/rejected/escalated). Nút hành động nhanh.
+* Lọc theo loại phê duyệt và trạng thái. Tích hợp WebSocket cho cập nhật realtime.
+*
+* Tạo tự động bởi CP42 — không sửa thủ công.
+*/
+
+import {
+Component,
+OnInit,
+OnDestroy,
+ChangeDetectorRef,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+
+import { ApprovalService } from './approval.service';
+import { ApprovalStore } from './approval.store';
+import {
+ApprovalRequest,
+ApprovalStatus,
+ApprovalType,
+ApprovalEvent,
+NotificationConfig
+} from './approval-types';
+
+// ===========================================================================
+// Cấu hình từ template
+// ===========================================================================
+
+/** Cờ bật hệ thống sự kiện realtime. */
+const USE_EVENTS: boolean = {{ 'true' if use_events else 'false' }};
+
+/** Số yêu cầu phê duyệt mẫu. */
+const NUM_REQUESTS: number = {{ num_requests }};
+
+/**
+* Cấu hình thông báo mặc định.
+*/
+const NOTIFICATION_CONFIG: NotificationConfig = {
+emailEnabled: {{ 'true' if notification_config.get('emailEnabled', false) else 'false' }},
+pushEnabled: {{ 'true' if notification_config.get('pushEnabled', false) else 'false' }},
+notifyOnStepAssigned: {{ 'true' if notification_config.get('notifyOnStepAssigned', false) else 'false' }},
+notifyOnDeadlineApproaching: {{ 'true' if notification_config.get('notifyOnDeadlineApproaching', false) else 'false' }},
+deadlineWarningHours: {{ notification_config.get('deadlineWarningHours', 24) }},
+notifyOnEscalation: {{ 'true' if notification_config.get('notifyOnEscalation', false) else 'false' }},
+notifyOnDelegation: {{ 'true' if notification_config.get('notifyOnDelegation', false) else 'false' }}
+};
+
+/**
+* ApprovalDashboardComponent — Bảng điều khiển tổng quan phê duyệt.
+*
+* Sử dụng:
+* <app-approval-dashboard></app-approval-dashboard>
+*/
+@Component({
+selector: 'app-approval-dashboard',
+standalone: true,
+imports: [CommonModule, FormsModule],
+changeDetection: ChangeDetectionStrategy.OnPush,
+
+template:
+{% raw %}
+`
+<div class="approval-dashboard">
+    <!-- Tiêu đề -->
+    <header class="dashboard-header">
+        <h1>Bảng Điều Khiên Phê Duyệt</h1>
+        <span class="event-indicator" [class.active]="isEventsEnabled()">
+            {{ isEventsEnabled() ? '● Realtime' : '○ Offline' }}
+        </span>
+    </header>
+
+    <!-- Thẻ thống kê -->
+    <section class="stats-cards">
+        <div class="stat-card pending" (click)="onFilterByStatus('pending')">
+            <div class="stat-value">{{ pendingCount() }}</div>
+            <div class="stat-label">Đang Chờ</div>
+        </div>
+        <div class="stat-card approved" (click)="onFilterByStatus('approved')">
+            <div class="stat-value">{{ approvedCount() }}</div>
+            <div class="stat-label">Đã Phê Duyệt</div>
+        </div>
+        <div class="stat-card rejected" (click)="onFilterByStatus('rejected')">
+            <div class="stat-value">{{ rejectedCount() }}</div>
+            <div class="stat-label">Đã Từ Chối</div>
+        </div>
+        <div class="stat-card escalated" (click)="onFilterByStatus('escalated')">
+            <div class="stat-value">{{ escalatedCount() }}</div>
+            <div class="stat-label">Đã Leo Thang</div>
+        </div>
+    </section>
+
+    <!-- Bộ lọc -->
+    <section class="filter-bar">
+        <label for="type-filter">Lọc theo loại:</label>
+        <select id="type-filter" [(ngModel)]="selectedType" (change)="onFilterChange()">
+            <option value="">Tất cả</option>
+            <option value="sequential">Tuần tự</option>
+            <option value="parallel">Song song</option>
+            <option value="matrix">Ma trận</option>
+            <option value="voting">Biểu quyết</option>
+            <option value="single">Đơn lẻ</option>
+        </select>
+
+        <label for="status-filter">Lọc theo trạng thái:</label>
+        <select id="status-filter" [(ngModel)]="selectedStatus" (change)="onFilterChange()">
+            <option value="">Tất cả</option>
+            <option value="pending">Đang chờ</option>
+            <option value="approved">Đã phê duyệt</option>
+            <option value="rejected">Đã từ chối</option>
+            <option value="escalated">Đã leo thang</option>
+            <option value="expired">Hết hạn</option>
+            <option value="cancelled">Đã hủy</option>
+        </select>
+    </section>
+
+    <!-- Nút hành động nhanh -->
+    <section class="quick-actions">
+        <button class="btn-action" (click)="refreshRequests()">
+            Làm mới dữ liệu
+        </button>
+        <button class="btn-action btn-export" (click)="exportPending()">
+            Xuất danh sách đang chờ
+        </button>
+    </section>
+
+    <!-- Danh sách yêu cầu đang chờ -->
+    <section class="requests-list">
+        <h2>Yêu Cầu Đang Chờ Xử Lý</h2>
+        <div class="request-items" *ngIf="filteredRequests().length; else emptyState">
+            <div class="request-item" *ngFor="let request of filteredRequests()" (click)="onSelectRequest(request)"
+                [class]="getRequestStatusClass(request.status)">
+                <div class="request-header">
+                    <span class="request-id">#{{ request.requestId }}</span>
+                    <span class="request-title">{{ request.title }}</span>
+                </div>
+                <div class="request-meta">
+                    <span class="request-type">{{ getApprovalTypeLabel(request.approvalType) }}</span>
+                    <span class="request-step">Bước {{ request.currentStep }}/{{ request.totalSteps }}</span>
+                    <span class="request-deadline">Hạn: {{ request.deadline | date:'dd/MM/yyyy' }}</span>
+                </div>
+            </div>
+        </div>
+        <ng-template #emptyState>
+            <div class="empty-state">
+                <p>Không có yêu cầu nào phù hợp với bộ lọc.</p>
+            </div>
+        </ng-template>
+    </section>
+
+    <!-- Log sự kiện realtime -->
+    <section class="event-log" *ngIf="isEventsEnabled()">
+        <h2>Sự Kiện Realtime</h2>
+        <div class="event-items">
+            <div class="event-item" *ngFor="let event of recentEvents()">
+                <span class="event-type">{{ event.eventType }}</span>
+                <span class="event-request">#{{ event.requestId }}</span>
+                <span class="event-time">{{ event.timestamp | date:'HH:mm:ss' }}</span>
+            </div>
+        </div>
+    </section>
+</div>
+`,
+{% endraw %}
+styles: [`
+.approval-dashboard {
+padding: 16px;
+font-family: system-ui, -apple-system, sans-serif;
+}
+.dashboard-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 24px;
+}
+.event-indicator {
+font-size: 0.85rem;
+color: #999;
+}
+.event-indicator.active {
+color: #22c55e;
+}
+.stats-cards {
+display: grid;
+grid-template-columns: repeat(4, 1fr);
+gap: 16px;
+margin-bottom: 24px;
+}
+.stat-card {
+padding: 20px;
+border-radius: 8px;
+cursor: pointer;
+transition: transform 0.15s;
+}
+.stat-card:hover {
+transform: translateY(-2px);
+}
+.stat-card.pending { background: #fef9c3; }
+.stat-card.approved { background: #dcfce7; }
+.stat-card.rejected { background: #fee2e2; }
+.stat-card.escalated { background: #ffedd5; }
+.stat-value {
+font-size: 2rem;
+font-weight: 700;
+}
+.stat-label {
+font-size: 0.875rem;
+color: #666;
+}
+.filter-bar {
+display: flex;
+gap: 12px;
+align-items: center;
+margin-bottom: 16px;
+}
+.quick-actions {
+display: flex;
+gap: 8px;
+margin-bottom: 24px;
+}
+.btn-action {
+padding: 8px 16px;
+border: 1px solid #d1d5db;
+border-radius: 6px;
+background: #fff;
+cursor: pointer;
+}
+.btn-action:hover {
+background: #f3f4f6;
+}
+.request-item {
+padding: 12px;
+border-radius: 6px;
+border: 1px solid #e5e7eb;
+margin-bottom: 8px;
+cursor: pointer;
+}
+.request-item:hover {
+background: #f9fafb;
+}
+.request-header {
+display: flex;
+gap: 8px;
+align-items: center;
+}
+.request-id {
+font-family: monospace;
+font-size: 0.8rem;
+color: #6b7280;
+}
+.request-title {
+font-weight: 600;
+}
+.request-meta {
+display: flex;
+gap: 16px;
+font-size: 0.8rem;
+color: #9ca3af;
+margin-top: 4px;
+}
+.event-item {
+padding: 8px;
+border-bottom: 1px solid #f3f4f6;
+font-size: 0.85rem;
+display: flex;
+gap: 12px;
+}
+.event-type {
+font-family: monospace;
+background: #f3f4f6;
+padding: 2px 6px;
+border-radius: 4px;
+}
+`
+
+})
+export class ApprovalDashboardComponent implements OnInit, OnDestroy {
+// ===========================================================================
+// Inject dependencies
+// ===========================================================================
+
+private readonly cd = inject(ChangeDetectorRef);
+private readonly approvalService = inject(ApprovalService);
+private readonly approvalStore = inject(ApprovalStore);
+
+// ===========================================================================
+// Local state
+// ===========================================================================
+
+/** Loại phê duyệt đang lọc. */
+public selectedType: string = '';
+
+/** Trạng thái đang lọc. */
+public selectedStatus: string = '';
+
+/** Cờ bật sự kiện realtime. */
+public readonly isEventsEnabled = signal<boolean>(USE_EVENTS);
+
+    /** Sự kiện realtime gần đây (tối đa 20). */
+    public readonly recentEvents = signal<ApprovalEvent[]>([]);
+
+        // ===========================================================================
+        // Computed từ store
+        // ===========================================================================
+
+        /** Danh sách tất cả yêu cầu từ store. */
+        public readonly allRequests = this.approvalStore.pendingRequests;
+
+        /** Số lượng yêu cầu đang chờ. */
+        public readonly pendingCount = computed<number>(() => {
+            return this.allRequests().filter(r => r.status === ApprovalStatus.PENDING).length;
+            });
+
+            /** Số lượng yêu cầu đã phê duyệt. */
+            public readonly approvedCount = computed<number>(() => {
+                return this.allRequests().filter(r => r.status === ApprovalStatus.APPROVED).length;
+                });
+
+                /** Số lượng yêu cầu đã từ chối. */
+                public readonly rejectedCount = computed<number>(() => {
+                    return this.allRequests().filter(r => r.status === ApprovalStatus.REJECTED).length;
+                    });
+
+                    /** Số lượng yêu cầu đã leo thang. */
+                    public readonly escalatedCount = computed<number>(() => {
+                        return this.allRequests().filter(r => r.status === ApprovalStatus.ESCALATED).length;
+                        });
+
+                        /** Danh sách yêu cầu đã lọc theo loại và trạng thái. */
+                        public readonly filteredRequests = computed<ApprovalRequest[]>(() => {
+                            let requests = this.allRequests();
+
+                            // Lọc theo loại phê duyệt.
+                            if (this.selectedType) {
+                            requests = requests.filter(r => r.approvalType === this.selectedType as ApprovalType);
+                            }
+
+                            // Lọc theo trạng thái.
+                            if (this.selectedStatus) {
+                            requests = requests.filter(r => r.status === this.selectedStatus as ApprovalStatus);
+                            }
+
+                            return requests;
+                            });
+
+                            // ===========================================================================
+                            // Lifecycle
+                            // ===========================================================================
+
+                            ngOnInit(): void {
+                            // Tải danh sách yêu cầu ban đầu.
+                            this.approvalService.fetchAllRequests().pipe(takeUntilDestroyed()).subscribe(requests => {
+                            this.approvalStore.setRequests(requests);
+                            });
+
+                            // Tích hợp WebSocket cho cập nhật realtime.
+                            if (USE_EVENTS) {
+                            this.approvalService.connectWebSocket().pipe(takeUntilDestroyed()).subscribe();
+
+                            // Lắng nghe sự kiện realtime.
+                            this.approvalService.events$.pipe(takeUntilDestroyed()).subscribe((event: ApprovalEvent) =>
+                            {
+                            this.addRecentEvent(event);
+                            this.handleRealtimeEvent(event);
+                            });
+                            }
+                            }
+
+                            ngOnDestroy(): void {
+                            // Ngắt kết nối WebSocket khi hủy component.
+                            if (USE_EVENTS) {
+                            this.approvalService.disconnectWebSocket();
+                            }
+                            }
+
+                            // ===========================================================================
+                            // Xử lý lọc
+                            // ===========================================================================
+
+                            /**
+                            * Xử lý khi thay đổi bộ lọc.
+                            */
+                            onFilterChange(): void {
+                            this.cd.markForCheck();
+                            }
+
+                            /**
+                            * Lọc theo trạng thái từ thẻ thống kê.
+                            */
+                            onFilterByStatus(status: string): void {
+                            this.selectedStatus = status;
+                            this.onFilterChange();
+                            }
+
+                            /**
+                            * Chọn một yêu cầu để xem chi tiết.
+                            */
+                            onSelectRequest(request: ApprovalRequest): void {
+                            this.approvalStore.setCurrentRequest(request);
+                            console.info('[ApprovalDashboard] Chọn yêu cầu:', request.requestId);
+                            }
+
+                            // ===========================================================================
+                            // Hành động nhanh
+                            // ===========================================================================
+
+                            /**
+                            * Làm mới danh sách yêu cầu từ server.
+                            */
+                            refreshRequests(): void {
+                            this.approvalService.fetchAllRequests().subscribe(requests => {
+                            this.approvalStore.setRequests(requests);
+                            });
+                            }
+
+                            /**
+                            * Xuất danh sách yêu cầu đang chờ dưới dạng CSV.
+                            */
+                            exportPending(): void {
+                            const pending = this.allRequests().filter(r => r.status === ApprovalStatus.PENDING);
+                            const csv = this.generateCSV(pending);
+                            this.downloadCSV(csv, 'pending-approvals.csv');
+                            }
+
+                            /**
+                            * Tạo nội dung CSV từ danh sách yêu cầu.
+                            */
+                            private generateCSV(requests: ApprovalRequest[]): string {
+                            const header = 'ID,Ti\u00eau \u0110\u1ec1,Loại,Tr\u1ea1ng th\u00e1i,B\u01b0\u1edbc,Hạn';
+                            const rows = requests.map(r =>
+                            [r.requestId, r.title, r.approvalType, r.status,
+                            r.currentStep + '/' + r.totalSteps, r.deadline || ''].join(',')
+                            );
+                            return [header, ...rows].join('\n');
+                            }
+
+                            /**
+                            * Tải file CSV về máy.
+                            */
+                            private downloadCSV(content: string, filename: string): void {
+                            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+                            const link = document.createElement('a');
+                            link.href = URL.createObjectURL(blob);
+                            link.download = filename;
+                            link.click();
+                            URL.revokeObjectURL(link.href);
+                            }
+
+                            // ===========================================================================
+                            // Xử lý sự kiện realtime
+                            // ===========================================================================
+
+                            /**
+                            * Thêm sự kiện vào danh sách gần đây.
+                            */
+                            private addRecentEvent(event: ApprovalEvent): void {
+                            const current = this.recentEvents();
+                            const updated = [event, ...current].slice(0, 20);
+                            this.recentEvents.set(updated);
+                            }
+
+                            /**
+                            * Xử lý sự kiện realtime — cập nhật store tương ứng.
+                            */
+                            private handleRealtimeEvent(event: ApprovalEvent): void {
+                            switch (event.eventType) {
+                            case 'request_created':
+                            this.approvalStore.addRequest(event.payload as any);
+                            break;
+                            case 'request_updated':
+                            this.approvalStore.updateRequest(event.requestId, event.payload as any);
+                            break;
+                            case 'decision_made':
+                            this.approvalStore.addDecision(event.payload as any);
+                            break;
+                            case 'escalated':
+                            this.approvalStore.escalateRequest(event.requestId);
+                            break;
+                            case 'delegated':
+                            this.approvalStore.delegateRequest(event.requestId, event.payload as any);
+                            break;
+                            default:
+                            console.info('[ApprovalDashboard] Sự kiện chưa xử lý:', event.eventType);
+                            }
+                            }
+
+                            // ===========================================================================
+                            // Helper methods
+                            // ===========================================================================
+
+                            /**
+                            * Lấy class CSS cho trạng thái yêu cầu.
+                            */
+                            getRequestStatusClass(status: string): string {
+                            const classMap: Record<string, string> = {
+                                pending: 'status-pending',
+                                approved: 'status-approved',
+                                rejected: 'status-rejected',
+                                escalated: 'status-escalated',
+                                expired: 'status-expired',
+                                cancelled: 'status-cancelled'
+                                };
+                                return classMap[status] || '';
+                                }
+
+                                /**
+                                * Lấy nhãn tiếng Việt cho loại phê duyệt.
+                                */
+                                getApprovalTypeLabel(type: string): string {
+                                const labelMap: Record<string, string> = {
+                                    sequential: 'Tuần tự',
+                                    parallel: 'Song song',
+                                    matrix: 'Ma trận',
+                                    voting: 'Biểu quyết',
+                                    single: 'Đơn lẻ'
+                                    };
+                                    return labelMap[type] || type;
+                                    }
+                                    }

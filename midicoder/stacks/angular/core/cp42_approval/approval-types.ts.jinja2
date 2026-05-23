@@ -1,0 +1,269 @@
+/**
+ * Định nghịa kiểu TypeScript cho CP42 — Approval Workflow.
+ *
+ * Bao gồm các interface: ApprovalRequest, ApprovalStep, ApprovalDecision,
+ * EscalationRule, DelegationRecord và các enum: ApprovalStatus, ApprovalType,
+ * EscalationStrategy, DelegationType, VotingMode.
+ *
+ * Tạo tự động bởi CP42 — không sửa thủ công.
+ */
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/** Trạng thái của yêu cầu phê duyệt. */
+export enum ApprovalStatus {
+  /** Đang chờ phê duyệt */
+  PENDING = 'pending',
+  /** Đã được phê duyệt */
+  APPROVED = 'approved',
+  /** Đã bị từ chối */
+  REJECTED = 'rejected',
+  /** Đã leo thăng đến cấp cao hơn */
+  ESCALATED = 'escalated',
+  /** Đã được đột độc bởi CP42 */
+  DELEGATED = 'delegated',
+  /** Đã hết thời hạn */
+  EXPIRED = 'expired',
+  /** Đã bị hỷy */
+  CANCELLED = 'cancelled'
+}
+
+/** Loại quy trình phê duyệt. */
+export enum ApprovalType {
+  /** Phê duyệt tuân tự, tụng bước theo thứ tự */
+  SEQUENTIAL = 'sequential',
+  /** Phê duyệt song song, nhiều người cùng lúc */
+  PARALLEL = 'parallel',
+  /** Phê duyệt ma trận (theo cấp bấc và chuyến môn) */
+  MATRIX = 'matrix',
+  /** Phê duyệt bằng biểu quyết (đa số/tất cả) */
+  VOTING = 'voting',
+  /** Phê duyệt bởi một người duy nhất */
+  SINGLE = 'single'
+}
+
+/** Chiến lược leo thăng khi hết thời hạn phê duyệt. */
+export enum EscalationStrategy {
+  /** Tự động chuyển đến cấp phê duyệt tiếp theo */
+  NEXT_LEVEL = 'next_level',
+  /** Chuyển đến vai trò khác có quyền */
+  NEXT_ROLE = 'next_role',
+  /** Chuyển đến quản lý trục tiếp */
+  MANAGER = 'manager',
+  /** Tự động xử lý khi hết thời gian */
+  TIMEOUT = 'timeout'
+}
+
+/** Loại đột độc bởi CP42. */
+export enum DelegationType {
+  /** Tạm thời (có thời hạn) */
+  TEMPORARY = 'temporary',
+  /** Vềnh viễn (cho đến khi thu hồi) */
+  PERMANENT = 'permanent',
+  /** Có điều kiện (phù hợp điều kiện mới kích hoạt) */
+  CONDITIONAL = 'conditional'
+}
+
+/** Chế độ biểu quyết cho phê duyệt loại voting. */
+export enum VotingMode {
+  /** Đa số (trên 50 phần trảm số phiếu) */
+  MAJORITY = 'majority',
+  /** Nhất trí (100 phần trảm số phiếu) */
+  UNANIMITY = 'unanimity',
+  /** Người đầu tiên quyết định có hiệu lực */
+  FIRST_DECIDES = 'first_decides',
+  /** Biểu quyết có trọng số (mỗi phiếu có trọng số khác nhau) */
+  WEIGHTED = 'weighted'
+}
+
+// ===========================================================================
+// Interface chính
+// ===========================================================================
+
+/**
+ * Yêu cầu phê duyệt — thức thể chính trong quy trình.
+ *
+ * Đại diện cho một yêu cầu cần được phê duyệt, bao gồm loại quy trình,
+ * trạng thái hiện tại, và tổng số bước phê duyệt.
+ */
+export interface ApprovalRequest {
+  /** ID duy nhất của yêu cầu phê duyệt */
+  requestId: string;
+  /** Tiêu đề yêu cầu */
+  title: string;
+  /** Mô tả chi tiết yêu cầu */
+  description: string;
+  /** Loại thức thể cần phê duyệt */
+  entityType: string;
+  /** ID của thức thể liên quan */
+  entityId: string;
+  /** Loại quy trình phê duyệt */
+  approvalType: ApprovalType;
+  /** Trạng thái hiện tại của yêu cầu */
+  status: ApprovalStatus;
+  /** ID người khởi tạo yêu cầu */
+  initiatorId: string;
+  /** Số bước hiện tại đang xử lý */
+  currentStep: number;
+  /** Tổng số bước phê duyệt */
+  totalSteps: number;
+  /** Thời hạn phê duyệt cuối cùng (ISO 8601) */
+  deadline: string | null;
+  /** Dữ liệu bổ sung tựy chính */
+  metadata: Record<string, unknown>;
+  /** Thời điểm tạo yêu cầu (ISO 8601) */
+  createdAt: string | null;
+  /** Thời điểm cập nhật cuối (ISO 8601) */
+  updatedAt: string | null;
+}
+
+/**
+ * Bước phê duyệt trong chuối.
+ *
+ * Mỗi bước xác định một người phê duyệt cụ thể với vai trò,
+ * thời hạn hành động, và điều kiện kích hoạt.
+ */
+export interface ApprovalStep {
+  /** ID duy nhất của bước phê duyệt */
+  stepId: string;
+  /** ID yêu cầu phê duyệt cha */
+  requestId: string;
+  /** Thứ tự bước trong chuối (1-based) */
+  stepNumber: number;
+  /** ID người phê duyệt */
+  approverId: string;
+  /** Vai trò của người phê duyệt */
+  approverRole: string;
+  /** Trạng thái của bước */
+  status: ApprovalStatus;
+  /** Thời hạn hành động cho bước này (ISO 8601) */
+  actionDeadline: string | null;
+  /** Bước có thực hiện song song với các bước khác không */
+  isParallel: boolean;
+  /** Biểu thức điều kiện để kích hoạt bước này */
+  conditionExpression: string | null;
+  /** Thời điểm tạo bước (ISO 8601) */
+  createdAt: string | null;
+}
+
+/**
+ * Quyết định phê duyệt.
+ *
+ * Ghi nhận quyết định (phê duyệt/từ chối) của một người phê duyệt
+ * tại một bước cụ thể, kèm theo nhận xét.
+ */
+export interface ApprovalDecision {
+  /** ID duy nhất của quyết định */
+  decisionId: string;
+  /** ID bước phê duyệt liên quan */
+  stepId: string;
+  /** ID yêu cầu phê duyệt cha */
+  requestId: string;
+  /** ID người đưa ra quyết định */
+  approverId: string;
+  /** Quyết định: approved hoặc rejected */
+  decision: 'approved' | 'rejected';
+  /** Nhận xét hoặc lý do */
+  comment: string;
+  /** Thời điểm đưa ra quyết định (ISO 8601) */
+  createdAt: string | null;
+}
+
+/**
+ * Quy tấc leo thăng phê duyệt.
+ *
+ * Xác định khi nào và như thế nào một yêu cầu phê duyệt
+ * sẽ được leo thăng khi không được xử lý kịp thời.
+ */
+export interface EscalationRule {
+  /** ID duy nhất của quy tấc leo thăng */
+  ruleId: string;
+  /** ID yêu cầu phê duyệt liên quan */
+  requestId: string;
+  /** Thời gian (phút) sau khi kích hoạt leo thăng */
+  triggerAfterMinutes: number;
+  /** Chiến lược leo thăng */
+  escalationStrategy: EscalationStrategy;
+  /** Vai trò mục tiêu khi leo thăng */
+  targetRole: string;
+  /** ID người/phòng ban mục tiêu khi leo thăng */
+  targetId: string;
+  /** Mục leo thăng tối đa */
+  maxEscalationLevel: number;
+  /** Quy tấc có đang hoạt động không */
+  isActive: boolean;
+}
+
+/**
+ * Bản ghi đột độc bởi CP42.
+ *
+ * Ghi nhận việc một người phê duyệt đột độc bởi CP42
+ * cho người khác, với phạm vi và thời hạn rõ ràng.
+ */
+export interface DelegationRecord {
+  /** ID duy nhất của bản ghi đột độc bởi CP42 */
+  delegationId: string;
+  /** ID người đột độc bởi CP42 */
+  delegatorId: string;
+  /** ID người được đột độc bởi CP42 */
+  delegateeId: string;
+  /** Loại đột độc bởi CP42 */
+  delegationType: DelegationType;
+  /** Phạm vi đột độc bởi CP42 (request_id cụ thể hoặc * cho tất cả) */
+  scope: string;
+  /** Thời điểm bắt đầu có hiệu lực (ISO 8601) */
+  validFrom: string | null;
+  /** Thời điểm hết hiệu lực (ISO 8601, null là vềnh viễn) */
+  validUntil: string | null;
+  /** Bản ghi đột độc bởi CP42 có đang hoạt động không */
+  isActive: boolean;
+}
+
+// ===========================================================================
+// Giao diện bổ trợ cho WebSocket và sự kiện
+// ===========================================================================
+
+/** Sự kiện real-time từ WebSocket server. */
+export interface ApprovalEvent {
+  /** Loại sự kiện */
+  eventType: 'request_created' | 'request_updated' | 'step_assigned' | 'decision_made' | 'escalated' | 'delegated' | 'expired' | 'cancelled';
+  /** ID yêu cầu phê duyệt liên quan */
+  requestId: string;
+  /** Dữ liệu bổ sung của sự kiện */
+  payload: Record<string, unknown>;
+  /** Thời điểm sự kiện xảy ra (ISO 8601) */
+  timestamp: string;
+}
+
+/** Cấu hình thông báo email/push. */
+export interface NotificationConfig {
+  /** Có bất thông báo email không */
+  emailEnabled: boolean;
+  /** Có bất thông báo push không */
+  pushEnabled: boolean;
+  /** Có thông báo khi bước mới được phân công không */
+  notifyOnStepAssigned: boolean;
+  /** Có thông báo khi sắc hết thời hạn không */
+  notifyOnDeadlineApproaching: boolean;
+  /** Số giờ trước thời hạn để cảnh báo */
+  deadlineWarningHours: number;
+  /** Có thông báo khi leo thăng không */
+  notifyOnEscalation: boolean;
+  /** Có thông báo khi đột độc bởi CP42 không */
+  notifyOnDelegation: boolean;
+}
+
+// ===========================================================================
+// Cấu hình từ template
+// ===========================================================================
+
+/** Số lượng yêu cầu phê duyệt mẫu. */
+export const NUM_REQUESTS: number = {{ num_requests }};
+
+/** Số lượng bước phê duyệt mẫu. */
+export const NUM_STEPS: number = {{ num_steps }};
+
+/** Cố bất hệ thống sự kiện real-time không. */
+export const USE_EVENTS: boolean = {{ 'true' if use_events else 'false' }};

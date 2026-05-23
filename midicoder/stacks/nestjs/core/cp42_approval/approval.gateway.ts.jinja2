@@ -1,0 +1,303 @@
+/**
+ * ApprovalGateway - WebSocket Gateway cho Approval Workflow Engine.
+ *
+ * Cung cấp kết nối realtime cho hệ thống phê duyệt:
+ * - Kết nối/ngắt kết nối client
+ * - Thông báo yêu cầu phê duyệt mới
+ * - Thông báo quyết định phê duyệt
+ * - Thông báo leo thang
+ * - Thông báo ủy quyền
+ * - Cảnh báo deadline
+ *
+ * Cấu hình:
+ * - Namespace: /ws/approvals
+ * - Transport: WebSocket (với WS adapter tùy chọn)
+ *
+ * Events:
+ * - connect: client kết nối
+ * - disconnect: client ngắt kết nối
+ * - new_approval_request: nhận yêu cầu phê duyệt mới
+ * - approval_decision: nhận quyết định phê duyệt
+ * - approval_escalated: nhận thông báo leo thang
+ * - approval_delegated: nhận thông báo ủy quyền
+ * - deadline_warning: cảnh báo deadline sắp đến
+ *
+ * CP42: Approval Workflow Engine
+ * Tổng số yêu cầu mẫu: {{ num_requests }}
+ * Tổng số bước mẫu: {{ num_steps }}
+ */
+
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  OnGatewayInit,
+  WsException,
+} from "@nestjs/websockets";
+import { Injectable, Logger } from "@nestjs/common";
+import { Server, Socket } from "socket.io";
+import { ApprovalService } from "./approval.service";
+
+/**
+ * ApprovalGateway - WebSocket Gateway cho realtime notification.
+ *
+ * Quản lý kết nối WebSocket và broadcast events realtime:
+ * - onConnection: xử lý khi client kết nối, đăng ký vào room theo userId
+ * - onDisconnect: xử lý khi client ngắt kết nối, dọn dẹp room
+ * - new_approval_request: broadcast khi có yêu cầu phê duyệt mới
+ * - approval_decision: broadcast khi có quyết định phê duyệt
+ * - approval_escalated: broadcast khi leo thang yêu cầu
+ * - approval_delegated: broadcast khi ủy quyền phê duyệt
+ * - deadline_warning: broadcast cảnh báo deadline
+ *
+ * Topic-based rooms:
+ * - Mỗi user là một room: "user:{userId}"
+ * - Mỗi yêu cầu là một room: "approval:{requestId}"
+ * - Client join room để nhận notification cá nhân
+ * - Khi có sự kiện, server emit đến room tương ứng
+ */
+@Injectable()
+@WebSocketGateway({
+  namespace: "ws/approvals",
+  cors: {
+    origin: "*",
+    credentials: true,
+  },
+  pingInterval: 25000,
+  pingTimeout: 5000,
+})
+export class ApprovalGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+  /**
+   * Server Socket.io instance.
+   */
+  @WebSocketServer()
+  server: Server;
+
+  /**
+   * Logger instance.
+   */
+  private readonly logger = new Logger("ApprovalGateway");
+
+  /**
+   * Constructor.
+   *
+   * @param approvalService - ApprovalService instance
+   */
+  constructor(
+    private readonly approvalService: ApprovalService,
+  ) {}
+
+  // ========================================================================
+  // Gateway Lifecycle
+  // ========================================================================
+
+  /**
+   * Xử lý khi gateway khởi tạo.
+   *
+   * Đăng ký các middleware và cấu hình server.
+   */
+  afterInit(server: Server): void {
+    this.logger.log("ApprovalGateway đã khởi tạo trên namespace: /ws/approvals");
+  }
+
+  /**
+   * Xử lý khi client kết nối.
+   *
+   * Lưu thông tin client và đăng ký vào room theo userId.
+   *
+   * @param client - Socket kết nối
+   */
+  handleConnection(client: Socket): void {
+    this.logger.log("Client kết nối: " + client.id);
+
+    // Lấy userId từ handshake data
+    const userId = client.handshake.query.userId as string;
+
+    if (userId) {
+      // Lưu userId vào socket data
+      (client as any).userId = userId;
+
+      // Đăng ký client vào room theo userId (cho notification cá nhân)
+      client.join("user:" + userId);
+
+      this.logger.log(
+        "Client " + client.id + " đã đăng ký với userId: " + userId,
+      );
+    }
+
+    // Gửi sự kiện kết nối thành công
+    client.emit("connected", {
+      clientId: client.id,
+      userId,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Xử lý khi client ngắt kết nối.
+   *
+   * Dọn dẹp room và ghi log.
+   *
+   * @param client - Socket ngắt kết nối
+   */
+  handleDisconnect(client: Socket): void {
+    const userId = (client as any).userId;
+
+    this.logger.log(
+      "Client ngắt kết nối: " +
+      client.id +
+      (userId ? " (userId: " + userId + ")" : ""),
+    );
+
+    // Tự động rời khỏi tất cả rooms
+    client.rooms.forEach((room) => {
+      client.leave(room);
+    });
+  }
+
+  // ========================================================================
+  // Event Handlers
+  // ========================================================================
+
+  /**
+   * Xử lý khi client tham gia room của yêu cầu phê duyệt.
+   *
+   * @param client - Socket kết nối
+   * @param data - Dữ liệu { requestId }
+   */
+  @SubscribeMessage("join_approval")
+  handleJoinApproval(
+    client: Socket,
+    data: any,
+  ): Promise<void> {
+    const { requestId } = data;
+
+    if (!requestId) {
+      throw new WsException("requestId không được để trống");
+    }
+
+    // Tham gia room
+    client.join("approval:" + requestId);
+
+    this.logger.log(
+      "Client " +
+      client.id +
+      " đã tham gia room: approval:" +
+      requestId,
+    );
+
+    // Gửi xác nhận
+    client.emit("approval_joined", {
+      room: "approval:" + requestId,
+      requestId,
+    });
+
+    return Promise.resolve();
+  }
+
+  /**
+   * Xử lý khi client rời room của yêu cầu phê duyệt.
+   *
+   * @param client - Socket kết nối
+   * @param data - Dữ liệu { requestId }
+   */
+  @SubscribeMessage("leave_approval")
+  handleLeaveApproval(
+    client: Socket,
+    data: any,
+  ): Promise<void> {
+    const { requestId } = data;
+
+    if (!requestId) {
+      throw new WsException("requestId không được để trống");
+    }
+
+    // Rời room
+    client.leave("approval:" + requestId);
+
+    this.logger.log(
+      "Client " +
+      client.id +
+      " đã rời room: approval:" +
+      requestId,
+    );
+
+    // Gửi xác nhận
+    client.emit("approval_left", {
+      room: "approval:" + requestId,
+      requestId,
+    });
+
+    return Promise.resolve();
+  }
+
+  /**
+   * Xử lý khi client yêu cầu danh sách yêu cầu đang chờ.
+   *
+   * @param client - Socket kết nối
+   * @returns List yêu cầu đang chờ của user
+   */
+  @SubscribeMessage("get_pending_approvals")
+  async handleGetPendingApprovals(
+    client: Socket,
+  ): Promise<any[]> {
+    const userId = (client as any).userId;
+
+    if (!userId) {
+      throw new WsException("userId không được để trống");
+    }
+
+    const pendingApprovals = await this.approvalService.getPendingApprovals(userId);
+
+    return pendingApprovals;
+  }
+
+  // ========================================================================
+  // Broadcast Methods
+  // ========================================================================
+
+  /**
+   * Broadcast sự kiện đến tất cả client.
+   *
+   * @param event - Tên sự kiện
+   * @param data - Dữ liệu gửi đi
+   */
+  broadcastToAll(
+    event: string,
+    data: any,
+  ): void {
+    this.server.emit(event, data);
+  }
+
+  /**
+   * Gửi thông báo đến user cụ thể.
+   *
+   * @param userId - ID người nhận
+   * @param event - Tên sự kiện
+   * @param data - Dữ liệu gửi đi
+   */
+  sendToUser(
+    userId: string,
+    event: string,
+    data: any,
+  ): void {
+    this.server.to("user:" + userId).emit(event, data);
+  }
+
+  /**
+   * Broadcast sự kiện đến tất cả client trong room của yêu cầu.
+   *
+   * @param requestId - ID yêu cầu phê duyệt
+   * @param event - Tên sự kiện
+   * @param data - Dữ liệu gửi đi
+   */
+  broadcastToApproval(
+    requestId: string,
+    event: string,
+    data: any,
+  ): void {
+    this.server.to("approval:" + requestId).emit(event, data);
+  }
+}
