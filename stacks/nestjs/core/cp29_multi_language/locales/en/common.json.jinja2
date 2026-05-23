@@ -1,6 +1,0 @@
-{
-{% for key in i18n_keyset.keys %}
-  "{{ key.key }}": "{{ key.description }}"{% if not loop.last %},{% endif %}
-
-{% endfor %}
-}
