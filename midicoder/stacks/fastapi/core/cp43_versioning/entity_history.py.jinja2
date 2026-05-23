@@ -1,0 +1,67 @@
+"""EntityHistory — Base model cho history table (CP43).
+
+Mỗi entity có một history table tương ứng để lưu snapshot
+của entity tại mỗi version. History records là IMMUTABLE.
+"""
+import json
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+from sqlalchemy import (
+    Column, String, Integer, Text, DateTime, Index,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+
+
+class EntityHistoryMixin:
+    """Base mixin cho entity history table."""
+
+    entity_type: str = ""
+
+    id = Column(String(36), primary_key=True)
+    entity_id = Column(String(200), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+    snapshot = Column(JSONB, nullable=False)
+    operation = Column(String(20), nullable=False)
+    changed_fields = Column(JSONB, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default="NOW()",
+    )
+    created_by = Column(String(200), nullable=False, default="system")
+    immutable_hash = Column(String(64), nullable=False)
+
+    __table_args__ = (
+        Index("ix_history_entity_version", "entity_id", "version"),
+        Index("ix_history_entity_created_at", "entity_id", "created_at"),
+    )
+
+    @staticmethod
+    def compute_hash(record: Any) -> str:
+        """
+        Tính SHA-256 hash cho history record (tamper-evidence).
+
+        Args:
+            record: History record instance
+
+        Returns:
+            SHA-256 hash string
+        """
+        import hashlib
+
+        data = {
+            "entity_type": record.entity_type,
+            "entity_id": record.entity_id,
+            "version": record.version,
+            "snapshot": record.snapshot,
+            "operation": record.operation,
+            "created_by": record.created_by,
+            "created_at": record.created_at.isoformat() if record.created_at else "",
+        }
+        canonical = json.dumps(data, sort_keys=True, default=str)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def get_snapshot(self) -> Dict[str, Any]:
+        """Trả về snapshot dict của record này."""
+        return self.snapshot if isinstance(self.snapshot, dict) else {}

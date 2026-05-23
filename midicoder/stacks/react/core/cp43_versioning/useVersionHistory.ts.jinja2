@@ -1,0 +1,43 @@
+/**
+ * useVersionHistory Hook - CP43.
+ */
+
+import { useCallback, useState, useMemo } from "react";
+import { VersionHistoryEntry, UseVersionHistoryReturn } from "./types";
+
+export function useVersionHistory(
+  entityType: string,
+  entityId: string,
+  apiBase: string = "/api/v1",
+): UseVersionHistoryReturn {
+  const [entries, setEntries] = useState<VersionHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadHistory = useCallback(async (limit: number = 100) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `${apiBase}/version-history/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}?limit=${limit}`,
+      );
+      if (!response.ok) throw new Error(`Lỗi tải version history: ${response.status}`);
+      setEntries(await response.json());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi tải version history");
+      setEntries([]);
+    } finally { setLoading(false); }
+  }, [apiBase, entityType, entityId]);
+
+  const restoreToVersion = useCallback(async (version: number) => {
+    const response = await fetch(
+      `${apiBase}/version-history/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/restore`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version }) },
+    );
+    if (!response.ok) throw new Error(`Restore thất bại: ${response.status}`);
+    await loadHistory();
+  }, [apiBase, entityType, entityId, loadHistory]);
+
+  return useMemo(() => ({ entries, loading, error, loadHistory, restoreToVersion }),
+    [entries, loading, error, loadHistory, restoreToVersion]);
+}

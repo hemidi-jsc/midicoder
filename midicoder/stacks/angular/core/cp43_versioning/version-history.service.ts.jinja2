@@ -1,0 +1,41 @@
+/**
+ * Version History Service - CP43.
+ */
+
+import { Injectable } from "@angular/core";
+import { HttpClient } from "@angular/common/http";
+import { Observable } from "rxjs";
+
+export interface VersionHistoryEntry {
+  version: number;
+  operation: string;
+  snapshot: Record<string, any>;
+  changed_fields: string[];
+  created_at: string;
+  created_by: string;
+}
+
+@Injectable({ providedIn: "root" })
+export class VersionHistoryService {
+  constructor(private http: HttpClient, private apiBase: string = "/api/v1") {}
+
+  getVersionHistory(entityType: string, entityId: string, limit: number = 100): Observable<VersionHistoryEntry[]> {
+    return this.http.get<VersionHistoryEntry[]>(
+      `${this.apiBase}/version-history/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`,
+      { params: { limit: limit.toString() } },
+    );
+  }
+
+  getAtVersion(entityType: string, entityId: string, version: number): Observable<Record<string, any>> {
+    return this.http.get<Record<string, any>>(
+      `${this.apiBase}/version-history/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/version/${version}`,
+    );
+  }
+
+  restoreToVersion(entityType: string, entityId: string, version: number): Observable<any> {
+    return this.http.post(
+      `${this.apiBase}/version-history/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/restore`,
+      { version },
+    );
+  }
+}

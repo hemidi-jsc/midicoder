@@ -843,6 +843,9 @@ core_packs:
     description: Entity versioning, time-travel query, soft delete, audit trail extension
     definitions_count: 4
     obligations_count: 2
+    category: data
+    status: stable
+    version: 1.0.0
     depends_on:
       - CP01
       - CP08

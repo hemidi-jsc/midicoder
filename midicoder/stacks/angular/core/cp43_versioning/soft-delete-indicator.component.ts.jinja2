@@ -1,0 +1,27 @@
+/**
+* Soft Delete Indicator - CP43.
+*/
+
+import { Component, Input, Output, EventEmitter } from "@angular/core";
+
+@Component({
+selector: "app-soft-delete-indicator",
+template: `
+<div *ngIf="isDeleted" class="soft-delete-indicator">
+    <span class="soft-delete-indicator__badge">Đã xóa</span>
+    <span>Xóa bởi {\{ deletedBy \}} lúc {\{ deletedAt | date:'medium' \}}</span>
+    <button (click)="onRestore()">Khôi phục</button>
+</div>
+<div *ngIf="!isDeleted" class="soft-delete-indicator--active">
+    <span class="soft-delete-indicator__badge--active">Hoạt động</span>
+</div>
+`,
+})
+export class SoftDeleteIndicatorComponent {
+@Input() isDeleted: boolean = false;
+@Input() deletedAt: string | null = null;
+@Input() deletedBy: string = "";
+@Output() restore = new EventEmitter<void>();
+
+    onRestore(): void { this.restore.emit(); }
+    }

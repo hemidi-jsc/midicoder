@@ -340,6 +340,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "ReactGeospatialEmitter",
         "cp35_geospatial",
     ),
+    # CP43 – Versioning & History (FastAPI)
+    "cp43.versioning.fastapi": (
+        "midicoder.emitters.core.cp43_versioning.fastapi",
+        "FastAPIVersioningEmitter",
+        None,
+    ),
+    # CP43 – Versioning & History (NestJS)
+    "cp43.versioning.nestjs": (
+        "midicoder.emitters.core.cp43_versioning.nestjs",
+        "NestJSVersioningEmitter",
+        None,
+    ),
+    # CP43 – Versioning & History (Angular)
+    "cp43.versioning.angular": (
+        "midicoder.emitters.core.cp43_versioning.angular",
+        "AngularVersioningEmitter",
+        None,
+    ),
+    # CP43 – Versioning & History (React)
+    "cp43.versioning.react": (
+        "midicoder.emitters.core.cp43_versioning.react",
+        "ReactVersioningEmitter",
+        None,
+    ),
 }
 
 

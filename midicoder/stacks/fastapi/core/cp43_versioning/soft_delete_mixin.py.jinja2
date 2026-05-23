@@ -1,0 +1,80 @@
+"""SoftDeleteMixin — SQLAlchemy mixin cho soft delete (CP43).
+
+Cung cấp:
+- deleted_at column (nullable timestamp)
+- deleted_by column (ký ai xóa)
+- soft_delete(): đánh dấu xóa
+- restore(): khôi phục entity
+- hard_delete(): xóa vĩnh viễn
+- Auto filter: query tự động WHERE deleted_at IS NULL
+"""
+from datetime import datetime, timezone
+from typing import Optional, Type, TYPE_CHECKING
+from sqlalchemy import Column, DateTime, String
+from sqlalchemy.orm import Query
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+
+class SoftDeleteMixin:
+    """SQLAlchemy mixin cho soft delete functionality."""
+
+    deleted_at = Column(
+        DateTime,
+        nullable=True,
+        default=None,
+        server_default=None,
+        index=True,
+    )
+    deleted_by = Column(String(200), nullable=True, default=None)
+
+    @property
+    def is_deleted(self) -> bool:
+        """Kiểm tra entity có bị soft delete không."""
+        return self.deleted_at is not None
+
+    def soft_delete(self, actor: str = "system", db_session: Optional["Session"] = None) -> None:
+        """
+        Đánh dấu entity bị soft delete.
+
+        Args:
+            actor: ID của user thực hiện thao tác
+            db_session: Database session (optional)
+        """
+        self.deleted_at = datetime.now(timezone.utc)
+        self.deleted_by = actor
+
+    def restore(self) -> None:
+        """Khôi phục entity đã bị soft delete."""
+        self.deleted_at = None
+        self.deleted_by = None
+
+    def hard_delete(self, db_session: Optional["Session"] = None) -> None:
+        """
+        Xóa vĩnh viễn entity (bỏ qua soft delete).
+
+        Dùng thận trọng — không thể khôi phục sau khi hard delete.
+
+        Args:
+            db_session: Database session để delete
+        """
+        if db_session:
+            db_session.delete(self)
+            db_session.commit()
+
+
+def apply_soft_delete_filter(query: Query, model: Type["SoftDeleteMixin"]) -> Query:
+    """
+    Tự động áp dụng filter WHERE deleted_at IS NULL cho query.
+
+    Args:
+        query: SQLAlchemy query
+        model: Model class có SoftDeleteMixin
+
+    Returns:
+        Query đã được filter
+    """
+    if hasattr(model, "deleted_at"):
+        query = query.filter(model.deleted_at.is_(None))
+    return query

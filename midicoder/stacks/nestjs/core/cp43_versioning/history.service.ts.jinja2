@@ -1,0 +1,49 @@
+/**
+ * HistoryService — Service cho time-travel query (CP43).
+ */
+
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository, LessThanOrEqual } from "typeorm";
+import { EntityHistory } from "./history-entity";
+
+@Injectable()
+export class HistoryService {
+  constructor(
+    @InjectRepository(EntityHistory)
+    private readonly historyRepo: Repository<EntityHistory>,
+  ) {}
+
+  async getAtVersion(entityId: string, version: number): Promise<Record<string, any> | null> {
+    const record = await this.historyRepo.findOne({ where: { entity_id: entityId, version } });
+    return record ? record.snapshot : null;
+  }
+
+  async getAtTimestamp(entityId: string, timestamp: Date): Promise<Record<string, any> | null> {
+    const record = await this.historyRepo.findOne({
+      where: { entity_id: entityId, created_at: LessThanOrEqual(timestamp) },
+      order: { created_at: "DESC" },
+    });
+    return record ? record.snapshot : null;
+  }
+
+  async getVersionHistory(entityId: string, limit: number = 100): Promise<any[]> {
+    const records = await this.historyRepo.find({
+      where: { entity_id: entityId },
+      order: { version: "DESC" },
+      take: limit,
+    });
+    return records.map((r) => ({
+      version: r.version, operation: r.operation, snapshot: r.snapshot,
+      changed_fields: r.changed_fields || [], created_at: r.created_at.toISOString(),
+      created_by: r.created_by,
+    }));
+  }
+
+  async getLatestVersion(entityId: string): Promise<number | null> {
+    const record = await this.historyRepo.findOne({
+      where: { entity_id: entityId }, order: { version: "DESC" },
+    });
+    return record ? record.version : null;
+  }
+}

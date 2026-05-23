@@ -1,0 +1,86 @@
+"""HistoryRepository — Repository cho time-travel query (CP43).
+
+Cung cấp các method:
+- get_at_version(): Lấy snapshot ở version cụ thể
+- get_at_timestamp(): Lấy snapshot gần nhất trước thời điểm T
+- get_version_history(): Lấy danh sách tất cả versions
+- get_changes_between(): So sánh 2 versions
+"""
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Type
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from app.models.mixins.entity_history import EntityHistoryMixin
+
+
+class HistoryRepository:
+    """Repository cho time-travel query operations."""
+
+    def __init__(self, db_session: Session, history_model: Type[EntityHistoryMixin]) -> None:
+        """
+        Init repository.
+
+        Args:
+            db_session: SQLAlchemy session
+            history_model: History model class
+        """
+        self.db = db_session
+        self.history_model = history_model
+
+    def get_at_version(self, entity_id: str, version: int) -> Optional[Dict[str, Any]]:
+        """Lấy snapshot của entity ở version cụ thể."""
+        record = self.db.query(self.history_model).filter(
+            self.history_model.entity_id == entity_id,
+            self.history_model.version == version,
+        ).first()
+        return record.get_snapshot() if record else None
+
+    def get_at_timestamp(self, entity_id: str, timestamp: datetime) -> Optional[Dict[str, Any]]:
+        """Lấy snapshot gần nhất trước thời điểm T."""
+        record = self.db.query(self.history_model).filter(
+            self.history_model.entity_id == entity_id,
+            self.history_model.created_at <= timestamp,
+        ).order_by(desc(self.history_model.created_at)).first()
+        return record.get_snapshot() if record else None
+
+    def get_version_history(self, entity_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Lấy danh sách tất cả versions của entity."""
+        records = self.db.query(self.history_model).filter(
+            self.history_model.entity_id == entity_id,
+        ).order_by(desc(self.history_model.version)).limit(limit).all()
+        return [
+            {
+                "version": r.version,
+                "operation": r.operation,
+                "snapshot": r.get_snapshot(),
+                "changed_fields": r.changed_fields or [],
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+                "created_by": r.created_by,
+            }
+            for r in records
+        ]
+
+    def get_changes_between(
+        self, entity_id: str, from_version: int, to_version: int
+    ) -> Dict[str, Any]:
+        """So sánh 2 versions và trả về các thay đổi."""
+        old_snapshot = self.get_at_version(entity_id, from_version)
+        new_snapshot = self.get_at_version(entity_id, to_version)
+        if old_snapshot is None or new_snapshot is None:
+            return {"old": old_snapshot, "new": new_snapshot, "changes": []}
+        changes = []
+        all_keys = set(old_snapshot.keys()) | set(new_snapshot.keys())
+        for key in all_keys:
+            old_val = old_snapshot.get(key)
+            new_val = new_snapshot.get(key)
+            if old_val != new_val:
+                changes.append({"field": key, "old_value": old_val, "new_value": new_val})
+        return {"old": old_snapshot, "new": new_snapshot, "changes": changes}
+
+    def get_latest_version(self, entity_id: str) -> Optional[int]:
+        """Lấy version số mới nhất của entity."""
+        record = self.db.query(self.history_model).filter(
+            self.history_model.entity_id == entity_id,
+        ).order_by(desc(self.history_model.version)).first()
+        return record.version if record else None

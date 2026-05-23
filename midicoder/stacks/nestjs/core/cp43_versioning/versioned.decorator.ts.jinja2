@@ -1,0 +1,36 @@
+/**
+ * Versioned Decorator — TypeORM decorator cho optimistic locking (CP43).
+ */
+
+import { Column } from "typeorm";
+
+interface VersionedTarget {
+  prototype: any;
+  new (): any;
+}
+
+export function Versioned(): ClassDecorator {
+  return (target: VersionedTarget) => {
+    const proto = target.prototype;
+    if (!proto.version) {
+      Column({ type: "int", nullable: false, default: 1 })(proto, "version");
+    }
+    Object.defineProperty(proto, "checkVersion", {
+      value(function (expectedVersion: number): void {
+        if (this.version !== expectedVersion) {
+          throw new Error(
+            `Version conflict: expected v${expectedVersion}, found v${this.version}`,
+          );
+        }
+      }),
+      writable: true, enumerable: false, configurable: true,
+    });
+    Object.defineProperty(proto, "bumpVersion", {
+      value(function (): number {
+        this.version = (this.version || 1) + 1;
+        return this.version;
+      }),
+      writable: true, enumerable: false, configurable: true,
+    });
+  };
+}

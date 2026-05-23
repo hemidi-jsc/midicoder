@@ -966,6 +966,20 @@ class ErrorCode(str, Enum):
     CP42_APPROVAL_EVENT_HANDLER_FAILED = "MDC-CP42-010"
 
     # =========================================================================
+    # CP43: Versioning & History Errors
+    # =========================================================================
+    CP43_VERSION_CONFLICT = "MDC-CP43-001"
+    CP43_INVALID_VERSION_NUMBER = "MDC-CP43-002"
+    CP43_HISTORY_RECORD_NOT_FOUND = "MDC-CP43-003"
+    CP43_NO_SNAPSHOT_AT_TIMESTAMP = "MDC-CP43-004"
+    CP43_ALREADY_HARD_DELETED = "MDC-CP43-005"
+    CP43_RESTORE_VERSION_FAILED = "MDC-CP43-006"
+    CP43_HISTORY_IMMUTABILITY_VIOLATION = "MDC-CP43-007"
+    CP43_AUDIT_EVENT_EMIT_FAILED = "MDC-CP43-008"
+    CP43_INVALID_VERSION_CONFIG = "MDC-CP43-009"
+    CP43_DSL_PARSE_ERROR = "MDC-CP43-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1499,6 +1513,18 @@ class MidicoderErrorManager:
         ErrorCode.CP42_APPROVAL_DELEGATION_SELF: "Không thể delegation cho chính mình",
         ErrorCode.CP42_APPROVAL_VOTING_NOT_QUORUM: "Chưa đạt quorum vote: {votes}/{required}",
         ErrorCode.CP42_APPROVAL_EVENT_HANDLER_FAILED: "Xử lý event approval thất bại: {reason}",
+
+        # CP43: Versioning & History Error Templates
+        ErrorCode.CP43_VERSION_CONFLICT: "Entity version conflict (optimistic locking): {entity_id} — expected v{expected}, found v{actual}",
+        ErrorCode.CP43_INVALID_VERSION_NUMBER: "Version number không hợp lệ: {version}",
+        ErrorCode.CP43_HISTORY_RECORD_NOT_FOUND: "History record không tìm thấy: {entity_type}/{entity_id} at version {version}",
+        ErrorCode.CP43_NO_SNAPSHOT_AT_TIMESTAMP: "Không có snapshot ở thời điểm {timestamp} cho {entity_type}/{entity_id}",
+        ErrorCode.CP43_ALREADY_HARD_DELETED: "Entity đã bị hard delete: {entity_type}/{entity_id}",
+        ErrorCode.CP43_RESTORE_VERSION_FAILED: "Restore version thất bại: {entity_type}/{entity_id} — {reason}",
+        ErrorCode.CP43_HISTORY_IMMUTABILITY_VIOLATION: "History record immutability violation: không thể sửa/xóa history record {record_id}",
+        ErrorCode.CP43_AUDIT_EVENT_EMIT_FAILED: "Emit audit event thất bại: {reason}",
+        ErrorCode.CP43_INVALID_VERSION_CONFIG: "Version config không hợp lệ: {reason}",
+        ErrorCode.CP43_DSL_PARSE_ERROR: "Parse DSL versioning config thất bại: {error}",
 
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",

@@ -1,0 +1,104 @@
+"""AuditIntegration — Auto emit audit event tới CP14 (CP43).
+
+Mỗi lần version thay đổi (CREATE/UPDATE/DELETE) tự động
+emit audit event tới CP14 audit_logger.
+"""
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from sqlalchemy.orm import Session
+
+
+class VersionAuditLogger:
+    """Auto emit audit event tới CP14 audit_logger."""
+
+    def __init__(self, db_session: Optional[Session] = None) -> None:
+        """Init audit logger."""
+        self.db = db_session
+
+    def log_version_change(
+        self,
+        entity_type: str,
+        entity_id: str,
+        operation: str,
+        old_version: int,
+        new_version: int,
+        changed_fields: Optional[List[str]] = None,
+        user_id: str = "system",
+        tenant_id: str = "default",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Log version change event tới CP14 audit trail."""
+        now = datetime.now(timezone.utc)
+        audit_event = {
+            "timestamp": now.isoformat(),
+            "action": operation,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "actor_id": user_id,
+            "actor_type": "user" if user_id != "system" else "system",
+            "tenant_id": tenant_id,
+            "old_values": {"version": old_version},
+            "new_values": {"version": new_version, "changed_fields": changed_fields or []},
+            "metadata": {
+                "old_version": old_version,
+                "new_version": new_version,
+                "changed_fields": changed_fields or [],
+                "operation": operation,
+                **(metadata or {}),
+            },
+        }
+        if self.db is not None:
+            try:
+                self._write_to_audit_table(audit_event)
+            except Exception:
+                pass
+        return audit_event
+
+    def _write_to_audit_table(self, event: Dict[str, Any]) -> None:
+        """Ghi audit event vào audit_logs table (CP14)."""
+        import hashlib
+        import json
+        from uuid import uuid4
+
+        hash_data = {
+            "action": event["action"],
+            "entity_type": event["entity_type"],
+            "entity_id": event["entity_id"],
+            "actor_id": event["actor_id"],
+            "tenant_id": event["tenant_id"],
+            "old_values": event["old_values"],
+            "new_values": event["new_values"],
+            "metadata": event["metadata"],
+            "timestamp": event["timestamp"],
+        }
+        immutable_hash = hashlib.sha256(
+            json.dumps(hash_data, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+        self.db.execute(
+            """
+            INSERT INTO audit_logs (
+                id, timestamp, action, entity_type, entity_id,
+                actor_id, actor_type, tenant_id,
+                old_values, new_values, metadata_json, immutable_hash
+            ) VALUES (
+                :id, :timestamp, :action, :entity_type, :entity_id,
+                :actor_id, :actor_type, :tenant_id,
+                :old_values, :new_values, :metadata_json, :immutable_hash
+            )
+            """,
+            {
+                "id": str(uuid4()),
+                "timestamp": event["timestamp"],
+                "action": event["action"],
+                "entity_type": event["entity_type"],
+                "entity_id": event["entity_id"],
+                "actor_id": event["actor_id"],
+                "actor_type": event["actor_type"],
+                "tenant_id": event["tenant_id"],
+                "old_values": json.dumps(event["old_values"]),
+                "new_values": json.dumps(event["new_values"]),
+                "metadata_json": json.dumps(event["metadata"]),
+                "immutable_hash": immutable_hash,
+            },
+        )
+        self.db.commit()

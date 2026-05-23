@@ -1,0 +1,44 @@
+/**
+ * SoftDelete Decorator — TypeORM decorator cho soft delete (CP43).
+ */
+
+import { Column, SelectQueryBuilder } from "typeorm";
+
+interface SoftDeleteTarget {
+  prototype: any;
+  new (): any;
+}
+
+export function SoftDelete(): ClassDecorator {
+  return (target: SoftDeleteTarget) => {
+    const proto = target.prototype;
+    if (!proto.deletedAt) {
+      Column({ type: "timestamp", nullable: true, default: null, index: true })(proto, "deletedAt");
+    }
+    if (!proto.deletedBy) {
+      Column({ name: "deleted_by", type: "varchar", length: 200, nullable: true, default: null })(proto, "deletedBy");
+    }
+    Object.defineProperty(proto, "isDeleted", {
+      get() { return this.deletedAt !== null && this.deletedAt !== undefined; },
+      enumerable: false, configurable: true,
+    });
+    Object.defineProperty(proto, "softDelete", {
+      value(function (actor: string = "system"): void {
+        this.deletedAt = new Date();
+        this.deletedBy = actor;
+      }),
+      writable: true, enumerable: false, configurable: true,
+    });
+    Object.defineProperty(proto, "restore", {
+      value(function (): void {
+        this.deletedAt = null;
+        this.deletedBy = null;
+      }),
+      writable: true, enumerable: false, configurable: true,
+    });
+  };
+}
+
+export function filterSoftDeleted<T>(qb: SelectQueryBuilder<T>): SelectQueryBuilder<T> {
+  return qb.andWhere(`${qb.alias}.deletedAt IS NULL`);
+}

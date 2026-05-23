@@ -1,0 +1,59 @@
+/**
+ * Version History Component - CP43.
+ */
+
+import { useEffect, useState } from "react";
+import { useVersionHistory } from "./useVersionHistory";
+import { VersionHistoryEntry, VersionHistoryProps } from "./types";
+
+export function VersionHistory({ entityType, entityId, apiBase, onRestore }: VersionHistoryProps) {
+  const { entries, loading, error, loadHistory, restoreToVersion } = useVersionHistory(entityType, entityId, apiBase);
+  const [selectedEntry, setSelectedEntry] = useState<VersionHistoryEntry | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<number | null>(null);
+
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  return (
+    <div className="version-history">
+      <div className="version-history__header">
+        <h3>Lịch sử Version</h3>
+        <span>{entries.length} versions</span>
+      </div>
+      {loading && <div>Đang tải...</div>}
+      {error && <div className="error">{error}</div>}
+      {!loading && !error && (
+        <div className="version-history__list">
+          {entries.map((entry) => (
+            <div key={entry.version} className="version-history__entry" onClick={() => setSelectedEntry(entry)}>
+              <span>v{entry.version}</span>
+              <span>{entry.operation}</span>
+              <span>{new Date(entry.created_at).toLocaleString("vi-VN")}</span>
+              <span>{entry.created_by}</span>
+            </div>
+          ))}
+          {entries.length === 0 && <div>Không có version history.</div>}
+        </div>
+      )}
+      {selectedEntry && (
+        <div className="version-history__detail">
+          <h4>Chi tiết Version {selectedEntry.version}</h4>
+          <pre>{JSON.stringify(selectedEntry.snapshot, null, 2)}</pre>
+          <button onClick={() => setConfirmRestore(selectedEntry.version)}>
+            Restore về version {selectedEntry.version}
+          </button>
+        </div>
+      )}
+      {confirmRestore !== null && (
+        <div className="version-history__confirm">
+          <p>Bạn có chắc muốn restore về version {confirmRestore}?</p>
+          <button onClick={() => setConfirmRestore(null)}>Hủy</button>
+          <button onClick={async () => { await restoreToVersion(confirmRestore); setConfirmRestore(null); onRestore?.(confirmRestore); }}>
+            Restore
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default VersionHistory;

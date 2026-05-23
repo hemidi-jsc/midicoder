@@ -1,0 +1,65 @@
+/**
+* Version History Component - CP43.
+*/
+
+import { Component, OnInit, Input, Output, EventEmitter } from "@angular/core";
+import { VersionHistoryService, VersionHistoryEntry } from "./version-history.service";
+
+@Component({
+selector: "app-version-history",
+template: `
+<div class="version-history">
+    <div class="version-history__header">
+        <h3>Lịch sử Version</h3>
+        <span>{\{ entries.length \}} versions</span>
+    </div>
+    <div *ngIf="loading">Đang tải...</div>
+    <div *ngIf="error" class="error">{\{ error \}}</div>
+    <div *ngIf="!loading && !error" class="version-history__list">
+        <div *ngFor="let entry of entries" class="version-history__entry" (click)="selectVersion(entry)">
+            <span class="version-history__badge">v{\{ entry.version \}}</span>
+            <span>{\{ entry.operation \}}</span>
+            <span>{\{ entry.created_at | date: 'medium' \}}</span>
+            <span>{\{ entry.created_by \}}</span>
+            <div *ngIf="entry.changed_fields?.length">Thay đổi: {\{ entry.changed_fields.join(', ') \}}</div>
+        </div>
+    </div>
+    <div *ngIf="selectedEntry" class="version-history__detail">
+        <h4>Chi tiết Version {\{ selectedEntry.version \}}</h4>
+        <pre>{\{ selectedEntry.snapshot | json \}}</pre>
+        <button (click)="restoreVersion(selectedEntry.version)">Restore về version {\{ selectedEntry.version
+            \}}</button>
+    </div>
+</div>
+`,
+})
+export class VersionHistoryComponent implements OnInit {
+@Input() entityType: string = "";
+@Input() entityId: string = "";
+@Output() restored = new EventEmitter<number>();
+
+    entries: VersionHistoryEntry[] = [];
+    selectedEntry: VersionHistoryEntry | null = null;
+    loading: boolean = false;
+    error: string = "";
+
+    constructor(private versionService: VersionHistoryService) {}
+
+    ngOnInit(): void { this.loadHistory(); }
+
+    loadHistory(): void {
+    this.loading = true;
+    this.versionService.getVersionHistory(this.entityType, this.entityId).subscribe({
+    next: (data) => { this.entries = data; this.loading = false; },
+    error: (err) => { this.error = err.message; this.loading = false; },
+    });
+    }
+
+    selectVersion(entry: VersionHistoryEntry): void { this.selectedEntry = entry; }
+
+    restoreVersion(version: number): void {
+    this.versionService.restoreToVersion(this.entityType, this.entityId, version).subscribe({
+    next: () => { this.restored.emit(version); this.loadHistory(); },
+    });
+    }
+    }

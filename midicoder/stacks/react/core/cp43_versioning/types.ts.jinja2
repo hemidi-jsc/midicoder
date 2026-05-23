@@ -1,0 +1,34 @@
+/**
+ * Versioning Types - CP43.
+ */
+
+export interface VersionHistoryEntry {
+  version: number;
+  operation: string;
+  snapshot: Record<string, any>;
+  changed_fields: string[];
+  created_at: string;
+  created_by: string;
+}
+
+export interface VersionHistoryProps {
+  entityType: string;
+  entityId: string;
+  apiBase?: string;
+  onRestore?: (version: number) => void;
+}
+
+export interface SoftDeleteIndicatorProps {
+  isDeleted: boolean;
+  deletedAt?: string | null;
+  deletedBy?: string;
+  onRestore?: () => void;
+}
+
+export interface UseVersionHistoryReturn {
+  entries: VersionHistoryEntry[];
+  loading: boolean;
+  error: string | null;
+  loadHistory: (limit?: number) => Promise<void>;
+  restoreToVersion: (version: number) => Promise<void>;
+}

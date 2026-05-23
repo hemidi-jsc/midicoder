@@ -1,0 +1,43 @@
+"""VersionMixin — SQLAlchemy mixin cho optimistic locking (CP43).
+
+Cung cấp:
+- version column (Integer, default=1)
+- Tự động increment version trước mỗi UPDATE
+- Kiểm tra version conflict (optimistic locking)
+"""
+from datetime import datetime, timezone
+from sqlalchemy import Column, Integer
+
+
+class VersionMixin:
+    """SQLAlchemy mixin cho entity versioning với optimistic locking."""
+
+    __mapper_args__ = {"eager_defaults": True}
+
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+
+    def check_version(self, expected_version: int) -> None:
+        """
+        Kiểm tra version trước khi update (optimistic locking).
+
+        Args:
+            expected_version: Version mong đợi từ client
+
+        Raises:
+            ValueError: Nếu version conflict (data đã bị thay đổi bởi user khác)
+        """
+        if self.version != expected_version:
+            raise ValueError(
+                f"Version conflict: expected v{expected_version}, "
+                f"found v{self.version}"
+            )
+
+    def bump_version(self) -> int:
+        """
+        Tăng version lên 1 và trả về version mới.
+
+        Returns:
+            Version mới sau khi increment
+        """
+        self.version = (self.version or 1) + 1
+        return self.version

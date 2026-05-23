@@ -1,0 +1,24 @@
+/**
+ * Soft Delete Indicator - CP43.
+ */
+
+import { SoftDeleteIndicatorProps } from "./types";
+
+export function SoftDeleteIndicator({ isDeleted, deletedAt, deletedBy, onRestore }: SoftDeleteIndicatorProps) {
+  if (isDeleted) {
+    return (
+      <div className="soft-delete-indicator">
+        <span className="soft-delete-indicator__badge">Đã xóa</span>
+        <span>Xóa bởi {deletedBy || "system"} {deletedAt && `lúc ${new Date(deletedAt).toLocaleString("vi-VN")}`}</span>
+        {onRestore && <button className="soft-delete-indicator__restore-btn" onClick={onRestore}>Khôi phục</button>}
+      </div>
+    );
+  }
+  return (
+    <div className="soft-delete-indicator--active">
+      <span className="soft-delete-indicator__badge--active">Hoạt động</span>
+    </div>
+  );
+}
+
+export default SoftDeleteIndicator;

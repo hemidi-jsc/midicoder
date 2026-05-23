@@ -1,0 +1,52 @@
+/**
+ * EntityHistory — Base entity cho history table (CP43).
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+} from "typeorm";
+
+export abstract class EntityHistory {
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
+
+  @Column({ length: 200 })
+  entity_id: string;
+
+  @Column({ type: "int", default: 1 })
+  version: number;
+
+  @Column({ type: "jsonb" })
+  snapshot: Record<string, any>;
+
+  @Column({ length: 20 })
+  operation: string;
+
+  @Column({ name: "changed_fields", type: "jsonb", nullable: true })
+  changed_fields: string[];
+
+  @CreateDateColumn({ name: "created_at", type: "timestamptz" })
+  created_at: Date;
+
+  @Column({ name: "created_by", length: 200, default: "system" })
+  created_by: string;
+
+  @Column({ name: "immutable_hash", length: 64 })
+  immutable_hash: string;
+
+  computeHash(): string {
+    const crypto = require("crypto");
+    const data = {
+      entity_id: this.entity_id,
+      version: this.version,
+      snapshot: this.snapshot,
+      operation: this.operation,
+      created_by: this.created_by,
+      created_at: this.created_at.toISOString(),
+    };
+    return crypto.createHash("sha256").update(JSON.stringify(data)).digest("hex");
+  }
+}
