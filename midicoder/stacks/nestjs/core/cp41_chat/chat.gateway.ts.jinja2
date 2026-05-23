@@ -1,0 +1,420 @@
+/**
+ * ChatGateway - WebSocket Gateway cho Chat & Messaging.
+ *
+ * Cung cấp kết nối realtime cho hệ thống chat:
+ * - Kết nối/ngắt kết nối client
+ * - Gửi/nhận tin nhắn realtime
+ * - Subscribe/unsubscribe theo hội thoại (topic-based rooms)
+ * - Broadcast tin nhắn đến tất cả client trong room
+ *
+ * Cấu hình:
+ * - Namespace: /ws/chat
+ * - Transport: WebSocket (với WS adapter tùy chọn)
+ *
+ * Events:
+ * - connect: client kết nối
+ * - disconnect: client ngắt kết nối
+ * - send_message: gửi tin nhắn realtime
+ * - join_room: tham gia phòng chat
+ * - leave_room: rời phòng chat
+ * - new_message: nhận tin nhắn mới (từ server)
+ * - notification: nhận thông báo (từ server)
+ *
+ * CP41: Chat & Messaging
+ * Sử dụng WebSocket: {{ use_websocket }}
+ * Sử dụng Redis: {{ use_redis }}
+ */
+
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  OnGatewayInit,
+  WsException,
+} from "@nestjs/websockets";
+import {
+  Injectable,
+  Logger,
+  Inject,
+  Optional,
+} from "@nestjs/common";
+import { Server, Socket } from "socket.io";
+import { ChatService } from "./chat.service";
+{% if use_redis %}
+import { ChatQueueService } from "./chat-queue.service";
+{% endif %}
+
+/**
+ * ChatGateway - WebSocket Gateway cho realtime messaging.
+ *
+ * Quản lý kết nối WebSocket và broadcast tin nhắn realtime:
+ * - onConnection: xử lý khi client kết nối, đăng ký vào room theo userId
+ * - onDisconnect: xử lý khi client ngắt kết nối, dọn dẹp room
+ * - send_message: nhận tin nhắn từ client, gọi ChatService để lưu và broadcast
+ * - join_room: client tham gia vào room hội thoại cụ thể
+ * - leave_room: client rời khỏi room hội thoại
+ *
+ * Topic-based rooms:
+ * - Mỗi hội thoại là một room: "chat:{conversationId}"
+ * - Client join room để nhận tin nhắn realtime của hội thoại đó
+ * - Khi có tin nhắn mới, server emit đến tất cả client trong room
+ *
+ * Redis pub/sub integration:
+ * - Nếu bật Redis, gateway subscribe đến channels để nhận
+ *   tin nhắn từ các instance server khác (horizontal scaling)
+ */
+@Injectable()
+@WebSocketGateway({
+  namespace: "ws/chat",
+  cors: {
+    origin: "*",
+    credentials: true,
+  },
+  pingInterval: 25000,
+  pingTimeout: 5000,
+})
+export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+  /**
+   * Server Socket.io instance.
+   */
+  @WebSocketServer()
+  server: Server;
+
+  /**
+   * Logger instance.
+   */
+  private readonly logger = new Logger("ChatGateway");
+
+  /**
+   * Constructor.
+   *
+   * @param chatService - ChatService instance
+   * @param queueService - ChatQueueService cho Redis pub/sub (optional)
+   */
+  constructor(
+    private readonly chatService: ChatService,
+{% if use_redis %}
+    @Optional()
+    @Inject(ChatQueueService)
+    private readonly queueService: ChatQueueService,
+{% endif %}
+  ) {}
+
+  // ========================================================================
+  // Gateway Lifecycle
+  // ========================================================================
+
+  /**
+   * Xử lý khi gateway khởi tạo.
+   *
+   * Đăng ký các middleware và cấu hình server.
+   */
+  afterInit(server: Server): void {
+    this.logger.log("ChatGateway đã khởi tạo trên namespace: /ws/chat");
+
+{% if use_redis %}
+    // Nếu có Redis, subscribe đến các channel để nhận tin nhắn từ các instance khác
+    if (this.queueService) {
+      this.queueService.subscribe("chat:gateway", (channel, message) => {
+        this.logger.debug("Nhận tin nhắn từ Redis channel: " + channel);
+        const data = JSON.parse(message);
+
+        // Broadcast đến tất cả client trong room
+        if (data.conversationId) {
+          this.server.to("chat:" + data.conversationId).emit("new_message", data.message);
+        } else {
+          // Broadcast đến tất cả client
+          this.server.emit("new_message", data.message);
+        }
+      });
+
+      this.logger.log("Đã subscribe đến Redis channel: chat:gateway");
+    }
+{% endif %}
+  }
+
+  /**
+   * Xử lý khi client kết nối.
+   *
+   * Lưu thông tin client và đăng ký vào room theo userId.
+   *
+   * @param client - Socket kết nối
+   */
+  handleConnection(client: Socket): void {
+    this.logger.log("Client kết nối: " + client.id);
+
+    // Lấy userId từ handshake data (token, query params, v.v.)
+    const userId = client.handshake.query.userId as string;
+
+    if (userId) {
+      // Lưu userId vào socket data
+      (client as any).userId = userId;
+
+      // Đăng ký client vào room theo userId (cho notification cá nhân)
+      client.join("user:" + userId);
+
+      this.logger.log(
+        "Client " + client.id + " đã đăng ký với userId: " + userId,
+      );
+    }
+
+    // Gửi sự kiện kết nối thành công
+    client.emit("connected", {
+      clientId: client.id,
+      userId,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Xử lý khi client ngắt kết nối.
+   *
+   * Dọn dẹp room và ghi log.
+   *
+   * @param client - Socket ngắt kết nối
+   */
+  handleDisconnect(client: Socket): void {
+    const userId = (client as any).userId;
+
+    this.logger.log(
+      "Client ngắt kết nối: " +
+        client.id +
+        (userId ? " (userId: " + userId + ")" : ""),
+    );
+
+    // Tự động rời khỏi tất cả rooms
+    client.rooms.forEach((room) => {
+      client.leave(room);
+    });
+  }
+
+  // ========================================================================
+  // Message Handling
+  // ========================================================================
+
+  /**
+   * Xử lý khi client gửi tin nhắn.
+   *
+   * Lưu tin nhắn vào database và broadcast đến các client khác trong room.
+   *
+   * @param client - Socket gửi tin nhắn
+   * @param data - Dữ liệu tin nhắn { conversationId, senderId, messageType, content, attachments, replyTo }
+   */
+  @SubscribeMessage("send_message")
+  async handleMessage(
+    client: Socket,
+    data: any,
+  ): Promise<void> {
+    const { conversationId, senderId, messageType, content, attachments, replyTo } = data;
+
+    // Validate dữ liệu cơ bản
+    if (!conversationId || !senderId || !content) {
+      throw new WsException(
+        "Dữ liệu tin nhắn không hợp lệ: thiếu conversationId, senderId, hoặc content",
+      );
+    }
+
+    // Kiểm tra độ dài nội dung tối đa 4096 ký tự
+    if (content.length > 4096) {
+      throw new WsException(
+        "Nội dung tin nhắn không được vượt quá 4096 ký tự (hiện tại: " + content.length + " ký tự)",
+      );
+    }
+
+    try {
+      // Gọi ChatService để lưu tin nhắn
+      const message = await this.chatService.sendMessage(conversationId, {
+        senderId,
+        messageType: messageType || "text",
+        content,
+        attachments: attachments || [],
+        replyTo: replyTo || null,
+      });
+
+      // Broadcast tin nhắn mới đến tất cả client trong room (trừ người gửi)
+      this.server.to("chat:" + conversationId).emit("new_message", {
+        messageId: message.messageId,
+        conversationId: message.conversationId,
+        senderId: message.senderId,
+        messageType: message.messageType,
+        content: message.content,
+        attachments: message.attachments,
+        replyTo: message.replyTo,
+        status: message.status,
+        createdAt: message.createdAt,
+      });
+
+      // Gửi xác nhận đến người gửi
+      client.emit("message_sent", {
+        messageId: message.messageId,
+        status: message.status,
+        createdAt: message.createdAt,
+      });
+
+      this.logger.log(
+        "Tin nhắn đã được gửi qua WebSocket: " +
+          message.messageId +
+          " trong hội thoại: " +
+          conversationId,
+      );
+    } catch (error) {
+      this.logger.error("Lỗi khi gửi tin nhắn qua WebSocket: " + error.message);
+      throw new WsException(error.message);
+    }
+  }
+
+  /**
+   * Xử lý khi client tham gia room hội thoại.
+   *
+   * @param client - Socket kết nối
+   * @param data - Dữ liệu { conversationId }
+   */
+  @SubscribeMessage("join_room")
+  handleJoinRoom(
+    client: Socket,
+    data: any,
+  ): Promise<void> {
+    const { conversationId } = data;
+
+    if (!conversationId) {
+      throw new WsException("conversationId không được để trống");
+    }
+
+    // Tham gia room
+    client.join("chat:" + conversationId);
+
+    this.logger.log(
+      "Client " +
+        client.id +
+        " đã tham gia room: chat:" +
+        conversationId,
+    );
+
+    // Gửi xác nhận
+    client.emit("room_joined", {
+      room: "chat:" + conversationId,
+      conversationId,
+    });
+
+    return Promise.resolve();
+  }
+
+  /**
+   * Xử lý khi client rời room hội thoại.
+   *
+   * @param client - Socket kết nối
+   * @param data - Dữ liệu { conversationId }
+   */
+  @SubscribeMessage("leave_room")
+  handleLeaveRoom(
+    client: Socket,
+    data: any,
+  ): Promise<void> {
+    const { conversationId } = data;
+
+    if (!conversationId) {
+      throw new WsException("conversationId không được để trống");
+    }
+
+    // Rời room
+    client.leave("chat:" + conversationId);
+
+    this.logger.log(
+      "Client " +
+        client.id +
+        " đã rời room: chat:" +
+        conversationId,
+    );
+
+    // Gửi xác nhận
+    client.emit("room_left", {
+      room: "chat:" + conversationId,
+      conversationId,
+    });
+
+    return Promise.resolve();
+  }
+
+  /**
+   * Xử lý khi client đánh dấu tin nhắn đã đọc.
+   *
+   * @param client - Socket kết nối
+   * @param data - Dữ liệu { conversationId, messageId, userId }
+   */
+  @SubscribeMessage("mark_read")
+  async handleMarkRead(
+    client: Socket,
+    data: any,
+  ): Promise<void> {
+    const { conversationId, messageId, userId } = data;
+
+    if (!conversationId || !messageId || !userId) {
+      throw new WsException("Thiếu conversationId, messageId, hoặc userId");
+    }
+
+    try {
+      await this.chatService.markAsRead(conversationId, messageId, {
+        userId,
+        receiptType: "read",
+      });
+
+      // Broadcast thông báo đã đọc đến các client khác trong room
+      this.server.to("chat:" + conversationId).emit("message_read", {
+        messageId,
+        userId,
+        conversationId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      this.logger.error("Lỗi khi đánh dấu đã đọc: " + error.message);
+      throw new WsException(error.message);
+    }
+  }
+
+  /**
+   * Broadcast tin nhắn đến tất cả client trong room.
+   *
+   * Phương thức public để có thể gọi từ ChatService.
+   *
+   * @param conversationId - ID hội thoại
+   * @param event - Tên sự kiện
+   * @param data - Dữ liệu gửi đi
+   */
+  broadcastToRoom(
+    conversationId: string,
+    event: string,
+    data: any,
+  ): void {
+    this.server.to("chat:" + conversationId).emit(event, data);
+  }
+
+  /**
+   * Gửi thông báo đến user cụ thể.
+   *
+   * @param userId - ID người nhận
+   * @param event - Tên sự kiện
+   * @param data - Dữ liệu gửi đi
+   */
+  sendToUser(
+    userId: string,
+    event: string,
+    data: any,
+  ): void {
+    this.server.to("user:" + userId).emit(event, data);
+  }
+
+  /**
+   * Broadcast đến tất cả client.
+   *
+   * @param event - Tên sự kiện
+   * @param data - Dữ liệu gửi đi
+   */
+  broadcastToAll(
+    event: string,
+    data: any,
+  ): void {
+    this.server.emit(event, data);
+  }
+}

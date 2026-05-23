@@ -1,0 +1,573 @@
+/**
+ * ChatQueueService - Redis Pub/Sub Queue Service cho Chat & Messaging.
+ *
+ * Cung cấp cơ chế pub/sub qua Redis để broadcast tin nhắn realtime
+ * giữa các instance server (horizontal scaling):
+ * - Publish tin nhắn đến channel cụ thể
+ * - Subscribe/unsubscribe đến topics
+ * - Message handler cho tin nhắn nhận được
+ * - Connection retry logic khi Redis disconnect
+ *
+ * Channels:
+ * - chat:{conversationId} - tin nhắn của hội thoại cụ thể
+ * - chat:gateway - broadcast đến tất cả gateway instances
+ *
+ * CP41: Chat & Messaging
+ * Redis URL: {{ redis_url }}
+ * Sử dụng Redis: {{ use_redis }}
+ */
+
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+  Inject,
+  Optional,
+} from "@nestjs/common";
+import Redis from "ioredis";
+
+/**
+ * Cấu hình mặc định cho Redis connection.
+ */
+const REDIS_DEFAULTS = {
+  /** Số lần retry kết nối tối đa */
+  maxRetryAttempts: 10,
+  /** Delay retry ban đầu (ms) */
+  retryDelay: 1000,
+  /** Delay retry tối đa (ms) - exponential backoff */
+  maxRetryDelay: 30000,
+  /** Thời gian timeout kết nối (ms) */
+  connectTimeout: 10000,
+  /** Ping interval để kiểm tra kết nối (ms) */
+  pingInterval: 30000,
+};
+
+/**
+ * Callback xử lý tin nhắn nhận được từ Redis.
+ *
+ * @param channel - Tên channel nhận được tin nhắn
+ * @param message - Nội dung tin nhắn (string)
+ */
+export type MessageCallback = (channel: string, message: string) => void;
+
+/**
+ * ChatQueueService - Redis pub/sub queue cho realtime messaging.
+ *
+ * Quản lý hai Redis client:
+ * - publisher: dùng để publish tin nhắn đến channels
+ * - subscriber: dùng để subscribe và nhận tin nhắn (fork của publisher)
+ *
+ * Connection lifecycle:
+ * - onModuleInit: kết nối Redis, setup retry và error handlers
+ * - onModuleDestroy: ngắt kết nối và unsubscribe tất cả channels
+ *
+ * Retry logic:
+ * - Khi Redis disconnect, tự động retry với exponential backoff
+ * - maxRetryAttempts: số lần retry tối đa
+ * - retryDelay: delay ban đầu, tăng gấp đôi mỗi lần retry
+ * - maxRetryDelay: delay tối đa giữa các lần retry
+ *
+ * Usage:
+ * // Publish tin nhắn
+ * await queueService.publish("chat:conv_123", JSON.stringify(message));
+ *
+ * // Subscribe đến channel
+ * queueService.subscribe("chat:conv_123", (channel, message) => {
+ *   // Xử lý tin nhắn
+ * });
+ *
+ * // Unsubscribe
+ * queueService.unsubscribe("chat:conv_123");
+ */
+@Injectable()
+export class ChatQueueService implements OnModuleInit, OnModuleDestroy {
+  /**
+   * Logger instance.
+   */
+  private readonly logger = new Logger("ChatQueueService");
+
+  /**
+   * Redis publisher client.
+   */
+  private publisher: Redis | null = null;
+
+  /**
+   * Redis subscriber client (fork từ publisher).
+   */
+  private subscriber: Redis | null = null;
+
+  /**
+   * Danh sách channels đang subscribe.
+   */
+  private subscribedChannels: Map<string, MessageCallback[]> = new Map();
+
+  /**
+   * Ping interval ID.
+   */
+  private pingIntervalId: NodeJS.Timeout | null = null;
+
+  /**
+   * Retry attempt counter.
+   */
+  private retryAttempts = 0;
+
+  /**
+   * Redis URL từ config.
+   */
+  private readonly redisUrl: string;
+
+  /**
+   * Constructor.
+   *
+   * @param redisUrl - URL kết nối Redis (optional, default từ env)
+   */
+  constructor(
+{% if use_redis %}
+    @Optional()
+    @Inject("REDIS_URL")
+    redisUrl?: string,
+{% else %}
+    @Optional()
+    @Inject("REDIS_URL")
+    redisUrl?: string,
+{% endif %}
+  ) {
+    this.redisUrl = redisUrl || "redis://localhost:6379";
+  }
+
+  // ========================================================================
+  // Lifecycle Hooks
+  // ========================================================================
+
+  /**
+   * Khởi tạo Redis connection khi module init.
+   *
+   * Tạo publisher và subscriber client, setup error handlers.
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      this.logger.log("Đang kết nối Redis: " + this.redisUrl);
+
+      // Tạo publisher client
+      this.publisher = new Redis(this.redisUrl, {
+        connectTimeout: REDIS_DEFAULTS.connectTimeout,
+        lazyConnect: true,
+      });
+
+      // Tạo subscriber client (fork từ publisher - dùng cùng kết nối)
+      this.subscriber = this.publisher.duplicate();
+
+      // Đợi kết nối
+      await this.publisher.connect();
+      await this.subscriber.connect();
+
+      // Setup error handlers
+      this.setupErrorHandler(this.publisher, "Publisher");
+      this.setupErrorHandler(this.subscriber, "Subscriber");
+
+      // Setup reconnect handlers
+      this.setupReconnectHandler(this.publisher, "Publisher");
+      this.setupReconnectHandler(this.subscriber, "Subscriber");
+
+      // Reset retry counter
+      this.retryAttempts = 0;
+
+      // Bắt đầu ping interval để kiểm tra kết nối
+      this.startPingInterval();
+
+      this.logger.log("Đã kết nối Redis thành công");
+    } catch (error) {
+      this.logger.error("Lỗi kết nối Redis: " + error.message);
+      // Không throw error - cho phép app chạy mà không có Redis
+      // (fallback: không broadcast realtime)
+    }
+  }
+
+  /**
+   * Dọn dẹp Redis connection khi module destroy.
+   *
+   * Ngắt kết nối và unsubscribe tất cả channels.
+   */
+  async onModuleDestroy(): Promise<void> {
+    this.logger.log("Đang ngắt kết nối Redis");
+
+    // Dừng ping interval
+    this.stopPingInterval();
+
+    // Unsubscribe tất cả channels
+    if (this.subscriber) {
+      const channels = Array.from(this.subscribedChannels.keys());
+      if (channels.length > 0) {
+        await this.subscriber.unsubscribe(...channels);
+      }
+      await this.subscriber.quit();
+      this.subscriber = null;
+    }
+
+    // Ngắt kết nối publisher
+    if (this.publisher) {
+      await this.publisher.quit();
+      this.publisher = null;
+    }
+
+    this.subscribedChannels.clear();
+
+    this.logger.log("Đã ngắt kết nối Redis");
+  }
+
+  // ========================================================================
+  // Publish Methods
+  // ========================================================================
+
+  /**
+   * Publish tin nhắn đến channel.
+   *
+   * @param channel - Tên channel (ví dụ: "chat:conv_123")
+   * @param message - Nội dung tin nhắn (string, thường là JSON)
+   * @returns Số lượng client nhận được tin nhắn
+   */
+  async publish(channel: string, message: string): Promise<number> {
+    if (!this.publisher) {
+      this.logger.warn(
+        "Không thể publish - Redis chưa kết nối. Channel: " + channel,
+      );
+      return 0;
+    }
+
+    try {
+      const receivers = await this.publisher.publish(channel, message);
+      this.logger.debug(
+        "Đã publish đến channel " +
+          channel +
+          " - " +
+          receivers +
+          " receivers",
+      );
+      return receivers;
+    } catch (error) {
+      this.logger.error(
+        "Lỗi publish đến channel " + channel + ": " + error.message,
+      );
+      return 0;
+    }
+  }
+
+  /**
+   * Broadcast tin nhắn đến hội thoại cụ thể.
+   *
+   * Helper method để publish đến channel "chat:{conversationId}".
+   *
+   * @param conversationId - ID hội thoại
+   * @param message - Dữ liệu tin nhắn (object, sẽ được stringify)
+   * @returns Số lượng client nhận được tin nhắn
+   */
+  async broadcastToConversation(
+    conversationId: string,
+    message: any,
+  ): Promise<number> {
+    const channel = "chat:" + conversationId;
+    return this.publish(channel, JSON.stringify(message));
+  }
+
+  // ========================================================================
+  // Subscribe Methods
+  // ========================================================================
+
+  /**
+   * Subscribe đến channel với callback.
+   *
+   * Nếu đã subscribe channel này, thêm callback vào danh sách.
+   *
+   * @param channel - Tên channel cần subscribe
+   * @param callback - Callback xử lý tin nhắn nhận được
+   */
+  async subscribe(channel: string, callback: MessageCallback): Promise<void> {
+    if (!this.subscriber) {
+      this.logger.warn(
+        "Không thể subscribe - Redis chưa kết nối. Channel: " + channel,
+      );
+      return;
+    }
+
+    try {
+      // Thêm callback vào danh sách
+      if (!this.subscribedChannels.has(channel)) {
+        this.subscribedChannels.set(channel, []);
+      }
+      this.subscribedChannels.get(channel)!.push(callback);
+
+      // Subscribe đến channel (nếu chưa subscribe)
+      const currentSubs = await this.getSubscriberChannels();
+      if (!currentSubs.includes(channel)) {
+        await this.subscriber.subscribe(channel, this.messageHandler.bind(this));
+      }
+
+      this.logger.log("Đã subscribe channel: " + channel);
+    } catch (error) {
+      this.logger.error(
+        "Lỗi subscribe channel " + channel + ": " + error.message,
+      );
+    }
+  }
+
+  /**
+   * Unsubscribe khỏi channel.
+   *
+   * @param channel - Tên channel cần unsubscribe
+   * @param callback - Callback cụ thể cần xóa (nếu không truyền, xóa tất cả callbacks)
+   */
+  async unsubscribe(
+    channel: string,
+    callback?: MessageCallback,
+  ): Promise<void> {
+    if (!this.subscriber) {
+      return;
+    }
+
+    try {
+      if (callback) {
+        // Xóa callback cụ thể
+        const callbacks = this.subscribedChannels.get(channel) || [];
+        const index = callbacks.indexOf(callback);
+        if (index > -1) {
+          callbacks.splice(index, 1);
+        }
+
+        // Nếu không còn callback nào, unsubscribe channel
+        if (callbacks.length === 0) {
+          this.subscribedChannels.delete(channel);
+          await this.subscriber.unsubscribe(channel);
+        }
+      } else {
+        // Xóa tất cả callbacks và unsubscribe channel
+        this.subscribedChannels.delete(channel);
+        await this.subscriber.unsubscribe(channel);
+      }
+
+      this.logger.log("Đã unsubscribe channel: " + channel);
+    } catch (error) {
+      this.logger.error(
+        "Lỗi unsubscribe channel " + channel + ": " + error.message,
+      );
+    }
+  }
+
+  // ========================================================================
+  // Message Handler
+  // ========================================================================
+
+  /**
+   * Message handler - xử lý tin nhắn nhận được từ Redis.
+   *
+   * Gọi tất cả callbacks đã đăng ký cho channel.
+   *
+   * @param channel - Tên channel nhận được tin nhắn
+   * @param message - Nội dung tin nhắn (string)
+   */
+  private messageHandler(channel: string, message: string): void {
+    const callbacks = this.subscribedChannels.get(channel);
+
+    if (!callbacks || callbacks.length === 0) {
+      this.logger.debug(
+        "Không có callback cho channel: " + channel,
+      );
+      return;
+    }
+
+    // Gọi tất cả callbacks cho channel
+    for (const callback of callbacks) {
+      try {
+        callback(channel, message);
+      } catch (error) {
+        this.logger.error(
+          "Lỗi trong callback cho channel " +
+            channel +
+            ": " +
+            error.message,
+        );
+      }
+    }
+  }
+
+  // ========================================================================
+  // Connection Management
+  // ========================================================================
+
+  /**
+   * Setup error handler cho Redis client.
+   *
+   * @param client - Redis client
+   * @param name - Tên client (cho logging)
+   */
+  private setupErrorHandler(client: Redis, name: string): void {
+    client.on("error", (error) => {
+      this.logger.error(
+        "Redis " + name + " error: " + error.message,
+      );
+    });
+
+    client.on("close", () => {
+      this.logger.warn("Redis " + name + " đã ngắt kết nối");
+      this.attemptReconnect(name);
+    });
+
+    client.on("reconnecting", () => {
+      this.logger.log("Redis " + name + " đang reconnect...");
+    });
+
+    client.on("connect", () => {
+      this.logger.log("Redis " + name + " đã kết nối");
+      this.retryAttempts = 0;
+    });
+  }
+
+  /**
+   * Setup reconnect handler cho Redis client.
+   *
+   * @param client - Redis client
+   * @param name - Tên client (cho logging)
+   */
+  private setupReconnectHandler(client: Redis, name: string): void {
+    client.on("error", async (error) => {
+      this.logger.error(
+        "Redis " + name + " error, attempting reconnect: " + error.message,
+      );
+      await this.attemptReconnect(name);
+    });
+  }
+
+  /**
+   * Attempt reconnect với exponential backoff.
+   *
+   * @param name - Tên client đang reconnect
+   */
+  private async attemptReconnect(name: string): Promise<void> {
+    if (this.retryAttempts >= REDIS_DEFAULTS.maxRetryAttempts) {
+      this.logger.error(
+        "Đã vượt quá số lần retry tối đa cho Redis " +
+          name +
+          " (" +
+          REDIS_DEFAULTS.maxRetryAttempts +
+          " attempts)",
+      );
+      return;
+    }
+
+    this.retryAttempts++;
+
+    // Exponential backoff: delay * 2^(attempt-1), max maxRetryDelay
+    const delay = Math.min(
+      REDIS_DEFAULTS.retryDelay * Math.pow(2, this.retryAttempts - 1),
+      REDIS_DEFAULTS.maxRetryDelay,
+    );
+
+    this.logger.log(
+      "Redis " +
+        name +
+        " retry #" +
+        this.retryAttempts +
+        " sau " +
+        delay +
+        "ms",
+    );
+
+    // Wait for delay
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    try {
+      if (this.publisher && !this.publisher.status) {
+        await this.publisher.connect();
+        this.logger.log("Redis publisher đã reconnect thành công");
+      }
+
+      if (this.subscriber && !this.subscriber.status) {
+        await this.subscriber.connect();
+
+        // Re-subscribe đến tất cả channels
+        const channels = Array.from(this.subscribedChannels.keys());
+        if (channels.length > 0) {
+          await this.subscriber.subscribe(channels);
+          this.logger.log(
+            "Đã re-subscribe đến " +
+              channels.length +
+              " channels",
+          );
+        }
+      }
+
+      // Reset retry counter nếu reconnect thành công
+      this.retryAttempts = 0;
+    } catch (error) {
+      this.logger.error(
+        "Lỗi reconnect Redis " + name + ": " + error.message,
+      );
+      // Recursive retry
+      await this.attemptReconnect(name);
+    }
+  }
+
+  /**
+   * Start ping interval để kiểm tra kết nối.
+   */
+  private startPingInterval(): void {
+    this.pingIntervalId = setInterval(async () => {
+      if (this.publisher && this.publisher.status === "ready") {
+        try {
+          await this.publisher.ping();
+        } catch (error) {
+          this.logger.warn("Redis ping thất bại: " + error.message);
+          this.attemptReconnect("Publisher");
+        }
+      }
+    }, REDIS_DEFAULTS.pingInterval);
+  }
+
+  /**
+   * Stop ping interval.
+   */
+  private stopPingInterval(): void {
+    if (this.pingIntervalId) {
+      clearInterval(this.pingIntervalId);
+      this.pingIntervalId = null;
+    }
+  }
+
+  /**
+   * Lấy danh sách channels đang subscribe.
+   *
+   * @returns Danh sách channel names
+   */
+  private async getSubscriberChannels(): Promise<string[]> {
+    if (!this.subscriber) {
+      return [];
+    }
+
+    try {
+      // ioredis không có method trực tiếp để lấy subscribed channels
+      // Sử dụng Map keys thay thế
+      return Array.from(this.subscribedChannels.keys());
+    } catch (error) {
+      this.logger.error("Lỗi lấy danh sách subscribed channels: " + error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Kiểm tra Redis có đang kết nối không.
+   *
+   * @returns True nếu publisher đang trong trạng thái "ready"
+   */
+  isConnected(): boolean {
+    return this.publisher !== null && this.publisher.status === "ready";
+  }
+
+  /**
+   * Lấy số lượng channels đang subscribe.
+   *
+   * @returns Số lượng channels
+   */
+  getSubscribedChannelCount(): number {
+    return this.subscribedChannels.size;
+  }
+}

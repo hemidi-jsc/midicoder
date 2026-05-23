@@ -1,0 +1,169 @@
+/**
+ * useNotifications — React hook cho thong bao: SSE subscription, dem chua doc, doc lai.
+ * Sinh boi CP41 ChatEmitter.
+ *
+ * So luong thong bao: {{ num_notifications }}
+ */
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+/* ---- Giao dien thong bao ---- */
+export type NotificationType = 'new_message' | 'mention' | 'reply' | 'system' | 'mention_reply';
+
+export interface NotificationItem {
+    notification_id: string;
+    conversation_id: string;
+    target_user_id: string;
+    notification_type: NotificationType;
+    message_id: string | null;
+    is_read: boolean;
+    created_at: string;
+    preview?: string;
+}
+
+export interface UseNotificationsReturn {
+    notifications: NotificationItem[];
+    unreadCount: number;
+    markAsRead: (notificationId: string) => void;
+    markAllAsRead: () => void;
+    sseError: string | null;
+    isSseConnected: boolean;
+}
+
+/* Kieu du lieu tu SSE */
+type SseData = {
+    type: 'notification' | 'connected' | 'error';
+    payload?: NotificationItem;
+    error?: string;
+};
+
+/* URL mặc định cho SSE endpoint */
+const DEFAULT_SSE_URL = '/api/chat/notifications/stream';
+
+/* ---- Hook chinh: useNotifications ---- */
+export function useNotifications(sseUrl: string = DEFAULT_SSE_URL): UseNotificationsReturn {
+    const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+    const [isSseConnected, setIsSseConnected] = useState(false);
+    const [sseError, setSseError] = useState<string | null>(null);
+
+    const eventSourceRef = useRef<EventSource | null>(null);
+    const reconnectTimerRef = useRef<number | null>(null);
+
+    /* Dem thong bao chua doc */
+    const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+    /* Ket noi SSE de nhan thong bao realtime */
+    const connectSSE = useCallback(() => {
+{% if use_websocket %}
+        // Ngat ket noi cu neu co
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+        }
+
+        try {
+            const es = new EventSource(sseUrl);
+            eventSourceRef.current = es;
+
+            es.onopen = () => {
+                setIsSseConnected(true);
+                setSseError(null);
+            };
+
+            es.addEventListener('notification', (event) => {
+                try {
+                    const data: SseData = JSON.parse(event.data);
+                    if (data.type === 'notification' && data.payload) {
+                        setNotifications((prev) => {
+                            // Tra suat neu da co thong bao nay
+                            if (prev.find((n) => n.notification_id === data.payload!.notification_id)) return prev;
+                            return [data.payload!, ...prev];
+                        });
+                    }
+                } catch {
+                    setSseError('Loi giai ma thong bao SSE');
+                }
+            });
+
+            es.addEventListener('error_event', (event) => {
+                try {
+                    const data: SseData = JSON.parse(event.data);
+                    if (data.type === 'error') {
+                        setSseError(data.error || 'Co loi tu server');
+                    }
+                } catch {
+                    setSseError('Loi tu server SSE');
+                }
+            });
+
+            es.onerror = () => {
+                setIsSseConnected(false);
+                setSseError('Ngat ket noi SSE — dang ket lai...');
+                es.close();
+                // Tu dong ket lai sau 5 giay
+                reconnectTimerRef.current = window.setTimeout(() => {
+                    connectSSE();
+                }, 5000);
+            };
+        } catch (e) {
+            setSseError(e instanceof Error ? e.message : 'Khong the ket noi SSE');
+        }
+{% else %}
+        // SSE bi tat — khong ket noi
+        setIsSseConnected(false);
+{% endif %}
+    }, [sseUrl]);
+
+    /* Ket noi khi mount */
+    useEffect(() => {
+        connectSSE();
+        return () => {
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close();
+            }
+            if (reconnectTimerRef.current) {
+                clearTimeout(reconnectTimerRef.current);
+            }
+        };
+    }, [connectSSE]);
+
+    /* Tac vu doc mot thong bao */
+    const markAsRead = useCallback((notificationId: string) => {
+        setNotifications((prev) =>
+            prev.map((n) =>
+                n.notification_id === notificationId ? { ...n, is_read: true } : n
+            )
+        );
+
+        // Goi API de luu lai trang thai tren server
+        fetch('/api/chat/notifications/' + notificationId + '/read', {
+            method: 'POST',
+        }).catch(() => {
+            // Im llang — da cap nhat UI optimistic
+        });
+    }, []);
+
+    /* Tac vu doc tat ca thong bao */
+    const markAllAsRead = useCallback(() => {
+        setNotifications((prev) =>
+            prev.map((n) => ({ ...n, is_read: true }))
+        );
+
+        // Goi API de luu lai trang thai tren server
+        fetch('/api/chat/notifications/read-all', {
+            method: 'POST',
+        }).catch(() => {
+            // Im llang — da cap nhat UI optimistic
+        });
+    }, []);
+
+    return {
+        notifications,
+        unreadCount,
+        markAsRead,
+        markAllAsRead,
+        sseError,
+        isSseConnected,
+    };
+}
+
+export default useNotifications;

@@ -1,0 +1,136 @@
+/**
+ * ChatModule - NestJS Module cho Chat & Messaging stack.
+ *
+ * Khởi tạo và kết nối tất cả các component của hệ thống chat:
+ * - TypeORM entities (Conversation, ChatMessage, ConversationParticipant, ReadReceipt, Notification)
+ * - CRUD Service (ChatService)
+ * - REST Controller (ChatController)
+ * - WebSocket Gateway (ChatGateway)
+ * - Redis Pub/Sub Queue (ChatQueueService)
+ *
+ * Hỗ trợ conditional import cho Redis/WebSocket:
+ * - Nếu use_redis = true: import ChatQueueService cho pub/sub
+ * - Nếu use_websocket = true: import ChatGateway cho realtime
+ *
+ * Redis URL: {{ redis_url }}
+ * Sử dụng Redis: {{ use_redis }}
+ * Sử dụng WebSocket: {{ use_websocket }}
+ * Tổng số hội thoại: {{ num_conversations }}
+ * Tổng số tin nhắn: {{ num_messages }}
+ *
+ * CP41: Chat & Messaging
+ */
+
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import {
+  Conversation,
+  ChatMessage,
+  ConversationParticipant,
+  ReadReceipt,
+  Notification,
+} from "./chat.entity";
+import { ChatController } from "./chat.controller";
+import { ChatService } from "./chat.service";
+import { ChatGateway } from "./chat.gateway";
+{% if use_redis %}
+import { ChatQueueService } from "./chat-queue.service";
+{% endif %}
+
+/**
+ * ChatModule - module cho Chat & Messaging.
+ *
+ * Structure:
+ * - Imports:
+ *   - TypeOrmModule.forFeature() - 5 entities cho chat
+ *   - (conditional) Redis module nếu use_redis = true
+ *
+ * - Controllers:
+ *   - ChatController - REST API cho hội thoại, tin nhắn, thông báo
+ *
+ * - Providers:
+ *   - ChatService - CRUD và business logic
+ *   - ChatGateway - WebSocket realtime messaging
+ *   - (conditional) ChatQueueService - Redis pub/sub
+ *
+ * - Exports:
+ *   - ChatService - để module khác có thể query hội thoại/tin nhắn
+ *   - ChatGateway - để module khác có thể broadcast messages
+ *   - (conditional) ChatQueueService - để module khác publish messages
+ *
+ * Usage trong AppModule:
+ * @Module({
+ *   imports: [
+ *     ChatModule,
+ *   ],
+ * })
+ * export class AppModule {}
+ *
+ * Usage để gửi tin nhắn từ module khác:
+ * constructor(
+ *   private readonly chatService: ChatService,
+ * ) {}
+ *
+ * await this.chatService.sendMessage(conversationId, sendDto);
+ *
+ * Usage để broadcast realtime:
+ * constructor(
+ *   private readonly chatGateway: ChatGateway,
+ * ) {}
+ *
+ * this.chatGateway.broadcastToRoom(conversationId, "new_message", message);
+ */
+@Module({
+  imports: [
+    // TypeORM - quản lý các entity cho hệ thống chat
+    // - Conversation: hội thoại/phòng chat
+    // - ChatMessage: tin nhắn
+    // - ConversationParticipant: người tham gia
+    // - ReadReceipt: xác nhận đọc
+    // - Notification: thông báo
+    TypeOrmModule.forFeature([
+      Conversation,
+      ChatMessage,
+      ConversationParticipant,
+      ReadReceipt,
+      Notification,
+    ]),
+  ],
+  controllers: [
+    // REST Controller cho chat API
+    // - GET /chat/conversations - list hội thoại
+    // - POST /chat/conversations - tạo hội thoại
+    // - POST /chat/conversations/:id/participants - thêm người tham gia
+    // - GET /chat/conversations/:id/messages - list tin nhắn
+    // - POST /chat/conversations/:id/messages - gửi tin nhắn
+    // - POST /chat/conversations/:id/messages/:msgId/read - đánh dấu đã đọc
+    // - GET /chat/notifications - list thông báo
+    // - POST /chat/notifications/:id/read - đánh dấu thông báo đã đọc
+    ChatController,
+  ],
+  providers: [
+    // Service chính cho chat - CRUD và business logic
+    ChatService,
+
+    // WebSocket Gateway - realtime messaging
+    // Namespace: /ws/chat
+    // Events: connect, disconnect, send_message, join_room, leave_room, mark_read
+    ChatGateway,
+{% if use_redis %}
+
+    // Redis Pub/Sub Queue - broadcast message đến các instance server khác
+    // Sử dụng Redis channel: chat:{conversationId}
+    // Config Redis connection: {{ redis_url }}
+    ChatQueueService,
+{% endif %}
+  ],
+  exports: [
+    // Export các service để module khác có thể inject
+    ChatService,
+    ChatGateway,
+{% if use_redis %}
+    ChatQueueService,
+{% endif %}
+  ],
+})
+export class ChatModule {}

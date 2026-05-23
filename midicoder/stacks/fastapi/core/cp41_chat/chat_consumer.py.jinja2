@@ -1,0 +1,308 @@
+# ----------------------------------------------------------
+# CP41 Chat & Messaging — Redis pub/sub consumer
+# ----------------------------------------------------------
+# Sinh boi CP41ChatEmitter
+# Consumer: nghe de Redis channel "chat:{conversation_id}"
+# va broadcast den WebSocket clients
+# Su dung Redis: {{ use_redis | lower }}
+# URL Redis: {{ redis_url }}
+# ----------------------------------------------------------
+
+import asyncio
+import json
+import logging
+import time
+from typing import Any, Dict, Optional
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+# DOI SOI KET NOI REDIS
+REDIS_RETRY_DELAY = 5        # Giay cho lan retry Redis dau tien
+REDIS_MAX_RETRY_DELAY = 60   # Giay cho lan retry Redis toi da
+REDIS_RECONNECT_TIMEOUT = 30 # Giay timeout cho moi lan ket noi lai
+
+
+class ChatRedisConsumer:
+    """
+    Redis pub/sub consumer — nghe de cac channel chat:{conversation_id}
+    va broadcast tin nhan den cac WebSocket client dang ket noi.
+
+    Workflow:
+    1. Ket noi den Redis va subscribe cac channel chat:*
+    2. Khi co tin moi, giai ma JSON va gui den WebSocket manager
+    3. Xu ly ket noi mat va retry tu dong
+    4. Ho tro dynamic subscribe/unsubscribe khi client ket noi/ngat
+
+    Attributes:
+        redis_url: URL ket noi Redis.
+        websocket_manager: WebSocketManager de broadcast den client.
+    """
+
+    def __init__(
+        self,
+        redis_url: str,
+        websocket_manager: Any = None,
+    ) -> None:
+        """
+        Khoi tao Redis consumer.
+
+        Tham so:
+            redis_url: URL ket noi Redis (vi du: redis://localhost:6379).
+            websocket_manager: WebSocketManager de broadcast (tu chon).
+        """
+        self.redis_url = redis_url
+        self.websocket_manager = websocket_manager
+        self._redis = None
+        self._pubsub = None
+        self._running = False
+        self._subscribed_channels: Dict[str, bool] = {}
+        self._retry_count = 0
+
+    async def start(self) -> None:
+        """
+        Bat dau consumer — ket noi den Redis va bat dau nghe de.
+
+        Chiexec retry logic neu ket noi that bai.
+        """
+        self._running = True
+        await self._connect_redis()
+
+        logger.info(
+            "ChatRedisConsumer bat dau: redis_url=%s",
+            self.redis_url,
+        )
+
+        # Luong chu — nghe de cac tin nhan tu Redis
+        while self._running:
+            try:
+                if self._pubsub is None:
+                    await self._connect_redis()
+
+                async for message in self._pubsub.listen():
+                    await self._handle_message(message)
+
+            except asyncio.CancelledError:
+                logger.info("ChatRedisConsumer bi huy boi asyncio")
+                break
+
+            except Exception as e:
+                if self._running:
+                    logger.error(
+                        "ChatRedisConsumer loi trong luong chu: %s",
+                        str(e),
+                    )
+                    await self._wait_and_retry()
+
+        # Dong ket noi khi thoat
+        await self._disconnect()
+
+    async def stop(self) -> None:
+        """Dung consumer va dong ket noi Redis."""
+        self._running = False
+        await self._disconnect()
+        logger.info("ChatRedisConsumer da dung")
+
+    async def subscribe_conversation(self, conversation_id: str) -> None:
+        """
+        Subscribe vao mot hoi thoai moi.
+
+        Goi khi client moi ket noi WebSocket vao hoi thoai.
+
+        Tham so:
+            conversation_id: ID hoi thoai can subscribe.
+        """
+        channel = "chat:{}".format(conversation_id)
+
+        if channel not in self._subscribed_channels:
+            if self._pubsub is not None:
+                await self._pubsub.subscribe(channel)
+            self._subscribed_channels[channel] = True
+            logger.info(
+                "Da subscribe channel Redis: %s",
+                channel,
+            )
+
+    async def unsubscribe_conversation(self, conversation_id: str) -> None:
+        """
+        Unsubscribe khoi mot hoi thoai.
+
+        Goi khi khong con client nao ket noi voi hoi thoai.
+
+        Tham so:
+            conversation_id: ID hoi thoai can unsubscribe.
+        """
+        channel = "chat:{}".format(conversation_id)
+
+        if channel in self._subscribed_channels:
+            if self._pubsub is not None:
+                await self._pubsub.unsubscribe(channel)
+            del self._subscribed_channels[channel]
+            logger.info(
+                "Da unsubscribe channel Redis: %s",
+                channel,
+            )
+
+    async def _handle_message(self, message: Dict[str, Any]) -> None:
+        """
+        Xu ly tin nhan nhan duoc tu Redis pub/sub.
+
+        Giai ma JSON va broadcast den cac WebSocket client
+        dang ket noi trong hoi thoai.
+
+        Tham so:
+            message: Tu dict tu Redis pub/sub voi keys: type, channel, data.
+        """
+        if message.get("type") != "message":
+            return
+
+        channel = message.get("channel", "")
+        raw_data = message.get("data", "")
+
+        # Trich chuot conversation_id tu channel
+        if isinstance(channel, bytes):
+            channel = channel.decode("utf-8")
+
+        conversation_id = self._extract_conversation_id(channel)
+        if not conversation_id:
+            return
+
+        try:
+            if isinstance(raw_data, bytes):
+                raw_data = raw_data.decode("utf-8")
+            payload = json.loads(raw_data)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.error("Loi giai ma tin nhan Redis: %s", str(e))
+            return
+
+        # Broadcast den WebSocket clients
+        if self.websocket_manager is not None:
+            sent_count = await self.websocket_manager.broadcast_to_conversation(
+                conversation_id,
+                payload,
+            )
+            logger.debug(
+                "Da broadcast tu Redis den WebSocket: conversation=%s, sent=%d",
+                conversation_id,
+                sent_count,
+            )
+
+    async def _connect_redis(self) -> None:
+        """
+        Ket noi den Redis va khoi tao pub/sub.
+
+        Import dong redis de tranh loi neu Redis khong duoc cai dat.
+        """
+        try:
+            import redis.asyncio as aioredis
+
+            if self._redis is not None:
+                await self._redis.close()
+
+            self._redis = aioredis.from_url(
+                self.redis_url,
+                decode_responses=False,
+                socket_timeout=REDIS_RECONNECT_TIMEOUT,
+                socket_connect_timeout=REDIS_RECONNECT_TIMEOUT,
+                retry_on_timeout=True,
+            )
+            self._pubsub = self._redis.pubsub()
+            self._retry_count = 0
+
+            # Re-subscribe cac channel da co
+            for channel in list(self._subscribed_channels.keys()):
+                await self._pubsub.subscribe(channel)
+
+            logger.info(
+                "Da ket noi Redis: url=%s, channels=%d",
+                self.redis_url,
+                len(self._subscribed_channels),
+            )
+
+        except ImportError:
+            logger.error("Redis khong duoc cai dat. Cai dat bang: pip install redis[hiredis]")
+            raise
+
+        except Exception as e:
+            logger.error("Loi ket noi Redis: %s", str(e))
+            self._pubsub = None
+            raise
+
+    async def _disconnect(self) -> None:
+        """Dong ket noi Redis."""
+        try:
+            if self._pubsub is not None:
+                await self._pubsub.close()
+                self._pubsub = None
+            if self._redis is not None:
+                await self._redis.close()
+                self._redis = None
+        except Exception as e:
+            logger.warning("Loi khi dong ket noi Redis: %s", str(e))
+        self._subscribed_channels.clear()
+
+    async def _wait_and_retry(self) -> None:
+        """
+        Cho dai va retry ket noi Redis.
+
+        Su dung exponential backoff: delay tang dan toi DOI SOI KET NOI REDIS.
+        """
+        self._retry_count += 1
+        delay = min(REDIS_RETRY_DELAY * (2 ** (self._retry_count - 1)), REDIS_MAX_RETRY_DELAY)
+
+        logger.info(
+            "ChatRedisConsumer cho %s giay truong retry ket noi Redis (lan thu %d)",
+            delay,
+            self._retry_count,
+        )
+
+        await asyncio.sleep(delay)
+
+        # Thuc hien ket noi lai
+        try:
+            await self._connect_redis()
+        except Exception:
+            logger.warning("Retry ket noi Redis that bai, se thuc hien lai")
+
+    @staticmethod
+    def _extract_conversation_id(channel: str) -> Optional[str]:
+        """
+        Trich chuot conversation_id tu channel Redis.
+
+        Channel format: chat:{conversation_id}
+
+        Tham so:
+            channel: Ten channel Redis.
+
+        Tra ve:
+            conversation_id hoac None neu khong hop le.
+        """
+        if channel.startswith("chat:"):
+            return channel[5:]
+        return None
+
+
+# --------------------------------------------------------------
+# Factory function — tao consumer
+# --------------------------------------------------------------
+
+async def create_chat_consumer(
+    redis_url: str,
+    websocket_manager: Any = None,
+) -> ChatRedisConsumer:
+    """
+    Tao va khoi tao ChatRedisConsumer.
+
+    Tham so:
+        redis_url: URL ket noi Redis.
+        websocket_manager: WebSocketManager de broadcast (tu chon).
+
+    Tra ve:
+        ChatRedisConsumer san sang hoat dong.
+    """
+    consumer = ChatRedisConsumer(
+        redis_url=redis_url,
+        websocket_manager=websocket_manager,
+    )
+    return consumer
+{% endraw %}

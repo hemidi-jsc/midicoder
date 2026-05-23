@@ -1,0 +1,307 @@
+# ----------------------------------------------------------
+# CP41 Chat & Messaging — Router FastAPI cho quan ly chat
+# ----------------------------------------------------------
+# Sinh boi CP41ChatEmitter
+# Routes: CRUD hoi thoai, tin nhan, thong bao
+# Su dung WebSocket: {{ use_websocket | lower }}
+# Su dung Redis: {{ use_redis | lower }}
+# ----------------------------------------------------------
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+# Dinh danh router
+router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+# --------------------------------------------------------------
+# Phu thuoc — injection
+# --------------------------------------------------------------
+
+def get_chat_service(session: AsyncSession = Depends(lambda: None), redis_client=None) -> "ChatService":
+    """
+    Cung cap dich vu chat cho cac route.
+    Day la diem phu thuoc injection cho ChatService.
+    """
+    from chat_service import ChatService
+    return ChatService(session, redis_client=redis_client)
+
+
+# --------------------------------------------------------------
+# Route: liet ke hoi thoai
+# --------------------------------------------------------------
+
+@router.get(
+    "/conversations",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Liet ke hoi thoai",
+    description="Lay danh sach hoi thoai cua nguoi dung voi phan trang.",
+)
+async def list_conversations(
+    user_id: str = Query(..., description="ID nguoi dung"),
+    offset: int = Query(0, ge=0, description="So ban ghi bo qua"),
+    limit: int = Query(50, ge=1, le=200, description="So ban ghi toi da"),
+    service: "ChatService" = Depends(get_chat_service),
+) -> List[Dict[str, Any]]:
+    """
+    Liet ke tat ca hoi thoai cua nguoi dung voi phan trang.
+    """
+    items, total = await service.get_conversations(
+        user_id=user_id,
+        offset=offset,
+        limit=limit,
+    )
+    return [item.__dict__ for item in items]
+
+
+# --------------------------------------------------------------
+# Route: tao hoi thoai moi
+# --------------------------------------------------------------
+
+@router.post(
+    "/conversations",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Tao hoi thoai moi",
+    description="Tao phong chat moi voi nguoi tao la admin.",
+)
+async def create_conversation(
+    payload: Dict[str, Any],
+    service: "ChatService" = Depends(get_chat_service),
+) -> Dict[str, Any]:
+    """
+    Tao hoi thoai moi. Nguoi tao tu dong truan admin.
+    """
+    # Kiem tra du lieu bat buoc
+    if not payload.get("created_by"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="created_by la bat buoc",
+        )
+
+    conversation = await service.create_conversation(payload)
+    return conversation.__dict__
+
+
+# --------------------------------------------------------------
+# Route: them nguoi tham gia
+# --------------------------------------------------------------
+
+@router.post(
+    "/conversations/{conversation_id}/participants",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Them nguoi tham gia",
+    description="Them nguoi dung vao hoi thoai voi vai tro chinh.",
+)
+async def add_participant(
+    conversation_id: str,
+    payload: Dict[str, Any],
+    service: "ChatService" = Depends(get_chat_service),
+) -> Dict[str, Any]:
+    """
+    Them nguoi tham gia vao hoi thoai.
+    """
+    # Kiem tra user_id
+    if not payload.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id la bat buoc",
+        )
+
+    try:
+        participant = await service.add_participant(conversation_id, payload)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
+
+    if participant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Khong tim thay hoi thoai voi ID: {}".format(conversation_id),
+        )
+
+    return participant.__dict__
+
+
+# --------------------------------------------------------------
+# Route: lay tin nhan voi phan trang
+# --------------------------------------------------------------
+
+@router.get(
+    "/conversations/{conversation_id}/messages",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Lay tin nhan",
+    description="Lay danh sach tin nhan trong hoi thoai voi phan trang.",
+)
+async def get_messages(
+    conversation_id: str,
+    offset: int = Query(0, ge=0, description="So ban ghi bo qua"),
+    limit: int = Query(50, ge=1, le=200, description="So ban ghi toi da"),
+    service: "ChatService" = Depends(get_chat_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lay danh sach tin nhan trong hoi thoai theo phan trang.
+    Sap xep theo thoi gian gui (moi nhat truoc).
+    """
+    items, total = await service.get_messages(
+        conversation_id=conversation_id,
+        offset=offset,
+        limit=limit,
+    )
+    return [item.__dict__ for item in items]
+
+
+# --------------------------------------------------------------
+# Route: gui tin nhan moi
+# --------------------------------------------------------------
+
+@router.post(
+    "/conversations/{conversation_id}/messages",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Gui tin nhan",
+    description="Gui tin nhan moi vao hoi thoai.",
+)
+async def send_message(
+    conversation_id: str,
+    payload: Dict[str, Any],
+    service: "ChatService" = Depends(get_chat_service),
+) -> Dict[str, Any]:
+    """
+    Gui tin nhan vao hoi thoai. Validate nguoi gui va do dai noi dung.
+    """
+    # Kiem tra sender_id
+    if not payload.get("sender_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="sender_id la bat buoc",
+        )
+
+    try:
+        message = await service.send_message(conversation_id, payload)
+    except ValueError as e:
+        error_msg = str(e)
+        if "4096 ky tu" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+        elif "khong phai la thanh vien" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+
+    if message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Khong tim thay hoi thoai voi ID: {}".format(conversation_id),
+        )
+
+    return message.__dict__
+
+
+# --------------------------------------------------------------
+# Route: danh dau tin nhan da doc
+# --------------------------------------------------------------
+
+@router.post(
+    "/conversations/{conversation_id}/messages/{message_id}/read",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Danh dau da doc",
+    description="Danh dau tin nhan da duoc nguoi dung doc.",
+)
+async def mark_message_read(
+    conversation_id: str,
+    message_id: str,
+    user_id: str = Query(..., description="ID nguoi dung danh dau da doc"),
+    service: "ChatService" = Depends(get_chat_service),
+) -> Dict[str, Any]:
+    """
+    Danh dau tin nhan da doc va tao ReadReceipt.
+    """
+    receipt = await service.mark_as_read(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        message_id=message_id,
+    )
+
+    if receipt is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Khong tim thay hoi thoai hoac nguoi dung khong phai la thanh vien",
+        )
+
+    return receipt.__dict__
+
+
+# --------------------------------------------------------------
+# Route: liet ke thong bao
+# --------------------------------------------------------------
+
+@router.get(
+    "/notifications",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Lay thong bao",
+    description="Lay danh sach thong bao cua nguoi dung.",
+)
+async def get_notifications(
+    user_id: str = Query(..., description="ID nguoi dung"),
+    is_read: Optional[bool] = Query(None, description="Loc theo trang thai da doc"),
+    limit: int = Query(50, ge=1, le=200, description="So thong bao toi da"),
+    service: "ChatService" = Depends(get_chat_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lay danh sach thong bao cua nguoi dung.
+    """
+    notifications = await service.get_notifications(
+        user_id=user_id,
+        is_read=is_read,
+        limit=limit,
+    )
+    return [n.__dict__ for n in notifications]
+
+
+# --------------------------------------------------------------
+# Route: danh dau thong bao da doc
+# --------------------------------------------------------------
+
+@router.post(
+    "/notifications/{notification_id}/read",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Danh dau thong bao da doc",
+    description="Danh dau mot thong bao da duoc nguoi dung doc.",
+)
+async def mark_notification_read(
+    notification_id: str,
+    service: "ChatService" = Depends(get_chat_service),
+) -> None:
+    """
+    Danh dau thong bao da doc.
+    """
+    success = await service.mark_notification_read(notification_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Khong tim thay thong bao voi ID: {}".format(notification_id),
+        )
+{% endraw %}

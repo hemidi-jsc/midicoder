@@ -1,0 +1,795 @@
+/**
+* Chat Entity - TypeORM entities cho Chat & Messaging.
+*
+* Định nghĩa các entity:
+* - Conversation: Hội thoại (phòng chat) với metadata và người tham gia
+* - ChatMessage: Tin nhắn trong hội thoại (nội dung, đính kèm, phản hồi)
+* - ConversationParticipant: Người tham gia hội thoại với vai trò
+* - ReadReceipt: Xác nhận đọc tin nhắn
+* - Notification: Thông báo chat gửi đến người dùng
+*
+* CP41: Chat & Messaging
+* Tổng số hội thoại: {{ conversation_count }}
+* Tổng số tin nhắn: {{ message_count }}
+*/
+
+import {
+Entity,
+PrimaryGeneratedColumn,
+Column,
+CreateDateColumn,
+UpdateDateColumn,
+Index,
+OneToMany,
+ManyToOne,
+JoinColumn,
+OneToOne,
+} from "typeorm";
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/**
+* Các loại tin nhắn hợp lệ.
+*/
+export const MESSAGE_TYPES = [
+{% for msg_type in message_types %} "{{ msg_type }}",
+{% endfor %}];
+
+/**
+* Các trạng thái tin nhắn hợp lệ.
+*/
+export const MESSAGE_STATUSES = [
+{% for status in message_statuses %} "{{ status }}",
+{% endfor %}];
+
+/**
+* Các loại hội thoại hợp lệ.
+*/
+export const CONVERSATION_TYPES = [
+{% for conv_type in conversation_types %} "{{ conv_type }}",
+{% endfor %}];
+
+/**
+* Các loại thông báo hợp lệ.
+*/
+export const NOTIFICATION_TYPES = [
+{% for notif_type in notification_types %} "{{ notif_type }}",
+{% endfor %}];
+
+/**
+* Các loại xác nhận đọc hợp lệ.
+*/
+export const READ_RECEIPT_TYPES = ["delivered", "read", "played"];
+
+/**
+* Các vai trò người tham gia hợp lệ.
+*/
+export const PARTICIPANT_ROLES = ["admin", "member", "muted"];
+
+// ===========================================================================
+// Conversation Entity
+// ===========================================================================
+
+/**
+* Interface cho Conversation properties.
+*/
+export interface IConversation {
+conversationId: string;
+name: string;
+conversationType: string;
+createdBy: string;
+maxParticipants: number;
+isActive: boolean;
+metadata: Record<string, any>;
+    messages: ChatMessage[];
+    participants: ConversationParticipant[];
+    createdAt: Date;
+    updatedAt: Date;
+    }
+
+    /**
+    * Conversation Entity - Hội thoại (phòng chat).
+    *
+    * Mỗi hội thoại có loại (direct/group/support/broadcast), người tạo,
+    * và giới hạn số lượng người tham gia tối đa.
+    *
+    * Mối quan hệ:
+    * - Một hội thoại có nhiều tin nhắn (OneToMany: messages)
+    * - Một hội thoại có nhiều người tham gia (OneToMany: participants)
+    *
+    * Indexes:
+    * - (conversationType) - tối ưu lọc theo loại hội thoại
+    * - (createdBy) - tối ưu tìm hội thoại do user tạo
+    * - (isActive) - tối ưu lọc hội thoại đang hoạt động
+    */
+    @Entity("conversations")
+    @Index("idx_conversation_type", ["conversationType"])
+    @Index("idx_conversation_created_by", ["createdBy"])
+    @Index("idx_conversation_is_active", ["isActive"])
+    export class Conversation implements IConversation {
+    /**
+    * Primary key - UUID tự sinh.
+    */
+    @PrimaryGeneratedColumn("uuid")
+    conversationId: string;
+
+    /**
+    * Tên hội thoại.
+    *
+    * Tùy chọn cho direct chat, bắt buộc cho group chat.
+    * Ví dụ: "Nhóm dự án Alpha", "Hỗ trợ khách hàng #123"
+    */
+    @Column({ type: "varchar", length: 256, default: "" })
+    name: string;
+
+    /**
+    * Loại hội thoại.
+    *
+    * - "direct": trò chuyện trực tiếp giữa 2 người
+    * - "group": trò chuyện nhóm (nhiều người tham gia)
+    * - "support": hỗ trợ khách hàng
+    * - "broadcast": phát sóng cho nhiều người nhận
+    */
+    @Column({ name: "conversation_type", type: "varchar", length: 32, default: "direct" })
+    conversationType: string;
+
+    /**
+    * ID người tạo hội thoại.
+    */
+    @Column({ name: "created_by", type: "uuid" })
+    createdBy: string;
+
+    /**
+    * Số người tham gia tối đa.
+    *
+    * Mặc định: 100
+    * 0 = không giới hạn
+    */
+    @Column({ name: "max_participants", type: "int", default: 100 })
+    maxParticipants: number;
+
+    /**
+    * Hội thoại có đang hoạt động không.
+    *
+    * True = đang hoạt động, False = đã bị đóng/khóa
+    */
+    @Column({ name: "is_active", type: "boolean", default: true })
+    isActive: boolean;
+
+    /**
+    * Dữ liệu bổ sung (metadata tùy chỉnh).
+    *
+    * Dạng JSON, có thể chứa: avatar URL, mô tả, cấu hình phòng chat, v.v.
+    * Ví dụ:
+    * {
+    * "avatar_url": "https://example.com/avatar.png",
+    * "description": "Phòng thảo luận dự án",
+    * "settings": { "allow_file_upload": true }
+    * }
+    */
+    @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+    metadata: Record<string, any>;
+
+        /**
+        * Danh sách tin nhắn trong hội thoại.
+        */
+        @OneToMany(() => ChatMessage, (message) => message.conversation)
+        messages: ChatMessage[];
+
+        /**
+        * Danh sách người tham gia hội thoại.
+        */
+        @OneToMany(() => ConversationParticipant, (participant) => participant.conversation)
+        participants: ConversationParticipant[];
+
+        /**
+        * Created at - thời điểm tạo hội thoại.
+        */
+        @CreateDateColumn({ name: "created_at" })
+        createdAt: Date;
+
+        /**
+        * Updated at - thời điểm cập nhật hội thoại.
+        */
+        @UpdateDateColumn({ name: "updated_at" })
+        updatedAt: Date;
+
+        // ========================================================================
+        // Utility Methods
+        // ========================================================================
+
+        /**
+        * Kiểm tra hội thoại có đang hoạt động không.
+        *
+        * @returns True nếu isActive là true
+        */
+        isActiveConversation(): boolean {
+        return this.isActive === true;
+        }
+
+        /**
+        * Kiểm tra có phải direct chat không.
+        *
+        * @returns True nếu conversationType là "direct"
+        */
+        isDirectChat(): boolean {
+        return this.conversationType === "direct";
+        }
+
+        /**
+        * Kiểm tra có phải group chat không.
+        *
+        * @returns True nếu conversationType là "group"
+        */
+        isGroupChat(): boolean {
+        return this.conversationType === "group";
+        }
+
+        /**
+        * String representation cho debugging.
+        *
+        * @returns Formatted string
+        */
+        toString(): string {
+        return "<Conversation(id=\"" + this.conversationId + "\" , type=\"" + this.conversationType + \", active=\"" +
+            this.isActive + "\" )>";
+            }
+            }
+
+            // ===========================================================================
+            // ChatMessage Entity
+            // ===========================================================================
+
+            /**
+            * Interface cho ChatMessage properties.
+            */
+            export interface IChatMessage {
+            messageId: string;
+            conversationId: string;
+            senderId: string;
+            messageType: string;
+            content: string;
+            attachments: Record<string, any>[];
+                replyTo: string | null;
+                status: string;
+                conversation: Conversation;
+                createdAt: Date;
+                }
+
+                /**
+                * ChatMessage Entity - Tin nhắn trong hội thoại.
+                *
+                * Mỗi tin nhắn có loại (text/image/video/audio/file/system/reaction/reply),
+                * nội dung, danh sách file đính kèm, và trạng thái giao/nhận.
+                *
+                * Mối quan hệ:
+                * - Thuộc một hội thoại (ManyToOne: conversation)
+                *
+                * Indexes:
+                * - (conversationId) - tối ưu tìm tin nhắn theo hội thoại
+                * - (senderId) - tối ưu tìm tin nhắn theo người gửi
+                * - (status) - tối ưu lọc theo trạng thái
+                * - (replyTo) - tối ưu tìm tin nhắn trả lời
+                */
+                @Entity("chat_messages")
+                @Index("idx_message_conversation", ["conversationId"])
+                @Index("idx_message_sender", ["senderId"])
+                @Index("idx_message_status", ["status"])
+                @Index("idx_message_reply_to", ["replyTo"])
+                @Index("idx_message_created_at", ["createdAt"])
+                export class ChatMessage implements IChatMessage {
+                /**
+                * Primary key - UUID tự sinh.
+                */
+                @PrimaryGeneratedColumn("uuid")
+                messageId: string;
+
+                /**
+                * ID hội thoại chứa tin nhắn.
+                */
+                @Column({ name: "conversation_id", type: "uuid" })
+                conversationId: string;
+
+                /**
+                * Mối quan hệ ManyToOne với Conversation.
+                */
+                @ManyToOne(() => Conversation, (conversation) => conversation.messages, {
+                onDelete: "CASCADE",
+                })
+                @JoinColumn({ name: "conversation_id" })
+                conversation: Conversation;
+
+                /**
+                * ID người gửi tin nhắn.
+                */
+                @Column({ name: "sender_id", type: "uuid" })
+                senderId: string;
+
+                /**
+                * Loại tin nhắn.
+                *
+                * - "text": văn bản thuần
+                * - "image": ảnh
+                * - "video": video
+                * - "audio": âm thanh
+                * - "file": file đính kèm
+                * - "system": tin nhắn hệ thống
+                * - "reaction": phản ứng emoji
+                * - "reply": tin nhắn trả lời
+                */
+                @Column({ name: "message_type", type: "varchar", length: 32, default: "text" })
+                messageType: string;
+
+                /**
+                * Nội dung tin nhắn.
+                *
+                * Đối với tin nhắn văn bản: nội dung trực tiếp.
+                * Đối với đa phương tiện: metadata JSON (URL, kích thước, v.v.).
+                * Giới hạn: tối đa 4096 ký tự.
+                */
+                @Column({ type: "text", default: "" })
+                content: string;
+
+                /**
+                * Danh sách file đính kèm.
+                *
+                * Mảng các object JSON, mỗi object chứa:
+                * - url: URL file
+                * - filename: tên file gốc
+                * - mime_type: MIME type của file
+                * - size: kích thước file (byte)
+                *
+                * Ví dụ:
+                * [
+                * {
+                * "url": "https://storage.example.com/file.pdf",
+                * "filename": "document.pdf",
+                * "mime_type": "application/pdf",
+                * "size": 1024000
+                * }
+                * ]
+                */
+                @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
+                attachments: Record<string, any>[];
+
+                    /**
+                    * ID tin nhắn được trả lời.
+                    *
+                    * NULL nếu không phải tin nhắn trả lời.
+                    * Tham chiếu đến messageId của tin nhắn gốc.
+                    */
+                    @Column({ name: "reply_to", type: "uuid", nullable: true })
+                    replyTo: string | null;
+
+                    /**
+                    * Trạng thái tin nhắn.
+                    *
+                    * - "pending": đang chờ gửi
+                    * - "sent": đã gửi từ máy khách
+                    * - "delivered": đã giao đến máy nhận
+                    * - "read": đã được người nhận đọc
+                    * - "failed": gửi thất bại
+                    */
+                    @Column({ type: "varchar", length: 20, default: "pending" })
+                    status: string;
+
+                    /**
+                    * Created at - thời điểm gửi tin nhắn.
+                    */
+                    @CreateDateColumn({ name: "created_at" })
+                    createdAt: Date;
+
+                    // ========================================================================
+                    // Utility Methods
+                    // ========================================================================
+
+                    /**
+                    * Kiểm tra tin nhắn có đang chờ gửi không.
+                    *
+                    * @returns True nếu status là "pending"
+                    */
+                    isPending(): boolean {
+                    return this.status === "pending";
+                    }
+
+                    /**
+                    * Kiểm tra tin nhắn đã được gửi chưa.
+                    *
+                    * @returns True nếu status là "sent" hoặc cao hơn
+                    */
+                    isSent(): boolean {
+                    return ["sent", "delivered", "read"].includes(this.status);
+                    }
+
+                    /**
+                    * Kiểm tra tin nhắn đã được đọc chưa.
+                    *
+                    * @returns True nếu status là "read"
+                    */
+                    isRead(): boolean {
+                    return this.status === "read";
+                    }
+
+                    /**
+                    * Kiểm tra tin nhắn gửi thất bại.
+                    *
+                    * @returns True nếu status là "failed"
+                    */
+                    isFailed(): boolean {
+                    return this.status === "failed";
+                    }
+
+                    /**
+                    * Kiểm tra có phải tin nhắn trả lời không.
+                    *
+                    * @returns True nếu replyTo không null
+                    */
+                    isReply(): boolean {
+                    return this.replyTo !== null;
+                    }
+
+                    /**
+                    * String representation cho debugging.
+                    *
+                    * @returns Formatted string
+                    */
+                    toString(): string {
+                    return "<ChatMessage(id=\"" + this.messageId + "\" , type=\"" + this.messageType + \", status=\"" +
+                        this.status + "\" )>";
+                        }
+                        }
+
+                        // ===========================================================================
+                        // ConversationParticipant Entity
+                        // ===========================================================================
+
+                        /**
+                        * Interface cho ConversationParticipant properties.
+                        */
+                        export interface IConversationParticipant {
+                        participantId: string;
+                        conversationId: string;
+                        userId: string;
+                        role: string;
+                        lastReadMessageId: string | null;
+                        conversation: Conversation;
+                        joinedAt: Date;
+                        }
+
+                        /**
+                        * ConversationParticipant Entity - Người tham gia hội thoại.
+                        *
+                        * Theo dõi vai trò của mỗi user trong hội thoại: admin, member, muted.
+                        *
+                        * Mối quan hệ:
+                        * - Thuộc một hội thoại (ManyToOne: conversation)
+                        *
+                        * Indexes:
+                        * - (conversationId, userId) unique - mỗi user chỉ tham gia một hội thoại một lần
+                        * - (userId) - tối ưu tìm hội thoại của user
+                        * - (role) - tối ưu lọc theo vai trò
+                        */
+                        @Entity("conversation_participants")
+                        @Index("idx_participant_conversation_user", ["conversationId", "userId"], { unique: true })
+                        @Index("idx_participant_user", ["userId"])
+                        @Index("idx_participant_role", ["role"])
+                        export class ConversationParticipant implements IConversationParticipant {
+                        /**
+                        * Primary key - UUID tự sinh.
+                        */
+                        @PrimaryGeneratedColumn("uuid")
+                        participantId: string;
+
+                        /**
+                        * ID hội thoại.
+                        */
+                        @Column({ name: "conversation_id", type: "uuid" })
+                        conversationId: string;
+
+                        /**
+                        * Mối quan hệ ManyToOne với Conversation.
+                        */
+                        @ManyToOne(() => Conversation, (conversation) => conversation.participants, {
+                        onDelete: "CASCADE",
+                        })
+                        @JoinColumn({ name: "conversation_id" })
+                        conversation: Conversation;
+
+                        /**
+                        * ID người dùng tham gia.
+                        */
+                        @Column({ name: "user_id", type: "uuid" })
+                        userId: string;
+
+                        /**
+                        * Vai trò trong hội thoại.
+                        *
+                        * - "admin": quản trị viên, có quyền quản lý hội thoại
+                        * - "member": thành viên bình thường
+                        * - "muted": bị tắt tiếng, không thể gửi tin nhắn
+                        */
+                        @Column({ type: "varchar", length: 20, default: "member" })
+                        role: string;
+
+                        /**
+                        * ID tin nhắn cuối cùng đã đọc.
+                        *
+                        * Dùng để tính số tin nhắn chưa đọc.
+                        * NULL nếu chưa đọc tin nhắn nào.
+                        */
+                        @Column({ name: "last_read_message_id", type: "uuid", nullable: true })
+                        lastReadMessageId: string | null;
+
+                        /**
+                        * Joined at - thời điểm tham gia hội thoại.
+                        */
+                        @CreateDateColumn({ name: "joined_at" })
+                        joinedAt: Date;
+
+                        // ========================================================================
+                        // Utility Methods
+                        // ========================================================================
+
+                        /**
+                        * Kiểm tra có phải admin không.
+                        *
+                        * @returns True nếu role là "admin"
+                        */
+                        isAdmin(): boolean {
+                        return this.role === "admin";
+                        }
+
+                        /**
+                        * Kiểm tra có bị mute không.
+                        *
+                        * @returns True nếu role là "muted"
+                        */
+                        isMuted(): boolean {
+                        return this.role === "muted";
+                        }
+
+                        /**
+                        * Kiểm tra có quyền gửi tin nhắn không.
+                        *
+                        * @returns True nếu không bị mute
+                        */
+                        canSendMessage(): boolean {
+                        return this.role !== "muted";
+                        }
+
+                        /**
+                        * String representation cho debugging.
+                        *
+                        * @returns Formatted string
+                        */
+                        toString(): string {
+                        return "<ConversationParticipant(conv=\"" + this.conversationId + "\" , user=\"" + this.userId
+                            + "\" , role=\"" + this.role + "\" )>";
+                            }
+                            }
+
+                            // ===========================================================================
+                            // ReadReceipt Entity
+                            // ===========================================================================
+
+                            /**
+                            * Interface cho ReadReceipt properties.
+                            */
+                            export interface IReadReceipt {
+                            receiptId: string;
+                            messageId: string;
+                            conversationId: string;
+                            userId: string;
+                            receiptType: string;
+                            createdAt: Date;
+                            }
+
+                            /**
+                            * ReadReceipt Entity - Xác nhận đọc tin nhắn.
+                            *
+                            * Ghi nhận khi một người dùng đã xem/phát nội dung tin nhắn.
+                            *
+                            * Indexes:
+                            * - (messageId, userId) unique - mỗi user chỉ có một receipt cho một message
+                            * - (conversationId) - tối ưu tìm theo hội thoại
+                            * - (userId) - tối ưu tìm theo người dùng
+                            */
+                            @Entity("read_receipts")
+                            @Index("idx_receipt_message_user", ["messageId", "userId"], { unique: true })
+                            @Index("idx_receipt_conversation", ["conversationId"])
+                            @Index("idx_receipt_user", ["userId"])
+                            export class ReadReceipt implements IReadReceipt {
+                            /**
+                            * Primary key - UUID tự sinh.
+                            */
+                            @PrimaryGeneratedColumn("uuid")
+                            receiptId: string;
+
+                            /**
+                            * ID tin nhắn được xác nhận.
+                            */
+                            @Column({ name: "message_id", type: "uuid" })
+                            messageId: string;
+
+                            /**
+                            * ID hội thoại chứa tin nhắn.
+                            */
+                            @Column({ name: "conversation_id", type: "uuid" })
+                            conversationId: string;
+
+                            /**
+                            * ID người dùng xác nhận đọc.
+                            */
+                            @Column({ name: "user_id", type: "uuid" })
+                            userId: string;
+
+                            /**
+                            * Loại xác nhận đọc.
+                            *
+                            * - "delivered": tin nhắn đã được giao
+                            * - "read": tin nhắn đã được đọc
+                            * - "played": nội dung đa phương tiện đã được phát
+                            */
+                            @Column({ name: "receipt_type", type: "varchar", length: 20, default: "read" })
+                            receiptType: string;
+
+                            /**
+                            * Created at - thời điểm xác nhận.
+                            */
+                            @CreateDateColumn({ name: "created_at" })
+                            createdAt: Date;
+
+                            // ========================================================================
+                            // Utility Methods
+                            // ========================================================================
+
+                            /**
+                            * Kiểm tra có phải xác nhận đọc không.
+                            *
+                            * @returns True nếu receiptType là "read"
+                            */
+                            isReadReceipt(): boolean {
+                            return this.receiptType === "read";
+                            }
+
+                            /**
+                            * Kiểm tra có phải xác nhận đã phát không.
+                            *
+                            * @returns True nếu receiptType là "played"
+                            */
+                            isPlayedReceipt(): boolean {
+                            return this.receiptType === "played";
+                            }
+
+                            /**
+                            * String representation cho debugging.
+                            *
+                            * @returns Formatted string
+                            */
+                            toString(): string {
+                            return "<ReadReceipt(message=\"" + this.messageId + "\" , user=\"" + this.userId + "\" ,
+                                type=\"" + this.receiptType + "\" )>";
+                                }
+                                }
+
+                                // ===========================================================================
+                                // Notification Entity
+                                // ===========================================================================
+
+                                /**
+                                * Interface cho Notification properties.
+                                */
+                                export interface INotification {
+                                notificationId: string;
+                                conversationId: string;
+                                targetUserId: string;
+                                notificationType: string;
+                                messageId: string | null;
+                                isRead: boolean;
+                                createdAt: Date;
+                                }
+
+                                /**
+                                * Notification Entity - Thông báo chat gửi đến người dùng.
+                                *
+                                * Tạo khi có sự kiện mới: tin nhắn mới, được nhắc đến, trả lời, v.v.
+                                *
+                                * Indexes:
+                                * - (targetUserId) - tối ưu tìm thông báo theo người nhận
+                                * - (conversationId) - tối ưu tìm thông báo theo hội thoại
+                                * - (isRead) - tối ưu lọc thông báo chưa đọc
+                                * - (notificationType) - tối ưu lọc theo loại thông báo
+                                */
+                                @Entity("notifications")
+                                @Index("idx_notification_target_user", ["targetUserId"])
+                                @Index("idx_notification_conversation", ["conversationId"])
+                                @Index("idx_notification_is_read", ["isRead"])
+                                @Index("idx_notification_type", ["notificationType"])
+                                export class Notification implements INotification {
+                                /**
+                                * Primary key - UUID tự sinh.
+                                */
+                                @PrimaryGeneratedColumn("uuid")
+                                notificationId: string;
+
+                                /**
+                                * ID hội thoại liên quan.
+                                */
+                                @Column({ name: "conversation_id", type: "uuid" })
+                                conversationId: string;
+
+                                /**
+                                * ID người nhận thông báo.
+                                */
+                                @Column({ name: "target_user_id", type: "uuid" })
+                                targetUserId: string;
+
+                                /**
+                                * Loại thông báo.
+                                *
+                                * - "new_message": tin nhắn mới trong hội thoại
+                                * - "mention": được nhắc đến trong tin nhắn (@mention)
+                                * - "reply": có người trả lời tin nhắn của mình
+                                * - "system": thông báo hệ thống (cập nhật, bảo trì)
+                                * - "mention_reply": được nhắc đến trong tin nhắn trả lời
+                                */
+                                @Column({ name: "notification_type", type: "varchar", length: 32, default: "new_message"
+                                })
+                                notificationType: string;
+
+                                /**
+                                * ID tin nhắn liên quan.
+                                *
+                                * NULL nếu thông báo hệ thống không liên quan đến tin nhắn cụ thể.
+                                */
+                                @Column({ name: "message_id", type: "uuid", nullable: true })
+                                messageId: string | null;
+
+                                /**
+                                * Thông báo đã được đọc chưa.
+                                *
+                                * False = chưa đọc, True = đã đọc
+                                */
+                                @Column({ name: "is_read", type: "boolean", default: false })
+                                isRead: boolean;
+
+                                /**
+                                * Created at - thời điểm tạo thông báo.
+                                */
+                                @CreateDateColumn({ name: "created_at" })
+                                createdAt: Date;
+
+                                // ========================================================================
+                                // Utility Methods
+                                // ========================================================================
+
+                                /**
+                                * Kiểm tra thông báo chưa đọc.
+                                *
+                                * @returns True nếu isRead là false
+                                */
+                                isUnread(): boolean {
+                                return this.isRead === false;
+                                }
+
+                                /**
+                                * Kiểm tra có phải thông báo hệ thống không.
+                                *
+                                * @returns True nếu notificationType là "system"
+                                */
+                                isSystemNotification(): boolean {
+                                return this.notificationType === "system";
+                                }
+
+                                /**
+                                * String representation cho debugging.
+                                *
+                                * @returns Formatted string
+                                */
+                                toString(): string {
+                                return "<Notification(user=\"" + this.targetUserId + "\" , type=\"" +
+                                    this.notificationType + \", read=\"" + this.isRead + "\" )>";
+                                    }
+                                    }

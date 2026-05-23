@@ -1,0 +1,757 @@
+/**
+* ChatService - dịch vụ quản lý Chat & Messaging.
+*
+* Cung cấp các phương thức chính:
+* - createConversation: tạo hội thoại mới
+* - addParticipant: thêm người tham gia vào hội thoại
+* - sendMessage: gửi tin nhắn (validate độ dài tối đa 4096 ký tự)
+* - getMessages: lấy danh sách tin nhắn với phân trang
+* - markAsRead: đánh dấu tin nhắn đã đọc
+* - getConversations: lấy danh sách hội thoại của người dùng
+* - getNotifications: lấy danh sách thông báo
+* - markNotificationRead: đánh dấu thông báo đã đọc
+*
+* Tích hợp Redis pub/sub để broadcast tin nhắn realtime.
+* Inject Redis client qua ChatQueueService.
+*
+* CP41: Chat & Messaging
+* Tổng số hội thoại: {{ num_conversations }}
+* Tổng số tin nhắn: {{ num_messages }}
+* Sử dụng Redis: {{ use_redis }}
+*/
+
+import {
+Injectable,
+NotFoundException,
+BadRequestException,
+Logger,
+Inject,
+Optional,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository, Not } from "typeorm";
+import {
+Conversation,
+ChatMessage,
+ConversationParticipant,
+ReadReceipt,
+Notification,
+} from "./chat.entity";
+import {
+CreateConversationDto,
+SendMessageDto,
+AddParticipantDto,
+MarkAsReadDto,
+MESSAGE_TYPES,
+PARTICIPANT_ROLES,
+CONVERSATION_TYPES,
+} from "./chat.dto";
+{% if use_redis %}
+import { ChatQueueService } from "./chat-queue.service";
+{% endif %}
+
+const logger = new Logger("ChatService");
+
+/**
+* Giới hạn độ dài nội dung tin nhắn.
+*/
+const MAX_MESSAGE_LENGTH = 4096;
+
+/**
+* Kết quả phân trang tin nhắn.
+*/
+export interface PaginatedMessages {
+/** Danh sách tin nhắn */
+data: ChatMessage[];
+/** Tổng số tin nhắn */
+total: number;
+/** Số lượng mỗi trang */
+limit: number;
+/** Trang hiện tại */
+page: number;
+}
+
+/**
+* Kết quả phân trang hội thoại.
+*/
+export interface PaginatedConversations {
+/** Danh sách hội thoại */
+data: Conversation[];
+/** Tổng số hội thoại */
+total: number;
+/** Số lượng mỗi trang */
+limit: number;
+/** Trang hiện tại */
+page: number;
+}
+
+/**
+* Tùy chọn tìm kiếm hội thoại.
+*/
+export interface ConversationQueryOptions {
+/** Lọc theo loại hội thoại */
+conversationType?: string;
+/** Số lượng mỗi trang */
+limit?: number;
+/** Trang hiện tại */
+page?: number;
+}
+
+/**
+* Tùy chọn tìm kiếm tin nhắn.
+*/
+export interface MessageQueryOptions {
+/** Số lượng mỗi trang */
+limit?: number;
+/** Trang hiện tại */
+page?: number;
+/** Chỉ lấy tin nhắn từ sau thời điểm này */
+after?: Date;
+}
+
+/**
+* ChatService - quản lý hội thoại, tin nhắn, và thông báo.
+*
+* Phương thức chính:
+* - createConversation: tạo phòng chat mới với validation đầy đủ
+* - addParticipant: thêm user vào hội thoại (kiểm tra quyền admin)
+* - sendMessage: gửi tin nhắn với validate nội dung, tạo thông báo
+* - getMessages: lấy tin nhắn với phân trang (sắp xếp mới nhất trước)
+* - markAsRead: đánh dấu đã đọc, tạo ReadReceipt
+* - getConversations: lấy danh sách hội thoại của user
+*
+* Redis pub/sub:
+* - Publish tin nhắn mới đến channel chat:{conversationId}
+* - Broadcast đến tất cả client kết nối trong hội thoại
+*/
+@Injectable()
+export class ChatService {
+/**
+* Constructor.
+*
+* @param conversationRepository - Repository cho Conversation entity
+* @param messageRepository - Repository cho ChatMessage entity
+* @param participantRepository - Repository cho ConversationParticipant entity
+* @param readReceiptRepository - Repository cho ReadReceipt entity
+* @param notificationRepository - Repository cho Notification entity
+* @param queueService - ChatQueueService cho Redis pub/sub (optional)
+*/
+constructor(
+@InjectRepository(Conversation)
+private readonly conversationRepository: Repository<Conversation>,
+    @InjectRepository(ChatMessage)
+    private readonly messageRepository: Repository<ChatMessage>,
+        @InjectRepository(ConversationParticipant)
+        private readonly participantRepository: Repository<ConversationParticipant>,
+            @InjectRepository(ReadReceipt)
+            private readonly readReceiptRepository: Repository<ReadReceipt>,
+                @InjectRepository(Notification)
+                private readonly notificationRepository: Repository<Notification>,
+                    {% if use_redis %}
+                    @Optional()
+                    @Inject(ChatQueueService)
+                    private readonly queueService: ChatQueueService,
+                    {% endif %}
+                    ) {}
+
+                    // ========================================================================
+                    // Conversation Methods
+                    // ========================================================================
+
+                    /**
+                    * Tạo hội thoại mới.
+                    *
+                    * Xác thực:
+                    * - conversationType phải hợp lệ
+                    * - createdBy phải là UUID hợp lệ
+                    * - maxParticipants phải > 0
+                    *
+                    * Tự động thêm người tạo là admin của hội thoại.
+                    *
+                    * @param createDto - CreateConversationDto
+                    * @returns Conversation entity vừa tạo
+                    */
+                    async createConversation(createDto: CreateConversationDto): Promise<Conversation> {
+                        // Xác thực loại hội thoại
+                        if (!CONVERSATION_TYPES.includes(createDto.conversationType)) {
+                        throw new BadRequestException(
+                        "Loại hội thoại không hợp lệ: " + createDto.conversationType,
+                        );
+                        }
+
+                        // Tạo hội thoại mới
+                        const conversation = this.conversationRepository.create({
+                        name: createDto.name || "",
+                        conversationType: createDto.conversationType,
+                        createdBy: createDto.createdBy,
+                        maxParticipants: createDto.maxParticipants || 100,
+                        isActive: true,
+                        metadata: createDto.metadata || {},
+                        });
+
+                        const saved = await this.conversationRepository.save(conversation);
+
+                        // Thêm người tạo là admin
+                        const creator = this.participantRepository.create({
+                        conversationId: saved.conversationId,
+                        userId: createDto.createdBy,
+                        role: "admin",
+                        });
+                        await this.participantRepository.save(creator);
+
+                        // Thêm các người tham gia ban đầu (nếu có)
+                        if (createDto.initialParticipants && createDto.initialParticipants.length > 0) {
+                        const participants = createDto.initialParticipants.map((userId) =>
+                        this.participantRepository.create({
+                        conversationId: saved.conversationId,
+                        userId,
+                        role: "member",
+                        }),
+                        );
+                        await this.participantRepository.save(participants);
+                        }
+
+                        logger.log(
+                        "Tạo hội thoại mới: " +
+                        saved.conversationId +
+                        " (type: " +
+                        saved.conversationType +
+                        ", creator: " +
+                        createDto.createdBy +
+                        ")",
+                        );
+
+                        return saved;
+                        }
+
+                        /**
+                        * Lấy danh sách hội thoại với phân trang.
+                        *
+                        * @param userId - ID người dùng
+                        * @param options - Tùy chọn tìm kiếm
+                        * @returns Object chứa data và pagination info
+                        */
+                        async getConversations(
+                        userId: string,
+                        options?: ConversationQueryOptions,
+                        ): Promise<PaginatedConversations> {
+                            const limit = options?.limit ?? 20;
+                            const page = options?.page ?? 1;
+                            const skip = (page - 1) * limit;
+
+                            // Xây dựng query để lấy hội thoại mà user là thành viên
+                            const query = this.conversationRepository
+                            .createQueryBuilder("conversation")
+                            .innerJoinAndSelect(
+                            "conversation.participants",
+                            "participant",
+                            "participant.userId = :userId",
+                            { userId },
+                            );
+
+                            // Lọc theo loại hội thoại
+                            if (options?.conversationType) {
+                            query.andWhere("conversation.conversationType = :type", {
+                            type: options.conversationType,
+                            });
+                            }
+
+                            // Chỉ lấy hội thoại đang hoạt động
+                            query.andWhere("conversation.isActive = :isActive", { isActive: true });
+
+                            query
+                            .orderBy("conversation.updatedAt", "DESC")
+                            .take(limit)
+                            .skip(skip);
+
+                            const [data, total] = await query.getManyAndCount();
+
+                            return { data, total, limit, page };
+                            }
+
+                            /**
+                            * Lấy chi tiết hội thoại theo ID.
+                            *
+                            * @param conversationId - ID hội thoại
+                            * @returns Conversation entity hoặc null
+                            */
+                            async findConversationById(conversationId: string): Promise<Conversation | null> {
+                                return this.conversationRepository.findOne({
+                                where: { conversationId },
+                                relations: ["participants"],
+                                });
+                                }
+
+                                // ========================================================================
+                                // Participant Methods
+                                // ========================================================================
+
+                                /**
+                                * Thêm người tham gia vào hội thoại.
+                                *
+                                * Xác thực:
+                                * - hội thoại phải tồn tại và đang hoạt động
+                                * - người dùng không được đã là thành viên
+                                * - số lượng thành viên chưa vượt quá giới hạn
+                                *
+                                * @param conversationId - ID hội thoại
+                                * @param addDto - AddParticipantDto
+                                * @returns ConversationParticipant entity vừa tạo
+                                */
+                                async addParticipant(
+                                conversationId: string,
+                                addDto: AddParticipantDto,
+                                ): Promise<ConversationParticipant> {
+                                    // Kiểm tra hội thoại tồn tại
+                                    const conversation = await this.conversationRepository.findOne({
+                                    where: { conversationId },
+                                    relations: ["participants"],
+                                    });
+
+                                    if (!conversation) {
+                                    throw new NotFoundException(
+                                    "Không tìm thấy hội thoại: " + conversationId,
+                                    );
+                                    }
+
+                                    if (!conversation.isActive) {
+                                    throw new BadRequestException("Hội thoại đã bị đóng: " + conversationId);
+                                    }
+
+                                    // Kiểm tra đã là thành viên chưa
+                                    const existing = await this.participantRepository.findOne({
+                                    where: {
+                                    conversationId,
+                                    userId: addDto.userId,
+                                    },
+                                    });
+
+                                    if (existing) {
+                                    throw new BadRequestException(
+                                    "Người dùng đã là thành viên của hội thoại này",
+                                    );
+                                    }
+
+                                    // Kiểm tra số lượng thành viên
+                                    const participantCount = conversation.participants?.length ?? 0;
+                                    if (conversation.maxParticipants > 0 && participantCount >=
+                                    conversation.maxParticipants) {
+                                    throw new BadRequestException(
+                                    "Hội thoại đã đạt số lượng người tham gia tối đa: " + conversation.maxParticipants,
+                                    );
+                                    }
+
+                                    // Xác thực vai trò
+                                    const role = addDto.role || "member";
+                                    if (!PARTICIPANT_ROLES.includes(role)) {
+                                    throw new BadRequestException("Vai trò không hợp lệ: " + role);
+                                    }
+
+                                    // Thêm người tham gia mới
+                                    const participant = this.participantRepository.create({
+                                    conversationId,
+                                    userId: addDto.userId,
+                                    role,
+                                    });
+
+                                    const saved = await this.participantRepository.save(participant);
+
+                                    logger.log(
+                                    "Thêm người tham gia: " +
+                                    addDto.userId +
+                                    " vào hội thoại: " +
+                                    conversationId +
+                                    " (role: " +
+                                    role +
+                                    ")",
+                                    );
+
+                                    return saved;
+                                    }
+
+                                    /**
+                                    * Kiểm tra user có phải thành viên hội thoại không.
+                                    *
+                                    * @param conversationId - ID hội thoại
+                                    * @param userId - ID người dùng
+                                    * @returns ConversationParticipant hoặc null
+                                    */
+                                    async getParticipant(
+                                    conversationId: string,
+                                    userId: string,
+                                    ): Promise<ConversationParticipant | null> {
+                                        return this.participantRepository.findOne({
+                                        where: { conversationId, userId },
+                                        });
+                                        }
+
+                                        // ========================================================================
+                                        // Message Methods
+                                        // ========================================================================
+
+                                        /**
+                                        * Gửi tin nhắn trong hội thoại.
+                                        *
+                                        * Xác thực:
+                                        * - hội thoại phải tồn tại và đang hoạt động
+                                        * - người gửi phải là thành viên hội thoại
+                                        * - người gửi không bị mute
+                                        * - nội dung không vượt quá 4096 ký tự
+                                        * - messageType phải hợp lệ
+                                        *
+                                        * Sau khi lưu tin nhắn:
+                                        * - Tạo thông báo cho các thành viên khác
+                                        * - Broadcast tin nhắn qua Redis pub/sub
+                                        *
+                                        * @param conversationId - ID hội thoại
+                                        * @param sendDto - SendMessageDto
+                                        * @returns ChatMessage entity vừa tạo
+                                        */
+                                        async sendMessage(
+                                        conversationId: string,
+                                        sendDto: SendMessageDto,
+                                        ): Promise<ChatMessage> {
+                                            // Kiểm tra hội thoại tồn tại
+                                            const conversation = await this.conversationRepository.findOne({
+                                            where: { conversationId },
+                                            });
+
+                                            if (!conversation) {
+                                            throw new NotFoundException(
+                                            "Không tìm thấy hội thoại: " + conversationId,
+                                            );
+                                            }
+
+                                            if (!conversation.isActive) {
+                                            throw new BadRequestException("Hội thoại đã bị đóng: " + conversationId);
+                                            }
+
+                                            // Kiểm tra người gửi là thành viên và không bị mute
+                                            const participant = await this.getParticipant(conversationId,
+                                            sendDto.senderId);
+
+                                            if (!participant) {
+                                            throw new BadRequestException(
+                                            "Người gửi không phải thành viên của hội thoại: " + sendDto.senderId,
+                                            );
+                                            }
+
+                                            if (participant.role === "muted") {
+                                            throw new BadRequestException(
+                                            "Người dùng đã bị tắt tiếng trong hội thoại này",
+                                            );
+                                            }
+
+                                            // Validate nội dung tin nhắn - kiểm tra độ dài tối đa
+                                            this.validateMessageContent(sendDto.content);
+
+                                            // Xác thực messageType
+                                            const messageType = sendDto.messageType || "text";
+                                            if (!MESSAGE_TYPES.includes(messageType)) {
+                                            throw new BadRequestException("Loại tin nhắn không hợp lệ: " + messageType);
+                                            }
+
+                                            // Tạo tin nhắn mới
+                                            const message = this.messageRepository.create({
+                                            conversationId,
+                                            senderId: sendDto.senderId,
+                                            messageType,
+                                            content: sendDto.content,
+                                            attachments: sendDto.attachments || [],
+                                            replyTo: sendDto.replyTo || null,
+                                            status: "sent",
+                                            });
+
+                                            const saved = await this.messageRepository.save(message);
+
+                                            // Tạo thông báo cho các thành viên khác
+                                            await this.createNotifications(conversationId, saved);
+
+                                            // Broadcast tin nhắn qua Redis pub/sub
+                                            {% if use_redis %}
+                                            if (this.queueService) {
+                                            await this.queueService.publish(
+                                            "chat:" + conversationId,
+                                            JSON.stringify({
+                                            type: "new_message",
+                                            message: saved,
+                                            timestamp: new Date().toISOString(),
+                                            }),
+                                            );
+                                            }
+                                            {% else %}
+                                            // Không sử dụng Redis - bỏ qua broadcast
+                                            // Trong môi trường production nên bật Redis để có realtime messaging
+                                            {% endif %}
+
+                                            logger.log(
+                                            "Tin nhắn mới trong hội thoại: " +
+                                            conversationId +
+                                            " từ user: " +
+                                            sendDto.senderId,
+                                            );
+
+                                            return saved;
+                                            }
+
+                                            /**
+                                            * Lấy danh sách tin nhắn với phân trang.
+                                            *
+                                            * Sắp xếp theo created_at giảm dần (mới nhất trước).
+                                            *
+                                            * @param conversationId - ID hội thoại
+                                            * @param options - Tùy chọn tìm kiếm
+                                            * @returns Object chứa data và pagination info
+                                            */
+                                            async getMessages(
+                                            conversationId: string,
+                                            options?: MessageQueryOptions,
+                                            ): Promise<PaginatedMessages> {
+                                                const limit = options?.limit ?? 50;
+                                                const page = options?.page ?? 1;
+                                                const skip = (page - 1) * limit;
+
+                                                // Kiểm tra hội thoại tồn tại
+                                                const conversation = await this.conversationRepository.findOne({
+                                                where: { conversationId },
+                                                });
+
+                                                if (!conversation) {
+                                                throw new NotFoundException(
+                                                "Không tìm thấy hội thoại: " + conversationId,
+                                                );
+                                                }
+
+                                                // Xây dựng query
+                                                const queryBuilder = this.messageRepository
+                                                .createQueryBuilder("message")
+                                                .where("message.conversationId = :conversationId", { conversationId })
+                                                .orderBy("message.createdAt", "DESC")
+                                                .take(limit)
+                                                .skip(skip);
+
+                                                // Lọc theo thời điểm (chỉ lấy tin nhắn sau thời điểm này)
+                                                if (options?.after) {
+                                                queryBuilder.andWhere("message.createdAt > :after", {
+                                                after: options.after,
+                                                });
+                                                }
+
+                                                const [data, total] = await queryBuilder.getManyAndCount();
+
+                                                return { data, total, limit, page };
+                                                }
+
+                                                /**
+                                                * Validate nội dung tin nhắn.
+                                                *
+                                                * Kiểm tra:
+                                                * - Độ dài không vượt quá 4096 ký tự
+                                                * - Không để trống
+                                                *
+                                                * @param content - Nội dung tin nhắn
+                                                * @throws BadRequestException nếu nội dung không hợp lệ
+                                                */
+                                                private validateMessageContent(content: string): void {
+                                                if (!content || !content.trim()) {
+                                                throw new BadRequestException("Nội dung tin nhắn không được để trống");
+                                                }
+
+                                                // Kiểm tra độ dài nội dung - giới hạn 4096 ký tự
+                                                if (content.length > MAX_MESSAGE_LENGTH) {
+                                                throw new BadRequestException(
+                                                "Nội dung tin nhắn không được vượt quá " +
+                                                MAX_MESSAGE_LENGTH +
+                                                " ký tự (hiện tại: " +
+                                                content.length +
+                                                " ký tự)",
+                                                );
+                                                }
+                                                }
+
+                                                //
+                                                ========================================================================
+                                                // Read Receipt Methods
+                                                //
+                                                ========================================================================
+
+                                                /**
+                                                * Đánh dấu tin nhắn đã đọc.
+                                                *
+                                                * Tạo ReadReceipt và cập nhật lastReadMessageId cho người tham gia.
+                                                *
+                                                * @param conversationId - ID hội thoại
+                                                * @param messageId - ID tin nhắn
+                                                * @param markDto - MarkAsReadDto
+                                                * @returns ReadReceipt entity vừa tạo
+                                                */
+                                                async markAsRead(
+                                                conversationId: string,
+                                                messageId: string,
+                                                markDto: MarkAsReadDto,
+                                                ): Promise<ReadReceipt> {
+                                                    // Kiểm tra hội thoại tồn tại
+                                                    const conversation = await this.conversationRepository.findOne({
+                                                    where: { conversationId },
+                                                    });
+
+                                                    if (!conversation) {
+                                                    throw new NotFoundException(
+                                                    "Không tìm thấy hội thoại: " + conversationId,
+                                                    );
+                                                    }
+
+                                                    // Kiểm tra người dùng là thành viên
+                                                    const participant = await this.getParticipant(conversationId,
+                                                    markDto.userId);
+
+                                                    if (!participant) {
+                                                    throw new BadRequestException(
+                                                    "Người dùng không phải thành viên của hội thoại",
+                                                    );
+                                                    }
+
+                                                    // Kiểm tra tin nhắn tồn tại
+                                                    const message = await this.messageRepository.findOne({
+                                                    where: { messageId, conversationId },
+                                                    });
+
+                                                    if (!message) {
+                                                    throw new NotFoundException(
+                                                    "Không tìm thấy tin nhắn: " + messageId,
+                                                    );
+                                                    }
+
+                                                    // Tạo ReadReceipt (nếu chưa tồn tại)
+                                                    const existingReceipt = await this.readReceiptRepository.findOne({
+                                                    where: { messageId, userId: markDto.userId },
+                                                    });
+
+                                                    if (existingReceipt) {
+                                                    // Cập nhật receipt type
+                                                    existingReceipt.receiptType = markDto.receiptType || "read";
+                                                    return this.readReceiptRepository.save(existingReceipt);
+                                                    }
+
+                                                    // Tạo receipt mới
+                                                    const receipt = this.readReceiptRepository.create({
+                                                    messageId,
+                                                    conversationId,
+                                                    userId: markDto.userId,
+                                                    receiptType: markDto.receiptType || "read",
+                                                    });
+
+                                                    const saved = await this.readReceiptRepository.save(receipt);
+
+                                                    // Cập nhật lastReadMessageId cho người tham gia
+                                                    participant.lastReadMessageId = messageId;
+                                                    await this.participantRepository.save(participant);
+
+                                                    logger.log(
+                                                    "Đánh dấu tin nhắn đã đọc: " +
+                                                    messageId +
+                                                    " bởi user: " +
+                                                    markDto.userId,
+                                                    );
+
+                                                    return saved;
+                                                    }
+
+                                                    //
+                                                    ========================================================================
+                                                    // Notification Methods
+                                                    //
+                                                    ========================================================================
+
+                                                    /**
+                                                    * Lấy danh sách thông báo của người dùng.
+                                                    *
+                                                    * @param userId - ID người dùng
+                                                    * @param unreadOnly - Chỉ lấy thông báo chưa đọc
+                                                    * @returns List Notification
+                                                    */
+                                                    async getNotifications(
+                                                    userId: string,
+                                                    unreadOnly: boolean = false,
+                                                    ): Promise<Notification[]> {
+                                                        const where: any = { targetUserId: userId };
+
+                                                        if (unreadOnly) {
+                                                        where.isRead = false;
+                                                        }
+
+                                                        return this.notificationRepository.find({
+                                                        where,
+                                                        order: { createdAt: "DESC" },
+                                                        });
+                                                        }
+
+                                                        /**
+                                                        * Đánh dấu thông báo đã đọc.
+                                                        *
+                                                        * @param notificationId - ID thông báo
+                                                        * @returns True nếu đánh dấu thành công
+                                                        */
+                                                        async markNotificationRead(notificationId: string): Promise
+                                                        <boolean> {
+                                                            const notification = await
+                                                            this.notificationRepository.findOne({
+                                                            where: { notificationId },
+                                                            });
+
+                                                            if (!notification) {
+                                                            throw new NotFoundException(
+                                                            "Không tìm thấy thông báo: " + notificationId,
+                                                            );
+                                                            }
+
+                                                            notification.isRead = true;
+                                                            await this.notificationRepository.save(notification);
+
+                                                            return true;
+                                                            }
+
+                                                            //
+                                                            ========================================================================
+                                                            // Private Methods
+                                                            //
+                                                            ========================================================================
+
+                                                            /**
+                                                            * Tạo thông báo cho các thành viên khác trong hội thoại.
+                                                            *
+                                                            * Tự động tạo notification cho tất cả thành viên (trừ người
+                                                            gửi).
+                                                            *
+                                                            * @param conversationId - ID hội thoại
+                                                            * @param message - ChatMessage đã gửi
+                                                            */
+                                                            private async createNotifications(
+                                                            conversationId: string,
+                                                            message: ChatMessage,
+                                                            ): Promise<void> {
+                                                                // Lấy danh sách thành viên trong hội thoại (trừ người
+                                                                gửi)
+                                                                const participants = await
+                                                                this.participantRepository.find({
+                                                                where: {
+                                                                conversationId,
+                                                                userId: Not(message.senderId),
+                                                                },
+                                                                });
+
+                                                                // Tạo thông báo cho mỗi thành viên
+                                                                for (const participant of participants) {
+                                                                const notification =
+                                                                this.notificationRepository.create({
+                                                                conversationId,
+                                                                targetUserId: participant.userId,
+                                                                notificationType: "new_message",
+                                                                messageId: message.messageId,
+                                                                isRead: false,
+                                                                });
+
+                                                                await this.notificationRepository.save(notification);
+                                                                }
+                                                                }
+                                                                }

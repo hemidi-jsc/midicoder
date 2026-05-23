@@ -1,0 +1,569 @@
+/**
+ * Chat DTO - Data Transfer Objects cho Chat & Messaging.
+ *
+ * Định nghĩa các DTO với class-validator decorators:
+ * - CreateConversationDto: tạo hội thoại mới
+ * - UpdateConversationDto: cập nhật hội thoại
+ * - SendMessageDto: gửi tin nhắn mới
+ * - AddParticipantDto: thêm người tham gia
+ * - MarkAsReadDto: đánh dấu tin nhắn đã đọc
+ * - WsSendMessageDto: gửi tin nhắn qua WebSocket
+ *
+ * CP41: Chat & Messaging
+ */
+
+import {
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsBoolean,
+  IsEnum,
+  IsArray,
+  IsObject,
+  MaxLength,
+  MinLength,
+  IsNumber,
+  Min,
+  Max,
+  ValidateNested,
+  IsNotEmpty,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/**
+ * Các loại tin nhắn hợp lệ.
+ */
+export const MESSAGE_TYPES = [
+{% for msg_type in message_types %}  "{{ msg_type }}",
+{% endfor %}];
+
+/**
+ * Các loại hội thoại hợp lệ.
+ */
+export const CONVERSATION_TYPES = [
+{% for conv_type in conversation_types %}  "{{ conv_type }}",
+{% endfor %}];
+
+/**
+ * Các vai trò người tham gia hợp lệ.
+ */
+export const PARTICIPANT_ROLES = ["admin", "member", "muted"];
+
+// ===========================================================================
+// CreateConversationDto
+// ===========================================================================
+
+/**
+ * DTO cho việc tạo hội thoại mới.
+ *
+ * Các trường bắt buộc:
+ * - conversationType: loại hội thoại
+ * - createdBy: ID người tạo
+ *
+ * Các trường tùy chọn:
+ * - name: tên hội thoại (bắt buộc cho group chat)
+ * - maxParticipants: số người tham gia tối đa
+ * - metadata: dữ liệu bổ sung
+ */
+export class CreateConversationDto {
+  /**
+   * Tên hội thoại.
+   *
+   * Tùy chọn cho direct chat, nên cung cấp cho group chat.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  @ApiPropertyOptional({
+    description: "Tên hội thoại",
+    example: "Nhóm dự án Alpha",
+    maxLength: 256,
+  })
+  name?: string;
+
+  /**
+   * Loại hội thoại.
+   *
+   * Một trong: direct, group, support, broadcast
+   */
+  @IsEnum(CONVERSATION_TYPES)
+  @IsNotEmpty()
+  @ApiProperty({
+    description: "Loại hội thoại",
+    enum: CONVERSATION_TYPES,
+    example: "group",
+  })
+  conversationType: string;
+
+  /**
+   * ID người tạo hội thoại.
+   */
+  @IsUUID("4")
+  @IsNotEmpty()
+  @ApiProperty({
+    description: "ID người tạo hội thoại (UUID v4)",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  createdBy: string;
+
+  /**
+   * Số người tham gia tối đa.
+   *
+   * Mặc định: 100, giới hạn: 1-10000
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(10000)
+  @ApiPropertyOptional({
+    description: "Số người tham gia tối đa",
+    example: 100,
+    minimum: 1,
+    maximum: 10000,
+  })
+  maxParticipants?: number;
+
+  /**
+   * Dữ liệu bổ sung.
+   *
+   * Dạng object JSON tùy chỉnh.
+   */
+  @IsOptional()
+  @IsObject()
+  @ApiPropertyOptional({
+    description: "Dữ liệu bổ sung (metadata tùy chỉnh)",
+    example: {
+      avatar_url: "https://example.com/avatar.png",
+      description: "Phòng thảo luận dự án",
+    },
+  })
+  metadata?: Record<string, any>;
+
+  /**
+   * Danh sách ID người tham gia ban đầu.
+   *
+   * Dùng để thêm người tham gia ngay khi tạo hội thoại.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsUUID("4", { each: true })
+  @ApiPropertyOptional({
+    description: "Danh sách ID người tham gia ban đầu",
+    type: [String],
+    example: ["550e8400-e29b-41d4-a716-446655440001"],
+  })
+  initialParticipants?: string[];
+}
+
+// ===========================================================================
+// UpdateConversationDto
+// ===========================================================================
+
+/**
+ * DTO cho việc cập nhật hội thoại.
+ *
+ * Partial update - chỉ cập nhật các trường được truyền.
+ */
+export class UpdateConversationDto {
+  /**
+   * Tên hội thoại mới.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  @ApiPropertyOptional({
+    description: "Tên hội thoại mới",
+    maxLength: 256,
+  })
+  name?: string;
+
+  /**
+   * Dữ liệu bổ sung mới.
+   */
+  @IsOptional()
+  @IsObject()
+  @ApiPropertyOptional({
+    description: "Dữ liệu bổ sung mới",
+  })
+  metadata?: Record<string, any>;
+
+  /**
+   * Kích hoạt/vô hiệu hóa hội thoại.
+   */
+  @IsOptional()
+  @IsBoolean()
+  @ApiPropertyOptional({
+    description: "Hội thoại có đang hoạt động không",
+    example: true,
+  })
+  isActive?: boolean;
+}
+
+// ===========================================================================
+// SendMessageDto
+// ===========================================================================
+
+/**
+ * DTO cho việc gửi tin nhắn.
+ *
+ * Các trường bắt buộc:
+ * - senderId: ID người gửi
+ * - content: nội dung tin nhắn
+ *
+ * Các trường tùy chọn:
+ * - messageType: loại tin nhắn (mặc định "text")
+ * - attachments: danh sách file đính kèm
+ * - replyTo: ID tin nhắn trả lời
+ */
+export class SendMessageDto {
+  /**
+   * ID người gửi tin nhắn.
+   */
+  @IsUUID("4")
+  @IsNotEmpty()
+  @ApiProperty({
+    description: "ID người gửi tin nhắn (UUID v4)",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  senderId: string;
+
+  /**
+   * Loại tin nhắn.
+   *
+   * Mặc định: "text"
+   * Một trong: text, image, video, audio, file, system, reaction, reply
+   */
+  @IsOptional()
+  @IsEnum(MESSAGE_TYPES)
+  @ApiPropertyOptional({
+    description: "Loại tin nhắn",
+    enum: MESSAGE_TYPES,
+    example: "text",
+    default: "text",
+  })
+  messageType?: string;
+
+  /**
+   * Nội dung tin nhắn.
+   *
+   * Đối với tin nhắn văn bản: nội dung trực tiếp.
+   * Đối với đa phương tiện: metadata JSON.
+   * Giới hạn: tối đa 4096 ký tự.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4096)
+  @ApiProperty({
+    description: "Nội dung tin nhắn (tối đa 4096 ký tự)",
+    example: "Xin chào mọi người!",
+    maxLength: 4096,
+  })
+  content: string;
+
+  /**
+   * Danh sách file đính kèm.
+   *
+   * Mảng các object JSON với các trường:
+   * url, filename, mime_type, size
+   */
+  @IsOptional()
+  @IsArray()
+  @ApiPropertyOptional({
+    description: "Danh sách file đính kèm",
+    type: [Object],
+    example: [
+      {
+        url: "https://storage.example.com/file.pdf",
+        filename: "document.pdf",
+        mime_type: "application/pdf",
+        size: 1024000,
+      },
+    ],
+  })
+  attachments?: Record<string, any>[];
+
+  /**
+   * ID tin nhắn được trả lời.
+   *
+   * NULL nếu không phải tin nhắn trả lời.
+   */
+  @IsOptional()
+  @IsUUID("4")
+  @ApiPropertyOptional({
+    description: "ID tin nhắn được trả lời",
+    example: "550e8400-e29b-41d4-a716-446655440001",
+  })
+  replyTo?: string | null;
+}
+
+// ===========================================================================
+// AddParticipantDto
+// ===========================================================================
+
+/**
+ * DTO cho việc thêm người tham gia vào hội thoại.
+ *
+ * Các trường bắt buộc:
+ * - userId: ID người dùng cần thêm
+ *
+ * Các trường tùy chọn:
+ * - role: vai trò trong hội thoại (mặc định "member")
+ */
+export class AddParticipantDto {
+  /**
+   * ID người dùng cần thêm vào hội thoại.
+   */
+  @IsUUID("4")
+  @IsNotEmpty()
+  @ApiProperty({
+    description: "ID người dùng cần thêm (UUID v4)",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  userId: string;
+
+  /**
+   * Vai trò trong hội thoại.
+   *
+   * Mặc định: "member"
+   * Một trong: admin, member, muted
+   */
+  @IsOptional()
+  @IsEnum(PARTICIPANT_ROLES)
+  @ApiPropertyOptional({
+    description: "Vai trò trong hội thoại",
+    enum: PARTICIPANT_ROLES,
+    example: "member",
+    default: "member",
+  })
+  role?: string;
+}
+
+// ===========================================================================
+// MarkAsReadDto
+// ===========================================================================
+
+/**
+ * DTO cho việc đánh dấu tin nhắn đã đọc.
+ *
+ * Các trường tùy chọn:
+ * - receiptType: loại xác nhận đọc (mặc định "read")
+ */
+export class MarkAsReadDto {
+  /**
+   * ID người dùng đánh dấu đã đọc.
+   */
+  @IsUUID("4")
+  @IsNotEmpty()
+  @ApiProperty({
+    description: "ID người dùng đánh dấu đã đọc (UUID v4)",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  userId: string;
+
+  /**
+   * Loại xác nhận đọc.
+   *
+   * Mặc định: "read"
+   * Một trong: delivered, read, played
+   */
+  @IsOptional()
+  @IsEnum(["delivered", "read", "played"])
+  @ApiPropertyOptional({
+    description: "Loại xác nhận đọc",
+    enum: ["delivered", "read", "played"],
+    example: "read",
+    default: "read",
+  })
+  receiptType?: string;
+}
+
+// ===========================================================================
+// WsSendMessageDto
+// ===========================================================================
+
+/**
+ * DTO cho việc gửi tin nhắn qua WebSocket.
+ *
+ * Tương tự SendMessageDto nhưng không cần conversationId
+ * (được truyền qua room/topic).
+ */
+export class WsSendMessageDto {
+  /**
+   * ID người gửi tin nhắn.
+   */
+  @IsUUID("4")
+  @IsNotEmpty()
+  @ApiProperty({
+    description: "ID người gửi tin nhắn (UUID v4)",
+  })
+  senderId: string;
+
+  /**
+   * Loại tin nhắn.
+   */
+  @IsOptional()
+  @IsEnum(MESSAGE_TYPES)
+  @ApiPropertyOptional({
+    description: "Loại tin nhắn",
+    enum: MESSAGE_TYPES,
+    example: "text",
+    default: "text",
+  })
+  messageType?: string;
+
+  /**
+   * Nội dung tin nhắn.
+   *
+   * Giới hạn: tối đa 4096 ký tự.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4096)
+  @ApiProperty({
+    description: "Nội dung tin nhắn (tối đa 4096 ký tự)",
+    maxLength: 4096,
+  })
+  content: string;
+
+  /**
+   * Danh sách file đính kèm.
+   */
+  @IsOptional()
+  @IsArray()
+  @ApiPropertyOptional({
+    description: "Danh sách file đính kèm",
+    type: [Object],
+  })
+  attachments?: Record<string, any>[];
+
+  /**
+   * ID tin nhắn được trả lời.
+   */
+  @IsOptional()
+  @IsUUID("4")
+  @ApiPropertyOptional({
+    description: "ID tin nhắn được trả lời",
+  })
+  replyTo?: string | null;
+}
+
+// ===========================================================================
+// PaginatedMessages
+// ===========================================================================
+
+/**
+ * Kết quả phân trang cho danh sách tin nhắn.
+ */
+export class PaginatedMessagesDto {
+  /**
+   * Danh sách tin nhắn.
+   */
+  @ApiProperty({
+    description: "Danh sách tin nhắn",
+    type: [Object],
+  })
+  data: any[];
+
+  /**
+   * Tổng số tin nhắn.
+   */
+  @ApiProperty({
+    description: "Tổng số tin nhắn",
+    example: 150,
+  })
+  total: number;
+
+  /**
+   * Số lượng mỗi trang.
+   */
+  @ApiProperty({
+    description: "Số lượng mỗi trang",
+    example: 50,
+  })
+  limit: number;
+
+  /**
+   * Trang hiện tại.
+   */
+  @ApiProperty({
+    description: "Trang hiện tại",
+    example: 1,
+  })
+  page: number;
+}
+
+// ===========================================================================
+// NotificationResponseDto
+// ===========================================================================
+
+/**
+ * DTO cho phản hồi thông báo.
+ */
+export class NotificationResponseDto {
+  /**
+   * ID thông báo.
+   */
+  @ApiProperty({
+    description: "ID thông báo",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  notificationId: string;
+
+  /**
+   * ID hội thoại liên quan.
+   */
+  @ApiProperty({
+    description: "ID hội thoại liên quan",
+  })
+  conversationId: string;
+
+  /**
+   * ID người nhận.
+   */
+  @ApiProperty({
+    description: "ID người nhận thông báo",
+  })
+  targetUserId: string;
+
+  /**
+   * Loại thông báo.
+   */
+  @ApiProperty({
+    description: "Loại thông báo",
+    example: "new_message",
+  })
+  notificationType: string;
+
+  /**
+   * ID tin nhắn liên quan.
+   */
+  @ApiPropertyOptional({
+    description: "ID tin nhắn liên quan",
+    nullable: true,
+  })
+  messageId: string | null;
+
+  /**
+   * Đã đọc chưa.
+   */
+  @ApiProperty({
+    description: "Thông báo đã được đọc chưa",
+    example: false,
+  })
+  isRead: boolean;
+
+  /**
+   * Thời điểm tạo.
+   */
+  @ApiProperty({
+    description: "Thời điểm tạo thông báo",
+    type: String,
+    format: "date-time",
+  })
+  createdAt: Date;
+}

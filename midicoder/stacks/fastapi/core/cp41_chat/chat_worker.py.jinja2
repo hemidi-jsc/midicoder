@@ -1,0 +1,430 @@
+# ----------------------------------------------------------
+# CP41 Chat & Messaging — Background worker
+# ----------------------------------------------------------
+# Sinh boi CP41ChatEmitter
+# Worker: xu ly thong bao, xac nhan doc, cap nhat trang thai tin nhan
+# Tuong thich voi Celery
+# ----------------------------------------------------------
+
+import asyncio
+import logging
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+# DOI SOI WORKER
+WORKER_POLL_INTERVAL = 10      # Giay giua cac lan poll
+NOTIFICATION_TTL_HOURS = 72    # Thoi han cu thong bao (gio)
+MESSAGE_STATUS_TIMEOUT = 300   # Thoi han tin nhan "pending" (giay)
+
+
+class ChatWorker:
+    """
+    Background worker cho he thong chat — xu ly cac tac vu phia sau.
+
+    Cac nhiem vu chinh:
+    1. Notification delivery: gui va theo doi trang thai thong bao
+    2. Read receipt processing: xu ly va lap cai xac nhan doc
+    3. Message status updates: cap nhat trang thai tin nhan da het han
+    4. Cleanup: xoa du lieu cu va thong bao het han
+
+    Tuong thich voi Celery: moi phuong thuc task co the duoc goi
+    tu Celery beat schedule hoac tu API endpoint.
+
+    Attributes:
+        session_factory: Factory de tao AsyncSession moi cho moi task.
+    """
+
+    def __init__(self, session_factory: Any) -> None:
+        """
+        Khoi tao ChatWorker.
+
+        Tham so:
+            session_factory: Ham de tao AsyncSession moi (AsyncSessionmaker).
+        """
+        self._session_factory = session_factory
+
+    async def process_notification_delivery(self) -> Dict[str, Any]:
+        """
+        Xu ly giao thong bao — kiem tra va xu ly cac thong bao
+        chua duoc giao.
+
+        Celery-compatible task. Co the duoc dat schedule trong Celery beat.
+
+        Tra ve:
+            Tu dict chua thong ke ve so thong bao da xu ly.
+        """
+        async with self._session_factory() as session:
+            try:
+                notif_model = self._get_notification_model()
+
+                # Lay cac thong bao chua doc trong 24 gio qua
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+                query = select(notif_model).where(
+                    notif_model.is_read == False,
+                    notif_model.created_at >= cutoff,
+                )
+
+                result = await session.execute(query)
+                notifications = list(result.scalars().all())
+
+                processed = 0
+                for notification in notifications:
+                    # Xu ly tung thong bao — trong production co the gui
+                    # push notification qua Firebase, APNs, email, v.v.
+                    await self._deliver_notification(notification)
+                    processed += 1
+
+                await session.commit()
+
+                logger.info(
+                    "Da xu ly thong bao: tong=%d, da_xu_ly=%d",
+                    len(notifications),
+                    processed,
+                )
+
+                return {
+                    "total": len(notifications),
+                    "processed": processed,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+            except Exception as e:
+                logger.error("Loi xu ly thong bao: %s", str(e))
+                return {
+                    "total": 0,
+                    "processed": 0,
+                    "error": str(e),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+    async def process_read_receipts(self) -> Dict[str, Any]:
+        """
+        Xu ly xac nhan doc — lap cai va tong ket xac nhan doc.
+
+        Celery-compatible task.
+
+        Tra ve:
+            Tu dict chua thong ke ve so xac nhan da xu ly.
+        """
+        async with self._session_factory() as session:
+            try:
+                receipt_model = self._get_receipt_model()
+                message_model = self._get_message_model()
+
+                # Lay cac xac nhan doc cua 1 gio qua
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+                query = select(receipt_model).where(
+                    receipt_model.created_at >= cutoff,
+                    receipt_model.receipt_type == "read",
+                )
+
+                result = await session.execute(query)
+                receipts = list(result.scalars().all())
+
+                # Nhom theo message_id de cap nhat status tin nhan
+                message_ids = set()
+                for receipt in receipts:
+                    message_ids.add(receipt.message_id)
+
+                processed = 0
+                for msg_id in message_ids:
+                    # Cap nhat status tin nhan thanh "read"
+                    msg_query = select(message_model).where(
+                        message_model.message_id == msg_id
+                    )
+                    msg_result = await session.execute(msg_query)
+                    message = msg_result.scalar_one_or_none()
+
+                    if message is not None and message.status != "read":
+                        message.status = "read"
+                        processed += 1
+
+                await session.commit()
+
+                logger.info(
+                    "Da xu ly xac nhan doc: receipts=%d, messages_cap_nhat=%d",
+                    len(receipts),
+                    processed,
+                )
+
+                return {
+                    "receipts_processed": len(receipts),
+                    "messages_updated": processed,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+            except Exception as e:
+                logger.error("Loi xu ly xac nhan doc: %s", str(e))
+                return {
+                    "receipts_processed": 0,
+                    "messages_updated": 0,
+                    "error": str(e),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+    async def update_message_status(self) -> Dict[str, Any]:
+        """
+        Cap nhat trang thai tin nhan — danh dau cac tin nhan
+        "pending" het han thanh "failed".
+
+        Celery-compatible task.
+
+        Tra ve:
+            Tu dict chua thong ke ve so tin nhan da cap nhat.
+        """
+        async with self._session_factory() as session:
+            try:
+                message_model = self._get_message_model()
+
+                # Tim cac tin nhan pending qua gioi han
+                cutoff = datetime.now(timezone.utc) - timedelta(seconds=MESSAGE_STATUS_TIMEOUT)
+                query = select(message_model).where(
+                    message_model.status == "pending",
+                    message_model.created_at < cutoff,
+                )
+
+                result = await session.execute(query)
+                messages = list(result.scalars().all())
+
+                failed_count = 0
+                for message in messages:
+                    message.status = "failed"
+                    failed_count += 1
+
+                await session.commit()
+
+                logger.info(
+                    "Da cap nhat trang thai tin nhan: pending_het_han=%d",
+                    failed_count,
+                )
+
+                return {
+                    "messages_checked": len(messages),
+                    "marked_failed": failed_count,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+            except Exception as e:
+                logger.error("Loi cap nhat trang thai tin nhan: %s", str(e))
+                return {
+                    "messages_checked": 0,
+                    "marked_failed": 0,
+                    "error": str(e),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+    async def cleanup_old_notifications(self) -> Dict[str, Any]:
+        """
+        Xoa cac thong bao het han de giam ta cho co so du lieu.
+
+        Celery-compatible task.
+
+        Tra ve:
+            Tu dict chua so thong bao da xoa.
+        """
+        async with self._session_factory() as session:
+            try:
+                notif_model = self._get_notification_model()
+
+                # Tim cac thong bao da doc va het han
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=NOTIFICATION_TTL_HOURS)
+                query = select(notif_model).where(
+                    notif_model.is_read == True,
+                    notif_model.created_at < cutoff,
+                )
+
+                result = await session.execute(query)
+                old_notifications = list(result.scalars().all())
+
+                deleted_count = 0
+                for notification in old_notifications:
+                    await session.delete(notification)
+                    deleted_count += 1
+
+                await session.commit()
+
+                logger.info(
+                    "Da xoa thong bao cu: so_luong=%d",
+                    deleted_count,
+                )
+
+                return {
+                    "deleted": deleted_count,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+            except Exception as e:
+                logger.error("Loi xoa thong bao cu: %s", str(e))
+                return {
+                    "deleted": 0,
+                    "error": str(e),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+    async def run_worker_loop(self) -> None:
+        """
+        Chay worker loop — lap dai xu ly tat ca cac task theo ky.
+
+        Su dung de chay trong background task hoac service.
+        """
+        logger.info("ChatWorker bat dau luong chu")
+
+        while True:
+            try:
+                # Xu ly cac task theo thu tu
+                await self.process_notification_delivery()
+                await self.process_read_receipts()
+                await self.update_message_status()
+
+                # Cleanup chi chay thi thoi
+                now = datetime.now(timezone.utc)
+                if now.hour == 2 and now.minute < 30:
+                    # Chay cleanup vao 2:00 AM mung
+                    await self.cleanup_old_notifications()
+
+            except Exception as e:
+                logger.error("Loi trong worker loop: %s", str(e))
+
+            # Cho ky tiep theo
+            await asyncio.sleep(WORKER_POLL_INTERVAL)
+
+    # --------------------------------------------------------------
+    # Phuong thuc noi bo
+    # --------------------------------------------------------------
+
+    async def _deliver_notification(self, notification: Any) -> None:
+        """
+        Xu ly giao mot thong bao den nguoi dung.
+
+        Placeholder — trong production, tang hop voi Firebase Cloud Messaging,
+        Apple Push Notification service, hoac email gateway.
+
+        Tham so:
+            notification: Doi tuong Notification can giao.
+        """
+        # Placeholder cho notification delivery
+        # Vi du: gui push notification qua FCM/APNs
+        logger.debug(
+            "Giao thong bao: id=%s, user=%s, loai=%s",
+            notification.notification_id,
+            notification.target_user_id,
+            notification.notification_type,
+        )
+
+    # --------------------------------------------------------------
+    # Lay mo hinh tu module models (import dong)
+    # --------------------------------------------------------------
+
+    def _get_notification_model(self) -> type:
+        """Lay mo hinh Notification."""
+        from chat_models import Notification
+        return Notification
+
+    def _get_receipt_model(self) -> type:
+        """Lay mo hinh ReadReceipt."""
+        from chat_models import ReadReceipt
+        return ReadReceipt
+
+    def _get_message_model(self) -> type:
+        """Lay mo hinh ChatMessage."""
+        from chat_models import ChatMessage
+        return ChatMessage
+
+
+# --------------------------------------------------------------
+# Celery-compatible task definitions
+# --------------------------------------------------------------
+# Cac task nay co the duoc goi boi Celery beat schedule.
+# Vi du Celery config:
+#
+#   beat_schedule = {
+#       "chat-notification-delivery": {
+#           "task": "chat_worker.deliver_notifications_task",
+#           "schedule": 60.0,  # moi 60 giay
+#       },
+#       "chat-read-receipts": {
+#           "task": "chat_worker.process_receipts_task",
+#           "schedule": 300.0,  # moi 5 phut
+#       },
+#       "chat-message-status": {
+#           "task": "chat_worker.update_status_task",
+#           "schedule": 600.0,  # moi 10 phut
+#       },
+#       "chat-cleanup-notifications": {
+#           "task": "chat_worker.cleanup_task",
+#           "schedule": 86400.0,  # moi 24 gio
+#       },
+#   }
+# --------------------------------------------------------------
+
+
+async def deliver_notifications_task(session_factory: Any) -> Dict[str, Any]:
+    """
+    Celery task — xu ly giao thong bao.
+
+    Goi tu Celery beat schedule moi 60 giay.
+
+    Tham so:
+        session_factory: Factory de tao AsyncSession.
+
+    Tra ve:
+        Thong ke ve so thong bao da xu ly.
+    """
+    worker = ChatWorker(session_factory)
+    return await worker.process_notification_delivery()
+
+
+async def process_receipts_task(session_factory: Any) -> Dict[str, Any]:
+    """
+    Celery task — xu ly xac nhan doc.
+
+    Goi tu Celery beat schedule moi 5 phut.
+
+    Tham so:
+        session_factory: Factory de tao AsyncSession.
+
+    Tra ve:
+        Thong ke ve so xac nhan da xu ly.
+    """
+    worker = ChatWorker(session_factory)
+    return await worker.process_read_receipts()
+
+
+async def update_status_task(session_factory: Any) -> Dict[str, Any]:
+    """
+    Celery task — cap nhat trang thai tin nhan.
+
+    Goi tu Celery beat schedule moi 10 phut.
+
+    Tham so:
+        session_factory: Factory de tao AsyncSession.
+
+    Tra ve:
+        Thong ke ve so tin nhan da cap nhat.
+    """
+    worker = ChatWorker(session_factory)
+    return await worker.update_message_status()
+
+
+async def cleanup_task(session_factory: Any) -> Dict[str, Any]:
+    """
+    Celery task — xoa thong bao het han.
+
+    Goi tu Celery beat schedule moi 24 gio.
+
+    Tham so:
+        session_factory: Factory de tao AsyncSession.
+
+    Tra ve:
+        Thong ke ve so thong bao da xoa.
+    """
+    worker = ChatWorker(session_factory)
+    return await worker.cleanup_old_notifications()
+{% endraw %}

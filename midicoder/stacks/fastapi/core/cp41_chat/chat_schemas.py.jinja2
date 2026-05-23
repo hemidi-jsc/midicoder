@@ -1,0 +1,222 @@
+# ----------------------------------------------------------
+# CP41 Chat & Messaging — Pydantic schemas cho validation
+# ----------------------------------------------------------
+# Sinh bởi CP41ChatEmitter
+# Schemas: Create, Update, Read variants cho moi model
+# ----------------------------------------------------------
+
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+
+# ====================================================================
+# Attachment Schema
+# ====================================================================
+
+
+class AttachmentSchema(BaseModel):
+    """Schema cho file dinh kem tin nhan."""
+    url: str = Field(..., min_length=1, max_length=2048, description="URL cua file dinh kem")
+    filename: str = Field(..., min_length=1, max_length=256, description="Ten file")
+    mime_type: str = Field(..., min_length=1, max_length=128, description="Kiểu MIME cua file")
+    size: Optional[int] = Field(None, ge=0, description="Kich co file (byte)")
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        """Kiem tra URL hop le."""
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("URL phai bat dau bang http:// hoac https://")
+        return v
+
+
+# ====================================================================
+# Conversation Schemas
+# ====================================================================
+
+
+class ConversationCreate(BaseModel):
+    """Schema tao hoi thoai moi."""
+    name: str = Field(..., min_length=1, max_length=256, description="Ten hoi thoai")
+    conversation_type: str = Field(
+        default="direct",
+        description="Loai hoi thoai: direct, group, support, broadcast"
+    )
+    created_by: str = Field(..., min_length=1, max_length=64, description="ID nguoi tao")
+    max_participants: int = Field(default=100, ge=1, le=10000, description="So nguoi tham gia toi da")
+    metadata_json: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+
+    @field_validator("conversation_type")
+    @classmethod
+    def validate_conversation_type(cls, v: str) -> str:
+        """Kiem tra loai hoi thoai hop le."""
+        valid_types = ("direct", "group", "support", "broadcast")
+        if v not in valid_types:
+            raise ValueError("conversation_type phai la mot trong: {}".format(", ".join(valid_types)))
+        return v
+
+
+class ConversationUpdate(BaseModel):
+    """Schema cap nhat hoi thoai (bat chon)."""
+    name: Optional[str] = Field(None, min_length=1, max_length=256, description="Ten hoi thoai")
+    max_participants: Optional[int] = Field(None, ge=1, le=10000, description="So nguoi tham gia toi da")
+    is_active: Optional[bool] = Field(None, description="Hoi thoai co dang hoat dong khong")
+    metadata_json: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+
+
+class ConversationRead(BaseModel):
+    """Schema doc hoi thoai."""
+    conversation_id: str = Field(..., description="ID duy nhat cua hoi thoai")
+    name: str = Field(..., description="Ten hoi thoai")
+    conversation_type: str = Field(..., description="Loai hoi thoai")
+    created_by: str = Field(..., description="ID nguoi tao")
+    max_participants: int = Field(..., description="So nguoi tham gia toi da")
+    is_active: bool = Field(..., description="Hoi thoai co dang hoat dong khong")
+    metadata_json: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat cuoi")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# ChatMessage Schemas
+# ====================================================================
+
+
+class MessageCreate(BaseModel):
+    """Schema tao tin nhan moi."""
+    conversation_id: str = Field(..., min_length=1, max_length=36, description="ID hoi thoai")
+    sender_id: str = Field(..., min_length=1, max_length=64, description="ID nguoi gui")
+    message_type: str = Field(default="text", description="Loai tin nhan")
+    content: str = Field(default="", max_length=4096, description="Noi dung tin nhan")
+    attachments: Optional[List[AttachmentSchema]] = Field(None, description="Danh sach file dinh kem")
+    reply_to: Optional[str] = Field(None, max_length=36, description="ID tin nhan duoc tra loi")
+
+    @field_validator("message_type")
+    @classmethod
+    def validate_message_type(cls, v: str) -> str:
+        """Kiem tra loai tin nhan hop le."""
+        valid_types = ("text", "image", "video", "audio", "file", "system", "reaction", "reply")
+        if v not in valid_types:
+            raise ValueError("message_type phai la mot trong: {}".format(", ".join(valid_types)))
+        return v
+
+
+class MessageRead(BaseModel):
+    """Schema doc tin nhan."""
+    message_id: str = Field(..., description="ID duy nhat cua tin nhan")
+    conversation_id: str = Field(..., description="ID hoi thoai chua tin nhan")
+    sender_id: str = Field(..., description="ID nguoi gui")
+    message_type: str = Field(..., description="Loai tin nhan")
+    content: str = Field(..., description="Noi dung tin nhan")
+    attachments: Optional[List[Dict[str, Any]]] = Field(None, description="Danh sach file dinh kem")
+    reply_to: Optional[str] = Field(None, description="ID tin nhan duoc tra loi")
+    status: str = Field(..., description="Trang thai tin nhan")
+    created_at: datetime = Field(..., description="Thoi diem gui")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# ConversationParticipant Schemas
+# ====================================================================
+
+
+class ParticipantAdd(BaseModel):
+    """Schema them nguoi tham gia vao hoi thoai."""
+    user_id: str = Field(..., min_length=1, max_length=64, description="ID nguoi dung")
+    role: str = Field(default="member", description="Vai tro: admin, member, muted")
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        """Kiem tra vai tro hop le."""
+        valid_roles = ("admin", "member", "muted")
+        if v not in valid_roles:
+            raise ValueError("role phai la mot trong: {}".format(", ".join(valid_roles)))
+        return v
+
+
+class ParticipantRead(BaseModel):
+    """Schema doc nguoi tham gia."""
+    participant_id: str = Field(..., description="ID duy nhat cua ban ghi tham gia")
+    conversation_id: str = Field(..., description="ID hoi thoai")
+    user_id: str = Field(..., description="ID nguoi dung tham gia")
+    role: str = Field(..., description="Vai tro trong hoi thoai")
+    joined_at: datetime = Field(..., description="Thoi diem tham gia")
+    last_read_message_id: Optional[str] = Field(None, description="ID tin nhan cuoi cung da doc")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# ReadReceipt Schemas
+# ====================================================================
+
+
+class ReadReceiptCreate(BaseModel):
+    """Schema tao xac nhan doc tin nhan."""
+    message_id: str = Field(..., min_length=1, max_length=36, description="ID tin nhan")
+    conversation_id: str = Field(..., min_length=1, max_length=36, description="ID hoi thoai")
+    user_id: str = Field(..., min_length=1, max_length=64, description="ID nguoi dung")
+    receipt_type: str = Field(default="read", description="Loai xac nhan: delivered, read, played")
+
+    @field_validator("receipt_type")
+    @classmethod
+    def validate_receipt_type(cls, v: str) -> str:
+        """Kiem tra loai xac nhan hop le."""
+        valid_types = ("delivered", "read", "played")
+        if v not in valid_types:
+            raise ValueError("receipt_type phai la mot trong: {}".format(", ".join(valid_types)))
+        return v
+
+
+class ReadReceiptRead(BaseModel):
+    """Schema doc xac nhan doc."""
+    receipt_id: str = Field(..., description="ID duy nhat cua xac nhan doc")
+    message_id: str = Field(..., description="ID tin nhan")
+    conversation_id: str = Field(..., description="ID hoi thoai")
+    user_id: str = Field(..., description="ID nguoi dung")
+    receipt_type: str = Field(..., description="Loai xac nhan")
+    created_at: datetime = Field(..., description="Thoi diem xac nhan")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# Notification Schemas
+# ====================================================================
+
+
+class NotificationRead(BaseModel):
+    """Schema doc thong bao."""
+    notification_id: str = Field(..., description="ID duy nhat cua thong bao")
+    conversation_id: str = Field(..., description="ID hoi thoai lien quan")
+    target_user_id: str = Field(..., description="ID nguoi nhan thong bao")
+    notification_type: str = Field(..., description="Loai thong bao")
+    message_id: Optional[str] = Field(None, description="ID tin nhan lien quan")
+    is_read: bool = Field(..., description="Thong bao da duoc doc chua")
+    created_at: datetime = Field(..., description="Thoi diem tao thong bao")
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationUpdate(BaseModel):
+    """Schema cap nhat thong bao."""
+    is_read: Optional[bool] = Field(None, description="Anh da doc chua")
+
+
+# ====================================================================
+# Pagination Response Schema
+# ====================================================================
+
+
+class PaginatedMessages(BaseModel):
+    """Schema phan trang cho danh sach tin nhan."""
+    items: List[MessageRead] = Field(..., description="Danh sach tin nhan")
+    total: int = Field(..., description="Tong so tin nhan")
+    offset: int = Field(..., description="So ban ghi bo qua")
+    limit: int = Field(..., description="So ban ghi toi da")

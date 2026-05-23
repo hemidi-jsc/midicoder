@@ -1,0 +1,414 @@
+/**
+ * ChatController - controller cho API Chat & Messaging.
+ *
+ * Cung cấp các endpoint REST cho việc quản lý chat:
+ * - CRUD cho hội thoại
+ * - Gửi và nhận tin nhắn
+ * - Quản lý người tham gia
+ * - Xác nhận đọc tin nhắn
+ * - Quản lý thông báo
+ *
+ * API Routes:
+ * - GET    /chat/conversations             - List hội thoại của user
+ * - POST   /chat/conversations             - Tạo hội thoại mới
+ * - POST   /chat/conversations/:id/participants - Thêm người tham gia
+ * - GET    /chat/conversations/:id/messages   - Lấy tin nhắn (phân trang)
+ * - POST   /chat/conversations/:id/messages   - Gửi tin nhắn
+ * - POST   /chat/conversations/:id/messages/:msgId/read - Đánh dấu đã đọc
+ * - GET    /chat/notifications              - Lấy thông báo
+ * - POST   /chat/notifications/:id/read     - Đánh dấu thông báo đã đọc
+ *
+ * CP41: Chat & Messaging
+ * Tổng số hội thoại: {{ num_conversations }}
+ * Tổng số tin nhắn: {{ num_messages }}
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  HttpStatus,
+  HttpCode,
+  ParseUUIDPipe,
+  ValidationPipe,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiParam,
+} from "@nestjs/swagger";
+import { ChatService, PaginatedMessages, PaginatedConversations } from "./chat.service";
+import {
+  CreateConversationDto,
+  SendMessageDto,
+  AddParticipantDto,
+  MarkAsReadDto,
+} from "./chat.dto";
+
+/**
+ * ChatController - quản lý hội thoại và tin nhắn.
+ *
+ * API Routes:
+ * - GET    /chat/conversations             - List hội thoại của user (phân trang)
+ * - POST   /chat/conversations             - Tạo hội thoại mới
+ * - POST   /chat/conversations/:id/participants - Thêm người tham gia
+ * - GET    /chat/conversations/:id/messages   - Lấy tin nhắn (phân trang)
+ * - POST   /chat/conversations/:id/messages   - Gửi tin nhắn
+ * - POST   /chat/conversations/:id/messages/:msgId/read - Đánh dấu đã đọc
+ * - GET    /chat/notifications              - Lấy thông báo của user
+ * - POST   /chat/notifications/:id/read     - Đánh dấu thông báo đã đọc
+ */
+@ApiTags("Chat")
+@ApiBearerAuth()
+@Controller("chat")
+export class ChatController {
+  /**
+   * Constructor.
+   *
+   * @param chatService - ChatService instance
+   */
+  constructor(
+    private readonly chatService: ChatService,
+  ) {}
+
+  // ========================================================================
+  // Conversation Endpoints
+  // ========================================================================
+
+  /**
+   * Lấy danh sách hội thoại của người dùng.
+   *
+   * Hỗ trợ:
+   * - Phân trang: limit, page
+   * - Lọc theo loại hội thoại
+   *
+   * @param userId - ID người dùng (từ auth guard)
+   * @param limit - Số lượng mỗi trang (mặc định 20)
+   * @param page - Trang hiện tại (mặc định 1)
+   * @param conversationType - Lọc theo loại hội thoại
+   * @returns Object chứa data và pagination info
+   */
+  @Get("conversations")
+  @ApiOperation({
+    summary: "Lấy danh sách hội thoại của người dùng",
+    description:
+      "Lấy danh sách hội thoại mà người dùng đang tham gia với phân trang. Hỗ trợ lọc theo loại hội thoại.",
+  })
+  @ApiQuery({ name: "userId", required: true, description: "ID người dùng" })
+  @ApiQuery({ name: "limit", required: false, example: 20 })
+  @ApiQuery({ name: "page", required: false, example: 1 })
+  @ApiQuery({ name: "conversationType", required: false, example: "direct" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List hội thoại thành công",
+  })
+  async getConversations(
+    @Query("userId", new ParseUUIDPipe()) userId: string,
+    @Query("limit") limit?: number,
+    @Query("page") page?: number,
+    @Query("conversationType") conversationType?: string,
+  ): Promise<PaginatedConversations> {
+    return this.chatService.getConversations(userId, {
+      limit: limit ?? 20,
+      page: page ?? 1,
+      conversationType,
+    });
+  }
+
+  /**
+   * Tạo hội thoại mới.
+   *
+   * Tự động thêm người tạo là admin của hội thoại.
+   * Hỗ trợ thêm các người tham gia ban đầu qua initialParticipants.
+   *
+   * @param createDto - CreateConversationDto
+   * @returns Conversation entity vừa tạo
+   */
+  @Post("conversations")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo hội thoại mới",
+    description:
+      "Tạo phòng chat mới với loại (direct/group/support/broadcast). Tự động thêm người tạo là admin.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Hội thoại đã được tạo",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ",
+  })
+  async createConversation(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createDto: CreateConversationDto,
+  ): Promise<any> {
+    return this.chatService.createConversation(createDto);
+  }
+
+  // ========================================================================
+  // Participant Endpoints
+  // ========================================================================
+
+  /**
+   * Thêm người tham gia vào hội thoại.
+   *
+   * Xác thực:
+   * - Hội thoại phải tồn tại và đang hoạt động
+   * - Người dùng chưa là thành viên
+   * - Chưa vượt quá giới hạn số thành viên
+   *
+   * @param id - ID hội thoại
+   * @param addDto - AddParticipantDto
+   * @returns ConversationParticipant entity vừa tạo
+   */
+  @Post("conversations/:id/participants")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Thêm người tham gia vào hội thoại",
+    description:
+      "Thêm người dùng vào hội thoại với vai trò (admin/member/muted). Kiểm tra quyền và giới hạn số thành viên.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID hội thoại",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Người tham gia đã được thêm",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy hội thoại",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Người dùng đã là thành viên hoặc vượt quá giới hạn",
+  })
+  async addParticipant(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    addDto: AddParticipantDto,
+  ): Promise<any> {
+    return this.chatService.addParticipant(id, addDto);
+  }
+
+  // ========================================================================
+  // Message Endpoints
+  // ========================================================================
+
+  /**
+   * Lấy danh sách tin nhắn trong hội thoại.
+   *
+   * Hỗ trợ:
+   * - Phân trang: limit, page
+   * - Lọc theo thời điểm (chỉ lấy tin nhắn sau thời điểm này)
+   * - Sắp xếp theo created_at giảm dần (mới nhất trước)
+   *
+   * @param id - ID hội thoại
+   * @param limit - Số lượng mỗi trang (mặc định 50)
+   * @param page - Trang hiện tại (mặc định 1)
+   * @param after - Chỉ lấy tin nhắn sau thời điểm này (ISO string)
+   * @returns Object chứa data và pagination info
+   */
+  @Get("conversations/:id/messages")
+  @ApiOperation({
+    summary: "Lấy danh sách tin nhắn trong hội thoại",
+    description:
+      "Lấy tin nhắn với phân trang, sắp xếp mới nhất trước. Hỗ trợ lọc theo thời điểm.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID hội thoại",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiQuery({ name: "limit", required: false, example: 50 })
+  @ApiQuery({ name: "page", required: false, example: 1 })
+  @ApiQuery({ name: "after", required: false, type: "string", format: "date-time" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List tin nhắn thành công",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy hội thoại",
+  })
+  async getMessages(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query("limit") limit?: number,
+    @Query("page") page?: number,
+    @Query("after") after?: string,
+  ): Promise<PaginatedMessages> {
+    return this.chatService.getMessages(id, {
+      limit: limit ?? 50,
+      page: page ?? 1,
+      after: after ? new Date(after) : undefined,
+    });
+  }
+
+  /**
+   * Gửi tin nhắn trong hội thoại.
+   *
+   * Xác thực:
+   * - Hội thoại phải tồn tại và đang hoạt động
+   * - Người gửi phải là thành viên và không bị mute
+   * - Nội dung tối đa 4096 ký tự
+   *
+   * Sau khi gửi:
+   * - Tạo thông báo cho các thành viên khác
+   * - Broadcast qua Redis pub/sub (nếu bật)
+   *
+   * @param id - ID hội thoại
+   * @param sendDto - SendMessageDto
+   * @returns ChatMessage entity vừa tạo
+   */
+  @Post("conversations/:id/messages")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Gửi tin nhắn trong hội thoại",
+    description:
+      "Gửi tin nhắn mới trong hội thoại. Validate quyền gửi, độ dài nội dung, và trạng thái mute.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID hội thoại",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Tin nhắn đã được gửi",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy hội thoại",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Người gửi không có quyền hoặc nội dung không hợp lệ",
+  })
+  async sendMessage(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    sendDto: SendMessageDto,
+  ): Promise<any> {
+    return this.chatService.sendMessage(id, sendDto);
+  }
+
+  /**
+   * Đánh dấu tin nhắn đã đọc.
+   *
+   * Tạo ReadReceipt và cập nhật lastReadMessageId cho người tham gia.
+   *
+   * @param id - ID hội thoại
+   * @param msgId - ID tin nhắn
+   * @param markDto - MarkAsReadDto
+   * @returns ReadReceipt entity
+   */
+  @Post("conversations/:id/messages/:msgId/read")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Đánh dấu tin nhắn đã đọc",
+    description:
+      "Đánh dấu tin nhắn đã đọc và tạo ReadReceipt. Cập nhật lastReadMessageId cho người tham gia.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID hội thoại",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiParam({
+    name: "msgId",
+    description: "ID tin nhắn",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Đã đánh dấu tin nhắn đã đọc",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy hội thoại hoặc tin nhắn",
+  })
+  async markAsRead(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Param("msgId", new ParseUUIDPipe()) msgId: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    markDto: MarkAsReadDto,
+  ): Promise<any> {
+    return this.chatService.markAsRead(id, msgId, markDto);
+  }
+
+  // ========================================================================
+  // Notification Endpoints
+  // ========================================================================
+
+  /**
+   * Lấy danh sách thông báo của người dùng.
+   *
+   * @param userId - ID người dùng
+   * @param unreadOnly - Chỉ lấy thông báo chưa đọc
+   * @returns List Notification
+   */
+  @Get("notifications")
+  @ApiOperation({
+    summary: "Lấy danh sách thông báo",
+    description:
+      "Lấy danh sách thông báo chat của người dùng. Có thể lọc chỉ thông báo chưa đọc.",
+  })
+  @ApiQuery({ name: "userId", required: true, description: "ID người dùng" })
+  @ApiQuery({ name: "unreadOnly", required: false, example: true })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List thông báo thành công",
+  })
+  async getNotifications(
+    @Query("userId", new ParseUUIDPipe()) userId: string,
+    @Query("unreadOnly") unreadOnly?: string,
+  ): Promise<any[]> {
+    return this.chatService.getNotifications(userId, unreadOnly === "true");
+  }
+
+  /**
+   * Đánh dấu thông báo đã đọc.
+   *
+   * @param id - ID thông báo
+   * @returns Result của đánh dấu
+   */
+  @Post("notifications/:id/read")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Đánh dấu thông báo đã đọc",
+    description: "Đánh dấu một thông báo cụ thể là đã đọc.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID thông báo",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Đã đánh dấu thông báo đã đọc",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy thông báo",
+  })
+  async markNotificationRead(
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<boolean> {
+    return this.chatService.markNotificationRead(id);
+  }
+}

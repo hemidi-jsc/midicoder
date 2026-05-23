@@ -1,0 +1,359 @@
+# ----------------------------------------------------------
+# CP41 Chat & Messaging — WebSocket de chat realtime
+# ----------------------------------------------------------
+# Sinh boi CP41ChatEmitter
+# WebSocket endpoint: /ws/chat/{conversation_id}
+# Su dung WebSocket: {{ use_websocket | lower }}
+# Su dung Redis: {{ use_redis | lower }}
+# ----------------------------------------------------------
+
+import asyncio
+import json
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Set
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy.ext.asyncio import AsyncSession
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+# Dinh danh router
+router = APIRouter(tags=["websocket"])
+
+
+# --------------------------------------------------------------
+# WebSocket Manager — quan ly ket noi
+# --------------------------------------------------------------
+
+class WebSocketManager:
+    """
+    Quan ly cac ket noi WebSocket cua client de chat realtime.
+
+    Luu tru mapping giua conversation_id va danh sach WebSocket client,
+    va giua client_id va doi tuong WebSocket.
+    """
+
+    def __init__(self) -> None:
+        """Khoi tao voi cac tap ket noi rong."""
+        # Mapping: conversation_id -> tap client WebSocket
+        self.active_connections: Dict[str, Set[WebSocket]] = {}
+        # Mapping: client_id -> WebSocket
+        self.client_map: Dict[str, WebSocket] = {}
+        # Mapping: client_id -> conversation_id
+        self.client_conversation: Dict[str, str] = {}
+
+    async def connect(
+        self,
+        conversation_id: str,
+        websocket: WebSocket,
+        client_id: Optional[str] = None,
+    ) -> str:
+        """
+        Chap nhan ket noi WebSocket moi va gui ket qua den client.
+
+        Tham so:
+            conversation_id: ID hoi thoai ma client muon tham gia.
+            websocket: Doi tuong WebSocket da duoc chap nhan.
+            client_id: ID duy nhat cua client (neu khong co se tao moi).
+
+        Tra ve:
+            client_id cua client da ket noi.
+        """
+        if client_id is None:
+            client_id = str(uuid.uuid4())
+
+        # Them vao danh sach ket noi cua hoi thoai
+        if conversation_id not in self.active_connections:
+            self.active_connections[conversation_id] = set()
+        self.active_connections[conversation_id].add(websocket)
+
+        # Luu mapping client
+        self.client_map[client_id] = websocket
+        self.client_conversation[client_id] = conversation_id
+
+        # Gui tin nhan ket noi thanh cong den client
+        await websocket.send_json({
+            "type": "connected",
+            "client_id": client_id,
+            "conversation_id": conversation_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+        logger.info(
+            "Client ket noi WebSocket: client=%s, conversation=%s",
+            client_id,
+            conversation_id,
+        )
+
+        return client_id
+
+    async def disconnect(self, client_id: str) -> None:
+        """
+        Ngat ket noi va xoa client khoi danh sach.
+
+        Tham so:
+            client_id: ID client can ngat ket noi.
+        """
+        if client_id not in self.client_map:
+            return
+
+        websocket = self.client_map[client_id]
+        conversation_id = self.client_conversation.get(client_id)
+
+        if conversation_id and conversation_id in self.active_connections:
+            self.active_connections[conversation_id].discard(websocket)
+            # Xoa hoi thoai neu khong con client nao
+            if not self.active_connections[conversation_id]:
+                del self.active_connections[conversation_id]
+
+        del self.client_map[client_id]
+        if client_id in self.client_conversation:
+            del self.client_conversation[client_id]
+
+        logger.info(
+            "Client ngat ket noi WebSocket: client=%s, conversation=%s",
+            client_id,
+            conversation_id,
+        )
+
+    async def broadcast_to_conversation(
+        self,
+        conversation_id: str,
+        payload: Dict[str, Any],
+        exclude_client_id: Optional[str] = None,
+    ) -> int:
+        """
+        Gui tin nhan den tat ca client trong hoi thoai.
+
+        Tham so:
+            conversation_id: ID hoi thoai can broadcast.
+            payload: Du lieu JSON can gui.
+            exclude_client_id: ID client khong gui den (tu chon).
+
+        Tra ve:
+            So luong client nhan duoc tin nhan.
+        """
+        if conversation_id not in self.active_connections:
+            return 0
+
+        sent_count = 0
+        disconnected = []
+
+        for websocket in self.active_connections[conversation_id]:
+            # Bo qua client bi loai
+            cid = None
+            for key, val in self.client_map.items():
+                if val is websocket:
+                    cid = key
+                    break
+            if cid == exclude_client_id:
+                continue
+
+            try:
+                await websocket.send_json(payload)
+                sent_count += 1
+            except Exception as e:
+                logger.error(
+                    "Loi gui tin nhan WebSocket: client=%s, loi=%s",
+                    cid,
+                    str(e),
+                )
+                disconnected.append(websocket)
+
+        # Xoa cac ket noi da mat
+        for ws in disconnected:
+            self.active_connections[conversation_id].discard(ws)
+            # Tim va xoa khoi client_map
+            for key, val in list(self.client_map.items()):
+                if val is ws:
+                    self.client_map.pop(key, None)
+                    self.client_conversation.pop(key, None)
+
+        return sent_count
+
+    async def send_to_client(
+        self,
+        client_id: str,
+        payload: Dict[str, Any],
+    ) -> bool:
+        """
+        Gui tin nhan den mot client duy nhat.
+
+        Tham so:
+            client_id: ID client can gui.
+            payload: Du lieu JSON can gui.
+
+        Tra ve:
+            True neu gui thanh cong.
+        """
+        if client_id not in self.client_map:
+            return False
+
+        try:
+            await self.client_map[client_id].send_json(payload)
+            return True
+        except Exception as e:
+            logger.error("Loi gui den client %s: %s", client_id, str(e))
+            return False
+
+    def get_client_count(self, conversation_id: str) -> int:
+        """Tra ve so client dang ket noi trong hoi thoai."""
+        return len(self.active_connections.get(conversation_id, set()))
+
+
+# Tao instance toan cuc de chia se qua cac route
+manager = WebSocketManager()
+
+
+# --------------------------------------------------------------
+# WebSocket Endpoint
+# --------------------------------------------------------------
+
+@router.websocket("/ws/chat/{conversation_id}")
+async def websocket_chat(
+    websocket: WebSocket,
+    conversation_id: str,
+    session: AsyncSession = None,
+) -> None:
+    """
+    Endpoint WebSocket cho chat realtime.
+
+    Cho phep client ket noi vao hoi thoai de nhan va gui tin nhan
+    theo thoi gian thuc.
+
+    Du lieu giao tiep qua JSON voi cac loai su kien:
+    - "message": Tin nhan moi trong hoi thoai
+    - "typing": Dang nhap tin nhan
+    - "ping/pong": Kiem tra ket song
+    - "connected": Ket noi thanh cong (tu server)
+    - "disconnected": Ngat ket noi (tu server)
+    - "error": Loi xẩy ra
+
+    Auto-reconnect: Client gui client_id trong query parameter
+    de server nhan dien ket noi cu va phuc hoi trang thai.
+    """
+    client_id = None
+
+    try:
+        # Chap nhan ket noi
+        await websocket.accept()
+
+        # Lay client_id tu query parameter neu co (auto-reconnect)
+        query_params = websocket.query_params
+        client_id = query_params.get("client_id")
+
+        # Gui ket noi den manager va nhan client_id
+        client_id = await manager.connect(conversation_id, websocket, client_id)
+
+        logger.info(
+            "WebSocket chat mo: conversation=%s, client=%s",
+            conversation_id,
+            client_id,
+        )
+
+        # Luong chu chong tin nhan tu client
+        while True:
+            raw_data = await websocket.receive_text()
+
+            try:
+                data = json.loads(raw_data)
+            except json.JSONDecodeError:
+                await websocket.send_json({
+                    "type": "error",
+                    "error": "Du lieu khong phai JSON hop le",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                continue
+
+            message_type = data.get("type", "")
+
+            if message_type == "ping":
+                # Tra loi pong de giu ket song
+                await websocket.send_json({
+                    "type": "pong",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+
+            elif message_type == "message":
+                # Tiep nhan tin nhan moi — broadcast den tat ca client
+                payload = {
+                    "type": "message",
+                    "message_id": data.get("message_id"),
+                    "conversation_id": conversation_id,
+                    "sender_id": data.get("sender_id"),
+                    "content": data.get("content", ""),
+                    "message_type": data.get("message_type", "text"),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+                sent_count = await manager.broadcast_to_conversation(
+                    conversation_id,
+                    payload,
+                    exclude_client_id=None,  # Gui len ca nguoi gui de ack
+                )
+
+                logger.debug(
+                    "Broadcast tin nhan: conversation=%s, sent=%d",
+                    conversation_id,
+                    sent_count,
+                )
+
+            elif message_type == "typing":
+                # Broadcast tinh trang dang nhap
+                typing_payload = {
+                    "type": "typing",
+                    "sender_id": data.get("sender_id"),
+                    "conversation_id": conversation_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                await manager.broadcast_to_conversation(
+                    conversation_id,
+                    typing_payload,
+                    exclude_client_id=client_id,
+                )
+
+            elif message_type == "read_receipt":
+                # Broadcast xac nhan da doc
+                receipt_payload = {
+                    "type": "read_receipt",
+                    "message_id": data.get("message_id"),
+                    "user_id": data.get("user_id"),
+                    "conversation_id": conversation_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                await manager.broadcast_to_conversation(
+                    conversation_id,
+                    receipt_payload,
+                    exclude_client_id=client_id,
+                )
+
+            else:
+                # Loai tin nhan khong ho tro
+                await websocket.send_json({
+                    "type": "error",
+                    "error": "Loai tin nhan khong ho tro: {}".format(message_type),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+
+    except WebSocketDisconnect:
+        if client_id:
+            await manager.disconnect(client_id)
+        logger.info(
+            "Client WebSocket da ngat ket noi: conversation=%s, client=%s",
+            conversation_id,
+            client_id,
+        )
+
+    except Exception as e:
+        if client_id:
+            await manager.disconnect(client_id)
+        logger.error(
+            "Loi WebSocket: conversation=%s, client=%s, loi=%s",
+            conversation_id,
+            client_id,
+            str(e),
+        )
+{% endraw %}

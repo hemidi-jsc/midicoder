@@ -1,0 +1,501 @@
+/**
+* ChatStore — Quản lý trạng thái cho module chat dùng Signals.
+*
+* Cung cấp các signal state cho hội thoại, tin nhắn, thông báo,
+* và người dùng hiện tại. Hỗ trợ các action: setConversations,
+* addMessage, markRead, addNotification.
+*
+* Tạo tự động bởi CP41 — không sửa thủ công.
+*/
+
+import { Injectable, inject, computed, effect } from '@angular/core';
+import { toSignal, rxjsInterop } from '@angular/core/rxjs-interop';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+import {
+Conversation,
+Message,
+Notification,
+CurrentUser,
+TypingIndicator,
+ConnectionStatus,
+MessageStatus,
+ReadReceipt
+} from './chat-types';
+
+// ===========================================================================
+// Dữ liệu tĩnh từ template
+// ===========================================================================
+
+/** Danh sách hội thoại ban đầu (empty, sẽ được tải từ API). */
+const INITIAL_CONVERSATIONS: Conversation[] = [
+{% for i in range(conversation_count) %}
+{
+conversationId: 'conv_initial_{{ i + 1 }}',
+name: 'Hội thoại mẫu {{ i + 1 }}',
+conversationType: 'direct' as const,
+createdBy: 'system',
+maxParticipants: 100,
+isActive: true,
+participants: [],
+unreadCount: 0,
+createdAt: new Date().toISOString(),
+updatedAt: new Date().toISOString()
+}{% if not loop.last %},{% endif %}
+{% endfor %}
+];
+
+/** Danh sách tin nhắn ban đầu (empty, sẽ được tải từ API). */
+const INITIAL_MESSAGES: Message[][] = [
+{% for i in range(message_count) %}
+[]{% if not loop.last %},{% endif %}
+{% endfor %}
+];
+
+/** Danh sách thông báo ban đầu. */
+const INITIAL_NOTIFICATIONS: Notification[] = [
+{% for i in range(notification_count) %}
+{
+notificationId: 'notif_initial_{{ i + 1 }}',
+conversationId: 'conv_initial_1',
+targetUserId: 'current_user',
+notificationType: 'new_message' as any,
+title: 'Thông báo mẫu {{ i + 1 }}',
+message: 'Nội dung thông báo mẫu {{ i + 1 }}',
+isRead: false,
+createdAt: new Date().toISOString()
+}{% if not loop.last %},{% endif %}
+{% endfor %}
+];
+
+/**
+* ChatStore — Store trạng thái chat dựa trên Signals.
+*
+* State:
+* - conversations: Danh sách hội thoại
+* - messagesMap: Map conversationId -> Message[]
+* - notifications: Danh sách thông báo
+* - currentUser: Người dùng hiện tại
+* - activeConversationId: Hội thoại đang mở
+* - typingUsers: Map conversationId -> TypingIndicator[]
+* - connectionStatus: Trạng thái WebSocket
+*/
+@Injectable({
+providedIn: 'root'
+})
+export class ChatStore {
+
+// ===========================================================================
+// BehaviorSubject (source of truth)
+// ===========================================================================
+
+private readonly conversationsSubject = new BehaviorSubject<Conversation[]>(INITIAL_CONVERSATIONS);
+    private readonly messagesMapSubject = new BehaviorSubject<Map<string, Message[]>>(new Map());
+        private readonly notificationsSubject = new BehaviorSubject<Notification[]>(INITIAL_NOTIFICATIONS);
+            private readonly currentUserSubject = new BehaviorSubject<CurrentUser | null>(null);
+                private readonly activeConversationSubject = new BehaviorSubject<string | null>(null);
+                    private readonly typingUsersSubject = new BehaviorSubject<Map<string, TypingIndicator[]>>(new
+                        Map());
+                        private readonly connectionSubject = new BehaviorSubject<ConnectionStatus>({ status:
+                            'disconnected' });
+                            private readonly loadingSubject = new BehaviorSubject<Record<string, boolean>>({
+                                conversations: false,
+                                messages: false,
+                                notifications: false
+                                });
+
+                                // ===========================================================================
+                                // Signals — derived state
+                                // ===========================================================================
+
+                                /** Danh sách hội thoại. */
+                                public readonly conversations = toSignal(this.conversationsSubject.asObservable());
+
+                                /** Map tin nhắn theo conversationId. */
+                                public readonly messagesMap = toSignal(this.messagesMapSubject.asObservable());
+
+                                /** Danh sách thông báo. */
+                                public readonly notifications = toSignal(this.notificationsSubject.asObservable());
+
+                                /** Người dùng hiện tại. */
+                                public readonly currentUser = toSignal(this.currentUserSubject.asObservable());
+
+                                /** ID hội thoại đang mở. */
+                                public readonly activeConversationId =
+                                toSignal(this.activeConversationSubject.asObservable());
+
+                                /** Map typing indicators theo conversationId. */
+                                public readonly typingUsers = toSignal(this.typingUsersSubject.asObservable());
+
+                                /** Trạng thái kết nối WebSocket. */
+                                public readonly connectionStatus = toSignal(this.connectionSubject.asObservable());
+
+                                /** Trạng thái đang tải của từng resource. */
+                                public readonly loading = toSignal(this.loadingSubject.asObservable());
+
+                                // ===========================================================================
+                                // Computed signals
+                                // ===========================================================================
+
+                                /** Hội thoại đang mở (tính từ activeConversationId). */
+                                public readonly activeConversation = computed<Conversation | null>(() => {
+                                    const convId = this.activeConversationId();
+                                    if (!convId) return null;
+                                    return this.conversations().find(c => c.conversationId === convId) || null;
+                                    });
+
+                                    /** Tin nhắn của hội thoại đang mở. */
+                                    public readonly activeMessages = computed<Message[]>(() => {
+                                        const convId = this.activeConversationId();
+                                        if (!convId) return [];
+                                        return this.messagesMap().get(convId) || [];
+                                        });
+
+                                        /** Tổng số thông báo chưa đọc. */
+                                        public readonly unreadNotificationCount = computed<number>(() => {
+                                            return this.notifications().filter(n => !n.isRead).length;
+                                            });
+
+                                            /** Tổng số tin nhắn chưa đọc trên tất cả hội thoại. */
+                                            public readonly totalUnreadMessages = computed<number>(() => {
+                                                return this.conversations().reduce((sum, c) => sum + c.unreadCount, 0);
+                                                });
+
+                                                /** Danh sách người dùng đang gõ trong hội thoại hiện tại. */
+                                                public readonly activeTypingUsers = computed<string[]>(() => {
+                                                    const convId = this.activeConversationId();
+                                                    if (!convId) return [];
+                                                    const indicators = this.typingUsers().get(convId) || [];
+                                                    return indicators
+                                                    .filter(t => t.isTyping)
+                                                    .map(t => t.userName);
+                                                    });
+
+                                                    //
+                                                    ===========================================================================
+                                                    // Actions — Hội thoại
+                                                    //
+                                                    ===========================================================================
+
+                                                    /**
+                                                    * Đặt toàn bộ danh sách hội thoại.
+                                                    */
+                                                    setConversations(conversations: Conversation[]): void {
+                                                    this.conversationsSubject.next(conversations);
+                                                    }
+
+                                                    /**
+                                                    * Thêm một hội thoại mới vào danh sách.
+                                                    */
+                                                    addConversation(conversation: Conversation): void {
+                                                    const current = this.conversationsSubject.value;
+                                                    this.conversationsSubject.next([conversation, ...current]);
+                                                    }
+
+                                                    /**
+                                                    * Cập nhật hội thoại theo ID.
+                                                    */
+                                                    updateConversation(conversationId: string, changes: Partial
+                                                    <Conversation>): void {
+                                                        const current = this.conversationsSubject.value;
+                                                        const updated = current.map(c =>
+                                                        c.conversationId === conversationId ? { ...c, ...changes } : c
+                                                        );
+                                                        this.conversationsSubject.next(updated);
+                                                        }
+
+                                                        /**
+                                                        * Xóa hội thoại theo ID.
+                                                        */
+                                                        removeConversation(conversationId: string): void {
+                                                        const current = this.conversationsSubject.value;
+                                                        this.conversationsSubject.next(current.filter(c =>
+                                                        c.conversationId !== conversationId));
+
+                                                        // Xóa tin nhắn của hội thoại này khỏi store.
+                                                        const messagesMap = new Map(this.messagesMapSubject.value);
+                                                        messagesMap.delete(conversationId);
+                                                        this.messagesMapSubject.next(messagesMap);
+                                                        }
+
+                                                        /**
+                                                        * Đặt hội thoại đang mở.
+                                                        */
+                                                        setActiveConversation(conversationId: string | null): void {
+                                                        this.activeConversationSubject.next(conversationId);
+
+                                                        // Đánh dấu tất cả tin nhắn trong hội thoại là đã đọc.
+                                                        if (conversationId) {
+                                                        this.updateConversation(conversationId, { unreadCount: 0 });
+                                                        }
+                                                        }
+
+                                                        /**
+                                                        * Tăng số tin nhắn chưa đọc của hội thoại.
+                                                        */
+                                                        incrementUnread(conversationId: string, amount: number = 1):
+                                                        void {
+                                                        const current = this.conversationsSubject.value;
+                                                        const updated = current.map(c =>
+                                                        c.conversationId === conversationId
+                                                        ? { ...c, unreadCount: c.unreadCount + amount }
+                                                        : c
+                                                        );
+                                                        this.conversationsSubject.next(updated);
+                                                        }
+
+                                                        //
+                                                        ===========================================================================
+                                                        // Actions — Tin nhắn
+                                                        //
+                                                        ===========================================================================
+
+                                                        /**
+                                                        * Đặt danh sách tin nhắn cho một hội thoại.
+                                                        */
+                                                        setMessages(conversationId: string, messages: Message[]): void {
+                                                        const messagesMap = new Map(this.messagesMapSubject.value);
+                                                        messagesMap.set(conversationId, [...messages].sort((a, b) =>
+                                                        new Date(a.createdAt).getTime() - new
+                                                        Date(b.createdAt).getTime()
+                                                        ));
+                                                        this.messagesMapSubject.next(messagesMap);
+                                                        }
+
+                                                        /**
+                                                        * Thêm tin nhắn mới vào hội thoại.
+                                                        */
+                                                        addMessage(message: Message): void {
+                                                        const messagesMap = new Map(this.messagesMapSubject.value);
+                                                        const existing = messagesMap.get(message.conversationId) || [];
+                                                        messagesMap.set(message.conversationId, [...existing, message]);
+                                                        this.messagesMapSubject.next(messagesMap);
+
+                                                        // Cập nhật lastMessage và unreadCount cho hội thoại.
+                                                        const user = this.currentUser();
+                                                        if (user && message.senderId !== user.userId) {
+                                                        this.incrementUnread(message.conversationId);
+                                                        }
+                                                        this.updateLastMessage(message);
+                                                        }
+
+                                                        /**
+                                                        * Cập nhật tin nhắn theo ID (dùng khi gửi thành công hoặc chỉnh
+                                                        sửa).
+                                                        */
+                                                        updateMessage(conversationId: string, messageId: string,
+                                                        changes: Partial<Message>): void {
+                                                            const messagesMap = new Map(this.messagesMapSubject.value);
+                                                            const existing = messagesMap.get(conversationId) || [];
+                                                            const updated = existing.map(m =>
+                                                            m.messageId === messageId ? { ...m, ...changes } : m
+                                                            );
+                                                            messagesMap.set(conversationId, updated);
+                                                            this.messagesMapSubject.next(messagesMap);
+                                                            }
+
+                                                            /**
+                                                            * Xóa tin nhắn theo ID.
+                                                            */
+                                                            removeMessage(conversationId: string, messageId: string):
+                                                            void {
+                                                            const messagesMap = new Map(this.messagesMapSubject.value);
+                                                            const existing = messagesMap.get(conversationId) || [];
+                                                            messagesMap.set(conversationId, existing.filter(m =>
+                                                            m.messageId !== messageId));
+                                                            this.messagesMapSubject.next(messagesMap);
+                                                            }
+
+                                                            /**
+                                                            * Cập nhật tin nhắn cuối cùng của hội thoại.
+                                                            */
+                                                            private updateLastMessage(message: Message): void {
+                                                            const current = this.conversationsSubject.value;
+                                                            const updated = current.map(c =>
+                                                            c.conversationId === message.conversationId
+                                                            ? { ...c, lastMessage: message, updatedAt: message.createdAt
+                                                            }
+                                                            : c
+                                                            );
+                                                            this.conversationsSubject.next(updated);
+                                                            }
+
+                                                            /**
+                                                            * Thêm xác nhận đọc cho tin nhắn.
+                                                            */
+                                                            addReadReceipt(conversationId: string, messageId: string,
+                                                            receipt: ReadReceipt): void {
+                                                            const messagesMap = new Map(this.messagesMapSubject.value);
+                                                            const existing = messagesMap.get(conversationId) || [];
+                                                            const updated = existing.map(m => {
+                                                            if (m.messageId === messageId) {
+                                                            return {
+                                                            ...m,
+                                                            readReceipts: [...m.readReceipts, receipt],
+                                                            status: 'read' as MessageStatus
+                                                            };
+                                                            }
+                                                            return m;
+                                                            });
+                                                            messagesMap.set(conversationId, updated);
+                                                            this.messagesMapSubject.next(messagesMap);
+                                                            }
+
+                                                            /**
+                                                            * Đánh dấu tất cả tin nhắn trong hội thoại là đã đọc.
+                                                            */
+                                                            markAllMessagesRead(conversationId: string): void {
+                                                            const messagesMap = new Map(this.messagesMapSubject.value);
+                                                            const existing = messagesMap.get(conversationId) || [];
+                                                            const updated = existing.map(m => ({ ...m, status: 'read' as
+                                                            MessageStatus }));
+                                                            messagesMap.set(conversationId, updated);
+                                                            this.messagesMapSubject.next(messagesMap);
+                                                            this.updateConversation(conversationId, { unreadCount: 0 });
+                                                            }
+
+                                                            //
+                                                            ===========================================================================
+                                                            // Actions — Thông báo
+                                                            //
+                                                            ===========================================================================
+
+                                                            /**
+                                                            * Đặt toàn bộ danh sách thông báo.
+                                                            */
+                                                            setNotifications(notifications: Notification[]): void {
+                                                            this.notificationsSubject.next(notifications);
+                                                            }
+
+                                                            /**
+                                                            * Thêm thông báo mới.
+                                                            */
+                                                            addNotification(notification: Notification): void {
+                                                            const current = this.notificationsSubject.value;
+                                                            this.notificationsSubject.next([notification, ...current]);
+                                                            }
+
+                                                            /**
+                                                            * Đánh dấu thông báo đã đọc theo ID.
+                                                            */
+                                                            markNotificationRead(notificationId: string): void {
+                                                            const current = this.notificationsSubject.value;
+                                                            const updated = current.map(n =>
+                                                            n.notificationId === notificationId ? { ...n, isRead: true }
+                                                            : n
+                                                            );
+                                                            this.notificationsSubject.next(updated);
+                                                            }
+
+                                                            /**
+                                                            * Đánh dấu tất cả thông báo đã đọc.
+                                                            */
+                                                            markAllNotificationsRead(): void {
+                                                            const current = this.notificationsSubject.value;
+                                                            this.notificationsSubject.next(current.map(n => ({ ...n,
+                                                            isRead: true })));
+                                                            }
+
+                                                            /**
+                                                            * Xóa thông báo theo ID.
+                                                            */
+                                                            removeNotification(notificationId: string): void {
+                                                            const current = this.notificationsSubject.value;
+                                                            this.notificationsSubject.next(current.filter(n =>
+                                                            n.notificationId !== notificationId));
+                                                            }
+
+                                                            //
+                                                            ===========================================================================
+                                                            // Actions — Người dùng
+                                                            //
+                                                            ===========================================================================
+
+                                                            /**
+                                                            * Đặt thông tin người dùng hiện tại.
+                                                            */
+                                                            setCurrentUser(user: CurrentUser | null): void {
+                                                            this.currentUserSubject.next(user);
+                                                            }
+
+                                                            //
+                                                            ===========================================================================
+                                                            // Actions — Typing
+                                                            //
+                                                            ===========================================================================
+
+                                                            /**
+                                                            * Cập nhật trạng thái đang gõ của người dùng.
+                                                            */
+                                                            setTypingIndicator(indicator: TypingIndicator): void {
+                                                            const typingMap = new Map(this.typingUsersSubject.value);
+                                                            const existing = typingMap.get(indicator.conversationId) ||
+                                                            [];
+                                                            const updated = existing.map(t =>
+                                                            t.userId === indicator.userId ? indicator : t
+                                                            ).filter(t => t.userId !== indicator.userId || t.isTyping);
+                                                            // Nếu đang gõ, thêm vào hoặc cập nhật.
+                                                            if (indicator.isTyping) {
+                                                            const exists = updated.find(t => t.userId ===
+                                                            indicator.userId);
+                                                            if (!exists) {
+                                                            updated.push(indicator);
+                                                            }
+                                                            }
+                                                            typingMap.set(indicator.conversationId, updated);
+                                                            this.typingUsersSubject.next(typingMap);
+                                                            }
+
+                                                            //
+                                                            ===========================================================================
+                                                            // Actions — Kết nối
+                                                            //
+                                                            ===========================================================================
+
+                                                            /**
+                                                            * Cập nhật trạng thái kết nối.
+                                                            */
+                                                            setConnectionStatus(status: ConnectionStatus): void {
+                                                            this.connectionSubject.next(status);
+                                                            }
+
+                                                            //
+                                                            ===========================================================================
+                                                            // Actions — Loading
+                                                            //
+                                                            ===========================================================================
+
+                                                            /**
+                                                            * Đặt trạng thái đang tải.
+                                                            */
+                                                            setLoading(resource: string, isLoading: boolean): void {
+                                                            const current = { ...this.loadingSubject.value };
+                                                            current[resource] = isLoading;
+                                                            this.loadingSubject.next(current);
+                                                            }
+
+                                                            //
+                                                            ===========================================================================
+                                                            // Cleanup
+                                                            //
+                                                            ===========================================================================
+
+                                                            /**
+                                                            * Đặt lại toàn bộ trạng thái về giá trị ban đầu.
+                                                            */
+                                                            reset(): void {
+                                                            this.conversationsSubject.next([]);
+                                                            this.messagesMapSubject.next(new Map());
+                                                            this.notificationsSubject.next([]);
+                                                            this.currentUserSubject.next(null);
+                                                            this.activeConversationSubject.next(null);
+                                                            this.typingUsersSubject.next(new Map());
+                                                            this.connectionSubject.next({ status: 'disconnected' });
+                                                            this.loadingSubject.next({
+                                                            conversations: false,
+                                                            messages: false,
+                                                            notifications: false
+                                                            });
+                                                            }
+                                                            }

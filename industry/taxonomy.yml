@@ -815,7 +815,7 @@ core_packs:
       - support_ticket
       - notification_center
     category: communication
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP43
     name: Versioning & History

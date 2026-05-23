@@ -1,0 +1,274 @@
+/**
+ * useChat — React hook cho chat: ket noi WebSocket, gui/nhan tin nhan, auto-scroll, typing indicator.
+ * Sinh boi CP41 ChatEmitter.
+ *
+ * WebSocket URL: {{ redis_url }}
+ * Su dung Redis: {{ use_redis }}
+ * Su dung WebSocket: {{ use_websocket }}
+ */
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+/* ---- Giao dien tin nhan ---- */
+export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'file' | 'system' | 'reaction' | 'reply';
+export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed' | 'pending';
+
+export interface ChatMessage {
+    message_id: string;
+    conversation_id: string;
+    sender_id: string;
+    message_type: MessageType;
+    content: string;
+    attachments: Array<{ url: string; filename: string; mime_type: string; size: number }>;
+    reply_to: string | null;
+    status: MessageStatus;
+    created_at: string;
+}
+
+export interface TypingUser {
+    user_id: string;
+    stopped_at?: number;
+}
+
+export interface UseChatReturn {
+    messages: ChatMessage[];
+    sendMessage: (conversationId: string, content: string, type?: MessageType, replyTo?: string | null) => Promise<void>;
+    isConnected: boolean;
+    typingUsers: string[];
+    wsError: string | null;
+    reconnect: () => void;
+}
+
+/* Kieu tin nhan WebSocket */
+type WsMessage =
+    | { type: 'message'; payload: ChatMessage }
+    | { type: 'typing'; user_id: string; action: 'start' | 'stop' }
+    | { type: 'receipt'; message_id: string; user_id: string; receipt_type: string }
+    | { type: 'connected' }
+    | { type: 'error'; error: string };
+
+/* ---- Hook chinh: useChat ---- */
+export function useChat(conversationId: string, wsUrl?: string): UseChatReturn {
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [isConnected, setIsConnected] = useState(false);
+    const [wsError, setWsError] = useState<string | null>(null);
+    const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
+
+    const wsRef = useRef<WebSocket | null>(null);
+    const reconnectTimerRef = useRef<number | null>(null);
+    const typingTimerRef = useRef<Map<string, number>>(new Map());
+
+    /* Ket noi WebSocket */
+    const connect = useCallback(() => {
+{% if use_websocket %}
+        if (!wsUrl) {
+            setWsError('Khong co URL WebSocket');
+            return;
+        }
+
+        // Ngat ket noi cu neu co
+        if (wsRef.current) {
+            wsRef.current.close();
+        }
+
+        try {
+            const socket = new WebSocket(wsUrl);
+            wsRef.current = socket;
+
+            socket.onopen = () => {
+                setIsConnected(true);
+                setWsError(null);
+                // Gui tin nhan join de tham gia phong chat
+                socket.send(JSON.stringify({
+                    type: 'join',
+                    conversation_id: conversationId,
+                }));
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    const data: WsMessage = JSON.parse(event.data);
+                    switch (data.type) {
+                        case 'message':
+                            setMessages((prev) => {
+                                // Tra suat neu da co tin nay
+                                if (prev.find((m) => m.message_id === data.payload.message_id)) return prev;
+                                return [...prev, data.payload];
+                            });
+                            break;
+
+                        case 'typing':
+                            if (data.action === 'start') {
+                                setTypingUsers((prev) => {
+                                    const exists = prev.find((u) => u.user_id === data.user_id);
+                                    if (exists) return prev;
+                                    return [...prev, { user_id: data.user_id }];
+                                });
+                                // Tu dong xoa sau 5 giay
+                                const timer = window.setTimeout(() => {
+                                    setTypingUsers((prev) => prev.filter((u) => u.user_id !== data.user_id));
+                                }, 5000);
+                                typingTimerRef.current.set(data.user_id, timer);
+                            } else {
+                                setTypingUsers((prev) => prev.filter((u) => u.user_id !== data.user_id));
+                                // Xoa timer neu co
+                                const existingTimer = typingTimerRef.current.get(data.user_id);
+                                if (existingTimer) {
+                                    clearTimeout(existingTimer);
+                                    typingTimerRef.current.delete(data.user_id);
+                                }
+                            }
+                            break;
+
+                        case 'receipt':
+                            // Cap nhat read receipt — co the goi callback
+                            break;
+
+                        case 'connected':
+                            setIsConnected(true);
+                            setWsError(null);
+                            break;
+
+                        case 'error':
+                            setWsError(data.error);
+                            break;
+                    }
+                } catch {
+                    setWsError('Loi giai ma tin nhan WebSocket');
+                }
+            };
+
+            socket.onclose = (event) => {
+                setIsConnected(false);
+                if (event.code !== 1000) {
+                    setWsError('Ngat ket noi WebSocket — dang ket lai...');
+                    // Tu dong ket lai sau 3 giay
+                    reconnectTimerRef.current = window.setTimeout(() => {
+                        connect();
+                    }, 3000);
+                }
+            };
+
+            socket.onerror = () => {
+                setWsError('Loi ket noi WebSocket');
+            };
+        } catch (e) {
+            setWsError(e instanceof Error ? e.message : 'Khong the ket noi WebSocket');
+        }
+{% else %}
+        // WebSocket bi tat — khong ket noi
+        setIsConnected(false);
+{% endif %}
+    }, [wsUrl, conversationId]);
+
+    /* Ket noi khi mount va khi doi URL */
+    useEffect(() => {
+        connect();
+        return () => {
+            if (wsRef.current) {
+                wsRef.current.close(1000, 'Unmount');
+            }
+            if (reconnectTimerRef.current) {
+                clearTimeout(reconnectTimerRef.current);
+            }
+            // Xoa tat ca typing timers
+            typingTimerRef.current.forEach((timer) => clearTimeout(timer));
+        };
+    }, [connect]);
+
+    /* Gui tin nhan */
+    const sendMessage = useCallback(async (
+        convId: string,
+        content: string,
+        type: MessageType = 'text',
+        replyTo: string | null = null,
+    ) => {
+        // Tao optimistic message
+        const tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        const optimistic: ChatMessage = {
+            message_id: tempId,
+            conversation_id: convId,
+            sender_id: 'current_user',
+            message_type: type,
+            content,
+            attachments: [],
+            reply_to: replyTo,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+        };
+
+        // Them vao danh sach luon de hien thi ngan
+        setMessages((prev) => [...prev, optimistic]);
+
+        // Gui qua WebSocket neu da ket noi
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+                type: 'send',
+                conversation_id: convId,
+                message_id: tempId,
+                content,
+                message_type: type,
+                reply_to: replyTo,
+            }));
+        } else {
+            // Neu khong co WebSocket, gui qua HTTP API
+            try {
+                const response = await fetch('/api/chat/messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        conversation_id: convId,
+                        content,
+                        message_type: type,
+                        reply_to: replyTo,
+                    }),
+                });
+                if (!response.ok) {
+                    throw new Error('Gui tin nhan that bai: ' + response.status);
+                }
+                const saved = await response.json();
+                // Thay the optimistic message bang message co ID thuc su
+                setMessages((prev) => prev.map((m) =>
+                    m.message_id === tempId ? { ...saved, status: 'sent' as const } : m
+                ));
+            } catch (e) {
+                // Cap nhat trang thai that bai
+                setMessages((prev) => prev.map((m) =>
+                    m.message_id === tempId ? { ...m, status: 'failed' as const } : m
+                ));
+                throw e;
+            }
+        }
+    }, []);
+
+    /* Gui typing indicator */
+    const sendTyping = useCallback(() => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+                type: 'typing',
+                conversation_id: conversationId,
+                action: 'start',
+            }));
+        }
+    }, [conversationId]);
+
+    /* Ket lai thuong */
+    const reconnect = useCallback(() => {
+        setWsError(null);
+        connect();
+    }, [connect]);
+
+    /* Lay danh sach user_id dang typing */
+    const activeTypingUsers = typingUsers.map((u) => u.user_id);
+
+    return {
+        messages,
+        sendMessage,
+        isConnected,
+        typingUsers: activeTypingUsers,
+        wsError,
+        reconnect,
+    };
+}
+
+export default useChat;

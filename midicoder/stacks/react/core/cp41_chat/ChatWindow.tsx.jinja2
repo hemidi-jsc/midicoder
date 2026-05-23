@@ -1,0 +1,294 @@
+/**
+* ChatWindow — khung chat chinh: tieu de, danh sach tin nhan, nhap lieu gui.
+* Sinh boi CP41 ChatEmitter.
+*
+* WebSocket URL: {{ redis_url }}
+* Su dung Redis: {{ use_redis }}
+* Su dung WebSocket: {{ use_websocket }}
+*/
+{% raw %}
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+
+/* ---- Loai tin nhan va trang thai ---- */
+export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'file' | 'system' | 'reaction' | 'reply';
+export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed' | 'pending';
+
+export interface ChatMessage {
+message_id: string;
+conversation_id: string;
+sender_id: string;
+message_type: MessageType;
+content: string;
+attachments: Array<{ url: string; filename: string; mime_type: string; size: number }>;
+    reply_to: string | null;
+    status: MessageStatus;
+    created_at: string;
+    }
+
+    export interface ReadReceipt {
+    user_id: string;
+    receipt_type: 'delivered' | 'read' | 'played';
+    created_at: string;
+    }
+
+    export interface ChatWindowProps {
+    conversationId: string;
+    conversationName?: string;
+    messages: ChatMessage[];
+    onSendMessage: (conversationId: string, content: string, type?: MessageType) => void;
+    onMarkAsRead?: (messageId: string) => void;
+    currentUserId?: string;
+    wsUrl?: string;
+    }
+
+    /* ---- Style objects — de tranh double-brace trong JSX ---- */
+    const sWrap = { display: 'flex', flexDirection: 'column' as const, height: '100%', fontFamily: 'system-ui,
+    sans-serif', backgroundColor: '#f9fafb' };
+    const sHeader = { padding: '12px 16px', backgroundColor: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex',
+    alignItems: 'center', gap: '12px' };
+    const sHeaderTitle = { fontSize: '16px', fontWeight: 600, margin: 0 };
+    const sHeaderSub = { fontSize: '12px', color: '#6b7280' };
+    const sWsDot = { width: '8px', height: '8px', borderRadius: '50%' };
+    const sWsConnected = { ...sWsDot, backgroundColor: '#22c55e' };
+    const sWsDisconnected = { ...sWsDot, backgroundColor: '#ef4444' };
+    const sMessageList = { flex: 1, overflowY: 'auto' as const, padding: '16px', display: 'flex', flexDirection:
+    'column' as const, gap: '12px' };
+    const sInputArea = { padding: '12px 16px', backgroundColor: '#fff', borderTop: '1px solid #e5e7eb', display: 'flex',
+    gap: '8px', alignItems: 'flex-end' };
+    const sTextarea = { flex: 1, padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize:
+    '14px', resize: 'none' as const, fontFamily: 'inherit', minHeight: '42px', maxHeight: '120px' };
+    const sSendBtn = { padding: '10px 18px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius:
+    '8px', fontWeight: 600, cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' as const };
+    const sSendBtnDisabled = { ...sSendBtn, opacity: 0.5, cursor: 'not-allowed' };
+    const sEmptyCell = { padding: '32px', textAlign: 'center' as const, color: '#9ca3af', fontSize: '14px' };
+    const sSystemMsg = { textAlign: 'center' as const, color: '#6b7280', fontSize: '12px', padding: '4px 0' };
+    const sReactionWrap = { display: 'flex', gap: '4px', marginTop: '4px' };
+
+    /* Style cho bubble tin nhan — co bang helper function */
+    const sBubbleBase = { maxWidth: '70%', padding: '10px 14px', borderRadius: '12px', fontSize: '14px', lineHeight:
+    1.5, wordBreak: 'break-word' as const };
+    const sBubbleMeta = { fontSize: '11px', marginTop: '4px', opacity: 0.7 };
+    const sReplyRef = { padding: '6px 10px', marginLeft: '8px', marginRight: '8px', marginBottom: '4px',
+    backgroundColor: '#f3f4f6', borderRadius: '6px', fontSize: '12px', borderLeft: '3px solid #3b82f6' };
+
+    /* Helper: style bubble theo loai va vi tri ( trai/phai) */
+    function bubbleStyle(isOwn: boolean, msgType: MessageType) {
+    const base: Record<MessageType, { bg: string; color: string }> = {
+        text: { bg: isOwn ? '#3b82f6' : '#fff', color: isOwn ? '#fff' : '#111827' },
+        image: { bg: isOwn ? '#1e40af' : '#dbeafe', color: isOwn ? '#fff' : '#1e3a5f' },
+        video: { bg: isOwn ? '#7c3aed' : '#ede9fe', color: isOwn ? '#fff' : '#4c1d95' },
+        audio: { bg: isOwn ? '#059669' : '#d1fae5', color: isOwn ? '#fff' : '#064e3b' },
+        file: { bg: isOwn ? '#d97706' : '#fef3c7', color: isOwn ? '#fff' : '#78350f' },
+        system: { bg: 'transparent', color: '#6b7280' },
+        reaction: { bg: isOwn ? '#ec4899' : '#fce7f3', color: isOwn ? '#fff' : '#9d174d' },
+        reply: { bg: isOwn ? '#3b82f6' : '#fff', color: isOwn ? '#fff' : '#111827' },
+        };
+        const c = base[msgType] || base.text;
+        return { ...sBubbleBase, backgroundColor: c.bg, color: c.color };
+        }
+
+        /* Helper: align row theo vi tri tin nhan */
+        function rowStyle(isOwn: boolean) {
+        return { display: 'flex', justifyContent: isOwn ? 'flex-end' : 'flex-start', gap: '8px' };
+        }
+
+        /* Helper: mau cho status dot */
+        function statusColor(status: MessageStatus): string {
+        return ({ pending: '#f59e0b', sent: '#60a5fa', delivered: '#22c55e', read: '#22c55e', failed: '#ef4444' } as
+        Record<MessageStatus, string>)[status] || '#9ca3af';
+            }
+
+            /* ---- Utilities ---- */
+            function formatTime(iso: string): string {
+            const d = new Date(iso);
+            return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+            }
+
+            /* ---- Component: mot dong tin nhan ---- */
+            function MessageRow({ msg, isOwn, replyMsg, receipts, onMarkAsRead }: {
+            msg: ChatMessage;
+            isOwn: boolean;
+            replyMsg?: ChatMessage | null;
+            receipts?: ReadReceipt[];
+            onMarkAsRead?: (messageId: string) => void;
+            }) {
+            if (msg.message_type === 'system') {
+            return <div style={sSystemMsg}>{msg.content}</div>;
+            }
+
+            return (
+            <div style={rowStyle(isOwn)}>
+                <div>
+                    {msg.message_type === 'reply' && replyMsg && (
+                    <div style={sReplyRef}>
+                        <div style={{ fontWeight: 500, marginBottom: '2px' }}>{replyMsg.sender_id}</div>
+                        <div>{replyMsg.content.slice(0, 80)}{replyMsg.content.length > 80 ? '...' : ''}</div>
+                    </div>
+                    )}
+                    <div style={bubbleStyle(isOwn, msg.message_type)}>
+                        <div>{msg.content}</div>
+                        {msg.attachments && msg.attachments.length > 0 && (
+                        <div style={{ marginTop: '6px' , display: 'flex' , gap: '4px' , flexWrap: 'wrap' }}>
+                            {msg.attachments.map((a, i) => (
+                            <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '11px'
+                                , textDecoration: 'underline' }}>
+                                {a.filename}
+                            </a>
+                            ))}
+                        </div>
+                        )}
+                        <div style={sBubbleMeta}>
+                            {formatTime(msg.created_at)}
+                            {isOwn && (
+                            <span style={{ marginLeft: '6px' , color: statusColor(msg.status) }}>
+                                {msg.status === 'read' ? '\u2713\u2713' : msg.status === 'delivered' ? '\u2713\u2713' :
+                                '\u2713'}
+                            </span>
+                            )}
+                        </div>
+                    </div>
+                    {receipts && receipts.length > 0 && !isOwn && (
+                    <div style={sReactionWrap}>
+                        {receipts.map((r, i) => (
+                        <span key={i} style={{ fontSize: '10px' , color: '#6b7280' }}>
+                            {r.user_id}: {r.receipt_type}
+                        </span>
+                        ))}
+                    </div>
+                    )}
+                </div>
+            </div>
+            );
+            }
+
+            /* ---- Component chinh: ChatWindow ---- */
+            export function ChatWindow({
+            conversationId,
+            conversationName,
+            messages,
+            onSendMessage,
+            onMarkAsRead,
+            currentUserId = 'user_1',
+            wsUrl,
+            }: ChatWindowProps) {
+            const [input, setInput] = useState('');
+            const [wsConnected, setWsConnected] = useState(false);
+            const [wsError, setWsError] = useState<string | null>(null);
+                const listRef = useRef<HTMLDivElement>(null);
+                    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+                        /* Tao map tin nhan de tra nhanh reply */
+                        const msgMap = new Map<string, ChatMessage>();
+                            messages.forEach((m) => msgMap.set(m.message_id, m));
+
+                            /* Auto-scroll xuong duoi khi co tin nhan moi */
+                            useEffect(() => {
+                            if (listRef.current) {
+                            listRef.current.scrollTop = listRef.current.scrollHeight;
+                            }
+                            }, [messages]);
+
+                            /* WebSocket ket noi cho realtime */
+                            useEffect(() => {
+                            {% endraw %}{% if use_websocket %}{% raw %}
+                            if (!wsUrl) return;
+                            const socket = new WebSocket(wsUrl);
+                            socket.onopen = () => setWsConnected(true);
+                            socket.onclose = () => setWsConnected(false);
+                            socket.onerror = () => setWsError('Khong the ket noi WebSocket');
+                            socket.onmessage = (event) => {
+                            try {
+                            const data = JSON.parse(event.data);
+                            if (data.type === 'message' && data.conversation_id === conversationId) {
+                            // Tin nhan moi tu WebSocket se duoc xu li boi state cua cha
+                            }
+                            } catch {
+                            setWsError('Loi giai ma tin nhan WebSocket');
+                            }
+                            };
+                            return () => socket.close();
+                            {% endraw %}{% else %}{% raw %}
+                            // WebSocket bi tat — chi su dung HTTP polling
+                            setWsConnected(false);
+                            {% endraw %}{% endif %}{% raw %}
+                            }, [wsUrl, conversationId]);
+
+                            /* Gui tin nhan */
+                            const handleSend = useCallback(() => {
+                            const trimmed = input.trim();
+                            if (!trimmed) return;
+                            onSendMessage(conversationId, trimmed, 'text');
+                            setInput('');
+                            if (textareaRef.current) {
+                            textareaRef.current.style.height = 'auto';
+                            }
+                            }, [input, conversationId, onSendMessage]);
+
+                            /* Xy ly phim may */
+                            const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSend();
+                            }
+                            }, [handleSend]);
+
+                            /* Tu dong gia tang textarea */
+                            const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                                setInput(e.target.value);
+                                e.target.style.height = 'auto';
+                                e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                                }, []);
+
+                                /* So luong tin nhan */
+                                const msgCount = messages.length;
+
+                                return (
+                                <div style={sWrap}>
+                                    {/* Tieu de chat */}
+                                    <div style={sHeader}>
+                                        <div>
+                                            <h3 style={sHeaderTitle}>{conversationName || conversationId}</h3>
+                                            <div style={sHeaderSub}>
+                                                {msgCount} tin nhan
+                                                {wsUrl && (
+                                                <span style={{ display: 'inline-flex' , alignItems: 'center' ,
+                                                    gap: '4px' , marginLeft: '8px' }}>
+                                                    <span style={wsConnected ? sWsConnected : sWsDisconnected} />
+                                                    {wsConnected ? 'Da ket noi' : 'Ngat ket noi'}
+                                                </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {wsError && (
+                                        <div style={{ fontSize: '11px' , color: '#ef4444' , marginLeft: 'auto' }}>
+                                            {wsError}</div>
+                                        )}
+                                    </div>
+
+                                    {/* Danh sach tin nhan */}
+                                    <div ref={listRef} style={sMessageList}>
+                                        {messages.length === 0 && (
+                                        <div style={sEmptyCell}>Chua co tin nhan — bat dau tro chuyen!</div>
+                                        )}
+                                        {messages.map((msg) => (
+                                        <MessageRow key={msg.message_id} msg={msg} isOwn={msg.sender_id===currentUserId}
+                                            replyMsg={msg.reply_to ? msgMap.get(msg.reply_to) || null : null}
+                                            onMarkAsRead={onMarkAsRead} />
+                                        ))}
+                                    </div>
+
+                                    {/* Vung nhap lieu */}
+                                    <div style={sInputArea}>
+                                        <textarea ref={textareaRef} style={sTextarea} placeholder="Nhap tin nhan..."
+                                            value={input} onChange={handleInput} onKeyDown={handleKeyDown} rows={1} />
+                                        <button style={input.trim() ? sSendBtn : sSendBtnDisabled} onClick={handleSend}
+                                            disabled={!input.trim()}>
+                                            Gui
+                                        </button>
+                                    </div>
+                                </div>
+                                );
+                                }
+
+                                export default ChatWindow;
+                                {% endraw %}

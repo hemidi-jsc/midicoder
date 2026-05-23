@@ -1,0 +1,578 @@
+/**
+ * ChatService — Dịch vụ HTTP, WebSocket, và SSE cho module chat.
+ *
+ * Quản lý kết nối realtime (WebSocket), polling thông báo (SSE),
+ * và các phương thức HTTP cho hội thoại, tin nhắn, thông báo.
+ * Hỗ trợ auto-reconnect khi kết nối WebSocket bị gián đoạn.
+ *
+ * Tạo tự động bởi CP41 — không sửa thủ công.
+ */
+
+import { Injectable, inject, OnDestroy } from '@angular/core';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import {
+  Observable,
+  Subject,
+  interval,
+  of,
+  retry,
+  takeUntil,
+  concat,
+  defer,
+  EMPTY
+} from 'rxjs';
+import {
+  catchError,
+  map,
+  shareReplay,
+  tap,
+  switchMap,
+  delayWhen
+} from 'rxjs/operators';
+
+import {
+  Conversation,
+  Message,
+  Notification,
+  ReadReceipt,
+  ConversationListResponse,
+  MessageListResponse,
+  NotificationListResponse,
+  WebSocketPayload,
+  ConnectionStatus,
+  TypingIndicator,
+  MessageStatus,
+  ReadReceiptType,
+  USE_WEBSOCKET,
+  WEBSOCKET_URL,
+  USE_REDIS
+} from './chat-types';
+
+// ===========================================================================
+// Cấu hình
+// ===========================================================================
+
+/** URL cơ sở cho API chat. */
+const API_BASE: string = '/api/chat';
+
+/** Thời gian trễ giữa các lần reconnect (ms). */
+const RECONNECT_BASE_DELAY: number = 1000;
+
+/** Số lần reconnect tối đa. */
+const MAX_RECONNECT_ATTEMPTS: number = 5;
+
+/** Khoảng thời gian polling SSE (ms). */
+const SSE_POLL_INTERVAL: number = 30000;
+
+/** Cờ WebSocket. */
+const WS_ENABLED: boolean = {{ 'true' if use_websocket else 'false' }};
+
+/** Cờ Redis pub/sub. */
+const REDIS_ENABLED: boolean = {{ 'true' if use_redis else 'false' }};
+
+/** URL Redis. */
+const REDIS_URL: string = '{{ redis_url }}';
+
+/**
+ * ChatService — Service chính cho toàn bộ hoạt động chat.
+ *
+ * Cung cấp:
+ * - HTTP: Lấy danh sách hội thoại, tin nhắn, thông báo
+ * - HTTP: Gửi tin nhắn, đánh dấu đã đọc
+ * - WebSocket: Nhận/gửi tin nhắn realtime
+ * - SSE: Polling thông báo mới
+ * - Auto-reconnect: Tự động kết nối lại WebSocket
+ */
+@Injectable({
+  providedIn: 'root'
+})
+export class ChatService implements OnDestroy {
+  private readonly http = inject(HttpClient);
+
+  // --- WebSocket ---
+  private ws: WebSocket | null = null;
+  private reconnectAttempts: number = 0;
+  private isManuallyClosed: boolean = false;
+
+  // --- RxJS Subjects ---
+  /** Phát ra khi nhận được tin nhắn mới qua WebSocket. */
+  private readonly messageSubject = new Subject<Message>();
+
+  /** Phát ra khi nhận được xác nhận đọc qua WebSocket. */
+  private readonly receiptSubject = new Subject<ReadReceipt>();
+
+  /** Phát ra khi có indicator người dùng đang gõ. */
+  private readonly typingSubject = new Subject<TypingIndicator>();
+
+  /** Phát ra khi có thông báo realtime. */
+  private readonly notificationSubject = new Subject<Notification>();
+
+  /** Phát ra khi thay đổi trạng thái kết nối. */
+  private readonly connectionSubject = new Subject<ConnectionStatus>();
+
+  /** Signal hủy đăng ký. */
+  private readonly destroy$ = new Subject<void>();
+
+  // --- Observables công khai ---
+
+  /** Observable tin nhắn mới. */
+  public readonly messages$: Observable<Message> = this.messageSubject.asObservable();
+
+  /** Observable xác nhận đọc. */
+  public readonly receipts$: Observable<ReadReceipt> = this.receiptSubject.asObservable();
+
+  /** Observable đang gõ. */
+  public readonly typing$: Observable<TypingIndicator> = this.typingSubject.asObservable();
+
+  /** Observable thông báo realtime. */
+  public readonly realtimeNotifications$: Observable<Notification> = this.notificationSubject.asObservable();
+
+  /** Observable trạng thái kết nối. */
+  public readonly connectionStatus$: Observable<ConnectionStatus> = this.connectionSubject.asObservable();
+
+  // --- Cờ cấu hình ---
+  public readonly wsEnabled: boolean = WS_ENABLED;
+  public readonly redisEnabled: boolean = REDIS_ENABLED;
+
+  // ===========================================================================
+  // Hội thoại
+  // ===========================================================================
+
+  /**
+   * Lấy danh sách hội thoại của người dùng hiện tại.
+   */
+  getConversations(page: number = 1, pageSize: number = 20): Observable<ConversationListResponse> {
+    let params = new HttpParams()
+      .set('page', String(page))
+      .set('pageSize', String(pageSize));
+
+    return this.http.get<ConversationListResponse>(API_BASE + '/conversations', { params }).pipe(
+      catchError(error => {
+        console.warn('[ChatService] Không thể tải danh sách hội thoại:', error);
+        return of({ conversations: [], total: 0 });
+      })
+    );
+  }
+
+  /**
+   * Lấy chi tiết một hội thoại theo ID.
+   */
+  getConversation(conversationId: string): Observable<Conversation> {
+    return this.http.get<Conversation>(API_BASE + '/conversations/' + encodeURIComponent(conversationId)).pipe(
+      catchError(error => {
+        console.warn('[ChatService] Không thể tải hội thoại:', conversationId, error);
+        return EMPTY;
+      })
+    );
+  }
+
+  /**
+   * Tìm kiếm hội thoại theo từ khóa.
+   */
+  searchConversations(query: string): Observable<Conversation[]> {
+    const params = new HttpParams().set('q', query.trim());
+    return this.http.get<Conversation[]>(API_BASE + '/conversations/search', { params }).pipe(
+      catchError(error => {
+        console.warn('[ChatService] Không thể tìm kiếm hội thoại:', error);
+        return of([]);
+      })
+    );
+  }
+
+  // ===========================================================================
+  // Tin nhắn
+  // ===========================================================================
+
+  /**
+   * Lấy danh sách tin nhắn của một hội thoại.
+   */
+  getMessages(
+    conversationId: string,
+    limit: number = 50,
+    before?: string
+  ): Observable<MessageListResponse> {
+    let params = new HttpParams()
+      .set('limit', String(limit));
+
+    if (before) {
+      params = params.set('before', before);
+    }
+
+    return this.http.get<MessageListResponse>(
+      API_BASE + '/conversations/' + encodeURIComponent(conversationId) + '/messages',
+      { params }
+    ).pipe(
+      catchError(error => {
+        console.warn('[ChatService] Không thể tải tin nhắn:', conversationId, error);
+        return of({ messages: [], total: 0, hasMore: false });
+      })
+    );
+  }
+
+  /**
+   * Gửi tin nhắn mới qua HTTP.
+   */
+  sendMessage(conversationId: string, content: string, messageType: string = 'text', replyTo?: string): Observable<Message> {
+    const body: Record<string, unknown> = {
+      content,
+      messageType
+    };
+    if (replyTo) {
+      body.replyTo = replyTo;
+    }
+
+    return this.http.post<Message>(
+      API_BASE + '/conversations/' + encodeURIComponent(conversationId) + '/messages',
+      body
+    ).pipe(
+      tap(message => {
+        // Đồng thời gửi qua WebSocket nếu đang kết nối.
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({
+            type: 'message',
+            data: message
+          }));
+        }
+      }),
+      catchError(error => {
+        console.warn('[ChatService] Không thể gửi tin nhắn:', error);
+        return EMPTY;
+      })
+    );
+  }
+
+  /**
+   * Gửi tin nhắn trực tiếp qua WebSocket (nếu kết nối đang mở).
+   */
+  sendMessageViaWebSocket(conversationId: string, content: string, messageType: string = 'text'): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('[ChatService] WebSocket không mở — gửi qua HTTP thay thế');
+      this.sendMessage(conversationId, content, messageType).subscribe();
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'message',
+      data: {
+        conversationId,
+        content,
+        messageType,
+        status: MessageStatus.PENDING
+      }
+    }));
+  }
+
+  /**
+   * Đánh dấu tin nhắn đã đọc.
+   */
+  markAsRead(conversationId: string, messageId: string): Observable<ReadReceipt> {
+    return this.http.post<ReadReceipt>(
+      API_BASE + '/conversations/' + encodeURIComponent(conversationId) + '/messages/' + encodeURIComponent(messageId) + '/read',
+      {}
+    ).pipe(
+      catchError(error => {
+        console.warn('[ChatService] Không thể đánh dấu đã đọc:', error);
+        return EMPTY;
+      })
+    );
+  }
+
+  /**
+   * Gửi reaction (phản ứng emoji) cho tin nhắn.
+   */
+  addReaction(conversationId: string, messageId: string, emoji: string): Observable<Message> {
+    return this.http.post<Message>(
+      API_BASE + '/conversations/' + encodeURIComponent(conversationId) + '/messages/' + encodeURIComponent(messageId) + '/reactions',
+      { emoji }
+    ).pipe(
+      catchError(error => {
+        console.warn('[ChatService] Không thể thêm phản ứng:', error);
+        return EMPTY;
+      })
+    );
+  }
+
+  // ===========================================================================
+  // Thông báo
+  // ===========================================================================
+
+  /**
+   * Lấy danh sách thông báo của người dùng.
+   */
+  getNotifications(unreadOnly: boolean = false, limit: number = 50): Observable<NotificationListResponse> {
+    const params = new HttpParams()
+      .set('unreadOnly', String(unreadOnly))
+      .set('limit', String(limit));
+
+    return this.http.get<NotificationListResponse>(API_BASE + '/notifications', { params }).pipe(
+      catchError(error => {
+        console.warn('[ChatService] Không thể tải thông báo:', error);
+        return of({ notifications: [], unreadCount: 0, total: 0 });
+      })
+    );
+  }
+
+  /**
+   * Đánh dấu thông báo đã đọc.
+   */
+  markNotificationRead(notificationId: string): Observable<Notification> {
+    return this.http.patch<Notification>(
+      API_BASE + '/notifications/' + encodeURIComponent(notificationId) + '/read',
+      {}
+    ).pipe(
+      catchError(error => {
+        console.warn('[ChatService] Không thể đánh dấu thông báo đã đọc:', error);
+        return EMPTY;
+      })
+    );
+  }
+
+  /**
+   * Đánh dấu tất cả thông báo đã đọc.
+   */
+  markAllNotificationsRead(): Observable<{ count: number }> {
+    return this.http.patch<{ count: number }>(
+      API_BASE + '/notifications/read-all',
+      {}
+    ).pipe(
+      catchError(error => {
+        console.warn('[ChatService] Không thể đánh dấu tất cả đã đọc:', error);
+        return EMPTY;
+      })
+    );
+  }
+
+  // ===========================================================================
+  // SSE — Polling thông báo
+  // ===========================================================================
+
+  /**
+   * Tạo Observable polling thông báo mới với khoảng thời gian cố định.
+   */
+  pollNotifications(): Observable<Notification[]> {
+    return interval(SSE_POLL_INTERVAL).pipe(
+      startWith(0),
+      switchMap(() =>
+        this.http.get<Notification[]>(API_BASE + '/notifications/poll').pipe(
+          catchError(error => {
+            console.warn('[ChatService] SSE polling lỗi:', error);
+            return of([]);
+          })
+        )
+      ),
+      takeUntil(this.destroy$)
+    );
+  }
+
+  // ===========================================================================
+  // WebSocket — Kết nối realtime
+  // ===========================================================================
+
+  /**
+   * Kết nối WebSocket đến server chat.
+   */
+  connectWebSocket(): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return; // Đã kết nối, không làm gì.
+    }
+
+    if (!WS_ENABLED) {
+      console.info('[ChatService] WebSocket bị tắt — không kết nối');
+      this.connectionSubject.next({
+        status: 'disconnected',
+        errorMessage: 'WebSocket bị tắt ở cấu hình'
+      });
+      return;
+    }
+
+    this.isManuallyClosed = false;
+    this.doConnect();
+  }
+
+  /**
+   * Thực thi kết nối WebSocket với cơ chế retry.
+   */
+  private doConnect(): void {
+    try {
+      const wsUrl = WEBSOCKET_URL;
+      this.ws = new WebSocket(wsUrl);
+
+      // Xử lý khi kết nối thành công
+      this.ws.onopen = () => {
+        console.info('[ChatService] WebSocket đã kết nối:', wsUrl);
+        this.reconnectAttempts = 0;
+        this.connectionSubject.next({ status: 'connected' });
+
+        // Gửi tin nhắn ping để xác thực kết nối
+        this.ws?.send(JSON.stringify({
+          type: 'connection',
+          data: { action: 'subscribe' }
+        }));
+      };
+
+      // Xử lý khi nhận được dữ liệu
+      this.ws.onmessage = (event: MessageEvent) => {
+        try {
+          const payload: WebSocketPayload = JSON.parse(event.data);
+          this.handleWebSocketPayload(payload);
+        } catch (parseError) {
+          console.error('[ChatService] Không thể phân tích WebSocket payload:', parseError);
+        }
+      };
+
+      // Xử lý khi đóng kết nối
+      this.ws.onclose = (event: CloseEvent) => {
+        console.warn('[ChatService] WebSocket đóng:', event.code, event.reason);
+        this.connectionSubject.next({
+          status: 'disconnected',
+          errorCode: event.code
+        });
+
+        // Tự động reconnect nếu không đóng thủ công
+        if (!this.isManuallyClosed) {
+          this.scheduleReconnect();
+        }
+      };
+
+      // Xử lý lỗi WebSocket
+      this.ws.onerror = (error: Event) => {
+        console.error('[ChatService] WebSocket lỗi:', error);
+        this.connectionSubject.next({
+          status: 'error',
+          errorMessage: 'Lỗi kết nối WebSocket'
+        });
+      };
+
+    } catch (connectionError) {
+      console.error('[ChatService] Không thể tạo WebSocket:', connectionError);
+      this.scheduleReconnect();
+    }
+  }
+
+  /**
+   * Xử lý payload nhận được từ WebSocket.
+   */
+  private handleWebSocketPayload(payload: WebSocketPayload): void {
+    switch (payload.type) {
+      case 'message':
+        this.messageSubject.next(payload.data as Message);
+        break;
+      case 'read_receipt':
+        this.receiptSubject.next(payload.data as ReadReceipt);
+        break;
+      case 'typing':
+        this.typingSubject.next(payload.data as TypingIndicator);
+        break;
+      case 'notification':
+        this.notificationSubject.next(payload.data as Notification);
+        break;
+      case 'error':
+        console.error('[ChatService] WebSocket error payload:', payload.data);
+        break;
+      case 'connection':
+        // Xác nhận kết nối thành công từ server
+        break;
+      default:
+        console.warn('[ChatService] WebSocket payload loại chưa biết:', payload.type);
+    }
+  }
+
+  /**
+   * Lện reconnect với exponential backoff.
+   */
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.error('[ChatService]已达到 số lần reconnect tối đa');
+      this.connectionSubject.next({
+        status: 'error',
+        errorMessage: 'Không thể kết nối sau ' + MAX_RECONNECT_ATTEMPTS + ' lần thử'
+      });
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = RECONNECT_BASE_DELAY * Math.pow(2, this.reconnectAttempts - 1);
+
+    console.info('[ChatService] Sẽ reconnect sau ' + delay + 'ms (lần ' + this.reconnectAttempts + ')');
+
+    this.connectionSubject.next({
+      status: 'reconnecting',
+      errorMessage: 'Đang reconnect...'
+    });
+
+    setTimeout(() => {
+      if (!this.isManuallyClosed) {
+        this.doConnect();
+      }
+    }, delay);
+  }
+
+  /**
+   * Gửi indicator đang gõ cho server.
+   */
+  sendTypingIndicator(conversationId: string, isTyping: boolean): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'typing',
+      data: {
+        conversationId,
+        isTyping
+      }
+    }));
+  }
+
+  /**
+   * Gửi xác nhận đọc qua WebSocket.
+   */
+  sendReadReceipt(conversationId: string, messageId: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.markAsRead(conversationId, messageId).subscribe();
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'read_receipt',
+      data: {
+        conversationId,
+        messageId,
+        receiptType: ReadReceiptType.READ
+      }
+    }));
+  }
+
+  /**
+   * Đóng kết nối WebSocket thủ công.
+   */
+  disconnectWebSocket(): void {
+    this.isManuallyClosed = true;
+    if (this.ws) {
+      this.ws.close(1000, 'Client disconnected');
+      this.ws = null;
+    }
+  }
+
+  // ===========================================================================
+  // Cleanup
+  // ===========================================================================
+
+  /**
+   * Hủy tất cả đăng ký và đóng WebSocket khi service bị destroy.
+   */
+  ngOnDestroy(): void {
+    this.isManuallyClosed = true;
+    if (this.ws) {
+      this.ws.close(1000, 'Service destroyed');
+      this.ws = null;
+    }
+    this.destroy$.next();
+    this.destroy$.complete();
+    this.messageSubject.complete();
+    this.receiptSubject.complete();
+    this.typingSubject.complete();
+    this.notificationSubject.complete();
+    this.connectionSubject.complete();
+  }
+}

@@ -938,6 +938,20 @@ class ErrorCode(str, Enum):
     CP40_WEBHOOK_SUBSCRIPTION_INACTIVE = "MDC-CP40-010"
 
     # =========================================================================
+    # CP41: Chat & Messaging Errors
+    # =========================================================================
+    CP41_CHAT_CONVERSATION_NOT_FOUND = "MDC-CP41-001"
+    CP41_CHAT_MESSAGE_TOO_LONG = "MDC-CP41-002"
+    CP41_CHAT_USER_NOT_IN_CONVERSATION = "MDC-CP41-003"
+    CP41_CHAT_WEBSOCKET_CONNECTION_FAILED = "MDC-CP41-004"
+    CP41_CHAT_REDIS_PUBLISH_FAILED = "MDC-CP41-005"
+    CP41_CHAT_NOTIFICATION_SEND_FAILED = "MDC-CP41-006"
+    CP41_CHAT_MESSAGE_ATTACHMENT_TOO_LARGE = "MDC-CP41-007"
+    CP41_CHAT_RATE_LIMIT_EXCEEDED = "MDC-CP41-008"
+    CP41_CHAT_CONTENT_FILTER_VIOLATION = "MDC-CP41-009"
+    CP41_CHAT_SSE_CONNECTION_CLOSED = "MDC-CP41-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"
@@ -1447,6 +1461,18 @@ class MidicoderErrorManager:
         ErrorCode.CP40_WEBHOOK_SIGNATURE_GENERATION_FAILED: "Tạo HMAC signature thất bại: {reason}",
         ErrorCode.CP40_WEBHOOK_PAYLOAD_RENDER_FAILED: "Render payload template thất bại: {reason}",
         ErrorCode.CP40_WEBHOOK_SUBSCRIPTION_INACTIVE: "Webhook subscription không active: {subscription_id}",
+
+        # CP41: Chat & Messaging Error Templates
+        ErrorCode.CP41_CHAT_CONVERSATION_NOT_FOUND: "Conversation không tồn tại: {conversation_id}",
+        ErrorCode.CP41_CHAT_MESSAGE_TOO_LONG: "Message vượt quá độ dài cho phép: {length} > {max_length}",
+        ErrorCode.CP41_CHAT_USER_NOT_IN_CONVERSATION: "User không phải thành viên conversation: {user_id}",
+        ErrorCode.CP41_CHAT_WEBSOCKET_CONNECTION_FAILED: "Kết nối WebSocket thất bại: {reason}",
+        ErrorCode.CP41_CHAT_REDIS_PUBLISH_FAILED: "Không thể publish message qua Redis: {reason}",
+        ErrorCode.CP41_CHAT_NOTIFICATION_SEND_FAILED: "Gửi notification thất bại: {reason}",
+        ErrorCode.CP41_CHAT_MESSAGE_ATTACHMENT_TOO_LARGE: "Attachment quá lớn: {size} > {max_size}",
+        ErrorCode.CP41_CHAT_RATE_LIMIT_EXCEEDED: "Vượt rate limit chat: {user_id} ({messages} msg/min)",
+        ErrorCode.CP41_CHAT_CONTENT_FILTER_VIOLATION: "Message vi phạm content filter: {reason}",
+        ErrorCode.CP41_CHAT_SSE_CONNECTION_CLOSED: "SSE connection đóng không mong muốn",
 
         ErrorCode.CP53_BRIDGE_CAPABILITY_INVALID: "CP capability trong BridgeBinding khong hop le.",
         ErrorCode.CP53_DP_NOT_REGISTERED: "Domain pack target chua duoc dang ky.",

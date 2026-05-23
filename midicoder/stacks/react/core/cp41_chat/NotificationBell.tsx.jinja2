@@ -1,0 +1,192 @@
+/**
+ * NotificationBell — icon thong bao voi dropdown: dem chua doc, danh sach thong bao.
+ * Sinh boi CP41 ChatEmitter.
+ *
+ * Cac loai thong bao:
+{% for nt in notification_types %}
+ *   - {{ nt }}
+{% endfor %}
+ */
+
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+
+/* ---- Loai thong bao ---- */
+export type NotificationType = 'new_message' | 'mention' | 'reply' | 'system' | 'mention_reply';
+
+export interface NotificationItem {
+    notification_id: string;
+    conversation_id: string;
+    target_user_id: string;
+    notification_type: NotificationType;
+    message_id: string | null;
+    is_read: boolean;
+    created_at: string;
+    preview?: string;
+}
+
+export interface NotificationBellProps {
+    notifications: NotificationItem[];
+    unreadCount: number;
+    onMarkAsRead: (notificationId: string) => void;
+    onMarkAllAsRead?: () => void;
+    onSelect?: (notificationId: string) => void;
+}
+
+/* ---- Style objects — de tranh double-brace trong JSX ---- */
+const sWrap = { position: 'relative' as const };
+const sBellBtn = { position: 'relative' as const, background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '8px' };
+const sBadge = { position: 'absolute' as const, top: '2px', right: '2px', minWidth: '18px', height: '18px', borderRadius: '9px', backgroundColor: '#ef4444', color: '#fff', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' };
+const sDropdown = { position: 'absolute' as const, top: '40px', right: 0, width: '340px', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', boxShadow: '0 4px 24px rgba(0,0,0,0.12)', fontFamily: 'system-ui, sans-serif', zIndex: 1000, maxHeight: '480px', display: 'flex', flexDirection: 'column' as const };
+const sDropdownHeader = { padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' };
+const sDropdownTitle = { fontSize: '15px', fontWeight: 600, margin: 0 };
+const sMarkAllBtn = { fontSize: '12px', color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px' };
+const sDropdownList = { overflowY: 'auto' as const, flex: 1 };
+const sNotifItem = { padding: '12px 16px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'flex-start' };
+const sNotifItemUnread = { padding: '12px 16px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'flex-start', backgroundColor: '#eff6ff' };
+const sNotifIcon = { width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 };
+const sNotifBody = { flex: 1, overflow: 'hidden' };
+const sNotifPreview = { fontSize: '13px', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const };
+const sNotifPreviewBold = { fontSize: '13px', fontWeight: 600, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const };
+const sNotifMeta = { fontSize: '11px', color: '#9ca3af', marginTop: '2px' };
+const sNotifDot = { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#3b82f6', flexShrink: 0, marginTop: '4px' };
+const sEmptyCell = { padding: '24px', textAlign: 'center' as const, color: '#9ca3af', fontSize: '13px' };
+
+/* Icon va mau sac theo loai thong bao */
+const notifIcon: Record<NotificationType, { emoji: string; bg: string }> = {
+    new_message:  { emoji: '\u2709\uFE0F', bg: '#dbeafe' },
+    mention:      { emoji: '\u{1F464}', bg: '#fef3c7' },
+    reply:        { emoji: '\u21A9\uFE0F', bg: '#dcfce7' },
+    system:       { emoji: '\u2699\uFE0F', bg: '#f3f4f6' },
+    mention_reply:{ emoji: '\u{1F4AC}', bg: '#ede9fe' },
+};
+
+/* Helper: style icon theo loai */
+function notifIconStyle(type: NotificationType) {
+    const m = notifIcon[type] || notifIcon.system;
+    return { ...sNotifIcon, backgroundColor: m.bg };
+}
+
+/* Helper: thoi gian tuong doi */
+function relativeTime(iso: string): string {
+    const d = Date.now() - new Date(iso).getTime();
+    if (d < 60000) return 'vua xong';
+    if (d < 3600000) return Math.round(d / 60000) + ' phut truoc';
+    if (d < 86400000) return Math.round(d / 3600000) + ' gio truoc';
+    return new Date(iso).toLocaleDateString('vi-VN');
+}
+
+/* ---- Component chinh: NotificationBell ---- */
+export function NotificationBell({
+    notifications,
+    unreadCount,
+    onMarkAsRead,
+    onMarkAllAsRead,
+    onSelect,
+}: NotificationBellProps) {
+    const [open, setOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    /* Dong dropdown khi click ngoai */
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    /* Xung dan va dong/khoi dropdown */
+    const toggleOpen = useCallback(() => {
+        setOpen((p) => !p);
+    }, []);
+
+    /* Click vao thong bao — doc va chon */
+    const handleClick = useCallback((n: NotificationItem) => {
+        onMarkAsRead(n.notification_id);
+        if (onSelect) {
+            onSelect(n.notification_id);
+        }
+    }, [onMarkAsRead, onSelect]);
+
+    /* Doc tat ca */
+    const handleMarkAll = useCallback(() => {
+        if (onMarkAllAsRead) {
+            onMarkAllAsRead();
+        } else {
+            notifications.forEach((n) => onMarkAsRead(n.notification_id));
+        }
+    }, [notifications, onMarkAsRead, onMarkAllAsRead]);
+
+    /* Sap xep thong bao: chua doc tren truoc, sau do theo thoi gian */
+    const sorted = [...notifications].sort((a, b) => {
+        if (a.is_read !== b.is_read) return a.is_read ? 1 : -1;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
+    return (
+        <div style={sWrap} ref={dropdownRef}>
+            {/* Nút chuông */}
+            <button style={sBellBtn} onClick={toggleOpen} aria-label="Thong bao">
+                \u{1F514}
+                {unreadCount > 0 && (
+                    <span style={sBadge}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                )}
+            </button>
+
+            {/* Dropdown danh sach thong bao */}
+            {open && (
+                <div style={sDropdown}>
+                    <div style={sDropdownHeader}>
+                        <h3 style={sDropdownTitle}>Thong bao ({notifications.length})</h3>
+                        {unreadCount > 0 && (
+                            <button style={sMarkAllBtn} onClick={handleMarkAll}>
+                                Doc tat ca
+                            </button>
+                        )}
+                    </div>
+
+                    <div style={sDropdownList}>
+                        {sorted.length === 0 && (
+                            <div style={sEmptyCell}>Khong co thong bao nao</div>
+                        )}
+                        {sorted.map((n) => {
+                            const iconMeta = notifIcon[n.notification_type] || notifIcon.system;
+                            return (
+                                <div
+                                    key={n.notification_id}
+                                    style={n.is_read ? sNotifItem : sNotifItemUnread}
+                                    onClick={() => handleClick(n)}
+                                >
+                                    {/* Dot chua doc */}
+                                    {!n.is_read && <span style={sNotifDot} />}
+
+                                    {/* Icon loai */}
+                                    <div style={notifIconStyle(n.notification_type)}>
+                                        {iconMeta.emoji}
+                                    </div>
+
+                                    {/* Noi dung */}
+                                    <div style={sNotifBody}>
+                                        <div style={n.is_read ? sNotifPreview : sNotifPreviewBold}>
+                                            {n.preview || `Co thong bao loai ${n.notification_type}`}
+                                        </div>
+                                        <div style={sNotifMeta}>
+                                            {relativeTime(n.created_at)}
+                                            {' · '}
+                                            {n.conversation_id}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default NotificationBell;

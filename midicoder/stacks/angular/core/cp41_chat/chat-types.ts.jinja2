@@ -1,0 +1,378 @@
+/**
+ * chat-types.ts — Định nghĩa kiểu dữ liệu cho hệ thống chat & messaging.
+ *
+ * Cung cấp các interface và enum dùng chung cho toàn bộ module chat:
+ * Conversation, Message, Participant, Notification, ReadReceipt,
+ * cùng các enum MessageType, MessageStatus, ConversationType,
+ * NotificationType, ReadReceiptType.
+ *
+ * Tạo tự động bởi CP41 — không sửa thủ công.
+ */
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/**
+ * Loại tin nhắn trong hệ thống chat.
+ *
+ * - TEXT: Tin nhắn văn bản thuần
+ * - IMAGE: Tin nhắn ảnh
+ * - VIDEO: Tin nhắn video
+ * - AUDIO: Tin nhắn âm thanh
+ * - FILE: Tin nhắn file đính kèm
+ * - SYSTEM: Tin nhắn hệ thống (thông báo, cảnh báo)
+ * - REACTION: Phản ứng emoji trên tin nhắn
+ * - REPLY: Tin nhắn trả lời cho một tin nhắn khác
+ */
+export enum MessageType {
+  TEXT = 'text',
+  IMAGE = 'image',
+  VIDEO = 'video',
+  AUDIO = 'audio',
+  FILE = 'file',
+  SYSTEM = 'system',
+  REACTION = 'reaction',
+  REPLY = 'reply'
+}
+
+/**
+ * Trạng thái của tin nhắn.
+ *
+ * - SENT: Đã gửi từ máy khách
+ * - DELIVERED: Đã giao đến máy nhận
+ * - READ: Đã được người nhận đọc
+ * - FAILED: Gửi thất bại
+ * - PENDING: Đang chờ gửi
+ */
+export enum MessageStatus {
+  SENT = 'sent',
+  DELIVERED = 'delivered',
+  READ = 'read',
+  FAILED = 'failed',
+  PENDING = 'pending'
+}
+
+/**
+ * Loại hội thoại.
+ *
+ * - DIRECT: Trò chuyện trực tiếp giữa 2 người
+ * - GROUP: Trò chuyện nhóm (nhiều người tham gia)
+ * - SUPPORT: Hỗ trợ khách hàng
+ * - BROADCAST: Phát sóng cho nhiều người nhận
+ */
+export enum ConversationType {
+  DIRECT = 'direct',
+  GROUP = 'group',
+  SUPPORT = 'support',
+  BROADCAST = 'broadcast'
+}
+
+/**
+ * Loại thông báo trong hệ thống chat.
+ *
+ * - NEW_MESSAGE: Tin nhắn mới trong hội thoại
+ * - MENTION: Được nhắc đến trong tin nhắn (at mention)
+ * - REPLY: Có người trả lời tin nhắn của mình
+ * - SYSTEM: Thông báo hệ thống (cập nhật, bảo trì)
+ * - MENTION_REPLY: Được nhắc đến trong tin nhắn trả lời
+ */
+export enum NotificationType {
+  NEW_MESSAGE = 'new_message',
+  MENTION = 'mention',
+  REPLY = 'reply',
+  SYSTEM = 'system',
+  MENTION_REPLY = 'mention_reply'
+}
+
+/**
+ * Loại xác nhận đọc tin nhắn.
+ *
+ * - DELIVERED: Tin nhắn đã được giao
+ * - READ: Tin nhắn đã được đọc
+ * - PLAYED: Nội dung đa phương tiện đã được phát
+ */
+export enum ReadReceiptType {
+  DELIVERED = 'delivered',
+  READ = 'read',
+  PLAYED = 'played'
+}
+
+// ===========================================================================
+// Dữ liệu tĩnh từ template
+// ===========================================================================
+
+/** Các loại thông báo được hỗ trợ tại thời điểm build. */
+export const SUPPORTED_NOTIFICATION_TYPES: NotificationType[] = [
+{% for nt in notification_types %}
+  NotificationType.{{ nt }}{% if not loop.last %},{% endif %}
+{% endfor %}
+];
+
+/** Tổng số hội thoại tạo sẵn từ template. */
+export const INITIAL_CONVERSATION_COUNT: number = {{ num_conversations }};
+
+/** Tổng số tin nhắn tạo sẵn từ template. */
+export const INITIAL_MESSAGE_COUNT: number = {{ num_messages }};
+
+/** Tổng số thông báo tạo sẵn từ template. */
+export const INITIAL_NOTIFICATION_COUNT: number = {{ num_notifications }};
+
+/** URL WebSocket server cho kết nối realtime. */
+export const WEBSOCKET_URL: string = '{{ redis_url }}'.includes('redis')
+  ? 'ws' + ('{{ redis_url }}'.startsWith('https') ? 's' : '') + '://' + '{{ redis_url }}'.replace(/^https?:\/\//, '').replace(/redis/, 'ws') + '/chat'
+  : 'ws://localhost:8000/ws/chat';
+
+/** Cờ bật/tắt WebSocket cho real-time messaging. */
+export const USE_WEBSOCKET: boolean = {{ 'true' if use_websocket else 'false' }};
+
+/** Cờ bật/tắt Redis pub/sub cho broadcast. */
+export const USE_REDIS: boolean = {{ 'true' if use_redis else 'false' }};
+
+// ===========================================================================
+// Interfaces
+// ===========================================================================
+
+/**
+ * Người tham gia hội thoại.
+ *
+ * Theo dõi vai trò của mỗi user trong hội thoại: admin, member, muted.
+ */
+export interface Participant {
+  /** ID duy nhất của bản ghi tham gia. */
+  participantId: string;
+  /** ID hội thoại. */
+  conversationId: string;
+  /** ID người dùng. */
+  userId: string;
+  /** Tên hiển thị của người dùng. */
+  displayName?: string;
+  /** Avatar URL của người dùng. */
+  avatarUrl?: string;
+  /** Vai trò trong hội thoại. */
+  role: 'admin' | 'member' | 'muted';
+  /** Thời điểm tham gia hội thoại. */
+  joinedAt: string;
+  /** ID tin nhắn cuối cùng đã đọc. */
+  lastReadMessageId?: string;
+}
+
+/**
+ * Hội thoại (phòng chat).
+ *
+ * Chứa metadata về hội thoại và danh sách người tham gia.
+ */
+export interface Conversation {
+  /** ID duy nhất của hội thoại. */
+  conversationId: string;
+  /** Tên hội thoại (tùy chọn cho direct chat). */
+  name: string;
+  /** Loại hội thoại. */
+  conversationType: ConversationType;
+  /** ID người tạo hội thoại. */
+  createdBy: string;
+  /** Số người tham gia tối đa. */
+  maxParticipants: number;
+  /** Hội thoại có đang hoạt động không. */
+  isActive: boolean;
+  /** Dữ liệu bổ sung tùy chỉnh. */
+  metadata?: Record<string, unknown>;
+  /** Danh sách người tham gia. */
+  participants: Participant[];
+  /** Tin nhắn cuối cùng trong hội thoại. */
+  lastMessage?: Message;
+  /** Số tin nhắn chưa đọc. */
+  unreadCount: number;
+  /** Thời điểm tạo hội thoại. */
+  createdAt: string;
+  /** Thời điểm cập nhật cuối. */
+  updatedAt: string;
+}
+
+/**
+ * File đính kèm trong tin nhắn.
+ */
+export interface Attachment {
+  /** URL của file đính kèm. */
+  url: string;
+  /** Tên file. */
+  filename: string;
+  /** MIME type của file. */
+  mimeType: string;
+  /** Kích thước file (byte). */
+  size: number;
+  /** Thumbnail URL (đối với ảnh/video). */
+  thumbnailUrl?: string;
+}
+
+/**
+ * Tin nhắn trong hội thoại.
+ */
+export interface Message {
+  /** ID duy nhất của tin nhắn. */
+  messageId: string;
+  /** ID hội thoại chứa tin nhắn. */
+  conversationId: string;
+  /** ID người gửi. */
+  senderId: string;
+  /** Tên hiển thị của người gửi. */
+  senderName?: string;
+  /** Avatar URL của người gửi. */
+  senderAvatarUrl?: string;
+  /** Loại tin nhắn. */
+  messageType: MessageType;
+  /** Nội dung tin nhắn. */
+  content: string;
+  /** Danh sách file đính kèm. */
+  attachments: Attachment[];
+  /** ID tin nhắn được trả lời (nullable). */
+  replyTo?: string;
+  /** Tin nhắn gốc được trả lời (nếu có). */
+  replyToMessage?: Message;
+  /** Các phản ứng emoji trên tin nhắn. */
+  reactions: Reaction[];
+  /** Trạng thái tin nhắn. */
+  status: MessageStatus;
+  /** Xác nhận đọc. */
+  readReceipts: ReadReceipt[];
+  /** Thời điểm gửi tin nhắn. */
+  createdAt: string;
+  /** Thời điểm cập nhật (chỉnh sửa). */
+  updatedAt?: string;
+}
+
+/**
+ * Phản ứng emoji trên tin nhắn.
+ */
+export interface Reaction {
+  /** Emoji được phản ứng. */
+  emoji: string;
+  /** Danh sách ID người dùng đã phản ứng. */
+  userIds: string[];
+}
+
+/**
+ * Xác nhận đọc tin nhắn.
+ */
+export interface ReadReceipt {
+  /** ID duy nhất của xác nhận đọc. */
+  receiptId: string;
+  /** ID người dùng xác nhận đọc. */
+  userId: string;
+  /** Tên hiển thị của người xác nhận. */
+  userName?: string;
+  /** Loại xác nhận. */
+  receiptType: ReadReceiptType;
+  /** Thời điểm xác nhận. */
+  createdAt: string;
+}
+
+/**
+ * Thông báo chat gửi đến người dùng.
+ */
+export interface Notification {
+  /** ID duy nhất của thông báo. */
+  notificationId: string;
+  /** ID hội thoại liên quan. */
+  conversationId: string;
+  /** ID người nhận thông báo. */
+  targetUserId: string;
+  /** Loại thông báo. */
+  notificationType: NotificationType;
+  /** Tiêu đề thông báo. */
+  title: string;
+  /** Nội dung thông báo. */
+  message: string;
+  /** ID tin nhắn liên quan (nullable). */
+  messageId?: string;
+  /** Tin nhắn liên quan (nếu có). */
+  relatedMessage?: Message;
+  /** ID người gửi thông báo. */
+  senderId?: string;
+  /** Tên người gửi. */
+  senderName?: string;
+  /** Thông báo đã được đọc chưa. */
+  isRead: boolean;
+  /** Thời điểm tạo thông báo. */
+  createdAt: string;
+}
+
+/**
+ * Dữ liệu hiện tại của người dùng.
+ */
+export interface CurrentUser {
+  /** ID người dùng. */
+  userId: string;
+  /** Tên hiển thị. */
+  displayName: string;
+  /** Avatar URL. */
+  avatarUrl?: string;
+  /** Trạng thái trực tuyến. */
+  isOnline: boolean;
+  /** Tiêu đề cá nhân. */
+  statusMessage?: string;
+}
+
+/**
+ * Dữ liệu trả về khi kết nối WebSocket.
+ */
+export interface WebSocketPayload {
+  /** Loại sự kiện WebSocket. */
+  type: 'message' | 'typing' | 'read_receipt' | 'notification' | 'error' | 'connection';
+  /** Dữ liệu của sự kiện. */
+  data: Message | ReadReceipt | Notification | TypingIndicator | ConnectionStatus;
+  /** Timestamp của sự kiện. */
+  timestamp: string;
+}
+
+/**
+ * Indikator đang gõ tin nhắn.
+ */
+export interface TypingIndicator {
+  /** ID người đang gõ. */
+  userId: string;
+  /** Tên người đang gõ. */
+  userName: string;
+  /** ID hội thoại. */
+  conversationId: string;
+  /** Đang gõ hay đã dừng. */
+  isTyping: boolean;
+}
+
+/**
+ * Trạng thái kết nối WebSocket.
+ */
+export interface ConnectionStatus {
+  /** Trạng thái kết nối. */
+  status: 'connected' | 'disconnected' | 'reconnecting' | 'error';
+  /** Mã lỗi (nếu có). */
+  errorCode?: number;
+  /** Thông điệp lỗi. */
+  errorMessage?: string;
+}
+
+/**
+ * Response API danh sách hội thoại.
+ */
+export interface ConversationListResponse {
+  conversations: Conversation[];
+  total: number;
+}
+
+/**
+ * Response API danh sách tin nhắn.
+ */
+export interface MessageListResponse {
+  messages: Message[];
+  total: number;
+  hasMore: boolean;
+}
+
+/**
+ * Response API danh sách thông báo.
+ */
+export interface NotificationListResponse {
+  notifications: Notification[];
+  unreadCount: number;
+  total: number;
+}

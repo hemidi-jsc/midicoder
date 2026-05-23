@@ -1,0 +1,440 @@
+/**
+ * chatService — dich vu API cho chat: HTTP CRUD, WebSocket client, SSE client.
+ * Sinh boi CP41 ChatEmitter.
+ *
+ * Redis URL: {{ redis_url }}
+ * Su dung Redis: {{ use_redis }}
+ * Su dung WebSocket: {{ use_websocket }}
+ */
+
+/* ============================================
+ * Giao dien du lieu
+ * ============================================ */
+
+export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'file' | 'system' | 'reaction' | 'reply';
+export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed' | 'pending';
+export type ConversationType = 'direct' | 'group' | 'support' | 'broadcast';
+export type NotificationType = 'new_message' | 'mention' | 'reply' | 'system' | 'mention_reply';
+
+export interface Conversation {
+    conversation_id: string;
+    name: string;
+    conversation_type: ConversationType;
+    created_by: string;
+    max_participants: number;
+    is_active: boolean;
+    metadata: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface ChatMessage {
+    message_id: string;
+    conversation_id: string;
+    sender_id: string;
+    message_type: MessageType;
+    content: string;
+    attachments: Array<{ url: string; filename: string; mime_type: string; size: number }>;
+    reply_to: string | null;
+    status: MessageStatus;
+    created_at: string;
+}
+
+export interface NotificationItem {
+    notification_id: string;
+    conversation_id: string;
+    target_user_id: string;
+    notification_type: NotificationType;
+    message_id: string | null;
+    is_read: boolean;
+    created_at: string;
+}
+
+export interface ReadReceipt {
+    receipt_id: string;
+    message_id: string;
+    conversation_id: string;
+    user_id: string;
+    receipt_type: 'delivered' | 'read' | 'played';
+    created_at: string;
+}
+
+export interface ConversationParticipant {
+    participant_id: string;
+    conversation_id: string;
+    user_id: string;
+    role: 'admin' | 'member' | 'muted';
+    joined_at: string;
+    last_read_message_id: string | null;
+}
+
+/* ============================================
+ * HttpClient — goi API HTTP co ban
+ * ============================================ */
+
+class HttpClient {
+    constructor(private baseUrl: string) {}
+
+    private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+        const url = this.baseUrl + path;
+        const response = await fetch(url, {
+            headers: { 'Content-Type': 'application/json', ...options.headers },
+            ...options,
+        });
+        if (!response.ok) {
+            throw new Error('API loi: ' + response.status + ' ' + response.statusText);
+        }
+        // Handle 204 No Content
+        if (response.status === 204) {
+            return undefined as T;
+        }
+        return response.json();
+    }
+
+    get<T>(path: string): Promise<T> {
+        return this.request<T>(path, { method: 'GET' });
+    }
+
+    post<T>(path: string, body?: unknown): Promise<T> {
+        return this.request<T>(path, {
+            method: 'POST',
+            body: body ? JSON.stringify(body) : undefined,
+        });
+    }
+
+    put<T>(path: string, body?: unknown): Promise<T> {
+        return this.request<T>(path, {
+            method: 'PUT',
+            body: body ? JSON.stringify(body) : undefined,
+        });
+    }
+
+    delete<T>(path: string): Promise<T> {
+        return this.request<T>(path, { method: 'DELETE' });
+    }
+}
+
+/* ============================================
+ * WebSocketClient — quan ly ket noi WebSocket
+ * ============================================ */
+
+type WsCallback = (data: unknown) => void;
+
+export class WebSocketClient {
+    private socket: WebSocket | null = null;
+    private callbacks: Map<string, Set<WsCallback>> = new Map();
+    private reconnectDelay: number = 3000;
+    private reconnectTimer: number | null = null;
+    private isOpen: boolean = false;
+
+    constructor(private url: string) {}
+
+    /* Ket noi toi WebSocket server */
+    connect() {
+        if (this.socket) return;
+
+        try {
+            this.socket = new WebSocket(this.url);
+
+            this.socket.onopen = () => {
+                this.isOpen = true;
+            };
+
+            this.socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // Go call theo kieu tin nhan
+                    const type = typeof data === 'object' && data && 'type' in data ? (data as any).type : 'unknown';
+                    const handlers = this.callbacks.get(type as string);
+                    if (handlers) {
+                        handlers.forEach((cb) => cb(data));
+                    }
+                    // Cung goi vao '*' de bat tat ca
+                    const allHandlers = this.callbacks.get('*');
+                    if (allHandlers) {
+                        allHandlers.forEach((cb) => cb(data));
+                    }
+                } catch {
+                    // Tin nhan khong phai JSON — bo qua
+                }
+            };
+
+            this.socket.onclose = () => {
+                this.isOpen = false;
+                // Tu dong ket lai
+                this.reconnectTimer = window.setTimeout(() => {
+                    this.connect();
+                }, this.reconnectDelay);
+            };
+
+            this.socket.onerror = () => {
+                // onclose se duoc goi tiep
+            };
+        } catch {
+            // Ket noi that bai — se thu lai
+        }
+    }
+
+    /* Gui tin nhan */
+    send(data: unknown) {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify(data));
+        }
+    }
+
+    /* Dang ky callback theo kieu tin nhan */
+    on(type: string, callback: WsCallback) {
+        if (!this.callbacks.has(type)) {
+            this.callbacks.set(type, new Set());
+        }
+        this.callbacks.get(type)!.add(callback);
+    }
+
+    /* Huy callback */
+    off(type: string, callback: WsCallback) {
+        const handlers = this.callbacks.get(type);
+        if (handlers) {
+            handlers.delete(callback);
+        }
+    }
+
+    /* Ngat ket noi */
+    disconnect() {
+        if (this.reconnectTimer !== null) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        if (this.socket) {
+            this.socket.close(1000, 'Disconnect');
+            this.socket = null;
+        }
+        this.isOpen = false;
+    }
+
+    get connected(): boolean {
+        return this.isOpen;
+    }
+}
+
+/* ============================================
+ * SSEClient — quan ly ket noi Server-Sent Events
+ * ============================================ */
+
+type SseCallback = (data: unknown) => void;
+
+export class SSEClient {
+    private eventSource: EventSource | null = null;
+    private callbacks: Map<string, Set<SseCallback>> = new Map();
+    private reconnectTimer: number | null = null;
+
+    constructor(private url: string) {}
+
+    /* Ket noi toi SSE endpoint */
+    connect() {
+        if (this.eventSource) return;
+
+        try {
+            this.eventSource = new EventSource(this.url);
+
+            this.eventSource.onopen = () => {
+                // Ket noi thanh cong
+            };
+
+            // Nghe tin nhan mac dinh
+            this.eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    const handlers = this.callbacks.get('*');
+                    if (handlers) {
+                        handlers.forEach((cb) => cb(data));
+                    }
+                } catch {
+                    // Khong phai JSON
+                }
+            };
+
+            // Nghe kieu su kien 'notification'
+            this.eventSource.addEventListener('notification', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    const handlers = this.callbacks.get('notification');
+                    if (handlers) {
+                        handlers.forEach((cb) => cb(data));
+                    }
+                } catch {
+                    // Khong phai JSON
+                }
+            });
+
+            this.eventSource.onerror = () => {
+                this.eventSource?.close();
+                this.eventSource = null;
+                // Tu dong ket lai sau 5 giay
+                this.reconnectTimer = window.setTimeout(() => {
+                    this.connect();
+                }, 5000);
+            };
+        } catch {
+            // Ket noi that bai
+        }
+    }
+
+    /* Dang ky callback theo kieu su kien */
+    on(type: string, callback: SseCallback) {
+        if (!this.callbacks.has(type)) {
+            this.callbacks.set(type, new Set());
+        }
+        this.callbacks.get(type)!.add(callback);
+    }
+
+    /* Huy callback */
+    off(type: string, callback: SseCallback) {
+        const handlers = this.callbacks.get(type);
+        if (handlers) {
+            handlers.delete(callback);
+        }
+    }
+
+    /* Ngat ket noi */
+    disconnect() {
+        if (this.reconnectTimer !== null) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+    }
+}
+
+/* ============================================
+ * ChatService — dich vu chinh
+ * ============================================ */
+
+export class ChatService {
+    private http: HttpClient;
+    private ws: WebSocketClient | null = null;
+    private sse: SSEClient | null = null;
+
+    constructor(baseUrl: string = '') {
+        this.http = new HttpClient(baseUrl);
+{% if use_websocket %}
+        // Khoi tao WebSocket client voi URL Redis
+        this.ws = new WebSocketClient('{{ redis_url }}');
+{% endif %}
+    }
+
+    /* ---- Hoi thoai ---- */
+
+    async getConversations(): Promise<Conversation[]> {
+        return this.http.get<Conversation[]>('/api/chat/conversations');
+    }
+
+    async getConversation(id: string): Promise<Conversation> {
+        return this.http.get<Conversation>('/api/chat/conversations/' + id);
+    }
+
+    async createConversation(name: string, type: ConversationType, createdBy: string): Promise<Conversation> {
+        return this.http.post<Conversation>('/api/chat/conversations', {
+            name,
+            conversation_type: type,
+            created_by: createdBy,
+        });
+    }
+
+    async updateConversation(id: string, updates: Partial<Conversation>): Promise<Conversation> {
+        return this.http.put<Conversation>('/api/chat/conversations/' + id, updates);
+    }
+
+    async deleteConversation(id: string): Promise<void> {
+        return this.http.delete<void>('/api/chat/conversations/' + id);
+    }
+
+    async getParticipants(conversationId: string): Promise<ConversationParticipant[]> {
+        return this.http.get<ConversationParticipant[]>('/api/chat/conversations/' + conversationId + '/participants');
+    }
+
+    async addParticipant(conversationId: string, userId: string): Promise<ConversationParticipant> {
+        return this.http.post<ConversationParticipant>(
+            '/api/chat/conversations/' + conversationId + '/participants',
+            { user_id: userId },
+        );
+    }
+
+    /* ---- Tin nhan ---- */
+
+    async getMessages(conversationId: string, limit: number = 50): Promise<ChatMessage[]> {
+        return this.http.get<ChatMessage[]>('/api/chat/conversations/' + conversationId + '/messages?limit=' + limit);
+    }
+
+    async sendMessage(conversationId: string, content: string, type: MessageType = 'text', replyTo?: string | null): Promise<ChatMessage> {
+        return this.http.post<ChatMessage>('/api/chat/messages', {
+            conversation_id: conversationId,
+            content,
+            message_type: type,
+            reply_to: replyTo || null,
+        });
+    }
+
+    async markAsRead(conversationId: string, messageId: string, userId: string): Promise<ReadReceipt> {
+        return this.http.post<ReadReceipt>('/api/chat/read-receipts', {
+            message_id: messageId,
+            conversation_id: conversationId,
+            user_id: userId,
+            receipt_type: 'read',
+        });
+    }
+
+    /* ---- Thong bao ---- */
+
+    async getNotifications(userId: string): Promise<NotificationItem[]> {
+        return this.http.get<NotificationItem[]>('/api/chat/notifications?user_id=' + userId);
+    }
+
+    async markNotificationRead(notificationId: string): Promise<void> {
+        return this.http.post<void>('/api/chat/notifications/' + notificationId + '/read');
+    }
+
+    async markAllNotificationsRead(): Promise<void> {
+        return this.http.post<void>('/api/chat/notifications/read-all');
+    }
+
+    async getUnreadCount(userId: string): Promise<number> {
+        const data = await this.http.get<{ count: number }>('/api/chat/notifications/' + userId + '/unread-count');
+        return data.count;
+    }
+
+    /* ---- WebSocket ---- */
+
+    get websocket(): WebSocketClient | null {
+        return this.ws;
+    }
+
+    connectWebSocket() {
+        this.ws?.connect();
+    }
+
+    disconnectWebSocket() {
+        this.ws?.disconnect();
+    }
+
+    /* ---- SSE ---- */
+
+    connectSSE(url: string = '/api/chat/notifications/stream') {
+        if (!this.sse) {
+            this.sse = new SSEClient(url);
+        }
+        this.sse.connect();
+        return this.sse;
+    }
+
+    disconnectSSE() {
+        this.sse?.disconnect();
+    }
+}
+
+/* ---- Singleton instance ---- */
+const chatService = new ChatService();
+
+export default chatService;

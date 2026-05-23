@@ -1,0 +1,453 @@
+/**
+ * ChatNotificationComponent — Chuông thông báo và dropdown.
+ *
+ * Hiển thị badge số thông báo chưa đọc. Dropdown danh sách thông báo
+ * với icon theo loại (tin nhắn mới, được nhắc đến, trả lời, hệ thống).
+ * Click vào thông báo để đánh dấu đã đọc. Dùng SSE polling để cập nhật
+ * thông báo mới theo thời gian thực.
+ *
+ * Tạo tự động bởi CP41 — không sửa thủ công.
+ */
+
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  ChangeDetectionStrategy,
+  inject,
+  signal,
+  computed,
+  effect
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { takeUntil } from 'rxjs/operators';
+import { Subject } from 'rxjs';
+
+import { ChatService } from './chat.service';
+import { ChatStore } from './chat.store';
+import { Notification, NotificationType } from './chat-types';
+
+// ===========================================================================
+// Cấu hình
+// ===========================================================================
+
+/** Khoảng thời gian polling SSE (ms). */
+const POLL_INTERVAL: number = 30000;
+
+/** Số thông báo tối đa hiển thị trong dropdown. */
+const MAX_VISIBLE_NOTIFICATIONS: number = 20;
+
+/**
+ * ChatNotificationComponent — Chuông thông báo.
+ *
+ * Sử dụng:
+ *   <app-chat-notification
+ *     (onNotificationClick)="handleClick($event)">
+ *   </app-chat-notification>
+ */
+@Component({
+  selector: 'app-chat-notification',
+  standalone: true,
+  imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+{% raw %}
+  template: `
+    <div class="notification-component">
+      <!-- Nút chuông -->
+      <button
+        class="notification-bell"
+        [class.has-unread]="unreadCount() > 0"
+        [class.polling]="isPolling"
+        (click)="toggleDropdown()"
+        [title]="'Thông báo (' + unreadCount() + ' chưa đọc)'"
+      >
+        <span class="bell-icon">🔔</span>
+        <span class="unread-badge" *ngIf="unreadCount() > 0">
+          {{ unreadCount() > 99 ? '99+' : unreadCount() }}
+        </span>
+      </button>
+
+      <!-- Dropdown danh sách thông báo -->
+      <div class="notification-dropdown" [class.open]="isDropdownOpen">
+        <!-- Header dropdown -->
+        <header class="dropdown-header">
+          <h3 class="dropdown-title">Thông Báo</h3>
+          <div class="dropdown-actions">
+            <button
+              class="btn-mark-all"
+              (click)="markAllRead()"
+              [disabled]="unreadCount() === 0"
+              title="Đánh dấu tất cả đã đọc"
+            >
+              Đã đọc tất cả
+            </button>
+            <button
+              class="btn-close-dropdown"
+              (click)="closeDropdown()"
+              title="Đóng"
+            >
+              ✕
+            </button>
+          </div>
+        </header>
+
+        <!-- Bộ lọc loại thông báo -->
+        <div class="notification-filters">
+          <button
+            class="filter-chip"
+            [class.active]="activeTypeFilter() === 'all'"
+            (click)="setTypeFilter('all')"
+          >
+            Tất cả
+          </button>
+          <button
+            class="filter-chip"
+            [class.active]="activeTypeFilter() === 'new_message'"
+            (click)="setTypeFilter('new_message')"
+          >
+            💬 Tin nhắn
+          </button>
+          <button
+            class="filter-chip"
+            [class.active]="activeTypeFilter() === 'mention'"
+            (click)="setTypeFilter('mention')"
+          >
+            @ Nhắc đến
+          </button>
+          <button
+            class="filter-chip"
+            [class.active]="activeTypeFilter() === 'reply'"
+            (click)="setTypeFilter('reply')"
+          >
+            ↩️ Trả lời
+          </button>
+          <button
+            class="filter-chip"
+            [class.active]="activeTypeFilter() === 'system'"
+            (click)="setTypeFilter('system')"
+          >
+            ⚙️ Hệ thống
+          </button>
+        </div>
+
+        <!-- Danh sách thông báo -->
+        <div class="notification-list">
+          <div
+            class="notification-item"
+            *ngFor="let notif of filteredNotifications()"
+            [class.unread]="!notif.isRead"
+            [class]="getNotificationItemClass(notif.notificationType)"
+            (click)="onNotificationClick(notif)"
+          >
+            <!-- Icon theo loại -->
+            <div class="notif-icon">
+              {{ getNotificationIcon(notif.notificationType) }}
+            </div>
+
+            <!-- Nội dung thông báo -->
+            <div class="notif-content">
+              <div class="notif-header">
+                <span class="notif-title">{{ notif.title }}</span>
+                <span class="notif-time">{{ notif.createdAt | date:'HH:mm dd/MM' }}</span>
+              </div>
+              <div class="notif-body">
+                {{ notif.message }}
+              </div>
+
+              <!-- Metadata bổ sung -->
+              <div class="notif-meta">
+                <span class="notif-type-label">{{ getNotificationTypeLabel(notif.notificationType) }}</span>
+                <span class="notif-sender" *ngIf="notif.senderName">
+                  Từ: {{ notif.senderName }}
+                </span>
+                <!-- Badge chưa đọc -->
+                <span class="unread-dot" *ngIf="!notif.isRead"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Trạng thái trống -->
+          <div class="empty-notifications" *ngIf="!filteredNotifications().length">
+            <div class="empty-icon">🔕</div>
+            <p *ngIf="notifications().length; else noNotifications">
+              Không có thông báo nào phù hợp
+            </p>
+            <ng-template #noNotifications>
+              <p>Không có thông báo mới</p>
+              <span class="empty-hint">Thông báo sẽ hiển thị ở đây khi có</span>
+            </ng-template>
+          </div>
+        </div>
+
+        <!-- Footer dropdown -->
+        <footer class="dropdown-footer">
+          <span class="total-info">
+            {{ filteredNotifications().length }} thông báo
+            ({{ unreadCount() }} chưa đọc)
+          </span>
+          <span class="polling-status" *ngIf="isPolling">
+            ● Đồng bộ hóa...
+          </span>
+        </footer>
+      </div>
+
+      <!-- Overlay để đóng dropdown khi click ngoài -->
+      <div
+        class="notification-overlay"
+        *ngIf="isDropdownOpen"
+        (click)="closeDropdown()"
+      ></div>
+    </div>
+  `
+{% endraw %}
+})
+export class ChatNotificationComponent implements OnInit, OnDestroy {
+
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  private readonly chatService = inject(ChatService);
+  private readonly chatStore = inject(ChatStore);
+
+  // ===========================================================================
+  // Local state
+  // ===========================================================================
+
+  /** Dropdown có đang mở không. */
+  public isDropdownOpen: boolean = false;
+
+  /** Đang polling không. */
+  public isPolling: boolean = false;
+
+  /** Bộ lọc loại thông báo. */
+  public readonly activeTypeFilter = signal<string>('all');
+
+  /** Signal hủy đăng ký. */
+  private readonly destroy$ = new Subject<void>();
+
+  // ===========================================================================
+  // Computed signals
+  // ===========================================================================
+
+  /** Danh sách thông báo từ store. */
+  public readonly notifications = this.chatStore.notifications;
+
+  /** Số thông báo chưa đọc. */
+  public readonly unreadCount = this.chatStore.unreadNotificationCount;
+
+  /** Thông báo đã lọc theo loại. */
+  public readonly filteredNotifications = computed<Notification[]>(() => {
+    let list = this.notifications();
+    const filter = this.activeTypeFilter();
+
+    // Lọc theo loại.
+    if (filter !== 'all') {
+      list = list.filter(n => n.notificationType === filter);
+    }
+
+    // Sắp xếp: chưa đọc lên trước, sau đó theo thời gian mới nhất.
+    return list.sort((a, b) => {
+      // Chưa đọc lên trên.
+      if (!a.isRead && b.isRead) return -1;
+      if (a.isRead && !b.isRead) return 1;
+
+      // Thời gian mới nhất lên trên.
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    }).slice(0, MAX_VISIBLE_NOTIFICATIONS);
+  });
+
+  // ===========================================================================
+  // Lifecycle
+  // ===========================================================================
+
+  ngOnInit(): void {
+    // Đăng ký lắng nghe thông báo realtime từ WebSocket.
+    this.chatService.realtimeNotifications$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(notification => {
+        this.chatStore.addNotification(notification);
+      });
+
+    // Bắt đầu SSE polling cho thông báo mới.
+    this.startPolling();
+
+    // Tải thông báo ban đầu từ API.
+    this.loadNotifications();
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  // ===========================================================================
+  // SSE Polling
+  // ===========================================================================
+
+  /**
+   * Bắt đầu polling thông báo mới.
+   */
+  private startPolling(): void {
+    this.isPolling = true;
+
+    this.chatService.pollNotifications()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (newNotifications) => {
+          // Thêm các thông báo mới vào store.
+          const existing = this.chatStore.notifications();
+          const existingIds = new Set(existing.map(n => n.notificationId));
+
+          for (const notif of newNotifications) {
+            if (!existingIds.has(notif.notificationId)) {
+              this.chatStore.addNotification(notif);
+            }
+          }
+
+          this.isPolling = false;
+        },
+        error: (error) => {
+          console.warn('[ChatNotification] Polling lỗi:', error);
+          this.isPolling = false;
+        }
+      });
+  }
+
+  /**
+   * Tải danh sách thông báo từ API.
+   */
+  private loadNotifications(): void {
+    this.chatStore.setLoading('notifications', true);
+
+    this.chatService.getNotifications(false, MAX_VISIBLE_NOTIFICATIONS).subscribe({
+      next: (response) => {
+        this.chatStore.setNotifications(response.notifications);
+        this.chatStore.setLoading('notifications', false);
+      },
+      error: () => {
+        console.warn('[ChatNotification] Không thể tải thông báo');
+        this.chatStore.setLoading('notifications', false);
+      }
+    });
+  }
+
+  // ===========================================================================
+  // Tương tác dropdown
+  // ===========================================================================
+
+  /**
+   * Mở/đóng dropdown.
+   */
+  toggleDropdown(): void {
+    this.isDropdownOpen = !this.isDropdownOpen;
+  }
+
+  /**
+   * Đóng dropdown.
+   */
+  closeDropdown(): void {
+    this.isDropdownOpen = false;
+  }
+
+  // ===========================================================================
+  // Tương tác thông báo
+  // ===========================================================================
+
+  /**
+   * Xử lý khi click vào thông báo.
+   */
+  onNotificationClick(notification: Notification): void {
+    // Đánh dấu đã đọc.
+    if (!notification.isRead) {
+      this.markNotificationRead(notification.notificationId);
+    }
+
+    // Đóng dropdown.
+    this.closeDropdown();
+
+    // TODO: Điều hướng đến hội thoại liên quan.
+    console.info('[ChatNotification] Click thông báo:', notification.notificationId);
+  }
+
+  /**
+   * Đánh dấu một thông báo đã đọc.
+   */
+  markNotificationRead(notificationId: string): void {
+    this.chatService.markNotificationRead(notificationId).subscribe({
+      next: () => {
+        this.chatStore.markNotificationRead(notificationId);
+      },
+      error: (error) => {
+        console.warn('[ChatNotification] Không thể đánh dấu đã đọc:', error);
+      }
+    });
+  }
+
+  /**
+   * Đánh dấu tất cả thông báo đã đọc.
+   */
+  markAllRead(): void {
+    this.chatService.markAllNotificationsRead().subscribe({
+      next: () => {
+        this.chatStore.markAllNotificationsRead();
+      },
+      error: (error) => {
+        console.warn('[ChatNotification] Không thể đánh dấu tất cả đã đọc:', error);
+      }
+    });
+  }
+
+  /**
+   * Đặt bộ lọc loại thông báo.
+   */
+  setTypeFilter(type: string): void {
+    this.activeTypeFilter.set(type);
+  }
+
+  // ===========================================================================
+  // Helper methods
+  // ===========================================================================
+
+  /**
+   * Lấy icon emoji cho loại thông báo.
+   */
+  getNotificationIcon(type: string): string {
+    const iconMap: Record<string, string> = {
+      'new_message': '💬',
+      'mention': '@',
+      'reply': '↩️',
+      'system': '⚙️',
+      'mention_reply': '@↩️'
+    };
+    return iconMap[type] || '📌';
+  }
+
+  /**
+   * Lấy class CSS cho item thông báo theo loại.
+   */
+  getNotificationItemClass(type: string): string {
+    const classMap: Record<string, string> = {
+      'new_message': 'type-new-message',
+      'mention': 'type-mention',
+      'reply': 'type-reply',
+      'system': 'type-system',
+      'mention_reply': 'type-mention-reply'
+    };
+    return classMap[type] || '';
+  }
+
+  /**
+   * Lấy nhãn tiếng Việt cho loại thông báo.
+   */
+  getNotificationTypeLabel(type: string): string {
+    const labelMap: Record<string, string> = {
+      'new_message': 'Tin nhắn mới',
+      'mention': 'Được nhắc đến',
+      'reply': 'Trả lời',
+      'system': 'Hệ thống',
+      'mention_reply': 'Nhắc trong trả lời'
+    };
+    return labelMap[type] || type;
+  }
+}

@@ -1,0 +1,670 @@
+# ----------------------------------------------------------
+# CP41 Chat & Messaging — Dich vu thao tac chat
+# ----------------------------------------------------------
+# Sinh bởi CP41ChatEmitter
+# Class: ChatService voi CRUD hoi thoai, tin nhan, thong bao
+# Tong so hoi thoai mau: {{ num_conversations }}
+# Tong so tin nhan mau: {{ num_messages }}
+# Su dung Redis pub/sub: {{ use_redis | lower }}
+# URL Redis: {{ redis_url }}
+# ----------------------------------------------------------
+
+import json
+import logging
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Sequence
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+{% raw %}
+logger = logging.getLogger(__name__)
+
+
+class ChatService:
+    """
+    Dich vu quan ly chat — thuc hien tao hoi thoai, gui tin nhan,
+    xac nhan doc, va thong bao cho cac nguoi tham gia.
+
+    Tích hợp Redis pub/sub de broadcast realtime den cac client ket noi.
+    """
+
+    def __init__(self, session: AsyncSession, redis_client=None) -> None:
+        """
+        Khoi tao dich vu voi phien lam viec SQLAlchemy async va Redis client.
+
+        Tham so:
+            session: Phien lam viec async de truy cap co so du lieu.
+            redis_client: Client Redis de publish/subscribe (tu chon).
+        """
+        self._session = session
+        self._redis = redis_client
+
+    # --------------------------------------------------------------
+    # Hoi thoai — Tao
+    # --------------------------------------------------------------
+
+    async def create_conversation(self, data: Dict[str, Any]) -> Any:
+        """
+        Tao hoi thoai moi.
+
+        Tham so:
+            data: Tu dict chua du lieu hoi thoai theo schema ConversationCreate.
+
+        Tra ve:
+            Doi tuong Conversation moi duoc tao.
+        """
+        conversation_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        conversation = self._conversation_model()(
+            conversation_id=conversation_id,
+            name=data.get("name", ""),
+            conversation_type=data.get("conversation_type", "direct"),
+            created_by=data.get("created_by", ""),
+            max_participants=data.get("max_participants", 100),
+            is_active=True,
+            metadata_json=data.get("metadata_json"),
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(conversation)
+
+        # Tu dong them nguoi tao vao danh sach nguoi tham gia
+        participant_id = str(uuid.uuid4())
+        participant = self._participant_model()(
+            participant_id=participant_id,
+            conversation_id=conversation_id,
+            user_id=data.get("created_by", ""),
+            role="admin",
+            joined_at=now,
+        )
+        self._session.add(participant)
+
+        await self._session.commit()
+        await self._session.refresh(conversation)
+
+        logger.info(
+            "Tao hoi thoai moi: id=%s, loai=%s, nguoi_tao=%s",
+            conversation_id,
+            data.get("conversation_type"),
+            data.get("created_by"),
+        )
+
+        return conversation
+
+    # --------------------------------------------------------------
+    # Nguoi tham gia — Them
+    # --------------------------------------------------------------
+
+    async def add_participant(
+        self, conversation_id: str, data: Dict[str, Any]
+    ) -> Optional[Any]:
+        """
+        Them nguoi tham gia vao hoi thoai.
+
+        Tham so:
+            conversation_id: ID hoi thoai can them nguoi.
+            data: Tu dict chua user_id va role theo schema ParticipantAdd.
+
+        Tra ve:
+            Doi tuong ConversationParticipant moi, hoac None neu khong tim thay hoi thoai.
+
+        Nhom ra:
+            ValueError: Neu user da la thanh vien hoi thoai.
+        """
+        # Kiem tra hoi thoai ton tai
+        conversation = await self.get_conversation(conversation_id)
+        if conversation is None:
+            logger.warning("Khong tim thay hoi thoai de them nguoi: id=%s", conversation_id)
+            return None
+
+        user_id = data.get("user_id", "")
+        role = data.get("role", "member")
+
+        # Kiem tra trung lặp
+        existing = await self._get_participant(conversation_id, user_id)
+        if existing is not None:
+            raise ValueError(
+                "Nguoi dung '{}' da la thanh vien cua hoi thoai '{}'".format(user_id, conversation_id)
+            )
+
+        participant_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        participant = self._participant_model()(
+            participant_id=participant_id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            role=role,
+            joined_at=now,
+        )
+
+        self._session.add(participant)
+        await self._session.commit()
+        await self._session.refresh(participant)
+
+        logger.info(
+            "Them nguoi tham gia: conversation=%s, user=%s, role=%s",
+            conversation_id,
+            user_id,
+            role,
+        )
+
+        return participant
+
+    # --------------------------------------------------------------
+    # Tin nhan — Gui
+    # --------------------------------------------------------------
+
+    async def send_message(
+        self, conversation_id: str, data: Dict[str, Any]
+    ) -> Optional[Any]:
+        """
+        Gui tin nhan trong hoi thoai.
+
+        Validate: (1) nguoi gui phai la thanh vien hoi thoai,
+        (2) noi dung tin nhan khong vuot qua 4096 ky tu,
+        (3) content filter hook de kiem tra noi dung phu hop.
+
+        Tham so:
+            conversation_id: ID hoi thoai chua tin nhan.
+            data: Tu dict chua tin nhan theo schema MessageCreate.
+
+        Tra ve:
+            Doi tuong ChatMessage moi, hoac None neu khong hop le.
+
+        Nhom ra:
+            ValueError: Neu noi dung qua 4096 ky tu.
+            ValueError: Neu nguoi gui khong phai thanh vien.
+        """
+        sender_id = data.get("sender_id", "")
+        content = data.get("content", "")
+
+        # Validate do dai noi dung — toi da 4096 ky tu
+        if len(content) > 4096:
+            raise ValueError(
+                "Noi dung tin nhan khong duoc vuot qua 4096 ky tu (hien tai: {} ky tu)".format(len(content))
+            )
+
+        # Content filter hook — kiem tra noi dung phu hop
+        self._content_filter(content)
+
+        # Kiem tra nguoi gui la thanh vien
+        participant = await self._get_participant(conversation_id, sender_id)
+        if participant is None:
+            raise ValueError(
+                "Nguoi dung '{}' khong phai la thanh vien cua hoi thoai '{}'".format(sender_id, conversation_id)
+            )
+
+        message_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        message = self._message_model()(
+            message_id=message_id,
+            conversation_id=conversation_id,
+            sender_id=sender_id,
+            message_type=data.get("message_type", "text"),
+            content=content,
+            attachments=data.get("attachments"),
+            reply_to=data.get("reply_to"),
+            status="sent",
+            created_at=now,
+        )
+
+        self._session.add(message)
+
+        # Tao thong bao cho cac nguoi tham gia khac
+        await self._create_notifications(conversation_id, message)
+
+        # Tao xac nhan giao cho nguoi gui
+        await self._create_delivery_receipt(conversation_id, message_id, sender_id)
+
+        await self._session.commit()
+        await self._session.refresh(message)
+
+        # Publish qua Redis pub/sub neu co
+        await self._publish_message(conversation_id, message)
+
+        logger.info(
+            "Gui tin nhan thanh cong: msg_id=%s, conversation=%s, sender=%s",
+            message_id,
+            conversation_id,
+            sender_id,
+        )
+
+        return message
+
+    # --------------------------------------------------------------
+    # Tin nhan — Truy van
+    # --------------------------------------------------------------
+
+    async def get_messages(
+        self,
+        conversation_id: str,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> Sequence[Any]:
+        """
+        Lay danh sach tin nhan trong hoi thoai voi phan trang.
+
+        Tra ve tin nhan duoc sap xep theo created_at giam dan (moi nhat truoc).
+
+        Tham so:
+            conversation_id: ID hoi thoai.
+            offset: So ban ghi bo qua.
+            limit: So ban ghi tra ve toi da.
+
+        Tra ve:
+            Dong cac doi tuong ChatMessage va tong so tin nhan.
+        """
+        message_model = self._message_model()
+        query = select(message_model).where(
+            message_model.conversation_id == conversation_id
+        )
+        total_query = select(func.count()).select_from(
+            message_model
+        ).where(message_model.conversation_id == conversation_id)
+
+        query = query.order_by(message_model.created_at.desc())
+        query = query.offset(offset).limit(limit)
+
+        result = await self._session.execute(query)
+        total_result = await self._session.execute(total_query)
+        total = total_result.scalar_one()
+
+        return result.scalars().all(), total
+
+    # --------------------------------------------------------------
+    # Xac nhan doc
+    # --------------------------------------------------------------
+
+    async def mark_as_read(
+        self,
+        conversation_id: str,
+        user_id: str,
+        message_id: str,
+    ) -> Optional[Any]:
+        """
+        Danh dau tin nhan da doc va tao ReadReceipt.
+
+        Tham so:
+            conversation_id: ID hoi thoai chua tin nhan.
+            user_id: ID nguoi dung danh dau da doc.
+            message_id: ID tin nhan.
+
+        Tra ve:
+            Doi tuong ReadReceipt da tao, hoac None neu khong tim thay.
+        """
+        # Kiem tra nguoi dung la thanh vien
+        participant = await self._get_participant(conversation_id, user_id)
+        if participant is None:
+            logger.warning(
+                "Nguoi dung '{}' khong phai thanh vien cua hoi thoai '{}'".format(user_id, conversation_id)
+            )
+            return None
+
+        # Tao ReadReceipt
+        receipt_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        receipt = self._receipt_model()(
+            receipt_id=receipt_id,
+            message_id=message_id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            receipt_type="read",
+            created_at=now,
+        )
+
+        self._session.add(receipt)
+
+        # Cap nhat last_read_message_id cho nguoi tham gia
+        participant.last_read_message_id = message_id
+
+        # Cap nhat status tin nhan thanh "read"
+        message = await self._get_message(message_id)
+        if message is not None and message.status != "read":
+            message.status = "read"
+
+        await self._session.commit()
+        await self._session.refresh(receipt)
+
+        logger.info(
+            "Danh dau da doc: msg=%s, user=%s, conversation=%s",
+            message_id,
+            user_id,
+            conversation_id,
+        )
+
+        return receipt
+
+    # --------------------------------------------------------------
+    # Hoi thoai — Truy van
+    # --------------------------------------------------------------
+
+    async def get_conversation(self, conversation_id: str) -> Optional[Any]:
+        """
+        Lay hoi thoai theo ID.
+
+        Tham so:
+            conversation_id: ID hoi thoai can lay.
+
+        Tra ve:
+            Doi tuong Conversation hoac None neu khong tim thay.
+        """
+        query = select(self._conversation_model()).where(
+            self._conversation_model().conversation_id == conversation_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def get_conversations(
+        self,
+        user_id: str,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> Sequence[Any]:
+        """
+        Lay danh sach hoi thoai cua nguoi dung.
+
+        Tham so:
+            user_id: ID nguoi dung.
+            offset: So ban ghi bo qua.
+            limit: So ban ghi toi da.
+
+        Tra ve:
+            Dong cac doi tuong Conversation va tong so hoi thoai.
+        """
+        conv_model = self._conversation_model()
+        part_model = self._participant_model()
+
+        # Join voi bang participant de lay hoi thoai cua user
+        query = (
+            select(conv_model)
+            .join(part_model, conv_model.conversation_id == part_model.conversation_id)
+            .where(
+                part_model.user_id == user_id,
+                conv_model.is_active == True,
+            )
+        )
+        total_query = (
+            select(func.count())
+            .select_from(conv_model)
+            .join(part_model, conv_model.conversation_id == part_model.conversation_id)
+            .where(
+                part_model.user_id == user_id,
+                conv_model.is_active == True,
+            )
+        )
+
+        query = query.order_by(conv_model.updated_at.desc())
+        query = query.offset(offset).limit(limit)
+
+        result = await self._session.execute(query)
+        total_result = await self._session.execute(total_query)
+        total = total_result.scalar_one_or_none() or 0
+
+        return result.scalars().all(), total
+
+    async def search_conversations(
+        self,
+        user_id: str,
+        query_text: str,
+        limit: int = 50,
+    ) -> List[Any]:
+        """
+        Tim kiem hoi thoai theo ten (hoi thoai cua user).
+
+        Tham so:
+            user_id: ID nguoi dung.
+            query_text: Chuoi tim kiem trong ten hoi thoai.
+            limit: So ket qua toi da.
+
+        Tra ve:
+            Danh sach hoi thoai khop.
+        """
+        conv_model = self._conversation_model()
+        part_model = self._participant_model()
+
+        search_pattern = "%{}%".format(query_text)
+
+        query = (
+            select(conv_model)
+            .join(part_model, conv_model.conversation_id == part_model.conversation_id)
+            .where(
+                part_model.user_id == user_id,
+                conv_model.name.like(search_pattern),
+                conv_model.is_active == True,
+            )
+            .order_by(conv_model.updated_at.desc())
+            .limit(limit)
+        )
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Thong bao
+    # --------------------------------------------------------------
+
+    async def get_notifications(
+        self,
+        user_id: str,
+        is_read: Optional[bool] = None,
+        limit: int = 50,
+    ) -> List[Any]:
+        """
+        Lay danh sach thong bao cua nguoi dung.
+
+        Tham so:
+            user_id: ID nguoi dung.
+            is_read: Loc theo trang thai da doc chua (tu chon).
+            limit: So thong bao toi da.
+
+        Tra ve:
+            Danh sach Notification.
+        """
+        notif_model = self._notification_model()
+        query = select(notif_model).where(
+            notif_model.target_user_id == user_id
+        )
+
+        if is_read is not None:
+            query = query.where(notif_model.is_read == is_read)
+
+        query = query.order_by(notif_model.created_at.desc()).limit(limit)
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    async def mark_notification_read(self, notification_id: str) -> bool:
+        """
+        Danh dau thong bao da doc.
+
+        Tham so:
+            notification_id: ID thong bao.
+
+        Tra ve:
+            True neu danh dau thanh cong.
+        """
+        query = select(self._notification_model()).where(
+            self._notification_model().notification_id == notification_id
+        )
+        result = await self._session.execute(query)
+        notification = result.scalar_one_or_none()
+
+        if notification is None:
+            logger.warning("Khong tim thay thong bao: id=%s", notification_id)
+            return False
+
+        notification.is_read = True
+        await self._session.commit()
+
+        logger.info("Da danh dau thong bao da doc: id=%s", notification_id)
+        return True
+
+    # --------------------------------------------------------------
+    # Redis pub/sub — Publish
+    # --------------------------------------------------------------
+
+    async def _publish_message(self, conversation_id: str, message: Any) -> None:
+        """
+        Publish tin nhan qua Redis pub/sub de broadcast realtime.
+
+        Channel Redis: chat:{conversation_id}
+
+        Tham so:
+            conversation_id: ID hoi thoai.
+            message: Doi tuong ChatMessage can broadcast.
+        """
+        if self._redis is None:
+            return
+
+        try:
+            channel = "chat:{}".format(conversation_id)
+            payload = {
+                "type": "new_message",
+                "message_id": message.message_id,
+                "conversation_id": message.conversation_id,
+                "sender_id": message.sender_id,
+                "content": message.content,
+                "message_type": message.message_type,
+                "created_at": message.created_at.isoformat() if message.created_at else None,
+            }
+            await self._redis.publish(channel, json.dumps(payload))
+            logger.debug("Da publish tin nhan len Redis: channel=%s", channel)
+        except Exception as e:
+            logger.error("Loi publish Redis: %s", str(e))
+
+    # --------------------------------------------------------------
+    # Phuong thuc noi bo
+    # --------------------------------------------------------------
+
+    async def _create_notifications(self, conversation_id: str, message: Any) -> None:
+        """
+        Tao thong bao cho cac nguoi tham gia khac trong hoi thoai.
+
+        Tu dong tao notification cho tat ca nguoi tham gia (tru nguoi gui).
+
+        Tham so:
+            conversation_id: ID hoi thoai.
+            message: ChatMessage da gui.
+        """
+        participants = await self._get_participants(conversation_id)
+        now = datetime.now(timezone.utc)
+
+        for participant in participants:
+            if participant.user_id == message.sender_id:
+                continue
+
+            notification_id = str(uuid.uuid4())
+            notification = self._notification_model()(
+                notification_id=notification_id,
+                conversation_id=conversation_id,
+                target_user_id=participant.user_id,
+                notification_type="new_message",
+                message_id=message.message_id,
+                is_read=False,
+                created_at=now,
+            )
+            self._session.add(notification)
+
+    async def _create_delivery_receipt(
+        self, conversation_id: str, message_id: str, user_id: str
+    ) -> None:
+        """
+        Tao xac nhan giao cho nguoi gui (auto-delivered).
+
+        Tham so:
+            conversation_id: ID hoi thoai.
+            message_id: ID tin nhan.
+            user_id: ID nguoi gui.
+        """
+        receipt_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        receipt = self._receipt_model()(
+            receipt_id=receipt_id,
+            message_id=message_id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            receipt_type="delivered",
+            created_at=now,
+        )
+        self._session.add(receipt)
+
+    async def _get_participant(self, conversation_id: str, user_id: str) -> Optional[Any]:
+        """Lay nguoi tham gia theo hoi thoai va user."""
+        query = select(self._participant_model()).where(
+            self._participant_model().conversation_id == conversation_id,
+            self._participant_model().user_id == user_id,
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def _get_participants(self, conversation_id: str) -> List[Any]:
+        """Lay tat ca nguoi tham gia cua hoi thoai."""
+        query = select(self._participant_model()).where(
+            self._participant_model().conversation_id == conversation_id
+        )
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    async def _get_message(self, message_id: str) -> Optional[Any]:
+        """Lay tin nhan theo ID."""
+        query = select(self._message_model()).where(
+            self._message_model().message_id == message_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    def _content_filter(self, content: str) -> None:
+        """
+        Kiem tra noi dung tin nhan qua content filter.
+
+        Hook de mo rong kiem tra noi dung. Hien tai chi kiem tra
+        neu noi dung rong.
+
+        Tham so:
+            content: Noi dung tin nhan can kiem tra.
+
+        Nhom ra:
+            ValueError: Neu vi pham content filter.
+        """
+        # Placeholder cho content filter — co the mo rong
+        # Vi du: kiem tu cam, noi dung doc hai, spam, v.v.
+        pass
+
+    # --------------------------------------------------------------
+    # Lay mo hinh tu module models (import dong)
+    # --------------------------------------------------------------
+
+    def _conversation_model(self) -> type:
+        """Lay mo hinh Conversation."""
+        from chat_models import Conversation
+        return Conversation
+
+    def _message_model(self) -> type:
+        """Lay mo hinh ChatMessage."""
+        from chat_models import ChatMessage
+        return ChatMessage
+
+    def _participant_model(self) -> type:
+        """Lay mo hinh ConversationParticipant."""
+        from chat_models import ConversationParticipant
+        return ConversationParticipant
+
+    def _receipt_model(self) -> type:
+        """Lay mo hinh ReadReceipt."""
+        from chat_models import ReadReceipt
+        return ReadReceipt
+
+    def _notification_model(self) -> type:
+        """Lay mo hinh Notification."""
+        from chat_models import Notification
+        return Notification
+{% endraw %}

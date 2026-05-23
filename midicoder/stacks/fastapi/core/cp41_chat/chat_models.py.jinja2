@@ -1,0 +1,291 @@
+# ----------------------------------------------------------
+# CP41 Chat & Messaging — SQLAlchemy mô hình dữ liệu
+# ----------------------------------------------------------
+# Sinh bởi CP41ChatEmitter
+# Mô hình: Conversation, ChatMessage, ConversationParticipant,
+#          ReadReceipt, Notification
+# Tổng số hội thoại mẫu: {{ num_conversations }}
+# Tổng số tin nhắn mẫu: {{ num_messages }}
+# ----------------------------------------------------------
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import sqlalchemy as sa
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Co so khai bao cho toan bo mo hinh SQLAlchemy."""
+    pass
+
+
+{% for notification_type in notification_types %}
+# Loai thong bao: {{ notification_type }}
+{% endfor %}
+
+
+class Conversation(Base):
+    """
+    Mo hinh hoi thoai (phong chat) — chua metadata va danh sach
+    nguoi tham gia.
+
+    Loai hoi thoai: direct, group, support, broadcast.
+    """
+    __tablename__ = "conversations"
+
+    # Dinh danh
+    conversation_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    name: Mapped[str] = mapped_column(
+        sa.String(256), nullable=False, server_default=""
+    )
+    conversation_type: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="direct", index=True
+    )
+
+    # Thuoc tinh hoi thoai
+    created_by: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False
+    )
+    max_participants: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="100"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="1"
+    )
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Dau thoi gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Moi quan he
+    messages: Mapped[List["ChatMessage"]] = relationship(
+        "ChatMessage",
+        back_populates="conversation",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    participants: Mapped[List["ConversationParticipant"]] = relationship(
+        "ConversationParticipant",
+        back_populates="conversation",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    notifications: Mapped[List["Notification"]] = relationship(
+        "Notification",
+        back_populates="conversation",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+
+
+class ChatMessage(Base):
+    """
+    Mo hinh tin nhan trong hoi thoai — chua noi dung, dinh kem,
+    va trang thai giao/nhan.
+
+    Loai tin nhan: text, image, video, audio, file, system, reaction, reply.
+    Trang thai: sent, delivered, read, failed, pending.
+    """
+    __tablename__ = "chat_messages"
+
+    # Dinh danh
+    message_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        sa.String(36),
+        sa.ForeignKey("conversations.conversation_id"),
+        nullable=False,
+        index=True,
+    )
+    sender_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Noi dung tin nhan
+    message_type: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="text"
+    )
+    content: Mapped[str] = mapped_column(
+        sa.Text, nullable=False, server_default=""
+    )
+    attachments: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    reply_to: Mapped[Optional[str]] = mapped_column(
+        sa.String(36), nullable=True, index=True
+    )
+
+    # Trang thai
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="pending", index=True
+    )
+
+    # Dau thoi gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        index=True,
+    )
+
+    # Moi quan he
+    conversation: Mapped["Conversation"] = relationship(
+        "Conversation", back_populates="messages"
+    )
+    read_receipts: Mapped[List["ReadReceipt"]] = relationship(
+        "ReadReceipt",
+        back_populates="message",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+
+
+class ConversationParticipant(Base):
+    """
+    Mo hinh nguoi tham gia hoi thoai — theo doi vai tro cua moi user.
+
+    Vai tro: admin, member, muted.
+    """
+    __tablename__ = "conversation_participants"
+
+    # Dinh danh
+    participant_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        sa.String(36),
+        sa.ForeignKey("conversations.conversation_id"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Vai tro va trang thai
+    role: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="member"
+    )
+    last_read_message_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(36), nullable=True
+    )
+
+    # Dau thoi gian
+    joined_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Moi quan he
+    conversation: Mapped["Conversation"] = relationship(
+        "Conversation", back_populates="participants"
+    )
+
+    # Kiem tra duy nhat: moi user chi tham gia hoi thoai mot lan
+    __table_args__ = (
+        sa.UniqueConstraint("conversation_id", "user_id", name="uq_participant_conv_user"),
+    )
+
+
+class ReadReceipt(Base):
+    """
+    Mo hinh xac nhan doc tin nhan — ghi nhan khi nguoi dung xem/phat
+    noi dung tin nhan.
+
+    Loai xac nhan: delivered, read, played.
+    """
+    __tablename__ = "read_receipts"
+
+    # Dinh danh
+    receipt_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    message_id: Mapped[str] = mapped_column(
+        sa.String(36),
+        sa.ForeignKey("chat_messages.message_id"),
+        nullable=False,
+        index=True,
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        sa.String(36), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Loai xac nhan
+    receipt_type: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="read"
+    )
+
+    # Dau thoi gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Moi quan he
+    message: Mapped["ChatMessage"] = relationship(
+        "ChatMessage", back_populates="read_receipts"
+    )
+
+
+class Notification(Base):
+    """
+    Mo hinh thong bao chat gui den nguoi dung — tao khi co su kien
+    moi: tin nhan moi, duoc nhac den, tra loi, v.v.
+
+    Loai thong bao: new_message, mention, reply, system, mention_reply.
+    """
+    __tablename__ = "notifications"
+
+    # Dinh danh
+    notification_id: Mapped[str] = mapped_column(
+        sa.String(36), primary_key=True, index=True
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        sa.String(36), nullable=False, index=True
+    )
+    target_user_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Loai va trang thai
+    notification_type: Mapped[str] = mapped_column(
+        sa.String(32), nullable=False, server_default="new_message", index=True
+    )
+    message_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(36), nullable=True
+    )
+    is_read: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="0", index=True
+    )
+
+    # Dau thoi gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Moi quan he
+    conversation: Mapped["Conversation"] = relationship(
+        "Conversation", back_populates="notifications"
+    )

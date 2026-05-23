@@ -1,0 +1,197 @@
+/**
+ * ConversationList — danh sach hoi thoai ben: tim kiem, loc, preview tin nhan cuoi.
+ * Sinh boi CP41 ChatEmitter.
+ *
+ * So luong hoi thoai: {{ num_conversations }}
+ */
+
+import React, { useState, useMemo, useCallback } from 'react';
+
+/* ---- Loai hoi thoai ---- */
+export type ConversationType = 'direct' | 'group' | 'support' | 'broadcast';
+
+export interface Conversation {
+    conversation_id: string;
+    name: string;
+    conversation_type: ConversationType;
+    participants: string[];
+    last_message: string | null;
+    last_message_at: string | null;
+    unread_count: number;
+    is_active: boolean;
+    avatar_url?: string;
+}
+
+export interface ConversationListProps {
+    conversations: Conversation[];
+    onSelect: (conversationId: string) => void;
+    selectedId?: string;
+    currentUserId?: string;
+}
+
+/* ---- Style objects — de tranh double-brace trong JSX ---- */
+const sWrap = { width: '320px', borderRight: '1px solid #e5e7eb', backgroundColor: '#fff', display: 'flex', flexDirection: 'column' as const, fontFamily: 'system-ui, sans-serif', height: '100%' };
+const sHeader = { padding: '16px', borderBottom: '1px solid #e5e7eb' };
+const sTitle = { fontSize: '18px', fontWeight: 700, margin: '0 0 12px' };
+const sSearchInput = { width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' as const };
+const sFilterRow = { display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' as const };
+const sFilterChip = { padding: '4px 10px', fontSize: '11px', borderRadius: '9999px', border: '1px solid #d1d5db', backgroundColor: '#fff', cursor: 'pointer' };
+const sFilterChipActive = { padding: '4px 10px', fontSize: '11px', borderRadius: '9999px', border: '1px solid #3b82f6', backgroundColor: '#3b82f6', color: '#fff', cursor: 'pointer' };
+const sList = { flex: 1, overflowY: 'auto' as const };
+const sItem = { padding: '12px 16px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', display: 'flex', gap: '12px', alignItems: 'flex-start' };
+const sItemSelected = { padding: '12px 16px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', display: 'flex', gap: '12px', alignItems: 'flex-start', backgroundColor: '#eff6ff' };
+const sAvatar = { width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 600, color: '#3730a3', flexShrink: 0 };
+const sItemBody = { flex: 1, overflow: 'hidden' };
+const sItemTop = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' };
+const sItemName = { fontSize: '14px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const };
+const sItemTime = { fontSize: '11px', color: '#9ca3af', flexShrink: 0 };
+const sItemPreview = { fontSize: '13px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const };
+const sBadge = { minWidth: '20px', height: '20px', borderRadius: '10px', backgroundColor: '#ef4444', color: '#fff', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 6px' };
+const sTypeTag = { fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: '#f3f4f6', color: '#4b5563', marginLeft: '6px' };
+const sEmptyCell = { padding: '32px', textAlign: 'center' as const, color: '#9ca3af', fontSize: '13px' };
+
+/* Loai hoi thoai ho tro — sinh tu Jinja2 */
+const CONVERSATION_TYPES: ConversationType[] = [
+    'direct', 'group', 'support', 'broadcast',
+];
+
+const typeLabel: Record<ConversationType, string> = {
+    direct: 'Truc tiep',
+    group: 'Nhom',
+    support: 'Hoi tro',
+    broadcast: 'Phat song',
+};
+
+/* Helper: lay chu cai dau cua avatar */
+function avatarLetter(name: string): string {
+    return (name || '?').charAt(0).toUpperCase();
+}
+
+/* Helper: thoi gian tuong doi */
+function relativeTime(iso: string | null): string {
+    if (!iso) return '';
+    const d = Date.now() - new Date(iso).getTime();
+    if (d < 60000) return 'vua xong';
+    if (d < 3600000) return Math.round(d / 60000) + 'p';
+    if (d < 86400000) return Math.round(d / 3600000) + 'g';
+    return Math.round(d / 86400000) + 'n';
+}
+
+/* ---- Component chinh: ConversationList ---- */
+export function ConversationList({
+    conversations,
+    onSelect,
+    selectedId,
+    currentUserId = 'user_1',
+}: ConversationListProps) {
+    const [search, setSearch] = useState('');
+    const [typeFilter, setTypeFilter] = useState<ConversationType | ''>('');
+
+    /* Loc va sap xep hoi thoai */
+    const filtered = useMemo(() => {
+        let result = conversations.filter((c) => {
+            if (search) {
+                const q = search.toLowerCase();
+                if (!c.name.toLowerCase().includes(q) && !c.conversation_id.toLowerCase().includes(q)) {
+                    return false;
+                }
+            }
+            if (typeFilter && c.conversation_type !== typeFilter) return false;
+            return c.is_active;
+        });
+        /* Sap xep: co unread tren truoc, sau do theo last_message_at */
+        result.sort((a, b) => {
+            if (a.unread_count !== b.unread_count) return b.unread_count - a.unread_count;
+            const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+            const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+            return tb - ta;
+        });
+        return result;
+    }, [conversations, search, typeFilter]);
+
+    const handleSelect = useCallback((id: string) => {
+        onSelect(id);
+    }, [onSelect]);
+
+    const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        setSearch(e.target.value);
+    }, []);
+
+    const handleFilter = useCallback((t: ConversationType | '') => {
+        setTypeFilter((prev) => (prev === t ? '' : t));
+    }, []);
+
+    return (
+        <div style={sWrap}>
+            {/* Tieu de va tim kiem */}
+            <div style={sHeader}>
+                <h2 style={sTitle}>Hoi thoai</h2>
+                <input
+                    type="text"
+                    placeholder="Tim kiem hoi thoai..."
+                    value={search}
+                    onChange={handleSearch}
+                    style={sSearchInput}
+                />
+                {/* Bo loc theo loai */}
+                <div style={sFilterRow}>
+                    {CONVERSATION_TYPES.map((t) => (
+                        <span
+                            key={t}
+                            onClick={() => handleFilter(t)}
+                            style={typeFilter === t ? sFilterChipActive : sFilterChip}
+                        >
+                            {typeLabel[t]}
+                        </span>
+                    ))}
+                </div>
+            </div>
+
+            {/* Danh sach hoi thoai */}
+            <div style={sList}>
+                {filtered.length === 0 && (
+                    <div style={sEmptyCell}>
+                        {search ? 'Khong tim thay hoi thoai nao' : 'Chua co hoi thoai nao'}
+                    </div>
+                )}
+                {filtered.map((c) => {
+                    const isSelected = c.conversation_id === selectedId;
+                    return (
+                        <div
+                            key={c.conversation_id}
+                            style={isSelected ? sItemSelected : sItem}
+                            onClick={() => handleSelect(c.conversation_id)}
+                        >
+                            {/* Avatar */}
+                            <div style={sAvatar}>
+                                {avatarLetter(c.name)}
+                            </div>
+                            {/* Noi dung */}
+                            <div style={sItemBody}>
+                                <div style={sItemTop}>
+                                    <span style={sItemName}>
+                                        {c.name || c.conversation_id}
+                                        <span style={sTypeTag}>{typeLabel[c.conversation_type]}</span>
+                                    </span>
+                                    <span style={sItemTime}>
+                                        {relativeTime(c.last_message_at)}
+                                    </span>
+                                </div>
+                                <div style={sItemTop}>
+                                    <span style={sItemPreview}>
+                                        {c.last_message || 'Chua co tin nhan'}
+                                    </span>
+                                    {c.unread_count > 0 && (
+                                        <span style={sBadge}>{c.unread_count}</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+export default ConversationList;
