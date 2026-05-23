@@ -1,0 +1,33 @@
+/**
+ * NestJS i18n Module — tạo tự động bởi CP29.
+ *
+ * Không sửa thủ công.
+ */
+
+import { Module } from '@nestjs/common';
+import { I18nModule as NestI18nModule } from '@nestjs/i18n';
+import * as path from 'path';
+
+const supportedLocales: string[] = [
+{% for loc in language_profile.locales %}
+  '{{ loc }}',
+{% endfor %}
+];
+
+@Module({
+  imports: [
+    NestI18nModule.forRoot({
+      fallbackLanguage: '{{ language_profile.default_locale }}',
+      loaderOptions: {
+        path: path.join(__dirname, '/locales'),
+        acceptHeader: true,
+        fallbacks: true,
+      },
+      typesync: {
+        output: path.join(__dirname, '../i18n.generated.ts'),
+      },
+    }),
+  ],
+  exports: [NestI18nModule],
+})
+export class I18nModule {}
